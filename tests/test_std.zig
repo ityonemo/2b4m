@@ -138,6 +138,12 @@ pub fn addTests(
     // (the synthetic materialized theorems are suppressed.)
     ctx.okSilent(&.{ "check", "std/ring.bpa" });
 
+    // the field theory (std/field.bpa): a commutative ring with unit + a partial
+    // multiplicative inverse `recip` (total func, guarded axiom x≠0 → x·recip x = 1).
+    // MODELS std/ring.bpa to inherit the ring corpus; derives mulOneRight,
+    // recipMulLeft, and noZeroDivisors (a·b=0 → a=0 or b=0). Base of the ℚ/ℝ/ℂ tower.
+    ctx.okSilent(&.{ "check", "std/field.bpa" });
+
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
     // THREE-LEVEL chain ℤ → ring → group, checked with the base above.

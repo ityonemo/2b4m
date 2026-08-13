@@ -1,0 +1,190 @@
+// std/field.bpa — the theory of a FIELD: a commutative ring with unit in which
+// every NONZERO element has a multiplicative inverse. It is the ring theory
+// (std/ring.bpa) plus multiplicative commutativity, a two-sided unit, and a
+// (partial) reciprocal `recip` satisfying `x ≠ 0 → x·recip(x) = 1`, together with
+// nontriviality `1 ≠ 0`.
+//
+// The ring structure `(Field, add, mul, ZERO, ONE, neg)` IS a commutative ring, so
+// this theory MODELS std/ring.bpa: the ring corpus (mulZero, mulNeg*, negMulNeg,
+// additiveInverseUnique, …) transfers in, and the field's own properties
+// (reciprocal cancellation, no zero divisors) are proved using those transferred
+// facts plus the field axioms.
+//
+// `recip` is TOTAL as a function (recip(ZERO) is an unconstrained junk value); the
+// ONLY axiom about it is guarded on `x ≠ ZERO`, so recip(ZERO) is never usable —
+// the same discipline by which division guards nonzero in std/integer-divides.bpa.
+
+import ring <<< "std/ring.bpa"
+
+sort Field
+const ZERO: Field
+const ONE: Field
+func add(a: Field, b: Field): Field
+func mul(a: Field, b: Field): Field
+func neg(a: Field): Field
+func recip(a: Field): Field
+
+// -- ring axioms (discharge the ring model below) ---------------------------
+// Left-axiomatic, as in ring.bpa: only LEFT identity/inverse are primitive.
+axiom addAssoc: forall a, b, c: Field; add(add(a, b), c) = add(a, add(b, c))
+axiom addZeroLeft: forall a: Field; add(ZERO, a) = a
+axiom addNegLeft: forall a: Field; add(neg(a), a) = ZERO
+axiom addCommutative: forall a, b: Field; add(a, b) = add(b, a)
+axiom mulAssoc: forall a, b, c: Field; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulDistributesLeftOverAdd: forall a, b, c: Field; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulDistributesRightOverAdd: forall a, b, c: Field; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+
+// -- field-specific axioms --------------------------------------------------
+axiom mulCommutative: forall a, b: Field; mul(a, b) = mul(b, a)
+axiom mulOneLeft: forall a: Field; mul(ONE, a) = a
+axiom fieldInverse: forall a: Field; a != ZERO -> mul(a, recip(a)) = ONE
+axiom oneNotZero: ONE != ZERO
+
+// the ring structure is a commutative ring.
+model RingIsField {
+  ring.Ring: Field
+  ring.ZERO: ZERO
+  ring.ONE: ONE
+  ring.add: add
+  ring.mul: mul
+  ring.neg: neg
+  ring.addAssoc <- addAssoc
+  ring.addZeroLeft <- addZeroLeft
+  ring.addNegLeft <- addNegLeft
+  ring.addCommutative <- addCommutative
+  ring.mulAssoc <- mulAssoc
+  ring.mulDistributesLeftOverAdd <- mulDistributesLeftOverAdd
+  ring.mulDistributesRightOverAdd <- mulDistributesRightOverAdd
+}
+
+// -- unit + reciprocal laws (derived) ---------------------------------------
+
+// a·1 = a. Commute, then the left unit.
+theorem mulOneRight: forall a: Field; mul(a, ONE) = a
+proof
+  @generalize-a |
+    fix a: Field {
+      @commute |
+        mul(a, ONE) = mul(ONE, a)
+        [by specialize mulCommutative(a, ONE)]
+      @one-left |
+        mul(ONE, a) = a
+        [by specialize mulOneLeft(a)]
+      @conclusion-at-a |
+        mul(a, ONE) = a
+        [by chain commute one-left]
+    }
+  @conclusion |
+    forall a: Field; mul(a, ONE) = a
+    [by forall_intro generalize-a]
+qed
+
+// mul(a, ZERO) = ZERO — transferred through the ring model (also the model
+// smoke test). Used by noZeroDivisors below.
+theorem mulZeroRight: forall a: Field; mul(a, ZERO) = ZERO
+proof
+  @conclusion |
+    forall a: Field; mul(a, ZERO) = ZERO
+    [by model(RingIsField) ring.mulZeroRight]
+qed
+
+// recip(a)·a = 1 for a ≠ 0 (the right-inverse axiom commuted).
+theorem recipMulLeft: forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
+proof
+  @generalize-a |
+    fix a: Field {
+      @given-a-nonzero |
+        assume a != ZERO {
+          @a-nonzero |
+            a != ZERO
+            [by hypothesis given-a-nonzero]
+          @right-inverse |
+            mul(a, recip(a)) = ONE
+            [by specialize fieldInverse(a) a-nonzero]
+          @commute |
+            mul(recip(a), a) = mul(a, recip(a))
+            [by specialize mulCommutative(recip(a), a)]
+          @left-inverse |
+            mul(recip(a), a) = ONE
+            [by chain commute right-inverse]
+        }
+      @discharge |
+        a != ZERO -> mul(recip(a), a) = ONE
+        [by implies_intro given-a-nonzero]
+    }
+  @conclusion |
+    forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
+    [by forall_intro generalize-a]
+qed
+
+// -- no zero divisors -------------------------------------------------------
+
+// a·b = 0 → a = 0 or b = 0. If a ≠ 0, multiply by recip(a): b = 1·b =
+// (recip(a)·a)·b = recip(a)·(a·b) = recip(a)·0 = 0.
+theorem noZeroDivisors: forall a, b: Field; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+proof
+  @generalize-a |
+    fix a: Field {
+      @generalize-b |
+        fix b: Field {
+          @given-product-zero |
+            assume mul(a, b) = ZERO {
+              @product-zero |
+                mul(a, b) = ZERO
+                [by hypothesis given-product-zero]
+              @a-zero-or-not |
+                a = ZERO or a != ZERO
+                [by tautology]
+              @conclusion-cases |
+                a = ZERO or b = ZERO
+                case a-zero-or-not {
+                  @when-a-zero |
+                    assume a = ZERO {
+                      @a-is-zero |
+                        a = ZERO
+                        [by hypothesis when-a-zero]
+                      @conclusion-a-zero |
+                        a = ZERO or b = ZERO
+                        [by or_intro_left a-is-zero]
+                    }
+                  @when-a-nonzero |
+                    assume a != ZERO {
+                      @a-nonzero |
+                        a != ZERO
+                        [by hypothesis when-a-nonzero]
+                      @recip-a-left |
+                        mul(recip(a), a) = ONE
+                        [by specialize recipMulLeft(a) a-nonzero]
+                      // b = 1·b = (recip(a)·a)·b = recip(a)·(a·b) = recip(a)·0 = 0
+                      @one-times-b |
+                        mul(ONE, b) = b
+                        [by specialize mulOneLeft(b)]
+                      @regroup |
+                        mul(mul(recip(a), a), b) = mul(recip(a), mul(a, b))
+                        [by specialize mulAssoc(recip(a), a, b)]
+                      @recip-times-zero |
+                        mul(recip(a), ZERO) = ZERO
+                        [by specialize mulZeroRight(recip(a))]
+                      // chain: b = 1·b, 1 = recip(a)·a so 1·b = (recip a·a)·b,
+                      // regroup to recip(a)·(a·b), a·b = 0, recip(a)·0 = 0.
+                      @b-is-zero |
+                        b = ZERO
+                        [by chain one-times-b recip-a-left regroup product-zero recip-times-zero]
+                      @conclusion-b-zero |
+                        a = ZERO or b = ZERO
+                        [by or_intro_right b-is-zero]
+                    }
+                }
+            }
+          @discharge |
+            mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+            [by implies_intro given-product-zero]
+        }
+      @discharge-b |
+        forall b: Field; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Field; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+    [by forall_intro generalize-a]
+qed
