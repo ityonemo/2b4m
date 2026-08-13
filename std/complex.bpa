@@ -1,0 +1,128 @@
+// std/complex.bpa — the COMPLEX NUMBERS ℂ as an axiomatic FIELD (NOT ordered — ℂ
+// admits no order compatible with its field structure). ℂ models std/field.bpa
+// (inheriting the field corpus), adjoins the imaginary unit `I` with `I² = −1`, and
+// embeds ℝ via `fromReal` / `isReal`, with real and imaginary parts `re`/`im` and
+// conjugation `conj`.
+//
+// Following the tower's architecture, ℂ is INDEPENDENT (not constructed as ℝ×ℝ —
+// bpa has no pair sorts) and carries the ℝ embedding as a predicate + homomorphism,
+// NOT (for now) a guarded theorem-transfer model. Unlike ℚ↪ℝ (where ℚ has strictly
+// fewer theorems), the reals-inside-ℂ DO carry extra structure ℂ lacks globally —
+// the ORDER — so a guarded `RealsInComplex` model COULD be load-bearing; it is left
+// unbuilt until a target theorem actually needs an order fact on real parts.
+
+import field <<< "std/field.bpa"
+import real <<< "std/real.bpa"
+
+sort Complex
+const ZERO: Complex
+const ONE: Complex
+const I: Complex
+func add(a: Complex, b: Complex): Complex
+func mul(a: Complex, b: Complex): Complex
+func neg(a: Complex): Complex
+func recip(a: Complex): Complex
+
+// -- field axioms (discharge the field model below) --------------------------
+axiom addAssoc: forall a, b, c: Complex; add(add(a, b), c) = add(a, add(b, c))
+axiom addZeroLeft: forall a: Complex; add(ZERO, a) = a
+axiom addNegLeft: forall a: Complex; add(neg(a), a) = ZERO
+axiom addCommutative: forall a, b: Complex; add(a, b) = add(b, a)
+axiom mulAssoc: forall a, b, c: Complex; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulDistributesLeftOverAdd: forall a, b, c: Complex; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulDistributesRightOverAdd: forall a, b, c: Complex; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+axiom mulCommutative: forall a, b: Complex; mul(a, b) = mul(b, a)
+axiom mulOneLeft: forall a: Complex; mul(ONE, a) = a
+axiom fieldInverse: forall a: Complex; a != ZERO -> mul(a, recip(a)) = ONE
+axiom oneNotZero: ONE != ZERO
+
+model ComplexField {
+  field.Field: Complex
+  field.ZERO: ZERO
+  field.ONE: ONE
+  field.add: add
+  field.mul: mul
+  field.neg: neg
+  field.recip: recip
+  field.addAssoc <- addAssoc
+  field.addZeroLeft <- addZeroLeft
+  field.addNegLeft <- addNegLeft
+  field.addCommutative <- addCommutative
+  field.mulAssoc <- mulAssoc
+  field.mulDistributesLeftOverAdd <- mulDistributesLeftOverAdd
+  field.mulDistributesRightOverAdd <- mulDistributesRightOverAdd
+  field.mulCommutative <- mulCommutative
+  field.mulOneLeft <- mulOneLeft
+  field.fieldInverse <- fieldInverse
+  field.oneNotZero <- oneNotZero
+}
+
+// -- the imaginary unit -----------------------------------------------------
+axiom iSquared: mul(I, I) = neg(ONE)
+
+// -- the real embedding ℝ ↪ ℂ + real/imaginary parts -----------------------
+// fromReal embeds ℝ as a subfield; re/im project to the real and imaginary parts
+// (as reals); conj is complex conjugation. A complex reconstructs from its parts:
+// z = fromReal(re z) + fromReal(im z)·I.
+func fromReal(r: real.Real): Complex
+func re(z: Complex): real.Real
+func im(z: Complex): real.Real
+func conj(z: Complex): Complex
+
+axiom fromRealZero: fromReal(real.ZERO) = ZERO
+axiom fromRealOne: fromReal(real.ONE) = ONE
+axiom fromRealAdd: forall r, s: real.Real; fromReal(real.add(r, s)) = add(fromReal(r), fromReal(s))
+axiom fromRealMul: forall r, s: real.Real; fromReal(real.mul(r, s)) = mul(fromReal(r), fromReal(s))
+axiom fromRealNeg: forall r: real.Real; fromReal(real.neg(r)) = neg(fromReal(r))
+axiom fromRealInjective: forall r, s: real.Real; fromReal(r) = fromReal(s) -> r = s
+
+// re/im of an embedded real: re(fromReal r) = r, im(fromReal r) = 0.
+axiom reOfReal: forall r: real.Real; re(fromReal(r)) = r
+axiom imOfReal: forall r: real.Real; im(fromReal(r)) = real.ZERO
+// reconstruction: every z is its real part plus its imaginary part times I.
+axiom complexParts: forall z: Complex; z = add(fromReal(re(z)), mul(fromReal(im(z)), I))
+// conjugation flips the imaginary part: conj(z) = re(z) − im(z)·I.
+axiom conjDef: forall z: Complex; conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))
+
+define isReal(z: Complex) = exists r: real.Real; z = fromReal(r)
+
+// -- derived ----------------------------------------------------------------
+
+// an embedded real IS real (immediate from the def) — witness lemma for isReal.
+theorem fromRealIsReal: forall r: real.Real; isReal(fromReal(r))
+proof
+  @generalize-r |
+    fix r: real.Real {
+      @image-of-r |
+        fromReal(r) = fromReal(r)
+        [by reflexivity]
+      @is-real |
+        isReal(fromReal(r))
+        [by exists_intro(r) image-of-r]
+    }
+  @conclusion |
+    forall r: real.Real; isReal(fromReal(r))
+    [by forall_intro generalize-r]
+qed
+
+// ONE is real: ONE = fromReal(real.ONE) by fromRealOne, so isReal(ONE).
+theorem oneIsReal: isReal(ONE)
+proof
+  @from-real-one |
+    fromReal(real.ONE) = ONE
+    [by axiom fromRealOne]
+  @one-is-image |
+    ONE = fromReal(real.ONE)
+    [by symmetry from-real-one]
+  @conclusion |
+    isReal(ONE)
+    [by exists_intro(real.ONE) one-is-image]
+qed
+
+// smoke test (field model): no zero divisors transfers from the field theory.
+theorem noZeroDivisors: forall a, b: Complex; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+proof
+  @conclusion |
+    forall a, b: Complex; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+    [by model(ComplexField) field.noZeroDivisors]
+qed

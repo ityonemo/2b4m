@@ -164,6 +164,12 @@ pub fn addTests(
     // model (ℚ has strictly fewer theorems than ℝ; nothing to lift, unlike ℕ↪ℤ).
     ctx.okSilent(&.{ "check", "std/real.bpa" });
 
+    // the complex numbers ℂ (std/complex.bpa): an axiomatic FIELD (NOT ordered).
+    // MODELS std/field.bpa; adjoins the imaginary unit I with I²=−1; embeds ℝ via
+    // fromReal/isReal with re/im parts and conj. Top of the ℚ/ℝ/ℂ tower. (A guarded
+    // RealsInComplex order-transfer model is left unbuilt until a theorem needs it.)
+    ctx.okSilent(&.{ "check", "std/complex.bpa" });
+
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
     // THREE-LEVEL chain ℤ → ring → group, checked with the base above.
