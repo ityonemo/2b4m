@@ -270,11 +270,12 @@ proof
       -> forall n: Real; isInteger(n) -> isNatural(n) -> prop(n)
     [by implies_intro given-base]
 qed
-axiom integerInduction(prop: Real -> Prop):
-  prop(ZERO)
-  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)))
-  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)))
-  -> forall n: Real; isInteger(n) -> prop(n)
+// integerInduction is DERIVED (a theorem, below) from naturalInduction +
+// integerCases + the sign lemmas — see the "-- integer induction (derived)"
+// section after the discharge theorems. It is no longer a primitive axiom: the ℤ
+// minimality is already carried by naturalInduction, and bidirectional integer
+// induction is the reflection of it across the sign split (ℤ = ℕ ∪ −ℕ), exactly
+// as std/integer.bpa derives its own `induction` from nonnegInduction + intCases.
 
 // -- ring-lemma shims for the bare `polynomial` accelerant -------------------
 // `polynomial` (self-scope, no theory arg) resolves its ring vocabulary by BARE
@@ -732,6 +733,176 @@ proof
   @conclusion |
     forall a, b: Real; succ(a) = succ(b) -> a = b
     [by forall_intro generalize-a]
+qed
+
+// -- integer induction (derived) ---------------------------------------------
+// Bidirectional induction over the isInteger cut, DERIVED from naturalInduction +
+// integerCases + the sign lemmas (negZero/negSucc/negNeg). ℤ = ℕ ∪ −ℕ: the nonneg
+// arm is naturalInduction directly; the nonpositive arm reflects it through the
+// predicate prop(neg(·)), using negSucc to turn the successor step into the
+// predecessor step. Mirrors std/integer.bpa's derivation of `induction` from
+// nonnegInduction. This is why integerInduction need not be a separate axiom.
+theorem integerInduction(prop: Real -> Prop):
+  prop(ZERO)
+  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)))
+  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)))
+  -> forall n: Real; isInteger(n) -> prop(n)
+proof
+  @given-base |
+    assume prop(ZERO) {
+      @base-case |
+        prop(ZERO)
+        [by hypothesis given-base]
+      @given-successor-step |
+        assume forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)) {
+          @successor-step |
+            forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k))
+            [by hypothesis given-successor-step]
+          @given-predecessor-step |
+            assume forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)) {
+              @predecessor-step |
+                forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k))
+                [by hypothesis given-predecessor-step]
+              // sign facts cited once for reuse.
+              @negZero-fact |
+                neg(ZERO) = ZERO
+                [by theorem negZero]
+              @negSucc-fact |
+                forall n: Real; neg(succ(n)) = prev(neg(n))
+                [by theorem negSucc]
+              @negNeg-fact |
+                forall n: Real; neg(neg(n)) = n
+                [by theorem negNeg]
+
+              // -- NONNEG (natural) arm: naturalInduction on prop directly.
+              // Its step needs only isNatural(k) (a natural is an integer).
+              @natural-successor-step |
+                fix k: Real {
+                  @given-k-natural |
+                    assume isNatural(k) {
+                      @k-natural |
+                        isNatural(k)
+                        [by hypothesis given-k-natural]
+                      @k-integer |
+                        isInteger(k)
+                        [by specialize isNaturalIsInteger(k) k-natural]
+                      @step-at-k |
+                        prop(k) -> prop(succ(k))
+                        [by specialize successor-step(k) k-integer]
+                    }
+                  @natural-k-implies-step |
+                    isNatural(k) -> prop(k) -> prop(succ(k))
+                    [by implies_intro given-k-natural]
+                }
+              @natural-successor-step-for-all-k |
+                forall k: Real; isNatural(k) -> prop(k) -> prop(succ(k))
+                [by forall_intro natural-successor-step]
+              @natural-induction-on-prop |
+                forall n: Real; isNatural(n) -> prop(n)
+                [by instantiate naturalInduction((fun m: Real => prop(m))) base-case natural-successor-step-for-all-k]
+
+              // -- NONPOSITIVE arm: naturalInduction on Real(m) = prop(neg m).
+              @reflected-base-case |
+                prop(neg(ZERO))
+                [by rewrite negZero-fact base-case]
+              @reflected-successor-step |
+                fix k: Real {
+                  @given-k-natural-reflected |
+                    assume isNatural(k) {
+                      @k-natural-reflected |
+                        isNatural(k)
+                        [by hypothesis given-k-natural-reflected]
+                      @k-integer-reflected |
+                        isInteger(k)
+                        [by specialize isNaturalIsInteger(k) k-natural-reflected]
+                      @neg-k-integer |
+                        isInteger(neg(k))
+                        [by specialize isIntegerNeg(k) k-integer-reflected]
+                      @predecessor-step-at-neg-k |
+                        prop(neg(k)) -> prop(prev(neg(k)))
+                        [by specialize predecessor-step(neg(k)) neg-k-integer]
+                      @negSucc-at-k |
+                        neg(succ(k)) = prev(neg(k))
+                        [by forall_elim(k) negSucc-fact]
+                      @reflected-step-at-k |
+                        prop(neg(k)) -> prop(neg(succ(k)))
+                        [by rewrite negSucc-at-k predecessor-step-at-neg-k]
+                    }
+                  @natural-k-implies-reflected-step |
+                    isNatural(k) -> prop(neg(k)) -> prop(neg(succ(k)))
+                    [by implies_intro given-k-natural-reflected]
+                }
+              @reflected-successor-step-for-all-k |
+                forall k: Real; isNatural(k) -> prop(neg(k)) -> prop(neg(succ(k)))
+                [by forall_intro reflected-successor-step]
+              @reflected-natural-induction |
+                forall n: Real; isNatural(n) -> prop(neg(n))
+                [by instantiate naturalInduction((fun m: Real => prop(neg(m)))) reflected-base-case reflected-successor-step-for-all-k]
+
+              // -- split any integer n by sign and discharge each arm.
+              @generalize-n |
+                fix n: Real {
+                  @given-n-integer |
+                    assume isInteger(n) {
+                      @n-integer |
+                        isInteger(n)
+                        [by hypothesis given-n-integer]
+                      @sign-split |
+                        isNatural(n) or isNatural(neg(n))
+                        [by specialize integerCases(n) n-integer]
+                      @double-negation-of-n |
+                        neg(neg(n)) = n
+                        [by forall_elim(n) negNeg-fact]
+                      @prop-at-n |
+                        prop(n)
+                        case sign-split {
+                          @when-n-natural |
+                            assume isNatural(n) {
+                              @n-natural |
+                                isNatural(n)
+                                [by hypothesis when-n-natural]
+                              @prop-at-n-natural |
+                                prop(n)
+                                [by specialize natural-induction-on-prop(n) n-natural]
+                            }
+                          @when-neg-n-natural |
+                            assume isNatural(neg(n)) {
+                              @neg-n-natural |
+                                isNatural(neg(n))
+                                [by hypothesis when-neg-n-natural]
+                              @prop-at-double-neg |
+                                prop(neg(neg(n)))
+                                [by specialize reflected-natural-induction(neg(n)) neg-n-natural]
+                              @prop-at-n-reflected |
+                                prop(n)
+                                [by rewrite double-negation-of-n prop-at-double-neg]
+                            }
+                        }
+                    }
+                  @n-integer-implies-prop |
+                    isInteger(n) -> prop(n)
+                    [by implies_intro given-n-integer]
+                }
+              @conclusion-integer-induction |
+                forall n: Real; isInteger(n) -> prop(n)
+                [by forall_intro generalize-n]
+            }
+          @conclusion-with-predecessor-step |
+            (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k))) -> forall n: Real; isInteger(n) -> prop(n)
+            [by implies_intro given-predecessor-step]
+        }
+      @conclusion-with-successor-step |
+        (forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)))
+          -> (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)))
+          -> forall n: Real; isInteger(n) -> prop(n)
+        [by implies_intro given-successor-step]
+    }
+  @conclusion |
+    prop(ZERO)
+      -> (forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)))
+      -> (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)))
+      -> forall n: Real; isInteger(n) -> prop(n)
+    [by implies_intro given-base]
 qed
 
 // -- the integers as a CUT of ℝ + the guarded ℤ transfer model ---------------
