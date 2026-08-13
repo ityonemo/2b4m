@@ -144,6 +144,12 @@ pub fn addTests(
     // recipMulLeft, and noZeroDivisors (a·b=0 → a=0 or b=0). Base of the ℚ/ℝ/ℂ tower.
     ctx.okSilent(&.{ "check", "std/field.bpa" });
 
+    // the ordered-field theory (std/field-order.bpa): a field + a total strict order
+    // `less_than` compatible with the ops (translation-invariant add, positive
+    // product). MODELS std/field.bpa; postulates the order abstractly (opaque pred +
+    // axioms, unlike the constructed ℤ order) and derives asymmetry etc. ℚ/ℝ model it.
+    ctx.okSilent(&.{ "check", "std/field-order.bpa" });
+
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
     // THREE-LEVEL chain ℤ → ring → group, checked with the base above.
