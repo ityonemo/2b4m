@@ -19,6 +19,9 @@
 
 import field <<< "std/field.bpa"
 import field_order <<< "std/field-order.bpa"
+import integer <<< "std/integer.bpa"
+import peano <<< "std/peano.bpa"
+import rational <<< "std/rational.bpa"
 
 sort Real
 const ZERO: Real
@@ -110,6 +113,259 @@ axiom isRationalMul: forall a, b: Real; isRational(a) -> isRational(b) -> isRati
 axiom isRationalNeg: forall a: Real; isRational(a) -> isRational(neg(a))
 axiom isRationalRecip: forall a: Real; isRational(a) -> a != ZERO -> isRational(recip(a))
 
+model RealField {
+  field.Field: Real
+  field.ZERO: ZERO
+  field.ONE: ONE
+  field.add: add
+  field.mul: mul
+  field.neg: neg
+  field.recip: recip
+  field.addIsAssociative <- addIsAssociative
+  field.addZeroLeft <- addZeroLeft
+  field.addNegLeft <- addNegLeft
+  field.addIsCommutative <- addIsCommutative
+  field.mulIsAssociative <- mulIsAssociative
+  field.mulAddDistribLeft <- mulAddDistribLeft
+  field.mulAddDistribRight <- mulAddDistribRight
+  field.mulIsCommutative <- mulIsCommutative
+  field.mulOneLeft <- mulOneLeft
+  field.fieldInverse <- fieldInverse
+  field.oneNotZero <- oneNotZero
+}
+
+// -- the integers inside ℝ (a predicate, NOT an embedding function) ----------
+// `isInteger` marks the integer subring of ℝ — an OPAQUE predicate pinned down by
+// closure axioms: it contains 0 and 1 and is closed under +, ×, and neg. It is
+// deliberately NOT closed under recip — that is exactly what separates the integers
+// (a subRING) from a subfield. This is the carve a future `sort SomeInt = Real where
+// isInteger` + guarded ℤ-theorem-transfer model would build on.
+pred isInteger(q: Real)
+axiom isIntegerZero: isInteger(ZERO)
+axiom isIntegerOne: isInteger(ONE)
+axiom isIntegerAdd: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
+axiom isIntegerMul: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
+axiom isIntegerNeg: forall a: Real; isInteger(a) -> isInteger(neg(a))
+
+// -- successor / predecessor on ℝ (the discrete step, for the integer model) --
+// ℤ's theory is built on succ/prev; to model it on ℝ's integers we realize the
+// step as +1 / −1. These are total on ℝ (they step ANY rational by one) but only
+// the integer-model cites them, guarded to the isInteger cut.
+func succ(q: Real): Real
+func prev(q: Real): Real
+func sub(a: Real, b: Real): Real
+axiom succDefinition: forall q: Real; succ(q) = add(q, ONE)
+axiom prevDefinition: forall q: Real; prev(q) = add(q, neg(ONE))
+axiom subDefinition: forall a, b: Real; sub(a, b) = add(a, neg(b))
+
+// -- the naturals inside ℝ (nonneg integers) --------------------------------
+// `isNatural` marks the non-negative integers of ℝ — the ℕ cut. It is the ℤ cut
+// intersected with ≥0: contains 0, closed under succ, and every natural is an
+// integer. This is the source cut for the guarded ℕ (peano) model.
+pred isNatural(q: Real)
+axiom isNaturalZero: isNatural(ZERO)
+axiom isNaturalSucc: forall q: Real; isNatural(q) -> isNatural(succ(q))
+axiom isNaturalIsInteger: forall q: Real; isNatural(q) -> isInteger(q)
+axiom isNaturalSuccNotZero: forall q: Real; isNatural(q) -> succ(q) != ZERO
+// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
+// obligation of the integer model, on the cut.
+axiom integerCases: forall q: Real; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
+
+// -- integer succ/prev closure ----------------------------------------------
+axiom isIntegerSucc: forall q: Real; isInteger(q) -> isInteger(succ(q))
+axiom isIntegerPrev: forall q: Real; isInteger(q) -> isInteger(prev(q))
+
+// -- induction on the cuts (the minimality axioms) --------------------------
+// Neither induction principle is derivable from ℝ's ordered-field axioms — the
+// ordered-field theory has models with non-standard "integers" that satisfy every
+// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
+// exactly the minimality (smallest subring/submonoid containing 1) that pins the
+// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
+// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
+// discharge the induction obligations of the ℤ / ℕ models.
+axiom naturalInduction(prop: Real -> Prop):
+  prop(ZERO)
+  -> (forall k: Real; isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Real; isNatural(n) -> prop(n)
+
+// The SAME natural induction with a redundant `isInteger` guard on each bound
+// variable — the exact shape the IntegersInReal model's remap of ℤ's
+// `nonnegInduction` demands (ℤ's `Int` binder becomes isInteger, its `nonneg`
+// becomes isNatural, so both guards appear). Every natural is an integer, so the
+// isInteger guards carry no content; this discharges the model's induction
+// obligation. Derived from naturalInduction by dropping the extra antecedents.
+theorem naturalInductionOnInteger(prop: Real -> Prop):
+  prop(ZERO)
+  -> (forall k: Real; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Real; isInteger(n) -> isNatural(n) -> prop(n)
+proof
+  @given-base |
+    assume prop(ZERO) {
+      @given-step |
+        assume forall k: Real; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)) {
+          @base |
+            prop(ZERO)
+            [by hypothesis given-base]
+          @doubled-step |
+            forall k: Real; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k))
+            [by hypothesis given-step]
+          // drop the isInteger guard: a natural IS an integer, so re-supply it.
+          @generalize-k |
+            fix k: Real {
+              @given-k-natural |
+                assume isNatural(k) {
+                  @k-natural |
+                    isNatural(k)
+                    [by hypothesis given-k-natural]
+                  @k-integer |
+                    isInteger(k)
+                    [by specialize isNaturalIsInteger(k) k-natural]
+                  @step-at-k |
+                    prop(k) -> prop(succ(k))
+                    [by specialize doubled-step(k) k-integer k-natural]
+                }
+              @k-natural-implies-step |
+                isNatural(k) -> prop(k) -> prop(succ(k))
+                [by implies_intro given-k-natural]
+            }
+          @plain-step |
+            forall k: Real; isNatural(k) -> prop(k) -> prop(succ(k))
+            [by forall_intro generalize-k]
+          @natural-conclusion |
+            forall n: Real; isNatural(n) -> prop(n)
+            [by instantiate naturalInduction((fun m: Real => prop(m))) base plain-step]
+          @generalize-n |
+            fix n: Real {
+              @given-n-integer |
+                assume isInteger(n) {
+                  @given-n-natural |
+                    assume isNatural(n) {
+                      @n-natural |
+                        isNatural(n)
+                        [by hypothesis given-n-natural]
+                      @prop-n |
+                        prop(n)
+                        [by specialize natural-conclusion(n) n-natural]
+                    }
+                  @n-natural-implies-prop |
+                    isNatural(n) -> prop(n)
+                    [by implies_intro given-n-natural]
+                }
+              @n-integer-implies-rest |
+                isInteger(n) -> isNatural(n) -> prop(n)
+                [by implies_intro given-n-integer]
+            }
+          @conclusion-with-guards |
+            forall n: Real; isInteger(n) -> isNatural(n) -> prop(n)
+            [by forall_intro generalize-n]
+        }
+      @step-implies-conclusion |
+        (forall k: Real; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+          -> forall n: Real; isInteger(n) -> isNatural(n) -> prop(n)
+        [by implies_intro given-step]
+    }
+  @conclusion |
+    prop(ZERO)
+      -> (forall k: Real; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+      -> forall n: Real; isInteger(n) -> isNatural(n) -> prop(n)
+    [by implies_intro given-base]
+qed
+axiom integerInduction(prop: Real -> Prop):
+  prop(ZERO)
+  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(succ(k)))
+  -> (forall k: Real; isInteger(k) -> prop(k) -> prop(prev(k)))
+  -> forall n: Real; isInteger(n) -> prop(n)
+
+// -- ring-lemma shims for the bare `polynomial` accelerant -------------------
+// `polynomial` (self-scope, no theory arg) resolves its ring vocabulary by BARE
+// name in THIS file's scope. ℝ's own AXIOMS already supply the assoc/comm/distrib
+// /identity/inverse lemmas under the names polynomial expects; these SHIMS add the
+// remaining DERIVED folds + the two AC sort-swaps it needs — each proved directly
+// from ℝ's axioms (the same short derivations field.bpa/ring.bpa use). This is the
+// per-model cost of using a bare-name accelerant on a `model`-based sort (ℝ's
+// symbols are its own, not field's — a model transfers theorems, not names).
+
+// Each is a one-line transfer of field's like-named theorem through RealField
+// (field.bpa proves them all; the model carries them onto ℝ's symbols).
+theorem mulOneRight: forall a: Real; mul(a, ONE) = a
+proof
+  @conclusion |
+    forall a: Real; mul(a, ONE) = a
+    [by model(RealField) field.mulOneRight]
+qed
+
+theorem addZeroRight: forall a: Real; add(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: Real; add(a, ZERO) = a
+    [by model(RealField) field.addZeroRight]
+qed
+
+theorem addNegRight: forall a: Real; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: Real; add(a, neg(a)) = ZERO
+    [by model(RealField) field.addNegRight]
+qed
+
+theorem mulZeroRight: forall a: Real; mul(a, ZERO) = ZERO
+proof
+  @conclusion |
+    forall a: Real; mul(a, ZERO) = ZERO
+    [by model(RealField) field.mulZeroRight]
+qed
+
+theorem mulZeroLeft: forall a: Real; mul(ZERO, a) = ZERO
+proof
+  @conclusion |
+    forall a: Real; mul(ZERO, a) = ZERO
+    [by model(RealField) field.mulZeroLeft]
+qed
+
+theorem mulLeftSwap: forall x, y, r: Real; mul(x, mul(y, r)) = mul(y, mul(x, r))
+proof
+  @conclusion |
+    forall x, y, r: Real; mul(x, mul(y, r)) = mul(y, mul(x, r))
+    [by model(RealField) field.mulLeftSwap]
+qed
+
+theorem addLeftSwap: forall x, y, r: Real; add(x, add(y, r)) = add(y, add(x, r))
+proof
+  @conclusion |
+    forall x, y, r: Real; add(x, add(y, r)) = add(y, add(x, r))
+    [by model(RealField) field.addLeftSwap]
+qed
+
+// neg-distribution folds, so `polynomial` pushes neg to the leaves over signed ℝ
+// expressions (needed by the negSucc/negPrev/mulPrevLeft discharge theorems).
+theorem negNeg: forall a: Real; neg(neg(a)) = a
+proof
+  @conclusion |
+    forall a: Real; neg(neg(a)) = a
+    [by model(RealField) field.negNeg]
+qed
+
+theorem negAdd: forall a, b: Real; neg(add(a, b)) = add(neg(a), neg(b))
+proof
+  @conclusion |
+    forall a, b: Real; neg(add(a, b)) = add(neg(a), neg(b))
+    [by model(RealField) field.negAdd]
+qed
+
+theorem mulNegLeft: forall a, b: Real; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Real; mul(neg(a), b) = neg(mul(a, b))
+    [by model(RealField) field.mulNegLeft]
+qed
+
+theorem mulNegRight: forall a, b: Real; mul(a, neg(b)) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Real; mul(a, neg(b)) = neg(mul(a, b))
+    [by model(RealField) field.mulNegRight]
+qed
+
 // -- smoke test (algebra model) ---------------------------------------------
 theorem noZeroDivisors: forall a, b: Real; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
 proof
@@ -151,3 +407,434 @@ proof
     forall a: Real; isRational(a) -> a != ZERO -> isRational(recip(a))
     [by forall_intro generalize-a]
 qed
+
+// -- discharge theorems for the guarded integer / natural models -------------
+// Each proves an ℤ-theory (or ℕ-theory) axiom in its interpreted-on-ℝ form, so the
+// model below can cite it with `<-`. The recursive-definition axioms become pure
+// ℝ-ring identities once succ/prev/sub are unfolded — bare `polynomial` closes
+// them after the defining rewrites; the nonneg-structure ones are the isNatural /
+// isInteger axioms verbatim.
+
+// succ/prev are mutually inverse: prev(succ q) = q and succ(prev q) = q.
+theorem prevOfSucc: forall q: Real; prev(succ(q)) = q
+proof
+  @generalize-q |
+    fix q: Real {
+      @unfold-succ |
+        succ(q) = add(q, ONE)
+        [by specialize succDefinition(q)]
+      @unfold-prev |
+        prev(add(q, ONE)) = add(add(q, ONE), neg(ONE))
+        [by specialize prevDefinition(add(q, ONE))]
+      @prev-succ-expanded |
+        prev(succ(q)) = add(add(q, ONE), neg(ONE))
+        [by chain unfold-succ unfold-prev]
+      @cancel |
+        add(add(q, ONE), neg(ONE)) = q
+        [by polynomial]
+      @conclusion-prev-of-succ |
+        prev(succ(q)) = q
+        [by chain prev-succ-expanded cancel]
+    }
+  @conclusion |
+    forall q: Real; prev(succ(q)) = q
+    [by forall_intro generalize-q]
+qed
+
+theorem succOfPrev: forall q: Real; succ(prev(q)) = q
+proof
+  @generalize-q |
+    fix q: Real {
+      @unfold-prev |
+        prev(q) = add(q, neg(ONE))
+        [by specialize prevDefinition(q)]
+      @unfold-succ |
+        succ(add(q, neg(ONE))) = add(add(q, neg(ONE)), ONE)
+        [by specialize succDefinition(add(q, neg(ONE)))]
+      @succ-prev-expanded |
+        succ(prev(q)) = add(add(q, neg(ONE)), ONE)
+        [by chain unfold-prev unfold-succ]
+      @cancel |
+        add(add(q, neg(ONE)), ONE) = q
+        [by polynomial]
+      @conclusion-succ-of-prev |
+        succ(prev(q)) = q
+        [by chain succ-prev-expanded cancel]
+    }
+  @conclusion |
+    forall q: Real; succ(prev(q)) = q
+    [by forall_intro generalize-q]
+qed
+
+// ONE = succ(ZERO): succ(ZERO) = add(ZERO, ONE) = ONE.
+theorem oneIsSuccZero: ONE = succ(ZERO)
+proof
+  @unfold-succ |
+    succ(ZERO) = add(ZERO, ONE)
+    [by specialize succDefinition(ZERO)]
+  @add-zero |
+    add(ZERO, ONE) = ONE
+    [by specialize addZeroLeft(ONE)]
+  @succ-zero-is-one |
+    succ(ZERO) = ONE
+    [by chain unfold-succ add-zero]
+  @conclusion |
+    ONE = succ(ZERO)
+    [by symmetry succ-zero-is-one]
+qed
+
+// add(succ a, b) = succ(add a b): (a+1)+b = (a+b)+1.
+theorem addSuccLeft: forall a, b: Real; add(succ(a), b) = succ(add(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @unfold-succ-a |
+            succ(a) = add(a, ONE)
+            [by specialize succDefinition(a)]
+          @unfold-succ-sum |
+            succ(add(a, b)) = add(add(a, b), ONE)
+            [by specialize succDefinition(add(a, b))]
+          // (a+1)+b: congruence-rewrite succ(a)→a+1 into a reflexive left side.
+          @left-reflexive |
+            add(succ(a), b) = add(succ(a), b)
+            [by reflexivity]
+          @left-expanded |
+            add(succ(a), b) = add(add(a, ONE), b)
+            [by rewrite unfold-succ-a left-reflexive]
+          @left-normal |
+            add(add(a, ONE), b) = add(add(a, b), ONE)
+            [by polynomial]
+          @conclusion-add-succ-left |
+            add(succ(a), b) = succ(add(a, b))
+            [by chain left-expanded left-normal unfold-succ-sum]
+        }
+      @discharge-b |
+        forall b: Real; add(succ(a), b) = succ(add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; add(succ(a), b) = succ(add(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// add(prev a, b) = prev(add a b): (a−1)+b = (a+b)−1.
+theorem addPrevLeft: forall a, b: Real; add(prev(a), b) = prev(add(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @unfold-prev-a |
+            prev(a) = add(a, neg(ONE))
+            [by specialize prevDefinition(a)]
+          @unfold-prev-sum |
+            prev(add(a, b)) = add(add(a, b), neg(ONE))
+            [by specialize prevDefinition(add(a, b))]
+          @left-reflexive |
+            add(prev(a), b) = add(prev(a), b)
+            [by reflexivity]
+          @left-expanded |
+            add(prev(a), b) = add(add(a, neg(ONE)), b)
+            [by rewrite unfold-prev-a left-reflexive]
+          @left-normal |
+            add(add(a, neg(ONE)), b) = add(add(a, b), neg(ONE))
+            [by polynomial]
+          @conclusion-add-prev-left |
+            add(prev(a), b) = prev(add(a, b))
+            [by chain left-expanded left-normal unfold-prev-sum]
+        }
+      @discharge-b |
+        forall b: Real; add(prev(a), b) = prev(add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; add(prev(a), b) = prev(add(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// neg(ZERO) = ZERO.
+theorem negZero: neg(ZERO) = ZERO
+proof
+  @conclusion |
+    neg(ZERO) = ZERO
+    [by model(RealField) field.negZero]
+qed
+
+// neg(succ n) = prev(neg n): −(n+1) = −n−1.
+theorem negSucc: forall n: Real; neg(succ(n)) = prev(neg(n))
+proof
+  @generalize-n |
+    fix n: Real {
+      @unfold-succ |
+        succ(n) = add(n, ONE)
+        [by specialize succDefinition(n)]
+      @unfold-prev |
+        prev(neg(n)) = add(neg(n), neg(ONE))
+        [by specialize prevDefinition(neg(n))]
+      @neg-reflexive |
+        neg(succ(n)) = neg(succ(n))
+        [by reflexivity]
+      @neg-expanded |
+        neg(succ(n)) = neg(add(n, ONE))
+        [by rewrite unfold-succ neg-reflexive]
+      @neg-normal |
+        neg(add(n, ONE)) = add(neg(n), neg(ONE))
+        [by polynomial]
+      @conclusion-neg-succ |
+        neg(succ(n)) = prev(neg(n))
+        [by chain neg-expanded neg-normal unfold-prev]
+    }
+  @conclusion |
+    forall n: Real; neg(succ(n)) = prev(neg(n))
+    [by forall_intro generalize-n]
+qed
+
+// neg(prev n) = succ(neg n): −(n−1) = −n+1.
+theorem negPrev: forall n: Real; neg(prev(n)) = succ(neg(n))
+proof
+  @generalize-n |
+    fix n: Real {
+      @unfold-prev |
+        prev(n) = add(n, neg(ONE))
+        [by specialize prevDefinition(n)]
+      @unfold-succ |
+        succ(neg(n)) = add(neg(n), ONE)
+        [by specialize succDefinition(neg(n))]
+      @neg-reflexive |
+        neg(prev(n)) = neg(prev(n))
+        [by reflexivity]
+      @neg-expanded |
+        neg(prev(n)) = neg(add(n, neg(ONE)))
+        [by rewrite unfold-prev neg-reflexive]
+      @neg-normal |
+        neg(add(n, neg(ONE))) = add(neg(n), ONE)
+        [by polynomial]
+      @conclusion-neg-prev |
+        neg(prev(n)) = succ(neg(n))
+        [by chain neg-expanded neg-normal unfold-succ]
+    }
+  @conclusion |
+    forall n: Real; neg(prev(n)) = succ(neg(n))
+    [by forall_intro generalize-n]
+qed
+
+// mul(succ a, b) = add(mul a b, b): (a+1)·b = a·b + b.
+theorem mulSuccLeft: forall a, b: Real; mul(succ(a), b) = add(mul(a, b), b)
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @unfold-succ |
+            succ(a) = add(a, ONE)
+            [by specialize succDefinition(a)]
+          @left-reflexive |
+            mul(succ(a), b) = mul(succ(a), b)
+            [by reflexivity]
+          @left-expanded |
+            mul(succ(a), b) = mul(add(a, ONE), b)
+            [by rewrite unfold-succ left-reflexive]
+          @left-normal |
+            mul(add(a, ONE), b) = add(mul(a, b), b)
+            [by polynomial]
+          @conclusion-mul-succ-left |
+            mul(succ(a), b) = add(mul(a, b), b)
+            [by chain left-expanded left-normal]
+        }
+      @discharge-b |
+        forall b: Real; mul(succ(a), b) = add(mul(a, b), b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; mul(succ(a), b) = add(mul(a, b), b)
+    [by forall_intro generalize-a]
+qed
+
+// mul(prev a, b) = add(mul a b, neg b): (a−1)·b = a·b − b.
+theorem mulPrevLeft: forall a, b: Real; mul(prev(a), b) = add(mul(a, b), neg(b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @unfold-prev |
+            prev(a) = add(a, neg(ONE))
+            [by specialize prevDefinition(a)]
+          @left-reflexive |
+            mul(prev(a), b) = mul(prev(a), b)
+            [by reflexivity]
+          @left-expanded |
+            mul(prev(a), b) = mul(add(a, neg(ONE)), b)
+            [by rewrite unfold-prev left-reflexive]
+          @left-normal |
+            mul(add(a, neg(ONE)), b) = add(mul(a, b), neg(b))
+            [by polynomial]
+          @conclusion-mul-prev-left |
+            mul(prev(a), b) = add(mul(a, b), neg(b))
+            [by chain left-expanded left-normal]
+        }
+      @discharge-b |
+        forall b: Real; mul(prev(a), b) = add(mul(a, b), neg(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; mul(prev(a), b) = add(mul(a, b), neg(b))
+    [by forall_intro generalize-a]
+qed
+
+// succ is injective: succ(a) = succ(b) → a = b. On ℝ, succ(a) = a+1, so cancel the
+// +1 — a = (a+1)−1 = (b+1)−1 = b, the two ±1 cancellations bridged by the premise.
+theorem succInjective: forall a, b: Real; succ(a) = succ(b) -> a = b
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @given-succ-eq |
+            assume succ(a) = succ(b) {
+              @unfold-succ-a |
+                succ(a) = add(a, ONE)
+                [by specialize succDefinition(a)]
+              @unfold-succ-b |
+                succ(b) = add(b, ONE)
+                [by specialize succDefinition(b)]
+              @succ-eq |
+                succ(a) = succ(b)
+                [by hypothesis given-succ-eq]
+              // add(a,ONE) = add(b,ONE), bridging the two unfoldings.
+              @sums-equal |
+                add(a, ONE) = add(b, ONE)
+                [by chain unfold-succ-a succ-eq unfold-succ-b]
+              // a = (a+1)+(−1) = (b+1)+(−1) = b.
+              @a-recovers |
+                a = add(add(a, ONE), neg(ONE))
+                [by polynomial]
+              @b-recovers |
+                add(add(b, ONE), neg(ONE)) = b
+                [by polynomial]
+              @a-as-shifted-b |
+                a = add(add(b, ONE), neg(ONE))
+                [by rewrite sums-equal a-recovers]
+              @conclusion-a-equals-b |
+                a = b
+                [by chain a-as-shifted-b b-recovers]
+            }
+          @succ-eq-implies-equal |
+            succ(a) = succ(b) -> a = b
+            [by implies_intro given-succ-eq]
+        }
+      @discharge-b |
+        forall b: Real; succ(a) = succ(b) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; succ(a) = succ(b) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// -- the integers as a CUT of ℝ + the guarded ℤ transfer model ---------------
+// `sort Integer = Real where isInteger` carves the integer subring as a refinement of
+// ℝ (its elements are rationals satisfying isInteger; its ops are ℝ's ops). The
+// guarded model `IntegersInReal` interprets std/integer.bpa's ℤ theory on this
+// cut — relativizing every ℤ binder to isInteger and every nonneg binder to
+// isNatural — so ℤ's whole theorem corpus transfers onto ℝ's integers. Cite it
+// with `[by model(IntegersInReal) integer.<thm>]`. (There is NO new arithmetic
+// here: the cut inherits ℝ's add/mul/neg, so every ring identity on integers is
+// already an ℝ identity; the model transfers the ℤ-SPECIFIC facts — the ones that
+// rest on discreteness / induction — that ℝ does not have for all rationals.)
+sort Integer = Real where isInteger
+
+model IntegersInReal {
+  integer.Int: Integer
+  integer.nonneg: isNatural
+  integer.ZERO: ZERO
+  integer.ONE: ONE
+  integer.succ: succ
+  integer.prev: prev
+  integer.add: add
+  integer.mul: mul
+  integer.neg: neg
+  integer.sub: sub
+  integer.prevSucc <- prevOfSucc
+  integer.succPrev <- succOfPrev
+  integer.oneIsSuccZero <- oneIsSuccZero
+  integer.addZeroLeft <- addZeroLeft
+  integer.addSuccLeft <- addSuccLeft
+  integer.addPrevLeft <- addPrevLeft
+  integer.negZero <- negZero
+  integer.negSucc <- negSucc
+  integer.negPrev <- negPrev
+  integer.mulZeroLeft <- mulZeroLeft
+  integer.mulSuccLeft <- mulSuccLeft
+  integer.mulPrevLeft <- mulPrevLeft
+  integer.nonnegZero <- isNaturalZero
+  integer.nonnegSucc <- isNaturalSucc
+  integer.nonnegSuccNotZero <- isNaturalSuccNotZero
+  integer.intCases <- integerCases
+  integer.nonnegInduction <- naturalInductionOnInteger
+  integer.definitionOfSubtraction <- subDefinition
+}
+
+// -- the naturals as a CUT of ℝ + the guarded ℕ transfer model ---------------
+// `sort Natural = Real where isNatural` carves the non-negative integers; the guarded
+// model `NaturalsInReal` interprets std/peano.bpa's ℕ on the cut, transferring
+// ℕ's theorem corpus onto ℝ's naturals. peano's `induction` (unidirectional, over
+// all of ℕ) is discharged by ℝ's `naturalInduction` directly.
+sort Natural = Real where isNatural
+
+model NaturalsInReal {
+  peano.Nat: Natural
+  peano.ZERO: ZERO
+  peano.ONE: ONE
+  peano.succ: succ
+  peano.add: add
+  peano.mul: mul
+  peano.succInjective <- succInjective
+  peano.succNotZero <- isNaturalSuccNotZero
+  peano.addZeroLeft <- addZeroLeft
+  peano.addSuccLeft <- addSuccLeft
+  peano.mulZeroLeft <- mulZeroLeft
+  peano.mulSuccLeft <- mulSuccLeft
+  peano.oneIsSuccZero <- oneIsSuccZero
+  peano.induction <- naturalInduction
+}
+
+// -- the rationals as a CUT of ℝ + the guarded ℚ transfer model --------------
+// `sort Rational = Real where isRational` carves the rational subfield; the guarded
+// model `RationalsInReal` interprets std/rational.bpa's ORDERED-FIELD core on the
+// cut, transferring ℚ's ordered-field corpus onto ℝ's rationals. Only the
+// ordered-field axioms are discharged (ℚ's internal ℤ/ℕ/succ/prev scaffolding is
+// left unmapped — those theorems don't transfer, and aren't wanted on the cut).
+// Each ℚ axiom, relativized to isRational, follows from ℝ's like-named UNGUARDED
+// axiom by dropping the guards.
+sort Rational = Real where isRational
+
+model RationalsInReal {
+  rational.Q: Rational
+  rational.ZERO: ZERO
+  rational.ONE: ONE
+  rational.add: add
+  rational.mul: mul
+  rational.neg: neg
+  rational.recip: recip
+  rational.less_than: less_than
+  rational.addIsAssociative <- addIsAssociative
+  rational.addZeroLeft <- addZeroLeft
+  rational.addNegLeft <- addNegLeft
+  rational.addIsCommutative <- addIsCommutative
+  rational.mulIsAssociative <- mulIsAssociative
+  rational.mulAddDistribLeft <- mulAddDistribLeft
+  rational.mulAddDistribRight <- mulAddDistribRight
+  rational.mulIsCommutative <- mulIsCommutative
+  rational.mulOneLeft <- mulOneLeft
+  rational.fieldInverse <- fieldInverse
+  rational.oneNotZero <- oneNotZero
+  rational.lessThanIrreflexive <- lessThanIrreflexive
+  rational.lessThanTransitive <- lessThanTransitive
+  rational.lessThanTrichotomy <- lessThanTrichotomy
+  rational.lessThanAddRight <- lessThanAddRight
+  rational.lessThanAddCancel <- lessThanAddCancel
+  rational.positiveProduct <- positiveProduct
+}
