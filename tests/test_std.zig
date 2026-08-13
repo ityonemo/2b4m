@@ -157,6 +157,13 @@ pub fn addTests(
     // concrete sort of the tower; independent, containment-by-embedding.
     ctx.okSilent(&.{ "check", "std/rational.bpa" });
 
+    // the reals ℝ (std/real.bpa): an axiomatic COMPLETE ordered field. MODELS
+    // std/field-order.bpa + the least-upper-bound completeness AXIOM (a Real->Prop
+    // predicate-argument axiom, like nonnegInduction). Carries isRational +
+    // fromRational (ℚ↪ℝ embedding) to STATE facts about rationals — NO ℚ→ℝ transfer
+    // model (ℚ has strictly fewer theorems than ℝ; nothing to lift, unlike ℕ↪ℤ).
+    ctx.okSilent(&.{ "check", "std/real.bpa" });
+
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
     // THREE-LEVEL chain ℤ → ring → group, checked with the base above.

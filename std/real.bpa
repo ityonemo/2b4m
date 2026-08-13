@@ -1,0 +1,141 @@
+// std/real.bpa — the REAL NUMBERS ℝ as an axiomatic COMPLETE ordered field, with
+// the rationals ℚ living inside via the predicate `isRational`. ℝ models
+// std/field-order.bpa (inheriting the field + ordered-field corpus) and adds the
+// least-upper-bound (completeness) axiom.
+//
+// The rationals-inside-ℝ are marked by `isRational` + the embedding `fromRational`
+// — but there is NO guarded ℚ→ℝ theorem-transfer model. Unlike nonneg(ℤ) modeling
+// ℕ (which imports INDUCTION that ℤ lacks), ℚ has strictly FEWER theorems than ℝ:
+// every ℚ ordered-field fact ℝ already proves for ALL reals, so a ℚ→ℝ lift would
+// transfer nothing new. The predicate + embedding exist only to STATE facts about
+// the rationals (√2 ∉ ℚ, density, …).
+//
+// ℝ is POSTULATED, not constructed: constructing it (Cauchy sequences / Dedekind
+// cuts of ℚ) needs sets and quotient types bpa lacks. Completeness is just an
+// axiom — a predicate-argument axiom shaped like the existing nonnegInduction
+// schema. The ℚ↪ℝ equivalence therefore rests on categoricity, not a construction.
+
+import field <<< "std/field.bpa"
+import field_order <<< "std/field-order.bpa"
+import rational <<< "std/rational.bpa"
+
+sort Real
+const ZERO: Real
+const ONE: Real
+func add(a: Real, b: Real): Real
+func mul(a: Real, b: Real): Real
+func neg(a: Real): Real
+func recip(a: Real): Real
+pred less_than(a: Real, b: Real)
+
+// -- ordered-field axioms (discharge the ordered-field model below) ----------
+axiom addAssoc: forall a, b, c: Real; add(add(a, b), c) = add(a, add(b, c))
+axiom addZeroLeft: forall a: Real; add(ZERO, a) = a
+axiom addNegLeft: forall a: Real; add(neg(a), a) = ZERO
+axiom addCommutative: forall a, b: Real; add(a, b) = add(b, a)
+axiom mulAssoc: forall a, b, c: Real; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulDistributesLeftOverAdd: forall a, b, c: Real; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulDistributesRightOverAdd: forall a, b, c: Real; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+axiom mulCommutative: forall a, b: Real; mul(a, b) = mul(b, a)
+axiom mulOneLeft: forall a: Real; mul(ONE, a) = a
+axiom fieldInverse: forall a: Real; a != ZERO -> mul(a, recip(a)) = ONE
+axiom oneNotZero: ONE != ZERO
+axiom lessThanIrreflexive: forall a: Real; not less_than(a, a)
+axiom lessThanTransitive: forall a, b, c: Real; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+axiom lessThanTrichotomy: forall a, b: Real; less_than(a, b) or a = b or less_than(b, a)
+axiom lessThanAddRight: forall a, b, c: Real; less_than(a, b) -> less_than(add(a, c), add(b, c))
+axiom lessThanAddCancel: forall a, b, c: Real; less_than(add(a, c), add(b, c)) -> less_than(a, b)
+axiom positiveProduct: forall a, b: Real; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+
+define less_or_equal(a: Real, b: Real) = less_than(a, b) or a = b
+
+// ℝ is an ordered field: its ALGEBRA model (cited for field/order theorems).
+model RealOrderedField {
+  field_order.OrderedField: Real
+  field_order.ZERO: ZERO
+  field_order.ONE: ONE
+  field_order.add: add
+  field_order.mul: mul
+  field_order.neg: neg
+  field_order.recip: recip
+  field_order.less_than: less_than
+  field_order.addAssoc <- addAssoc
+  field_order.addZeroLeft <- addZeroLeft
+  field_order.addNegLeft <- addNegLeft
+  field_order.addCommutative <- addCommutative
+  field_order.mulAssoc <- mulAssoc
+  field_order.mulDistributesLeftOverAdd <- mulDistributesLeftOverAdd
+  field_order.mulDistributesRightOverAdd <- mulDistributesRightOverAdd
+  field_order.mulCommutative <- mulCommutative
+  field_order.mulOneLeft <- mulOneLeft
+  field_order.fieldInverse <- fieldInverse
+  field_order.oneNotZero <- oneNotZero
+  field_order.lessThanIrreflexive <- lessThanIrreflexive
+  field_order.lessThanTransitive <- lessThanTransitive
+  field_order.lessThanTrichotomy <- lessThanTrichotomy
+  field_order.lessThanAddRight <- lessThanAddRight
+  field_order.lessThanAddCancel <- lessThanAddCancel
+  field_order.positiveProduct <- positiveProduct
+}
+
+// -- completeness (the least-upper-bound axiom) -----------------------------
+// The distinguishing property of ℝ, POSTULATED as a predicate-argument axiom
+// (like std/integer.bpa's nonnegInduction schema). A set of reals is given by a
+// predicate `s: Real -> Prop`. Completeness: any nonempty, bounded-above set has a
+// LEAST upper bound. The upper-bound / least-upper-bound conditions are spelled
+// inline (higher-order args are only allowed in axiom/schema headers, not `define`).
+//   nonempty:        exists x; s(x)
+//   bounded above:   exists m; forall x; s(x) -> x <= m
+//   least upper bnd: exists m; (forall x; s(x) -> x <= m)               [m bounds s]
+//                      and (forall b; (forall x; s(x) -> x <= b) -> m <= b)  [least]
+axiom completeness(s: Real -> Prop):
+  (exists x: Real; s(x))
+  -> (exists m: Real; forall x: Real; s(x) -> less_or_equal(x, m))
+  -> exists m: Real;
+  (forall x: Real; s(x) -> less_or_equal(x, m))
+  and (forall b: Real; (forall x: Real; s(x) -> less_or_equal(x, b)) -> less_or_equal(m, b))
+
+// -- the rationals inside ℝ (a predicate, NOT a theorem-transfer model) ------
+// `fromRational` embeds ℚ into ℝ as an ordered ring homomorphism, and `isRational`
+// characterizes its image. Unlike nonneg(ℤ) modeling ℕ — which imports INDUCTION
+// that ℤ lacks — ℚ has strictly FEWER theorems than ℝ (every ℚ ordered-field fact
+// ℝ already proves for all reals), so there is NO guarded ℚ→ℝ transfer model here.
+// The predicate + embedding exist only to STATE facts about the rationals (e.g.
+// "√2 is not rational", density).
+func fromRational(q: rational.Q): Real
+axiom fromRationalZero: fromRational(rational.ZERO) = ZERO
+axiom fromRationalOne: fromRational(rational.ONE) = ONE
+axiom fromRationalAdd: forall p, q: rational.Q; fromRational(rational.add(p, q)) = add(fromRational(p), fromRational(q))
+axiom fromRationalMul: forall p, q: rational.Q; fromRational(rational.mul(p, q)) = mul(fromRational(p), fromRational(q))
+axiom fromRationalNeg: forall q: rational.Q; fromRational(rational.neg(q)) = neg(fromRational(q))
+axiom fromRationalOrder: forall p, q: rational.Q; rational.less_than(p, q) -> less_than(fromRational(p), fromRational(q))
+axiom fromRationalInjective: forall p, q: rational.Q; fromRational(p) = fromRational(q) -> p = q
+
+define isRational(x: Real) = exists q: rational.Q; x = fromRational(q)
+
+// a real that is the image of a rational is rational (immediate from the def) —
+// a small witness lemma exercising isRational.
+theorem fromRationalIsRational: forall q: rational.Q; isRational(fromRational(q))
+proof
+  @generalize-q |
+    fix q: rational.Q {
+      @image-of-q |
+        fromRational(q) = fromRational(q)
+        [by reflexivity]
+      // isRational(x) expands to `exists r; x = fromRational(r)`; witness r := q.
+      @is-rational |
+        isRational(fromRational(q))
+        [by exists_intro(q) image-of-q]
+    }
+  @conclusion |
+    forall q: rational.Q; isRational(fromRational(q))
+    [by forall_intro generalize-q]
+qed
+
+// -- smoke test (algebra model) ---------------------------------------------
+theorem noZeroDivisors: forall a, b: Real; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+proof
+  @conclusion |
+    forall a, b: Real; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+    [by model(RealOrderedField) field_order.noZeroDivisors]
+qed
