@@ -1,18 +1,31 @@
-// std/rational.bpa — the RATIONAL NUMBERS ℚ as an axiomatic ordered field, with a
-// ring embedding ℤ ↪ ℚ (`fromInt`). ℚ is the prime ordered field: it models
-// std/field-order.bpa (inheriting the whole field + ordered-field corpus) and adds
-// the embedding of the integers as a ring homomorphism, so integer facts reach ℚ.
+// std/rational.bpa — the RATIONAL NUMBERS ℚ as an axiomatic ordered field, with the
+// integers living inside via the predicate `isInteger`. ℚ is the prime ordered
+// field: it models std/field-order.bpa (inheriting the whole field + ordered-field
+// corpus) and marks its integer subring by a closure-axiomatized predicate.
 //
 // This is the FIRST concrete number sort in the ℚ/ℝ/ℂ tower. Following the
 // architecture, ℚ is INDEPENDENT (not constructed as fractions of ℤ — bpa has no
 // quotient/pair sorts) and hosts an algebra model (RationalOrderedField, cited for
-// its field/order theorems) plus a homomorphism (fromInt) linking it to ℤ.
+// its field/order theorems).
+//
+// The integers-inside-ℚ are marked by `isInteger`, an OPAQUE predicate with closure
+// axioms (contains 0/1, closed under +, ×, neg — but NOT recip: that is exactly what
+// distinguishes the integers from a subfield). There is no `fromInt` embedding
+// FUNCTION: cross-sort arithmetic is not carried by a homomorphism but, when needed,
+// by carving `sort SomeInt = Q where isInteger` and running a guarded model that
+// transfers ℤ's theorems onto the carved subset (the nonneg(ℤ)-models-ℕ move, one
+// level up). The predicate is that carve's prerequisite; it costs only its axioms.
 
 import field <<< "std/field.bpa"
 import field_order <<< "std/field-order.bpa"
+// The lower number theories are imported ONLY as guarded-model SOURCES (below):
+// their corpora transfer onto the `isInteger` / `isNatural` cuts of ℚ. ℚ does not
+// import a lower SORT — the integers/naturals are carved out of Q itself.
 import integer <<< "std/integer.bpa"
+import peano <<< "std/peano.bpa"
 
 sort Q
+
 const ZERO: Q
 const ONE: Q
 func add(a: Q, b: Q): Q
@@ -22,14 +35,14 @@ func recip(a: Q): Q
 pred less_than(a: Q, b: Q)
 
 // -- ordered-field axioms (discharge the ordered-field model below) ----------
-axiom addAssoc: forall a, b, c: Q; add(add(a, b), c) = add(a, add(b, c))
+axiom addIsAssociative: forall a, b, c: Q; add(add(a, b), c) = add(a, add(b, c))
 axiom addZeroLeft: forall a: Q; add(ZERO, a) = a
 axiom addNegLeft: forall a: Q; add(neg(a), a) = ZERO
-axiom addCommutative: forall a, b: Q; add(a, b) = add(b, a)
-axiom mulAssoc: forall a, b, c: Q; mul(mul(a, b), c) = mul(a, mul(b, c))
-axiom mulDistributesLeftOverAdd: forall a, b, c: Q; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
-axiom mulDistributesRightOverAdd: forall a, b, c: Q; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
-axiom mulCommutative: forall a, b: Q; mul(a, b) = mul(b, a)
+axiom addIsCommutative: forall a, b: Q; add(a, b) = add(b, a)
+axiom mulIsAssociative: forall a, b, c: Q; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulAddDistribLeft: forall a, b, c: Q; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulAddDistribRight: forall a, b, c: Q; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+axiom mulIsCommutative: forall a, b: Q; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Q; mul(ONE, a) = a
 axiom fieldInverse: forall a: Q; a != ZERO -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
@@ -50,14 +63,14 @@ model RationalOrderedField {
   field_order.neg: neg
   field_order.recip: recip
   field_order.less_than: less_than
-  field_order.addAssoc <- addAssoc
+  field_order.addIsAssociative <- addIsAssociative
   field_order.addZeroLeft <- addZeroLeft
   field_order.addNegLeft <- addNegLeft
-  field_order.addCommutative <- addCommutative
-  field_order.mulAssoc <- mulAssoc
-  field_order.mulDistributesLeftOverAdd <- mulDistributesLeftOverAdd
-  field_order.mulDistributesRightOverAdd <- mulDistributesRightOverAdd
-  field_order.mulCommutative <- mulCommutative
+  field_order.addIsCommutative <- addIsCommutative
+  field_order.mulIsAssociative <- mulIsAssociative
+  field_order.mulAddDistribLeft <- mulAddDistribLeft
+  field_order.mulAddDistribRight <- mulAddDistribRight
+  field_order.mulIsCommutative <- mulIsCommutative
   field_order.mulOneLeft <- mulOneLeft
   field_order.fieldInverse <- fieldInverse
   field_order.oneNotZero <- oneNotZero
@@ -69,17 +82,150 @@ model RationalOrderedField {
   field_order.positiveProduct <- positiveProduct
 }
 
-// -- the integer embedding ℤ ↪ ℚ -------------------------------------------
-// fromInt is a ring homomorphism carrying ℤ's 0/1/+/×/neg to ℚ's, and is
-// injective (distinct integers map to distinct rationals). This is how integer
-// arithmetic facts reach ℚ.
-func fromInt(n: integer.Int): Q
-axiom fromIntZero: fromInt(integer.ZERO) = ZERO
-axiom fromIntOne: fromInt(integer.ONE) = ONE
-axiom fromIntAdd: forall m, n: integer.Int; fromInt(integer.add(m, n)) = add(fromInt(m), fromInt(n))
-axiom fromIntMul: forall m, n: integer.Int; fromInt(integer.mul(m, n)) = mul(fromInt(m), fromInt(n))
-axiom fromIntNeg: forall n: integer.Int; fromInt(integer.neg(n)) = neg(fromInt(n))
-axiom fromIntInjective: forall m, n: integer.Int; fromInt(m) = fromInt(n) -> m = n
+// ℚ is also a FIELD (dropping the order): a second algebra model, cited to
+// transfer field's ring-lemma corpus (mulZeroRight, the AC swaps, …) onto ℚ's
+// own symbols under their bare names — the shims the `polynomial` accelerant
+// resolves. Concurrent with RationalOrderedField, as integer.bpa runs NonNegInt
+// + IntegerRing on one sort.
+model RationalField {
+  field.Field: Q
+  field.ZERO: ZERO
+  field.ONE: ONE
+  field.add: add
+  field.mul: mul
+  field.neg: neg
+  field.recip: recip
+  field.addIsAssociative <- addIsAssociative
+  field.addZeroLeft <- addZeroLeft
+  field.addNegLeft <- addNegLeft
+  field.addIsCommutative <- addIsCommutative
+  field.mulIsAssociative <- mulIsAssociative
+  field.mulAddDistribLeft <- mulAddDistribLeft
+  field.mulAddDistribRight <- mulAddDistribRight
+  field.mulIsCommutative <- mulIsCommutative
+  field.mulOneLeft <- mulOneLeft
+  field.fieldInverse <- fieldInverse
+  field.oneNotZero <- oneNotZero
+}
+
+// -- the integers inside ℚ (a predicate, NOT an embedding function) ----------
+// `isInteger` marks the integer subring of ℚ — an OPAQUE predicate pinned down by
+// closure axioms: it contains 0 and 1 and is closed under +, ×, and neg. It is
+// deliberately NOT closed under recip — that is exactly what separates the integers
+// (a subRING) from a subfield. This is the carve a future `sort SomeInt = Q where
+// isInteger` + guarded ℤ-theorem-transfer model would build on.
+pred isInteger(q: Q)
+axiom isIntegerZero: isInteger(ZERO)
+axiom isIntegerOne: isInteger(ONE)
+axiom isIntegerAdd: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
+axiom isIntegerMul: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
+axiom isIntegerNeg: forall a: Q; isInteger(a) -> isInteger(neg(a))
+
+// -- successor / predecessor on ℚ (the discrete step, for the integer model) --
+// ℤ's theory is built on succ/prev; to model it on ℚ's integers we realize the
+// step as +1 / −1. These are total on ℚ (they step ANY rational by one) but only
+// the integer-model cites them, guarded to the isInteger cut.
+func succ(q: Q): Q
+func prev(q: Q): Q
+func sub(a: Q, b: Q): Q
+axiom succDefinition: forall q: Q; succ(q) = add(q, ONE)
+axiom prevDefinition: forall q: Q; prev(q) = add(q, neg(ONE))
+axiom subDefinition: forall a, b: Q; sub(a, b) = add(a, neg(b))
+
+// -- the naturals inside ℚ (nonneg integers) --------------------------------
+// `isNatural` marks the non-negative integers of ℚ — the ℕ cut. It is the ℤ cut
+// intersected with ≥0: contains 0, closed under succ, and every natural is an
+// integer. This is the source cut for the guarded ℕ (peano) model.
+pred isNatural(q: Q)
+axiom isNaturalZero: isNatural(ZERO)
+axiom isNaturalSucc: forall q: Q; isNatural(q) -> isNatural(succ(q))
+axiom isNaturalIsInteger: forall q: Q; isNatural(q) -> isInteger(q)
+axiom isNaturalSuccNotZero: forall q: Q; isNatural(q) -> succ(q) != ZERO
+// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
+// obligation of the integer model, on the cut.
+axiom integerCases: forall q: Q; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
+
+// -- integer succ/prev closure ----------------------------------------------
+axiom isIntegerSucc: forall q: Q; isInteger(q) -> isInteger(succ(q))
+axiom isIntegerPrev: forall q: Q; isInteger(q) -> isInteger(prev(q))
+
+// -- induction on the cuts (the minimality axioms) --------------------------
+// Neither induction principle is derivable from ℚ's ordered-field axioms — the
+// ordered-field theory has models with non-standard "integers" that satisfy every
+// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
+// exactly the minimality (smallest subring/submonoid containing 1) that pins the
+// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
+// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
+// discharge the induction obligations of the ℤ / ℕ models.
+axiom naturalInduction(prop: Q -> Prop):
+  prop(ZERO)
+  -> (forall k: Q; isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Q; isNatural(n) -> prop(n)
+axiom integerInduction(prop: Q -> Prop):
+  prop(ZERO)
+  -> (forall k: Q; isInteger(k) -> prop(k) -> prop(succ(k)))
+  -> (forall k: Q; isInteger(k) -> prop(k) -> prop(prev(k)))
+  -> forall n: Q; isInteger(n) -> prop(n)
+
+// -- ring-lemma shims for the bare `polynomial` accelerant -------------------
+// `polynomial` (self-scope, no theory arg) resolves its ring vocabulary by BARE
+// name in THIS file's scope. ℚ's own AXIOMS already supply the assoc/comm/distrib
+// /identity/inverse lemmas under the names polynomial expects; these SHIMS add the
+// remaining DERIVED folds + the two AC sort-swaps it needs — each proved directly
+// from ℚ's axioms (the same short derivations field.bpa/ring.bpa use). This is the
+// per-model cost of using a bare-name accelerant on a `model`-based sort (ℚ's
+// symbols are its own, not field's — a model transfers theorems, not names).
+
+// Each is a one-line transfer of field's like-named theorem through RationalField
+// (field.bpa proves them all; the model carries them onto ℚ's symbols).
+theorem mulOneRight: forall a: Q; mul(a, ONE) = a
+proof
+  @conclusion |
+    forall a: Q; mul(a, ONE) = a
+    [by model(RationalField) field.mulOneRight]
+qed
+
+theorem addZeroRight: forall a: Q; add(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: Q; add(a, ZERO) = a
+    [by model(RationalField) field.addZeroRight]
+qed
+
+theorem addNegRight: forall a: Q; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: Q; add(a, neg(a)) = ZERO
+    [by model(RationalField) field.addNegRight]
+qed
+
+theorem mulZeroRight: forall a: Q; mul(a, ZERO) = ZERO
+proof
+  @conclusion |
+    forall a: Q; mul(a, ZERO) = ZERO
+    [by model(RationalField) field.mulZeroRight]
+qed
+
+theorem mulZeroLeft: forall a: Q; mul(ZERO, a) = ZERO
+proof
+  @conclusion |
+    forall a: Q; mul(ZERO, a) = ZERO
+    [by model(RationalField) field.mulZeroLeft]
+qed
+
+theorem mulLeftSwap: forall x, y, r: Q; mul(x, mul(y, r)) = mul(y, mul(x, r))
+proof
+  @conclusion |
+    forall x, y, r: Q; mul(x, mul(y, r)) = mul(y, mul(x, r))
+    [by model(RationalField) field.mulLeftSwap]
+qed
+
+theorem addLeftSwap: forall x, y, r: Q; add(x, add(y, r)) = add(y, add(x, r))
+proof
+  @conclusion |
+    forall x, y, r: Q; add(x, add(y, r)) = add(y, add(x, r))
+    [by model(RationalField) field.addLeftSwap]
+qed
 
 // -- derived --------------------------------------------------------------
 
@@ -92,42 +238,157 @@ proof
     [by model(RationalOrderedField) field_order.noZeroDivisors]
 qed
 
-// a nonzero integer embeds to a nonzero (hence invertible) rational. fromInt is
-// injective and sends ZERO to ZERO, so n != 0 in ℤ gives fromInt(n) != 0 in ℚ.
-theorem fromIntNonzero: forall n: integer.Int; n != integer.ZERO -> fromInt(n) != ZERO
+// smoke test (containment predicate): the integers are closed under subtraction —
+// a − b is an integer whenever a and b are, since sub(a,b) = add(a, neg(b)) and the
+// integers are closed under neg then add.
+theorem isIntegerSub: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, neg(b)))
 proof
-  @generalize-n |
-    fix n: integer.Int {
-      @given-n-nonzero |
-        assume n != integer.ZERO {
-          @n-nonzero |
-            n != integer.ZERO
-            [by hypothesis given-n-nonzero]
-          @given-image-zero |
-            assume fromInt(n) = ZERO {
-              @image-zero |
-                fromInt(n) = ZERO
-                [by hypothesis given-image-zero]
-              @zero-image |
-                fromInt(integer.ZERO) = ZERO
-                [by axiom fromIntZero]
-              // fromInt(n) = ZERO = fromInt(ZERO), so by injectivity n = ZERO.
-              @images-equal |
-                fromInt(n) = fromInt(integer.ZERO)
-                [by chain image-zero zero-image]
-              @n-is-zero |
-                n = integer.ZERO
-                [by specialize fromIntInjective(n, integer.ZERO) images-equal]
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-a-integer |
+            assume isInteger(a) {
+              @given-b-integer |
+                assume isInteger(b) {
+                  @a-is-integer |
+                    isInteger(a)
+                    [by hypothesis given-a-integer]
+                  @b-is-integer |
+                    isInteger(b)
+                    [by hypothesis given-b-integer]
+                  // neg(b) is an integer, then add(a, neg(b)) is too.
+                  @neg-b-is-integer |
+                    isInteger(neg(b))
+                    [by specialize isIntegerNeg(b) b-is-integer]
+                  @difference-is-integer |
+                    isInteger(add(a, neg(b)))
+                    [by specialize isIntegerAdd(a, neg(b)) a-is-integer neg-b-is-integer]
+                }
+              @b-integer-implies-difference |
+                isInteger(b) -> isInteger(add(a, neg(b)))
+                [by implies_intro given-b-integer]
             }
-          @not-image-zero |
-            fromInt(n) != ZERO
-            [by not_intro given-image-zero n-is-zero n-nonzero]
+          @a-integer-implies-rest |
+            isInteger(a) -> isInteger(b) -> isInteger(add(a, neg(b)))
+            [by implies_intro given-a-integer]
         }
-      @discharge |
-        n != integer.ZERO -> fromInt(n) != ZERO
-        [by implies_intro given-n-nonzero]
+      @discharge-b |
+        forall b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, neg(b)))
+        [by forall_intro generalize-b]
     }
   @conclusion |
-    forall n: integer.Int; n != integer.ZERO -> fromInt(n) != ZERO
-    [by forall_intro generalize-n]
+    forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, neg(b)))
+    [by forall_intro generalize-a]
+qed
+
+// -- discharge theorems for the guarded integer / natural models -------------
+// Each proves an ℤ-theory (or ℕ-theory) axiom in its interpreted-on-ℚ form, so the
+// model below can cite it with `<-`. The recursive-definition axioms become pure
+// ℚ-ring identities once succ/prev/sub are unfolded — `polynomial(field)` closes
+// them after the defining rewrites; the nonneg-structure ones are the isNatural /
+// isInteger axioms verbatim.
+
+// succ/prev are mutually inverse: prev(succ q) = q and succ(prev q) = q.
+theorem prevOfSucc: forall q: Q; prev(succ(q)) = q
+proof
+  @generalize-q |
+    fix q: Q {
+      @unfold-succ |
+        succ(q) = add(q, ONE)
+        [by specialize succDefinition(q)]
+      @unfold-prev |
+        prev(add(q, ONE)) = add(add(q, ONE), neg(ONE))
+        [by specialize prevDefinition(add(q, ONE))]
+      @prev-succ-expanded |
+        prev(succ(q)) = add(add(q, ONE), neg(ONE))
+        [by chain unfold-succ unfold-prev]
+      @cancel |
+        add(add(q, ONE), neg(ONE)) = q
+        [by polynomial]
+      @conclusion-prev-of-succ |
+        prev(succ(q)) = q
+        [by chain prev-succ-expanded cancel]
+    }
+  @conclusion |
+    forall q: Q; prev(succ(q)) = q
+    [by forall_intro generalize-q]
+qed
+
+theorem succOfPrev: forall q: Q; succ(prev(q)) = q
+proof
+  @generalize-q |
+    fix q: Q {
+      @unfold-prev |
+        prev(q) = add(q, neg(ONE))
+        [by specialize prevDefinition(q)]
+      @unfold-succ |
+        succ(add(q, neg(ONE))) = add(add(q, neg(ONE)), ONE)
+        [by specialize succDefinition(add(q, neg(ONE)))]
+      @succ-prev-expanded |
+        succ(prev(q)) = add(add(q, neg(ONE)), ONE)
+        [by chain unfold-prev unfold-succ]
+      @cancel |
+        add(add(q, neg(ONE)), ONE) = q
+        [by polynomial]
+      @conclusion-succ-of-prev |
+        succ(prev(q)) = q
+        [by chain succ-prev-expanded cancel]
+    }
+  @conclusion |
+    forall q: Q; succ(prev(q)) = q
+    [by forall_intro generalize-q]
+qed
+
+// ONE = succ(ZERO): succ(ZERO) = add(ZERO, ONE) = ONE.
+theorem oneIsSuccZero: ONE = succ(ZERO)
+proof
+  @unfold-succ |
+    succ(ZERO) = add(ZERO, ONE)
+    [by specialize succDefinition(ZERO)]
+  @add-zero |
+    add(ZERO, ONE) = ONE
+    [by specialize addZeroLeft(ONE)]
+  @succ-zero-is-one |
+    succ(ZERO) = ONE
+    [by chain unfold-succ add-zero]
+  @conclusion |
+    ONE = succ(ZERO)
+    [by symmetry succ-zero-is-one]
+qed
+
+// add(succ a, b) = succ(add a b): (a+1)+b = (a+b)+1.
+theorem addSuccLeft: forall a, b: Q; add(succ(a), b) = succ(add(a, b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @unfold-succ-a |
+            succ(a) = add(a, ONE)
+            [by specialize succDefinition(a)]
+          @unfold-succ-sum |
+            succ(add(a, b)) = add(add(a, b), ONE)
+            [by specialize succDefinition(add(a, b))]
+          // (a+1)+b: congruence-rewrite succ(a)→a+1 into a reflexive left side.
+          @left-reflexive |
+            add(succ(a), b) = add(succ(a), b)
+            [by reflexivity]
+          @left-expanded |
+            add(succ(a), b) = add(add(a, ONE), b)
+            [by rewrite unfold-succ-a left-reflexive]
+          @left-normal |
+            add(add(a, ONE), b) = add(add(a, b), ONE)
+            [by polynomial]
+          @conclusion-add-succ-left |
+            add(succ(a), b) = succ(add(a, b))
+            [by chain left-expanded left-normal unfold-succ-sum]
+        }
+      @discharge-b |
+        forall b: Q; add(succ(a), b) = succ(add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; add(succ(a), b) = succ(add(a, b))
+    [by forall_intro generalize-a]
 qed

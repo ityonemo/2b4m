@@ -54,6 +54,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_neg.bpa" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_inverse.bpa" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_coeff.bpa" });
+
+    // polynomial(field): the accelerant over a FIELD theory (bare ONE constant,
+    // not the ℤ succ-tower). Guards field.bpa's ring-lemma shims + swaps resolving
+    // by bare name in field's scope, and the additive-inverse cancellation of the
+    // bare ONE atom (ONE + neg(ONE) → 0). Strict cert + --fast parity.
+    ctx.okSilent(&.{ "check", "tests/cases/polynomial_field.bpa" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_field.bpa" });
     // a wrong coefficient (q+q claimed = 3·q) is still rejected: q+q expands to
     // add(q, q), 3·q to add(q, add(q, q)) — real repeated-addition arithmetic.
     ctx.fail(&.{ "check", "tests/cases/polynomial_coeff_bad.bpa" }, "tests/cases/polynomial_coeff_bad.bpa:15:9: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");

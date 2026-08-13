@@ -26,16 +26,16 @@ func recip(a: Field): Field
 
 // -- ring axioms (discharge the ring model below) ---------------------------
 // Left-axiomatic, as in ring.bpa: only LEFT identity/inverse are primitive.
-axiom addAssoc: forall a, b, c: Field; add(add(a, b), c) = add(a, add(b, c))
+axiom addIsAssociative: forall a, b, c: Field; add(add(a, b), c) = add(a, add(b, c))
 axiom addZeroLeft: forall a: Field; add(ZERO, a) = a
 axiom addNegLeft: forall a: Field; add(neg(a), a) = ZERO
-axiom addCommutative: forall a, b: Field; add(a, b) = add(b, a)
-axiom mulAssoc: forall a, b, c: Field; mul(mul(a, b), c) = mul(a, mul(b, c))
-axiom mulDistributesLeftOverAdd: forall a, b, c: Field; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
-axiom mulDistributesRightOverAdd: forall a, b, c: Field; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+axiom addIsCommutative: forall a, b: Field; add(a, b) = add(b, a)
+axiom mulIsAssociative: forall a, b, c: Field; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulAddDistribLeft: forall a, b, c: Field; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulAddDistribRight: forall a, b, c: Field; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
 
 // -- field-specific axioms --------------------------------------------------
-axiom mulCommutative: forall a, b: Field; mul(a, b) = mul(b, a)
+axiom mulIsCommutative: forall a, b: Field; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Field; mul(ONE, a) = a
 axiom fieldInverse: forall a: Field; a != ZERO -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
@@ -48,13 +48,13 @@ model RingIsField {
   ring.add: add
   ring.mul: mul
   ring.neg: neg
-  ring.addAssoc <- addAssoc
+  ring.addIsAssociative <- addIsAssociative
   ring.addZeroLeft <- addZeroLeft
   ring.addNegLeft <- addNegLeft
-  ring.addCommutative <- addCommutative
-  ring.mulAssoc <- mulAssoc
-  ring.mulDistributesLeftOverAdd <- mulDistributesLeftOverAdd
-  ring.mulDistributesRightOverAdd <- mulDistributesRightOverAdd
+  ring.addIsCommutative <- addIsCommutative
+  ring.mulIsAssociative <- mulIsAssociative
+  ring.mulAddDistribLeft <- mulAddDistribLeft
+  ring.mulAddDistribRight <- mulAddDistribRight
 }
 
 // -- unit + reciprocal laws (derived) ---------------------------------------
@@ -66,7 +66,7 @@ proof
     fix a: Field {
       @commute |
         mul(a, ONE) = mul(ONE, a)
-        [by specialize mulCommutative(a, ONE)]
+        [by specialize mulIsCommutative(a, ONE)]
       @one-left |
         mul(ONE, a) = a
         [by specialize mulOneLeft(a)]
@@ -88,6 +88,118 @@ proof
     [by model(RingIsField) ring.mulZeroRight]
 qed
 
+// -- ring-lemma shims for the `polynomial(field)` accelerant -----------------
+// `polynomial(field)` resolves its ring vocabulary by BARE name in field's scope.
+// These lemmas exist in the ring theory but only as `ring.<name>` (qualified) —
+// importing ring never puts a bare name in scope. So surface them here: the
+// zero/inverse folds transfer through RingIsField, the two sort-swaps are derived
+// from associativity + commutativity (mul commutes only in a field, so the swaps
+// live here, not in the non-commutative ring theory).
+
+theorem mulZeroLeft: forall a: Field; mul(ZERO, a) = ZERO
+proof
+  @conclusion |
+    forall a: Field; mul(ZERO, a) = ZERO
+    [by model(RingIsField) ring.mulZeroLeft]
+qed
+
+theorem addZeroRight: forall a: Field; add(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: Field; add(a, ZERO) = a
+    [by model(RingIsField) ring.addZeroRight]
+qed
+
+theorem addNegRight: forall a: Field; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: Field; add(a, neg(a)) = ZERO
+    [by model(RingIsField) ring.addNegRight]
+qed
+
+// mul left-swap: a·(b·c) = b·(a·c). The mul-AC sorting primitive the accelerant
+// needs. Regroup left (associativity), commute the outer pair, regroup right.
+theorem mulLeftSwap: forall x, y, r: Field; mul(x, mul(y, r)) = mul(y, mul(x, r))
+proof
+  @generalize-x |
+    fix x: Field {
+      @generalize-y |
+        fix y: Field {
+          @generalize-r |
+            fix r: Field {
+              @associate-x-y |
+                mul(mul(x, y), r) = mul(x, mul(y, r))
+                [by specialize mulIsAssociative(x, y, r)]
+              @regroup-to-left |
+                mul(x, mul(y, r)) = mul(mul(x, y), r)
+                [by symmetry associate-x-y]
+              @commute-x-y |
+                mul(x, y) = mul(y, x)
+                [by specialize mulIsCommutative(x, y)]
+              @swap-factors |
+                mul(x, mul(y, r)) = mul(mul(y, x), r)
+                [by rewrite commute-x-y regroup-to-left]
+              @associate-y-x |
+                mul(mul(y, x), r) = mul(y, mul(x, r))
+                [by specialize mulIsAssociative(y, x, r)]
+              @conclusion-swap |
+                mul(x, mul(y, r)) = mul(y, mul(x, r))
+                [by chain swap-factors associate-y-x]
+            }
+          @discharge-r |
+            forall r: Field; mul(x, mul(y, r)) = mul(y, mul(x, r))
+            [by forall_intro generalize-r]
+        }
+      @discharge-y |
+        forall y, r: Field; mul(x, mul(y, r)) = mul(y, mul(x, r))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, r: Field; mul(x, mul(y, r)) = mul(y, mul(x, r))
+    [by forall_intro generalize-x]
+qed
+
+// add left-swap: the additive mirror of mulLeftSwap.
+theorem addLeftSwap: forall x, y, r: Field; add(x, add(y, r)) = add(y, add(x, r))
+proof
+  @generalize-x |
+    fix x: Field {
+      @generalize-y |
+        fix y: Field {
+          @generalize-r |
+            fix r: Field {
+              @associate-x-y |
+                add(add(x, y), r) = add(x, add(y, r))
+                [by specialize addIsAssociative(x, y, r)]
+              @regroup-to-left |
+                add(x, add(y, r)) = add(add(x, y), r)
+                [by symmetry associate-x-y]
+              @commute-x-y |
+                add(x, y) = add(y, x)
+                [by specialize addIsCommutative(x, y)]
+              @swap-factors |
+                add(x, add(y, r)) = add(add(y, x), r)
+                [by rewrite commute-x-y regroup-to-left]
+              @associate-y-x |
+                add(add(y, x), r) = add(y, add(x, r))
+                [by specialize addIsAssociative(y, x, r)]
+              @conclusion-swap |
+                add(x, add(y, r)) = add(y, add(x, r))
+                [by chain swap-factors associate-y-x]
+            }
+          @discharge-r |
+            forall r: Field; add(x, add(y, r)) = add(y, add(x, r))
+            [by forall_intro generalize-r]
+        }
+      @discharge-y |
+        forall y, r: Field; add(x, add(y, r)) = add(y, add(x, r))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, r: Field; add(x, add(y, r)) = add(y, add(x, r))
+    [by forall_intro generalize-x]
+qed
+
 // recip(a)·a = 1 for a ≠ 0 (the right-inverse axiom commuted).
 theorem recipMulLeft: forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
 proof
@@ -103,7 +215,7 @@ proof
             [by specialize fieldInverse(a) a-nonzero]
           @commute |
             mul(recip(a), a) = mul(a, recip(a))
-            [by specialize mulCommutative(recip(a), a)]
+            [by specialize mulIsCommutative(recip(a), a)]
           @left-inverse |
             mul(recip(a), a) = ONE
             [by chain commute right-inverse]
@@ -161,7 +273,7 @@ proof
                         [by specialize mulOneLeft(b)]
                       @regroup |
                         mul(mul(recip(a), a), b) = mul(recip(a), mul(a, b))
-                        [by specialize mulAssoc(recip(a), a, b)]
+                        [by specialize mulIsAssociative(recip(a), a, b)]
                       @recip-times-zero |
                         mul(recip(a), ZERO) = ZERO
                         [by specialize mulZeroRight(recip(a))]

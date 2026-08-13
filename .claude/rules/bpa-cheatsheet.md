@@ -119,6 +119,14 @@ qed
 
 `sort` (a type; `sort H = G where inH` is a refined subsort), `const` (0-ary), `func` (returns a term-sort, never Prop), `pred` (opaque predicate; no `:=` body), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[by model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only).
 
+## `import` and `model` — unlearn the Python prior (these are two different axes)
+
+A recurring wrong assumption, imported from Python, is that `import` dumps names into your namespace and that `model` is some flavor of import. Neither is true.
+
+- **`import` is LIKE a Zig import, not a Python one.** `import peano <<< "std/peano.bpa"` binds a namespace VALUE (the mental model is `const peano = @import("...")`, not `from peano import *`). You reach members fully-qualified: `peano.mulAddDistribLeft`. There is NO bulk open, no bare re-export. Importing `field` never gives you a bare `mulAddDistribLeft` in scope; only `field.mulAddDistribLeft`. To get a bare local name you must ALIAS (`func add = field.add`) or DECLARE a local theorem.
+- **`model` is NOT `import` — it is structure interpretation.** A `model` maps an abstract theory's symbols to YOUR local symbols and discharges its axioms; in return its THEOREMS become true of your symbols and citable via `[by model(NAME) src.thm]`. It does **not** put any name into your scope. The theorem is a fact about your symbols; it has no bare local name until you write one.
+- **Consequence — the shim idiom.** When an accelerant (`polynomial(myTheory)`, `arithmetic`) resolves a lemma by BARE name in your file's scope (self-theory), a model-transferred fact won't resolve — it has no bare name. Bridge the two axes with a one-line SHIM theorem: `theorem barelyNamedLemma: <stmt in your symbols> [by model(NAME) src.thm]`. Every model-based concrete sort (e.g. ℚ/ℝ/ℂ modeling `field`) pays this shim cost to use bare-name accelerants; the aliased case does not. This is the price of the model system, not a bug.
+
 ## Gotchas that bite (memorize)
 
 - **`fix` takes ONE binder.** `fix a, b: Nat {` is a PARSE ERROR — nest them: `fix a: Nat { fix b: Nat { … } }`, discharging with one `forall_intro` per level (inner discharges `forall b; …`, outer `forall a, b; …`).

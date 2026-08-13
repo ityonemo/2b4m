@@ -1,0 +1,49 @@
+// The `polynomial` tactic over a FIELD theory (std/field.bpa), not just the ℤ/ℕ
+// succ-tower. A field has add/mul/neg + a bare ONE constant (an opaque leaf, NOT
+// folded to succ(ZERO) as in ℤ) — so this fixture is the first to exercise
+// polynomial's additive-inverse cancellation with ONE as a genuine atom.
+//
+// `polynomial(field)` resolves the ring vocabulary + lemmas against std/field.bpa.
+// This requires (a) field's ring lemmas to be spelled with the names polynomial
+// expects (mulAddDistribLeft, mulIsAssociative, …) and (b) field to carry the
+// mulLeftSwap/addLeftSwap sorting lemmas — both landed alongside this fixture.
+import field <<< "std/field.bpa"
+
+sort F = field.Field
+const ZERO = field.ZERO
+const ONE = field.ONE
+func add = field.add
+func mul = field.mul
+func neg = field.neg
+
+// (q + 1) + (−1) = q  — the additive-inverse cancellation of the bare ONE
+// constant. This is exactly the shape of the ℚ-tower discharge theorem
+// `prev(succ q) = q` after succ/prev unfold. Both sides canonicalize to `q`:
+// polynomial sorts the sum {q, ONE, neg(ONE)} and cancels ONE + neg(ONE) → 0.
+theorem oneCancels: forall q: F; add(add(q, ONE), neg(ONE)) = q
+proof
+  @generalize-q |
+    fix q: F {
+      @cancel |
+        add(add(q, ONE), neg(ONE)) = q
+        [by polynomial(field)]
+    }
+  @conclusion |
+    forall q: F; add(add(q, ONE), neg(ONE)) = q
+    [by forall_intro generalize-q]
+qed
+
+// a second shape: the additive mirror, (−1) + (q + 1) = q, plus a genuine
+// nonlinear term to keep the monomial machinery honest — (q·q + 1) − 1 = q·q.
+theorem squareOnePlusNegOne: forall q: F; add(add(mul(q, q), ONE), neg(ONE)) = mul(q, q)
+proof
+  @generalize-q |
+    fix q: F {
+      @cancel |
+        add(add(mul(q, q), ONE), neg(ONE)) = mul(q, q)
+        [by polynomial(field)]
+    }
+  @conclusion |
+    forall q: F; add(add(mul(q, q), ONE), neg(ONE)) = mul(q, q)
+    [by forall_intro generalize-q]
+qed
