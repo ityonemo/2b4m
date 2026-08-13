@@ -117,6 +117,103 @@ proof
     [by forall_intro generalize-a]
 qed
 
+// -- ring-lemma shims (for the order-lemma algebra below) --------------------
+theorem addNegRight: forall a: OrderedField; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: OrderedField; add(a, neg(a)) = ZERO
+    [by model(FieldIsOrdered) field.addNegRight]
+qed
+
+theorem negMulNeg: forall a, b: OrderedField; mul(neg(a), neg(b)) = mul(a, b)
+proof
+  @conclusion |
+    forall a, b: OrderedField; mul(neg(a), neg(b)) = mul(a, b)
+    [by model(FieldIsOrdered) field.negMulNeg]
+qed
+
+theorem mulOneRight: forall a: OrderedField; mul(a, ONE) = a
+proof
+  @conclusion |
+    forall a: OrderedField; mul(a, ONE) = a
+    [by model(FieldIsOrdered) field.mulOneRight]
+qed
+
+// -- ZERO < ONE (the foundational positivity fact) ---------------------------
+// By trichotomy: 0=1 contradicts oneNotZero; and 1<0 is impossible — adding −1 to
+// 1<0 gives 0 < −1, so (−1)·(−1) > 0 by positiveProduct, but (−1)·(−1) = 1, giving
+// 0 < 1, which with 1 < 0 violates asymmetry. So 0 < 1.
+theorem zeroLessThanOne: less_than(ZERO, ONE)
+proof
+  @trichotomy |
+    less_than(ZERO, ONE) or ZERO = ONE or less_than(ONE, ZERO)
+    [by specialize lessThanTrichotomy(ZERO, ONE)]
+  @conclusion |
+    less_than(ZERO, ONE)
+    case trichotomy {
+      @when-zero-less-one |
+        assume less_than(ZERO, ONE) {
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by hypothesis when-zero-less-one]
+        }
+      @when-zero-is-one |
+        assume ZERO = ONE {
+          @zero-is-one |
+            ZERO = ONE
+            [by hypothesis when-zero-is-one]
+          @one-is-zero |
+            ONE = ZERO
+            [by symmetry zero-is-one]
+          @one-not-zero |
+            ONE != ZERO
+            [by axiom oneNotZero]
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by absurd one-is-zero one-not-zero]
+        }
+      @when-one-less-zero |
+        assume less_than(ONE, ZERO) {
+          @one-less-zero |
+            less_than(ONE, ZERO)
+            [by hypothesis when-one-less-zero]
+          // add −1 to both sides: 1+(−1) < 0+(−1).
+          @shifted |
+            less_than(add(ONE, neg(ONE)), add(ZERO, neg(ONE)))
+            [by specialize lessThanAddRight(ONE, ZERO, neg(ONE)) one-less-zero]
+          @one-plus-neg |
+            add(ONE, neg(ONE)) = ZERO
+            [by specialize addNegRight(ONE)]
+          @zero-plus-neg |
+            add(ZERO, neg(ONE)) = neg(ONE)
+            [by specialize addZeroLeft(neg(ONE))]
+          // rewrite the endpoints: ZERO < neg(ONE).
+          @shifted-left |
+            less_than(ZERO, add(ZERO, neg(ONE)))
+            [by rewrite one-plus-neg shifted]
+          @zero-less-negone |
+            less_than(ZERO, neg(ONE))
+            [by rewrite zero-plus-neg shifted-left]
+          // (−1)·(−1) > 0, and (−1)·(−1) = 1, so 0 < 1.
+          @negone-squared-positive |
+            less_than(ZERO, mul(neg(ONE), neg(ONE)))
+            [by specialize positiveProduct(neg(ONE), neg(ONE)) zero-less-negone zero-less-negone]
+          @negMulNeg-at |
+            mul(neg(ONE), neg(ONE)) = mul(ONE, ONE)
+            [by specialize negMulNeg(ONE, ONE)]
+          @mulOneRight-at |
+            mul(ONE, ONE) = ONE
+            [by specialize mulOneRight(ONE)]
+          @negone-squared-is-one |
+            mul(neg(ONE), neg(ONE)) = ONE
+            [by chain negMulNeg-at mulOneRight-at]
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by rewrite negone-squared-is-one negone-squared-positive]
+        }
+    }
+qed
+
 // smoke test: noZeroDivisors transfers through the field model.
 theorem noZeroDivisors: forall a, b: OrderedField; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
 proof
