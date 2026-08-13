@@ -150,6 +150,13 @@ pub fn addTests(
     // axioms, unlike the constructed ℤ order) and derives asymmetry etc. ℚ/ℝ model it.
     ctx.okSilent(&.{ "check", "std/field-order.bpa" });
 
+    // the rationals ℚ (std/rational.bpa): the prime ordered field. MODELS
+    // std/field-order.bpa (RationalOrderedField, the algebra lens) + a ring embedding
+    // ℤ↪ℚ (fromInt: homomorphism + injective) linking integer arithmetic to ℚ.
+    // Derives fromIntNonzero (nonzero ints embed to invertible rationals). First
+    // concrete sort of the tower; independent, containment-by-embedding.
+    ctx.okSilent(&.{ "check", "std/rational.bpa" });
+
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
     // THREE-LEVEL chain ℤ → ring → group, checked with the base above.
