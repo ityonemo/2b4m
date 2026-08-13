@@ -200,6 +200,96 @@ proof
     [by forall_intro generalize-x]
 qed
 
+// -- neg-distribution folds for `polynomial(field)` on SIGNED expressions -----
+// So the accelerant can push `neg` toward the leaves (neg over sum/product/neg/
+// zero). mulNeg*/negZero transfer through RingIsField; negNeg is the additive
+// involution; negAdd is the abelian inverse-of-a-sum, derived here.
+
+// neg(ZERO) = ZERO: ZERO+ZERO = ZERO, so ZERO is its own additive inverse.
+theorem negZero: neg(ZERO) = ZERO
+proof
+  @zero-plus-zero |
+    add(ZERO, ZERO) = ZERO
+    [by specialize addZeroLeft(ZERO)]
+  @inverse-unique |
+    forall x, y: Field; add(x, y) = ZERO -> y = neg(x)
+    [by model(RingIsField) ring.additiveInverseUnique]
+  @zero-is-neg-zero |
+    ZERO = neg(ZERO)
+    [by specialize inverse-unique(ZERO, ZERO) zero-plus-zero]
+  @conclusion |
+    neg(ZERO) = ZERO
+    [by symmetry zero-is-neg-zero]
+qed
+
+// neg(neg a) = a: a is a right additive inverse of neg(a) (neg(a)+a = 0), so
+// a = neg(neg a) by inverse-uniqueness.
+theorem negNeg: forall a: Field; neg(neg(a)) = a
+proof
+  @generalize-a |
+    fix a: Field {
+      @neg-plus-a |
+        add(neg(a), a) = ZERO
+        [by specialize addNegLeft(a)]
+      @inverse-unique |
+        forall x, y: Field; add(x, y) = ZERO -> y = neg(x)
+        [by model(RingIsField) ring.additiveInverseUnique]
+      @a-is-neg-neg |
+        a = neg(neg(a))
+        [by specialize inverse-unique(neg(a), a) neg-plus-a]
+      @conclusion-neg-neg |
+        neg(neg(a)) = a
+        [by symmetry a-is-neg-neg]
+    }
+  @conclusion |
+    forall a: Field; neg(neg(a)) = a
+    [by forall_intro generalize-a]
+qed
+
+theorem mulNegLeft: forall a, b: Field; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Field; mul(neg(a), b) = neg(mul(a, b))
+    [by model(RingIsField) ring.mulNegLeft]
+qed
+
+theorem mulNegRight: forall a, b: Field; mul(a, neg(b)) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Field; mul(a, neg(b)) = neg(mul(a, b))
+    [by model(RingIsField) ring.mulNegRight]
+qed
+
+// neg(a+b) = neg(a)+neg(b): neg(a)+neg(b) is a right additive inverse of a+b
+// ((a+b)+(neg a+neg b) = 0 by AC), so it equals neg(a+b) by inverse-uniqueness.
+theorem negAdd: forall a, b: Field; neg(add(a, b)) = add(neg(a), neg(b))
+proof
+  @generalize-a |
+    fix a: Field {
+      @generalize-b |
+        fix b: Field {
+          @sum-cancels |
+            add(add(a, b), add(neg(a), neg(b))) = ZERO
+            [by polynomial]
+          @inverse-unique |
+            forall x, y: Field; add(x, y) = ZERO -> y = neg(x)
+            [by model(RingIsField) ring.additiveInverseUnique]
+          @neg-sum-is-sum-of-negs |
+            add(neg(a), neg(b)) = neg(add(a, b))
+            [by specialize inverse-unique(add(a, b), add(neg(a), neg(b))) sum-cancels]
+          @conclusion-neg-add |
+            neg(add(a, b)) = add(neg(a), neg(b))
+            [by symmetry neg-sum-is-sum-of-negs]
+        }
+      @discharge-b |
+        forall b: Field; neg(add(a, b)) = add(neg(a), neg(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Field; neg(add(a, b)) = add(neg(a), neg(b))
+    [by forall_intro generalize-a]
+qed
+
 // recip(a)·a = 1 for a ≠ 0 (the right-inverse axiom commuted).
 theorem recipMulLeft: forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
 proof

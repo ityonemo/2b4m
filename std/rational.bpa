@@ -161,6 +161,89 @@ axiom naturalInduction(prop: Q -> Prop):
   prop(ZERO)
   -> (forall k: Q; isNatural(k) -> prop(k) -> prop(succ(k)))
   -> forall n: Q; isNatural(n) -> prop(n)
+
+// The SAME natural induction with a redundant `isInteger` guard on each bound
+// variable — the exact shape the IntegersInRational model's remap of ℤ's
+// `nonnegInduction` demands (ℤ's `Int` binder becomes isInteger, its `nonneg`
+// becomes isNatural, so both guards appear). Every natural is an integer, so the
+// isInteger guards carry no content; this discharges the model's induction
+// obligation. Derived from naturalInduction by dropping the extra antecedents.
+theorem naturalInductionOnInteger(prop: Q -> Prop):
+  prop(ZERO)
+  -> (forall k: Q; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Q; isInteger(n) -> isNatural(n) -> prop(n)
+proof
+  @given-base |
+    assume prop(ZERO) {
+      @given-step |
+        assume forall k: Q; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)) {
+          @base |
+            prop(ZERO)
+            [by hypothesis given-base]
+          @doubled-step |
+            forall k: Q; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k))
+            [by hypothesis given-step]
+          // drop the isInteger guard: a natural IS an integer, so re-supply it.
+          @generalize-k |
+            fix k: Q {
+              @given-k-natural |
+                assume isNatural(k) {
+                  @k-natural |
+                    isNatural(k)
+                    [by hypothesis given-k-natural]
+                  @k-integer |
+                    isInteger(k)
+                    [by specialize isNaturalIsInteger(k) k-natural]
+                  @step-at-k |
+                    prop(k) -> prop(succ(k))
+                    [by specialize doubled-step(k) k-integer k-natural]
+                }
+              @k-natural-implies-step |
+                isNatural(k) -> prop(k) -> prop(succ(k))
+                [by implies_intro given-k-natural]
+            }
+          @plain-step |
+            forall k: Q; isNatural(k) -> prop(k) -> prop(succ(k))
+            [by forall_intro generalize-k]
+          @natural-conclusion |
+            forall n: Q; isNatural(n) -> prop(n)
+            [by instantiate naturalInduction((fun m: Q => prop(m))) base plain-step]
+          @generalize-n |
+            fix n: Q {
+              @given-n-integer |
+                assume isInteger(n) {
+                  @given-n-natural |
+                    assume isNatural(n) {
+                      @n-natural |
+                        isNatural(n)
+                        [by hypothesis given-n-natural]
+                      @prop-n |
+                        prop(n)
+                        [by specialize natural-conclusion(n) n-natural]
+                    }
+                  @n-natural-implies-prop |
+                    isNatural(n) -> prop(n)
+                    [by implies_intro given-n-natural]
+                }
+              @n-integer-implies-rest |
+                isInteger(n) -> isNatural(n) -> prop(n)
+                [by implies_intro given-n-integer]
+            }
+          @conclusion-with-guards |
+            forall n: Q; isInteger(n) -> isNatural(n) -> prop(n)
+            [by forall_intro generalize-n]
+        }
+      @step-implies-conclusion |
+        (forall k: Q; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+          -> forall n: Q; isInteger(n) -> isNatural(n) -> prop(n)
+        [by implies_intro given-step]
+    }
+  @conclusion |
+    prop(ZERO)
+      -> (forall k: Q; isInteger(k) -> isNatural(k) -> prop(k) -> prop(succ(k)))
+      -> forall n: Q; isInteger(n) -> isNatural(n) -> prop(n)
+    [by implies_intro given-base]
+qed
 axiom integerInduction(prop: Q -> Prop):
   prop(ZERO)
   -> (forall k: Q; isInteger(k) -> prop(k) -> prop(succ(k)))
@@ -227,6 +310,36 @@ proof
     [by model(RationalField) field.addLeftSwap]
 qed
 
+// neg-distribution folds, so `polynomial` pushes neg to the leaves over signed ℚ
+// expressions (needed by the negSucc/negPrev/mulPrevLeft discharge theorems).
+theorem negNeg: forall a: Q; neg(neg(a)) = a
+proof
+  @conclusion |
+    forall a: Q; neg(neg(a)) = a
+    [by model(RationalField) field.negNeg]
+qed
+
+theorem negAdd: forall a, b: Q; neg(add(a, b)) = add(neg(a), neg(b))
+proof
+  @conclusion |
+    forall a, b: Q; neg(add(a, b)) = add(neg(a), neg(b))
+    [by model(RationalField) field.negAdd]
+qed
+
+theorem mulNegLeft: forall a, b: Q; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Q; mul(neg(a), b) = neg(mul(a, b))
+    [by model(RationalField) field.mulNegLeft]
+qed
+
+theorem mulNegRight: forall a, b: Q; mul(a, neg(b)) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Q; mul(a, neg(b)) = neg(mul(a, b))
+    [by model(RationalField) field.mulNegRight]
+qed
+
 // -- derived --------------------------------------------------------------
 
 // smoke test (algebra model): no zero divisors, transferred from the field theory
@@ -285,7 +398,7 @@ qed
 // -- discharge theorems for the guarded integer / natural models -------------
 // Each proves an ℤ-theory (or ℕ-theory) axiom in its interpreted-on-ℚ form, so the
 // model below can cite it with `<-`. The recursive-definition axioms become pure
-// ℚ-ring identities once succ/prev/sub are unfolded — `polynomial(field)` closes
+// ℚ-ring identities once succ/prev/sub are unfolded — bare `polynomial` closes
 // them after the defining rewrites; the nonneg-structure ones are the isNatural /
 // isInteger axioms verbatim.
 
@@ -392,3 +505,285 @@ proof
     forall a, b: Q; add(succ(a), b) = succ(add(a, b))
     [by forall_intro generalize-a]
 qed
+
+// add(prev a, b) = prev(add a b): (a−1)+b = (a+b)−1.
+theorem addPrevLeft: forall a, b: Q; add(prev(a), b) = prev(add(a, b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @unfold-prev-a |
+            prev(a) = add(a, neg(ONE))
+            [by specialize prevDefinition(a)]
+          @unfold-prev-sum |
+            prev(add(a, b)) = add(add(a, b), neg(ONE))
+            [by specialize prevDefinition(add(a, b))]
+          @left-reflexive |
+            add(prev(a), b) = add(prev(a), b)
+            [by reflexivity]
+          @left-expanded |
+            add(prev(a), b) = add(add(a, neg(ONE)), b)
+            [by rewrite unfold-prev-a left-reflexive]
+          @left-normal |
+            add(add(a, neg(ONE)), b) = add(add(a, b), neg(ONE))
+            [by polynomial]
+          @conclusion-add-prev-left |
+            add(prev(a), b) = prev(add(a, b))
+            [by chain left-expanded left-normal unfold-prev-sum]
+        }
+      @discharge-b |
+        forall b: Q; add(prev(a), b) = prev(add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; add(prev(a), b) = prev(add(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// neg(ZERO) = ZERO.
+theorem negZero: neg(ZERO) = ZERO
+proof
+  @conclusion |
+    neg(ZERO) = ZERO
+    [by model(RationalField) field.negZero]
+qed
+
+// neg(succ n) = prev(neg n): −(n+1) = −n−1.
+theorem negSucc: forall n: Q; neg(succ(n)) = prev(neg(n))
+proof
+  @generalize-n |
+    fix n: Q {
+      @unfold-succ |
+        succ(n) = add(n, ONE)
+        [by specialize succDefinition(n)]
+      @unfold-prev |
+        prev(neg(n)) = add(neg(n), neg(ONE))
+        [by specialize prevDefinition(neg(n))]
+      @neg-reflexive |
+        neg(succ(n)) = neg(succ(n))
+        [by reflexivity]
+      @neg-expanded |
+        neg(succ(n)) = neg(add(n, ONE))
+        [by rewrite unfold-succ neg-reflexive]
+      @neg-normal |
+        neg(add(n, ONE)) = add(neg(n), neg(ONE))
+        [by polynomial]
+      @conclusion-neg-succ |
+        neg(succ(n)) = prev(neg(n))
+        [by chain neg-expanded neg-normal unfold-prev]
+    }
+  @conclusion |
+    forall n: Q; neg(succ(n)) = prev(neg(n))
+    [by forall_intro generalize-n]
+qed
+
+// neg(prev n) = succ(neg n): −(n−1) = −n+1.
+theorem negPrev: forall n: Q; neg(prev(n)) = succ(neg(n))
+proof
+  @generalize-n |
+    fix n: Q {
+      @unfold-prev |
+        prev(n) = add(n, neg(ONE))
+        [by specialize prevDefinition(n)]
+      @unfold-succ |
+        succ(neg(n)) = add(neg(n), ONE)
+        [by specialize succDefinition(neg(n))]
+      @neg-reflexive |
+        neg(prev(n)) = neg(prev(n))
+        [by reflexivity]
+      @neg-expanded |
+        neg(prev(n)) = neg(add(n, neg(ONE)))
+        [by rewrite unfold-prev neg-reflexive]
+      @neg-normal |
+        neg(add(n, neg(ONE))) = add(neg(n), ONE)
+        [by polynomial]
+      @conclusion-neg-prev |
+        neg(prev(n)) = succ(neg(n))
+        [by chain neg-expanded neg-normal unfold-succ]
+    }
+  @conclusion |
+    forall n: Q; neg(prev(n)) = succ(neg(n))
+    [by forall_intro generalize-n]
+qed
+
+// mul(succ a, b) = add(mul a b, b): (a+1)·b = a·b + b.
+theorem mulSuccLeft: forall a, b: Q; mul(succ(a), b) = add(mul(a, b), b)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @unfold-succ |
+            succ(a) = add(a, ONE)
+            [by specialize succDefinition(a)]
+          @left-reflexive |
+            mul(succ(a), b) = mul(succ(a), b)
+            [by reflexivity]
+          @left-expanded |
+            mul(succ(a), b) = mul(add(a, ONE), b)
+            [by rewrite unfold-succ left-reflexive]
+          @left-normal |
+            mul(add(a, ONE), b) = add(mul(a, b), b)
+            [by polynomial]
+          @conclusion-mul-succ-left |
+            mul(succ(a), b) = add(mul(a, b), b)
+            [by chain left-expanded left-normal]
+        }
+      @discharge-b |
+        forall b: Q; mul(succ(a), b) = add(mul(a, b), b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; mul(succ(a), b) = add(mul(a, b), b)
+    [by forall_intro generalize-a]
+qed
+
+// mul(prev a, b) = add(mul a b, neg b): (a−1)·b = a·b − b.
+theorem mulPrevLeft: forall a, b: Q; mul(prev(a), b) = add(mul(a, b), neg(b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @unfold-prev |
+            prev(a) = add(a, neg(ONE))
+            [by specialize prevDefinition(a)]
+          @left-reflexive |
+            mul(prev(a), b) = mul(prev(a), b)
+            [by reflexivity]
+          @left-expanded |
+            mul(prev(a), b) = mul(add(a, neg(ONE)), b)
+            [by rewrite unfold-prev left-reflexive]
+          @left-normal |
+            mul(add(a, neg(ONE)), b) = add(mul(a, b), neg(b))
+            [by polynomial]
+          @conclusion-mul-prev-left |
+            mul(prev(a), b) = add(mul(a, b), neg(b))
+            [by chain left-expanded left-normal]
+        }
+      @discharge-b |
+        forall b: Q; mul(prev(a), b) = add(mul(a, b), neg(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; mul(prev(a), b) = add(mul(a, b), neg(b))
+    [by forall_intro generalize-a]
+qed
+
+// succ is injective: succ(a) = succ(b) → a = b. On ℚ, succ(a) = a+1, so cancel the
+// +1 — a = (a+1)−1 = (b+1)−1 = b, the two ±1 cancellations bridged by the premise.
+theorem succInjective: forall a, b: Q; succ(a) = succ(b) -> a = b
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-succ-eq |
+            assume succ(a) = succ(b) {
+              @unfold-succ-a |
+                succ(a) = add(a, ONE)
+                [by specialize succDefinition(a)]
+              @unfold-succ-b |
+                succ(b) = add(b, ONE)
+                [by specialize succDefinition(b)]
+              @succ-eq |
+                succ(a) = succ(b)
+                [by hypothesis given-succ-eq]
+              // add(a,ONE) = add(b,ONE), bridging the two unfoldings.
+              @sums-equal |
+                add(a, ONE) = add(b, ONE)
+                [by chain unfold-succ-a succ-eq unfold-succ-b]
+              // a = (a+1)+(−1) = (b+1)+(−1) = b.
+              @a-recovers |
+                a = add(add(a, ONE), neg(ONE))
+                [by polynomial]
+              @b-recovers |
+                add(add(b, ONE), neg(ONE)) = b
+                [by polynomial]
+              @a-as-shifted-b |
+                a = add(add(b, ONE), neg(ONE))
+                [by rewrite sums-equal a-recovers]
+              @conclusion-a-equals-b |
+                a = b
+                [by chain a-as-shifted-b b-recovers]
+            }
+          @succ-eq-implies-equal |
+            succ(a) = succ(b) -> a = b
+            [by implies_intro given-succ-eq]
+        }
+      @discharge-b |
+        forall b: Q; succ(a) = succ(b) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; succ(a) = succ(b) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// -- the integers as a CUT of ℚ + the guarded ℤ transfer model ---------------
+// `sort Integer = Q where isInteger` carves the integer subring as a refinement of
+// ℚ (its elements are rationals satisfying isInteger; its ops are ℚ's ops). The
+// guarded model `IntegersInRational` interprets std/integer.bpa's ℤ theory on this
+// cut — relativizing every ℤ binder to isInteger and every nonneg binder to
+// isNatural — so ℤ's whole theorem corpus transfers onto ℚ's integers. Cite it
+// with `[by model(IntegersInRational) integer.<thm>]`. (There is NO new arithmetic
+// here: the cut inherits ℚ's add/mul/neg, so every ring identity on integers is
+// already an ℚ identity; the model transfers the ℤ-SPECIFIC facts — the ones that
+// rest on discreteness / induction — that ℚ does not have for all rationals.)
+sort Integer = Q where isInteger
+
+model IntegersInRational {
+  integer.Int: Integer
+  integer.nonneg: isNatural
+  integer.ZERO: ZERO
+  integer.ONE: ONE
+  integer.succ: succ
+  integer.prev: prev
+  integer.add: add
+  integer.mul: mul
+  integer.neg: neg
+  integer.sub: sub
+  integer.prevSucc <- prevOfSucc
+  integer.succPrev <- succOfPrev
+  integer.oneIsSuccZero <- oneIsSuccZero
+  integer.addZeroLeft <- addZeroLeft
+  integer.addSuccLeft <- addSuccLeft
+  integer.addPrevLeft <- addPrevLeft
+  integer.negZero <- negZero
+  integer.negSucc <- negSucc
+  integer.negPrev <- negPrev
+  integer.mulZeroLeft <- mulZeroLeft
+  integer.mulSuccLeft <- mulSuccLeft
+  integer.mulPrevLeft <- mulPrevLeft
+  integer.nonnegZero <- isNaturalZero
+  integer.nonnegSucc <- isNaturalSucc
+  integer.nonnegSuccNotZero <- isNaturalSuccNotZero
+  integer.intCases <- integerCases
+  integer.nonnegInduction <- naturalInductionOnInteger
+  integer.definitionOfSubtraction <- subDefinition
+}
+
+// -- the naturals as a CUT of ℚ + the guarded ℕ transfer model ---------------
+// `sort Natural = Q where isNatural` carves the non-negative integers; the guarded
+// model `NaturalsInRational` interprets std/peano.bpa's ℕ on the cut, transferring
+// ℕ's theorem corpus onto ℚ's naturals. peano's `induction` (unidirectional, over
+// all of ℕ) is discharged by ℚ's `naturalInduction` directly.
+sort Natural = Q where isNatural
+
+model NaturalsInRational {
+  peano.Nat: Natural
+  peano.ZERO: ZERO
+  peano.ONE: ONE
+  peano.succ: succ
+  peano.add: add
+  peano.mul: mul
+  peano.succInjective <- succInjective
+  peano.succNotZero <- isNaturalSuccNotZero
+  peano.addZeroLeft <- addZeroLeft
+  peano.addSuccLeft <- addSuccLeft
+  peano.mulZeroLeft <- mulZeroLeft
+  peano.mulSuccLeft <- mulSuccLeft
+  peano.oneIsSuccZero <- oneIsSuccZero
+  peano.induction <- naturalInduction
+}
