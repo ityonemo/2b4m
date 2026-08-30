@@ -1,0 +1,1303 @@
+// std/integer-mod-n.bpa — the integers mod n, ℤ_n, as a genuine QUOTIENT sort
+// ℤ/nℤ, built so its group structure LIFTS from ℤ via a model.
+//
+// Rather than carry ℤ_n as a congruence relation on ℤ (as aata/3.1 does) or as
+// representatives 0..n−1 with wrap-around `mod` (which would force re-proving the
+// axioms against `mod`), ℤ_n is a first-class sort with a class map `cls : ℤ → ℤ_n`.
+// `cls` is a homomorphism (add/neg/zero commute with it), so ℤ_n's additive-group
+// axioms fall out of ℤ's for free — and then a single `model` transfers the whole
+// abstract group corpus (std/group.bpa) onto ℤ_n, and a second the group-power
+// corpus (std/group-power.bpa), from which ℤ_n = ⟨1⟩ is shown to be CYCLIC.
+//
+// n is a file-level const (fixed but arbitrary): every "ℤ_n" theorem is stated at
+// this n. There is no quantification over n — no indexed sorts, no kernel change.
+// (This settles the ℤ_n gap that recurs across the AATA corpus for the ALGEBRA of
+// ℤ_n; cardinality — "ℤ_n has exactly n elements" — is a separate finite-set concern.)
+//
+// INTENDED USE — this file is a TEMPLATE to be MODELED at a SPECIFIC n, not a
+// standalone concrete group. `N` here is an abstract positive const; to get a
+// particular ℤ_n (say ℤ_6), a downstream file supplies its own sort with a concrete
+// modulus and runs a `model` of THIS theory (mapping `N` to 6, and `Zn`/`cls`/`add`/…
+// to its own symbols, discharging the quotient + homomorphism axioms), thereby
+// inheriting the whole lifted corpus below — the group laws, the group-power
+// structure, and cyclicity — for that n. Use it the way std/group.bpa is used: an
+// abstract theory whose theorems transfer onto each concrete instance via a model,
+// not a single object you import and use directly.
+//
+// SCOPE NOTE — the substrate ℤ here is standalone `std/integer.bpa`. Instantiating at a
+// concrete n over standalone ℤ works today (see the concrete ℤ_6 in
+// scratch-needswork/z6.bpa). Composing the tower — modeling ℤ_n over the ℚ-CUT ℤ
+// (`rational.Integer`) — is NOT yet possible: it hits two model-system limitations (the
+// "one source theory" mapping restriction at src/elaborate.zig, and un-threaded guarded
+// cut-closure obligations). That is a documented reorg item (scratch-needswork/q-z6.bpa
+// is the parked motivating case); it does not affect standalone-ℤ instantiation, which
+// is what the concrete ℤ_n / U(n) constructions use.
+
+import integer <<< "std/integer.bpa"
+import int_divides <<< "std/integer-divides.bpa"
+import group <<< "std/group.bpa"
+
+sort Int = integer.Int
+func iadd = integer.add
+func ineg = integer.neg
+const IZERO = integer.ZERO
+func isub = integer.sub
+pred less_than = int_divides.less_than
+define divides(d: Int, k: Int) = exists j: Int; k = integer.mul(d, j)
+
+// the modulus n > 0.
+const N: Int
+axiom nPositive: less_than(IZERO, N)
+
+// the quotient ℤ_n and its class map cls : ℤ → ℤ_n.
+sort Zn
+func cls(k: Int): Zn
+
+// every class has an integer representative.
+axiom clsSurjective: forall z: Zn; exists k: Int; z = cls(k)
+// the quotient identification: cls(a) = cls(b) iff n | (a − b).
+axiom clsCongruent: forall a, b: Int; cls(a) = cls(b) iff divides(N, isub(a, b))
+
+// the induced additive-group structure on ℤ_n (cls is a homomorphism).
+const ZERO: Zn
+func add(x: Zn, y: Zn): Zn
+func neg(x: Zn): Zn
+axiom zeroIsClsZero: ZERO = cls(IZERO)
+axiom addHom: forall a, b: Int; add(cls(a), cls(b)) = cls(iadd(a, b))
+axiom negHom: forall a: Int; neg(cls(a)) = cls(ineg(a))
+
+// -- the additive-group axioms on ℤ_n, LIFTED from ℤ ------------------------
+
+// associativity: (x+y)+z = x+(y+z). Unpack representatives; both sides are cls of
+// equal integers, ((a+b)+c) and (a+(b+c)), which agree by ℤ associativity.
+theorem addAssoc: forall x, y, z: Zn; add(add(x, y), z) = add(x, add(y, z))
+proof
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @generalize-z |
+            fix z: Zn {
+              @x-rep |
+                exists k: Int; x = cls(k)
+                [by specialize clsSurjective(x)]
+              @with-a |
+                unpack a: Int from x-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-a]
+                  @y-rep |
+                    exists k: Int; y = cls(k)
+                    [by specialize clsSurjective(y)]
+                  @with-b |
+                    unpack b: Int from y-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-b]
+                      @z-rep |
+                        exists k: Int; z = cls(k)
+                        [by specialize clsSurjective(z)]
+                      @with-c |
+                        unpack c: Int from z-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-c]
+                          // rewrite x, y, z to their representatives.
+                          @goal-refl |
+                            add(add(x, y), z) = add(add(x, y), z)
+                            [by reflexivity]
+                          @with-x |
+                            add(add(x, y), z) = add(add(cls(a), y), z)
+                            [by rewrite x-is-cls-a goal-refl]
+                          @with-y |
+                            add(add(x, y), z) = add(add(cls(a), cls(b)), z)
+                            [by rewrite y-is-cls-b with-x]
+                          @with-z |
+                            add(add(x, y), z) = add(add(cls(a), cls(b)), cls(c))
+                            [by rewrite z-is-cls-c with-y]
+                          // LHS: add(add(cls a, cls b), cls c) = cls((a+b)+c).
+                          @ab |
+                            add(cls(a), cls(b)) = cls(iadd(a, b))
+                            [by specialize addHom(a, b)]
+                          @lhs-inner |
+                            add(add(cls(a), cls(b)), cls(c)) = add(cls(iadd(a, b)), cls(c))
+                            [by rewrite ab lhs-refl]
+                          @lhs-refl |
+                            add(add(cls(a), cls(b)), cls(c)) = add(add(cls(a), cls(b)), cls(c))
+                            [by reflexivity]
+                          @abc-left |
+                            add(cls(iadd(a, b)), cls(c)) = cls(iadd(iadd(a, b), c))
+                            [by specialize addHom(iadd(a, b), c)]
+                          @lhs-is-cls |
+                            add(add(cls(a), cls(b)), cls(c)) = cls(iadd(iadd(a, b), c))
+                            [by chain lhs-inner abc-left]
+                          // RHS: add(cls a, add(cls b, cls c)) = cls(a+(b+c)).
+                          @bc |
+                            add(cls(b), cls(c)) = cls(iadd(b, c))
+                            [by specialize addHom(b, c)]
+                          @rhs-inner |
+                            add(cls(a), add(cls(b), cls(c))) = add(cls(a), cls(iadd(b, c)))
+                            [by rewrite bc rhs-refl]
+                          @rhs-refl |
+                            add(cls(a), add(cls(b), cls(c))) = add(cls(a), add(cls(b), cls(c)))
+                            [by reflexivity]
+                          @abc-right |
+                            add(cls(a), cls(iadd(b, c))) = cls(iadd(a, iadd(b, c)))
+                            [by specialize addHom(a, iadd(b, c))]
+                          @rhs-is-cls |
+                            add(cls(a), add(cls(b), cls(c))) = cls(iadd(a, iadd(b, c)))
+                            [by chain rhs-inner abc-right]
+                          // the two integer exponents agree by ℤ associativity.
+                          @int-assoc |
+                            iadd(iadd(a, b), c) = iadd(a, iadd(b, c))
+                            [by specialize integer.addIsAssociative(a, b, c)]
+                          @cls-assoc |
+                            cls(iadd(iadd(a, b), c)) = cls(iadd(a, iadd(b, c)))
+                            [by rewrite int-assoc cls-left-refl]
+                          @cls-left-refl |
+                            cls(iadd(iadd(a, b), c)) = cls(iadd(iadd(a, b), c))
+                            [by reflexivity]
+                          // chain LHS = cls(...) = cls(...) = RHS.
+                          @lhs-eq-rhs-reps |
+                            add(add(cls(a), cls(b)), cls(c)) = add(cls(a), add(cls(b), cls(c)))
+                            [by chain lhs-is-cls cls-assoc rhs-is-cls-flipped]
+                          @rhs-is-cls-flipped |
+                            cls(iadd(a, iadd(b, c))) = add(cls(a), add(cls(b), cls(c)))
+                            [by symmetry rhs-is-cls]
+                          // fold representatives back to x, y, z.
+                          @rhs-with-x |
+                            add(add(x, y), z) = add(cls(a), add(cls(b), cls(c)))
+                            [by chain with-z lhs-eq-rhs-reps]
+                          @rhs-fold-x |
+                            add(add(x, y), z) = add(x, add(cls(b), cls(c)))
+                            [by rewrite x-is-cls-a rhs-with-x]
+                          @rhs-fold-y |
+                            add(add(x, y), z) = add(x, add(y, cls(c)))
+                            [by rewrite y-is-cls-b rhs-fold-x]
+                          @conclusion-assoc |
+                            add(add(x, y), z) = add(x, add(y, z))
+                            [by rewrite z-is-cls-c rhs-fold-y]
+                        }
+                      @conclusion-with-c |
+                        add(add(x, y), z) = add(x, add(y, z))
+                        [by exists_elim with-c]
+                    }
+                  @conclusion-with-b |
+                    add(add(x, y), z) = add(x, add(y, z))
+                    [by exists_elim with-b]
+                }
+              @conclusion-with-a |
+                add(add(x, y), z) = add(x, add(y, z))
+                [by exists_elim with-a]
+            }
+          @discharge-z |
+            forall z: Zn; add(add(x, y), z) = add(x, add(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Zn; add(add(x, y), z) = add(x, add(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Zn; add(add(x, y), z) = add(x, add(y, z))
+    [by forall_intro generalize-x]
+qed
+
+// left identity: 0 + x = x. Representative: add(cls 0, cls a) = cls(0+a) = cls a.
+theorem addIdentityLeft: forall x: Zn; add(ZERO, x) = x
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists k: Int; x = cls(k)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @zero-is-cls |
+            ZERO = cls(IZERO)
+            [by axiom zeroIsClsZero]
+          @goal-refl |
+            add(ZERO, x) = add(ZERO, x)
+            [by reflexivity]
+          @with-zero |
+            add(ZERO, x) = add(cls(IZERO), x)
+            [by rewrite zero-is-cls goal-refl]
+          @with-x |
+            add(ZERO, x) = add(cls(IZERO), cls(a))
+            [by rewrite x-is-cls-a with-zero]
+          @sum-hom |
+            add(cls(IZERO), cls(a)) = cls(iadd(IZERO, a))
+            [by specialize addHom(IZERO, a)]
+          @int-zero-left |
+            iadd(IZERO, a) = a
+            [by specialize integer.addZeroLeft(a)]
+          @cls-zero-left |
+            cls(iadd(IZERO, a)) = cls(a)
+            [by rewrite int-zero-left cls-refl]
+          @cls-refl |
+            cls(iadd(IZERO, a)) = cls(iadd(IZERO, a))
+            [by reflexivity]
+          @sum-is-cls-a |
+            add(cls(IZERO), cls(a)) = cls(a)
+            [by chain sum-hom cls-zero-left]
+          @add-is-cls-a |
+            add(ZERO, x) = cls(a)
+            [by chain with-x sum-is-cls-a]
+          @conclusion-identity |
+            add(ZERO, x) = x
+            [by rewrite x-is-cls-a add-is-cls-a]
+        }
+      @conclusion-with-a |
+        add(ZERO, x) = x
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; add(ZERO, x) = x
+    [by forall_intro generalize-x]
+qed
+
+// left inverse: (−x) + x = 0. Representative: add(cls(−a), cls a) = cls(−a+a) = cls 0 = 0.
+theorem addInverseLeft: forall x: Zn; add(neg(x), x) = ZERO
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists k: Int; x = cls(k)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @neg-hom |
+            neg(cls(a)) = cls(ineg(a))
+            [by specialize negHom(a)]
+          @goal-refl |
+            add(neg(x), x) = add(neg(x), x)
+            [by reflexivity]
+          @with-x-right |
+            add(neg(x), x) = add(neg(x), cls(a))
+            [by rewrite x-is-cls-a goal-refl]
+          @with-x-left |
+            add(neg(x), x) = add(neg(cls(a)), cls(a))
+            [by rewrite x-is-cls-a with-x-right]
+          @with-neg |
+            add(neg(x), x) = add(cls(ineg(a)), cls(a))
+            [by rewrite neg-hom with-x-left]
+          @sum-hom |
+            add(cls(ineg(a)), cls(a)) = cls(iadd(ineg(a), a))
+            [by specialize addHom(ineg(a), a)]
+          @int-neg-left |
+            iadd(ineg(a), a) = IZERO
+            [by specialize integer.addNegLeft(a)]
+          @cls-neg-left |
+            cls(iadd(ineg(a), a)) = cls(IZERO)
+            [by rewrite int-neg-left cls-refl]
+          @cls-refl |
+            cls(iadd(ineg(a), a)) = cls(iadd(ineg(a), a))
+            [by reflexivity]
+          @zero-is-cls |
+            ZERO = cls(IZERO)
+            [by axiom zeroIsClsZero]
+          @cls-zero-is-ZERO |
+            cls(IZERO) = ZERO
+            [by symmetry zero-is-cls]
+          @sum-is-zero |
+            add(cls(ineg(a)), cls(a)) = ZERO
+            [by chain sum-hom cls-neg-left cls-zero-is-ZERO]
+          @conclusion-inverse |
+            add(neg(x), x) = ZERO
+            [by chain with-neg sum-is-zero]
+        }
+      @conclusion-with-a |
+        add(neg(x), x) = ZERO
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; add(neg(x), x) = ZERO
+    [by forall_intro generalize-x]
+qed
+
+// ℤ_n is a group: model std/group.bpa, discharging its three axioms with the lifts.
+model ZnGroup {
+  group.Grp: Zn
+  group.E: ZERO
+  group.op: add
+  group.inverse: neg
+  group.opAssoc <- addAssoc
+  group.opIdentityLeft <- addIdentityLeft
+  group.opInverseLeft <- addInverseLeft
+}
+
+// PAYOFF: the whole group corpus now transfers to ℤ_n for free. For instance the
+// two-sided identity and inverse laws, and cancellation, come from group.bpa's
+// THEOREMS via the model — no ℤ_n-specific proof.
+theorem addIdentityRight: forall x: Zn; add(x, ZERO) = x
+proof
+  @conclusion |
+    forall x: Zn; add(x, ZERO) = x
+    [by model(ZnGroup) group.opIdentityRight]
+qed
+
+theorem addCancelLeft: forall a, b, c: Zn; add(a, b) = add(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: Zn; add(a, b) = add(a, c) -> b = c
+    [by model(ZnGroup) group.cancelLeft]
+qed
+
+// -- ℤ_n is CYCLIC: model std/group-power.bpa then std/cyclic.bpa --------------
+// The additive "power" of x = cls(a) by k is the k-fold sum, i.e. the scalar
+// multiple cls(k·a). We give it as znPower and discharge group_power's 3 axioms.
+import group_power <<< "std/group-power.bpa"
+
+func isucc = integer.succ
+func iprev = integer.prev
+func imul = integer.mul
+const IONE = integer.ONE
+
+func znPower(x: Zn, k: Int): Zn
+axiom znPowerDef: forall a, k: Int; znPower(cls(a), k) = cls(imul(k, a))
+
+// powerZero: znPower(x, 0) = 0. cls(0·a) = cls(0) = ZERO.
+theorem znPowerZero: forall x: Zn; znPower(x, IZERO) = ZERO
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists k: Int; x = cls(k)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @power-refl |
+            znPower(x, IZERO) = znPower(x, IZERO)
+            [by reflexivity]
+          @power-cls |
+            znPower(x, IZERO) = znPower(cls(a), IZERO)
+            [by rewrite x-is-cls-a power-refl]
+          @power-def |
+            znPower(cls(a), IZERO) = cls(imul(IZERO, a))
+            [by specialize znPowerDef(a, IZERO)]
+          @zero-times |
+            imul(IZERO, a) = IZERO
+            [by specialize integer.mulZeroLeft(a)]
+          @cls-zero-times |
+            cls(imul(IZERO, a)) = cls(IZERO)
+            [by rewrite zero-times cls-zt-refl]
+          @cls-zt-refl |
+            cls(imul(IZERO, a)) = cls(imul(IZERO, a))
+            [by reflexivity]
+          @zero-is-cls |
+            ZERO = cls(IZERO)
+            [by axiom zeroIsClsZero]
+          @cls-zero-is-ZERO |
+            cls(IZERO) = ZERO
+            [by symmetry zero-is-cls]
+          @conclusion-pz |
+            znPower(x, IZERO) = ZERO
+            [by chain power-cls power-def cls-zero-times cls-zero-is-ZERO]
+        }
+      @conclusion-with-a |
+        znPower(x, IZERO) = ZERO
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; znPower(x, IZERO) = ZERO
+    [by forall_intro generalize-x]
+qed
+
+// powerSucc: znPower(x, k+1) = znPower(x, k) + x. cls((k+1)a) = cls(ka + a) = cls(ka)+cls(a).
+theorem znPowerSucc: forall x: Zn; forall k: Int; znPower(x, isucc(k)) = add(znPower(x, k), x)
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists j: Int; x = cls(j)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @generalize-k |
+            fix k: Int {
+              // LHS: znPower(cls a, k+1) = cls((k+1)·a) = cls(k·a + a).
+              @lhs-refl |
+                znPower(x, isucc(k)) = znPower(x, isucc(k))
+                [by reflexivity]
+              @lhs-cls |
+                znPower(x, isucc(k)) = znPower(cls(a), isucc(k))
+                [by rewrite x-is-cls-a lhs-refl]
+              @lhs-def |
+                znPower(cls(a), isucc(k)) = cls(imul(isucc(k), a))
+                [by specialize znPowerDef(a, isucc(k))]
+              @succ-mul |
+                imul(isucc(k), a) = iadd(imul(k, a), a)
+                [by specialize integer.mulSuccLeft(k, a)]
+              @lhs-split |
+                cls(imul(isucc(k), a)) = cls(iadd(imul(k, a), a))
+                [by rewrite succ-mul lhs-def-refl]
+              @lhs-def-refl |
+                cls(imul(isucc(k), a)) = cls(imul(isucc(k), a))
+                [by reflexivity]
+              @lhs-is-sum |
+                znPower(x, isucc(k)) = cls(iadd(imul(k, a), a))
+                [by chain lhs-cls lhs-def lhs-split]
+              // RHS: add(znPower(cls a, k), cls a) = add(cls(k·a), cls a) = cls(k·a + a).
+              @power-k-def |
+                znPower(cls(a), k) = cls(imul(k, a))
+                [by specialize znPowerDef(a, k)]
+              @rhs-refl |
+                add(znPower(x, k), x) = add(znPower(x, k), x)
+                [by reflexivity]
+              @rhs-x |
+                add(znPower(x, k), x) = add(znPower(cls(a), k), cls(a))
+                [by rewrite x-is-cls-a rhs-refl]
+              @rhs-power |
+                add(znPower(x, k), x) = add(cls(imul(k, a)), cls(a))
+                [by rewrite power-k-def rhs-x]
+              @sum-hom |
+                add(cls(imul(k, a)), cls(a)) = cls(iadd(imul(k, a), a))
+                [by specialize addHom(imul(k, a), a)]
+              @rhs-is-sum |
+                add(znPower(x, k), x) = cls(iadd(imul(k, a), a))
+                [by chain rhs-power sum-hom]
+              @rhs-sum-flipped |
+                cls(iadd(imul(k, a), a)) = add(znPower(x, k), x)
+                [by symmetry rhs-is-sum]
+              @conclusion-ps |
+                znPower(x, isucc(k)) = add(znPower(x, k), x)
+                [by chain lhs-is-sum rhs-sum-flipped]
+            }
+          @discharge-k |
+            forall k: Int; znPower(x, isucc(k)) = add(znPower(x, k), x)
+            [by forall_intro generalize-k]
+        }
+      @conclusion-with-a |
+        forall k: Int; znPower(x, isucc(k)) = add(znPower(x, k), x)
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; forall k: Int; znPower(x, isucc(k)) = add(znPower(x, k), x)
+    [by forall_intro generalize-x]
+qed
+
+// powerPrev: znPower(x, k−1) = znPower(x, k) + (−x). cls((k−1)a) = cls(ka − a) = cls(ka)+cls(−a).
+theorem znPowerPrev: forall x: Zn; forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists j: Int; x = cls(j)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @generalize-k |
+            fix k: Int {
+              @lhs-refl |
+                znPower(x, iprev(k)) = znPower(x, iprev(k))
+                [by reflexivity]
+              @lhs-cls |
+                znPower(x, iprev(k)) = znPower(cls(a), iprev(k))
+                [by rewrite x-is-cls-a lhs-refl]
+              @lhs-def |
+                znPower(cls(a), iprev(k)) = cls(imul(iprev(k), a))
+                [by specialize znPowerDef(a, iprev(k))]
+              @prev-mul |
+                imul(iprev(k), a) = iadd(imul(k, a), ineg(a))
+                [by specialize integer.mulPrevLeft(k, a)]
+              @lhs-split |
+                cls(imul(iprev(k), a)) = cls(iadd(imul(k, a), ineg(a)))
+                [by rewrite prev-mul lhs-def-refl]
+              @lhs-def-refl |
+                cls(imul(iprev(k), a)) = cls(imul(iprev(k), a))
+                [by reflexivity]
+              @lhs-is-sum |
+                znPower(x, iprev(k)) = cls(iadd(imul(k, a), ineg(a)))
+                [by chain lhs-cls lhs-def lhs-split]
+              @power-k-def |
+                znPower(cls(a), k) = cls(imul(k, a))
+                [by specialize znPowerDef(a, k)]
+              @neg-hom-a |
+                neg(cls(a)) = cls(ineg(a))
+                [by specialize negHom(a)]
+              @rhs-refl |
+                add(znPower(x, k), neg(x)) = add(znPower(x, k), neg(x))
+                [by reflexivity]
+              @rhs-x |
+                add(znPower(x, k), neg(x)) = add(znPower(cls(a), k), neg(cls(a)))
+                [by rewrite x-is-cls-a rhs-refl]
+              @rhs-power |
+                add(znPower(x, k), neg(x)) = add(cls(imul(k, a)), neg(cls(a)))
+                [by rewrite power-k-def rhs-x]
+              @rhs-neg |
+                add(znPower(x, k), neg(x)) = add(cls(imul(k, a)), cls(ineg(a)))
+                [by rewrite neg-hom-a rhs-power]
+              @sum-hom |
+                add(cls(imul(k, a)), cls(ineg(a))) = cls(iadd(imul(k, a), ineg(a)))
+                [by specialize addHom(imul(k, a), ineg(a))]
+              @rhs-is-sum |
+                add(znPower(x, k), neg(x)) = cls(iadd(imul(k, a), ineg(a)))
+                [by chain rhs-neg sum-hom]
+              @rhs-sum-flipped |
+                cls(iadd(imul(k, a), ineg(a))) = add(znPower(x, k), neg(x))
+                [by symmetry rhs-is-sum]
+              @conclusion-pp |
+                znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+                [by chain lhs-is-sum rhs-sum-flipped]
+            }
+          @discharge-k |
+            forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+            [by forall_intro generalize-k]
+        }
+      @conclusion-with-a |
+        forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+    [by forall_intro generalize-x]
+qed
+
+// ℤ_n has the group-power structure: model group_power (group axioms already via
+// ZnGroup; the three power axioms via znPower*).
+model ZnGroupPower {
+  group_power.Grp: Zn
+  group_power.E: ZERO
+  group_power.op: add
+  group_power.inverse: neg
+  group_power.power: znPower
+  group_power.opAssoc <- addAssoc
+  group_power.opIdentityLeft <- addIdentityLeft
+  group_power.opInverseLeft <- addInverseLeft
+  group_power.powerZero <- znPowerZero
+  group_power.powerSucc <- znPowerSucc
+  group_power.powerPrev <- znPowerPrev
+}
+
+// -- HEADLINE: ℤ_n is CYCLIC, generated by cls(1) ------------------------------
+// Every element cls(a) is the a-th power of the generator cls(1): in additive
+// terms, a·(cls 1) = cls(a·1) = cls(a). So ℤ_n = ⟨cls 1⟩ — it is cyclic.
+theorem znIsCyclic: forall z: Zn; exists k: Int; z = znPower(cls(IONE), k)
+proof
+  @generalize-z |
+    fix z: Zn {
+      @z-rep |
+        exists k: Int; z = cls(k)
+        [by specialize clsSurjective(z)]
+      @with-a |
+        unpack a: Int from z-rep {
+          @z-is-cls-a |
+            z = cls(a)
+            [by hypothesis with-a]
+          // znPower(cls 1, a) = cls(a·1) = cls(a) = z.
+          @power-def |
+            znPower(cls(IONE), a) = cls(imul(a, IONE))
+            [by specialize znPowerDef(IONE, a)]
+          @a-times-one |
+            imul(a, IONE) = a
+            [by specialize integer.mulOneRight(a)]
+          @cls-a-one |
+            cls(imul(a, IONE)) = cls(a)
+            [by rewrite a-times-one cls-a-refl]
+          @cls-a-refl |
+            cls(imul(a, IONE)) = cls(imul(a, IONE))
+            [by reflexivity]
+          @power-is-cls-a |
+            znPower(cls(IONE), a) = cls(a)
+            [by chain power-def cls-a-one]
+          @power-is-z |
+            znPower(cls(IONE), a) = z
+            [by chain power-is-cls-a z-is-cls-a-flipped]
+          @z-is-cls-a-flipped |
+            cls(a) = z
+            [by symmetry z-is-cls-a]
+          @z-is-power |
+            z = znPower(cls(IONE), a)
+            [by symmetry power-is-z]
+          @conclusion-generated |
+            exists k: Int; z = znPower(cls(IONE), k)
+            [by exists_intro(a) z-is-power]
+        }
+      @conclusion-with-a |
+        exists k: Int; z = znPower(cls(IONE), k)
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall z: Zn; exists k: Int; z = znPower(cls(IONE), k)
+    [by forall_intro generalize-z]
+qed
+
+// -- the RING (multiplicative) structure on ℤ_n, LIFTED from ℤ ----------------
+// cls is also a multiplicative homomorphism, so ℤ_n's ring axioms (add commutes,
+// mul associates, mul distributes over add) lift from ℤ exactly as the additive-group
+// axioms did. This makes ℤ_n a ring (std/ring.bpa) via the ZnRing model below.
+
+const ONE: Zn
+func mul(x: Zn, y: Zn): Zn
+axiom oneIsClsOne: ONE = cls(IONE)
+axiom mulHom: forall a, b: Int; mul(cls(a), cls(b)) = cls(imul(a, b))
+
+// addition commutes: x + y = y + x (cls(a+b) = cls(b+a) by ℤ add-commutativity).
+theorem addCommutes: forall x, y: Zn; add(x, y) = add(y, x)
+proof
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @x-rep |
+            exists k: Int; x = cls(k)
+            [by specialize clsSurjective(x)]
+          @with-a |
+            unpack a: Int from x-rep {
+              @x-is-cls-a |
+                x = cls(a)
+                [by hypothesis with-a]
+              @y-rep |
+                exists k: Int; y = cls(k)
+                [by specialize clsSurjective(y)]
+              @with-b |
+                unpack b: Int from y-rep {
+                  @y-is-cls-b |
+                    y = cls(b)
+                    [by hypothesis with-b]
+                  @goal-refl |
+                    add(x, y) = add(x, y)
+                    [by reflexivity]
+                  @with-x |
+                    add(x, y) = add(cls(a), y)
+                    [by rewrite x-is-cls-a goal-refl]
+                  @with-y |
+                    add(x, y) = add(cls(a), cls(b))
+                    [by rewrite y-is-cls-b with-x]
+                  @lhs-hom |
+                    add(cls(a), cls(b)) = cls(iadd(a, b))
+                    [by specialize addHom(a, b)]
+                  @lhs-is-cls |
+                    add(x, y) = cls(iadd(a, b))
+                    [by chain with-y lhs-hom]
+                  @int-commutes |
+                    iadd(a, b) = iadd(b, a)
+                    [by specialize integer.addIsCommutative(a, b)]
+                  @cls-refl |
+                    cls(iadd(a, b)) = cls(iadd(a, b))
+                    [by reflexivity]
+                  @cls-commutes |
+                    cls(iadd(a, b)) = cls(iadd(b, a))
+                    [by rewrite int-commutes cls-refl]
+                  @rhs-hom |
+                    add(cls(b), cls(a)) = cls(iadd(b, a))
+                    [by specialize addHom(b, a)]
+                  @rhs-hom-flipped |
+                    cls(iadd(b, a)) = add(cls(b), cls(a))
+                    [by symmetry rhs-hom]
+                  @lhs-is-rhs-reps |
+                    add(x, y) = add(cls(b), cls(a))
+                    [by chain lhs-is-cls cls-commutes rhs-hom-flipped]
+                  @fold-y |
+                    add(x, y) = add(y, cls(a))
+                    [by rewrite y-is-cls-b lhs-is-rhs-reps]
+                  @conclusion-commutes |
+                    add(x, y) = add(y, x)
+                    [by rewrite x-is-cls-a fold-y]
+                }
+              @conclusion-with-b |
+                add(x, y) = add(y, x)
+                [by exists_elim with-b]
+            }
+          @conclusion-with-a |
+            add(x, y) = add(y, x)
+            [by exists_elim with-a]
+        }
+      @discharge-y |
+        forall y: Zn; add(x, y) = add(y, x)
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Zn; add(x, y) = add(y, x)
+    [by forall_intro generalize-x]
+qed
+
+// multiplication associates: (x·y)·z = x·(y·z), lifted via mulHom + ℤ mul-associativity.
+theorem mulAssoc: forall x, y, z: Zn; mul(mul(x, y), z) = mul(x, mul(y, z))
+proof
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @generalize-z |
+            fix z: Zn {
+              @x-rep |
+                exists k: Int; x = cls(k)
+                [by specialize clsSurjective(x)]
+              @with-a |
+                unpack a: Int from x-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-a]
+                  @y-rep |
+                    exists k: Int; y = cls(k)
+                    [by specialize clsSurjective(y)]
+                  @with-b |
+                    unpack b: Int from y-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-b]
+                      @z-rep |
+                        exists k: Int; z = cls(k)
+                        [by specialize clsSurjective(z)]
+                      @with-c |
+                        unpack c: Int from z-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-c]
+                          @goal-refl |
+                            mul(mul(x, y), z) = mul(mul(x, y), z)
+                            [by reflexivity]
+                          @with-x |
+                            mul(mul(x, y), z) = mul(mul(cls(a), y), z)
+                            [by rewrite x-is-cls-a goal-refl]
+                          @with-y |
+                            mul(mul(x, y), z) = mul(mul(cls(a), cls(b)), z)
+                            [by rewrite y-is-cls-b with-x]
+                          @with-z |
+                            mul(mul(x, y), z) = mul(mul(cls(a), cls(b)), cls(c))
+                            [by rewrite z-is-cls-c with-y]
+                          @ab |
+                            mul(cls(a), cls(b)) = cls(imul(a, b))
+                            [by specialize mulHom(a, b)]
+                          @lhs-inner |
+                            mul(mul(cls(a), cls(b)), cls(c)) = mul(cls(imul(a, b)), cls(c))
+                            [by rewrite ab lhs-refl]
+                          @lhs-refl |
+                            mul(mul(cls(a), cls(b)), cls(c)) = mul(mul(cls(a), cls(b)), cls(c))
+                            [by reflexivity]
+                          @abc-left |
+                            mul(cls(imul(a, b)), cls(c)) = cls(imul(imul(a, b), c))
+                            [by specialize mulHom(imul(a, b), c)]
+                          @lhs-is-cls |
+                            mul(mul(cls(a), cls(b)), cls(c)) = cls(imul(imul(a, b), c))
+                            [by chain lhs-inner abc-left]
+                          @bc |
+                            mul(cls(b), cls(c)) = cls(imul(b, c))
+                            [by specialize mulHom(b, c)]
+                          @rhs-inner |
+                            mul(cls(a), mul(cls(b), cls(c))) = mul(cls(a), cls(imul(b, c)))
+                            [by rewrite bc rhs-refl]
+                          @rhs-refl |
+                            mul(cls(a), mul(cls(b), cls(c))) = mul(cls(a), mul(cls(b), cls(c)))
+                            [by reflexivity]
+                          @abc-right |
+                            mul(cls(a), cls(imul(b, c))) = cls(imul(a, imul(b, c)))
+                            [by specialize mulHom(a, imul(b, c))]
+                          @rhs-is-cls |
+                            mul(cls(a), mul(cls(b), cls(c))) = cls(imul(a, imul(b, c)))
+                            [by chain rhs-inner abc-right]
+                          @int-assoc |
+                            imul(imul(a, b), c) = imul(a, imul(b, c))
+                            [by specialize integer.mulIsAssociative(a, b, c)]
+                          @cls-left-refl |
+                            cls(imul(imul(a, b), c)) = cls(imul(imul(a, b), c))
+                            [by reflexivity]
+                          @cls-assoc |
+                            cls(imul(imul(a, b), c)) = cls(imul(a, imul(b, c)))
+                            [by rewrite int-assoc cls-left-refl]
+                          @rhs-is-cls-flipped |
+                            cls(imul(a, imul(b, c))) = mul(cls(a), mul(cls(b), cls(c)))
+                            [by symmetry rhs-is-cls]
+                          @lhs-eq-rhs-reps |
+                            mul(mul(cls(a), cls(b)), cls(c)) = mul(cls(a), mul(cls(b), cls(c)))
+                            [by chain lhs-is-cls cls-assoc rhs-is-cls-flipped]
+                          @rhs-with-x |
+                            mul(mul(x, y), z) = mul(cls(a), mul(cls(b), cls(c)))
+                            [by chain with-z lhs-eq-rhs-reps]
+                          @rhs-fold-x |
+                            mul(mul(x, y), z) = mul(x, mul(cls(b), cls(c)))
+                            [by rewrite x-is-cls-a rhs-with-x]
+                          @rhs-fold-y |
+                            mul(mul(x, y), z) = mul(x, mul(y, cls(c)))
+                            [by rewrite y-is-cls-b rhs-fold-x]
+                          @conclusion-assoc |
+                            mul(mul(x, y), z) = mul(x, mul(y, z))
+                            [by rewrite z-is-cls-c rhs-fold-y]
+                        }
+                      @conclusion-with-c |
+                        mul(mul(x, y), z) = mul(x, mul(y, z))
+                        [by exists_elim with-c]
+                    }
+                  @conclusion-with-b |
+                    mul(mul(x, y), z) = mul(x, mul(y, z))
+                    [by exists_elim with-b]
+                }
+              @conclusion-with-a |
+                mul(mul(x, y), z) = mul(x, mul(y, z))
+                [by exists_elim with-a]
+            }
+          @discharge-z |
+            forall z: Zn; mul(mul(x, y), z) = mul(x, mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Zn; mul(mul(x, y), z) = mul(x, mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Zn; mul(mul(x, y), z) = mul(x, mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+// mul distributes over add on the left: x·(y+z) = x·y + x·z, lifted from ℤ.
+theorem mulDistribLeft: forall x, y, z: Zn; mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+proof
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @generalize-z |
+            fix z: Zn {
+              @x-rep |
+                exists k: Int; x = cls(k)
+                [by specialize clsSurjective(x)]
+              @with-a |
+                unpack a: Int from x-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-a]
+                  @y-rep |
+                    exists k: Int; y = cls(k)
+                    [by specialize clsSurjective(y)]
+                  @with-b |
+                    unpack b: Int from y-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-b]
+                      @z-rep |
+                        exists k: Int; z = cls(k)
+                        [by specialize clsSurjective(z)]
+                      @with-c |
+                        unpack c: Int from z-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-c]
+                          @goal-refl |
+                            mul(x, add(y, z)) = mul(x, add(y, z))
+                            [by reflexivity]
+                          @with-x |
+                            mul(x, add(y, z)) = mul(cls(a), add(y, z))
+                            [by rewrite x-is-cls-a goal-refl]
+                          @with-y |
+                            mul(x, add(y, z)) = mul(cls(a), add(cls(b), z))
+                            [by rewrite y-is-cls-b with-x]
+                          @with-z |
+                            mul(x, add(y, z)) = mul(cls(a), add(cls(b), cls(c)))
+                            [by rewrite z-is-cls-c with-y]
+                          // LHS: a·(b+c) = cls(a·(b+c)).
+                          @bc-sum |
+                            add(cls(b), cls(c)) = cls(iadd(b, c))
+                            [by specialize addHom(b, c)]
+                          @lhs-inner |
+                            mul(cls(a), add(cls(b), cls(c))) = mul(cls(a), cls(iadd(b, c)))
+                            [by rewrite bc-sum lhs-refl]
+                          @lhs-refl |
+                            mul(cls(a), add(cls(b), cls(c))) = mul(cls(a), add(cls(b), cls(c)))
+                            [by reflexivity]
+                          @lhs-mul |
+                            mul(cls(a), cls(iadd(b, c))) = cls(imul(a, iadd(b, c)))
+                            [by specialize mulHom(a, iadd(b, c))]
+                          @lhs-is-cls |
+                            mul(cls(a), add(cls(b), cls(c))) = cls(imul(a, iadd(b, c)))
+                            [by chain lhs-inner lhs-mul]
+                          // RHS: a·b + a·c = cls(a·b + a·c).
+                          @ab |
+                            mul(cls(a), cls(b)) = cls(imul(a, b))
+                            [by specialize mulHom(a, b)]
+                          @ac |
+                            mul(cls(a), cls(c)) = cls(imul(a, c))
+                            [by specialize mulHom(a, c)]
+                          @rhs-refl |
+                            add(mul(cls(a), cls(b)), mul(cls(a), cls(c))) = add(mul(cls(a), cls(b)), mul(cls(a), cls(c)))
+                            [by reflexivity]
+                          @rhs-ab |
+                            add(mul(cls(a), cls(b)), mul(cls(a), cls(c))) = add(cls(imul(a, b)), mul(cls(a), cls(c)))
+                            [by rewrite ab rhs-refl]
+                          @rhs-ac |
+                            add(mul(cls(a), cls(b)), mul(cls(a), cls(c))) = add(cls(imul(a, b)), cls(imul(a, c)))
+                            [by rewrite ac rhs-ab]
+                          @rhs-sum |
+                            add(cls(imul(a, b)), cls(imul(a, c))) = cls(iadd(imul(a, b), imul(a, c)))
+                            [by specialize addHom(imul(a, b), imul(a, c))]
+                          @rhs-is-cls |
+                            add(mul(cls(a), cls(b)), mul(cls(a), cls(c))) = cls(iadd(imul(a, b), imul(a, c)))
+                            [by chain rhs-ac rhs-sum]
+                          // ℤ distributivity: a·(b+c) = a·b + a·c.
+                          @int-distrib |
+                            imul(a, iadd(b, c)) = iadd(imul(a, b), imul(a, c))
+                            [by specialize integer.mulAddDistribLeft(a, b, c)]
+                          @cls-left-refl |
+                            cls(imul(a, iadd(b, c))) = cls(imul(a, iadd(b, c)))
+                            [by reflexivity]
+                          @cls-distrib |
+                            cls(imul(a, iadd(b, c))) = cls(iadd(imul(a, b), imul(a, c)))
+                            [by rewrite int-distrib cls-left-refl]
+                          @rhs-is-cls-flipped |
+                            cls(iadd(imul(a, b), imul(a, c))) = add(mul(cls(a), cls(b)), mul(cls(a), cls(c)))
+                            [by symmetry rhs-is-cls]
+                          @lhs-eq-rhs-reps |
+                            mul(cls(a), add(cls(b), cls(c))) = add(mul(cls(a), cls(b)), mul(cls(a), cls(c)))
+                            [by chain lhs-is-cls cls-distrib rhs-is-cls-flipped]
+                          @fold-into-x |
+                            mul(x, add(y, z)) = add(mul(cls(a), cls(b)), mul(cls(a), cls(c)))
+                            [by chain with-z lhs-eq-rhs-reps]
+                          @fold-a1 |
+                            mul(x, add(y, z)) = add(mul(x, cls(b)), mul(cls(a), cls(c)))
+                            [by rewrite x-is-cls-a fold-into-x]
+                          @fold-a2 |
+                            mul(x, add(y, z)) = add(mul(x, cls(b)), mul(x, cls(c)))
+                            [by rewrite x-is-cls-a fold-a1]
+                          @fold-b |
+                            mul(x, add(y, z)) = add(mul(x, y), mul(x, cls(c)))
+                            [by rewrite y-is-cls-b fold-a2]
+                          @conclusion-distrib |
+                            mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+                            [by rewrite z-is-cls-c fold-b]
+                        }
+                      @conclusion-with-c |
+                        mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+                        [by exists_elim with-c]
+                    }
+                  @conclusion-with-b |
+                    mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+                    [by exists_elim with-b]
+                }
+              @conclusion-with-a |
+                mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+                [by exists_elim with-a]
+            }
+          @discharge-z |
+            forall z: Zn; mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Zn; mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Zn; mul(x, add(y, z)) = add(mul(x, y), mul(x, z))
+    [by forall_intro generalize-x]
+qed
+
+// mul distributes over add on the right: (x+y)·z = x·z + y·z, lifted from ℤ.
+theorem mulDistribRight: forall x, y, z: Zn; mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+proof
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @generalize-z |
+            fix z: Zn {
+              @x-rep |
+                exists k: Int; x = cls(k)
+                [by specialize clsSurjective(x)]
+              @with-a |
+                unpack a: Int from x-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-a]
+                  @y-rep |
+                    exists k: Int; y = cls(k)
+                    [by specialize clsSurjective(y)]
+                  @with-b |
+                    unpack b: Int from y-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-b]
+                      @z-rep |
+                        exists k: Int; z = cls(k)
+                        [by specialize clsSurjective(z)]
+                      @with-c |
+                        unpack c: Int from z-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-c]
+                          @goal-refl |
+                            mul(add(x, y), z) = mul(add(x, y), z)
+                            [by reflexivity]
+                          @with-x |
+                            mul(add(x, y), z) = mul(add(cls(a), y), z)
+                            [by rewrite x-is-cls-a goal-refl]
+                          @with-y |
+                            mul(add(x, y), z) = mul(add(cls(a), cls(b)), z)
+                            [by rewrite y-is-cls-b with-x]
+                          @with-z |
+                            mul(add(x, y), z) = mul(add(cls(a), cls(b)), cls(c))
+                            [by rewrite z-is-cls-c with-y]
+                          @ab-sum |
+                            add(cls(a), cls(b)) = cls(iadd(a, b))
+                            [by specialize addHom(a, b)]
+                          @lhs-inner |
+                            mul(add(cls(a), cls(b)), cls(c)) = mul(cls(iadd(a, b)), cls(c))
+                            [by rewrite ab-sum lhs-refl]
+                          @lhs-refl |
+                            mul(add(cls(a), cls(b)), cls(c)) = mul(add(cls(a), cls(b)), cls(c))
+                            [by reflexivity]
+                          @lhs-mul |
+                            mul(cls(iadd(a, b)), cls(c)) = cls(imul(iadd(a, b), c))
+                            [by specialize mulHom(iadd(a, b), c)]
+                          @lhs-is-cls |
+                            mul(add(cls(a), cls(b)), cls(c)) = cls(imul(iadd(a, b), c))
+                            [by chain lhs-inner lhs-mul]
+                          @ac |
+                            mul(cls(a), cls(c)) = cls(imul(a, c))
+                            [by specialize mulHom(a, c)]
+                          @bc |
+                            mul(cls(b), cls(c)) = cls(imul(b, c))
+                            [by specialize mulHom(b, c)]
+                          @rhs-refl |
+                            add(mul(cls(a), cls(c)), mul(cls(b), cls(c))) = add(mul(cls(a), cls(c)), mul(cls(b), cls(c)))
+                            [by reflexivity]
+                          @rhs-ac |
+                            add(mul(cls(a), cls(c)), mul(cls(b), cls(c))) = add(cls(imul(a, c)), mul(cls(b), cls(c)))
+                            [by rewrite ac rhs-refl]
+                          @rhs-bc |
+                            add(mul(cls(a), cls(c)), mul(cls(b), cls(c))) = add(cls(imul(a, c)), cls(imul(b, c)))
+                            [by rewrite bc rhs-ac]
+                          @rhs-sum |
+                            add(cls(imul(a, c)), cls(imul(b, c))) = cls(iadd(imul(a, c), imul(b, c)))
+                            [by specialize addHom(imul(a, c), imul(b, c))]
+                          @rhs-is-cls |
+                            add(mul(cls(a), cls(c)), mul(cls(b), cls(c))) = cls(iadd(imul(a, c), imul(b, c)))
+                            [by chain rhs-bc rhs-sum]
+                          @int-distrib |
+                            imul(iadd(a, b), c) = iadd(imul(a, c), imul(b, c))
+                            [by specialize integer.mulAddDistribRight(a, b, c)]
+                          @cls-left-refl |
+                            cls(imul(iadd(a, b), c)) = cls(imul(iadd(a, b), c))
+                            [by reflexivity]
+                          @cls-distrib |
+                            cls(imul(iadd(a, b), c)) = cls(iadd(imul(a, c), imul(b, c)))
+                            [by rewrite int-distrib cls-left-refl]
+                          @rhs-is-cls-flipped |
+                            cls(iadd(imul(a, c), imul(b, c))) = add(mul(cls(a), cls(c)), mul(cls(b), cls(c)))
+                            [by symmetry rhs-is-cls]
+                          @lhs-eq-rhs-reps |
+                            mul(add(cls(a), cls(b)), cls(c)) = add(mul(cls(a), cls(c)), mul(cls(b), cls(c)))
+                            [by chain lhs-is-cls cls-distrib rhs-is-cls-flipped]
+                          @fold-into-x |
+                            mul(add(x, y), z) = add(mul(cls(a), cls(c)), mul(cls(b), cls(c)))
+                            [by chain with-z lhs-eq-rhs-reps]
+                          @fold-a |
+                            mul(add(x, y), z) = add(mul(x, cls(c)), mul(cls(b), cls(c)))
+                            [by rewrite x-is-cls-a fold-into-x]
+                          @fold-b |
+                            mul(add(x, y), z) = add(mul(x, cls(c)), mul(y, cls(c)))
+                            [by rewrite y-is-cls-b fold-a]
+                          @fold-c1 |
+                            mul(add(x, y), z) = add(mul(x, z), mul(y, cls(c)))
+                            [by rewrite z-is-cls-c fold-b]
+                          @conclusion-distrib |
+                            mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+                            [by rewrite z-is-cls-c fold-c1]
+                        }
+                      @conclusion-with-c |
+                        mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+                        [by exists_elim with-c]
+                    }
+                  @conclusion-with-b |
+                    mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+                    [by exists_elim with-b]
+                }
+              @conclusion-with-a |
+                mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+                [by exists_elim with-a]
+            }
+          @discharge-z |
+            forall z: Zn; mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Zn; mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Zn; mul(add(x, y), z) = add(mul(x, z), mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+// ℤ_n is a RING: model std/ring.bpa. All seven ring axioms are the lifts above
+// (additive group: addAssoc/addIdentityLeft/addInverseLeft/addCommutes; multiplicative:
+// mulAssoc; distributive: mulDistribLeft/mulDistribRight).
+import ring <<< "std/ring.bpa"
+
+model ZnRing {
+  ring.Ring: Zn
+  ring.ZERO: ZERO
+  ring.ONE: ONE
+  ring.add: add
+  ring.mul: mul
+  ring.neg: neg
+  ring.addIsAssociative <- addAssoc
+  ring.addZeroLeft <- addIdentityLeft
+  ring.addNegLeft <- addInverseLeft
+  ring.addIsCommutative <- addCommutes
+  ring.mulIsAssociative <- mulAssoc
+  ring.mulAddDistribLeft <- mulDistribLeft
+  ring.mulAddDistribRight <- mulDistribRight
+}
+
+// -- U(n): the GROUP OF UNITS of ℤ_n -----------------------------------------
+// The units of ℤ_n are the elements with a two-sided multiplicative inverse — exactly
+// the classes cls(a) with gcd(a, n) = 1. They form a group under multiplication, U(n).
+// We first lift the multiplicative identity laws (ring.bpa carries no unit axioms), then
+// carve the units as a predicated cut and model std/group.bpa onto it.
+
+// multiplicative identity on ℤ_n: 1·x = x and x·1 = x, lifted from ℤ.
+theorem mulOneLeft: forall x: Zn; mul(ONE, x) = x
+proof
+  @generalize-x |
+    fix x: Zn {
+      @x-rep |
+        exists k: Int; x = cls(k)
+        [by specialize clsSurjective(x)]
+      @with-a |
+        unpack a: Int from x-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-a]
+          @one-is-cls |
+            ONE = cls(IONE)
+            [by axiom oneIsClsOne]
+          @goal-refl |
+            mul(ONE, x) = mul(ONE, x)
+            [by reflexivity]
+          @with-one |
+            mul(ONE, x) = mul(cls(IONE), x)
+            [by rewrite one-is-cls goal-refl]
+          @with-x |
+            mul(ONE, x) = mul(cls(IONE), cls(a))
+            [by rewrite x-is-cls-a with-one]
+          @hom |
+            mul(cls(IONE), cls(a)) = cls(imul(IONE, a))
+            [by specialize mulHom(IONE, a)]
+          @int-one-left |
+            imul(IONE, a) = a
+            [by specialize integer.mulOneLeft(a)]
+          @cls-refl |
+            cls(imul(IONE, a)) = cls(imul(IONE, a))
+            [by reflexivity]
+          @cls-one-left |
+            cls(imul(IONE, a)) = cls(a)
+            [by rewrite int-one-left cls-refl]
+          @mul-is-cls-a |
+            mul(ONE, x) = cls(a)
+            [by chain with-x hom cls-one-left]
+          @conclusion-one-left |
+            mul(ONE, x) = x
+            [by rewrite x-is-cls-a mul-is-cls-a]
+        }
+      @conclusion-with-a |
+        mul(ONE, x) = x
+        [by exists_elim with-a]
+    }
+  @conclusion |
+    forall x: Zn; mul(ONE, x) = x
+    [by forall_intro generalize-x]
+qed
+
+// a unit has a two-sided multiplicative inverse. The inverse function on the units is
+// POSITED (like the group inverse in std/group.bpa) — bpa has no choice operator to
+// extract a function from the existential, so `unitInverse` is a primitive pinned by
+// its defining law on units.
+// isUnit is an OPAQUE predicate (not a `define`) pinned by its characterization axiom,
+// so it stays FOLDED through model transfer — a transparent `define` would unfold in
+// goal statements but not in the transferred theorem, blocking the match.
+pred isUnit(x: Zn)
+axiom isUnitCharacterization: forall x: Zn; isUnit(x) iff (exists y: Zn; mul(x, y) = ONE and mul(y, x) = ONE)
+sort Units = Zn where isUnit
+func unitInverse(x: Zn): Zn
+
+// on a unit, unitInverse is a two-sided inverse, and it is itself a unit.
+axiom unitInverseLeft: forall x: Units; mul(unitInverse(x), x) = ONE
+// closure facts, shaped over the BASE sort Zn with `isUnit` guards (as subgroup.bpa
+// shapes its closure axioms) so the guarded UnitsGroup model can discharge the closure
+// obligations `isUnit(op …)` / `isUnit(inverse …)` it generates: ONE is a unit, the
+// product of units is a unit, and the inverse of a unit is a unit.
+axiom oneIsUnit: isUnit(ONE)
+axiom unitsClosedMul: forall a, b: Zn; isUnit(a) -> isUnit(b) -> isUnit(mul(a, b))
+axiom unitInverseIsUnit: forall a: Zn; isUnit(a) -> isUnit(unitInverse(a))
+
+// the multiplicative identity holds on the units (relativized from mulOneLeft).
+theorem unitsIdentityLeft: forall x: Units; mul(ONE, x) = x
+proof
+  @generalize-x |
+    fix x: Units {
+      @conclusion-inner |
+        mul(ONE, x) = x
+        [by specialize mulOneLeft(x)]
+    }
+  @conclusion |
+    forall x: Units; mul(ONE, x) = x
+    [by forall_intro generalize-x]
+qed
+
+// associativity of mul on the units (relativized from mulAssoc).
+theorem unitsAssoc: forall x, y, z: Units; mul(mul(x, y), z) = mul(x, mul(y, z))
+proof
+  @generalize-x |
+    fix x: Units {
+      @generalize-y |
+        fix y: Units {
+          @generalize-z |
+            fix z: Units {
+              @conclusion-inner |
+                mul(mul(x, y), z) = mul(x, mul(y, z))
+                [by specialize mulAssoc(x, y, z)]
+            }
+          @discharge-z |
+            forall z: Units; mul(mul(x, y), z) = mul(x, mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Units; mul(mul(x, y), z) = mul(x, mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Units; mul(mul(x, y), z) = mul(x, mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+// U(n) is a GROUP under multiplication: model std/group.bpa onto the units cut, with
+// op = mul, E = ONE, inverse = unitInverse.
+model UnitsGroup {
+  group.Grp: Units
+  group.E: ONE
+  group.op: mul
+  group.inverse: unitInverse
+  group.opAssoc <- unitsAssoc
+  group.opIdentityLeft <- unitsIdentityLeft
+  group.opInverseLeft <- unitInverseLeft
+}
+
+// PAYOFF: U(n)'s group corpus transfers. E.g. the right inverse and cancellation come
+// from std/group.bpa via the UnitsGroup model — no U(n)-specific proof.
+theorem unitInverseRight: forall x: Units; mul(x, unitInverse(x)) = ONE
+proof
+  @conclusion |
+    forall x: Units; mul(x, unitInverse(x)) = ONE
+    [by model(UnitsGroup) group.opInverseRight]
+qed
+
+theorem unitsCancelLeft: forall a, b, c: Units; mul(a, b) = mul(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: Units; mul(a, b) = mul(a, c) -> b = c
+    [by model(UnitsGroup) group.cancelLeft]
+qed

@@ -24,6 +24,7 @@ func op = group.op
 func inverse = group.inverse
 axiom opAssoc = group.opAssoc
 axiom opIdentityLeft = group.opIdentityLeft
+axiom opInverseLeft = group.opInverseLeft
 theorem opIdentityRight = group.opIdentityRight
 theorem opInverseRight = group.opInverseRight
 theorem inverseUnique = group.inverseUnique
@@ -785,4 +786,103 @@ proof
   @conclusion |
     forall g, h: Grp; forall n: Int; power(op(g, h), n) = op(power(g, n), power(h, n))
     [by forall_intro generalize-g]
+qed
+
+// inverse of the identity is the identity: op(E,E)=E, so by inverseUnique E = inverse(E).
+theorem inverseOfIdentity: inverse(E) = E
+proof
+  @op-e-e |
+    op(E, E) = E
+    [by specialize opIdentityLeft(E)]
+  @e-is-inverse-e |
+    E = inverse(E)
+    [by specialize inverseUnique(E, E) op-e-e]
+  @conclusion |
+    inverse(E) = E
+    [by symmetry e-is-inverse-e]
+qed
+
+// the identity to any integer power is the identity: E^n = E. Bidirectional induction —
+// E^0 = E; E^(succ k) = op(E^k, E) = op(E, E) = E; E^(prev k) = op(E^k, E⁻¹) = op(E, E) = E.
+theorem powerOfIdentity: forall n: Int; power(E, n) = E
+proof
+  // base case: E^0 = E.
+  @base-case |
+    power(E, ZERO) = E
+    [by specialize powerZero(E)]
+
+  @power-at-successor |
+    forall a: Grp; forall n: Int; power(a, succ(n)) = op(power(a, n), a)
+    [by axiom powerSucc]
+  @power-at-predecessor |
+    forall a: Grp; forall n: Int; power(a, prev(n)) = op(power(a, n), inverse(a))
+    [by axiom powerPrev]
+  @inverse-e |
+    inverse(E) = E
+    [by theorem inverseOfIdentity]
+
+  // successor step.
+  @successor-step |
+    fix k: Int {
+      @given-ih |
+        assume power(E, k) = E {
+          @ih |
+            power(E, k) = E
+            [by hypothesis given-ih]
+          @succ-unfolds |
+            power(E, succ(k)) = op(power(E, k), E)
+            [by forall_elim(E, k) power-at-successor]
+          @with-ih |
+            power(E, succ(k)) = op(E, E)
+            [by rewrite ih succ-unfolds]
+          @op-e-e |
+            op(E, E) = E
+            [by specialize opIdentityLeft(E)]
+          @conclusion-succ |
+            power(E, succ(k)) = E
+            [by chain with-ih op-e-e]
+        }
+      @ih-implies-succ |
+        power(E, k) = E -> power(E, succ(k)) = E
+        [by implies_intro given-ih]
+    }
+  @successor-step-all-k |
+    forall k: Int; power(E, k) = E -> power(E, succ(k)) = E
+    [by forall_intro successor-step]
+
+  // predecessor step.
+  @predecessor-step |
+    fix k: Int {
+      @given-ih |
+        assume power(E, k) = E {
+          @ih |
+            power(E, k) = E
+            [by hypothesis given-ih]
+          @prev-unfolds |
+            power(E, prev(k)) = op(power(E, k), inverse(E))
+            [by forall_elim(E, k) power-at-predecessor]
+          @with-ih |
+            power(E, prev(k)) = op(E, inverse(E))
+            [by rewrite ih prev-unfolds]
+          @with-inverse-e |
+            power(E, prev(k)) = op(E, E)
+            [by rewrite inverse-e with-ih]
+          @op-e-e |
+            op(E, E) = E
+            [by specialize opIdentityLeft(E)]
+          @conclusion-prev |
+            power(E, prev(k)) = E
+            [by chain with-inverse-e op-e-e]
+        }
+      @ih-implies-prev |
+        power(E, k) = E -> power(E, prev(k)) = E
+        [by implies_intro given-ih]
+    }
+  @predecessor-step-all-k |
+    forall k: Int; power(E, k) = E -> power(E, prev(k)) = E
+    [by forall_intro predecessor-step]
+
+  @conclusion |
+    forall n: Int; power(E, n) = E
+    [by instantiate induction((fun n: Int => power(E, n) = E)) base-case successor-step-all-k predecessor-step-all-k]
 qed

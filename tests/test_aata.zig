@@ -46,6 +46,23 @@ pub fn addTests(
     // deferred. std used liberally.
     ctx.okSilent(&.{ "check", "aata/3.3-subgroups-exercises.md" });
 
+    // AATA Chapter 4 (Cyclic Groups). §4.1 "Cyclic Subgroups": the five main-text
+    // theorems transcribed following Judson — ⟨a⟩ is the smallest subgroup, cyclic ⇒
+    // abelian, every subgroup of a cyclic group is cyclic (division algorithm +
+    // well-ordering, with the elided memberPowerInH induction spelled out), a^k=e ⟺ n|k,
+    // and ord(a^k)=n/gcd(k,n). Exercises: Ex 23(a) proved via hasOrder; rest forward/defer/skip.
+    ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups.md" });
+    ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups-exercises.md" });
+    // §4.2 "The Multiplicative Group of ℂ": ℂ arithmetic + the modulus identities
+    // (real proofs via std/complex-modulus.bpa); polar/DeMoivre/roots-of-unity deferred
+    // as prose on the trigonometry gap. Exercises: Ex 19 a/b/f proved; rest skip/defer.
+    ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group.md" });
+    ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group-exercises.md" });
+    // §4.3 "The Method of Repeated Squares": prose-only (an algorithm, not a theorem;
+    // needs a concrete ℤ_n + binary representation). Exercises: brute numeric, skipped.
+    ctx.okSilent(&.{ "check", "aata/4.3-repeated-squares.md" });
+    ctx.okSilent(&.{ "check", "aata/4.3-repeated-squares-exercises.md" });
+
     // AATA set theory: the literate transliteration of Chapter 1 §1.2.1
     // (the set-algebra proposition + De Morgan's laws proved by hand; the §1.2
     // exercises discharged in one line each by the `ext` tactic).

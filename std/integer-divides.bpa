@@ -5358,3 +5358,109 @@ proof
     forall a, b, m: Int; less_than(ZERO, m) -> less_than(ZERO, lcm(a, b)) -> divides(a, m) -> divides(b, m) -> (forall n: Int; divides(a, n) -> divides(b, n) -> divides(m, n)) -> m = lcm(a, b)
     [by forall_intro generalize-a]
 qed
+
+// Euclid's coprimality lemma (Bézout form): if u and v are coprime witnessed by a
+// Bézout identity u·r + v·s = 1, and u divides v·w, then u divides w. Multiply the
+// identity by w: w = w·u·r + w·v·s; u divides the first summand (multiple of u) and the
+// second (u | v·w, so u | v·w·s), hence u | w. (The `gcd(u,v)=1` phrasing follows by
+// feeding coprimeBezout; this Bézout form is the reusable core.)
+theorem euclidFromBezout: forall u, v, w, r, s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+proof
+  @generalize-u |
+    fix u: Int {
+      @generalize-v |
+        fix v: Int {
+          @generalize-w |
+            fix w: Int {
+              @generalize-r |
+                fix r: Int {
+                  @generalize-s |
+                    fix s: Int {
+                      @given-bezout |
+                        assume add(mul(u, r), mul(v, s)) = ONE {
+                          @given-u-divides-vw |
+                            assume divides(u, mul(v, w)) {
+                              @bezout |
+                                add(mul(u, r), mul(v, s)) = ONE
+                                [by hypothesis given-bezout]
+                              @u-divides-vw |
+                                divides(u, mul(v, w))
+                                [by hypothesis given-u-divides-vw]
+                              // w = w·1 = w·(ur + vs) = wur + wvs.
+                              @mulOneRight-at-w |
+                                mul(w, ONE) = w
+                                [by specialize mulOneRight(w)]
+                              @w-is-mul-one |
+                                w = mul(w, ONE)
+                                [by symmetry mulOneRight-at-w]
+                              @one-is-bezout |
+                                ONE = add(mul(u, r), mul(v, s))
+                                [by symmetry bezout]
+                              @w-times-bezout |
+                                w = mul(w, add(mul(u, r), mul(v, s)))
+                                [by rewrite one-is-bezout w-is-mul-one]
+                              @w-distributes |
+                                mul(w, add(mul(u, r), mul(v, s))) = add(mul(w, mul(u, r)), mul(w, mul(v, s)))
+                                [by polynomial]
+                              @w-expands |
+                                w = add(mul(w, mul(u, r)), mul(w, mul(v, s)))
+                                [by chain w-times-bezout w-distributes]
+                              // u | w·u·r: it is u · (w·r).
+                              @first-summand-is-u-multiple |
+                                mul(w, mul(u, r)) = mul(u, mul(w, r))
+                                [by polynomial]
+                              @u-divides-u |
+                                divides(u, u)
+                                [by specialize dividesRefl(u)]
+                              @u-divides-u-wr |
+                                divides(u, mul(u, mul(w, r)))
+                                [by specialize dividesMul(u, u, mul(w, r)) u-divides-u]
+                              @u-divides-first |
+                                divides(u, mul(w, mul(u, r)))
+                                [by rewrite first-summand-is-u-multiple u-divides-u-wr]
+                              // u | w·v·s: it is (v·w)·s and u | v·w.
+                              @second-summand-is-vw-multiple |
+                                mul(w, mul(v, s)) = mul(mul(v, w), s)
+                                [by polynomial]
+                              @u-divides-vw-s |
+                                divides(u, mul(mul(v, w), s))
+                                [by specialize dividesMul(u, mul(v, w), s) u-divides-vw]
+                              @u-divides-second |
+                                divides(u, mul(w, mul(v, s)))
+                                [by rewrite second-summand-is-vw-multiple u-divides-vw-s]
+                              // u | (first + second) = w.
+                              @u-divides-sum |
+                                divides(u, add(mul(w, mul(u, r)), mul(w, mul(v, s))))
+                                [by specialize dividesAdd(u, mul(w, mul(u, r)), mul(w, mul(v, s))) u-divides-first u-divides-second]
+                              @conclusion-u-divides-w |
+                                divides(u, w)
+                                [by rewrite w-expands u-divides-sum]
+                            }
+                          @vw-implies |
+                            divides(u, mul(v, w)) -> divides(u, w)
+                            [by implies_intro given-u-divides-vw]
+                        }
+                      @bezout-implies |
+                        add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+                        [by implies_intro given-bezout]
+                    }
+                  @discharge-s |
+                    forall s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+                    [by forall_intro generalize-s]
+                }
+              @discharge-r |
+                forall r, s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+                [by forall_intro generalize-r]
+            }
+          @discharge-w |
+            forall w, r, s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+            [by forall_intro generalize-w]
+        }
+      @discharge-v |
+        forall v, w, r, s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u, v, w, r, s: Int; add(mul(u, r), mul(v, s)) = ONE -> divides(u, mul(v, w)) -> divides(u, w)
+    [by forall_intro generalize-u]
+qed

@@ -127,6 +127,23 @@ pub fn addTests(
     // model @-projects). Authored to plug into std/group.bpa via a model stack.
     ctx.okSilent(&.{ "check", "std/subgroup.bpa" });
 
+    // cyclic subgroups (std/cyclic.bpa, Judson §4.1): ⟨a⟩ = {a^k} as a membership
+    // predicate over a fixed generator const, proved a subgroup (identity/closure) and
+    // the smallest one containing a (integer induction), plus cyclic ⇒ abelian.
+    ctx.okSilent(&.{ "check", "std/cyclic.bpa" });
+
+    // order of a group element (std/group-order.bpa, Judson §4.1): the fixed-A/N form
+    // proves a^k = e ⟺ n|k and ord(a^k) = n/gcd(k,n) (via euclidFromBezout); the
+    // hasOrder(g,n) RELATION generalizes order over arbitrary elements (orderIsUnique,
+    // inverseHasSameOrder = |a|=|a⁻¹|).
+    ctx.okSilent(&.{ "check", "std/group-order.bpa" });
+
+    // the integers mod n (std/integer-mod-n.bpa, Judson §4.1 concrete): ℤ_n as a
+    // quotient sort ℤ/nℤ whose group/ring axioms LIFT from ℤ via cls-homomorphism,
+    // with ZnGroup/ZnGroupPower/ZnRing models (⟨1⟩ cyclic) and the units U(n) as a
+    // group (UnitsGroup). An abstract TEMPLATE modeled at a concrete n.
+    ctx.okSilent(&.{ "check", "std/integer-mod-n.bpa" });
+
     // the ring theory (std/ring.bpa): an additive abelian group + associative,
     // distributing multiplication. Its additive half MODELS std/group.bpa (a
     // TWO-LEVEL structure — a model inside a modelable theory). Judson's first
@@ -164,11 +181,22 @@ pub fn addTests(
     // model (ℚ has strictly fewer theorems than ℝ; nothing to lift, unlike ℕ↪ℤ).
     ctx.okSilent(&.{ "check", "std/real.bpa" });
 
+    // the nonnegative square root on ℝ (std/real-sqrt.bpa): sqrt pinned by its
+    // guarded defining axioms (sqrt(x)·sqrt(x)=x, sqrt≥0 for x≥0); proves
+    // sqrtMulNonneg, sqrtOne. (Also hosts the ℝ-order helpers squareNonneg etc. —
+    // those live in std/real.bpa.)
+    ctx.okSilent(&.{ "check", "std/real-sqrt.bpa" });
+
     // the complex numbers ℂ (std/complex.bpa): an axiomatic FIELD (NOT ordered).
     // MODELS std/field.bpa; adjoins the imaginary unit I with I²=−1; embeds ℝ via
     // fromReal/isReal with re/im parts and conj. Top of the ℚ/ℝ/ℂ tower. (A guarded
     // RealsInComplex order-transfer model is left unbuilt until a theorem needs it.)
     ctx.okSilent(&.{ "check", "std/complex.bpa" });
+
+    // the complex modulus (std/complex-modulus.bpa, Judson §4.2): normSq/abs on ℂ and
+    // the modulus identities (|z̄|=|z|, zz̄=|z|², |zw|=|z||w|) proved from ℂ's
+    // projection algebra + real-sqrt (no trigonometry).
+    ctx.okSilent(&.{ "check", "std/complex-modulus.bpa" });
 
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the

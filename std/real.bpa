@@ -82,6 +82,15 @@ model RealOrderedField {
   field_order.positiveProduct <- positiveProduct
 }
 
+// 0 < 1, transferred from the ordered-field corpus (a basic order fact several
+// downstream files — e.g. std/real-sqrt.bpa — need under a bare name).
+theorem zeroLessThanOne: less_than(ZERO, ONE)
+proof
+  @conclusion |
+    less_than(ZERO, ONE)
+    [by model(RealOrderedField) field_order.zeroLessThanOne]
+qed
+
 // -- completeness (the least-upper-bound axiom) -----------------------------
 // The distinguishing property of ℝ, POSTULATED as a predicate-argument axiom
 // (like std/integer.bpa's nonnegInduction schema). A set of reals is given by a
@@ -365,6 +374,356 @@ proof
   @conclusion |
     forall a, b: Real; mul(a, neg(b)) = neg(mul(a, b))
     [by model(RealField) field.mulNegRight]
+qed
+
+// -- order: nonnegativity helpers -------------------------------------------
+
+// 0 ≤ 1, weakened from the strict fact 0 < 1 (zeroLessThanOne).
+theorem zeroLessOrEqualOne: less_or_equal(ZERO, ONE)
+proof
+  @zero-less-than-one |
+    less_than(ZERO, ONE)
+    [by theorem zeroLessThanOne]
+  @conclusion |
+    less_or_equal(ZERO, ONE)
+    [by or_intro_left zero-less-than-one]
+qed
+
+// the product of two nonnegatives is nonnegative. Case on each factor being 0 or
+// strictly positive: if either is 0 the product is 0 (≤ itself); if both are
+// strictly positive, positiveProduct gives 0 < xy, hence 0 ≤ xy.
+theorem mulNonneg: forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> less_or_equal(ZERO, mul(x, y))
+proof
+  @generalize-x |
+    fix x: Real {
+      @generalize-y |
+        fix y: Real {
+          @given-x-nonneg |
+            assume less_or_equal(ZERO, x) {
+              @given-y-nonneg |
+                assume less_or_equal(ZERO, y) {
+                  @x-nonneg |
+                    less_than(ZERO, x) or ZERO = x
+                    [by hypothesis given-x-nonneg]
+                  @conclusion-product-nonneg |
+                    less_or_equal(ZERO, mul(x, y))
+                    case x-nonneg {
+                      @when-x-positive |
+                        assume less_than(ZERO, x) {
+                          @x-positive |
+                            less_than(ZERO, x)
+                            [by hypothesis when-x-positive]
+                          @y-nonneg |
+                            less_than(ZERO, y) or ZERO = y
+                            [by hypothesis given-y-nonneg]
+                          @conclusion-x-positive |
+                            less_or_equal(ZERO, mul(x, y))
+                            case y-nonneg {
+                              @when-y-positive |
+                                assume less_than(ZERO, y) {
+                                  @y-positive |
+                                    less_than(ZERO, y)
+                                    [by hypothesis when-y-positive]
+                                  @product-positive |
+                                    less_than(ZERO, mul(x, y))
+                                    [by specialize positiveProduct(x, y) x-positive y-positive]
+                                  @conclusion-both-positive |
+                                    less_or_equal(ZERO, mul(x, y))
+                                    [by or_intro_left product-positive]
+                                }
+                              @when-y-zero |
+                                assume ZERO = y {
+                                  @y-is-zero |
+                                    ZERO = y
+                                    [by hypothesis when-y-zero]
+                                  @product-with-zero |
+                                    mul(x, ZERO) = ZERO
+                                    [by specialize mulZeroRight(x)]
+                                  @product-is-zero |
+                                    mul(x, y) = ZERO
+                                    [by rewrite y-is-zero product-with-zero]
+                                  @zero-equals-product |
+                                    ZERO = mul(x, y)
+                                    [by symmetry product-is-zero]
+                                  @conclusion-y-zero |
+                                    less_or_equal(ZERO, mul(x, y))
+                                    [by or_intro_right zero-equals-product]
+                                }
+                            }
+                        }
+                      @when-x-zero |
+                        assume ZERO = x {
+                          @x-is-zero |
+                            ZERO = x
+                            [by hypothesis when-x-zero]
+                          @zero-times-y |
+                            mul(ZERO, y) = ZERO
+                            [by specialize mulZeroLeft(y)]
+                          @product-is-zero |
+                            mul(x, y) = ZERO
+                            [by rewrite x-is-zero zero-times-y]
+                          @zero-equals-product |
+                            ZERO = mul(x, y)
+                            [by symmetry product-is-zero]
+                          @conclusion-x-zero |
+                            less_or_equal(ZERO, mul(x, y))
+                            [by or_intro_right zero-equals-product]
+                        }
+                    }
+                }
+              @y-nonneg-implies |
+                less_or_equal(ZERO, y) -> less_or_equal(ZERO, mul(x, y))
+                [by implies_intro given-y-nonneg]
+            }
+          @x-nonneg-implies |
+            less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> less_or_equal(ZERO, mul(x, y))
+            [by implies_intro given-x-nonneg]
+        }
+      @discharge-y |
+        forall y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> less_or_equal(ZERO, mul(x, y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> less_or_equal(ZERO, mul(x, y))
+    [by forall_intro generalize-x]
+qed
+
+// a negative real has a positive negation: x < 0 ⟹ 0 < −x. Add −x to both sides
+// of x < 0 and simplify the endpoints (x + (−x) = 0, 0 + (−x) = −x).
+theorem negOfNegativeIsPositive: forall x: Real; less_than(x, ZERO) -> less_than(ZERO, neg(x))
+proof
+  @generalize-x |
+    fix x: Real {
+      @given-x-negative |
+        assume less_than(x, ZERO) {
+          @x-negative |
+            less_than(x, ZERO)
+            [by hypothesis given-x-negative]
+          @shift-by-neg |
+            less_than(add(x, neg(x)), add(ZERO, neg(x)))
+            [by specialize lessThanAddRight(x, ZERO, neg(x)) x-negative]
+          @x-plus-neg |
+            add(x, neg(x)) = ZERO
+            [by specialize addNegRight(x)]
+          @zero-plus-neg |
+            add(ZERO, neg(x)) = neg(x)
+            [by specialize addZeroLeft(neg(x))]
+          @shift-left |
+            less_than(ZERO, add(ZERO, neg(x)))
+            [by rewrite x-plus-neg shift-by-neg]
+          @conclusion-neg-positive |
+            less_than(ZERO, neg(x))
+            [by rewrite zero-plus-neg shift-left]
+        }
+      @negative-implies-positive-neg |
+        less_than(x, ZERO) -> less_than(ZERO, neg(x))
+        [by implies_intro given-x-negative]
+    }
+  @conclusion |
+    forall x: Real; less_than(x, ZERO) -> less_than(ZERO, neg(x))
+    [by forall_intro generalize-x]
+qed
+
+// (−x)·(−x) = x·x — the square is sign-independent.
+theorem negTimesNegIsSquare: forall x: Real; mul(neg(x), neg(x)) = mul(x, x)
+proof
+  @generalize-x |
+    fix x: Real {
+      @neg-left |
+        mul(neg(x), neg(x)) = neg(mul(x, neg(x)))
+        [by specialize mulNegLeft(x, neg(x))]
+      @neg-right |
+        mul(x, neg(x)) = neg(mul(x, x))
+        [by specialize mulNegRight(x, x)]
+      @neg-of-neg |
+        neg(neg(mul(x, x))) = mul(x, x)
+        [by specialize negNeg(mul(x, x))]
+      @square-neg-neg |
+        mul(neg(x), neg(x)) = neg(neg(mul(x, x)))
+        [by rewrite neg-right neg-left]
+      @conclusion-neg-square |
+        mul(neg(x), neg(x)) = mul(x, x)
+        [by chain square-neg-neg neg-of-neg]
+    }
+  @conclusion |
+    forall x: Real; mul(neg(x), neg(x)) = mul(x, x)
+    [by forall_intro generalize-x]
+qed
+
+// every square is nonnegative: 0 ≤ x·x. Trichotomy — x>0 or x=0 gives it via
+// mulNonneg; x<0 gives 0<(−x)(−x)=x·x via positiveProduct.
+theorem squareNonneg: forall x: Real; less_or_equal(ZERO, mul(x, x))
+proof
+  @generalize-x |
+    fix x: Real {
+      @trichotomy |
+        less_than(ZERO, x) or ZERO = x or less_than(x, ZERO)
+        [by specialize lessThanTrichotomy(ZERO, x)]
+      @conclusion-square-nonneg |
+        less_or_equal(ZERO, mul(x, x))
+        case trichotomy {
+          @when-positive |
+            assume less_than(ZERO, x) {
+              @x-positive |
+                less_than(ZERO, x)
+                [by hypothesis when-positive]
+              @square-positive |
+                less_than(ZERO, mul(x, x))
+                [by specialize positiveProduct(x, x) x-positive x-positive]
+              @conclusion-when-positive |
+                less_or_equal(ZERO, mul(x, x))
+                [by or_intro_left square-positive]
+            }
+          @when-zero |
+            assume ZERO = x {
+              @x-is-zero |
+                ZERO = x
+                [by hypothesis when-zero]
+              @zero-times-zero |
+                mul(ZERO, ZERO) = ZERO
+                [by specialize mulZeroLeft(ZERO)]
+              @square-with-zero |
+                mul(x, x) = ZERO
+                [by rewrite x-is-zero zero-times-zero]
+              @zero-equals-square |
+                ZERO = mul(x, x)
+                [by symmetry square-with-zero]
+              @conclusion-when-zero |
+                less_or_equal(ZERO, mul(x, x))
+                [by or_intro_right zero-equals-square]
+            }
+          @when-negative |
+            assume less_than(x, ZERO) {
+              @x-negative |
+                less_than(x, ZERO)
+                [by hypothesis when-negative]
+              @neg-positive |
+                less_than(ZERO, neg(x))
+                [by specialize negOfNegativeIsPositive(x) x-negative]
+              @neg-square-positive |
+                less_than(ZERO, mul(neg(x), neg(x)))
+                [by specialize positiveProduct(neg(x), neg(x)) neg-positive neg-positive]
+              @neg-square-is-square |
+                mul(neg(x), neg(x)) = mul(x, x)
+                [by specialize negTimesNegIsSquare(x)]
+              @square-positive |
+                less_than(ZERO, mul(x, x))
+                [by rewrite neg-square-is-square neg-square-positive]
+              @conclusion-when-negative |
+                less_or_equal(ZERO, mul(x, x))
+                [by or_intro_left square-positive]
+            }
+        }
+    }
+  @conclusion |
+    forall x: Real; less_or_equal(ZERO, mul(x, x))
+    [by forall_intro generalize-x]
+qed
+
+// the sum of two nonnegatives is nonnegative: 0 ≤ a and 0 ≤ b ⟹ 0 ≤ a+b. Case on
+// a (positive or zero); in each, case on b, closing with lessThanAddRight/transitivity
+// (positive+anything, or the zero folds).
+theorem addNonneg: forall a, b: Real; less_or_equal(ZERO, a) -> less_or_equal(ZERO, b) -> less_or_equal(ZERO, add(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @given-a-nonneg |
+            assume less_or_equal(ZERO, a) {
+              @given-b-nonneg |
+                assume less_or_equal(ZERO, b) {
+                  @a-nonneg |
+                    less_than(ZERO, a) or ZERO = a
+                    [by hypothesis given-a-nonneg]
+                  @b-nonneg |
+                    less_than(ZERO, b) or ZERO = b
+                    [by hypothesis given-b-nonneg]
+                  // 0 ≤ b gives b ≤ a+b when 0 ≤ a? We instead prove 0 ≤ a+b directly:
+                  // shift 0 ≤ b by +a is awkward; use: from 0 ≤ a, a ≤ a+b (add b to 0 ≤... )
+                  // Simplest: 0 ≤ a means 0+b ≤ a+b, i.e. b ≤ a+b; with 0 ≤ b, transitivity.
+                  @conclusion-sum-nonneg |
+                    less_or_equal(ZERO, add(a, b))
+                    case a-nonneg {
+                      @when-a-positive |
+                        assume less_than(ZERO, a) {
+                          @a-positive |
+                            less_than(ZERO, a)
+                            [by hypothesis when-a-positive]
+                          // 0 < a ⟹ 0+b < a+b ⟹ b < a+b.
+                          @shift-a |
+                            less_than(add(ZERO, b), add(a, b))
+                            [by specialize lessThanAddRight(ZERO, a, b) a-positive]
+                          @zero-plus-b |
+                            add(ZERO, b) = b
+                            [by specialize addZeroLeft(b)]
+                          @b-less-sum |
+                            less_than(b, add(a, b))
+                            [by rewrite zero-plus-b shift-a]
+                          @conclusion-a-positive |
+                            less_or_equal(ZERO, add(a, b))
+                            case b-nonneg {
+                              @when-b-positive |
+                                assume less_than(ZERO, b) {
+                                  @b-positive |
+                                    less_than(ZERO, b)
+                                    [by hypothesis when-b-positive]
+                                  @zero-less-sum |
+                                    less_than(ZERO, add(a, b))
+                                    [by specialize lessThanTransitive(ZERO, b, add(a, b)) b-positive b-less-sum]
+                                  @conclusion-bp |
+                                    less_or_equal(ZERO, add(a, b))
+                                    [by or_intro_left zero-less-sum]
+                                }
+                              @when-b-zero |
+                                assume ZERO = b {
+                                  @b-is-zero |
+                                    ZERO = b
+                                    [by hypothesis when-b-zero]
+                                  @zero-less-sum |
+                                    less_than(ZERO, add(a, b))
+                                    [by rewrite b-is-zero b-less-sum]
+                                  @conclusion-bz |
+                                    less_or_equal(ZERO, add(a, b))
+                                    [by or_intro_left zero-less-sum]
+                                }
+                            }
+                        }
+                      @when-a-zero |
+                        assume ZERO = a {
+                          @a-is-zero |
+                            ZERO = a
+                            [by hypothesis when-a-zero]
+                          @zero-plus-b |
+                            add(ZERO, b) = b
+                            [by specialize addZeroLeft(b)]
+                          @sum-is-b |
+                            add(a, b) = b
+                            [by rewrite a-is-zero zero-plus-b]
+                          @zero-le-b |
+                            less_or_equal(ZERO, b)
+                            [by hypothesis given-b-nonneg]
+                          @conclusion-a-zero |
+                            less_or_equal(ZERO, add(a, b))
+                            [by rewrite sum-is-b zero-le-b]
+                        }
+                    }
+                }
+              @b-nonneg-implies |
+                less_or_equal(ZERO, b) -> less_or_equal(ZERO, add(a, b))
+                [by implies_intro given-b-nonneg]
+            }
+          @a-nonneg-implies |
+            less_or_equal(ZERO, a) -> less_or_equal(ZERO, b) -> less_or_equal(ZERO, add(a, b))
+            [by implies_intro given-a-nonneg]
+        }
+      @discharge-b |
+        forall b: Real; less_or_equal(ZERO, a) -> less_or_equal(ZERO, b) -> less_or_equal(ZERO, add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; less_or_equal(ZERO, a) -> less_or_equal(ZERO, b) -> less_or_equal(ZERO, add(a, b))
+    [by forall_intro generalize-a]
 qed
 
 // -- smoke test (algebra model) ---------------------------------------------
