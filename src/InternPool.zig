@@ -4,8 +4,9 @@
 //!
 //! First slices of the data-model rebuild. Kinds so far: `string` (identifiers/paths,
 //! content-deduped), `file` (deduped by resolved path — Context's file identity rests on
-//! this), and `model` (an interpretation namespace, carrying its ancestor stack; the
-//! UNIVERSE model is seeded at `Index.universe` = 0). Later kinds (sort, symbol,
+//! this), `model` (an interpretation, carrying its ancestor stack; the UNIVERSE model is
+//! seeded at `Index.universe` = 0), and `namespace` (a `(model, file)` scope — the spec's
+//! `(model?, file, id)` factored as `(namespace, id)`). Later kinds (sort, symbol,
 //! statement) are added as `Key`/`Tag` variants on this same machinery.
 //!
 //! THE THREE-TIER SHAPE (Zig's design, adopted):
@@ -78,11 +79,16 @@ pub const Tag = enum(u8) {
     /// A source file, identified by its resolved-path string. `data` is an offset into
     /// `extra` decoding to `File` (the path's string `Index`).
     file,
-    /// A MODEL — an interpretation namespace. `data` is an offset into `extra` holding the
-    /// model's PARENT STACK: a `u32` depth followed by that many model `Index`es, the
-    /// ancestor chain going UP toward the universe (ancestors only, NOT self). Universe
-    /// (Index 0) has depth 0 (`[0]`); a model whose parent is universe has `[1, 0]`.
+    /// A MODEL — an interpretation. `data` is an offset into `extra` holding the model's
+    /// PARENT STACK: a `u32` depth followed by that many model `Index`es, the ancestor
+    /// chain going UP toward the universe (ancestors only, NOT self). Universe (Index 0)
+    /// has depth 0 (`[0]`); a model whose parent is universe has `[1, 0]`.
     model,
+    /// A NAMESPACE — a file seen through a model, i.e. the `(model, file)` SCOPE that
+    /// identifiers resolve within (the spec's `(model?, file, id)` is `(namespace, id)`).
+    /// `data` is an offset into `extra` decoding to `Namespace` (a model Index + a file
+    /// Index). Every file has its universe-namespace: `(universe, file)`.
+    namespace,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -94,10 +100,17 @@ pub const Key = union(enum) {
     /// model is the empty stack. Two models with the same ancestor chain are the same
     /// interpretation and collapse to one `Index`.
     model: []const Index,
+    /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
+    /// pair collapse to one `Index`.
+    namespace: Namespace,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
     pub const File = struct { path: StrId };
+
+    /// A namespace's payload: the model it is viewed through + the file it scopes. Both
+    /// are pool `Index`es (a `.model` and a `.file` respectively).
+    pub const Namespace = struct { model: Index, file: Index };
 
     /// `.string` storage payload: where the bytes live in `string_bytes`.
     const String = struct { off: u32, len: u32 };
@@ -135,6 +148,7 @@ fn hashKey(key: Key) u64 {
         .string => |bytes| h.update(bytes), // identity IS the bytes
         .file => |f| std.hash.autoHash(&h, f.path),
         .model => |stack| for (stack) |m| std.hash.autoHash(&h, m),
+        .namespace => |ns| std.hash.autoHash(&h, ns),
     }
     return h.final();
 }
@@ -145,6 +159,7 @@ fn keyEql(a: Key, b: Key) bool {
         .string => std.mem.eql(u8, a.string, b.string),
         .file => a.file.path == b.file.path,
         .model => std.mem.eql(Index, a.model, b.model),
+        .namespace => std.meta.eql(a.namespace, b.namespace),
     };
 }
 
@@ -180,6 +195,10 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addIndexSlice(stack); // depth-prefixed ancestor chain
             try self.items.append(self.arena, .{ .tag = .model, .data = off });
         },
+        .namespace => |ns| {
+            const off = try self.addExtra(ns);
+            try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
+        },
     }
     gop.key_ptr.* = index;
     return index;
@@ -195,6 +214,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         },
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.indexSlice(item.data) },
+        .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
     };
 }
 
@@ -214,6 +234,15 @@ pub fn internString(self: *InternPool, bytes: []const u8) std.mem.Allocator.Erro
 pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
     std.debug.assert(self.items.get(@intFromEnum(id)).tag == .string);
     return self.keyOf(id).string;
+}
+
+// -- namespace convenience ------------------------------------------------------------
+
+/// Intern the namespace `(model, file)` — a file viewed through a model. Deduped: the
+/// same pair always yields the same `Index`. The universe-namespace of `file` is
+/// `namespace(.universe, file)`.
+pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator.Error!Index {
+    return self.get(.{ .namespace = .{ .model = model, .file = file } });
 }
 
 // -- variable-length `Index` slice encoding (count-prefixed) --------------------------
@@ -316,6 +345,31 @@ test "universe model is seeded at Index 0 with an empty parent stack" {
     try std.testing.expectEqual(InternPool.Index.universe, stack[0]);
     // same ancestor chain -> same model Index (dedup)
     try std.testing.expectEqual(child, try pool.get(.{ .model = &.{.universe} }));
+}
+
+test "namespace = (model, file), deduped per pair" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
+    const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const m = try pool.get(.{ .model = &.{.universe} }); // some non-universe model
+
+    const u_int = try pool.namespace(.universe, f_int); // integer.bpa, universe reading
+    const u_nat = try pool.namespace(.universe, f_nat);
+    const m_int = try pool.namespace(m, f_int); // integer.bpa through model m
+
+    // distinct on either axis -> distinct namespace
+    try std.testing.expect(u_int != u_nat); // different file
+    try std.testing.expect(u_int != m_int); // different model, same file
+    // same (model, file) pair -> same Index (dedup)
+    try std.testing.expectEqual(u_int, try pool.namespace(.universe, f_int));
+
+    // round-trip the pair
+    const ns = pool.keyOf(m_int).namespace;
+    try std.testing.expectEqual(m, ns.model);
+    try std.testing.expectEqual(f_int, ns.file);
 }
 
 test "file interns by path: same path -> same Index, distinct paths -> distinct" {
