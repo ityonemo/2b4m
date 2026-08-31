@@ -29,9 +29,11 @@ const Context = @import("Context.zig");
 
 const Engine = @This();
 
-/// The parse task payload — the sole task shape today (all task payloads live under
-/// `src/Engine/`). `ProveTask` etc. join it there; `Task.payload` becomes a union.
+/// Task types (all payloads live under `src/Engine/`). `parse` produces ASTs + follows
+/// imports (transitional); `prove` is racked by the parse scan per theorem — a NO-OP for
+/// now. The engine treats both uniformly via type-erased payloads (see `Task`).
 pub const ParseTask = @import("Engine/ParseTask.zig");
+pub const ProveTask = @import("Engine/ProveTask.zig");
 
 arena: std.mem.Allocator,
 ctx: *Context,
@@ -71,15 +73,18 @@ pub const SpinLock = struct {
     }
 };
 
-/// A unit of work: an opaque payload plus the function that runs it. `run` receives the
-/// `Context` context, the payload, and a `*Handle` it can use to rack further tasks (the
-/// demand edges). It may return an allocation error (fatal → the engine stops).
+/// A unit of work: a TYPE-ERASED payload pointer plus the function that runs it. The
+/// engine is task-type-AGNOSTIC — it never inspects the payload; it just calls `run`,
+/// which casts the pointer back to its concrete type. Each task type (see `src/Engine/`)
+/// owns a `new(arena, payload)` that arena-allocates the payload (so it outlives the
+/// queue slot) and bundles the matching typed `run`. Adding a task type touches ZERO
+/// lines here. `run` may return an allocation error (fatal → the engine stops).
 ///
-/// TODO(prove-slice): `payload` becomes a `union(enum) { parse: ParseTask, prove: … }`
-/// so the engine can key/suspend on the variant; for now the sole shape is parse.
+/// When suspend/parking lands, the engine's inspection needs (a memo key, a can-suspend
+/// flag) become explicit FIELDS here — not knowledge of the payload's concrete type.
 pub const Task = struct {
-    payload: ParseTask,
-    run: *const fn (ctx: *Context, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void,
+    payload: *anyopaque,
+    run: *const fn (ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void,
 };
 
 /// The scheduling handle handed to a running task: the ONLY way to rack more work. Keeps
@@ -131,24 +136,33 @@ pub fn deinit(self: *Engine) void {
 
 test "engine runs racked tasks to quiescence, tasks can rack more" {
     // Pure-scheduling test: the run fn exercises the queue + in/out counter WITHOUT
-    // touching the Context ctx (it only reads/writes a counter smuggled through a global),
-    // so an undefined ctx pointer is fine — we test scheduling, not parsing.
+    // touching the Context ctx (an undefined ctx pointer is fine — we test scheduling).
+    // The payload is a type-erased `*u32` the run fn casts back — mirroring how a real
+    // task type casts its own payload.
     const S = struct {
         var total: usize = 0;
-        fn run(ctx: *Context, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void {
+        fn run(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
             _ = ctx; // never dereferenced
-            const n = @intFromEnum(payload.file_id);
-            total += n;
-            // fan out: a task of value N racks N/2 (a shrinking tree) to exercise
-            // dynamic racking + quiescence.
-            if (n > 1) try h.rack(.{ .payload = .{ .file_id = @enumFromInt(n / 2), .source = "", .path = "" }, .run = &@This().run });
+            const n: *u32 = @ptrCast(@alignCast(payload));
+            total += n.*;
+            // fan out: a task of value N racks N/2 (a shrinking tree) to exercise dynamic
+            // racking + quiescence. The child payload is arena-allocated so it outlives
+            // the queue slot (the discipline every real task type follows via `new`).
+            if (n.* > 1) {
+                const child = try h.engine.arena.create(u32);
+                child.* = n.* / 2;
+                try h.rack(.{ .payload = child, .run = &@This().run });
+            }
         }
     };
     S.total = 0;
 
-    var e = Engine.init(std.testing.allocator, undefined);
-    defer e.deinit();
-    try e.rack(.{ .payload = .{ .file_id = @enumFromInt(8), .source = "", .path = "" }, .run = &S.run });
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var e = Engine.init(arena_state.allocator(), undefined);
+    const seed = try arena_state.allocator().create(u32);
+    seed.* = 8;
+    try e.rack(.{ .payload = seed, .run = &S.run });
     try e.run();
     // 8 + 4 + 2 + 1 = 15; and racked == completed at quiescence.
     try std.testing.expectEqual(@as(usize, 15), S.total);

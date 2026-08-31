@@ -51,6 +51,22 @@ string_bytes: std.ArrayList(u8) = .empty,
 /// re-deriving the key from the stored item (adapter context compares against `items`).
 map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load_percentage) = .empty,
 
+/// The WRITE mutex (see [[internpool-concurrency-model]]). `get` READS lock-free and never
+/// touches this — reads take NO lock, so the read path needs no `Io`. WRITERS (anything
+/// that mints a new `Index`) must hold it around the mint: a higher build layer (e.g. a
+/// theorem KV) takes `lockWrite(io)`, then calls `get` (which appends), then
+/// `unlockWrite(io)`. Reads stay lock-free; only writers serialize. `std.Io.Mutex` (not
+/// an RwLock — readers never take a shared lock) needs an `Io`, which writers get from the
+/// `Context` they hold.
+///
+/// CONCURRENCY PREREQUISITE (NOT yet satisfied): lock-free reads are only ACTUALLY safe
+/// once the store is NON-MOVING. `items`/`extra`/`string_bytes` are plain `ArrayList`s
+/// that reallocate on grow — a single-threaded placeholder. Until they become segmented
+/// (list-of-fixed-blocks) or pre-reserved, a lock-free reader can race a writer's
+/// reallocation. This mutex makes the WRITE DISCIPLINE correct; the non-moving store is the
+/// separate, still-pending half. Single-threaded today, so neither hazard is live.
+write_mutex: std.Io.Mutex = .init,
+
 arena: std.mem.Allocator,
 
 /// A dense handle into the pool. Non-exhaustive: low values are RESERVED for well-known
@@ -96,6 +112,12 @@ pub const Tag = enum(u8) {
     /// `data` is an offset into `extra` decoding to `Namespace` (a model Index + a file
     /// Index). Every file has its universe-namespace: `(universe, file)`.
     namespace,
+    /// A THEOREM — a declared identifier. `data` is an offset into `extra` decoding to
+    /// `Theorem` (its namespace Index + its name string Index). Keyed `(namespace, name)`:
+    /// unique per declaration-site (two `theorem foo` in different namespaces are distinct
+    /// entities). This Index IS the theorem's identity; formula/proof/loc are attached
+    /// side-table data (later), NOT part of the key.
+    theorem,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -110,10 +132,17 @@ pub const Key = union(enum) {
     /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
     /// pair collapse to one `Index`.
     namespace: Namespace,
+    /// A theorem, identified by its namespace + name. Two references to the same
+    /// `(namespace, name)` collapse to one `Index` (the theorem's identity).
+    theorem: Theorem,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
     pub const File = struct { path: StrId };
+
+    /// A theorem's payload: the namespace it is declared in + its name string. Both are
+    /// pool `Index`es (a `.namespace` and a `.string`).
+    pub const Theorem = struct { namespace: Index, name: StrId };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
     /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
@@ -167,6 +196,7 @@ fn hashKey(key: Key) u64 {
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
+        .theorem => |t| std.hash.autoHash(&h, t),
     }
     return h.final();
 }
@@ -184,6 +214,7 @@ fn keyEql(a: Key, b: Key) bool {
         .file => a.file.path == b.file.path,
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
+        .theorem => std.meta.eql(a.theorem, b.theorem),
     };
 }
 
@@ -225,6 +256,10 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(ns);
             try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
         },
+        .theorem => |t| {
+            const off = try self.addExtra(t);
+            try self.items.append(self.arena, .{ .tag = .theorem, .data = off });
+        },
     }
     gop.key_ptr.* = index;
     return index;
@@ -241,6 +276,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
+        .theorem => .{ .theorem = self.extraData(Key.Theorem, item.data) },
     };
 }
 
@@ -269,6 +305,12 @@ pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
 /// `namespace(.universe, file)`.
 pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator.Error!Index {
     return self.get(.{ .namespace = .{ .model = model, .file = file } });
+}
+
+/// Intern the theorem `name` declared in `ns` — its identity. Deduped per (namespace,
+/// name). The returned `Index` IS the theorem identifier.
+pub fn theorem(self: *InternPool, ns: Index, name: StrId) std.mem.Allocator.Error!Index {
+    return self.get(.{ .theorem = .{ .namespace = ns, .name = name } });
 }
 
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
@@ -397,6 +439,32 @@ test "namespace = (model, file), deduped per pair" {
     const ns = pool.keyOf(u_int).namespace;
     try std.testing.expectEqual(InternPool.Index.universe, ns.model);
     try std.testing.expectEqual(f_int, ns.file);
+}
+
+test "theorem = (namespace, name), deduped per pair" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
+    const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const ns_int = try pool.namespace(.universe, f_int);
+    const ns_nat = try pool.namespace(.universe, f_nat);
+    const comm = try pool.internString("addIsCommutative");
+    const assoc = try pool.internString("addIsAssociative");
+
+    const t = try pool.theorem(ns_int, comm);
+    // same (namespace, name) -> same Index (the theorem's identity)
+    try std.testing.expectEqual(t, try pool.theorem(ns_int, comm));
+    // same name in a DIFFERENT namespace -> distinct theorem
+    try std.testing.expect(t != try pool.theorem(ns_nat, comm));
+    // different name in the same namespace -> distinct theorem
+    try std.testing.expect(t != try pool.theorem(ns_int, assoc));
+
+    // round-trip
+    const key = pool.keyOf(t).theorem;
+    try std.testing.expectEqual(ns_int, key.namespace);
+    try std.testing.expectEqual(comm, key.name);
 }
 
 test "file interns by path: same path -> same Index, distinct paths -> distinct" {

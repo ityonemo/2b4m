@@ -143,7 +143,7 @@ fn emitPostOrder(self: *Context, fid: env.FileId, visited: []bool, order: *std.A
 pub fn loadProject(self: *Context, root_path: []const u8, root_source: []const u8) !env.FileId {
     self.root_file = try self.discover(root_path, root_source);
     var eng = Engine.init(self.arena, self);
-    try eng.rack(Engine.ParseTask.new(.{ .file_id = self.root_file, .source = root_source, .path = root_path }));
+    try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = self.root_file, .source = root_source, .path = root_path }));
     try eng.run(); // parse phase to quiescence
     try self.elaborateAll(); // elaborate phase in dependency order
     return self.root_file;

@@ -21,11 +21,19 @@ file_id: env.FileId,
 source: []const u8,
 path: []const u8,
 
-/// Package this payload into a rack-ready `Engine.Task` — bundles it with the parse
-/// run-fn so call sites just `try h.rack(ParseTask.new(...))` (or seed the same on the
-/// engine) instead of hand-assembling `.{ .payload = …, .run = … }`.
-pub fn new(payload: ParseTask) Engine.Task {
-    return .{ .payload = payload, .run = &run };
+/// Package a payload into a rack-ready `Engine.Task`. Arena-allocates the payload (so it
+/// outlives the queue slot behind the engine's type-erased `*anyopaque`) and bundles the
+/// typed `runErased`. Call sites just `try h.rack(ParseTask.new(arena, .{…}))`.
+pub fn new(arena: std.mem.Allocator, payload: ParseTask) std.mem.Allocator.Error!Engine.Task {
+    const p = try arena.create(ParseTask);
+    p.* = payload;
+    return .{ .payload = p, .run = &runErased };
+}
+
+/// The engine calls this with the type-erased payload; cast back and dispatch to `run`.
+fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.Allocator.Error!void {
+    const task: *ParseTask = @ptrCast(@alignCast(payload));
+    return run(self, task.*, h);
 }
 
 /// The parse-task body: parse the file, resolve its imports (discovering + racking
@@ -60,10 +68,26 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                 continue;
             };
             const cid = try self.discover(resolved, src);
-            try h.rack(new(.{ .file_id = cid, .source = src, .path = resolved }));
+            try h.rack(try new(self.arena, .{ .file_id = cid, .source = src, .path = resolved }));
             break :child cid;
         };
         const raw_id = try self.interner.internString(raw);
         try self.import_maps.items[idx].put(self.arena, raw_id, child);
+    }
+
+    // SCAN (tail of parse): the requested (root) file's theorems are the roots of demand.
+    // Rack a ProveTask per theorem. Whole-file request => all theorems (the only filter
+    // today). Only the root file is scanned — imported files' theorems are demanded by
+    // citations later, not proved just for being imported. ProveTask is a NO-OP for now,
+    // so this is behavior-neutral wiring: it proves scan -> rack -> prove runs to
+    // quiescence alongside the still-authoritative eager back-end.
+    if (task.file_id == self.root_file) {
+        const file_index = try self.fileIndex(task.path); // the pool .file identity
+        for (parsed.decls) |decl| {
+            if (decl != .theorem) continue;
+            const name = decl.theorem.name;
+            const name_id = try self.interner.internString(task.source[name.start..name.end]);
+            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
+        }
     }
 }
