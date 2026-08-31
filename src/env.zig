@@ -307,7 +307,7 @@ test "refinement chain: C = B where inC, B = A where inB → carrier A, quals [i
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var interner = InternPool.init(arena);
+    var interner = try InternPool.init(arena);
     var env = try Env.init(arena, &interner);
     const file = try env.newFile();
 

@@ -269,7 +269,7 @@ const Rig = struct {
 
 fn buildRig(arena: Allocator) !Rig {
     const interner = try arena.create(InternPool);
-    interner.* = .init(arena);
+    interner.* = try .init(arena);
     const environment = try arena.create(Env);
     environment.* = try .init(arena, interner);
     const file = try environment.newFile();

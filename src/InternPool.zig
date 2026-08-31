@@ -2,11 +2,11 @@
 //! checker works with (types/sorts/symbols/statements/models/files), modeled on the Zig
 //! compiler's `InternPool` (src/InternPool.zig in the zig tree).
 //!
-//! This is the SKELETON (first slice of the data-model rebuild). It proves the core
-//! mechanism against ONE interned kind — `file` — where deduplication is the whole
-//! point: the same resolved path interns to the SAME `Index` (the job the Context's
-//! `Context`'s file dedup rests on this — the path interns to a `.file` Index). Later kinds (sort, symbol,
-//! statement, model) are added as `Key`/`Tag` variants on this same machinery.
+//! First slices of the data-model rebuild. Kinds so far: `string` (identifiers/paths,
+//! content-deduped), `file` (deduped by resolved path — Context's file identity rests on
+//! this), and `model` (an interpretation namespace, carrying its ancestor stack; the
+//! UNIVERSE model is seeded at `Index.universe` = 0). Later kinds (sort, symbol,
+//! statement) are added as `Key`/`Tag` variants on this same machinery.
 //!
 //! THE THREE-TIER SHAPE (Zig's design, adopted):
 //!   * `Index` — a dense `enum(u32)` handle. Low values are RESERVED for well-known
@@ -51,10 +51,17 @@ map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load
 
 arena: std.mem.Allocator,
 
-/// A dense handle into the pool. Non-exhaustive: low values are reserved for well-known
-/// entries, `_` covers dynamically-interned ones. (No reserved entries yet — the shape is
-/// fixed so e.g. a `Prop` sort can claim index 0 later.)
-pub const Index = enum(u32) { _ };
+/// A dense handle into the pool. Non-exhaustive: low values are RESERVED for well-known
+/// entries, `_` covers dynamically-interned ones.
+///
+/// `universe` (Index 0) is the UNIVERSE MODEL — the `(∅, …)` abstract/ground reading in
+/// the namespace spec. Seeded at `init`, always present. Because it exists, the model
+/// slot of a `(model, file, id)` namespace is never truly optional: "no model" IS the
+/// universe model. Every model's parent chain bottoms out here.
+pub const Index = enum(u32) {
+    universe = 0,
+    _,
+};
 
 /// The packed storage form. `tag` discriminates; `data` is interpreted per the tag's doc
 /// (inline value, an `Index`, or an offset into `extra`).
@@ -71,6 +78,11 @@ pub const Tag = enum(u8) {
     /// A source file, identified by its resolved-path string. `data` is an offset into
     /// `extra` decoding to `File` (the path's string `Index`).
     file,
+    /// A MODEL — an interpretation namespace. `data` is an offset into `extra` holding the
+    /// model's PARENT STACK: a `u32` depth followed by that many model `Index`es, the
+    /// ancestor chain going UP toward the universe (ancestors only, NOT self). Universe
+    /// (Index 0) has depth 0 (`[0]`); a model whose parent is universe has `[1, 0]`.
+    model,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -78,6 +90,10 @@ pub const Key = union(enum) {
     /// A string's bytes. Interned by CONTENT: equal bytes collapse to one `Index`.
     string: []const u8,
     file: File,
+    /// A model's parent stack (ancestors, innermost-first, universe last). The universe
+    /// model is the empty stack. Two models with the same ancestor chain are the same
+    /// interpretation and collapse to one `Index`.
+    model: []const Index,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
@@ -118,6 +134,7 @@ fn hashKey(key: Key) u64 {
     switch (key) {
         .string => |bytes| h.update(bytes), // identity IS the bytes
         .file => |f| std.hash.autoHash(&h, f.path),
+        .model => |stack| for (stack) |m| std.hash.autoHash(&h, m),
     }
     return h.final();
 }
@@ -127,11 +144,18 @@ fn keyEql(a: Key, b: Key) bool {
     return switch (a) {
         .string => std.mem.eql(u8, a.string, b.string),
         .file => a.file.path == b.file.path,
+        .model => std.mem.eql(Index, a.model, b.model),
     };
 }
 
-pub fn init(arena: std.mem.Allocator) InternPool {
-    return .{ .arena = arena };
+/// Seed the pool with the reserved entries. Currently: the UNIVERSE MODEL at
+/// `Index.universe` (0) — an empty parent stack. Every other model's chain bottoms out
+/// here, and "no model" resolves to it.
+pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
+    var self: InternPool = .{ .arena = arena };
+    const universe = try self.get(.{ .model = &.{} });
+    std.debug.assert(universe == .universe); // the universe model MUST be Index 0
+    return self;
 }
 
 /// Intern a key: return the existing `Index` if a structurally-equal entry exists, else
@@ -152,6 +176,10 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(Key.File{ .path = f.path });
             try self.items.append(self.arena, .{ .tag = .file, .data = off });
         },
+        .model => |stack| {
+            const off = try self.addIndexSlice(stack); // depth-prefixed ancestor chain
+            try self.items.append(self.arena, .{ .tag = .model, .data = off });
+        },
     }
     gop.key_ptr.* = index;
     return index;
@@ -166,6 +194,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
             return .{ .string = self.string_bytes.items[s.off .. s.off + s.len] };
         },
         .file => .{ .file = self.extraData(Key.File, item.data) },
+        .model => .{ .model = self.indexSlice(item.data) },
     };
 }
 
@@ -185,6 +214,27 @@ pub fn internString(self: *InternPool, bytes: []const u8) std.mem.Allocator.Erro
 pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
     std.debug.assert(self.items.get(@intFromEnum(id)).tag == .string);
     return self.keyOf(id).string;
+}
+
+// -- variable-length `Index` slice encoding (count-prefixed) --------------------------
+// A run of `Index`es stored as `[len, i0, i1, …]` — for payloads the fixed-struct
+// reflection encoder can't express (e.g. a model's parent stack).
+
+/// Append `[len, ids…]` to `extra`; return the start offset (points at the length word).
+fn addIndexSlice(self: *InternPool, ids: []const Index) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, ids.len + 1);
+    self.extra.appendAssumeCapacity(@intCast(ids.len));
+    for (ids) |id| self.extra.appendAssumeCapacity(@intFromEnum(id));
+    return off;
+}
+
+/// Read the `[len, ids…]` run at `off` back as a slice into `extra`. (Reinterprets the
+/// `u32` run as `Index` — same layout, since `Index` is `enum(u32)`.)
+fn indexSlice(self: *const InternPool, off: u32) []const Index {
+    const len = self.extra.items[off];
+    const raw = self.extra.items[off + 1 .. off + 1 + len];
+    return @ptrCast(raw);
 }
 
 // -- reflection-based `extra` encoding ------------------------------------------------
@@ -233,7 +283,7 @@ fn decodeField(comptime T: type, raw: u32) T {
 test "strings intern by content and round-trip their bytes" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
-    var pool: InternPool = .init(arena_state.allocator());
+    var pool: InternPool = try .init(arena_state.allocator());
 
     const add = try pool.internString("add");
     const zero = try pool.internString("zero");
@@ -243,13 +293,35 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expect(add != zero);
     try std.testing.expectEqualStrings("add", pool.stringBytes(add));
     try std.testing.expectEqualStrings("zero", pool.stringBytes(zero));
-    try std.testing.expectEqual(@as(usize, 2), pool.count()); // only two strings stored
+    // universe model (Index 0) + two strings
+    try std.testing.expectEqual(@as(usize, 3), pool.count());
+}
+
+test "universe model is seeded at Index 0 with an empty parent stack" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    // seeded, at Index 0, and re-asking for the empty stack returns it (dedup)
+    try std.testing.expectEqual(@as(usize, 1), pool.count());
+    try std.testing.expectEqual(InternPool.Index.universe, try pool.get(.{ .model = &.{} }));
+    try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.len);
+
+    // a model whose parent is universe: stack [universe]. Distinct from universe, and
+    // round-trips its ancestor chain.
+    const child = try pool.get(.{ .model = &.{.universe} });
+    try std.testing.expect(child != .universe);
+    const stack = pool.keyOf(child).model;
+    try std.testing.expectEqual(@as(usize, 1), stack.len);
+    try std.testing.expectEqual(InternPool.Index.universe, stack[0]);
+    // same ancestor chain -> same model Index (dedup)
+    try std.testing.expectEqual(child, try pool.get(.{ .model = &.{.universe} }));
 }
 
 test "file interns by path: same path -> same Index, distinct paths -> distinct" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
-    var pool: InternPool = .init(arena_state.allocator());
+    var pool: InternPool = try .init(arena_state.allocator());
 
     const p_int = try pool.internString("std/integer.bpa");
     const p_nat = try pool.internString("std/peano.bpa");

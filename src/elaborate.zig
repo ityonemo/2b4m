@@ -4415,7 +4415,7 @@ pub const TestCtx = struct {
         const arena = arena_state.allocator();
 
         const interner = try arena.create(InternPool);
-        interner.* = .init(arena);
+        interner.* = try .init(arena);
         const pool = try arena.create(term.Pool);
         pool.* = .init(arena);
         const sink = try arena.create(Diagnostics.Sink);

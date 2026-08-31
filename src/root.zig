@@ -48,7 +48,7 @@ pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
     const file = try p.parseFile();
 
     const interner = try arena.create(InternPool);
-    interner.* = .init(arena);
+    interner.* = try .init(arena);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
     const environment = try arena.create(env.Env);
@@ -145,7 +145,7 @@ pub fn loadProject(
     const sink = try arena.create(diagnostics.Sink);
     sink.* = .init(arena);
     const interner = try arena.create(InternPool);
-    interner.* = .init(arena);
+    interner.* = try .init(arena);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
     const environment = try arena.create(env.Env);
