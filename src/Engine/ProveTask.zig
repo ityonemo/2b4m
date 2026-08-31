@@ -42,5 +42,5 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     _ = h;
     const ns = try self.interner.namespace(.universe, task.file);
-    _ = try self.interner.theorem(ns, task.name);
+    _ = try self.interner.fact(ns, task.name, .theorem);
 }

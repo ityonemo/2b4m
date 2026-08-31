@@ -7,8 +7,9 @@
 //! this), `model` (an interpretation: a parent link + sparse overlay; the UNIVERSE model
 //! is seeded at `Index.universe` = 0, its own parent), and `namespace` (a `(model, file)`
 //! scope — the spec's
-//! `(model?, file, id)` factored as `(namespace, id)`). Later kinds (sort, symbol,
-//! statement) are added as `Key`/`Tag` variants on this same machinery.
+//! `(model?, file, id)` factored as `(namespace, id)`), and `fact` (an axiom or theorem
+//! keyed `(namespace, name)`; `kind` is attached, not identity). Later kinds (sort,
+//! symbol) are added as `Key`/`Tag` variants on this same machinery.
 //!
 //! THE THREE-TIER SHAPE (Zig's design, adopted):
 //!   * `Index` — a dense `enum(u32)` handle. Low values are RESERVED for well-known
@@ -112,12 +113,15 @@ pub const Tag = enum(u8) {
     /// `data` is an offset into `extra` decoding to `Namespace` (a model Index + a file
     /// Index). Every file has its universe-namespace: `(universe, file)`.
     namespace,
-    /// A THEOREM — a declared identifier. `data` is an offset into `extra` decoding to
-    /// `Theorem` (its namespace Index + its name string Index). Keyed `(namespace, name)`:
-    /// unique per declaration-site (two `theorem foo` in different namespaces are distinct
-    /// entities). This Index IS the theorem's identity; formula/proof/loc are attached
-    /// side-table data (later), NOT part of the key.
-    theorem,
+    /// A FACT — a declared axiom or theorem. `data` is an offset into `extra` decoding to
+    /// `Fact` (its namespace Index, its name string Index, and its `kind`). Keyed by
+    /// `(namespace, name)` ONLY: unique per declaration-site (two facts named `foo` in
+    /// different namespaces are distinct; a namespace can't have two `foo`s, so `kind` is
+    /// NOT an identity axis — it's attached data). This Index IS the fact's identity.
+    /// axiom vs theorem is one `kind` field, branched at the prove-or-not boundary (an
+    /// axiom is a resolve-and-store leaf; a theorem's proof gets checked). One `fact` kind
+    /// for now; split into distinct kinds only if a roadbump demands it.
+    fact,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -132,17 +136,22 @@ pub const Key = union(enum) {
     /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
     /// pair collapse to one `Index`.
     namespace: Namespace,
-    /// A theorem, identified by its namespace + name. Two references to the same
-    /// `(namespace, name)` collapse to one `Index` (the theorem's identity).
-    theorem: Theorem,
+    /// A fact (axiom or theorem), identified by its namespace + name. Two references to
+    /// the same `(namespace, name)` collapse to one `Index` (the fact's identity); `kind`
+    /// is attached data, not part of the key.
+    fact: Fact,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
     pub const File = struct { path: StrId };
 
-    /// A theorem's payload: the namespace it is declared in + its name string. Both are
-    /// pool `Index`es (a `.namespace` and a `.string`).
-    pub const Theorem = struct { namespace: Index, name: StrId };
+    /// A fact's payload: its namespace + name (the identity) plus its `kind` (axiom or
+    /// theorem — attached, not identity). namespace/name are pool `Index`es.
+    pub const Fact = struct { namespace: Index, name: StrId, kind: Kind };
+
+    /// What a fact IS. Branched only at the prove-or-not boundary: an axiom is a
+    /// resolve-and-store leaf; a theorem's proof gets checked.
+    pub const Kind = enum(u8) { axiom, theorem };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
     /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
@@ -196,7 +205,11 @@ fn hashKey(key: Key) u64 {
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
-        .theorem => |t| std.hash.autoHash(&h, t),
+        // identity is (namespace, name) ONLY — `kind` is attached, not hashed
+        .fact => |f| {
+            std.hash.autoHash(&h, f.namespace);
+            std.hash.autoHash(&h, f.name);
+        },
     }
     return h.final();
 }
@@ -214,7 +227,8 @@ fn keyEql(a: Key, b: Key) bool {
         .file => a.file.path == b.file.path,
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
-        .theorem => std.meta.eql(a.theorem, b.theorem),
+        // identity is (namespace, name) ONLY — `kind` ignored
+        .fact => a.fact.namespace == b.fact.namespace and a.fact.name == b.fact.name,
     };
 }
 
@@ -256,9 +270,12 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(ns);
             try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
         },
-        .theorem => |t| {
-            const off = try self.addExtra(t);
-            try self.items.append(self.arena, .{ .tag = .theorem, .data = off });
+        .fact => |f| {
+            // dedup is on (namespace, name); the FIRST-interned `kind` is what sticks
+            // (re-interning the same name with a different kind returns the existing entry
+            // unchanged — a name is declared once, so this is fine).
+            const off = try self.addExtra(f);
+            try self.items.append(self.arena, .{ .tag = .fact, .data = off });
         },
     }
     gop.key_ptr.* = index;
@@ -276,7 +293,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
-        .theorem => .{ .theorem = self.extraData(Key.Theorem, item.data) },
+        .fact => .{ .fact = self.extraData(Key.Fact, item.data) },
     };
 }
 
@@ -307,10 +324,11 @@ pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator
     return self.get(.{ .namespace = .{ .model = model, .file = file } });
 }
 
-/// Intern the theorem `name` declared in `ns` — its identity. Deduped per (namespace,
-/// name). The returned `Index` IS the theorem identifier.
-pub fn theorem(self: *InternPool, ns: Index, name: StrId) std.mem.Allocator.Error!Index {
-    return self.get(.{ .theorem = .{ .namespace = ns, .name = name } });
+/// Intern the fact `name` declared in `ns` with `kind` (axiom/theorem) — its identity.
+/// Deduped per (namespace, name); the returned `Index` IS the fact identifier. If the
+/// name is already interned, the existing entry (and its first-interned kind) is returned.
+pub fn fact(self: *InternPool, ns: Index, name: StrId, kind: Key.Kind) std.mem.Allocator.Error!Index {
+    return self.get(.{ .fact = .{ .namespace = ns, .name = name, .kind = kind } });
 }
 
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
@@ -441,7 +459,7 @@ test "namespace = (model, file), deduped per pair" {
     try std.testing.expectEqual(f_int, ns.file);
 }
 
-test "theorem = (namespace, name), deduped per pair" {
+test "fact = (namespace, name), deduped per pair; kind is attached not identity" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
@@ -453,16 +471,21 @@ test "theorem = (namespace, name), deduped per pair" {
     const comm = try pool.internString("addIsCommutative");
     const assoc = try pool.internString("addIsAssociative");
 
-    const t = try pool.theorem(ns_int, comm);
-    // same (namespace, name) -> same Index (the theorem's identity)
-    try std.testing.expectEqual(t, try pool.theorem(ns_int, comm));
-    // same name in a DIFFERENT namespace -> distinct theorem
-    try std.testing.expect(t != try pool.theorem(ns_nat, comm));
-    // different name in the same namespace -> distinct theorem
-    try std.testing.expect(t != try pool.theorem(ns_int, assoc));
+    const t = try pool.fact(ns_int, comm, .theorem);
+    // same (namespace, name) -> same Index (the fact's identity)
+    try std.testing.expectEqual(t, try pool.fact(ns_int, comm, .theorem));
+    // same name in a DIFFERENT namespace -> distinct fact
+    try std.testing.expect(t != try pool.fact(ns_nat, comm, .theorem));
+    // different name in the same namespace -> distinct fact
+    try std.testing.expect(t != try pool.fact(ns_int, assoc, .theorem));
 
-    // round-trip
-    const key = pool.keyOf(t).theorem;
+    // KIND is NOT identity: re-interning the same (ns, name) with a different kind
+    // returns the SAME Index, and the FIRST-interned kind sticks.
+    try std.testing.expectEqual(t, try pool.fact(ns_int, comm, .axiom));
+    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(t).fact.kind);
+
+    // round-trip identity
+    const key = pool.keyOf(t).fact;
     try std.testing.expectEqual(ns_int, key.namespace);
     try std.testing.expectEqual(comm, key.name);
 }
