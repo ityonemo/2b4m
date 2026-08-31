@@ -11,8 +11,10 @@
 //! This FILE IS the context struct (capitalized-file = top-level-struct convention):
 //! `const Context = @import("Context.zig")` yields the type directly.
 //!
-//! MIGRATION NOTE: `by_path` (file dedup) will move into the InternPool — file identity
-//! is context-global and IS the namespace's file component. Pure rename for now.
+//! File identity is context-global and IS the namespace's file component: the InternPool
+//! does the file DEDUP (intern the resolved path -> a `.file` entity Index; the same path
+//! collapses to the same Index), and `pool_file` maps that Index -> the dense `FileId`
+//! that cursors the per-file tables. `discover` mints a FileId only on a pool-file MISS.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -39,7 +41,12 @@ files: std.ArrayList(diagnostics.FileSrc) = .empty,
 /// resolved path -> FileId. A file gets its FileId when first DISCOVERED (racked),
 /// before it is parsed — so a second reference resolves to the same id (and cyclic
 /// file imports are naturally fine: the id exists before parsing completes).
-by_path: std.StringHashMapUnmanaged(env.FileId) = .empty,
+/// pool `.file` entity Index -> the dense FileId cursoring the per-file tables. The
+/// InternPool does the path dedup (same resolved path -> same file Index); this maps that
+/// interned identity onto the FileId used to index files/parsed/import_maps/scopes. A
+/// second reference to a file resolves through the pool to the same Index -> same FileId
+/// (so cyclic file imports are naturally fine: the id exists before parsing completes).
+pool_file: std.AutoHashMapUnmanaged(InternPool.Index, env.FileId) = .empty,
 read_ctx: ?*anyopaque,
 read_fn: ReadFileFn,
 /// which verification layers are active (see elaborate.Verify). When
@@ -60,16 +67,34 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 /// the root FileId (elaborated with is_root = true; not trusted).
 root_file: env.FileId = undefined,
 
-/// Register a newly-discovered file: assign its FileId, reserve its table slots.
+/// Intern a resolved path to its `.file` entity Index — the context-global file
+/// identity. The InternPool dedups: the same path always yields the same Index.
+pub fn fileIndex(self: *Context, resolved_path: []const u8) !InternPool.Index {
+    const path_id = try self.interner.internString(resolved_path);
+    return self.interner.get(.{ .file = .{ .path = path_id } });
+}
+
+/// The FileId already assigned to a resolved path, or null if not yet discovered. Reads
+/// through the pool (interns the path -> file Index -> the pool_file map).
+pub fn lookupFile(self: *Context, resolved_path: []const u8) !?env.FileId {
+    return self.pool_file.get(try self.fileIndex(resolved_path));
+}
+
+/// Register a newly-discovered file: intern its path (the file entity), assign a FileId,
+/// reserve its table slots. IDEMPOTENT — a repeat path returns the existing FileId
+/// (the pool dedups the path to one file Index, and pool_file maps it to one FileId).
 /// FileId order == `files`/`parsed`/`import_maps` index order (the newFile assert).
 /// Pub: the parse task (Engine/ParseTask.zig) discovers a file's imports.
 pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !env.FileId {
+    const file_index = try self.fileIndex(resolved_path);
+    if (self.pool_file.get(file_index)) |existing| return existing;
+
     const file_id = try self.environment.newFile();
     std.debug.assert(@intFromEnum(file_id) == self.files.items.len);
     try self.files.append(self.arena, .{ .path = resolved_path, .source = source });
     try self.parsed.append(self.arena, .{ .decls = &.{} });
     try self.import_maps.append(self.arena, .{});
-    try self.by_path.put(self.arena, resolved_path, file_id);
+    try self.pool_file.put(self.arena, file_index, file_id);
     return file_id;
 }
 

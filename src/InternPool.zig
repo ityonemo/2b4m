@@ -5,7 +5,7 @@
 //! This is the SKELETON (first slice of the data-model rebuild). It proves the core
 //! mechanism against ONE interned kind — `file` — where deduplication is the whole
 //! point: the same resolved path interns to the SAME `Index` (the job the Context's
-//! hand-rolled `by_path` map does today, generalized). Later kinds (sort, symbol,
+//! `Context`'s file dedup rests on this — the path interns to a `.file` Index). Later kinds (sort, symbol,
 //! statement, model) are added as `Key`/`Tag` variants on this same machinery.
 //!
 //! THE THREE-TIER SHAPE (Zig's design, adopted):

@@ -51,7 +51,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         else
             try std.fs.path.resolve(self.arena, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
 
-        const child: env.FileId = if (self.by_path.get(resolved)) |existing|
+        const child: env.FileId = if (try self.lookupFile(resolved)) |existing|
             existing // already discovered (incl. a cyclic re-reference) — reuse id
         else child: {
             const src = self.read_fn(self.read_ctx, self.arena, resolved) catch {
