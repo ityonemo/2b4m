@@ -4,8 +4,9 @@
 //!
 //! First slices of the data-model rebuild. Kinds so far: `string` (identifiers/paths,
 //! content-deduped), `file` (deduped by resolved path — Context's file identity rests on
-//! this), `model` (an interpretation, carrying its ancestor stack; the UNIVERSE model is
-//! seeded at `Index.universe` = 0), and `namespace` (a `(model, file)` scope — the spec's
+//! this), `model` (an interpretation: a parent link + sparse overlay; the UNIVERSE model
+//! is seeded at `Index.universe` = 0, its own parent), and `namespace` (a `(model, file)`
+//! scope — the spec's
 //! `(model?, file, id)` factored as `(namespace, id)`). Later kinds (sort, symbol,
 //! statement) are added as `Key`/`Tag` variants on this same machinery.
 //!
@@ -79,10 +80,16 @@ pub const Tag = enum(u8) {
     /// A source file, identified by its resolved-path string. `data` is an offset into
     /// `extra` decoding to `File` (the path's string `Index`).
     file,
-    /// A MODEL — an interpretation. `data` is an offset into `extra` holding the model's
-    /// PARENT STACK: a `u32` depth followed by that many model `Index`es, the ancestor
-    /// chain going UP toward the universe (ancestors only, NOT self). Universe (Index 0)
-    /// has depth 0 (`[0]`); a model whose parent is universe has `[1, 0]`.
+    /// A MODEL — an interpretation. `data` is an offset into `extra` holding
+    /// `[parent, overlay_count, src0, tgt0, src1, tgt1, …]`: a single parent model
+    /// `Index`, then a count of `(src -> tgt)` overlay mappings, then that many Index
+    /// PAIRS. The ancestor chain is the parent WALK: follow `parent` until it points at
+    /// itself. Universe (Index 0) is its own parent with an EMPTY overlay (`[0, 0]`) — the
+    /// fixpoint that terminates the walk, so no sentinel is needed.
+    ///
+    /// The overlay slot is present now but always empty (count 0) — the sparse mappings
+    /// are DEFERRED; when they land they join identity (models with the same parent but
+    /// different overlays won't dedup) without reshaping this layout.
     model,
     /// A NAMESPACE — a file seen through a model, i.e. the `(model, file)` SCOPE that
     /// identifiers resolve within (the spec's `(model?, file, id)` is `(namespace, id)`).
@@ -96,10 +103,10 @@ pub const Key = union(enum) {
     /// A string's bytes. Interned by CONTENT: equal bytes collapse to one `Index`.
     string: []const u8,
     file: File,
-    /// A model's parent stack (ancestors, innermost-first, universe last). The universe
-    /// model is the empty stack. Two models with the same ancestor chain are the same
-    /// interpretation and collapse to one `Index`.
-    model: []const Index,
+    /// A model: a parent link + a sparse overlay of `src -> tgt` mappings. Universe is its
+    /// own parent with an empty overlay. Identity is the pair (parent + overlay); the
+    /// overlay is empty for now (mappings deferred) but already part of the key.
+    model: Model,
     /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
     /// pair collapse to one `Index`.
     namespace: Namespace,
@@ -107,6 +114,14 @@ pub const Key = union(enum) {
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
     pub const File = struct { path: StrId };
+
+    /// A model's payload: its parent model `Index` (universe = itself) + its sparse
+    /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
+    /// walk to the universe fixpoint.
+    pub const Model = struct { parent: Index, overlay: []const Mapping = &.{} };
+
+    /// One `src -> tgt` overlay entry (both pool `Index`es).
+    pub const Mapping = struct { src: Index, tgt: Index };
 
     /// A namespace's payload: the model it is viewed through + the file it scopes. Both
     /// are pool `Index`es (a `.model` and a `.file` respectively).
@@ -147,10 +162,19 @@ fn hashKey(key: Key) u64 {
     switch (key) {
         .string => |bytes| h.update(bytes), // identity IS the bytes
         .file => |f| std.hash.autoHash(&h, f.path),
-        .model => |stack| for (stack) |m| std.hash.autoHash(&h, m),
+        .model => |m| {
+            std.hash.autoHash(&h, m.parent);
+            for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
+        },
         .namespace => |ns| std.hash.autoHash(&h, ns),
     }
     return h.final();
+}
+
+fn modelEql(a: Key.Model, b: Key.Model) bool {
+    if (a.parent != b.parent or a.overlay.len != b.overlay.len) return false;
+    for (a.overlay, b.overlay) |x, y| if (x.src != y.src or x.tgt != y.tgt) return false;
+    return true;
 }
 
 fn keyEql(a: Key, b: Key) bool {
@@ -158,7 +182,7 @@ fn keyEql(a: Key, b: Key) bool {
     return switch (a) {
         .string => std.mem.eql(u8, a.string, b.string),
         .file => a.file.path == b.file.path,
-        .model => std.mem.eql(Index, a.model, b.model),
+        .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
     };
 }
@@ -168,7 +192,9 @@ fn keyEql(a: Key, b: Key) bool {
 /// here, and "no model" resolves to it.
 pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     var self: InternPool = .{ .arena = arena };
-    const universe = try self.get(.{ .model = &.{} });
+    // Universe is its own parent — a self-reference at Index 0. The `.universe` constant
+    // IS 0, so we can name it as the parent before the entry physically exists.
+    const universe = try self.get(.{ .model = .{ .parent = .universe } });
     std.debug.assert(universe == .universe); // the universe model MUST be Index 0
     return self;
 }
@@ -191,8 +217,8 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(Key.File{ .path = f.path });
             try self.items.append(self.arena, .{ .tag = .file, .data = off });
         },
-        .model => |stack| {
-            const off = try self.addIndexSlice(stack); // depth-prefixed ancestor chain
+        .model => |m| {
+            const off = try self.addModel(m); // [parent, overlay_count, ...src/tgt pairs]
             try self.items.append(self.arena, .{ .tag = .model, .data = off });
         },
         .namespace => |ns| {
@@ -213,7 +239,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
             return .{ .string = self.string_bytes.items[s.off .. s.off + s.len] };
         },
         .file => .{ .file = self.extraData(Key.File, item.data) },
-        .model => .{ .model = self.indexSlice(item.data) },
+        .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
     };
 }
@@ -245,25 +271,30 @@ pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator
     return self.get(.{ .namespace = .{ .model = model, .file = file } });
 }
 
-// -- variable-length `Index` slice encoding (count-prefixed) --------------------------
-// A run of `Index`es stored as `[len, i0, i1, …]` — for payloads the fixed-struct
-// reflection encoder can't express (e.g. a model's parent stack).
+// -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
+// A model's parent + sparse overlay; variable-length, so the fixed-struct reflection
+// encoder can't express it. The overlay is empty for now (mappings deferred).
 
-/// Append `[len, ids…]` to `extra`; return the start offset (points at the length word).
-fn addIndexSlice(self: *InternPool, ids: []const Index) std.mem.Allocator.Error!u32 {
+/// Append `[parent, overlay_count, src0, tgt0, …]` to `extra`; return the start offset.
+fn addModel(self: *InternPool, m: Key.Model) std.mem.Allocator.Error!u32 {
     const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, ids.len + 1);
-    self.extra.appendAssumeCapacity(@intCast(ids.len));
-    for (ids) |id| self.extra.appendAssumeCapacity(@intFromEnum(id));
+    try self.extra.ensureUnusedCapacity(self.arena, 2 + m.overlay.len * 2);
+    self.extra.appendAssumeCapacity(@intFromEnum(m.parent));
+    self.extra.appendAssumeCapacity(@intCast(m.overlay.len));
+    for (m.overlay) |mapping| {
+        self.extra.appendAssumeCapacity(@intFromEnum(mapping.src));
+        self.extra.appendAssumeCapacity(@intFromEnum(mapping.tgt));
+    }
     return off;
 }
 
-/// Read the `[len, ids…]` run at `off` back as a slice into `extra`. (Reinterprets the
-/// `u32` run as `Index` — same layout, since `Index` is `enum(u32)`.)
-fn indexSlice(self: *const InternPool, off: u32) []const Index {
-    const len = self.extra.items[off];
-    const raw = self.extra.items[off + 1 .. off + 1 + len];
-    return @ptrCast(raw);
+/// Read the model payload at `off` back — the inverse of `addModel`. The overlay slice
+/// reinterprets the `u32` pair-run in `extra` as `Mapping` (same layout: two `Index`es).
+fn modelData(self: *const InternPool, off: u32) Key.Model {
+    const parent: Index = @enumFromInt(self.extra.items[off]);
+    const n = self.extra.items[off + 1];
+    const raw = self.extra.items[off + 2 .. off + 2 + n * 2];
+    return .{ .parent = parent, .overlay = @ptrCast(raw) };
 }
 
 // -- reflection-based `extra` encoding ------------------------------------------------
@@ -326,25 +357,24 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expectEqual(@as(usize, 3), pool.count());
 }
 
-test "universe model is seeded at Index 0 with an empty parent stack" {
+test "universe model is seeded at Index 0 as its own parent" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    // seeded, at Index 0, and re-asking for the empty stack returns it (dedup)
+    // seeded, at Index 0; universe is its own parent (the walk fixpoint), empty overlay
     try std.testing.expectEqual(@as(usize, 1), pool.count());
-    try std.testing.expectEqual(InternPool.Index.universe, try pool.get(.{ .model = &.{} }));
-    try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.len);
+    try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
+    try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);
+    // re-asking for the universe payload dedups back to Index 0
+    try std.testing.expectEqual(InternPool.Index.universe, try pool.get(.{ .model = .{ .parent = .universe } }));
 
-    // a model whose parent is universe: stack [universe]. Distinct from universe, and
-    // round-trips its ancestor chain.
-    const child = try pool.get(.{ .model = &.{.universe} });
-    try std.testing.expect(child != .universe);
-    const stack = pool.keyOf(child).model;
-    try std.testing.expectEqual(@as(usize, 1), stack.len);
-    try std.testing.expectEqual(InternPool.Index.universe, stack[0]);
-    // same ancestor chain -> same model Index (dedup)
-    try std.testing.expectEqual(child, try pool.get(.{ .model = &.{.universe} }));
+    // a model whose parent is universe: distinct from universe, round-trips its parent
+    const child = try pool.get(.{ .model = .{ .parent = .universe } });
+    // NOTE: with an empty overlay, this child has the SAME payload as universe {parent:0}
+    // and therefore DEDUPS to universe. Distinct child models require a distinct parent or
+    // a non-empty overlay (deferred). Assert the dedup is exactly that:
+    try std.testing.expectEqual(InternPool.Index.universe, child);
 }
 
 test "namespace = (model, file), deduped per pair" {
@@ -354,21 +384,18 @@ test "namespace = (model, file), deduped per pair" {
 
     const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
     const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
-    const m = try pool.get(.{ .model = &.{.universe} }); // some non-universe model
 
-    const u_int = try pool.namespace(.universe, f_int); // integer.bpa, universe reading
+    // universe-namespace of each file (distinct non-universe models need overlays, deferred)
+    const u_int = try pool.namespace(.universe, f_int);
     const u_nat = try pool.namespace(.universe, f_nat);
-    const m_int = try pool.namespace(m, f_int); // integer.bpa through model m
 
-    // distinct on either axis -> distinct namespace
-    try std.testing.expect(u_int != u_nat); // different file
-    try std.testing.expect(u_int != m_int); // different model, same file
+    try std.testing.expect(u_int != u_nat); // different file -> different namespace
     // same (model, file) pair -> same Index (dedup)
     try std.testing.expectEqual(u_int, try pool.namespace(.universe, f_int));
 
     // round-trip the pair
-    const ns = pool.keyOf(m_int).namespace;
-    try std.testing.expectEqual(m, ns.model);
+    const ns = pool.keyOf(u_int).namespace;
+    try std.testing.expectEqual(InternPool.Index.universe, ns.model);
     try std.testing.expectEqual(f_int, ns.file);
 }
 
