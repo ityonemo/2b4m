@@ -12,6 +12,7 @@ pub const term = @import("term.zig");
 pub const env = @import("env.zig");
 pub const elaborate = @import("elaborate.zig");
 pub const Verify = elaborate.Verify;
+pub const engine = @import("engine.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");
@@ -108,6 +109,9 @@ pub const ProjectResult = struct {
     }
 };
 
+/// raw-import-path StrId -> resolved child FileId, for one file.
+const ImportMap = std.AutoHashMapUnmanaged(intern.StrId, env.FileId);
+
 const Loader = struct {
     arena: std.mem.Allocator,
     sink: *diagnostics.Sink,
@@ -115,8 +119,10 @@ const Loader = struct {
     pool: *term.Pool,
     environment: *env.Env,
     files: std.ArrayList(diagnostics.FileSrc) = .empty,
-    /// resolved path -> load state (null while loading: cycle detection)
-    by_path: std.StringHashMapUnmanaged(?env.FileId) = .empty,
+    /// resolved path -> FileId. A file gets its FileId when first DISCOVERED (racked),
+    /// before it is parsed — so a second reference resolves to the same id (and cyclic
+    /// file imports are naturally fine: the id exists before parsing completes).
+    by_path: std.StringHashMapUnmanaged(env.FileId) = .empty,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
     /// which verification layers are active (see elaborate.Verify). When
@@ -128,65 +134,124 @@ const Loader = struct {
     std_root: []const u8,
     declarations: usize = 0,
 
-    /// Load, (maybe) check, and register one file. Imports are processed
-    /// depth-first, so a file's dependencies are fully elaborated before the
-    /// file itself (its qualified names resolve into their scopes).
-    fn load(self: *Loader, path: []const u8, source: []const u8, is_root: bool) !env.FileId {
-        const gop = try self.by_path.getOrPut(self.arena, path);
-        if (gop.found_existing) unreachable; // caller checks before descending
-        gop.value_ptr.* = null; // loading: a re-visit is a cycle
+    /// FILL-ON-PARSE tables, indexed by FileId (grown in lockstep with `files`, so
+    /// `@intFromEnum(fid)` is the index). The engine's parse tasks populate these; the
+    /// second (elaborate) phase reads them. `import_maps[fid]` is that file's raw->child
+    /// import resolution; `parsed[fid]` its AST.
+    parsed: std.ArrayList(ast.File) = .empty,
+    import_maps: std.ArrayList(ImportMap) = .empty,
+    /// the root FileId (elaborated with is_root = true; not trusted).
+    root_file: env.FileId = undefined,
 
+    /// Register a newly-discovered file: assign its FileId, reserve its table slots.
+    /// FileId order == `files`/`parsed`/`import_maps` index order (the newFile assert).
+    fn discover(self: *Loader, resolved_path: []const u8, source: []const u8) !env.FileId {
         const file_id = try self.environment.newFile();
         std.debug.assert(@intFromEnum(file_id) == self.files.items.len);
-        try self.files.append(self.arena, .{ .path = path, .source = source });
+        try self.files.append(self.arena, .{ .path = resolved_path, .source = source });
+        try self.parsed.append(self.arena, .{ .decls = &.{} });
+        try self.import_maps.append(self.arena, .{});
+        try self.by_path.put(self.arena, resolved_path, file_id);
+        return file_id;
+    }
 
-        self.sink.current_file = @intFromEnum(file_id);
-        var p: parser.Parser = .init(self.arena, source, self.sink);
+    // -- PHASE A: engine-driven parse ---------------------------------------------
+    // The task payload: the file to parse. FileId + source are already assigned/read at
+    // discovery time (so the child's id exists before its parse runs — cyclic-import
+    // safe). Parse fills `parsed[fid]`, resolves imports, and RACKS a parse task for each
+    // newly-discovered import.
+    const ParseTask = struct { file_id: env.FileId, source: []const u8, path: []const u8 };
+    const ParseEngine = engine.Engine(Loader, ParseTask, std.mem.Allocator.Error);
+
+    /// Run one parse task: parse the file, resolve its imports (discovering + racking
+    /// child parse tasks), and record its import map. TRANSITIONAL: parse follows
+    /// imports here only because the eager elaborator back-end (phase B) needs the whole
+    /// transitive file set present. In the target demand-driven design, the PROVER pulls
+    /// a file in when it cites into it; this import-following goes away then.
+    fn runParse(self: *Loader, task: ParseTask, h: *ParseEngine.Handle) std.mem.Allocator.Error!void {
+        const idx = @intFromEnum(task.file_id);
+        self.sink.current_file = idx;
+        var p: parser.Parser = .init(self.arena, task.source, self.sink);
         const parsed = try p.parseFile();
+        self.parsed.items[idx] = parsed;
         self.declarations += parsed.decls.len;
 
-        // resolve imports (recursing), building raw-path -> FileId
-        var import_map: std.AutoHashMapUnmanaged(intern.StrId, env.FileId) = .empty;
         for (parsed.decls) |decl| {
             if (decl != .import) continue;
             const d = decl.import;
-            const raw_quoted = source[d.path.start..d.path.end];
+            const raw_quoted = task.source[d.path.start..d.path.end];
             const raw = raw_quoted[1 .. raw_quoted.len - 1];
             const resolved = if (std.mem.startsWith(u8, raw, "std/"))
                 try std.fs.path.resolve(self.arena, &.{ self.std_root, raw["std/".len..] })
             else
-                try std.fs.path.resolve(self.arena, &.{ std.fs.path.dirname(path) orelse ".", raw });
+                try std.fs.path.resolve(self.arena, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
 
-            const child: ?env.FileId = child: {
-                if (self.by_path.get(resolved)) |state| {
-                    break :child state orelse {
-                        self.sink.current_file = @intFromEnum(file_id);
-                        try self.sink.add(d.path.start, "import cycle detected via '{s}'", .{resolved});
-                        break :child null;
-                    };
-                }
+            const child: env.FileId = if (self.by_path.get(resolved)) |existing|
+                existing // already discovered (incl. a cyclic re-reference) — reuse id
+            else child: {
                 const src = self.read_fn(self.read_ctx, self.arena, resolved) catch {
-                    self.sink.current_file = @intFromEnum(file_id);
+                    self.sink.current_file = idx;
                     try self.sink.add(d.path.start, "cannot open '{s}': file not found", .{resolved});
-                    break :child null;
+                    continue;
                 };
-                break :child try self.load(resolved, src, false);
+                const cid = try self.discover(resolved, src);
+                try h.rack(.{ .payload = .{ .file_id = cid, .source = src, .path = resolved }, .run = &runParseThunk });
+                break :child cid;
             };
-            if (child) |c| {
-                const raw_id = try self.interner.intern(raw);
-                try import_map.put(self.arena, raw_id, c);
-            }
+            const raw_id = try self.interner.intern(raw);
+            try self.import_maps.items[idx].put(self.arena, raw_id, child);
         }
+    }
+    fn runParseThunk(ctx: *Loader, payload: ParseTask, h: *ParseEngine.Handle) std.mem.Allocator.Error!void {
+        return ctx.runParse(payload, h);
+    }
 
-        self.sink.current_file = @intFromEnum(file_id);
-        var elab: elaborate.Elaborator = .init(self.arena, source, self.interner, self.pool, self.environment, self.sink, file_id);
-        elab.imports = &import_map;
-        elab.trusted = !is_root and !self.verify.recheck_imports;
-        elab.verify = self.verify;
-        try elab.elaborateFile(parsed);
+    // -- PHASE B: dependency-order elaborate --------------------------------------
+    // Any topological order of the import DAG works (a file's imports must be elaborated
+    // before it, so its qualified names resolve into populated scopes). We emit a
+    // post-order DFS over the import edges from the root — the same order the old
+    // depth-first loader produced. A cyclic file-import (allowed now) is simply visited
+    // in whatever order the DFS reaches it; the old cycle-error is dropped (the target
+    // design permits cyclic file imports — acyclicity is a PROOF-graph concern).
+    fn elaborateAll(self: *Loader) !void {
+        const visited = try self.arena.alloc(bool, self.files.items.len);
+        @memset(visited, false);
+        var order: std.ArrayList(env.FileId) = .empty;
+        try self.emitPostOrder(self.root_file, visited, &order);
+        // any file the root doesn't transitively import (shouldn't happen — all files
+        // are discovered via imports from the root) still gets elaborated, in id order.
+        for (0..self.files.items.len) |i| {
+            if (!visited[i]) try self.emitPostOrder(@enumFromInt(i), visited, &order);
+        }
+        for (order.items) |fid| {
+            const idx = @intFromEnum(fid);
+            self.sink.current_file = idx;
+            var elab: elaborate.Elaborator = .init(self.arena, self.files.items[idx].source, self.interner, self.pool, self.environment, self.sink, fid);
+            elab.imports = &self.import_maps.items[idx];
+            elab.trusted = fid != self.root_file and !self.verify.recheck_imports;
+            elab.verify = self.verify;
+            try elab.elaborateFile(self.parsed.items[idx]);
+        }
+    }
 
-        self.by_path.getPtr(path).?.* = file_id;
-        return file_id;
+    fn emitPostOrder(self: *Loader, fid: env.FileId, visited: []bool, order: *std.ArrayList(env.FileId)) !void {
+        const idx = @intFromEnum(fid);
+        if (visited[idx]) return;
+        visited[idx] = true; // mark BEFORE recursing so a cycle doesn't loop forever
+        var it = self.import_maps.items[idx].valueIterator();
+        while (it.next()) |child| try self.emitPostOrder(child.*, visited, order);
+        try order.append(self.arena, fid);
+    }
+
+    /// The two-phase entry: discover + parse the whole transitive file set via the
+    /// engine, then elaborate every file in dependency order.
+    fn run(self: *Loader, root_path: []const u8, root_source: []const u8) !env.FileId {
+        self.root_file = try self.discover(root_path, root_source);
+        var eng = ParseEngine.init(self.arena, self);
+        try eng.rack(.{ .payload = .{ .file_id = self.root_file, .source = root_source, .path = root_path }, .run = &runParseThunk });
+        try eng.run(); // parse phase to quiescence
+        try self.elaborateAll(); // elaborate phase in dependency order
+        return self.root_file;
     }
 };
 
@@ -243,7 +308,7 @@ pub fn loadProject(
         .std_root = std_root,
     };
     const canonical_root = try std.fs.path.resolve(arena, &.{root_path});
-    const root_file = try loader.load(canonical_root, root_source, true);
+    const root_file = try loader.run(canonical_root, root_source);
     return .{
         .interner = interner,
         .pool = pool,

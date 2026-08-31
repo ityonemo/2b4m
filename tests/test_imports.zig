@@ -76,8 +76,12 @@ pub fn addTests(
 
     ctx.okSilent(&.{ "check", "tests/cases/imports/uses.bpa" });
 
-    // Imports, broken siblings (messages pinned once implemented)
-    ctx.fail(&.{ "check", "tests/cases/imports/cycle_a.bpa" }, "tests/cases/imports/cycle_b.bpa:2:14: error: import cycle detected via 'tests/cases/imports/cycle_a.bpa'\n");
+    // CYCLIC FILE IMPORTS are now allowed (architecture refactor: file graph may
+    // cycle; proof-graph acyclicity is the separate, proof-time concern). cycle_a and
+    // cycle_b mutually import each other and declare sorts A/B — no proof cycle, so it
+    // checks green. The engine-driven loader assigns each file its FileId at DISCOVERY
+    // (before parse), so a back-reference resolves to the existing id — cycles just work.
+    ctx.okSilent(&.{ "check", "tests/cases/imports/cycle_a.bpa" });
 
     ctx.fail(&.{ "check", "tests/cases/imports/bad_alias.bpa" }, "tests/cases/imports/bad_alias.bpa:3:14: error: 'lib.NIL' is not a sort\n");
 
