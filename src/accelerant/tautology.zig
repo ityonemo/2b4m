@@ -53,7 +53,7 @@ pub fn justify(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, goal
     // valid. --fast: decide-only — taint, no certificate (the SMT verdict is
     // trusted). Skip generate entirely (its oracle already ran, above).
     if (!self.verify.certify_arithmetic) {
-        const name = self.interner.intern("tautology") catch return error.OutOfMemory;
+        const name = self.interner.internString("tautology") catch return error.OutOfMemory;
         try self.recordAccelerated(name, loc);
         return .{ .accelerated = name };
     }
@@ -68,7 +68,7 @@ pub fn justify(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, goal
     if (try common.generate(self, low, block_id, loc, "tautology", goal, c.refs, &body)) |just| {
         return just;
     }
-    const name = self.interner.intern("tautology") catch return error.OutOfMemory;
+    const name = self.interner.internString("tautology") catch return error.OutOfMemory;
     try self.recordAccelerated(name, loc);
     return .{ .accelerated = name };
 }

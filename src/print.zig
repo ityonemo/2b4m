@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const intern = @import("intern.zig");
+const InternPool = @import("InternPool.zig");
 const term = @import("term.zig");
 const TermId = term.TermId;
 const Env = @import("env.zig").Env;
@@ -15,7 +15,7 @@ pub fn render(
     arena: Allocator,
     pool: *const term.Pool,
     env: *const Env,
-    interner: *const intern.Interner,
+    interner: *const InternPool,
     id: TermId,
 ) Allocator.Error![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
@@ -35,7 +35,7 @@ const Printer = struct {
     arena: Allocator,
     pool: *const term.Pool,
     env: *const Env,
-    interner: *const intern.Interner,
+    interner: *const InternPool,
     /// names of free variables anywhere in the term (binder hints must avoid)
     fvar_names: std.StringHashMapUnmanaged(void) = .empty,
     /// enclosing binder names, innermost last
@@ -46,8 +46,8 @@ const Printer = struct {
     /// the interned name (`x` -> `x#2`). `#` can never appear in a userland
     /// identifier (the lexer forbids it), so trimming at the first `#` recovers
     /// the name the author wrote without any risk of colliding with a real name.
-    fn displayName(self: *const Printer, name: intern.StrId) []const u8 {
-        const s = self.interner.str(name);
+    fn displayName(self: *const Printer, name: InternPool.StrId) []const u8 {
+        const s = self.interner.stringBytes(name);
         return if (std.mem.indexOfScalar(u8, s, '#')) |i| s[0..i] else s;
     }
 
@@ -87,7 +87,7 @@ const Printer = struct {
             },
             .fvar => |v| try w.writeAll(self.displayName(v.name)),
             .app, .pred => |a| {
-                try w.writeAll(self.interner.str(self.env.sym(a.sym).name));
+                try w.writeAll(self.interner.stringBytes(self.env.sym(a.sym).name));
                 if (a.args_len > 0) {
                     try w.writeAll("(");
                     for (self.pool.args(a), 0..) |arg, i| {
@@ -204,7 +204,7 @@ fn expectRoundTrip(formula: []const u8) !void {
     defer ctx1.deinit(gpa);
     for (ctx1.sink.list.items) |d| std.debug.print("unexpected: {s}\n", .{d.message});
     try testing.expectEqual(0, ctx1.sink.list.items.len);
-    const f1 = ctx1.env.findStatement(@enumFromInt(0), try ctx1.interner.intern("rt")).?.axiom.formula;
+    const f1 = ctx1.env.findStatement(@enumFromInt(0), try ctx1.interner.internString("rt")).?.axiom.formula;
     const rendered1 = try render(ctx1.arena_state.allocator(), ctx1.pool, ctx1.env, ctx1.interner, f1);
 
     const src2 = try std.mem.concat(gpa, u8, &.{ header, "axiom rt: ", rendered1, "\n" });
@@ -212,7 +212,7 @@ fn expectRoundTrip(formula: []const u8) !void {
     var ctx2 = try TestCtx.run(gpa, src2);
     defer ctx2.deinit(gpa);
     try testing.expectEqual(0, ctx2.sink.list.items.len);
-    const f2 = ctx2.env.findStatement(@enumFromInt(0), try ctx2.interner.intern("rt")).?.axiom.formula;
+    const f2 = ctx2.env.findStatement(@enumFromInt(0), try ctx2.interner.internString("rt")).?.axiom.formula;
     const rendered2 = try render(ctx2.arena_state.allocator(), ctx2.pool, ctx2.env, ctx2.interner, f2);
 
     try testing.expectEqualStrings(rendered1, rendered2);
@@ -245,8 +245,8 @@ test "binder hints freshen against free variables" {
     const pool = ctx.pool;
 
     // build: forall x: Nat; x_free = x_bound  (hint 'x' collides with fvar 'x')
-    const Nat = ctx.env.findSort(@enumFromInt(0), try ctx.interner.intern("Nat")).?;
-    const x_name = try ctx.interner.intern("x");
+    const Nat = ctx.env.findSort(@enumFromInt(0), try ctx.interner.internString("Nat")).?;
+    const x_name = try ctx.interner.internString("x");
     const x_free = try pool.add(.{ .fvar = .{ .name = x_name, .sort = Nat } });
     const b0 = try pool.add(.{ .bvar = 0 });
     const body = try pool.add(.{ .eq = .{ .lhs = x_free, .rhs = b0 } });

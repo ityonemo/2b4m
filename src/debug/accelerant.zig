@@ -20,7 +20,7 @@ const ast = @import("../ast.zig");
 const lexer = @import("../lexer.zig");
 const parser = @import("../parser.zig");
 const diagnostics = @import("../diagnostics.zig");
-const intern = @import("../intern.zig");
+const InternPool = @import("../InternPool.zig");
 const term = @import("../term.zig");
 const env = @import("../env.zig");
 const kernel = @import("../kernel.zig");
@@ -29,7 +29,7 @@ const print = @import("../print.zig");
 
 const Env = env.Env;
 const Pool = term.Pool;
-const Interner = intern.Interner;
+const Interner = InternPool;
 const StatementId = env.StatementId;
 const root = @import("../root.zig");
 
@@ -109,7 +109,7 @@ pub fn renderTheorem(arena: Allocator, pool: *Pool, environment: *Env, interner:
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
 
-    const name = displayName(arena, interner.str(fact.name));
+    const name = displayName(arena, interner.stringBytes(fact.name));
     const formula = try print.render(arena, pool, environment, interner, fact.formula);
     w.print("theorem {s}: {s}\n", .{ name, formula }) catch return error.OutOfMemory;
 
@@ -204,7 +204,7 @@ const Renderer = struct {
         switch (b.kind) {
             .fix => |f| {
                 const fv = f.v;
-                const nm = displayName(self.arena, self.interner.str(fv.name));
+                const nm = displayName(self.arena, self.interner.stringBytes(fv.name));
                 const sort = self.env.sortName(self.interner, fv.sort);
                 w.print("{s}@{s} |\n{s}  fix {s}: {s} {{\n", .{ pad, header_label, pad, nm, sort }) catch return error.OutOfMemory;
             },
@@ -213,7 +213,7 @@ const Renderer = struct {
                 w.print("{s}@{s} |\n{s}  assume {s} {{\n", .{ pad, header_label, pad, fs }) catch return error.OutOfMemory;
             },
             .unpack => |u| {
-                const nm = displayName(self.arena, self.interner.str(u.v.name));
+                const nm = displayName(self.arena, self.interner.stringBytes(u.v.name));
                 const sort = self.env.sortName(self.interner, u.v.sort);
                 w.print("{s}@{s} |\n{s}  unpack {s}: {s} from {s} {{\n", .{ pad, header_label, pad, nm, sort, self.stepLabel(u.source.id) }) catch return error.OutOfMemory;
             },
@@ -252,7 +252,7 @@ const Renderer = struct {
             .symmetry => |s| w.print("symmetry {s}", .{self.stepLabel(s.id)}) catch return error.OutOfMemory,
             .rewrite => |r| w.print("rewrite {s} {s}", .{ self.stepLabel(r.equation.id), self.stepLabel(r.target.id) }) catch return error.OutOfMemory,
             .iff_rewrite => |r| w.print("iff_rewrite {s} {s}", .{ self.stepLabel(r.biconditional.id), self.stepLabel(r.target.id) }) catch return error.OutOfMemory,
-            .accelerated => |name| w.print("{s} /* accelerated */", .{self.interner.str(name)}) catch return error.OutOfMemory,
+            .accelerated => |name| w.print("{s} /* accelerated */", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory,
             .schema_instance => w.writeAll("instantiate /* schema */") catch return error.OutOfMemory,
             // block-closing rules are handled by renderStep, never reach here.
             .forall_intro, .implies_intro, .exists_elim, .or_elim => unreachable,
@@ -268,9 +268,9 @@ const Renderer = struct {
     }
     fn statementName(self: *Renderer, id: StatementId) []const u8 {
         return switch (self.env.statements.items[@intFromEnum(id)]) {
-            .axiom => |f| self.interner.str(f.name),
-            .theorem => |f| displayName(self.arena, self.interner.str(f.name)),
-            .schema => |s| self.interner.str(s.name),
+            .axiom => |f| self.interner.stringBytes(f.name),
+            .theorem => |f| displayName(self.arena, self.interner.stringBytes(f.name)),
+            .schema => |s| self.interner.stringBytes(s.name),
         };
     }
 };

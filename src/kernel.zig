@@ -21,8 +21,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const intern = @import("intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("InternPool.zig");
+const StrId = InternPool.StrId;
 const term = @import("term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
@@ -118,7 +118,7 @@ pub const Kernel = struct {
     arena: Allocator,
     pool: *term.Pool,
     env: *const Env,
-    interner: *const intern.Interner,
+    interner: *const InternPool,
     sink: *Diagnostics.Sink,
 
     const Fail = error{ Invalid, OutOfMemory };
@@ -167,7 +167,7 @@ pub const Kernel = struct {
     }
 
     fn str(self: *const Kernel, id: StrId) []const u8 {
-        return self.interner.str(id);
+        return self.interner.stringBytes(id);
     }
 
     fn block(proof: Proof, id: BlockId) *const Block {
@@ -722,7 +722,7 @@ fn statementName(stmt: @import("env.zig").Statement) StrId {
 const testing = std.testing;
 
 const Rig = struct {
-    interner: *intern.Interner,
+    interner: *InternPool,
     pool: *term.Pool,
     env: *Env,
     sink: *Diagnostics.Sink,
@@ -742,7 +742,7 @@ const Rig = struct {
 };
 
 fn buildRig(arena: Allocator) !Rig {
-    const interner = try arena.create(intern.Interner);
+    const interner = try arena.create(InternPool);
     interner.* = .init(arena);
     const env = try arena.create(Env);
     env.* = try .init(arena, interner);
@@ -752,10 +752,10 @@ fn buildRig(arena: Allocator) !Rig {
     sink.* = .init(arena);
 
     const file = try env.newFile();
-    const nat = try env.addSort(file, try interner.intern("nat"), 0);
+    const nat = try env.addSort(file, try interner.internString("nat"), 0);
     const nat_args = try arena.dupe(SortId, &.{nat});
     const d = try env.addSym(file, .{
-        .name = try interner.intern("d"),
+        .name = try interner.internString("d"),
         .kind = .pred,
         .arg_sorts = nat_args,
         .result = .prop,
@@ -764,7 +764,7 @@ fn buildRig(arena: Allocator) !Rig {
         .loc = 0,
     });
     const p = try env.addSym(file, .{
-        .name = try interner.intern("p"),
+        .name = try interner.internString("p"),
         .kind = .pred,
         .arg_sorts = &.{},
         .result = .prop,
@@ -791,11 +791,11 @@ test "forged proof: eigenvariable leak is rejected" {
     var rig = try buildRig(arena);
 
     // forged axiom about a FREE variable x (elaborator could never make one)
-    const x_name = try rig.interner.intern("x");
+    const x_name = try rig.interner.internString("x");
     const x = try rig.pool.add(.{ .fvar = .{ .name = x_name, .sort = rig.nat } });
     const dx = try rig.pool.addApp(.pred, rig.d, &.{x});
-    const leak_stmt = try rig.env.addStatement(@enumFromInt(0), try rig.interner.intern("leak"), .{ .axiom = .{
-        .name = try rig.interner.intern("leak"),
+    const leak_stmt = try rig.env.addStatement(@enumFromInt(0), try rig.interner.internString("leak"), .{ .axiom = .{
+        .name = try rig.interner.internString("leak"),
         .formula = dx,
         .loc = 0,
     } });
@@ -804,10 +804,10 @@ test "forged proof: eigenvariable leak is rejected" {
     const body = try rig.pool.close(dx, x_name);
     const goal = try rig.pool.add(.{ .quant = .{ .q = .forall, .sort = rig.nat, .hint = x_name, .body = body } });
 
-    const s0 = try rig.interner.intern("s0");
-    const s1 = try rig.interner.intern("s1");
-    const s2 = try rig.interner.intern("s2");
-    const fixb = try rig.interner.intern("fixb");
+    const s0 = try rig.interner.internString("s0");
+    const s1 = try rig.interner.internString("s1");
+    const s2 = try rig.interner.internString("s2");
+    const fixb = try rig.interner.internString("fixb");
     const blocks = [_]Block{
         .{ .parent = null, .label = s0, .kind = .root, .first_step = 0, .last_step = 3 },
         .{ .parent = @enumFromInt(0), .label = fixb, .kind = .{ .fix = .{ .v = .{ .name = x_name, .sort = rig.nat } } }, .first_step = 1, .last_step = 2 },
@@ -830,9 +830,9 @@ test "forged proof: citing into a closed subproof is rejected" {
     var rig = try buildRig(arena);
 
     const p_id = try rig.pool.addApp(.pred, rig.p, &.{});
-    const s0 = try rig.interner.intern("s0");
-    const s1 = try rig.interner.intern("s1");
-    const asm_b = try rig.interner.intern("asm");
+    const s0 = try rig.interner.internString("s0");
+    const s1 = try rig.interner.internString("s1");
+    const asm_b = try rig.interner.internString("asm");
     const blocks = [_]Block{
         .{ .parent = null, .label = s0, .kind = .root, .first_step = 0, .last_step = 2 },
         .{ .parent = @enumFromInt(0), .label = asm_b, .kind = .{ .assume = p_id }, .first_step = 0, .last_step = 1 },
@@ -853,7 +853,7 @@ test "forged proof: forward/self reference is rejected" {
     var rig = try buildRig(arena);
 
     const p_id = try rig.pool.addApp(.pred, rig.p, &.{});
-    const s0 = try rig.interner.intern("s0");
+    const s0 = try rig.interner.internString("s0");
     const blocks = [_]Block{
         .{ .parent = null, .label = s0, .kind = .root, .first_step = 0, .last_step = 1 },
     };
@@ -869,12 +869,12 @@ test "symmetry: swaps a proven equation; a mismatched claim is rejected" {
     const arena = arena_state.allocator();
     var rig = try buildRig(arena);
 
-    const x = try rig.pool.add(.{ .fvar = .{ .name = try rig.interner.intern("x"), .sort = rig.nat } });
-    const y = try rig.pool.add(.{ .fvar = .{ .name = try rig.interner.intern("y"), .sort = rig.nat } });
+    const x = try rig.pool.add(.{ .fvar = .{ .name = try rig.interner.internString("x"), .sort = rig.nat } });
+    const y = try rig.pool.add(.{ .fvar = .{ .name = try rig.interner.internString("y"), .sort = rig.nat } });
     const xx = try rig.pool.add(.{ .eq = .{ .lhs = x, .rhs = x } });
     const y_eq_x = try rig.pool.add(.{ .eq = .{ .lhs = y, .rhs = x } });
-    const s0 = try rig.interner.intern("s0");
-    const s1 = try rig.interner.intern("s1");
+    const s0 = try rig.interner.internString("s0");
+    const s1 = try rig.interner.internString("s1");
     const blocks = [_]Block{
         .{ .parent = null, .label = s0, .kind = .root, .first_step = 0, .last_step = 2 },
     };
@@ -903,8 +903,8 @@ test "forged proof: discharging a subproof from inside itself is rejected" {
 
     const p_id = try rig.pool.addApp(.pred, rig.p, &.{});
     const p_imp_p = try rig.pool.add(.{ .bin = .{ .op = .implies, .lhs = p_id, .rhs = p_id } });
-    const s0 = try rig.interner.intern("s0");
-    const asm_b = try rig.interner.intern("asm");
+    const s0 = try rig.interner.internString("s0");
+    const asm_b = try rig.interner.internString("asm");
     const blocks = [_]Block{
         .{ .parent = null, .label = s0, .kind = .root, .first_step = 0, .last_step = 1 },
         .{ .parent = @enumFromInt(0), .label = asm_b, .kind = .{ .assume = p_id }, .first_step = 0, .last_step = 1 },

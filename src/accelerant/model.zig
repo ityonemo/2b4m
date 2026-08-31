@@ -22,8 +22,8 @@ const term = @import("../term.zig");
 const TermId = term.TermId;
 
 const std = @import("std");
-const intern = @import("../intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("../InternPool.zig");
+const StrId = InternPool.StrId;
 const StatementId = @import("../env.zig").StatementId;
 
 /// Two modes (MODEL-DESIGN.md):
@@ -83,7 +83,7 @@ pub fn justify(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, goal
 
     if (!self.verify.certify_arithmetic) {
         // --fast: trust the transfer wholesale.
-        const name = self.interner.intern("model") catch return error.OutOfMemory;
+        const name = self.interner.internString("model") catch return error.OutOfMemory;
         try self.recordAccelerated(name, loc);
         return .{ .accelerated = name };
     }
@@ -166,7 +166,7 @@ fn materializeModelTheorem(self: *Elaborator, model: *Model, source: StatementId
         .schema => return self.fail(loc, "model cannot materialize a schema", .{}),
     };
     const proof = fact.proof orelse
-        return self.fail(loc, "model cannot materialize '{s}': its proof was not retained (trusted import?)", .{self.interner.str(fact.name)});
+        return self.fail(loc, "model cannot materialize '{s}': its proof was not retained (trusted import?)", .{self.interner.stringBytes(fact.name)});
 
     // mangled name `Model$sourcename`, bound in the current file. `$` is not
     // a lexable identifier char, so it cannot collide with a user name.
@@ -214,7 +214,7 @@ fn materializeModelTheorem(self: *Elaborator, model: *Model, source: StatementId
     // source proof's provenance (accelerated/holes) — retention lets an OUTER
     // model re-materialize through this synthetic theorem (the multi-level
     // chain ℤ models ring models group).
-    const on_fail = try std.fmt.allocPrint(self.arena, "model transfer of '{s}' does not kernel-check under the interpretation (an obligation is undischarged?)", .{self.interner.str(fact.name)});
+    const on_fail = try std.fmt.allocPrint(self.arena, "model transfer of '{s}' does not kernel-check under the interpretation (an obligation is undischarged?)", .{self.interner.stringBytes(fact.name)});
     try self.finishSyntheticTheorem(mat_id, new_steps, new_blocks, fact.accelerated, fact.holes, loc, on_fail);
     return mat_id;
 }
@@ -290,7 +290,7 @@ fn materializeGuardedModelTheorem(self: *Elaborator, model: *Model, source: Stat
         .schema => return self.fail(loc, "model cannot materialize a schema", .{}),
     };
     const proof = fact.proof orelse
-        return self.fail(loc, "model cannot materialize '{s}': its proof was not retained (trusted import?)", .{self.interner.str(fact.name)});
+        return self.fail(loc, "model cannot materialize '{s}': its proof was not retained (trusted import?)", .{self.interner.stringBytes(fact.name)});
 
     const mangled = try mangledModelName(self, model.name, fact.name);
     const remapped_formula = self.pool.remapFormula(fact.formula, model.remap) catch return error.OutOfMemory;
@@ -301,7 +301,7 @@ fn materializeGuardedModelTheorem(self: *Elaborator, model: *Model, source: Stat
     var plow: Lowering = .{};
     try plow.blocks.append(self.arena, .{
         .parent = null,
-        .label = try self.interner.intern("proof"),
+        .label = try self.interner.internString("proof"),
         .kind = .root,
         .first_step = 0,
         .last_step = 0,
@@ -343,7 +343,7 @@ fn materializeGuardedModelTheorem(self: *Elaborator, model: *Model, source: Stat
     }
     plow.blocks.items[0].last_step = @intCast(plow.steps.items.len);
 
-    const on_fail = try std.fmt.allocPrint(self.arena, "guarded model transfer of '{s}' does not kernel-check under the interpretation", .{self.interner.str(fact.name)});
+    const on_fail = try std.fmt.allocPrint(self.arena, "guarded model transfer of '{s}' does not kernel-check under the interpretation", .{self.interner.stringBytes(fact.name)});
     try self.finishSyntheticTheorem(mat_id, plow.steps.items, plow.blocks.items, fact.accelerated, fact.holes, loc, on_fail);
     return mat_id;
 }
@@ -954,7 +954,7 @@ fn emitGuardProof(self: *Elaborator, plow: *Lowering, block: kernel.BlockId, ctx
     // whose conclusion C unifies with t — instantiate it, recurse on each
     // antecedent, and chain forall_elim + modus_ponens.
     if (try emitCompositeGuard(self, plow, block, ctx, t, want)) |ref| return ref;
-    return self.fail(ctx.loc, "guarded model '{s}' cannot discharge the closure obligation '{s}' — supply an axiom or theorem establishing it, in scope where model '{s}' is declared", .{ self.interner.str(ctx.model.name), try self.renderTerm(want), self.interner.str(ctx.model.name) });
+    return self.fail(ctx.loc, "guarded model '{s}' cannot discharge the closure obligation '{s}' — supply an axiom or theorem establishing it, in scope where model '{s}' is declared", .{ self.interner.stringBytes(ctx.model.name), try self.renderTerm(want), self.interner.stringBytes(ctx.model.name) });
 }
 
 /// Discharge `guard(t)` for a composite `t` via a closure fact. Searches for a
@@ -1135,16 +1135,16 @@ fn remapCitation(self: *Elaborator, model: *Model, source: StatementId, is_theor
             const mat = try materializeModelTheorem(self, model, source, loc);
             return .{ .theorem_ref = .{ .stmt = mat, .loc = loc } };
         },
-        .axiom => |f| return self.fail(loc, "model materialization cites axiom '{s}', which the substitution affects but the model does not map; add a mapping for it", .{self.interner.str(f.name)}),
+        .axiom => |f| return self.fail(loc, "model materialization cites axiom '{s}', which the substitution affects but the model does not map; add a mapping for it", .{self.interner.stringBytes(f.name)}),
         .schema => unreachable,
     }
 }
 
 fn mangledModelName(self: *Elaborator, model_name: StrId, source_name: StrId) ElabError!StrId {
     const text_ = std.fmt.allocPrint(self.arena, "{s}${s}", .{
-        self.interner.str(model_name), self.interner.str(source_name),
+        self.interner.stringBytes(model_name), self.interner.stringBytes(source_name),
     }) catch return error.OutOfMemory;
-    return self.interner.intern(text_) catch return error.OutOfMemory;
+    return self.interner.internString(text_) catch return error.OutOfMemory;
 }
 
 fn statementNameOf(self: *Elaborator, id: StatementId) StrId {

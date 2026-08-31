@@ -13,7 +13,7 @@
 //!
 //! CONCRETE, not generic. The engine owns exactly the task shapes bpa's checker needs
 //! (today: parse; later: prove). A `Task` is a payload plus a `run` function closing
-//! over the `Loader` context. The engine pulls a task off the run queue, runs it (the
+//! over the `Context` context. The engine pulls a task off the run queue, runs it (the
 //! task may `rack` more tasks via the handle it is given), and repeats until QUIESCENT
 //! — the race-free termination condition `completed == racked` (the "in/out counter").
 //! Normal termination is quiescence, NOT a shutdown task; the stop flag is the
@@ -25,7 +25,7 @@
 //! compute a memo key and decide suspension) — the reason this is concrete, not generic.
 
 const std = @import("std");
-const Loader = @import("Loader.zig");
+const Context = @import("Context.zig");
 
 const Engine = @This();
 
@@ -34,7 +34,7 @@ const Engine = @This();
 pub const ParseTask = @import("Engine/ParseTask.zig");
 
 arena: std.mem.Allocator,
-ctx: *Loader,
+ctx: *Context,
 
 /// AFFORDANCE: guards the run queue + counters. One worker never contends; multi-core
 /// stealing later takes this lock (or replaces it with per-core deques). Present from
@@ -72,14 +72,14 @@ pub const SpinLock = struct {
 };
 
 /// A unit of work: an opaque payload plus the function that runs it. `run` receives the
-/// `Loader` context, the payload, and a `*Handle` it can use to rack further tasks (the
+/// `Context` context, the payload, and a `*Handle` it can use to rack further tasks (the
 /// demand edges). It may return an allocation error (fatal → the engine stops).
 ///
 /// TODO(prove-slice): `payload` becomes a `union(enum) { parse: ParseTask, prove: … }`
 /// so the engine can key/suspend on the variant; for now the sole shape is parse.
 pub const Task = struct {
     payload: ParseTask,
-    run: *const fn (ctx: *Loader, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void,
+    run: *const fn (ctx: *Context, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void,
 };
 
 /// The scheduling handle handed to a running task: the ONLY way to rack more work. Keeps
@@ -91,7 +91,7 @@ pub const Handle = struct {
     }
 };
 
-pub fn init(arena: std.mem.Allocator, ctx: *Loader) Engine {
+pub fn init(arena: std.mem.Allocator, ctx: *Context) Engine {
     return .{ .arena = arena, .ctx = ctx };
 }
 
@@ -131,11 +131,11 @@ pub fn deinit(self: *Engine) void {
 
 test "engine runs racked tasks to quiescence, tasks can rack more" {
     // Pure-scheduling test: the run fn exercises the queue + in/out counter WITHOUT
-    // touching the Loader ctx (it only reads/writes a counter smuggled through a global),
+    // touching the Context ctx (it only reads/writes a counter smuggled through a global),
     // so an undefined ctx pointer is fine — we test scheduling, not parsing.
     const S = struct {
         var total: usize = 0;
-        fn run(ctx: *Loader, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void {
+        fn run(ctx: *Context, payload: ParseTask, h: *Handle) std.mem.Allocator.Error!void {
             _ = ctx; // never dereferenced
             const n = @intFromEnum(payload.file_id);
             total += n;

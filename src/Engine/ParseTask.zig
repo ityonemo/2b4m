@@ -13,7 +13,7 @@ const std = @import("std");
 const env = @import("../env.zig");
 const parser = @import("../parser.zig");
 const Engine = @import("../Engine.zig");
-const Loader = @import("../Loader.zig");
+const Context = @import("../Context.zig");
 
 const ParseTask = @This();
 
@@ -30,10 +30,10 @@ pub fn new(payload: ParseTask) Engine.Task {
 
 /// The parse-task body: parse the file, resolve its imports (discovering + racking
 /// child parse tasks), and record its import map. TRANSITIONAL: parse follows imports
-/// here only because the eager elaborator back-end (Loader phase B) needs the whole
+/// here only because the eager elaborator back-end (Context phase B) needs the whole
 /// transitive file set present. In the target demand-driven design, the PROVER pulls a
 /// file in when it cites into it; this import-following goes away then.
-pub fn run(self: *Loader, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     self.sink.current_file = idx;
     var p: parser.Parser = .init(self.arena, task.source, self.sink);
@@ -63,7 +63,7 @@ pub fn run(self: *Loader, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.
             try h.rack(new(.{ .file_id = cid, .source = src, .path = resolved }));
             break :child cid;
         };
-        const raw_id = try self.interner.intern(raw);
+        const raw_id = try self.interner.internString(raw);
         try self.import_maps.items[idx].put(self.arena, raw_id, child);
     }
 }

@@ -1,32 +1,38 @@
-//! The project loader: reads a root file and everything it transitively imports, then
-//! elaborates them. Two engine-driven phases (see Engine.zig): PHASE A parses the whole
+//! The checker's shared world — the CONTEXT everything operates against: the interner,
+//! term pool, environment, diagnostics sink, verify config, and the per-file tables
+//! (files/parsed/import_maps) keyed by FileId. It is threaded to every engine task (the
+//! engine's `ctx`). LOADING is a thing you DO with a context (`loadProject`), not a
+//! separate abstraction — hence Context, not "Loader".
+//!
+//! `loadProject` runs two engine-driven phases (see Engine.zig): PHASE A parses the whole
 //! transitive file set on the task engine (filling the FileId-indexed tables); PHASE B
 //! elaborates every file in dependency order with the (unchanged) eager back-end.
 //!
-//! This FILE IS the loader struct (capitalized-file = top-level-struct convention):
-//! `const Loader = @import("Loader.zig")` yields the type directly. It owns the
-//! parse-task body and the FileId-indexed results tables the engine populates — the
-//! loader is the engine's sole caller today.
+//! This FILE IS the context struct (capitalized-file = top-level-struct convention):
+//! `const Context = @import("Context.zig")` yields the type directly.
+//!
+//! MIGRATION NOTE: `by_path` (file dedup) will move into the InternPool — file identity
+//! is context-global and IS the namespace's file component. Pure rename for now.
 
 const std = @import("std");
 const ast = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
-const intern = @import("intern.zig");
+const InternPool = @import("InternPool.zig");
 const term = @import("term.zig");
 const env = @import("env.zig");
 const elaborate = @import("elaborate.zig");
 const Engine = @import("Engine.zig");
 
-const Loader = @This();
+const Context = @This();
 
 pub const ReadFileFn = *const fn (ctx: ?*anyopaque, arena: std.mem.Allocator, path: []const u8) anyerror![]const u8;
 
 /// raw-import-path StrId -> resolved child FileId, for one file.
-const ImportMap = std.AutoHashMapUnmanaged(intern.StrId, env.FileId);
+const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, env.FileId);
 
 arena: std.mem.Allocator,
 sink: *diagnostics.Sink,
-interner: *intern.Interner,
+interner: *InternPool,
 pool: *term.Pool,
 environment: *env.Env,
 files: std.ArrayList(diagnostics.FileSrc) = .empty,
@@ -57,7 +63,7 @@ root_file: env.FileId = undefined,
 /// Register a newly-discovered file: assign its FileId, reserve its table slots.
 /// FileId order == `files`/`parsed`/`import_maps` index order (the newFile assert).
 /// Pub: the parse task (Engine/ParseTask.zig) discovers a file's imports.
-pub fn discover(self: *Loader, resolved_path: []const u8, source: []const u8) !env.FileId {
+pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !env.FileId {
     const file_id = try self.environment.newFile();
     std.debug.assert(@intFromEnum(file_id) == self.files.items.len);
     try self.files.append(self.arena, .{ .path = resolved_path, .source = source });
@@ -76,7 +82,7 @@ pub fn discover(self: *Loader, resolved_path: []const u8, source: []const u8) !e
 // depth-first loader produced. A cyclic file-import (allowed now) is simply visited
 // in whatever order the DFS reaches it; the old cycle-error is dropped (the target
 // design permits cyclic file imports — acyclicity is a PROOF-graph concern).
-fn elaborateAll(self: *Loader) !void {
+fn elaborateAll(self: *Context) !void {
     const visited = try self.arena.alloc(bool, self.files.items.len);
     @memset(visited, false);
     var order: std.ArrayList(env.FileId) = .empty;
@@ -97,7 +103,7 @@ fn elaborateAll(self: *Loader) !void {
     }
 }
 
-fn emitPostOrder(self: *Loader, fid: env.FileId, visited: []bool, order: *std.ArrayList(env.FileId)) !void {
+fn emitPostOrder(self: *Context, fid: env.FileId, visited: []bool, order: *std.ArrayList(env.FileId)) !void {
     const idx = @intFromEnum(fid);
     if (visited[idx]) return;
     visited[idx] = true; // mark BEFORE recursing so a cycle doesn't loop forever
@@ -107,8 +113,9 @@ fn emitPostOrder(self: *Loader, fid: env.FileId, visited: []bool, order: *std.Ar
 }
 
 /// The two-phase entry: discover + parse the whole transitive file set via the
-/// engine, then elaborate every file in dependency order.
-pub fn run(self: *Loader, root_path: []const u8, root_source: []const u8) !env.FileId {
+/// engine, then elaborate every file in dependency order. (Loading is a thing you DO
+/// with a context.)
+pub fn loadProject(self: *Context, root_path: []const u8, root_source: []const u8) !env.FileId {
     self.root_file = try self.discover(root_path, root_source);
     var eng = Engine.init(self.arena, self);
     try eng.rack(Engine.ParseTask.new(.{ .file_id = self.root_file, .source = root_source, .path = root_path }));

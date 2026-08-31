@@ -10,7 +10,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const StrId = @import("intern.zig").StrId;
+const StrId = @import("InternPool.zig").StrId;
 
 pub const SortId = enum(u32) {
     /// the builtin sort of propositions

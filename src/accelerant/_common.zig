@@ -32,7 +32,7 @@ const Elaborator = elaborate.Elaborator;
 const Lowering = Elaborator.Lowering;
 const ElabError = elaborate.ElabError;
 const StatementId = elaborate.StatementId;
-const StrId = @import("../intern.zig").StrId;
+const StrId = @import("../InternPool.zig").StrId;
 
 const kernel = @import("../kernel.zig");
 const lexer = @import("../lexer.zig");
@@ -124,7 +124,7 @@ pub fn generate(
     var plow: Lowering = .{};
     try plow.blocks.append(self.arena, .{
         .parent = null,
-        .label = try self.interner.intern("proof"),
+        .label = try self.interner.internString("proof"),
         .kind = .root,
         .first_step = 0,
         .last_step = 0,
@@ -173,7 +173,7 @@ pub fn generate(
     // In strict mode we continue: wrap the certificate into a kernel-checked
     // synthetic theorem and cite it.
     if (!self.verify.certify_arithmetic) {
-        const taint = try self.interner.intern(tactic);
+        const taint = try self.interner.internString(tactic);
         try self.recordAccelerated(taint, loc);
         return .{ .accelerated = taint };
     }
@@ -296,5 +296,5 @@ fn dischargeRef(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, loc
 fn mangledName(self: *Elaborator, tactic: []const u8) ElabError!StrId {
     self.fresh_counter += 1;
     const text_ = std.fmt.allocPrint(self.arena, "{s}${d}", .{ tactic, self.fresh_counter }) catch return error.OutOfMemory;
-    return self.interner.intern(text_) catch return error.OutOfMemory;
+    return self.interner.internString(text_) catch return error.OutOfMemory;
 }

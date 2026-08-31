@@ -7,8 +7,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const intern = @import("intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("InternPool.zig");
+const StrId = InternPool.StrId;
 const term = @import("term.zig");
 const kernel = @import("kernel.zig");
 const SortId = term.SortId;
@@ -139,8 +139,8 @@ pub const Env = struct {
 
     /// Creates the builtin `Prop` sort entity (SortId 0). Files are added
     /// with `newFile`, each seeing `Prop` under its own scope.
-    pub fn init(arena: Allocator, interner: *intern.Interner) !Env {
-        var env: Env = .{ .arena = arena, .prop_name = try interner.intern("Prop") };
+    pub fn init(arena: Allocator, interner: *InternPool) !Env {
+        var env: Env = .{ .arena = arena, .prop_name = try interner.internString("Prop") };
         try env.sorts.append(arena, .{ .name = env.prop_name, .loc = 0 });
         return env;
     }
@@ -162,8 +162,8 @@ pub const Env = struct {
         return self.syms.items[@intFromEnum(id)];
     }
 
-    pub fn sortName(self: *const Env, interner: *const intern.Interner, id: SortId) []const u8 {
-        return interner.str(self.sorts.items[@intFromEnum(id)].name);
+    pub fn sortName(self: *const Env, interner: *const InternPool, id: SortId) []const u8 {
+        return interner.stringBytes(self.sorts.items[@intFromEnum(id)].name);
     }
 
     // --- declaration (create entity + bind name in the declaring file) ---
@@ -307,15 +307,15 @@ test "refinement chain: C = B where inC, B = A where inB → carrier A, quals [i
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var interner = intern.Interner.init(arena);
+    var interner = InternPool.init(arena);
     var env = try Env.init(arena, &interner);
     const file = try env.newFile();
 
-    const a_name = try interner.intern("A");
-    const b_name = try interner.intern("B");
-    const c_name = try interner.intern("C");
-    const inb_name = try interner.intern("inB");
-    const inc_name = try interner.intern("inC");
+    const a_name = try interner.internString("A");
+    const b_name = try interner.internString("B");
+    const c_name = try interner.internString("C");
+    const inb_name = try interner.internString("inB");
+    const inc_name = try interner.internString("inC");
 
     // sort A (root); pred inB(a: A); sort B = A where inB
     const a = try env.addSort(file, a_name, 0);

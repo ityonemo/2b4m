@@ -21,8 +21,8 @@ const term = @import("../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 
-const intern = @import("../intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("../InternPool.zig");
+const StrId = InternPool.StrId;
 const Statement = @import("../env.zig").Statement;
 const StatementId = @import("../env.zig").StatementId;
 
@@ -596,7 +596,7 @@ fn matchPattern(self: *Elaborator, pattern: []const StrId, pat: TermId, target: 
 }
 
 fn arithmeticTerminal(self: *Elaborator, loc: u32, reasons: []const Reason) ElabError!kernel.Justification {
-    const accelerated_name = self.interner.intern("arithmetic") catch return error.OutOfMemory;
+    const accelerated_name = self.interner.internString("arithmetic") catch return error.OutOfMemory;
     if (!self.verify.certify_arithmetic) {
         // --fast: take the accelerated verdict, record it
         for (self.accelerated_used.items) |o| {
@@ -844,7 +844,7 @@ fn farkasCertificate(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId
     while (true) {
         const node = self.pool.get(body);
         if (node != .quant or node.quant.q != .forall or node.quant.sort != nat) break;
-        const name = try self.freshNamed(self.interner.str(node.quant.hint));
+        const name = try self.freshNamed(self.interner.stringBytes(node.quant.hint));
         const fv: term.Node.Fvar = .{ .name = name, .sort = nat };
         const fvt = try self.pool.add(.{ .fvar = fv });
         const b = try self.newBlock(low, try self.freshNamed("arithmetic"), parent, .{ .fix = .{ .v = fv } });
@@ -1225,7 +1225,7 @@ fn cooperInduction(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, 
 
     // the induction schema must be in scope (a parameterized axiom = a
     // proofless schema); resolve it for the instance construction.
-    const induction_id = self.env.findStatementId(self.theoryScope(), self.interner.intern("induction") catch return error.OutOfMemory) orelse
+    const induction_id = self.env.findStatementId(self.theoryScope(), self.interner.internString("induction") catch return error.OutOfMemory) orelse
         return .{ .declined = .{ .missing_lemma = "induction" } };
     const induction_stmt = &self.env.statements.items[@intFromEnum(induction_id)];
     if (induction_stmt.* != .schema or induction_stmt.schema.proof != null) return .{ .declined = .{ .missing_lemma = "induction" } };
@@ -1747,7 +1747,7 @@ fn missingTheorySymbol(self: *Elaborator, goal: TermId, premises: []const TermId
     };
     for (wanted) |w| {
         if (w.present) continue;
-        const id = self.interner.intern(w.name) catch return error.OutOfMemory;
+        const id = self.interner.internString(w.name) catch return error.OutOfMemory;
         if (self.pool.usesSymNamed(self.env, id, goal)) return w.name;
         for (premises) |p| {
             if (self.pool.usesSymNamed(self.env, id, p)) return w.name;
@@ -1764,7 +1764,7 @@ fn schemaParamName(self: *Elaborator, t: TermId) ?[]const u8 {
     const prefix = "opaque-schema-param#";
     switch (self.pool.get(t)) {
         .app, .pred => |a| {
-            const name = self.interner.str(self.env.sym(a.sym).name);
+            const name = self.interner.stringBytes(self.env.sym(a.sym).name);
             if (std.mem.startsWith(u8, name, prefix)) {
                 // `opaque-schema-param#<origName>#<counter>` — the middle segment.
                 const rest = name[prefix.len..];
@@ -1868,7 +1868,7 @@ fn arithmeticJustification(self: *Elaborator, low: *Lowering, block_id: kernel.B
             for (premises) |p| {
                 if (self.pool.occursFree(p, name)) collides = true;
             }
-            if (collides) name = try self.freshNamed(self.interner.str(node.quant.hint));
+            if (collides) name = try self.freshNamed(self.interner.stringBytes(node.quant.hint));
             const fv = try self.pool.add(.{ .fvar = .{ .name = name, .sort = nat_sort } });
             stripped = try self.pool.open(node.quant.body, fv);
         }
@@ -1993,7 +1993,7 @@ fn arithmeticJustification(self: *Elaborator, low: *Lowering, block_id: kernel.B
             for (cm.values) |a| {
                 msg.writer.print("{s}{s} := {d}", .{
                     if (count > 0) ", " else "",
-                    Elaborator.displayName(self.interner.str(a.name)),
+                    Elaborator.displayName(self.interner.stringBytes(a.name)),
                     a.value,
                 }) catch return error.OutOfMemory;
                 count += 1;

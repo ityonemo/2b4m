@@ -8,8 +8,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const intern = @import("intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("InternPool.zig");
+const StrId = InternPool.StrId;
 const term = @import("term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
@@ -258,7 +258,7 @@ fn termSort(pool: *const term.Pool, environment: *const Env, t: TermId) SortId {
 const testing = std.testing;
 
 const Rig = struct {
-    interner: *intern.Interner,
+    interner: *InternPool,
     pool: *term.Pool,
     environment: *Env,
     nat: SortId,
@@ -268,7 +268,7 @@ const Rig = struct {
 };
 
 fn buildRig(arena: Allocator) !Rig {
-    const interner = try arena.create(intern.Interner);
+    const interner = try arena.create(InternPool);
     interner.* = .init(arena);
     const environment = try arena.create(Env);
     environment.* = try .init(arena, interner);
@@ -276,11 +276,11 @@ fn buildRig(arena: Allocator) !Rig {
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
 
-    const nat = try environment.addSort(file, try interner.intern("Nat"), 0);
+    const nat = try environment.addSort(file, try interner.internString("Nat"), 0);
     const nat2 = try arena.dupe(SortId, &.{ nat, nat });
     const nat1 = try arena.dupe(SortId, &.{nat});
     const add = try environment.addSym(file, .{
-        .name = try interner.intern("add"),
+        .name = try interner.internString("add"),
         .kind = .app,
         .arg_sorts = nat2,
         .result = nat,
@@ -289,7 +289,7 @@ fn buildRig(arena: Allocator) !Rig {
         .loc = 0,
     });
     const succ = try environment.addSym(file, .{
-        .name = try interner.intern("succ"),
+        .name = try interner.internString("succ"),
         .kind = .app,
         .arg_sorts = nat1,
         .result = nat,
@@ -298,7 +298,7 @@ fn buildRig(arena: Allocator) !Rig {
         .loc = 0,
     });
     const zero = try environment.addSym(file, .{
-        .name = try interner.intern("ZERO"),
+        .name = try interner.internString("ZERO"),
         .kind = .app,
         .arg_sorts = &.{},
         .result = nat,
@@ -311,7 +311,7 @@ fn buildRig(arena: Allocator) !Rig {
 
 /// rule: add(ZERO, b) = b  (pattern var b)
 fn zeroRule(arena: Allocator, r: *Rig) !Rule {
-    const b = try r.interner.intern("p#b");
+    const b = try r.interner.internString("p#b");
     const bv = try r.pool.add(.{ .fvar = .{ .name = b, .sort = r.nat } });
     const z = try r.pool.addApp(.app, r.zero, &.{});
     const lhs = try r.pool.addApp(.app, r.add, &.{ z, bv });
@@ -327,8 +327,8 @@ fn zeroRule(arena: Allocator, r: *Rig) !Rule {
 
 /// rule: add(succ(a), b) = succ(add(a, b))
 fn succRule(arena: Allocator, r: *Rig) !Rule {
-    const a = try r.interner.intern("p#a");
-    const b = try r.interner.intern("p#b");
+    const a = try r.interner.internString("p#a");
+    const b = try r.interner.internString("p#b");
     const av = try r.pool.add(.{ .fvar = .{ .name = a, .sort = r.nat } });
     const bv = try r.pool.add(.{ .fvar = .{ .name = b, .sort = r.nat } });
     const sa = try r.pool.addApp(.app, r.succ, &.{av});
@@ -370,7 +370,7 @@ test "non-linear pattern add(k, k) binds consistently" {
     var r = try buildRig(arena);
 
     // rule: add(k, k) = ZERO (nonsense, but exercises consistency)
-    const k = try r.interner.intern("p#k");
+    const k = try r.interner.internString("p#k");
     const kv = try r.pool.add(.{ .fvar = .{ .name = k, .sort = r.nat } });
     const lhs = try r.pool.addApp(.app, r.add, &.{ kv, kv });
     const z = try r.pool.addApp(.app, r.zero, &.{});
@@ -402,7 +402,7 @@ test "cycling rules hit the cap" {
     // succ(k) = succ(k) would not loop (after == before is still a rewrite —
     // build a real two-rule cycle: succ(k) -> add(ZERO, k)'s successor? use:
     // rule1: succ(k) = add(k, ZERO); rule2: add(k, ZERO) = succ(k)
-    const k = try r.interner.intern("p#k");
+    const k = try r.interner.internString("p#k");
     const kv = try r.pool.add(.{ .fvar = .{ .name = k, .sort = r.nat } });
     const z = try r.pool.addApp(.app, r.zero, &.{});
     const sk = try r.pool.addApp(.app, r.succ, &.{kv});

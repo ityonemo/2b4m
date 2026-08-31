@@ -404,8 +404,8 @@ test "alpha-equivalent quantified subformulas are one atom" {
     const nat: term.SortId = @enumFromInt(1);
     const b0 = try r.pool.add(.{ .bvar = 0 });
     const px = try r.pool.addApp(.pred, @enumFromInt(0), &.{b0});
-    const hint_x: @import("../../intern.zig").StrId = @enumFromInt(1);
-    const hint_y: @import("../../intern.zig").StrId = @enumFromInt(2);
+    const hint_x: @import("../../InternPool.zig").StrId = @enumFromInt(1);
+    const hint_y: @import("../../InternPool.zig").StrId = @enumFromInt(2);
     const qx = try r.pool.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = hint_x, .body = px } });
     const qy = try r.pool.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = hint_y, .body = px } });
     const v = try tautology(arena_state.allocator(), &r.pool, &.{}, try r.implies(qx, qy));

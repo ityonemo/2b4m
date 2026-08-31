@@ -181,7 +181,7 @@ fn acEquation(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, loc: 
                     try self.renderTerm(s_nf), try self.renderTerm(t_nf),
                 });
             }
-            const name = self.interner.intern("assoc_commut") catch return error.OutOfMemory;
+            const name = self.interner.internString("assoc_commut") catch return error.OutOfMemory;
             try self.recordAccelerated(name, loc);
             return .{ .accelerated = name };
         }

@@ -122,7 +122,7 @@ fn assocEquation(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, lo
                 try self.renderTerm(s_nf), try self.renderTerm(t_nf),
             });
         }
-        const name = self.interner.intern("assoc") catch return error.OutOfMemory;
+        const name = self.interner.internString("assoc") catch return error.OutOfMemory;
         try self.recordAccelerated(name, loc);
         return .{ .accelerated = name };
     }

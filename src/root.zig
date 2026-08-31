@@ -7,13 +7,13 @@ pub const lexer = @import("lexer.zig");
 pub const ast = @import("ast.zig");
 pub const parser = @import("parser.zig");
 pub const diagnostics = @import("diagnostics.zig");
-pub const intern = @import("intern.zig");
+pub const InternPool = @import("InternPool.zig");
 pub const term = @import("term.zig");
 pub const env = @import("env.zig");
 pub const elaborate = @import("elaborate.zig");
 pub const Verify = elaborate.Verify;
 pub const Engine = @import("Engine.zig");
-pub const Loader = @import("Loader.zig");
+pub const Context = @import("Context.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");
@@ -47,7 +47,7 @@ pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
     var p: parser.Parser = .init(arena, source, sink);
     const file = try p.parseFile();
 
-    const interner = try arena.create(intern.Interner);
+    const interner = try arena.create(InternPool);
     interner.* = .init(arena);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
@@ -74,7 +74,7 @@ pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
 
 // --- multi-file checking (imports) ---
 
-pub const ReadFileFn = @import("Loader.zig").ReadFileFn;
+pub const ReadFileFn = @import("Context.zig").ReadFileFn;
 
 pub const ProjectResult = struct {
     files: []const diagnostics.FileSrc,
@@ -122,7 +122,7 @@ pub const ProjectResult = struct {
 /// needs imports loaded so cited statements resolve (incl. nested/recursive
 /// synthetics like a `model` materialization citing another).
 pub const LoadedProject = struct {
-    interner: *intern.Interner,
+    interner: *InternPool,
     pool: *term.Pool,
     environment: *env.Env,
     sink: *diagnostics.Sink,
@@ -144,14 +144,14 @@ pub fn loadProject(
 ) !LoadedProject {
     const sink = try arena.create(diagnostics.Sink);
     sink.* = .init(arena);
-    const interner = try arena.create(intern.Interner);
+    const interner = try arena.create(InternPool);
     interner.* = .init(arena);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
     const environment = try arena.create(env.Env);
     environment.* = try .init(arena, interner);
 
-    var loader: Loader = .{
+    var context: Context = .{
         .arena = arena,
         .sink = sink,
         .interner = interner,
@@ -163,15 +163,15 @@ pub fn loadProject(
         .std_root = std_root,
     };
     const canonical_root = try std.fs.path.resolve(arena, &.{root_path});
-    const root_file = try loader.run(canonical_root, root_source);
+    const root_file = try context.loadProject(canonical_root, root_source);
     return .{
         .interner = interner,
         .pool = pool,
         .environment = environment,
         .sink = sink,
         .root_file = root_file,
-        .files = loader.files.items,
-        .declarations = loader.declarations,
+        .files = context.files.items,
+        .declarations = context.declarations,
     };
 }
 
@@ -189,7 +189,7 @@ pub fn checkProject(
     const interner = loaded.interner;
     const environment = loaded.environment;
     const root_file = loaded.root_file;
-    const loader = struct { files: []const diagnostics.FileSrc, declarations: usize }{ .files = loaded.files, .declarations = loaded.declarations };
+    const loaded_view = struct { files: []const diagnostics.FileSrc, declarations: usize }{ .files = loaded.files, .declarations = loaded.declarations };
 
     var proven: usize = 0;
     var trusted: usize = 0;
@@ -216,7 +216,7 @@ pub fn checkProject(
             if (stmt.theorem.accelerated.len != 0) {
                 accelerated += 1;
                 outer: for (stmt.theorem.accelerated) |o| {
-                    const s = interner.str(o);
+                    const s = interner.stringBytes(o);
                     for (accelerated_names.items) |seen| {
                         if (std.mem.eql(u8, seen, s)) continue :outer;
                     }
@@ -236,27 +236,27 @@ pub fn checkProject(
             if (dep != .theorem) continue;
             for (dep.theorem.holes) |hn| {
                 if (hn == h.name) {
-                    try dependents.append(arena, interner.str(dep.theorem.name));
+                    try dependents.append(arena, interner.stringBytes(dep.theorem.name));
                     break;
                 }
             }
         }
-        const src = loader.files[@intFromEnum(h.file)].source;
+        const src = loaded_view.files[@intFromEnum(h.file)].source;
         var line: usize = 1;
         for (src[0..@min(h.loc, src.len)]) |ch| {
             if (ch == '\n') line += 1;
         }
         try holes.append(arena, .{
-            .name = interner.str(h.name),
-            .path = loader.files[@intFromEnum(h.file)].path,
+            .name = interner.stringBytes(h.name),
+            .path = loaded_view.files[@intFromEnum(h.file)].path,
             .line = line,
             .dependents = dependents.items,
         });
     }
     return .{
-        .files = loader.files,
+        .files = loaded_view.files,
         .sink = sink,
-        .declarations = loader.declarations,
+        .declarations = loaded_view.declarations,
         .theorems_proven = proven,
         .target_theorem_decls = target_theorem_decls,
         .theorems_trusted = trusted,

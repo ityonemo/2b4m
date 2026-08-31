@@ -257,7 +257,7 @@ fn extUnfold(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, formul
 /// `<op>Member` instantiated at (a, b, …, x). Dedups by formula.
 fn extUnfoldOp(self: *Elaborator, low: *Lowering, block_id: kernel.BlockId, app: term.Node.App, x_id: TermId, out: *std.ArrayList(Premise), loc: u32) ElabError!void {
     const op_name = self.env.sym(app.sym).name;
-    const lemma_name = try std.fmt.allocPrint(self.arena, "{s}Member", .{self.interner.str(op_name)});
+    const lemma_name = try std.fmt.allocPrint(self.arena, "{s}Member", .{self.interner.stringBytes(op_name)});
     const fact = (try self.wellKnownFact(lemma_name, loc)) orelse return; // no lemma: leave atom opaque
     // instantiate: the lemma is `forall <setargs>; forall x; <iff>`.
     // bind the operator's args, then x.

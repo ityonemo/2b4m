@@ -287,7 +287,7 @@ fn polynomialEquation(self: *Elaborator, low: *Lowering, block_id: kernel.BlockI
                 try self.renderTerm(ns_s), try self.renderTerm(ns_t),
             });
         }
-        const name = self.interner.intern("polynomial") catch return error.OutOfMemory;
+        const name = self.interner.internString("polynomial") catch return error.OutOfMemory;
         try self.recordAccelerated(name, loc);
         return .{ .accelerated = name };
     }

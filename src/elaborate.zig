@@ -10,8 +10,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const lexer = @import("lexer.zig");
-const intern = @import("intern.zig");
-const StrId = intern.StrId;
+const InternPool = @import("InternPool.zig");
+const StrId = InternPool.StrId;
 const term = @import("term.zig");
 const SortId = term.SortId;
 const TermId = term.TermId;
@@ -104,7 +104,7 @@ pub const Verify = struct {
 pub const Elaborator = struct {
     arena: Allocator,
     source: []const u8,
-    interner: *intern.Interner,
+    interner: *InternPool,
     pool: *term.Pool,
     env: *Env,
     sink: *Diagnostics.Sink,
@@ -244,7 +244,7 @@ pub const Elaborator = struct {
     pub fn init(
         arena: Allocator,
         source: []const u8,
-        interner: *intern.Interner,
+        interner: *InternPool,
         pool: *term.Pool,
         env: *Env,
         sink: *Diagnostics.Sink,
@@ -266,7 +266,7 @@ pub const Elaborator = struct {
     }
 
     pub fn internTok(self: *Elaborator, tok: lexer.Token) !StrId {
-        return self.interner.intern(self.text(tok));
+        return self.interner.internString(self.text(tok));
     }
 
     pub fn fail(self: *Elaborator, offset: u32, comptime fmt: []const u8, args: anytype) ElabError {
@@ -328,7 +328,7 @@ pub const Elaborator = struct {
                 const name = try self.internTok(d.ns);
                 try self.checkFreshName(name, d.ns);
                 const path_text = self.text(d.path);
-                const raw = self.interner.intern(path_text[1 .. path_text.len - 1]) catch return error.OutOfMemory;
+                const raw = self.interner.internString(path_text[1 .. path_text.len - 1]) catch return error.OutOfMemory;
                 // the loader resolved (and diagnosed) imports; a missing entry
                 // means it already reported — stay silent here
                 const target = if (self.imports) |m| m.get(raw) else null;
@@ -840,7 +840,7 @@ pub const Elaborator = struct {
         const saved_roots = self.extra_reachable_steps;
         self.extra_reachable_steps = .empty;
         defer self.extra_reachable_steps = saved_roots;
-        const root_label = try self.interner.intern("proof");
+        const root_label = try self.interner.internString("proof");
         try low.blocks.append(self.arena, .{
             .parent = null,
             .label = root_label,
@@ -1005,7 +1005,7 @@ pub const Elaborator = struct {
         var any_dead = false;
         for (steps, 0..) |s, i| {
             if (reached[i]) continue;
-            const label = self.interner.str(s.label);
+            const label = self.interner.stringBytes(s.label);
             if (std.mem.indexOfScalar(u8, label, '#') != null) continue; // synthetic
             self.sink.add(s.loc, "unused fact: step '{s}' is never used — no later step or the conclusion cites it (a proof must use every fact it introduces; use --draft while filling in a proof)", .{label}) catch return error.OutOfMemory;
             any_dead = true;
@@ -1112,10 +1112,10 @@ pub const Elaborator = struct {
     /// Citations a step makes to labels *in its own block* (intra-block
     /// dependency edges). Enclosing-block labels and statement names are not
     /// edges — they are already available.
-    fn stepSiblingDeps(step: *const ast.Step, index_of: std.AutoHashMapUnmanaged(StrId, usize), interner: *intern.Interner, source: []const u8, out: *std.ArrayList(usize), arena: Allocator) !void {
+    fn stepSiblingDeps(step: *const ast.Step, index_of: std.AutoHashMapUnmanaged(StrId, usize), interner: *InternPool, source: []const u8, out: *std.ArrayList(usize), arena: Allocator) !void {
         const tok = struct {
-            fn ref(t: lexer.Token, idx: std.AutoHashMapUnmanaged(StrId, usize), in: *intern.Interner, src: []const u8, o: *std.ArrayList(usize), a: Allocator) !void {
-                const name = in.intern(src[t.start..t.end]) catch return error.OutOfMemory;
+            fn ref(t: lexer.Token, idx: std.AutoHashMapUnmanaged(StrId, usize), in: *InternPool, src: []const u8, o: *std.ArrayList(usize), a: Allocator) !void {
+                const name = in.internString(src[t.start..t.end]) catch return error.OutOfMemory;
                 if (idx.get(name)) |dep| try o.append(a, dep);
             }
         };
@@ -2010,8 +2010,8 @@ pub const Elaborator = struct {
         const dst_schema = &self.env.statements.items[@intFromEnum(dst)].schema;
         if (src_schema.params.len != dst_schema.params.len) {
             return self.fail(loc, "schema discharge '{s}' has {d} parameter(s); the source schema '{s}' has {d}", .{
-                self.interner.str(dst_schema.name), dst_schema.params.len,
-                self.interner.str(src_schema.name),  src_schema.params.len,
+                self.interner.stringBytes(dst_schema.name), dst_schema.params.len,
+                self.interner.stringBytes(src_schema.name),  src_schema.params.len,
             });
         }
 
@@ -2071,7 +2071,7 @@ pub const Elaborator = struct {
         const remapped = self.pool.remapFormula(src_body, remap) catch return error.OutOfMemory;
         if (!self.pool.alphaEq(remapped, dst_body)) {
             return self.fail(loc, "schema discharge '{s}' does not match the model's remap of '{s}':\n  expected (remapped source): {s}\n  discharge:                 {s}", .{
-                self.interner.str(dst_schema.name), self.interner.str(src_schema.name),
+                self.interner.stringBytes(dst_schema.name), self.interner.stringBytes(src_schema.name),
                 try self.renderTerm(remapped), try self.renderTerm(dst_body),
             });
         }
@@ -2159,7 +2159,7 @@ pub const Elaborator = struct {
                 var msg: std.Io.Writer.Allocating = .init(self.arena);
                 for (self.instantiating.items[i..]) |sid| {
                     const s = self.env.statements.items[@intFromEnum(sid)];
-                    msg.writer.print("{s} -> ", .{self.interner.str(statementName(s))}) catch return error.OutOfMemory;
+                    msg.writer.print("{s} -> ", .{self.interner.stringBytes(statementName(s))}) catch return error.OutOfMemory;
                 }
                 msg.writer.print("{s}", .{self.text(name_tok)}) catch return error.OutOfMemory;
                 return self.fail(name_tok.start, "schema instantiation cycle: {s}", .{msg.written()});
@@ -2358,7 +2358,7 @@ pub const Elaborator = struct {
             // name the eigenvariable after the binder's own hint when it has one
             // (so diagnostics read `n`, not the synthetic `<prefix>`); the `#N`
             // suffix `freshNamed` adds keeps it unique and is stripped on display.
-            const hint = self.interner.str(node.quant.hint);
+            const hint = self.interner.stringBytes(node.quant.hint);
             const name_prefix = if (hint.len > 0) hint else prefix;
             const fv: term.Node.Fvar = .{ .name = try self.freshNamed(name_prefix), .sort = node.quant.sort };
             const fv_id = try self.pool.add(.{ .fvar = fv });
@@ -2381,7 +2381,7 @@ pub const Elaborator = struct {
         while (fix_vars.items.len < max) {
             const node = self.pool.get(g);
             if (node != .quant or node.quant.q != .forall) break;
-            const hint = self.interner.str(node.quant.hint);
+            const hint = self.interner.stringBytes(node.quant.hint);
             const name_prefix = if (hint.len > 0) hint else prefix;
             const fv: term.Node.Fvar = .{ .name = try self.freshNamed(name_prefix), .sort = node.quant.sort };
             const fv_id = try self.pool.add(.{ .fvar = fv });
@@ -2891,7 +2891,7 @@ pub const Elaborator = struct {
     }
 
     pub fn wellKnownFact(self: *Elaborator, name_text: []const u8, loc: u32) ElabError!?struct { formula: TermId, source: simplify_mod.Source } {
-        const name = self.interner.intern(name_text) catch return error.OutOfMemory;
+        const name = self.interner.internString(name_text) catch return error.OutOfMemory;
         const stmt_id = self.env.findStatementId(self.theoryScope(), name) orelse return null;
         const stmt = self.env.statements.items[@intFromEnum(stmt_id)];
         switch (stmt) {
@@ -3437,7 +3437,7 @@ pub const Elaborator = struct {
     /// where it marks the theorem accelerated.
     pub fn recordAccelerated(self: *Elaborator, name: StrId, loc: u32) ElabError!void {
         if (self.verify.certify_arithmetic) {
-            return self.fail(loc, "'{s}' could not be emitted as kernel steps here; use --fast to accept the accelerated verdict", .{self.interner.str(name)});
+            return self.fail(loc, "'{s}' could not be emitted as kernel steps here; use --fast to accept the accelerated verdict", .{self.interner.stringBytes(name)});
         }
         for (self.accelerated_used.items) |o| {
             if (o == name) return;
@@ -3876,7 +3876,7 @@ pub const Elaborator = struct {
     };
 
     pub fn wellKnownSym(self: *Elaborator, name: []const u8) ElabError!?term.SymId {
-        const id = self.interner.intern(name) catch return error.OutOfMemory;
+        const id = self.interner.internString(name) catch return error.OutOfMemory;
         return self.env.findSym(self.theoryScope(), id);
     }
 
@@ -3927,7 +3927,7 @@ pub const Elaborator = struct {
         // make it collision-proof, and if it ever surfaces in a diagnostic it reads
         // exactly as the source. No scope binding.
         const label = std.fmt.allocPrint(self.arena, "{s} where {s}", .{ self.text(b.sort), self.text(g) }) catch return error.OutOfMemory;
-        const nm = self.interner.intern(label) catch return error.OutOfMemory;
+        const nm = self.interner.internString(label) catch return error.OutOfMemory;
         return self.env.addAnonymousRefinedSort(nm, b.sort.start, base, quals) catch return error.OutOfMemory;
     }
 
@@ -3986,10 +3986,10 @@ pub const Elaborator = struct {
         if (std.mem.indexOfScalar(u8, rest, '.') != null) {
             return self.fail(tok.start, "only one level of namespace qualification is allowed", .{});
         }
-        const ns = self.interner.intern(text_[0..i]) catch return error.OutOfMemory;
+        const ns = self.interner.internString(text_[0..i]) catch return error.OutOfMemory;
         const file = self.env.findNamespace(self.file, ns) orelse
             return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]});
-        const base = self.interner.intern(rest) catch return error.OutOfMemory;
+        const base = self.interner.internString(rest) catch return error.OutOfMemory;
         return .{ .file = file, .base = base };
     }
 
@@ -4069,7 +4069,7 @@ pub const Elaborator = struct {
     pub fn freshNamed(self: *Elaborator, prefix: []const u8) ElabError!StrId {
         self.fresh_counter += 1;
         const s = std.fmt.allocPrint(self.arena, "{s}#{d}", .{ prefix, self.fresh_counter }) catch return error.OutOfMemory;
-        return self.interner.intern(s) catch error.OutOfMemory;
+        return self.interner.internString(s) catch error.OutOfMemory;
     }
 
     pub fn elaborateExpr(self: *Elaborator, e: *const ast.Expr) ElabError!Typed {
@@ -4396,7 +4396,7 @@ const parser_mod = @import("parser.zig");
 
 pub const TestCtx = struct {
     arena_state: *std.heap.ArenaAllocator,
-    interner: *intern.Interner,
+    interner: *InternPool,
     pool: *term.Pool,
     env: *Env,
     sink: *Diagnostics.Sink,
@@ -4414,7 +4414,7 @@ pub const TestCtx = struct {
         arena_state.* = .init(gpa);
         const arena = arena_state.allocator();
 
-        const interner = try arena.create(intern.Interner);
+        const interner = try arena.create(InternPool);
         interner.* = .init(arena);
         const pool = try arena.create(term.Pool);
         pool.* = .init(arena);
@@ -4467,11 +4467,11 @@ test "well-sorted declarations elaborate cleanly" {
     try testing.expectEqual(0, ctx.sink.list.items.len);
 
     // div stored its guard: not (eq (fvar b) ZERO)
-    const div = ctx.env.sym(ctx.env.findSym(@enumFromInt(0), try ctx.interner.intern("div")).?);
+    const div = ctx.env.sym(ctx.env.findSym(@enumFromInt(0), try ctx.interner.internString("div")).?);
     const guard = ctx.pool.get(div.guard.?);
     try testing.expect(guard == .not);
     // schema stored lazily as a form
-    const ind = ctx.env.findStatement(@enumFromInt(0), try ctx.interner.intern("induction")).?;
+    const ind = ctx.env.findStatement(@enumFromInt(0), try ctx.interner.internString("induction")).?;
     try testing.expect(ind.* == .schema);
 }
 
@@ -4576,7 +4576,7 @@ test "de Bruijn indices correct under nested binders" {
     try testing.expectEqual(0, ctx.sink.list.items.len);
 
     // nested: add(a, b) under two binders = app(bvar1, bvar0)
-    const nested = ctx.env.findStatement(@enumFromInt(0), try ctx.interner.intern("nested")).?.axiom;
+    const nested = ctx.env.findStatement(@enumFromInt(0), try ctx.interner.internString("nested")).?.axiom;
     const q1 = ctx.pool.get(nested.formula).quant;
     const q2 = ctx.pool.get(q1.body).quant;
     const neq = ctx.pool.get(q2.body).eq;
