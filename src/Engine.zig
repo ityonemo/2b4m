@@ -111,6 +111,9 @@ pub const Task = struct {
 /// the `racked` counter and the queue in lockstep under the mutex.
 pub const Handle = struct {
     engine: *Engine,
+    /// The running task's OWN index — so it can claim itself in FactKV (record "task
+    /// `self_index` is proving this") and hand others something to suspend on.
+    self_index: TaskIndex,
     /// Set by `suspendOn`: the task this run is blocked on. null ⇒ the task COMPLETED
     /// this run; non-null ⇒ SUSPENDED, park it blocked-on that TaskIndex. The engine reads
     /// this after `run` returns. (`run` stays `void` — suspension is a control signal, not
@@ -175,7 +178,7 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
         const index = self.pull() orelse break; // run queue empty ⇒ quiescent
         const task = self.taskOf(index);
-        var handle: Handle = .{ .engine = self };
+        var handle: Handle = .{ .engine = self, .self_index = index };
         try task.run(self.ctx, task.payload, &handle);
         if (handle.blocked_on) |blocker| {
             // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
