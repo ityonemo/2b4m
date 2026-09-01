@@ -29,6 +29,11 @@ const Context = @import("Context.zig");
 
 const Engine = @This();
 
+/// A stable handle to a racked task — its slot in the append-only `tasks` table. Distinct
+/// id space from `InternPool.Index` (tasks are mutable, transient scheduler state; the
+/// pool is immutable/eternal). Used to wait on / park on a specific task.
+pub const TaskIndex = enum(u32) { _ };
+
 /// Task types (all payloads live under `src/Engine/`). `parse` produces ASTs + follows
 /// imports (transitional); `prove` is racked by the parse scan per theorem — a NO-OP for
 /// now. The engine treats both uniformly via type-erased payloads (see `Task`).
@@ -38,11 +43,16 @@ pub const ProveTask = @import("Engine/ProveTask.zig");
 arena: std.mem.Allocator,
 ctx: *Context,
 
-/// AFFORDANCE: guards the run queue + counters. One worker never contends; multi-core
-/// stealing later takes this lock (or replaces it with per-core deques). Present from
-/// day one so the shared-state shape is correct.
+/// AFFORDANCE: guards the task table, run queue + counters. One worker never contends;
+/// multi-core stealing later takes this lock (or replaces it with per-core deques).
+/// Present from day one so the shared-state shape is correct.
 mutex: SpinLock = .{},
-run_queue: std.ArrayList(Task) = .empty,
+/// The task TABLE — append-only; a task's `TaskIndex` is its slot here, a STABLE handle
+/// that outlives its time in the run queue (so a suspended task can be waited on / parked
+/// on by `TaskIndex`, and FactKV can record "task T is proving this"). The run queue holds
+/// INDICES into this table, not tasks.
+tasks: std.ArrayList(Task) = .empty,
+run_queue: std.ArrayList(TaskIndex) = .empty,
 
 /// the in/out counter — the race-free "done" detector. `racked` bumps on every rack;
 /// `completed` bumps as each task finishes. Quiescent ⇔ equal.
@@ -91,8 +101,11 @@ pub const Task = struct {
 /// the `racked` counter and the queue in lockstep under the mutex.
 pub const Handle = struct {
     engine: *Engine,
+    /// Rack a child task; discards its `TaskIndex` (the common case — fire-and-forget).
+    /// A task that needs to wait on the child (later slices) racks via the engine and
+    /// keeps the index.
     pub fn rack(self: *Handle, task: Task) std.mem.Allocator.Error!void {
-        try self.engine.rack(task);
+        _ = try self.engine.rack(task);
     }
 };
 
@@ -100,20 +113,35 @@ pub fn init(arena: std.mem.Allocator, ctx: *Context) Engine {
     return .{ .arena = arena, .ctx = ctx };
 }
 
-/// Rack a task: bump `racked`, push to the run queue. Mutex-guarded.
-pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!void {
+/// Rack a task: append it to the task table (assigning its stable `TaskIndex`), bump
+/// `racked`, push the index to the run queue. Returns the `TaskIndex`. Mutex-guarded.
+pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
+    const index: TaskIndex = @enumFromInt(self.tasks.items.len);
+    try self.tasks.append(self.arena, task);
     self.racked += 1;
-    try self.run_queue.append(self.arena, task);
+    try self.run_queue.append(self.arena, index);
+    return index;
 }
 
-/// Pull the next runnable task, or null if the run queue is empty. Mutex-guarded.
-fn pull(self: *Engine) ?Task {
+/// Pull the next runnable task's index, or null if the run queue is empty. Mutex-guarded.
+fn pull(self: *Engine) ?TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
     if (self.run_queue.items.len == 0) return null;
     return self.run_queue.pop();
+}
+
+/// The task with the given index (from the append-only table). Not mutex-guarded — the
+/// table never moves an existing entry (append-only), so a held index is always valid.
+fn taskOf(self: *const Engine, index: TaskIndex) Task {
+    return self.tasks.items[@intFromEnum(index)];
+}
+
+/// Number of tasks ever racked (the append-only table's length).
+pub fn taskCount(self: *const Engine) usize {
+    return self.tasks.items.len;
 }
 
 /// Run the worker loop to QUIESCENCE (single-threaded). Returns when the run queue is
@@ -121,7 +149,8 @@ fn pull(self: *Engine) ?Task {
 /// stop flag also ends the loop (affordance).
 pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
-        const task = self.pull() orelse break; // run queue empty ⇒ quiescent
+        const index = self.pull() orelse break; // run queue empty ⇒ quiescent
+        const task = self.taskOf(index);
         var handle: Handle = .{ .engine = self };
         try task.run(self.ctx, task.payload, &handle);
         self.mutex.lock();
@@ -132,6 +161,7 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
 
 pub fn deinit(self: *Engine) void {
     self.run_queue.deinit(self.arena);
+    self.tasks.deinit(self.arena);
 }
 
 test "engine runs racked tasks to quiescence, tasks can rack more" {
@@ -162,9 +192,12 @@ test "engine runs racked tasks to quiescence, tasks can rack more" {
     var e = Engine.init(arena_state.allocator(), undefined);
     const seed = try arena_state.allocator().create(u32);
     seed.* = 8;
-    try e.rack(.{ .payload = seed, .run = &S.run });
+    const seed_index = try e.rack(.{ .payload = seed, .run = &S.run });
+    try std.testing.expectEqual(@as(TaskIndex, @enumFromInt(0)), seed_index); // first task
     try e.run();
     // 8 + 4 + 2 + 1 = 15; and racked == completed at quiescence.
     try std.testing.expectEqual(@as(usize, 15), S.total);
     try std.testing.expectEqual(e.racked, e.completed);
+    // the task TABLE is append-only: it holds every task ever racked (8,4,2,1 = 4).
+    try std.testing.expectEqual(@as(usize, 4), e.taskCount());
 }
