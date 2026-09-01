@@ -41,6 +41,8 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 /// eager back-end.)
 pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     _ = h;
+    // create-if-absent through FactKV (the locked demand layer), not the pool directly —
+    // this is the coordination point a concurrent prover would serialize on.
     const ns = try self.interner.namespace(.universe, task.file);
-    _ = try self.interner.fact(ns, task.name, .theorem);
+    _ = try self.facts.write(self.io, .{ .namespace = ns, .name = task.name }, .theorem);
 }

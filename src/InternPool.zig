@@ -282,6 +282,17 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
     return index;
 }
 
+/// Take the WRITE mutex around a mint (see [[internpool-concurrency-model]]). A writer
+/// wraps its `get`-that-appends in `lockWrite`/`unlockWrite`; `get` itself never touches
+/// the mutex, so READS stay lock-free. Uncontended today (single-threaded). Uncancelable
+/// so the lock discipline can't be interrupted mid-mint.
+pub fn lockWrite(self: *InternPool, io: std.Io) void {
+    self.write_mutex.lockUncancelable(io);
+}
+pub fn unlockWrite(self: *InternPool, io: std.Io) void {
+    self.write_mutex.unlock(io);
+}
+
 /// Reconstruct the ergonomic `Key` from an `Index` — the inverse of `get`'s packing.
 pub fn keyOf(self: *const InternPool, index: Index) Key {
     const item = self.items.get(@intFromEnum(index));

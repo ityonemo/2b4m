@@ -24,6 +24,7 @@ const term = @import("term.zig");
 const env = @import("env.zig");
 const elaborate = @import("elaborate.zig");
 const Engine = @import("Engine.zig");
+const FactKV = @import("FactKV.zig");
 
 const Context = @This();
 
@@ -33,8 +34,15 @@ pub const ReadFileFn = *const fn (ctx: ?*anyopaque, arena: std.mem.Allocator, pa
 const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, env.FileId);
 
 arena: std.mem.Allocator,
+/// The Io handle (from Zig 0.16 "juicy main" `init.io`), threaded through the entry
+/// points. Writers use it to take the InternPool write-mutex / FactKV RwLock. Reads are
+/// lock-free and never need it. Single-threaded today, so locks are uncontended.
+io: std.Io,
 sink: *diagnostics.Sink,
 interner: *InternPool,
+/// The fact resolution/coordination table over `interner` (see FactKV). Populated by the
+/// prove scan (a fact per theorem) and, later, by citation resolution.
+facts: FactKV,
 pool: *term.Pool,
 environment: *env.Env,
 files: std.ArrayList(diagnostics.FileSrc) = .empty,

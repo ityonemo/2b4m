@@ -45,6 +45,7 @@ pub const Result = struct {
 /// produced. `read_fn`/`std_root` are the same import-resolution hooks `check`
 /// uses (the CLI passes its filesystem reader).
 pub fn accelerant(
+    io: std.Io,
     arena: Allocator,
     path: []const u8,
     source: []const u8,
@@ -70,7 +71,7 @@ pub fn accelerant(
 
     // load + strict-elaborate the whole project (default Verify → synthetics
     // produced). A proof/resolution error surfaces as a diagnostic.
-    const loaded = try root.loadProject(arena, path, source, read_ctx, read_fn, .{}, std_root);
+    const loaded = try root.loadProject(io, arena, path, source, read_ctx, read_fn, .{}, std_root);
     if (loaded.sink.list.items.len > 0) return renderDiagnostics(arena, path, source, loaded.sink);
 
     // find the synthetic theorem the accelerant produced at that step. Its `loc`

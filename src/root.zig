@@ -8,6 +8,7 @@ pub const ast = @import("ast.zig");
 pub const parser = @import("parser.zig");
 pub const diagnostics = @import("diagnostics.zig");
 pub const InternPool = @import("InternPool.zig");
+pub const FactKV = @import("FactKV.zig");
 pub const term = @import("term.zig");
 pub const env = @import("env.zig");
 pub const elaborate = @import("elaborate.zig");
@@ -134,6 +135,7 @@ pub const LoadedProject = struct {
 /// Run the multi-file loader (imports depth-first, same as `checkProject`) and
 /// hand back the elaborated env. `checkProject` is this + the count/hole summary.
 pub fn loadProject(
+    io: std.Io,
     arena: std.mem.Allocator,
     root_path: []const u8,
     root_source: []const u8,
@@ -153,8 +155,10 @@ pub fn loadProject(
 
     var context: Context = .{
         .arena = arena,
+        .io = io,
         .sink = sink,
         .interner = interner,
+        .facts = .init(interner),
         .pool = pool,
         .environment = environment,
         .read_ctx = read_ctx,
@@ -176,6 +180,7 @@ pub fn loadProject(
 }
 
 pub fn checkProject(
+    io: std.Io,
     arena: std.mem.Allocator,
     root_path: []const u8,
     root_source: []const u8,
@@ -184,7 +189,7 @@ pub fn checkProject(
     verify: elaborate.Verify,
     std_root: []const u8,
 ) !ProjectResult {
-    const loaded = try loadProject(arena, root_path, root_source, read_ctx, read_fn, verify, std_root);
+    const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root);
     const sink = loaded.sink;
     const interner = loaded.interner;
     const environment = loaded.environment;

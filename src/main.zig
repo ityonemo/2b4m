@@ -94,7 +94,7 @@ fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
         };
-        const result = try bpa.debug.accelerant.accelerant(arena, p, source, selector, null, queryReadFile, std_root);
+        const result = try bpa.debug.accelerant.accelerant(io, arena, p, source, selector, null, queryReadFile, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "taint")) {
@@ -430,7 +430,7 @@ pub fn main(init: std.process.Init) !u8 {
         else => return fail("error: cannot open '{s}': {t}\n", .{ root_path, e }),
     };
 
-    var result = try bpa.checkProject(arena, root_path, source, null, readImport, verify, std_root);
+    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root);
     if (!result.ok()) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);
