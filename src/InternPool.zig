@@ -119,20 +119,15 @@ pub const Tag = enum(u8) {
     /// `data` is an offset into `extra` decoding to `Namespace` (a model Index + a file
     /// Index). Every file has its universe-namespace: `(universe, file)`.
     namespace,
-    /// A FACT — a proven axiom or theorem. A BARE TRUTH TOKEN: `data` is the `Kind`
-    /// (axiom/theorem) inline, NO `extra` payload, NO identity. INTERNED ⇒ TRUE: a fact
-    /// exists in the pool only when proven (interning is the commit point of proving);
-    /// there is no proven-bit, presence IS truth. Its `(namespace,name)` identity lives in
-    /// FactKV (the sole forward index) — nothing does a reverse fact→(ns,name) lookup, so
-    /// the pool stores none of it. Facts BYPASS dedup: `mintFact` always appends a fresh
-    /// token; FactKV's map + write-lock guarantee single-mint per `(ns,name)`.
+    /// A FACT — a proven axiom or theorem. A TRUTH TOKEN: `data` is an offset into `extra`
+    /// holding `[kind, formula]` (the axiom/theorem `Kind` + the formula term `Index` it
+    /// asserts), NO identity. INTERNED ⇒ TRUE: a fact exists in the pool only when proven
+    /// (interning is the commit point of proving); there is no proven-bit, presence IS
+    /// truth. Its `(namespace,name)` identity lives in FactKV (the sole forward index) —
+    /// nothing does a reverse fact→(ns,name) lookup, so the pool stores none of it. Facts
+    /// BYPASS dedup: `mintFact` always appends a fresh token; FactKV's map + write-lock
+    /// guarantee single-mint per `(ns,name)`.
     fact,
-    /// An IDENTIFIER — a declared sort/const/func/pred/define. A BARE TOKEN like `.fact`:
-    /// `data` is the `IdentKind` inline, NO `extra`, NO `(ns,name)`. Its identity lives in
-    /// IdentKV (the sole forward index); its rich content (a func/pred signature, a const's
-    /// sort, a define's body template) is attached in the IdentKV value / a side-table, not
-    /// here. Minted by `mintIdent`, never deduped (IdentKV's map guarantees single-mint).
-    ident,
 
     // -- TERMS (a term IS an Index; locally-nameless, so structural interning gives
     //    α-equivalence for free — two α-equal terms collapse to one Index). --------------
@@ -162,6 +157,46 @@ pub const Tag = enum(u8) {
     /// a distinct tag (a predicate, not a function). Its own kind so the two never dedup
     /// together even with the same sym+args.
     term_pred,
+
+    // -- SUPPORTING (structural, deduped like terms) --------------------------------------
+
+    /// A SIGNATURE — a func/pred's arrow type. `data` is an offset into `extra` holding
+    /// `[result, result_refined, argc, a0, …]`: the result sort `Index`, the result's
+    /// refinement sort `Index` (or `none`), an arg count, then that many argument sort
+    /// `Index`es. Variable-length (hand-encoded). Deduped: two symbols with the same
+    /// arrow share one sig Index (harmless — a sig has no identity of its own).
+    sig,
+
+    // -- IDENTIFIERS (MINTED, never deduped — identity is IdentKV's (ns,name); the pool
+    //    stores only the identifier's CONTENT). ------------------------------------------
+
+    /// A SORT. Its NAME lives in IdentKV; the pool stores its refinement. `data` is
+    /// `none` for a ROOT sort (no refinement), else an offset into `extra` holding
+    /// `[parent, qualc, q0, …]`: the parent sort `Index` + a count + that many qualifier
+    /// (predicate) `Index`es. Minted (two root sorts have identical content but distinct
+    /// Indexes).
+    sort,
+    /// A CONSTANT. `data` IS its sort `Index` (single-ref, no `extra`). Minted; its name
+    /// lives in IdentKV.
+    constant,
+    /// A FUNCTION. `data` is an offset into `extra` holding `[sig, guard, paramc, pn0, …]`:
+    /// its signature `Index`, an optional guard term `Index` (`none` if unguarded), a
+    /// param-name count, then that many param-name string `Index`es. Minted; name is
+    /// IdentKV's.
+    func,
+    /// A PREDICATE. Identical `[sig, guard, paramc, pn0, …]` layout to `func`, a distinct
+    /// tag. Minted; name is IdentKV's.
+    pred,
+    /// A DEFINE (transparent macro). `data` is an offset into `extra` holding
+    /// `[body, paramc, pn0, …]`: the template body term `Index` (an unelaborated template,
+    /// expanded during proving — the reason a define's FetchTask doesn't suspend on its
+    /// body's contents) + a param-name count + that many param-name string `Index`es.
+    /// Minted; name is IdentKV's.
+    define,
+    /// An IMPORT. `data` IS the `.namespace` `Index` it binds to (single-ref, no `extra`).
+    /// Minted (a file can bind one namespace under several local names — distinct imports).
+    /// Its local name lives in IdentKV.
+    import,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -176,14 +211,10 @@ pub const Key = union(enum) {
     /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
     /// pair collapse to one `Index`.
     namespace: Namespace,
-    /// A fact (proven axiom or theorem) — a bare truth token carrying only its `Kind`.
-    /// No identity here (that's FactKV's); minted by `mintFact`, never deduped.
-    fact: Kind,
-    /// An identifier (sort/const/func/pred/define) — a bare token carrying only its
-    /// `IdentKind`. No identity here (that's IdentKV's); minted by `mintIdent`, never
-    /// deduped.
-    ident: IdentKind,
-
+    /// A fact (proven axiom or theorem) — a truth token carrying its `Kind` AND the
+    /// formula it asserts. No identity here (that's FactKV's); minted by `mintFact`,
+    /// never deduped.
+    fact: Fact,
     /// A term: a bound variable, its de Bruijn index. Deduped structurally (locally-
     /// nameless ⇒ α-equivalence for free).
     term_bvar: u32,
@@ -201,6 +232,21 @@ pub const Key = union(enum) {
     term_app: App,
     /// A term: a predication `sym(args…)` — same `App` payload, a distinct kind.
     term_pred: App,
+    /// A signature (func/pred arrow type). Deduped on `(result, result_refined, args…)`.
+    sig: Sig,
+    /// A sort identifier's content: its refinement (null = a root sort). Minted; identity
+    /// (its name/namespace) is IdentKV's, not here.
+    sort: Sort,
+    /// A constant identifier's content: its sort `Index`. Minted; name is IdentKV's.
+    constant: Index,
+    /// A function identifier's content: signature + optional guard + param names. Minted.
+    func: Callable,
+    /// A predicate identifier's content — same `Callable` payload, a distinct kind. Minted.
+    pred: Callable,
+    /// A define identifier's content: its template body term + param names. Minted.
+    define: Define,
+    /// An import identifier's content: the `.namespace` `Index` it binds to. Minted.
+    import: Index,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
@@ -210,9 +256,9 @@ pub const Key = union(enum) {
     /// resolve-and-store leaf; a theorem's proof gets checked.
     pub const Kind = enum(u8) { axiom, theorem };
 
-    /// What KIND of identifier a `.ident` token is. The rich content (signature, body,
-    /// sort) is attached elsewhere (IdentKV value / side-table), not in the pool.
-    pub const IdentKind = enum(u8) { sort, constant, func, pred, define };
+    /// A fact's payload: its kind + the formula term `Index` it asserts. Spilled into
+    /// `extra` as `[kind, formula]`.
+    pub const Fact = struct { kind: Kind, formula: Index };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
     /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
@@ -251,6 +297,26 @@ pub const Key = union(enum) {
     /// Variable-length; shared shape for `term_app` and `term_pred` (they differ only in
     /// which position the symbol denotes — a function vs a predicate).
     pub const App = struct { sym: Index, args: []const Index };
+
+    /// A signature payload: the result sort `Index`, its refinement sort `Index` (or
+    /// `Index.none`), and the argument sort `Index`es. Variable-length.
+    pub const Sig = struct { result: Index, result_refined: Index, args: []const Index };
+
+    /// A sort's content. `refinement == null` is a ROOT sort; otherwise it is a subsort
+    /// of `parent` cut by a list of qualifier (predicate) `Index`es.
+    pub const Sort = struct {
+        refinement: ?Refinement = null,
+        pub const Refinement = struct { parent: Index, qualifiers: []const Index };
+    };
+
+    /// A func/pred's content: its signature `Index`, an optional guard term `Index`
+    /// (`Index.none` = unguarded), and its param-name string `Index`es. Shared by `func`
+    /// and `pred` (identical layout; the tag says which). Variable-length.
+    pub const Callable = struct { sig: Index, guard: Index, param_names: []const Index };
+
+    /// A define's content: its template body term `Index` + its param-name string
+    /// `Index`es. Variable-length.
+    pub const Define = struct { body: Index, param_names: []const Index };
 
     /// `.string` storage payload: where the bytes live in `string_bytes`.
     const String = struct { off: u32, len: u32 };
@@ -302,14 +368,25 @@ fn hashKey(key: Key) u64 {
             std.hash.autoHash(&h, a.sym);
             for (a.args) |arg| std.hash.autoHash(&h, arg);
         },
-        // facts and identifiers are never deduped — minted via mintFact/mintIdent, not get
-        .fact, .ident => unreachable,
+        .sig => |s| {
+            std.hash.autoHash(&h, s.result);
+            std.hash.autoHash(&h, s.result_refined);
+            for (s.args) |arg| std.hash.autoHash(&h, arg);
+        },
+        // facts and identifiers are never deduped — minted via mintFact/mint*, not get
+        .fact, .sort, .constant, .func, .pred, .define, .import => unreachable,
     }
     return h.final();
 }
 
 fn appEql(a: Key.App, b: Key.App) bool {
     if (a.sym != b.sym or a.args.len != b.args.len) return false;
+    for (a.args, b.args) |x, y| if (x != y) return false;
+    return true;
+}
+
+fn sigEql(a: Key.Sig, b: Key.Sig) bool {
+    if (a.result != b.result or a.result_refined != b.result_refined or a.args.len != b.args.len) return false;
     for (a.args, b.args) |x, y| if (x != y) return false;
     return true;
 }
@@ -335,7 +412,8 @@ fn keyEql(a: Key, b: Key) bool {
         .term_quant => std.meta.eql(a.term_quant, b.term_quant),
         .term_app => appEql(a.term_app, b.term_app),
         .term_pred => appEql(a.term_pred, b.term_pred),
-        .fact, .ident => unreachable, // never deduped (see mintFact/mintIdent)
+        .sig => sigEql(a.sig, b.sig),
+        .fact, .sort, .constant, .func, .pred, .define, .import => unreachable, // minted
     };
 }
 
@@ -407,29 +485,136 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addApp(a); // same [sym, argc, a0, …] layout
             try self.items.append(self.arena, .{ .tag = .term_pred, .data = off });
         },
-        // facts/idents are minted via mintFact/mintIdent, never `get` (no dedup)
-        .fact, .ident => unreachable,
+        .sig => |s| {
+            const off = try self.addSig(s); // [result, result_refined, argc, a0, …]
+            try self.items.append(self.arena, .{ .tag = .sig, .data = off });
+        },
+        // facts/identifiers are minted via mintFact/mint*, never `get` (no dedup)
+        .fact, .sort, .constant, .func, .pred, .define, .import => unreachable,
     }
     gop.key_ptr.* = index;
     return index;
 }
 
-/// Mint a fresh fact truth-token carrying `kind` inline in `data` — ALWAYS appends (no
-/// dedup, no `extra`). Bypasses `get`/`map` because a fact has no structural identity in
-/// the pool (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact
-/// IS committing "this fact is proven true". Takes the write-mutex like any pool write.
-pub fn mintFact(self: *InternPool, kind: Key.Kind) std.mem.Allocator.Error!Index {
+/// Mint a fresh fact truth-token carrying `(kind, formula)` in `extra` — ALWAYS appends
+/// (no dedup). Bypasses `get`/`map` because a fact has no structural identity in the pool
+/// (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact IS
+/// committing "this fact is proven true". Takes the write-mutex like any pool write.
+pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: Index) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
-    try self.items.append(self.arena, .{ .tag = .fact, .data = @intFromEnum(kind) });
+    const off = try self.addExtra(Key.Fact{ .kind = kind, .formula = formula });
+    try self.items.append(self.arena, .{ .tag = .fact, .data = off });
     return index;
 }
 
-/// Mint a fresh identifier token carrying `kind` inline in `data` — ALWAYS appends, same
-/// discipline as `mintFact`: no dedup, no `extra`; IdentKV owns `(ns,name)→Index` and
-/// guarantees single-mint. Rich content (signature/body/sort) is attached in IdentKV.
-pub fn mintIdent(self: *InternPool, kind: Key.IdentKind) std.mem.Allocator.Error!Index {
+
+/// Mint a fresh SORT identifier, ALWAYS appending (no dedup; IdentKV owns identity). A
+/// root sort stores `data = none`; a refined sort spills `[parent, qualc, q0, …]` into
+/// `extra`. Two root sorts have identical content but distinct Indexes (name-identity is
+/// IdentKV's). Callers hold the write-mutex, as with any pool write.
+pub fn mintSort(self: *InternPool, s: Key.Sort) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
-    try self.items.append(self.arena, .{ .tag = .ident, .data = @intFromEnum(kind) });
+    const data: u32 = if (s.refinement) |r| try self.addRefinement(r) else @intFromEnum(Index.none);
+    try self.items.append(self.arena, .{ .tag = .sort, .data = data });
+    return index;
+}
+
+/// Append `[parent, qualc, q0, …]` to `extra`; return the start offset.
+fn addRefinement(self: *InternPool, r: Key.Sort.Refinement) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, 2 + r.qualifiers.len);
+    self.extra.appendAssumeCapacity(@intFromEnum(r.parent));
+    self.extra.appendAssumeCapacity(@intCast(r.qualifiers.len));
+    for (r.qualifiers) |q| self.extra.appendAssumeCapacity(@intFromEnum(q));
+    return off;
+}
+
+/// Read a refinement payload at `off` back — the inverse of `addRefinement`.
+fn refinementData(self: *const InternPool, off: u32) Key.Sort.Refinement {
+    const parent: Index = @enumFromInt(self.extra.items[off]);
+    const n = self.extra.items[off + 1];
+    const raw = self.extra.items[off + 2 .. off + 2 + n];
+    return .{ .parent = parent, .qualifiers = @ptrCast(raw) };
+}
+
+/// Mint a fresh CONSTANT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
+/// `data` IS its sort `Index`. Two constants of the same sort get distinct Indexes.
+pub fn mintConstant(self: *InternPool, sort: Index) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    try self.items.append(self.arena, .{ .tag = .constant, .data = @intFromEnum(sort) });
+    return index;
+}
+
+/// Append `[sig, guard, paramc, pn0, …]` to `extra`; return the start offset.
+fn addCallable(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, 3 + c.param_names.len);
+    self.extra.appendAssumeCapacity(@intFromEnum(c.sig));
+    self.extra.appendAssumeCapacity(@intFromEnum(c.guard));
+    self.extra.appendAssumeCapacity(@intCast(c.param_names.len));
+    for (c.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
+    return off;
+}
+
+/// Read a callable payload at `off` back — the inverse of `addCallable`.
+fn callableData(self: *const InternPool, off: u32) Key.Callable {
+    const sig: Index = @enumFromInt(self.extra.items[off]);
+    const guard: Index = @enumFromInt(self.extra.items[off + 1]);
+    const n = self.extra.items[off + 2];
+    const raw = self.extra.items[off + 3 .. off + 3 + n];
+    return .{ .sig = sig, .guard = guard, .param_names = @ptrCast(raw) };
+}
+
+/// Mint a fresh FUNCTION identifier, ALWAYS appending (no dedup; IdentKV owns identity).
+/// Spills `[sig, guard, paramc, pn0, …]` into `extra`.
+pub fn mintFunc(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    const off = try self.addCallable(c);
+    try self.items.append(self.arena, .{ .tag = .func, .data = off });
+    return index;
+}
+
+/// Mint a fresh PREDICATE identifier — same `Callable` payload as `mintFunc`, a distinct
+/// tag. ALWAYS appends (no dedup; IdentKV owns identity).
+pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    const off = try self.addCallable(c);
+    try self.items.append(self.arena, .{ .tag = .pred, .data = off });
+    return index;
+}
+
+/// Append `[body, paramc, pn0, …]` to `extra`; return the start offset.
+fn addDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, 2 + d.param_names.len);
+    self.extra.appendAssumeCapacity(@intFromEnum(d.body));
+    self.extra.appendAssumeCapacity(@intCast(d.param_names.len));
+    for (d.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
+    return off;
+}
+
+/// Read a define payload at `off` back — the inverse of `addDefine`.
+fn defineData(self: *const InternPool, off: u32) Key.Define {
+    const body: Index = @enumFromInt(self.extra.items[off]);
+    const n = self.extra.items[off + 1];
+    const raw = self.extra.items[off + 2 .. off + 2 + n];
+    return .{ .body = body, .param_names = @ptrCast(raw) };
+}
+
+/// Mint a fresh DEFINE identifier, ALWAYS appending (no dedup; IdentKV owns identity).
+/// Spills `[body, paramc, pn0, …]` into `extra`.
+pub fn mintDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    const off = try self.addDefine(d);
+    try self.items.append(self.arena, .{ .tag = .define, .data = off });
+    return index;
+}
+
+/// Mint a fresh IMPORT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
+/// `data` IS the `.namespace` `Index` it binds to.
+pub fn mintImport(self: *InternPool, ns: Index) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    try self.items.append(self.arena, .{ .tag = .import, .data = @intFromEnum(ns) });
     return index;
 }
 
@@ -455,8 +640,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
-        .fact => .{ .fact = @enumFromInt(item.data) }, // kind is inline in data
-        .ident => .{ .ident = @enumFromInt(item.data) }, // IdentKind inline in data
+        .fact => .{ .fact = self.extraData(Key.Fact, item.data) }, // [kind, formula]
         .term_bvar => .{ .term_bvar = item.data }, // de Bruijn index inline
         .term_fvar => .{ .term_fvar = self.extraData(Key.Fvar, item.data) },
         .term_eq => .{ .term_eq = self.extraData(Key.Eq, item.data) },
@@ -465,6 +649,16 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .term_quant => .{ .term_quant = self.extraData(Key.Quant, item.data) },
         .term_app => .{ .term_app = self.appData(item.data) },
         .term_pred => .{ .term_pred = self.appData(item.data) },
+        .sig => .{ .sig = self.sigData(item.data) },
+        .sort => {
+            if (item.data == @intFromEnum(Index.none)) return .{ .sort = .{ .refinement = null } };
+            return .{ .sort = .{ .refinement = self.refinementData(item.data) } };
+        },
+        .constant => .{ .constant = @enumFromInt(item.data) }, // sort Index inline
+        .func => .{ .func = self.callableData(item.data) },
+        .pred => .{ .pred = self.callableData(item.data) },
+        .define => .{ .define = self.defineData(item.data) },
+        .import => .{ .import = @enumFromInt(item.data) }, // namespace Index inline
     };
 }
 
@@ -542,6 +736,28 @@ fn appData(self: *const InternPool, off: u32) Key.App {
     const n = self.extra.items[off + 1];
     const raw = self.extra.items[off + 2 .. off + 2 + n];
     return .{ .sym = sym, .args = @ptrCast(raw) };
+}
+
+// -- signature encoding (`[result, result_refined, argc, a0, …]`) ----------------------
+
+/// Append `[result, result_refined, argc, a0, …]` to `extra`; return the start offset.
+fn addSig(self: *InternPool, s: Key.Sig) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, 3 + s.args.len);
+    self.extra.appendAssumeCapacity(@intFromEnum(s.result));
+    self.extra.appendAssumeCapacity(@intFromEnum(s.result_refined));
+    self.extra.appendAssumeCapacity(@intCast(s.args.len));
+    for (s.args) |arg| self.extra.appendAssumeCapacity(@intFromEnum(arg));
+    return off;
+}
+
+/// Read a signature payload at `off` back — the inverse of `addSig`.
+fn sigData(self: *const InternPool, off: u32) Key.Sig {
+    const result: Index = @enumFromInt(self.extra.items[off]);
+    const result_refined: Index = @enumFromInt(self.extra.items[off + 1]);
+    const n = self.extra.items[off + 2];
+    const raw = self.extra.items[off + 3 .. off + 3 + n];
+    return .{ .result = result, .result_refined = result_refined, .args = @ptrCast(raw) };
 }
 
 // -- reflection-based `extra` encoding ------------------------------------------------
@@ -773,6 +989,153 @@ test "term_pred: same App shape as term_app but a DISTINCT kind (never collapses
     try std.testing.expectEqual(b0, k.args[0]);
 }
 
+test "sig: [result, result_refined, argc, args…] interns/round-trips; dedups structurally" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.internString("Nat"); // stand-in sort Indexes
+    const int = try pool.internString("Int");
+    const bool_ = try pool.internString("Bool");
+
+    // (Nat, Int) -> Bool, with no result refinement (none)
+    const s1 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s1_again = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s2 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ int, nat } } }); // arg order
+    const s3 = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, int } } }); // result
+    const s4 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = nat, .args = &.{ nat, int } } }); // refined
+    const s_nullary = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{} } });
+
+    try std.testing.expectEqual(s1, s1_again); // structural dedup
+    try std.testing.expect(s1 != s2);
+    try std.testing.expect(s1 != s3);
+    try std.testing.expect(s1 != s4);
+
+    const k = pool.keyOf(s1).sig;
+    try std.testing.expectEqual(bool_, k.result);
+    try std.testing.expectEqual(InternPool.Index.none, k.result_refined);
+    try std.testing.expectEqual(@as(usize, 2), k.args.len);
+    try std.testing.expectEqual(nat, k.args[0]);
+    try std.testing.expectEqual(int, k.args[1]);
+    try std.testing.expectEqual(@as(usize, 0), pool.keyOf(s_nullary).sig.args.len);
+}
+
+test "sort: root (no refinement) + refined [parent, quals…] mint fresh, round-trip, never dedup" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    // two ROOT sorts: identical content (no refinement) but MINTED, so DISTINCT Indexes
+    // (identity is IdentKV's (ns,name), not pool structure).
+    const nat = try pool.mintSort(.{ .refinement = null });
+    const int = try pool.mintSort(.{ .refinement = null });
+    try std.testing.expect(nat != int);
+    try std.testing.expect(pool.keyOf(nat).sort.refinement == null);
+
+    // a REFINED sort: parent + a qualifier list (stand-in pred Indexes)
+    const even = try pool.internString("isEven"); // stand-in qualifier
+    const pos = try pool.internString("isPos");
+    const refined = try pool.mintSort(.{ .refinement = .{ .parent = nat, .qualifiers = &.{ even, pos } } });
+    const r = pool.keyOf(refined).sort.refinement.?;
+    try std.testing.expectEqual(nat, r.parent);
+    try std.testing.expectEqual(@as(usize, 2), r.qualifiers.len);
+    try std.testing.expectEqual(even, r.qualifiers[0]);
+    try std.testing.expectEqual(pos, r.qualifiers[1]);
+}
+
+test "constant: data = sort Index, minted fresh (same sort → distinct constants), round-trips" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.mintSort(.{ .refinement = null });
+
+    const zero = try pool.mintConstant(nat);
+    const one = try pool.mintConstant(nat); // same sort, different constant
+    try std.testing.expect(zero != one); // minted, so distinct despite same sort
+    try std.testing.expectEqual(nat, pool.keyOf(zero).constant);
+    try std.testing.expectEqual(nat, pool.keyOf(one).constant);
+}
+
+test "func: [sig, guard|none, paramc, names…] minted fresh, round-trips; guard optional" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.mintSort(.{ .refinement = null });
+    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
+    const n_name = try pool.internString("n");
+    const m_name = try pool.internString("m");
+    const guard = try pool.get(.{ .term_bvar = 0 }); // stand-in guard term
+
+    // a func WITHOUT a guard
+    const add = try pool.mintFunc(.{ .sig = sig, .guard = .none, .param_names = &.{ n_name, m_name } });
+    const add2 = try pool.mintFunc(.{ .sig = sig, .guard = .none, .param_names = &.{ n_name, m_name } });
+    try std.testing.expect(add != add2); // minted → distinct despite identical content
+    const ka = pool.keyOf(add).func;
+    try std.testing.expectEqual(sig, ka.sig);
+    try std.testing.expectEqual(InternPool.Index.none, ka.guard);
+    try std.testing.expectEqual(@as(usize, 2), ka.param_names.len);
+    try std.testing.expectEqual(n_name, ka.param_names[0]);
+    try std.testing.expectEqual(m_name, ka.param_names[1]);
+
+    // a func WITH a guard
+    const g = try pool.mintFunc(.{ .sig = sig, .guard = guard, .param_names = &.{n_name} });
+    const kg = pool.keyOf(g).func;
+    try std.testing.expectEqual(guard, kg.guard);
+    try std.testing.expectEqual(@as(usize, 1), kg.param_names.len);
+}
+
+test "pred: same Callable payload as func, minted under a DISTINCT kind" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.mintSort(.{ .refinement = null });
+    // a predicate's sig has no meaningful result sort in the pool layout; use none-ish.
+    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
+    const x = try pool.internString("x");
+
+    const is_even = try pool.mintPred(.{ .sig = sig, .guard = .none, .param_names = &.{x} });
+    const k = pool.keyOf(is_even).pred;
+    try std.testing.expectEqual(sig, k.sig);
+    try std.testing.expectEqual(InternPool.Index.none, k.guard);
+    try std.testing.expectEqual(@as(usize, 1), k.param_names.len);
+    try std.testing.expectEqual(x, k.param_names[0]);
+}
+
+test "define: [body, paramc, names…] minted fresh, round-trips its template body + params" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const body = try pool.get(.{ .term_bvar = 0 }); // stand-in template body term
+    const n = try pool.internString("n");
+
+    const def = try pool.mintDefine(.{ .body = body, .param_names = &.{n} });
+    const def2 = try pool.mintDefine(.{ .body = body, .param_names = &.{n} });
+    try std.testing.expect(def != def2); // minted → distinct
+
+    const k = pool.keyOf(def).define;
+    try std.testing.expectEqual(body, k.body);
+    try std.testing.expectEqual(@as(usize, 1), k.param_names.len);
+    try std.testing.expectEqual(n, k.param_names[0]);
+}
+
+test "import: data = the .namespace it binds; minted (two imports of one ns are distinct)" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const ns = try pool.namespace(.universe, f);
+
+    const imp = try pool.mintImport(ns);
+    const imp2 = try pool.mintImport(ns); // same target ns, different local binding
+    try std.testing.expect(imp != imp2); // minted → distinct
+    try std.testing.expectEqual(ns, pool.keyOf(imp).import);
+}
+
 test "strings intern by content and round-trip their bytes" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -832,21 +1195,27 @@ test "namespace = (model, file), deduped per pair" {
     try std.testing.expectEqual(f_int, ns.file);
 }
 
-test "fact is a bare truth token: mintFact always appends, carries only kind" {
+test "fact is a truth token carrying (kind, formula): mintFact always appends, round-trips" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
+    // stand-in formula terms (a fact now records the proposition it asserts)
+    const f1 = try pool.get(.{ .term_bvar = 0 });
+    const f2 = try pool.get(.{ .term_bvar = 1 });
+
     // mintFact ALWAYS appends a fresh token — no dedup (identity/(ns,name) is FactKV's
-    // job, not the pool's). Two mints, even same kind, are DISTINCT Indexes.
-    const a = try pool.mintFact(.theorem);
-    const b = try pool.mintFact(.theorem);
+    // job, not the pool's). Two mints, even same (kind, formula), are DISTINCT Indexes.
+    const a = try pool.mintFact(.theorem, f1);
+    const b = try pool.mintFact(.theorem, f1);
     try std.testing.expect(a != b);
 
-    // the ONLY thing a fact token carries is its kind (inline in data; no extra payload)
-    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(a).fact);
-    const x = try pool.mintFact(.axiom);
-    try std.testing.expectEqual(InternPool.Key.Kind.axiom, pool.keyOf(x).fact);
+    // a fact carries its kind AND its formula (in extra).
+    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(a).fact.kind);
+    try std.testing.expectEqual(f1, pool.keyOf(a).fact.formula);
+    const x = try pool.mintFact(.axiom, f2);
+    try std.testing.expectEqual(InternPool.Key.Kind.axiom, pool.keyOf(x).fact.kind);
+    try std.testing.expectEqual(f2, pool.keyOf(x).fact.formula);
     try std.testing.expect(x != a);
 }
 

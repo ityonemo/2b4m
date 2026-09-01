@@ -8,8 +8,9 @@
 //! identifier token (the real shape-interning — resolving the identifier's referenced
 //! names, which is where a FetchTask will later SUSPEND — comes when the prover drives it).
 //!
-//! Payload = which identifier: its file's pool `.file` Index + its interned name + which
-//! IdentKind it is. Namespace is the file's universe-namespace `(universe, file)`.
+//! Payload = which identifier: its file's pool `.file` Index + its interned name + a
+//! `Mint` descriptor (the concrete identifier content to intern). Namespace is the file's
+//! universe-namespace `(universe, file)`.
 
 const std = @import("std");
 const InternPool = @import("../InternPool.zig");
@@ -21,7 +22,10 @@ const FetchTask = @This();
 
 file: InternPool.Index,
 name: InternPool.StrId,
-kind: InternPool.Key.IdentKind,
+/// What to intern once claimed — the concrete identifier's content (a `Mint` descriptor).
+/// In the target design the fetcher ASSEMBLES this by resolving the identifier's shape
+/// (where it may suspend); for now it is supplied ready-made (isolated slice).
+mint: IdentKV.Mint,
 
 /// Package a payload into a rack-ready `Engine.Task` (arena-allocated payload + typed
 /// erased run), mirroring `ParseTask.new` / `ProveTask.new`.
@@ -53,7 +57,7 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
             return;
         },
         .claimed => {
-            _ = try self.idents.publish(self.io, key, task.kind);
+            _ = try self.idents.publish(self.io, key, task.mint);
         },
     }
 }
@@ -81,15 +85,16 @@ test "FetchTask through the engine: two fetches of one identifier dedup (claim, 
     var eng = Engine.init(arena, &ctx);
     defer eng.deinit();
     // rack TWO fetches of the same identifier — the second must dedup to a no-op waiter.
-    _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .kind = .sort }));
-    _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .kind = .sort }));
+    const mint: IdentKV.Mint = .{ .sort = .{ .refinement = null } };
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .mint = mint }));
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .mint = mint }));
     try eng.run();
 
-    // Exactly ONE identifier token was minted (dedup): the pool has universe + Nat's file
-    // + its path string + the namespace + ONE ident. Assert the ident is present & a sort.
+    // Exactly ONE identifier was minted (dedup): the pool has universe + Nat's file + its
+    // path string + the namespace + ONE identifier. Assert it is present & a (root) sort.
     const ns = try pool.namespace(.universe, f);
     switch (try ctx.idents.claimOrLookup(io, .{ .namespace = ns, .name = nat }, @enumFromInt(99))) {
-        .done => |ident| try std_.testing.expectEqual(InternPool.Key.IdentKind.sort, pool.keyOf(ident).ident),
+        .done => |ident| try std_.testing.expect(pool.keyOf(ident).sort.refinement == null),
         else => try std_.testing.expect(false), // must be done after both fetches ran
     }
     try std_.testing.expectEqual(eng.racked, eng.completed); // quiescent

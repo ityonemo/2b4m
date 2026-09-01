@@ -1,9 +1,10 @@
-//! IdentKV — the demand table for IDENTIFIERS (sort/const/func/pred/define), filled by
-//! FetchTask. `(namespace, name) -> State`, where State is `done` (the interned identifier
-//! token) or `in_flight` (the TaskIndex currently fetching it); "absent" = no entry. The
-//! pool holds only bare identifier tokens (no identity); IdentKV owns the identity index
-//! AND the done/in-flight/absent lifecycle. The non-fact sibling of FactKV — same shape,
-//! same lock discipline; differs only in what it produces (an identifier, not a fact).
+//! IdentKV — the demand table for IDENTIFIERS (sort/const/func/pred/define/import), filled
+//! by FetchTask. `(namespace, name) -> State`, where State is `done` (the interned
+//! identifier `Index`) or `in_flight` (the TaskIndex currently fetching it); "absent" = no
+//! entry. The pool holds the identifier's CONTENT (its refinement/sort/signature/body);
+//! IdentKV owns its `(namespace,name)` IDENTITY AND the done/in-flight/absent lifecycle.
+//! The non-fact sibling of FactKV — same shape, same lock discipline; differs only in what
+//! it produces (an identifier, not a fact).
 //! (Deliberately a peer clone of FactKV, NOT a shared generic — two concrete tables read
 //! clearer than a generalization extracted from one instance.)
 //!
@@ -61,21 +62,46 @@ pub fn claimOrLookup(self: *IdentKV, io: std.Io, key: Key, self_task: Engine.Tas
     return .claimed;
 }
 
-/// SUCCESS transition: the claiming task fetched `key`, so mint its identifier token and
-/// flip the entry in_flight -> done. Returns the token `Index`. The mint nests the
-/// InternPool write-mutex inside the exclusive lock (order IdentKV -> InternPool). Callers
-/// then wake anyone parked on the claiming task's index (engine-side).
-pub fn publish(self: *IdentKV, io: std.Io, key: Key, kind: InternPool.Key.IdentKind) std.mem.Allocator.Error!InternPool.Index {
+/// A descriptor for the identifier a fetcher wants minted — one variant per concrete pool
+/// identifier kind, carrying that kind's content (the fetcher assembled it; `publish`
+/// mints it under the correct nested lock). Mirrors the pool's identifier `Key`s.
+pub const Mint = union(enum) {
+    sort: InternPool.Key.Sort,
+    constant: InternPool.Index, // its sort
+    func: InternPool.Key.Callable,
+    pred: InternPool.Key.Callable,
+    define: InternPool.Key.Define,
+    import: InternPool.Index, // the namespace it binds
+};
+
+/// SUCCESS transition: the claiming task fetched `key`, so mint its concrete identifier
+/// (per `mint`) and flip the entry in_flight -> done. Returns the identifier `Index`. The
+/// mint nests the InternPool write-mutex inside the exclusive lock (order IdentKV ->
+/// InternPool). Callers then wake anyone parked on the claiming task's index (engine-side).
+pub fn publish(self: *IdentKV, io: std.Io, key: Key, mint: Mint) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
     self.pool.lockWrite(io);
-    const index = self.pool.mintIdent(kind) catch |e| {
+    const index = self.mintUnderLock(mint) catch |e| {
         self.pool.unlockWrite(io);
         return e;
     };
     self.pool.unlockWrite(io);
     try self.map.put(self.pool.arena, key, .{ .done = index });
     return index;
+}
+
+/// Dispatch the concrete pool mint for a `Mint` descriptor. Called with the InternPool
+/// write-mutex already held (via `publish`).
+fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.Index {
+    return switch (mint) {
+        .sort => |s| self.pool.mintSort(s),
+        .constant => |sort| self.pool.mintConstant(sort),
+        .func => |c| self.pool.mintFunc(c),
+        .pred => |c| self.pool.mintPred(c),
+        .define => |d| self.pool.mintDefine(d),
+        .import => |ns| self.pool.mintImport(ns),
+    };
 }
 
 test "IdentKV demand table: claim -> in_flight -> publish -> done, deduped per key" {
@@ -99,9 +125,9 @@ test "IdentKV demand table: claim -> in_flight -> publish -> done, deduped per k
     try std.testing.expectEqual(IdentKV.Outcome.claimed, try kv.claimOrLookup(io, k, my_task));
     // now IN-FLIGHT -> a second fetcher is told to suspend on the claiming task.
     try std.testing.expectEqual(IdentKV.Outcome{ .in_flight = my_task }, try kv.claimOrLookup(io, k, other_task));
-    // PUBLISH -> mints the identifier token, flips in_flight -> done.
-    const ident = try kv.publish(io, k, .sort);
-    try std.testing.expectEqual(InternPool.Key.IdentKind.sort, pool.keyOf(ident).ident);
+    // PUBLISH -> mints the concrete identifier (a root sort here), flips in_flight -> done.
+    const ident = try kv.publish(io, k, .{ .sort = .{ .refinement = null } });
+    try std.testing.expect(pool.keyOf(ident).sort.refinement == null);
     // now DONE -> lookups return the token, fetch-nothing.
     try std.testing.expectEqual(IdentKV.Outcome{ .done = ident }, try kv.claimOrLookup(io, k, other_task));
 }

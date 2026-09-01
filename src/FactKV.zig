@@ -71,15 +71,16 @@ pub fn claimOrLookup(self: *FactKV, io: std.Io, key: Key, self_task: Engine.Task
     return .claimed;
 }
 
-/// SUCCESS transition: the claiming task proved `key`, so mint its fact token and flip the
-/// entry in_flight -> proven. Returns the fact `Index`. The mint nests the InternPool
-/// write-mutex inside the FactKV exclusive lock (order FactKV -> InternPool). Callers then
-/// wake anyone parked on the claiming task's index (engine-side).
-pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind) std.mem.Allocator.Error!InternPool.Index {
+/// SUCCESS transition: the claiming task proved `key`, so mint its fact token (carrying
+/// its `kind` + the `formula` it asserts) and flip the entry in_flight -> proven. Returns
+/// the fact `Index`. The mint nests the InternPool write-mutex inside the FactKV exclusive
+/// lock (order FactKV -> InternPool). Callers then wake anyone parked on the claiming
+/// task's index (engine-side).
+pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, formula: InternPool.Index) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
     self.pool.lockWrite(io);
-    const index = self.pool.mintFact(kind) catch |e| {
+    const index = self.pool.mintFact(kind, formula) catch |e| {
         self.pool.unlockWrite(io);
         return e;
     };
@@ -115,9 +116,11 @@ test "FactKV demand table: claim -> in_flight -> publish -> proven; the entry pr
         try kv.claimOrLookup(io, k, other_task),
     );
 
-    // PUBLISH on success: in-flight -> proven, minting the fact token.
-    const fact = try kv.publish(io, k, .theorem);
-    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(fact).fact);
+    // PUBLISH on success: in-flight -> proven, minting the fact token (kind + formula).
+    const formula = try pool.get(.{ .term_bvar = 0 }); // stand-in asserted proposition
+    const fact = try kv.publish(io, k, .theorem, formula);
+    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(fact).fact.kind);
+    try std.testing.expectEqual(formula, pool.keyOf(fact).fact.formula);
 
     // now PROVEN -> any lookup returns the fact index, prove-nothing.
     try std.testing.expectEqual(

@@ -59,7 +59,11 @@ pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator
         .claimed => {
             // BEGIN PROVING — eager back-end still verifies (scaffolding); publish flips
             // in_flight -> proven. (No demand/suspend on citations yet — the risky slice.)
-            _ = try self.facts.publish(self.io, key, .theorem);
+            // The fact now carries a formula; the REAL asserted proposition comes with the
+            // one-walk lowering — for now a placeholder term stands in (this path is not
+            // yet wired to actual proving).
+            const formula = try self.interner.get(.{ .term_bvar = 0 });
+            _ = try self.facts.publish(self.io, key, .theorem, formula);
         },
     }
 }
