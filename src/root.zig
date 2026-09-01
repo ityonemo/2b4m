@@ -9,6 +9,7 @@ pub const parser = @import("parser.zig");
 pub const diagnostics = @import("diagnostics.zig");
 pub const InternPool = @import("InternPool.zig");
 pub const FactKV = @import("FactKV.zig");
+pub const IdentKV = @import("IdentKV.zig");
 pub const term = @import("term.zig");
 pub const env = @import("env.zig");
 pub const elaborate = @import("elaborate.zig");
@@ -159,6 +160,7 @@ pub fn loadProject(
         .sink = sink,
         .interner = interner,
         .facts = .init(interner),
+        .idents = .init(interner),
         .pool = pool,
         .environment = environment,
         .read_ctx = read_ctx,
@@ -282,4 +284,8 @@ test {
     std.testing.refAllDecls(debug.taint);
     std.testing.refAllDecls(literate);
     std.testing.refAllDecls(lint);
+    // engine task-payload sub-files (their tests aren't reached by the shallow @This() ref)
+    std.testing.refAllDecls(Engine.ParseTask);
+    std.testing.refAllDecls(Engine.ProveTask);
+    std.testing.refAllDecls(Engine.FetchTask);
 }

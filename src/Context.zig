@@ -25,6 +25,7 @@ const env = @import("env.zig");
 const elaborate = @import("elaborate.zig");
 const Engine = @import("Engine.zig");
 const FactKV = @import("FactKV.zig");
+const IdentKV = @import("IdentKV.zig");
 
 const Context = @This();
 
@@ -43,6 +44,9 @@ interner: *InternPool,
 /// The fact resolution/coordination table over `interner` (see FactKV). Populated by the
 /// prove scan (a fact per theorem) and, later, by citation resolution.
 facts: FactKV,
+/// The identifier resolution/coordination table over `interner` (see IdentKV). Filled by
+/// FetchTask. Sibling of `facts`; not wired into resolution yet.
+idents: IdentKV,
 pool: *term.Pool,
 environment: *env.Env,
 files: std.ArrayList(diagnostics.FileSrc) = .empty,

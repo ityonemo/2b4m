@@ -121,6 +121,12 @@ pub const Tag = enum(u8) {
     /// the pool stores none of it. Facts BYPASS dedup: `mintFact` always appends a fresh
     /// token; FactKV's map + write-lock guarantee single-mint per `(ns,name)`.
     fact,
+    /// An IDENTIFIER — a declared sort/const/func/pred/define. A BARE TOKEN like `.fact`:
+    /// `data` is the `IdentKind` inline, NO `extra`, NO `(ns,name)`. Its identity lives in
+    /// IdentKV (the sole forward index); its rich content (a func/pred signature, a const's
+    /// sort, a define's body template) is attached in the IdentKV value / a side-table, not
+    /// here. Minted by `mintIdent`, never deduped (IdentKV's map guarantees single-mint).
+    ident,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -138,6 +144,10 @@ pub const Key = union(enum) {
     /// A fact (proven axiom or theorem) — a bare truth token carrying only its `Kind`.
     /// No identity here (that's FactKV's); minted by `mintFact`, never deduped.
     fact: Kind,
+    /// An identifier (sort/const/func/pred/define) — a bare token carrying only its
+    /// `IdentKind`. No identity here (that's IdentKV's); minted by `mintIdent`, never
+    /// deduped.
+    ident: IdentKind,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
@@ -146,6 +156,10 @@ pub const Key = union(enum) {
     /// What a fact IS. Branched only at the prove-or-not boundary: an axiom is a
     /// resolve-and-store leaf; a theorem's proof gets checked.
     pub const Kind = enum(u8) { axiom, theorem };
+
+    /// What KIND of identifier a `.ident` token is. The rich content (signature, body,
+    /// sort) is attached elsewhere (IdentKV value / side-table), not in the pool.
+    pub const IdentKind = enum(u8) { sort, constant, func, pred, define };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
     /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
@@ -199,8 +213,8 @@ fn hashKey(key: Key) u64 {
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
-        // facts are never deduped — they go through `mintFact`, not `get`
-        .fact => unreachable,
+        // facts and identifiers are never deduped — minted via mintFact/mintIdent, not get
+        .fact, .ident => unreachable,
     }
     return h.final();
 }
@@ -218,7 +232,7 @@ fn keyEql(a: Key, b: Key) bool {
         .file => a.file.path == b.file.path,
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
-        .fact => unreachable, // facts never deduped (see mintFact)
+        .fact, .ident => unreachable, // never deduped (see mintFact/mintIdent)
     };
 }
 
@@ -260,7 +274,8 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(ns);
             try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
         },
-        .fact => unreachable, // facts are minted via `mintFact`, never `get` (no dedup)
+        // facts/idents are minted via mintFact/mintIdent, never `get` (no dedup)
+        .fact, .ident => unreachable,
     }
     gop.key_ptr.* = index;
     return index;
@@ -273,6 +288,15 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
 pub fn mintFact(self: *InternPool, kind: Key.Kind) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
     try self.items.append(self.arena, .{ .tag = .fact, .data = @intFromEnum(kind) });
+    return index;
+}
+
+/// Mint a fresh identifier token carrying `kind` inline in `data` — ALWAYS appends, same
+/// discipline as `mintFact`: no dedup, no `extra`; IdentKV owns `(ns,name)→Index` and
+/// guarantees single-mint. Rich content (signature/body/sort) is attached in IdentKV.
+pub fn mintIdent(self: *InternPool, kind: Key.IdentKind) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    try self.items.append(self.arena, .{ .tag = .ident, .data = @intFromEnum(kind) });
     return index;
 }
 
@@ -299,6 +323,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
         .fact => .{ .fact = @enumFromInt(item.data) }, // kind is inline in data
+        .ident => .{ .ident = @enumFromInt(item.data) }, // IdentKind inline in data
     };
 }
 
