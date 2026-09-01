@@ -89,6 +89,11 @@ arena: std.mem.Allocator,
 /// universe model. Every model's parent chain bottoms out here.
 pub const Index = enum(u32) {
     universe = 0,
+    /// The builtin `Prop` sort, reserved at Index 1 (seeded by `init` right after
+    /// universe). `term.SortId.prop` is the same value: once `SortId` becomes a pool
+    /// `Index` (demand-prover Step 5+6), `Prop` already sits at its reserved slot and
+    /// can't collide with the universe model at 0.
+    prop = 1,
     _,
 
     /// The ABSENT marker for optional `Index` slots packed into `extra` (e.g. a func's
@@ -336,15 +341,20 @@ fn keyEql(a: Key, b: Key) bool {
     };
 }
 
-/// Seed the pool with the reserved entries. Currently: the UNIVERSE MODEL at
-/// `Index.universe` (0) — an empty parent stack. Every other model's chain bottoms out
-/// here, and "no model" resolves to it.
+/// Seed the pool with the RESERVED entries: the UNIVERSE MODEL at `Index.universe` (0) —
+/// an empty parent stack every model's chain bottoms out at — and the builtin `Prop` SORT
+/// at `Index.prop` (1). Prop is a root sort (no refinement); reserving it here means the
+/// well-known slot exists before anything else is interned, so `term.SortId.prop` can point
+/// at it once sorts become pool Indexes.
 pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     var self: InternPool = .{ .arena = arena };
     // Universe is its own parent — a self-reference at Index 0. The `.universe` constant
     // IS 0, so we can name it as the parent before the entry physically exists.
     const universe = try self.get(.{ .model = .{ .parent = .universe } });
     std.debug.assert(universe == .universe); // the universe model MUST be Index 0
+    // Prop: the builtin proposition sort, a root sort at the reserved Index 1.
+    const prop = try self.mintSort(.{ .refinement = null });
+    std.debug.assert(prop == .prop); // Prop MUST land at Index 1
     return self;
 }
 
@@ -929,8 +939,8 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expect(add != zero);
     try std.testing.expectEqualStrings("add", pool.stringBytes(add));
     try std.testing.expectEqualStrings("zero", pool.stringBytes(zero));
-    // universe model (Index 0) + two strings
-    try std.testing.expectEqual(@as(usize, 3), pool.count());
+    // reserved universe model (0) + Prop sort (1), then two strings
+    try std.testing.expectEqual(@as(usize, 4), pool.count());
 }
 
 test "universe model is seeded at Index 0 as its own parent" {
@@ -938,8 +948,9 @@ test "universe model is seeded at Index 0 as its own parent" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    // seeded, at Index 0; universe is its own parent (the walk fixpoint), empty overlay
-    try std.testing.expectEqual(@as(usize, 1), pool.count());
+    // reserved seeds: universe model at Index 0 + Prop sort at Index 1
+    try std.testing.expectEqual(@as(usize, 2), pool.count());
+    try std.testing.expect(pool.keyOf(.prop).sort.refinement == null); // Prop is a root sort
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);
     // re-asking for the universe payload dedups back to Index 0
