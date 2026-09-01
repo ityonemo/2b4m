@@ -117,7 +117,8 @@ test "FactKV demand table: claim -> in_flight -> publish -> proven; the entry pr
     );
 
     // PUBLISH on success: in-flight -> proven, minting the fact token (kind + formula).
-    const formula = try pool.get(.{ .term_bvar = 0 }); // stand-in asserted proposition
+    // formula = a reified-term `extra` offset (Step 3); any u32 works for this round-trip.
+    const formula: InternPool.Index = @enumFromInt(5);
     const fact = try kv.publish(io, k, .theorem, formula);
     try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(fact).fact.kind);
     try std.testing.expectEqual(formula, pool.keyOf(fact).fact.formula);

@@ -10,7 +10,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const StrId = @import("InternPool.zig").StrId;
+const InternPool = @import("InternPool.zig");
+const StrId = InternPool.StrId;
 
 pub const SortId = enum(u32) {
     /// the builtin sort of propositions
@@ -481,6 +482,170 @@ pub const Pool = struct {
         for (old_args, new_args) |arg, *out| out.* = try self.remapFormula(arg, remap);
         return self.addApp(kind, remap.sym(a.sym), new_args);
     }
+
+    // === DURABLE serialization: scratchpad <-> InternPool `extra` ===================
+    //
+    // Terms are NOT interned Items (bpa is explicit — no term dedup). A DURABLE term (a
+    // fact's formula, a callable's guard, a define's body) lives as a SELF-CONTAINED u32
+    // run in the InternPool's `extra`; this Pool is the per-task SCRATCHPAD where terms are
+    // constructed (TermId = index into `nodes`). `reify` serializes a scratchpad term into
+    // `extra`; `copyIn` rebuilds a durable term into fresh scratchpad nodes. The calculus
+    // (walk/alphaEq/…) only ever runs on the scratchpad TermId form.
+    //
+    // RUN FORMAT — `[word_count, ...payload...]`. Payload is a POST-ORDER sequence of nodes
+    // (children before parents), so a child ref is a back-reference to an earlier node's
+    // LOCAL index (0-based within the payload). The ROOT is the last node. Each node is a
+    // variable-width u32 group headed by a tag (values match `Node`'s field order):
+    //   bvar  [0, debruijn]
+    //   fvar  [1, name:Index, sort:Index]
+    //   app   [2, sym:Index, argc, argloc0, …]     (arglocN = local node index)
+    //   pred  [3, sym:Index, argc, argloc0, …]
+    //   eq    [4, lhs_loc, rhs_loc]
+    //   not   [5, operand_loc]
+    //   bin   [6, op, lhs_loc, rhs_loc]
+    //   quant [7, q, sort:Index, hint:Index, body_loc]
+    // Index-typed fields are DURABLE pool Indexes (interned strings/sorts/syms); child
+    // positions are LOCAL back-refs. No dedup, no sharing across runs (each durable term is
+    // owned by exactly one entity), so an inlined run makes reify/copyIn a linear splice.
+
+    const TermTag = enum(u32) { bvar, fvar, app, pred, eq, not, bin, quant };
+
+    /// Mutable state threaded through the post-order reify DFS.
+    const Reifier = struct {
+        pool: *const Pool,
+        arena: Allocator,
+        words: std.ArrayList(u32) = .empty, // the payload (node groups, post-order)
+        next_ordinal: u32 = 0, // next node's LOCAL index (0-based by appearance)
+        seen: std.AutoHashMapUnmanaged(TermId, u32) = .empty, // TermId -> its local ordinal
+
+        /// Emit `id`'s subtree post-order; return `id`'s LOCAL node ordinal. A repeated
+        /// scratchpad TermId is emitted once (shared within this run).
+        fn go(r: *Reifier, id: TermId) Allocator.Error!u32 {
+            if (r.seen.get(id)) |ord| return ord;
+            const node = r.pool.get(id);
+            switch (node) {
+                .bvar => |b| try r.emit(&.{ @intFromEnum(TermTag.bvar), b }),
+                .fvar => |v| try r.emit(&.{ @intFromEnum(TermTag.fvar), @intFromEnum(v.name), @intFromEnum(v.sort) }),
+                .not => |t| {
+                    const c = try r.go(t);
+                    try r.emit(&.{ @intFromEnum(TermTag.not), c });
+                },
+                .eq => |p| {
+                    const l = try r.go(p.lhs);
+                    const rr = try r.go(p.rhs);
+                    try r.emit(&.{ @intFromEnum(TermTag.eq), l, rr });
+                },
+                .bin => |b| {
+                    const l = try r.go(b.lhs);
+                    const rr = try r.go(b.rhs);
+                    try r.emit(&.{ @intFromEnum(TermTag.bin), @intFromEnum(b.op), l, rr });
+                },
+                .quant => |q| {
+                    const body = try r.go(q.body);
+                    try r.emit(&.{ @intFromEnum(TermTag.quant), @intFromEnum(q.q), @intFromEnum(q.sort), @intFromEnum(q.hint), body });
+                },
+                .app, .pred => |a| {
+                    const tag: TermTag = if (node == .app) .app else .pred;
+                    // args must precede this node — reify them first, capturing ordinals.
+                    // (self.args aliases pool.extra, but reify never writes pool.extra, so
+                    // the slice is stable across the loop.)
+                    const arg_ids = r.pool.args(a);
+                    const arg_ords = try r.arena.alloc(u32, arg_ids.len);
+                    for (arg_ids, arg_ords) |arg, *out| out.* = try r.go(arg);
+                    var group: std.ArrayList(u32) = .empty;
+                    try group.append(r.arena, @intFromEnum(tag));
+                    try group.append(r.arena, @intFromEnum(a.sym));
+                    try group.append(r.arena, @intCast(arg_ids.len));
+                    try group.appendSlice(r.arena, arg_ords);
+                    try r.emit(group.items);
+                },
+            }
+            const ord = r.next_ordinal - 1; // emit() bumped it
+            try r.seen.put(r.arena, id, ord);
+            return ord;
+        }
+
+        fn emit(r: *Reifier, group: []const u32) Allocator.Error!void {
+            try r.words.appendSlice(r.arena, group);
+            r.next_ordinal += 1;
+        }
+    };
+
+    /// Serialize scratchpad term `id` into `ip`'s `extra` as a self-contained run; return
+    /// the run's start offset. A pool WRITE — the caller must hold `ip`'s write-mutex.
+    /// Run = `[word_count, ...post-order node groups...]`.
+    pub fn reify(self: *const Pool, id: TermId, ip: *InternPool) Allocator.Error!u32 {
+        var r: Reifier = .{ .pool = self, .arena = ip.arena };
+        _ = try r.go(id);
+        var run: std.ArrayList(u32) = .empty;
+        try run.append(ip.arena, @intCast(r.words.items.len));
+        try run.appendSlice(ip.arena, r.words.items);
+        return ip.appendExtraRun(run.items);
+    }
+
+    /// Rebuild a durable term (serialized at `off` in `ip.extra`) into THIS scratchpad;
+    /// return the root's fresh `TermId`. Walks the payload node-by-node (post-order, so a
+    /// child ordinal always resolves to an already-built TermId); the LAST node is the root.
+    pub fn copyIn(self: *Pool, ip: *const InternPool, off: u32) Allocator.Error!TermId {
+        const word_count = ip.extraRunLen(off);
+        const payload = ip.extraRun(off + 1, word_count);
+        // ordinal -> rebuilt scratchpad TermId (grows as we walk; capacity = node count is
+        // unknown up-front, so use a dynamic list).
+        var built: std.ArrayList(TermId) = .empty;
+        var i: usize = 0;
+        while (i < payload.len) {
+            const tag: TermTag = @enumFromInt(payload[i]);
+            const id: TermId = switch (tag) {
+                .bvar => blk: {
+                    const b: u16 = @intCast(payload[i + 1]);
+                    i += 2;
+                    break :blk try self.add(.{ .bvar = b });
+                },
+                .fvar => blk: {
+                    const name: StrId = @enumFromInt(payload[i + 1]);
+                    const sort: SortId = @enumFromInt(payload[i + 2]);
+                    i += 3;
+                    break :blk try self.add(.{ .fvar = .{ .name = name, .sort = sort } });
+                },
+                .not => blk: {
+                    const c = built.items[payload[i + 1]];
+                    i += 2;
+                    break :blk try self.add(.{ .not = c });
+                },
+                .eq => blk: {
+                    const l = built.items[payload[i + 1]];
+                    const rr = built.items[payload[i + 2]];
+                    i += 3;
+                    break :blk try self.add(.{ .eq = .{ .lhs = l, .rhs = rr } });
+                },
+                .bin => blk: {
+                    const op: BinOp = @enumFromInt(payload[i + 1]);
+                    const l = built.items[payload[i + 2]];
+                    const rr = built.items[payload[i + 3]];
+                    i += 4;
+                    break :blk try self.add(.{ .bin = .{ .op = op, .lhs = l, .rhs = rr } });
+                },
+                .quant => blk: {
+                    const q: Quantifier = @enumFromInt(payload[i + 1]);
+                    const sort: SortId = @enumFromInt(payload[i + 2]);
+                    const hint: StrId = @enumFromInt(payload[i + 3]);
+                    const body = built.items[payload[i + 4]];
+                    i += 5;
+                    break :blk try self.add(.{ .quant = .{ .q = q, .sort = sort, .hint = hint, .body = body } });
+                },
+                .app, .pred => blk: {
+                    const sym: SymId = @enumFromInt(payload[i + 1]);
+                    const argc = payload[i + 2];
+                    const args_buf = try self.arena.alloc(TermId, argc);
+                    for (args_buf, 0..) |*out, j| out.* = built.items[payload[i + 3 + j]];
+                    i += 3 + argc;
+                    break :blk try self.addApp(if (tag == .app) .app else .pred, sym, args_buf);
+                },
+            };
+            try built.append(self.arena, id);
+        }
+        return built.items[built.items.len - 1]; // root = last node (post-order)
+    }
 };
 
 // --- tests ---
@@ -801,4 +966,76 @@ test "remapFormula: sorts/syms absent from the map pass through unchanged" {
     try testing.expectEqual(related, on.sym);
     try testing.expectEqual(ssort(2), p.get(p.args(on)[0]).fvar.sort);
     try testing.expectEqual(s3, p.get(p.args(on)[1]).fvar.sort);
+}
+
+// --- durable serialization: reify -> extra -> copyIn round-trips ---
+// (Repurposed from the retired InternPool `term_*` Item tests: terms are no longer
+// interned entities; these verify the term round-trips through the pool's `extra` instead.)
+
+/// Round-trip `id` through `ip.extra` and back into the SAME scratchpad `p`, asserting the
+/// rebuilt term is alpha-equal to the original. Same-pool round-trip works because the repr
+/// is locally-nameless with no dedup: `copyIn` appends fresh-but-structurally-identical
+/// nodes, so `alphaEq(rebuilt, id)` holds.
+fn expectReifyRoundTrip(io: std.Io, ip: *InternPool, p: *Pool, id: TermId) !void {
+    ip.lockWrite(io);
+    const off = try p.reify(id, ip);
+    ip.unlockWrite(io);
+    const rebuilt = try p.copyIn(ip, off);
+    try testing.expect(p.alphaEq(rebuilt, id));
+}
+
+test "reify/copyIn: every node kind round-trips through extra" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: Pool = .init(arena);
+    const p = &pool;
+    var ip: InternPool = try .init(arena);
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    // bvar, fvar
+    const b0 = try p.add(.{ .bvar = 0 });
+    try expectReifyRoundTrip(io, &ip, p, b0);
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    try expectReifyRoundTrip(io, &ip, p, x);
+
+    // app(add, x, b0) and pred(P, x) — variable-length, with shared subterms
+    const add = tsym(7);
+    const app = try p.addApp(.app, add, &.{ x, b0 });
+    try expectReifyRoundTrip(io, &ip, p, app);
+    const pred = try p.addApp(.pred, tsym(9), &.{x});
+    try expectReifyRoundTrip(io, &ip, p, pred);
+
+    // eq, not
+    const eq = try p.add(.{ .eq = .{ .lhs = app, .rhs = b0 } });
+    try expectReifyRoundTrip(io, &ip, p, eq);
+    const neg = try p.add(.{ .not = eq });
+    try expectReifyRoundTrip(io, &ip, p, neg);
+
+    // bin (all ops), quant (both), nested — the whole tree
+    const conj = try p.add(.{ .bin = .{ .op = .and_op, .lhs = eq, .rhs = neg } });
+    try expectReifyRoundTrip(io, &ip, p, conj);
+    const body = try p.close(conj, sid(1)); // close over x -> a loose bvar
+    const fa = try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(1), .body = body } });
+    try expectReifyRoundTrip(io, &ip, p, fa);
+    const ex = try p.add(.{ .quant = .{ .q = .exists, .sort = nat, .hint = sid(2), .body = body } });
+    try expectReifyRoundTrip(io, &ip, p, ex);
+}
+
+test "reify/copyIn: shared subterm emitted once, rebuilt consistently" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: Pool = .init(arena);
+    const p = &pool;
+    var ip: InternPool = try .init(arena);
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    // f(x, x): x appears twice — reify emits it once (dedup within the run), copyIn
+    // rebuilds a valid tree either way; assert structural round-trip.
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const fxx = try p.addApp(.app, tsym(1), &.{ x, x });
+    try expectReifyRoundTrip(io, &ip, p, fxx);
 }

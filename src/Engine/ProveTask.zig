@@ -59,10 +59,10 @@ pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator
         .claimed => {
             // BEGIN PROVING — eager back-end still verifies (scaffolding); publish flips
             // in_flight -> proven. (No demand/suspend on citations yet — the risky slice.)
-            // The fact now carries a formula; the REAL asserted proposition comes with the
-            // one-walk lowering — for now a placeholder term stands in (this path is not
-            // yet wired to actual proving).
-            const formula = try self.interner.get(.{ .term_bvar = 0 });
+            // The fact carries a formula = a reified-term `extra` offset; the REAL asserted
+            // proposition comes with the one-walk lowering (Step 8). For now this path isn't
+            // wired to actual proving, so a placeholder offset stands in.
+            const formula: InternPool.Index = .none;
             _ = try self.facts.publish(self.io, key, .theorem, formula);
         },
     }
