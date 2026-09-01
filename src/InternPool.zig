@@ -80,6 +80,12 @@ arena: std.mem.Allocator,
 pub const Index = enum(u32) {
     universe = 0,
     _,
+
+    /// The ABSENT marker for optional `Index` slots packed into `extra` (e.g. a func's
+    /// missing guard). Index 0 is a real entry (the universe model), so the top of the
+    /// range is the sentinel. A `?Index` is encoded as this on `null`, decoded back to
+    /// `null` on read. NOT a valid pool entry — never appears as a `get`/`keyOf` result.
+    pub const none: Index = @enumFromInt(0xFFFF_FFFF);
 };
 
 /// The packed storage form. `tag` discriminates; `data` is interpreted per the tag's doc
@@ -127,6 +133,35 @@ pub const Tag = enum(u8) {
     /// sort, a define's body template) is attached in the IdentKV value / a side-table, not
     /// here. Minted by `mintIdent`, never deduped (IdentKV's map guarantees single-mint).
     ident,
+
+    // -- TERMS (a term IS an Index; locally-nameless, so structural interning gives
+    //    α-equivalence for free — two α-equal terms collapse to one Index). --------------
+
+    /// A bound variable (de Bruijn index). `data` IS the index inline (no `extra`).
+    term_bvar,
+    /// A free variable: a named variable at a sort. `data` is an offset into `extra`
+    /// decoding to `Fvar` (its name string `Index` + its sort `Index`).
+    term_fvar,
+    /// An equality `lhs = rhs`. `data` is an offset into `extra` decoding to `Eq` (two
+    /// term `Index`es). Orientation-significant (dedup is on the ordered pair).
+    term_eq,
+    /// A negation `not X`. Single-ref: `data` IS the operand term `Index` (no `extra`).
+    term_not,
+    /// A binary connective (`and`/`or`/`implies`). `data` is an offset into `extra`
+    /// decoding to `Bin` (a `BinOp` + two term `Index`es).
+    term_bin,
+    /// A quantifier (`forall`/`exists`). `data` is an offset into `extra` decoding to
+    /// `Quant` (a `Quantifier` + the bound sort `Index` + a name-hint string `Index` +
+    /// the body term `Index`, whose innermost `term_bvar 0` is this binder).
+    term_quant,
+    /// A function APPLICATION `sym(a0, …)`. `data` is an offset into `extra` holding
+    /// `[sym, argc, a0, …]`: the function symbol `Index`, an arg count, then that many
+    /// argument term `Index`es. Variable-length (hand-encoded, like `.model`).
+    term_app,
+    /// A PREDICATION `sym(a0, …)` — identical `[sym, argc, a0, …]` layout to `term_app`,
+    /// a distinct tag (a predicate, not a function). Its own kind so the two never dedup
+    /// together even with the same sym+args.
+    term_pred,
 };
 
 /// The ERGONOMIC view — what callers build and match on. One variant per `Tag`.
@@ -148,6 +183,24 @@ pub const Key = union(enum) {
     /// `IdentKind`. No identity here (that's IdentKV's); minted by `mintIdent`, never
     /// deduped.
     ident: IdentKind,
+
+    /// A term: a bound variable, its de Bruijn index. Deduped structurally (locally-
+    /// nameless ⇒ α-equivalence for free).
+    term_bvar: u32,
+    /// A term: a free (named) variable at a sort. Deduped on the full `(name, sort)` pair.
+    term_fvar: Fvar,
+    /// A term: an equality between two sub-terms. Deduped structurally (ordered pair).
+    term_eq: Eq,
+    /// A term: a negation. The operand term `Index` (single-ref). Deduped on the operand.
+    term_not: Index,
+    /// A term: a binary connective over two sub-terms. Deduped on `(op, lhs, rhs)`.
+    term_bin: Bin,
+    /// A term: a quantifier over a body. Deduped on `(q, sort, hint, body)`.
+    term_quant: Quant,
+    /// A term: a function application `sym(args…)`. Deduped on `(sym, args…)`.
+    term_app: App,
+    /// A term: a predication `sym(args…)` — same `App` payload, a distinct kind.
+    term_pred: App,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
@@ -172,6 +225,32 @@ pub const Key = union(enum) {
     /// A namespace's payload: the model it is viewed through + the file it scopes. Both
     /// are pool `Index`es (a `.model` and a `.file` respectively).
     pub const Namespace = struct { model: Index, file: Index };
+
+    /// A free variable's payload: its name string `Index` + its sort `Index`.
+    pub const Fvar = struct { name: Index, sort: Index };
+
+    /// An equality's payload: its two operand term `Index`es.
+    pub const Eq = struct { lhs: Index, rhs: Index };
+
+    /// A binary logical connective. The pool owns this durable serialized form (it is the
+    /// lower layer; term.zig's `BinOp` mirrors it). Values match term.zig's ordering.
+    pub const BinOp = enum(u8) { and_op, or_op, implies };
+
+    /// A binary connective's payload: the op + its two operand term `Index`es.
+    pub const Bin = struct { op: BinOp, lhs: Index, rhs: Index };
+
+    /// A quantifier kind. The pool owns this durable serialized form (term.zig's
+    /// `Quantifier` mirrors it). Values match term.zig's ordering.
+    pub const Quantifier = enum(u8) { forall, exists };
+
+    /// A quantifier's payload: the kind + the bound sort `Index` + a name-hint string
+    /// `Index` (a display convenience) + the body term `Index`.
+    pub const Quant = struct { q: Quantifier, sort: Index, hint: Index, body: Index };
+
+    /// An application/predication payload: a symbol `Index` + its argument term `Index`es.
+    /// Variable-length; shared shape for `term_app` and `term_pred` (they differ only in
+    /// which position the symbol denotes — a function vs a predicate).
+    pub const App = struct { sym: Index, args: []const Index };
 
     /// `.string` storage payload: where the bytes live in `string_bytes`.
     const String = struct { off: u32, len: u32 };
@@ -213,10 +292,26 @@ fn hashKey(key: Key) u64 {
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
+        .term_bvar => |i| std.hash.autoHash(&h, i),
+        .term_fvar => |v| std.hash.autoHash(&h, v),
+        .term_eq => |e| std.hash.autoHash(&h, e),
+        .term_not => |o| std.hash.autoHash(&h, o),
+        .term_bin => |b| std.hash.autoHash(&h, b),
+        .term_quant => |q| std.hash.autoHash(&h, q),
+        .term_app, .term_pred => |a| {
+            std.hash.autoHash(&h, a.sym);
+            for (a.args) |arg| std.hash.autoHash(&h, arg);
+        },
         // facts and identifiers are never deduped — minted via mintFact/mintIdent, not get
         .fact, .ident => unreachable,
     }
     return h.final();
+}
+
+fn appEql(a: Key.App, b: Key.App) bool {
+    if (a.sym != b.sym or a.args.len != b.args.len) return false;
+    for (a.args, b.args) |x, y| if (x != y) return false;
+    return true;
 }
 
 fn modelEql(a: Key.Model, b: Key.Model) bool {
@@ -232,6 +327,14 @@ fn keyEql(a: Key, b: Key) bool {
         .file => a.file.path == b.file.path,
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
+        .term_bvar => a.term_bvar == b.term_bvar,
+        .term_fvar => std.meta.eql(a.term_fvar, b.term_fvar),
+        .term_eq => std.meta.eql(a.term_eq, b.term_eq),
+        .term_not => a.term_not == b.term_not,
+        .term_bin => std.meta.eql(a.term_bin, b.term_bin),
+        .term_quant => std.meta.eql(a.term_quant, b.term_quant),
+        .term_app => appEql(a.term_app, b.term_app),
+        .term_pred => appEql(a.term_pred, b.term_pred),
         .fact, .ident => unreachable, // never deduped (see mintFact/mintIdent)
     };
 }
@@ -273,6 +376,36 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
         .namespace => |ns| {
             const off = try self.addExtra(ns);
             try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
+        },
+        .term_bvar => |i| {
+            try self.items.append(self.arena, .{ .tag = .term_bvar, .data = i });
+        },
+        .term_fvar => |v| {
+            const off = try self.addExtra(v);
+            try self.items.append(self.arena, .{ .tag = .term_fvar, .data = off });
+        },
+        .term_eq => |e| {
+            const off = try self.addExtra(e);
+            try self.items.append(self.arena, .{ .tag = .term_eq, .data = off });
+        },
+        .term_not => |o| {
+            try self.items.append(self.arena, .{ .tag = .term_not, .data = @intFromEnum(o) });
+        },
+        .term_bin => |b| {
+            const off = try self.addExtra(b);
+            try self.items.append(self.arena, .{ .tag = .term_bin, .data = off });
+        },
+        .term_quant => |q| {
+            const off = try self.addExtra(q);
+            try self.items.append(self.arena, .{ .tag = .term_quant, .data = off });
+        },
+        .term_app => |a| {
+            const off = try self.addApp(a); // [sym, argc, a0, …]
+            try self.items.append(self.arena, .{ .tag = .term_app, .data = off });
+        },
+        .term_pred => |a| {
+            const off = try self.addApp(a); // same [sym, argc, a0, …] layout
+            try self.items.append(self.arena, .{ .tag = .term_pred, .data = off });
         },
         // facts/idents are minted via mintFact/mintIdent, never `get` (no dedup)
         .fact, .ident => unreachable,
@@ -324,6 +457,14 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
         .fact => .{ .fact = @enumFromInt(item.data) }, // kind is inline in data
         .ident => .{ .ident = @enumFromInt(item.data) }, // IdentKind inline in data
+        .term_bvar => .{ .term_bvar = item.data }, // de Bruijn index inline
+        .term_fvar => .{ .term_fvar = self.extraData(Key.Fvar, item.data) },
+        .term_eq => .{ .term_eq = self.extraData(Key.Eq, item.data) },
+        .term_not => .{ .term_not = @enumFromInt(item.data) }, // operand Index inline
+        .term_bin => .{ .term_bin = self.extraData(Key.Bin, item.data) },
+        .term_quant => .{ .term_quant = self.extraData(Key.Quant, item.data) },
+        .term_app => .{ .term_app = self.appData(item.data) },
+        .term_pred => .{ .term_pred = self.appData(item.data) },
     };
 }
 
@@ -380,6 +521,29 @@ fn modelData(self: *const InternPool, off: u32) Key.Model {
     return .{ .parent = parent, .overlay = @ptrCast(raw) };
 }
 
+// -- application/predication encoding (`[sym, argc, a0, …]`) ---------------------------
+// A symbol + a variable-length arg run, so the fixed-struct reflection encoder can't
+// express it (same reason as `.model`). Shared by `term_app` and `term_pred`.
+
+/// Append `[sym, argc, a0, …]` to `extra`; return the start offset.
+fn addApp(self: *InternPool, a: Key.App) std.mem.Allocator.Error!u32 {
+    const off: u32 = @intCast(self.extra.items.len);
+    try self.extra.ensureUnusedCapacity(self.arena, 2 + a.args.len);
+    self.extra.appendAssumeCapacity(@intFromEnum(a.sym));
+    self.extra.appendAssumeCapacity(@intCast(a.args.len));
+    for (a.args) |arg| self.extra.appendAssumeCapacity(@intFromEnum(arg));
+    return off;
+}
+
+/// Read an application payload at `off` back — the inverse of `addApp`. The args slice
+/// reinterprets the `u32` run in `extra` as `Index` (same layout).
+fn appData(self: *const InternPool, off: u32) Key.App {
+    const sym: Index = @enumFromInt(self.extra.items[off]);
+    const n = self.extra.items[off + 1];
+    const raw = self.extra.items[off + 2 .. off + 2 + n];
+    return .{ .sym = sym, .args = @ptrCast(raw) };
+}
+
 // -- reflection-based `extra` encoding ------------------------------------------------
 // A payload struct is serialized field-by-field as `u32`: enum fields by their integer
 // tag, integer fields by bit-cast. Reading reverses it. Field ORDER is the contract.
@@ -421,6 +585,192 @@ fn decodeField(comptime T: type, raw: u32) T {
         .int => @bitCast(raw),
         else => @compileError("InternPool extra: unsupported field type " ++ @typeName(T)),
     };
+}
+
+test "term_bvar: a de Bruijn index interns inline and round-trips; equal indices dedup" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+    const b1 = try pool.get(.{ .term_bvar = 1 });
+    const b0_again = try pool.get(.{ .term_bvar = 0 });
+
+    try std.testing.expectEqual(b0, b0_again); // DEDUP: same de Bruijn index collapses
+    try std.testing.expect(b0 != b1);
+    try std.testing.expectEqual(@as(u32, 0), pool.keyOf(b0).term_bvar);
+    try std.testing.expectEqual(@as(u32, 1), pool.keyOf(b1).term_bvar);
+}
+
+test "term_fvar: [name, sort] interns and round-trips; same pair dedups, differ by either" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.internString("Nat");
+    const int = try pool.internString("Int");
+    const x = try pool.internString("x");
+    const y = try pool.internString("y");
+
+    const x_nat = try pool.get(.{ .term_fvar = .{ .name = x, .sort = nat } });
+    const y_nat = try pool.get(.{ .term_fvar = .{ .name = y, .sort = nat } });
+    const x_int = try pool.get(.{ .term_fvar = .{ .name = x, .sort = int } });
+    const x_nat_again = try pool.get(.{ .term_fvar = .{ .name = x, .sort = nat } });
+
+    try std.testing.expectEqual(x_nat, x_nat_again); // DEDUP on the full (name, sort) pair
+    try std.testing.expect(x_nat != y_nat); // differ by name
+    try std.testing.expect(x_nat != x_int); // differ by sort
+
+    const k = pool.keyOf(x_nat).term_fvar;
+    try std.testing.expectEqual(x, k.name);
+    try std.testing.expectEqual(nat, k.sort);
+}
+
+test "term_eq: [lhs, rhs] over sub-terms interns and round-trips; dedups structurally" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+    const b1 = try pool.get(.{ .term_bvar = 1 });
+
+    const eq01 = try pool.get(.{ .term_eq = .{ .lhs = b0, .rhs = b1 } });
+    const eq10 = try pool.get(.{ .term_eq = .{ .lhs = b1, .rhs = b0 } });
+    const eq01_again = try pool.get(.{ .term_eq = .{ .lhs = b0, .rhs = b1 } });
+
+    try std.testing.expectEqual(eq01, eq01_again); // structural dedup on (lhs, rhs)
+    try std.testing.expect(eq01 != eq10); // orientation matters
+    try std.testing.expect(eq01 != b0); // an eq is distinct from its operands
+
+    const k = pool.keyOf(eq01).term_eq;
+    try std.testing.expectEqual(b0, k.lhs);
+    try std.testing.expectEqual(b1, k.rhs);
+}
+
+test "term_not: single-ref operand interns inline, round-trips; dedups; double-not distinct" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+    const not0 = try pool.get(.{ .term_not = b0 });
+    const not0_again = try pool.get(.{ .term_not = b0 });
+    const notnot0 = try pool.get(.{ .term_not = not0 });
+
+    try std.testing.expectEqual(not0, not0_again); // dedup on the operand
+    try std.testing.expect(not0 != b0); // not X ≠ X
+    try std.testing.expect(notnot0 != not0); // not not X ≠ not X
+
+    try std.testing.expectEqual(b0, pool.keyOf(not0).term_not);
+    try std.testing.expectEqual(not0, pool.keyOf(notnot0).term_not);
+}
+
+test "term_bin: [op, lhs, rhs] interns and round-trips; dedups; differ by op or operand" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+    const b1 = try pool.get(.{ .term_bvar = 1 });
+
+    const and01 = try pool.get(.{ .term_bin = .{ .op = .and_op, .lhs = b0, .rhs = b1 } });
+    const or01 = try pool.get(.{ .term_bin = .{ .op = .or_op, .lhs = b0, .rhs = b1 } });
+    const and10 = try pool.get(.{ .term_bin = .{ .op = .and_op, .lhs = b1, .rhs = b0 } });
+    const and01_again = try pool.get(.{ .term_bin = .{ .op = .and_op, .lhs = b0, .rhs = b1 } });
+
+    try std.testing.expectEqual(and01, and01_again); // structural dedup on (op, lhs, rhs)
+    try std.testing.expect(and01 != or01); // differ by op
+    try std.testing.expect(and01 != and10); // differ by operand order
+
+    const k = pool.keyOf(and01).term_bin;
+    try std.testing.expectEqual(InternPool.Key.BinOp.and_op, k.op);
+    try std.testing.expectEqual(b0, k.lhs);
+    try std.testing.expectEqual(b1, k.rhs);
+}
+
+test "term_quant: [q, sort, hint, body] interns/round-trips; hint IS identity here; dedups" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const nat = try pool.internString("Nat");
+    const hint_x = try pool.internString("x");
+    const hint_y = try pool.internString("y");
+    const body = try pool.get(.{ .term_bvar = 0 });
+
+    const fa = try pool.get(.{ .term_quant = .{ .q = .forall, .sort = nat, .hint = hint_x, .body = body } });
+    const ex = try pool.get(.{ .term_quant = .{ .q = .exists, .sort = nat, .hint = hint_x, .body = body } });
+    const fa_y = try pool.get(.{ .term_quant = .{ .q = .forall, .sort = nat, .hint = hint_y, .body = body } });
+    const fa_again = try pool.get(.{ .term_quant = .{ .q = .forall, .sort = nat, .hint = hint_x, .body = body } });
+
+    try std.testing.expectEqual(fa, fa_again); // dedup on the full tuple
+    try std.testing.expect(fa != ex); // differ by quantifier
+    // hint is stored (a display name); at the pool layer it is part of the packed tuple.
+    // (α-equivalence that IGNORES the hint is a higher-layer concern; the pool round-trips
+    // exactly what it was given.)
+    try std.testing.expect(fa != fa_y);
+
+    const k = pool.keyOf(fa).term_quant;
+    try std.testing.expectEqual(InternPool.Key.Quantifier.forall, k.q);
+    try std.testing.expectEqual(nat, k.sort);
+    try std.testing.expectEqual(hint_x, k.hint);
+    try std.testing.expectEqual(body, k.body);
+}
+
+test "term_app: [sym, argc, args…] variable-length interns/round-trips; dedups structurally" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    // borrow raw indices as stand-in sym + args (the pool is agnostic about which kind an
+    // arg Index is — it just stores the reference).
+    const add = try pool.internString("add");
+    const mul = try pool.internString("mul");
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+    const b1 = try pool.get(.{ .term_bvar = 1 });
+
+    const add01 = try pool.get(.{ .term_app = .{ .sym = add, .args = &.{ b0, b1 } } });
+    const add01_again = try pool.get(.{ .term_app = .{ .sym = add, .args = &.{ b0, b1 } } });
+    const add10 = try pool.get(.{ .term_app = .{ .sym = add, .args = &.{ b1, b0 } } });
+    const mul01 = try pool.get(.{ .term_app = .{ .sym = mul, .args = &.{ b0, b1 } } });
+    const add0 = try pool.get(.{ .term_app = .{ .sym = add, .args = &.{b0} } }); // arity 1
+    const add_nul = try pool.get(.{ .term_app = .{ .sym = add, .args = &.{} } }); // arity 0
+
+    try std.testing.expectEqual(add01, add01_again); // dedup on (sym, args…)
+    try std.testing.expect(add01 != add10); // arg order matters
+    try std.testing.expect(add01 != mul01); // sym matters
+    try std.testing.expect(add01 != add0); // arity matters
+    try std.testing.expect(add0 != add_nul);
+
+    const k = pool.keyOf(add01).term_app;
+    try std.testing.expectEqual(add, k.sym);
+    try std.testing.expectEqual(@as(usize, 2), k.args.len);
+    try std.testing.expectEqual(b0, k.args[0]);
+    try std.testing.expectEqual(b1, k.args[1]);
+    try std.testing.expectEqual(@as(usize, 0), pool.keyOf(add_nul).term_app.args.len);
+}
+
+test "term_pred: same App shape as term_app but a DISTINCT kind (never collapses together)" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var pool: InternPool = try .init(arena_state.allocator());
+
+    const p = try pool.internString("isEven");
+    const b0 = try pool.get(.{ .term_bvar = 0 });
+
+    const pred = try pool.get(.{ .term_pred = .{ .sym = p, .args = &.{b0} } });
+    const pred_again = try pool.get(.{ .term_pred = .{ .sym = p, .args = &.{b0} } });
+    const app = try pool.get(.{ .term_app = .{ .sym = p, .args = &.{b0} } });
+
+    try std.testing.expectEqual(pred, pred_again); // dedup on (sym, args…)
+    // an app and a pred with the SAME sym+args are DIFFERENT kinds → distinct Indexes
+    // (tag participates in identity; keyEql short-circuits on differing active tag).
+    try std.testing.expect(pred != app);
+
+    const k = pool.keyOf(pred).term_pred;
+    try std.testing.expectEqual(p, k.sym);
+    try std.testing.expectEqual(@as(usize, 1), k.args.len);
+    try std.testing.expectEqual(b0, k.args[0]);
 }
 
 test "strings intern by content and round-trip their bytes" {

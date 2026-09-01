@@ -10,6 +10,7 @@ pub const diagnostics = @import("diagnostics.zig");
 pub const InternPool = @import("InternPool.zig");
 pub const FactKV = @import("FactKV.zig");
 pub const IdentKV = @import("IdentKV.zig");
+pub const TermSlate = @import("TermSlate.zig");
 pub const term = @import("term.zig");
 pub const env = @import("env.zig");
 pub const elaborate = @import("elaborate.zig");
