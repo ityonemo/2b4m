@@ -50,9 +50,11 @@ pub fn write(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind) std
     // re-check under the exclusive lock (a racer may have published between our read and
     // acquiring the lock)
     if (self.map.get(key)) |existing| return existing;
-    // still absent — mint under the pool write-mutex (nested), then publish
+    // still absent — mint a fresh truth-token under the pool write-mutex (nested), then
+    // publish the (ns,name)->Index mapping. FactKV's map is the identity index; the pool
+    // just hands out a bare token, so the map's dedup is what guarantees single-mint.
     self.pool.lockWrite(io);
-    const index = self.pool.fact(key.namespace, key.name, kind) catch |e| {
+    const index = self.pool.mintFact(kind) catch |e| {
         self.pool.unlockWrite(io);
         return e;
     };

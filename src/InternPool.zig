@@ -113,14 +113,13 @@ pub const Tag = enum(u8) {
     /// `data` is an offset into `extra` decoding to `Namespace` (a model Index + a file
     /// Index). Every file has its universe-namespace: `(universe, file)`.
     namespace,
-    /// A FACT — a declared axiom or theorem. `data` is an offset into `extra` decoding to
-    /// `Fact` (its namespace Index, its name string Index, and its `kind`). Keyed by
-    /// `(namespace, name)` ONLY: unique per declaration-site (two facts named `foo` in
-    /// different namespaces are distinct; a namespace can't have two `foo`s, so `kind` is
-    /// NOT an identity axis — it's attached data). This Index IS the fact's identity.
-    /// axiom vs theorem is one `kind` field, branched at the prove-or-not boundary (an
-    /// axiom is a resolve-and-store leaf; a theorem's proof gets checked). One `fact` kind
-    /// for now; split into distinct kinds only if a roadbump demands it.
+    /// A FACT — a proven axiom or theorem. A BARE TRUTH TOKEN: `data` is the `Kind`
+    /// (axiom/theorem) inline, NO `extra` payload, NO identity. INTERNED ⇒ TRUE: a fact
+    /// exists in the pool only when proven (interning is the commit point of proving);
+    /// there is no proven-bit, presence IS truth. Its `(namespace,name)` identity lives in
+    /// FactKV (the sole forward index) — nothing does a reverse fact→(ns,name) lookup, so
+    /// the pool stores none of it. Facts BYPASS dedup: `mintFact` always appends a fresh
+    /// token; FactKV's map + write-lock guarantee single-mint per `(ns,name)`.
     fact,
 };
 
@@ -136,18 +135,13 @@ pub const Key = union(enum) {
     /// A namespace: a file scoped by a model. Two references to the same `(model, file)`
     /// pair collapse to one `Index`.
     namespace: Namespace,
-    /// A fact (axiom or theorem), identified by its namespace + name. Two references to
-    /// the same `(namespace, name)` collapse to one `Index` (the fact's identity); `kind`
-    /// is attached data, not part of the key.
-    fact: Fact,
+    /// A fact (proven axiom or theorem) — a bare truth token carrying only its `Kind`.
+    /// No identity here (that's FactKV's); minted by `mintFact`, never deduped.
+    fact: Kind,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
     /// path — two importers of the same file get the same `Index`.
     pub const File = struct { path: StrId };
-
-    /// A fact's payload: its namespace + name (the identity) plus its `kind` (axiom or
-    /// theorem — attached, not identity). namespace/name are pool `Index`es.
-    pub const Fact = struct { namespace: Index, name: StrId, kind: Kind };
 
     /// What a fact IS. Branched only at the prove-or-not boundary: an axiom is a
     /// resolve-and-store leaf; a theorem's proof gets checked.
@@ -205,11 +199,8 @@ fn hashKey(key: Key) u64 {
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
-        // identity is (namespace, name) ONLY — `kind` is attached, not hashed
-        .fact => |f| {
-            std.hash.autoHash(&h, f.namespace);
-            std.hash.autoHash(&h, f.name);
-        },
+        // facts are never deduped — they go through `mintFact`, not `get`
+        .fact => unreachable,
     }
     return h.final();
 }
@@ -227,8 +218,7 @@ fn keyEql(a: Key, b: Key) bool {
         .file => a.file.path == b.file.path,
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
-        // identity is (namespace, name) ONLY — `kind` ignored
-        .fact => a.fact.namespace == b.fact.namespace and a.fact.name == b.fact.name,
+        .fact => unreachable, // facts never deduped (see mintFact)
     };
 }
 
@@ -270,15 +260,19 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             const off = try self.addExtra(ns);
             try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
         },
-        .fact => |f| {
-            // dedup is on (namespace, name); the FIRST-interned `kind` is what sticks
-            // (re-interning the same name with a different kind returns the existing entry
-            // unchanged — a name is declared once, so this is fine).
-            const off = try self.addExtra(f);
-            try self.items.append(self.arena, .{ .tag = .fact, .data = off });
-        },
+        .fact => unreachable, // facts are minted via `mintFact`, never `get` (no dedup)
     }
     gop.key_ptr.* = index;
+    return index;
+}
+
+/// Mint a fresh fact truth-token carrying `kind` inline in `data` — ALWAYS appends (no
+/// dedup, no `extra`). Bypasses `get`/`map` because a fact has no structural identity in
+/// the pool (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact
+/// IS committing "this fact is proven true". Takes the write-mutex like any pool write.
+pub fn mintFact(self: *InternPool, kind: Key.Kind) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    try self.items.append(self.arena, .{ .tag = .fact, .data = @intFromEnum(kind) });
     return index;
 }
 
@@ -304,7 +298,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.modelData(item.data) },
         .namespace => .{ .namespace = self.extraData(Key.Namespace, item.data) },
-        .fact => .{ .fact = self.extraData(Key.Fact, item.data) },
+        .fact => .{ .fact = @enumFromInt(item.data) }, // kind is inline in data
     };
 }
 
@@ -333,13 +327,6 @@ pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
 /// `namespace(.universe, file)`.
 pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator.Error!Index {
     return self.get(.{ .namespace = .{ .model = model, .file = file } });
-}
-
-/// Intern the fact `name` declared in `ns` with `kind` (axiom/theorem) — its identity.
-/// Deduped per (namespace, name); the returned `Index` IS the fact identifier. If the
-/// name is already interned, the existing entry (and its first-interned kind) is returned.
-pub fn fact(self: *InternPool, ns: Index, name: StrId, kind: Key.Kind) std.mem.Allocator.Error!Index {
-    return self.get(.{ .fact = .{ .namespace = ns, .name = name, .kind = kind } });
 }
 
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
@@ -470,35 +457,22 @@ test "namespace = (model, file), deduped per pair" {
     try std.testing.expectEqual(f_int, ns.file);
 }
 
-test "fact = (namespace, name), deduped per pair; kind is attached not identity" {
+test "fact is a bare truth token: mintFact always appends, carries only kind" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
-    const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
-    const ns_int = try pool.namespace(.universe, f_int);
-    const ns_nat = try pool.namespace(.universe, f_nat);
-    const comm = try pool.internString("addIsCommutative");
-    const assoc = try pool.internString("addIsAssociative");
+    // mintFact ALWAYS appends a fresh token — no dedup (identity/(ns,name) is FactKV's
+    // job, not the pool's). Two mints, even same kind, are DISTINCT Indexes.
+    const a = try pool.mintFact(.theorem);
+    const b = try pool.mintFact(.theorem);
+    try std.testing.expect(a != b);
 
-    const t = try pool.fact(ns_int, comm, .theorem);
-    // same (namespace, name) -> same Index (the fact's identity)
-    try std.testing.expectEqual(t, try pool.fact(ns_int, comm, .theorem));
-    // same name in a DIFFERENT namespace -> distinct fact
-    try std.testing.expect(t != try pool.fact(ns_nat, comm, .theorem));
-    // different name in the same namespace -> distinct fact
-    try std.testing.expect(t != try pool.fact(ns_int, assoc, .theorem));
-
-    // KIND is NOT identity: re-interning the same (ns, name) with a different kind
-    // returns the SAME Index, and the FIRST-interned kind sticks.
-    try std.testing.expectEqual(t, try pool.fact(ns_int, comm, .axiom));
-    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(t).fact.kind);
-
-    // round-trip identity
-    const key = pool.keyOf(t).fact;
-    try std.testing.expectEqual(ns_int, key.namespace);
-    try std.testing.expectEqual(comm, key.name);
+    // the ONLY thing a fact token carries is its kind (inline in data; no extra payload)
+    try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(a).fact);
+    const x = try pool.mintFact(.axiom);
+    try std.testing.expectEqual(InternPool.Key.Kind.axiom, pool.keyOf(x).fact);
+    try std.testing.expect(x != a);
 }
 
 test "file interns by path: same path -> same Index, distinct paths -> distinct" {
