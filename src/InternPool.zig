@@ -426,6 +426,51 @@ fn refinementData(self: *const InternPool, off: u32) Key.Sort.Refinement {
     return .{ .parent = parent, .qualifiers = @ptrCast(raw) };
 }
 
+// -- pool-backed refinement / signature queries -------------------------------------
+// These mirror `env.Env`'s `carrierOf`/`qualifiersOf`/`isRefined`/`symResult` over the
+// pool's `sort`/`func`/`pred` Items, reading refinement chains stored in `extra`. As the
+// demand model takes over (env dissolves), name resolution + kernel reads route here.
+// (`sortName` waits until a `sort` Item carries its name — Step 6.)
+
+/// Whether a `sort` Item is refined (a predicated sort with a guard). Reads the `.sort`
+/// item's `data`, which is `none` for a root sort, else a refinement `extra`-offset.
+pub fn isRefined(self: *const InternPool, sort: Index) bool {
+    std.debug.assert(self.items.get(@intFromEnum(sort)).tag == .sort);
+    return self.items.get(@intFromEnum(sort)).data != @intFromEnum(Index.none);
+}
+
+/// The KERNEL sort a (possibly refined) sort `Index` lowers to: walk `parent` to the root
+/// (a `sort` with no refinement). A root sort is its own carrier. Mirrors env.carrierOf.
+pub fn carrierOf(self: *const InternPool, sort: Index) Index {
+    var cur = sort;
+    while (self.keyOf(cur).sort.refinement) |r| cur = r.parent;
+    return cur;
+}
+
+/// The guard qualifiers accumulated along a sort's refinement chain (empty for a root
+/// sort), innermost-refinement first. Mirrors env.qualifiersOf. Arena-allocated result.
+pub fn qualifiersOf(self: *const InternPool, arena: std.mem.Allocator, sort: Index) std.mem.Allocator.Error![]const Index {
+    var acc: std.ArrayList(Index) = .empty;
+    var cur = sort;
+    while (self.keyOf(cur).sort.refinement) |r| {
+        try acc.appendSlice(arena, r.qualifiers);
+        cur = r.parent;
+    }
+    return acc.toOwnedSlice(arena);
+}
+
+/// A func/pred symbol's RESULT sort `Index` (from its signature). Mirrors the kernel's
+/// `env.sym(id).result`. Asserts `sym` names a `.func` or `.pred` Item.
+pub fn symResult(self: *const InternPool, sym: Index) Index {
+    const key = self.keyOf(sym);
+    const callable = switch (key) {
+        .func => |c| c,
+        .pred => |c| c,
+        else => unreachable,
+    };
+    return self.keyOf(callable.sig).sig.result;
+}
+
 /// Mint a fresh CONSTANT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// `data` IS its sort `Index`. Two constants of the same sort get distinct Indexes.
 pub fn mintConstant(self: *InternPool, sort: Index) std.mem.Allocator.Error!Index {
@@ -743,6 +788,38 @@ test "sort: root (no refinement) + refined [parent, quals…] mint fresh, round-
     try std.testing.expectEqual(@as(usize, 2), r.qualifiers.len);
     try std.testing.expectEqual(even, r.qualifiers[0]);
     try std.testing.expectEqual(pos, r.qualifiers[1]);
+}
+
+test "refinement queries: carrierOf/qualifiersOf/isRefined walk the chain" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: InternPool = try .init(arena);
+
+    const in_b = try pool.internString("inB"); // stand-in qualifier preds
+    const in_c = try pool.internString("inC");
+    // chain: C = B where inC, B = A where inB, A root.
+    const a = try pool.mintSort(.{ .refinement = null });
+    const b = try pool.mintSort(.{ .refinement = .{ .parent = a, .qualifiers = &.{in_b} } });
+    const c = try pool.mintSort(.{ .refinement = .{ .parent = b, .qualifiers = &.{in_c} } });
+
+    try std.testing.expect(!pool.isRefined(a));
+    try std.testing.expect(pool.isRefined(b));
+    try std.testing.expect(pool.isRefined(c));
+
+    // carrier collapses to the root A for every level.
+    try std.testing.expectEqual(a, pool.carrierOf(a));
+    try std.testing.expectEqual(a, pool.carrierOf(b));
+    try std.testing.expectEqual(a, pool.carrierOf(c));
+
+    // qualifiers accumulate innermost-first along the chain.
+    try std.testing.expectEqualSlices(Index, &.{}, try pool.qualifiersOf(arena, a));
+    try std.testing.expectEqualSlices(Index, &.{in_c, in_b}, try pool.qualifiersOf(arena, c));
+
+    // symResult reads a func's signature result sort.
+    const sig = try pool.get(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
+    const f = try pool.mintFunc(.{ .sig = sig, .guard = no_term, .param_names = &.{try pool.internString("x")} });
+    try std.testing.expectEqual(a, pool.symResult(f));
 }
 
 test "constant: data = sort Index, minted fresh (same sort → distinct constants), round-trips" {
