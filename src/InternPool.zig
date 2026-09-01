@@ -40,6 +40,16 @@ const InternPool = @This();
 /// value is understood to name a string, even though the type is the general `Index`).
 pub const StrId = Index;
 
+/// A DURABLE TERM's location: an offset into `extra` where a term is serialized as a
+/// self-contained u32 run (see `appendExtraRun` + term.zig `reify`/`copyIn`). NOT an
+/// `Index` — a term is not an interned entity (bpa is explicit; no term dedup). Named
+/// distinctly so a term-offset is never confused with an entity `Index` at a field.
+pub const TermOff = u32;
+
+/// The ABSENT marker for an optional `TermOff` (e.g. a func's missing guard). Offset 0 is a
+/// valid term location, so the top of the range is the sentinel — mirrors `Index.none`.
+pub const no_term: TermOff = 0xFFFF_FFFF;
+
 /// The packed store: one `Item` per interned entity, indexed by `@intFromEnum(Index)`.
 items: std.MultiArrayList(Item) = .empty,
 /// Variable-length payload spill. An `Item.data` may be an offset into here; the run of
@@ -215,9 +225,9 @@ pub const Key = union(enum) {
     /// resolve-and-store leaf; a theorem's proof gets checked.
     pub const Kind = enum(u8) { axiom, theorem };
 
-    /// A fact's payload: its kind + the formula term `Index` it asserts. Spilled into
-    /// `extra` as `[kind, formula]`.
-    pub const Fact = struct { kind: Kind, formula: Index };
+    /// A fact's payload: its kind + the `extra`-offset of the formula term it asserts.
+    /// Spilled into `extra` as `[kind, formula_off]`.
+    pub const Fact = struct { kind: Kind, formula: TermOff };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
     /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
@@ -242,14 +252,14 @@ pub const Key = union(enum) {
         pub const Refinement = struct { parent: Index, qualifiers: []const Index };
     };
 
-    /// A func/pred's content: its signature `Index`, an optional guard term `Index`
-    /// (`Index.none` = unguarded), and its param-name string `Index`es. Shared by `func`
-    /// and `pred` (identical layout; the tag says which). Variable-length.
-    pub const Callable = struct { sig: Index, guard: Index, param_names: []const Index };
+    /// A func/pred's content: its signature `Index`, the `extra`-offset of an optional
+    /// guard term (`no_term` = unguarded), and its param-name string `Index`es. Shared by
+    /// `func` and `pred` (identical layout; the tag says which). Variable-length.
+    pub const Callable = struct { sig: Index, guard: TermOff, param_names: []const Index };
 
-    /// A define's content: its template body term `Index` + its param-name string
-    /// `Index`es. Variable-length.
-    pub const Define = struct { body: Index, param_names: []const Index };
+    /// A define's content: the `extra`-offset of its template body term + its param-name
+    /// string `Index`es. Variable-length.
+    pub const Define = struct { body: TermOff, param_names: []const Index };
 
     /// `.string` storage payload: where the bytes live in `string_bytes`.
     const String = struct { off: u32, len: u32 };
@@ -379,7 +389,7 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
 /// (no dedup). Bypasses `get`/`map` because a fact has no structural identity in the pool
 /// (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact IS
 /// committing "this fact is proven true". Takes the write-mutex like any pool write.
-pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: Index) std.mem.Allocator.Error!Index {
+pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(Key.Fact{ .kind = kind, .formula = formula });
     try self.items.append(self.arena, .{ .tag = .fact, .data = off });
@@ -429,7 +439,7 @@ fn addCallable(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!u32 {
     const off: u32 = @intCast(self.extra.items.len);
     try self.extra.ensureUnusedCapacity(self.arena, 3 + c.param_names.len);
     self.extra.appendAssumeCapacity(@intFromEnum(c.sig));
-    self.extra.appendAssumeCapacity(@intFromEnum(c.guard));
+    self.extra.appendAssumeCapacity(c.guard); // TermOff (u32), not an Index
     self.extra.appendAssumeCapacity(@intCast(c.param_names.len));
     for (c.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
     return off;
@@ -438,7 +448,7 @@ fn addCallable(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!u32 {
 /// Read a callable payload at `off` back — the inverse of `addCallable`.
 fn callableData(self: *const InternPool, off: u32) Key.Callable {
     const sig: Index = @enumFromInt(self.extra.items[off]);
-    const guard: Index = @enumFromInt(self.extra.items[off + 1]);
+    const guard: TermOff = self.extra.items[off + 1]; // TermOff (u32), not an Index
     const n = self.extra.items[off + 2];
     const raw = self.extra.items[off + 3 .. off + 3 + n];
     return .{ .sig = sig, .guard = guard, .param_names = @ptrCast(raw) };
@@ -466,7 +476,7 @@ pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Inde
 fn addDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!u32 {
     const off: u32 = @intCast(self.extra.items.len);
     try self.extra.ensureUnusedCapacity(self.arena, 2 + d.param_names.len);
-    self.extra.appendAssumeCapacity(@intFromEnum(d.body));
+    self.extra.appendAssumeCapacity(d.body); // TermOff (u32), not an Index
     self.extra.appendAssumeCapacity(@intCast(d.param_names.len));
     for (d.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
     return off;
@@ -474,7 +484,7 @@ fn addDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!u32 {
 
 /// Read a define payload at `off` back — the inverse of `addDefine`.
 fn defineData(self: *const InternPool, off: u32) Key.Define {
-    const body: Index = @enumFromInt(self.extra.items[off]);
+    const body: TermOff = self.extra.items[off]; // TermOff (u32), not an Index
     const n = self.extra.items[off + 1];
     const raw = self.extra.items[off + 2 .. off + 2 + n];
     return .{ .body = body, .param_names = @ptrCast(raw) };
@@ -758,17 +768,16 @@ test "func: [sig, guard|none, paramc, names…] minted fresh, round-trips; guard
     const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
     const n_name = try pool.internString("n");
     const m_name = try pool.internString("m");
-    // stand-in guard term-offset (terms aren't Items; a real guard is a reified `extra`
-    // offset — Step 3. For this round-trip test any u32 value works as the stored offset).
-    const guard: Index = @enumFromInt(42);
+    // stand-in guard term-offset (a real guard is a reified `extra` offset; any u32 works).
+    const guard: TermOff = 42;
 
     // a func WITHOUT a guard
-    const add = try pool.mintFunc(.{ .sig = sig, .guard = .none, .param_names = &.{ n_name, m_name } });
-    const add2 = try pool.mintFunc(.{ .sig = sig, .guard = .none, .param_names = &.{ n_name, m_name } });
+    const add = try pool.mintFunc(.{ .sig = sig, .guard = InternPool.no_term, .param_names = &.{ n_name, m_name } });
+    const add2 = try pool.mintFunc(.{ .sig = sig, .guard = InternPool.no_term, .param_names = &.{ n_name, m_name } });
     try std.testing.expect(add != add2); // minted → distinct despite identical content
     const ka = pool.keyOf(add).func;
     try std.testing.expectEqual(sig, ka.sig);
-    try std.testing.expectEqual(InternPool.Index.none, ka.guard);
+    try std.testing.expectEqual(InternPool.no_term, ka.guard);
     try std.testing.expectEqual(@as(usize, 2), ka.param_names.len);
     try std.testing.expectEqual(n_name, ka.param_names[0]);
     try std.testing.expectEqual(m_name, ka.param_names[1]);
@@ -790,10 +799,10 @@ test "pred: same Callable payload as func, minted under a DISTINCT kind" {
     const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
     const x = try pool.internString("x");
 
-    const is_even = try pool.mintPred(.{ .sig = sig, .guard = .none, .param_names = &.{x} });
+    const is_even = try pool.mintPred(.{ .sig = sig, .guard = InternPool.no_term, .param_names = &.{x} });
     const k = pool.keyOf(is_even).pred;
     try std.testing.expectEqual(sig, k.sig);
-    try std.testing.expectEqual(InternPool.Index.none, k.guard);
+    try std.testing.expectEqual(InternPool.no_term, k.guard);
     try std.testing.expectEqual(@as(usize, 1), k.param_names.len);
     try std.testing.expectEqual(x, k.param_names[0]);
 }
@@ -803,7 +812,7 @@ test "define: [body, paramc, names…] minted fresh, round-trips its template bo
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const body: Index = @enumFromInt(7); // stand-in template body term-offset (see Step 3)
+    const body: TermOff = 7; // stand-in template body term-offset (a reified extra offset)
     const n = try pool.internString("n");
 
     const def = try pool.mintDefine(.{ .body = body, .param_names = &.{n} });
@@ -895,9 +904,9 @@ test "fact is a truth token carrying (kind, formula): mintFact always appends, r
     var pool: InternPool = try .init(arena_state.allocator());
 
     // stand-in formula term-offsets (a fact records the proposition it asserts, as a
-    // reified `extra` offset — Step 3; any distinct u32s work for this round-trip test).
-    const f1: Index = @enumFromInt(11);
-    const f2: Index = @enumFromInt(22);
+    // reified `extra` offset; any distinct u32s work for this round-trip test).
+    const f1: TermOff = 11;
+    const f2: TermOff = 22;
 
     // mintFact ALWAYS appends a fresh token — no dedup (identity/(ns,name) is FactKV's
     // job, not the pool's). Two mints, even same (kind, formula), are DISTINCT Indexes.
