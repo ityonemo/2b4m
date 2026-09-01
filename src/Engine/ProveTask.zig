@@ -14,6 +14,7 @@ const std = @import("std");
 const InternPool = @import("../InternPool.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
+const FactKV = @import("../FactKV.zig");
 
 const ProveTask = @This();
 
@@ -35,14 +36,30 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
     return run(self, task.*, h);
 }
 
-/// Intern the theorem's representation: `(universe-namespace(file), name)` -> a `.theorem`
-/// entity whose `Index` is the theorem's identity. (Later: also demand its citations and
-/// check the proof; for now interning is the whole job and verification stays with the
-/// eager back-end.)
+/// The demand ENTRY PROTOCOL (see FactKV): look up `(namespace, name)`, claiming it if
+/// absent. Branches:
+///   - proven    -> nothing to do.
+///   - in_flight -> SUSPEND blocked-on the task already proving it (a redundant duplicate
+///                  prove-task dedups to a no-op waiter; on resume it re-runs, finds
+///                  `proven`, and completes).
+///   - claimed   -> we own it: BEGIN PROVING. For now the eager back-end still does the
+///                  actual checking, so we immediately `publish` (mint the fact token,
+///                  in_flight -> proven). When the reentrant prover lands, "begin proving"
+///                  becomes the real suspendable lowering, and publish moves to its
+///                  success path.
 pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
-    _ = h;
-    // create-if-absent through FactKV (the locked demand layer), not the pool directly —
-    // this is the coordination point a concurrent prover would serialize on.
     const ns = try self.interner.namespace(.universe, task.file);
-    _ = try self.facts.write(self.io, .{ .namespace = ns, .name = task.name }, .theorem);
+    const key = FactKV.Key{ .namespace = ns, .name = task.name };
+    switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
+        .proven => return,
+        .in_flight => |blocker| {
+            h.suspendOn(blocker);
+            return;
+        },
+        .claimed => {
+            // BEGIN PROVING — eager back-end still verifies (scaffolding); publish flips
+            // in_flight -> proven. (No demand/suspend on citations yet — the risky slice.)
+            _ = try self.facts.publish(self.io, key, .theorem);
+        },
+    }
 }

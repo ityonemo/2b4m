@@ -29,6 +29,15 @@ const Context = @import("Context.zig");
 
 const Engine = @This();
 
+/// A stable handle to a racked task — its slot in the append-only `tasks` table. Distinct
+/// id space from `InternPool.Index` (tasks are mutable, transient scheduler state; the
+/// pool is immutable/eternal). Used to wait on / park on a specific task.
+pub const TaskIndex = enum(u32) { _ };
+
+/// A suspended task + the task it is blocked on (its wake trigger + the cycle-detection
+/// edge).
+const Parked = struct { task: TaskIndex, blocked_on: TaskIndex };
+
 /// Task types (all payloads live under `src/Engine/`). `parse` produces ASTs + follows
 /// imports (transitional); `prove` is racked by the parse scan per theorem — a NO-OP for
 /// now. The engine treats both uniformly via type-erased payloads (see `Task`).
@@ -38,11 +47,22 @@ pub const ProveTask = @import("Engine/ProveTask.zig");
 arena: std.mem.Allocator,
 ctx: *Context,
 
-/// AFFORDANCE: guards the run queue + counters. One worker never contends; multi-core
-/// stealing later takes this lock (or replaces it with per-core deques). Present from
-/// day one so the shared-state shape is correct.
+/// AFFORDANCE: guards the task table, run queue + counters. One worker never contends;
+/// multi-core stealing later takes this lock (or replaces it with per-core deques).
+/// Present from day one so the shared-state shape is correct.
 mutex: SpinLock = .{},
-run_queue: std.ArrayList(Task) = .empty,
+/// The task TABLE — append-only; a task's `TaskIndex` is its slot here, a STABLE handle
+/// that outlives its time in the run queue (so a suspended task can be waited on / parked
+/// on by `TaskIndex`, and FactKV can record "task T is proving this"). The run queue holds
+/// INDICES into this table, not tasks.
+tasks: std.ArrayList(Task) = .empty,
+run_queue: std.ArrayList(TaskIndex) = .empty,
+/// SUSPENDED tasks, each tagged with the `blocked_on` task it waits on. Cores never pull
+/// from here. When a task completes, everything parked blocked-on IT moves to the run
+/// queue (`wake`). The parked set also doubles (later) as the cycle/wedge registry: run
+/// queue empty + parked non-empty + nothing finishing = stuck. Detector deferred; the
+/// `blocked_on` edge it will walk is recorded here from day one.
+parked: std.ArrayList(Parked) = .empty,
 
 /// the in/out counter — the race-free "done" detector. `racked` bumps on every rack;
 /// `completed` bumps as each task finishes. Quiescent ⇔ equal.
@@ -91,8 +111,28 @@ pub const Task = struct {
 /// the `racked` counter and the queue in lockstep under the mutex.
 pub const Handle = struct {
     engine: *Engine,
+    /// The running task's OWN index — so it can claim itself in FactKV (record "task
+    /// `self_index` is proving this") and hand others something to suspend on.
+    self_index: TaskIndex,
+    /// Set by `suspendOn`: the task this run is blocked on. null ⇒ the task COMPLETED
+    /// this run; non-null ⇒ SUSPENDED, park it blocked-on that TaskIndex. The engine reads
+    /// this after `run` returns. (`run` stays `void` — suspension is a control signal, not
+    /// a return value; a task's actual output lives in the Context it mutates.)
+    blocked_on: ?TaskIndex = null,
+
+    /// Rack a child task; discards its `TaskIndex` (fire-and-forget — the common case).
     pub fn rack(self: *Handle, task: Task) std.mem.Allocator.Error!void {
-        try self.engine.rack(task);
+        _ = try self.engine.rack(task);
+    }
+    /// Rack a child and KEEP its `TaskIndex` — for a task that will `suspendOn` the child.
+    pub fn rackIndexed(self: *Handle, task: Task) std.mem.Allocator.Error!TaskIndex {
+        return self.engine.rack(task);
+    }
+    /// Signal that this run is SUSPENDED, blocked on task `t`. The engine parks this task;
+    /// when `t` completes it is moved back to the run queue and its `run` re-enters (it
+    /// resumes from its own saved state — held in the Context / its payload).
+    pub fn suspendOn(self: *Handle, t: TaskIndex) void {
+        self.blocked_on = t;
     }
 };
 
@@ -100,20 +140,35 @@ pub fn init(arena: std.mem.Allocator, ctx: *Context) Engine {
     return .{ .arena = arena, .ctx = ctx };
 }
 
-/// Rack a task: bump `racked`, push to the run queue. Mutex-guarded.
-pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!void {
+/// Rack a task: append it to the task table (assigning its stable `TaskIndex`), bump
+/// `racked`, push the index to the run queue. Returns the `TaskIndex`. Mutex-guarded.
+pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
+    const index: TaskIndex = @enumFromInt(self.tasks.items.len);
+    try self.tasks.append(self.arena, task);
     self.racked += 1;
-    try self.run_queue.append(self.arena, task);
+    try self.run_queue.append(self.arena, index);
+    return index;
 }
 
-/// Pull the next runnable task, or null if the run queue is empty. Mutex-guarded.
-fn pull(self: *Engine) ?Task {
+/// Pull the next runnable task's index, or null if the run queue is empty. Mutex-guarded.
+fn pull(self: *Engine) ?TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
     if (self.run_queue.items.len == 0) return null;
     return self.run_queue.pop();
+}
+
+/// The task with the given index (from the append-only table). Not mutex-guarded — the
+/// table never moves an existing entry (append-only), so a held index is always valid.
+fn taskOf(self: *const Engine, index: TaskIndex) Task {
+    return self.tasks.items[@intFromEnum(index)];
+}
+
+/// Number of tasks ever racked (the append-only table's length).
+pub fn taskCount(self: *const Engine) usize {
+    return self.tasks.items.len;
 }
 
 /// Run the worker loop to QUIESCENCE (single-threaded). Returns when the run queue is
@@ -121,17 +176,46 @@ fn pull(self: *Engine) ?Task {
 /// stop flag also ends the loop (affordance).
 pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
-        const task = self.pull() orelse break; // run queue empty ⇒ quiescent
-        var handle: Handle = .{ .engine = self };
+        const index = self.pull() orelse break; // run queue empty ⇒ quiescent
+        const task = self.taskOf(index);
+        var handle: Handle = .{ .engine = self, .self_index = index };
         try task.run(self.ctx, task.payload, &handle);
-        self.mutex.lock();
-        self.completed += 1;
-        self.mutex.unlock();
+        if (handle.blocked_on) |blocker| {
+            // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
+            self.mutex.lock();
+            try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
+            self.mutex.unlock();
+        } else {
+            // COMPLETED: count it, then wake everyone parked blocked-on it.
+            self.mutex.lock();
+            self.completed += 1;
+            self.mutex.unlock();
+            try self.wake(index);
+        }
+    }
+}
+
+/// A task `finished` completed — move every parked task blocked-on it back to the run
+/// queue (it will re-enter its `run` and resume from its saved state). Mutex-guarded;
+/// the "stupid simple" parked-queue scan (no separate waiter lists).
+fn wake(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    var i: usize = 0;
+    while (i < self.parked.items.len) {
+        if (self.parked.items[i].blocked_on == finished) {
+            const woken = self.parked.swapRemove(i);
+            try self.run_queue.append(self.arena, woken.task);
+        } else {
+            i += 1;
+        }
     }
 }
 
 pub fn deinit(self: *Engine) void {
     self.run_queue.deinit(self.arena);
+    self.tasks.deinit(self.arena);
+    self.parked.deinit(self.arena);
 }
 
 test "engine runs racked tasks to quiescence, tasks can rack more" {
@@ -162,9 +246,55 @@ test "engine runs racked tasks to quiescence, tasks can rack more" {
     var e = Engine.init(arena_state.allocator(), undefined);
     const seed = try arena_state.allocator().create(u32);
     seed.* = 8;
-    try e.rack(.{ .payload = seed, .run = &S.run });
+    const seed_index = try e.rack(.{ .payload = seed, .run = &S.run });
+    try std.testing.expectEqual(@as(TaskIndex, @enumFromInt(0)), seed_index); // first task
     try e.run();
     // 8 + 4 + 2 + 1 = 15; and racked == completed at quiescence.
     try std.testing.expectEqual(@as(usize, 15), S.total);
     try std.testing.expectEqual(e.racked, e.completed);
+    // the task TABLE is append-only: it holds every task ever racked (8,4,2,1 = 4).
+    try std.testing.expectEqual(@as(usize, 4), e.taskCount());
+}
+
+test "engine suspends a task blocked on another, resumes it when the blocker completes" {
+    // Synthetic demand: task A, on first run, DEMANDS a dependency B — racks B and suspends
+    // blocked-on it. B completes; the engine wakes A; A re-enters, sees its dependency done
+    // (via shared state, since a task's output lives in shared memory, not a return value),
+    // and completes. `run` stays void; suspension is a CONTROL signal via `h.suspendOn(T)`.
+    const Shared = struct { a_runs: usize = 0, b_runs: usize = 0, b_index: ?TaskIndex = null };
+    const B = struct {
+        fn run(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = h;
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            s.b_runs += 1;
+        }
+    };
+    const A = struct {
+        fn run(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            s.a_runs += 1;
+            if (s.b_index == null) {
+                // first entry: demand B, then suspend blocked-on it
+                s.b_index = try h.rackIndexed(.{ .payload = payload, .run = &B.run });
+                h.suspendOn(s.b_index.?);
+                return;
+            }
+            // resumed: B is done (b_runs == 1) — nothing more to do, complete.
+        }
+    };
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var shared: Shared = .{};
+    var e = Engine.init(arena_state.allocator(), undefined);
+    _ = try e.rack(.{ .payload = &shared, .run = &A.run });
+    try e.run();
+
+    try std.testing.expectEqual(@as(usize, 2), shared.a_runs); // ran, suspended, resumed
+    try std.testing.expectEqual(@as(usize, 1), shared.b_runs); // ran once
+    try std.testing.expectEqual(e.racked, e.completed); // quiescent: both A and B completed
+    // A did NOT complete on its suspending run — completed counts each task ONCE.
+    try std.testing.expectEqual(@as(usize, 2), e.completed); // A + B
 }
