@@ -19,6 +19,7 @@ pub const Context = @import("Context.zig");
 pub const Prover = @import("Engine/ProveTask/Prover.zig");
 pub const Walk = @import("Engine/ProveTask/Walk.zig");
 pub const RefScan = @import("Engine/ProveTask/RefScan.zig");
+pub const Elab = @import("Engine/ProveTask/Elab.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");

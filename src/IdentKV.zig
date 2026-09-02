@@ -48,6 +48,17 @@ pub fn init(pool: *InternPool) IdentKV {
     return .{ .pool = pool };
 }
 
+/// A plain READ of the current state — no claim, no side effects. Used by ELABORATION,
+/// which runs after a read pass has ensured its names are `done` and only needs to map
+/// name -> Index (an absent/in_flight result there is a driver bug or a benign race).
+/// Takes the exclusive lock for simplicity (uncontended single-threaded; a shared-read
+/// optimization can come with real multi-threading).
+pub fn lookup(self: *IdentKV, io: std.Io, key: Key) ?State {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    return self.map.get(key);
+}
+
 /// The FetchTask ENTRY PROTOCOL, atomic under the EXCLUSIVE lock (the claim in the absent
 /// case must share the critical section with the lookup, or two fetchers both see "absent"
 /// and both claim). `self_task` is the calling fetch-task's own `TaskIndex`.

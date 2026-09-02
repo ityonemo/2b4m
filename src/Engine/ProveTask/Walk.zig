@@ -63,8 +63,20 @@ pub const LocalTarget = union(enum) { step: StepOrdinal, block: BlockOrdinal };
 /// LocalStepKV entry: a step/block label live in the current scope. Flat list,
 /// innermost-last; lookup is a reverse scan; block exit truncates to its mark.
 const LocalStep = struct { name: StrId, target: LocalTarget };
+
+/// The SEMANTIC half of a binder, computed by the driver while processing a fix/unpack
+/// step (it resolves the sort token and mints the hygienic fvar identity) and handed to
+/// the walk via `pending_binder`. Defaults are placeholders for structure-only drivers
+/// (the W1 fakes) that never read them.
+pub const BinderInfo = struct {
+    /// the binder's KERNEL sort (numerically a pool Index in the demand world)
+    sort: @import("../../term.zig").SortId = @enumFromInt(0),
+    /// the hygienic disambiguated fvar identity (`x#N`) terms bind through
+    fvar: StrId = .none,
+};
+
 /// LocalIdentKV entry: a binder (fix eigenvariable / unpack witness) live in scope.
-const LocalIdent = struct { name: StrId, block: BlockOrdinal };
+pub const LocalIdent = struct { name: StrId, block: BlockOrdinal, info: BinderInfo = .{} };
 
 /// One unit of reified traversal state. The stack of these IS the walk's cursor.
 pub const Frame = union(enum) {
@@ -99,6 +111,11 @@ local_idents: std.ArrayList(LocalIdent) = .empty,
 next_step: u32 = 0,
 next_block: u32 = 1, // 0 = root
 started: bool = false,
+/// Set by the driver during `process` of a fix/unpack step (the semantic binder info —
+/// resolved sort + hygienic fvar); consumed by the subsequent enterBlock. The handoff is
+/// explicit task state, not a return value, because process and enterBlock are separate
+/// moments of the state machine.
+pending_binder: ?BinderInfo = null,
 
 pub fn init(arena: Allocator, interner: *InternPool, source: []const u8, sink: *Diagnostics.Sink) Walk {
     return .{ .arena = arena, .interner = interner, .source = source, .sink = sink };
@@ -117,11 +134,11 @@ pub fn findStep(self: *const Walk, name: StrId) ?LocalTarget {
 }
 
 /// Resolve a binder name against LocalIdentKV (innermost wins). Null = not local.
-pub fn findIdent(self: *const Walk, name: StrId) ?BlockOrdinal {
+pub fn findIdent(self: *const Walk, name: StrId) ?LocalIdent {
     var i = self.local_idents.items.len;
     while (i > 0) {
         i -= 1;
-        if (self.local_idents.items[i].name == name) return self.local_idents.items[i].block;
+        if (self.local_idents.items[i].name == name) return self.local_idents.items[i];
     }
     return null;
 }
@@ -215,7 +232,10 @@ fn enterBlock(self: *Walk, label_tok: lexer.Token, binder: ?lexer.Token, body: [
         if (self.findIdent(bname) != null) {
             return self.reject(btok.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(btok)});
         }
-        try self.local_idents.append(self.arena, .{ .name = bname, .block = ord });
+        // consume the driver's semantic binder info (set during process; see field doc)
+        const info = self.pending_binder orelse BinderInfo{};
+        self.pending_binder = null;
+        try self.local_idents.append(self.arena, .{ .name = bname, .block = ord, .info = info });
     }
     return self.enterBody(body, ord);
 }
