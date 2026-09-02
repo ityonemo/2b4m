@@ -12,9 +12,11 @@
 //!   - claimed              -> we own it; produce.
 //!
 //! PRODUCTION (layer 1 — Step 8 W3): plain `sort` decls (root sorts) and `import` decls
-//! (the target file was resolved at parse time via the import map). Later layers add
-//! funcs/preds/consts/defines (need expression elaboration for guards, W4.5) and aliases
-//! (incl. predicated sorts). A decl kind not yet supported diagnoses "not yet supported".
+//! (the target file was resolved at parse time via the import map). LAYER 2 (W4.5):
+//! constants, funcs and preds — their referenced SORTS are themselves DEMANDED (IdentKV
+//! lookup; a miss racks a sub-FetchTask and SUSPENDS; resume re-runs `produce`, which is
+//! idempotent — earlier demands now hit `done`). Still unsupported (diagnosed, no
+//! publish): guarded funcs (`requires`), predicated params, defines, aliases.
 //!
 //! FAILURE ("reference not found" — the UndefinedError terminal): if no declaration
 //! produces the name, a diagnostic is recorded and the task completes WITHOUT publishing.
@@ -24,6 +26,7 @@
 
 const std = @import("std");
 const ast = @import("../ast.zig");
+const lexer = @import("../lexer.zig");
 const InternPool = @import("../InternPool.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
@@ -69,10 +72,10 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
 }
 
 /// Find the declaration and assemble/publish the identifier. Layer 1: root sorts +
-/// imports (neither references other identifiers, so production never suspends yet;
-/// the read-pass-then-produce suspension pattern arrives with funcs/preds in W4.5).
+/// imports (no identifier references — never suspends). Layer 2: constants/funcs/preds
+/// — referenced sorts are demanded via `resolveSortDemand`, which may rack sub-fetches
+/// and SUSPEND; each resume re-enters here idempotently (earlier demands hit `done`).
 fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
-    _ = h; // layer 1 production has no sub-fetches to suspend on yet
     const fid = self.pool_file.get(task.file) orelse {
         // the namespace's file was never discovered — an internal wiring error
         self.sink.add(task.loc, "internal: fetch into an undiscovered file", .{}) catch return error.OutOfMemory;
@@ -128,20 +131,158 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 } });
                 return;
             },
+            .constant => |d| {
+                const sort_ix = resolveSortDemand(self, h, task.file, source, d.sort) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return, // suspended or diagnosed — yield either way
+                };
+                _ = try self.idents.publish(self.io, key, .{ .constant = .{
+                    .sort = sort_ix,
+                    .name = task.name,
+                    .loc = name_tok.start,
+                } });
+                return;
+            },
+            .func => |d| {
+                // STATIC rejection first (before any demand/suspend, so the diagnostic
+                // fires exactly once): the TCC machinery isn't built yet.
+                if (d.requires != null) {
+                    self.sink.add(name_tok.start, "guarded functions ('requires') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+                    return; // no publish
+                }
+                const parts = assembleSig(self, h, task.file, source, d.params, d.result) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return,
+                };
+                _ = try self.idents.publish(self.io, key, .{ .func = .{
+                    .sig = parts.sig,
+                    .guard = InternPool.no_term,
+                    .param_names = parts.param_names,
+                    .name = task.name,
+                    .loc = name_tok.start,
+                } });
+                return;
+            },
+            .pred => |d| {
+                const parts = assembleSig(self, h, task.file, source, d.params, null) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return,
+                };
+                _ = try self.idents.publish(self.io, key, .{ .pred = .{
+                    .sig = parts.sig,
+                    .guard = InternPool.no_term,
+                    .param_names = parts.param_names,
+                    .name = task.name,
+                    .loc = name_tok.start,
+                } });
+                return;
+            },
             .axiom, .hole, .schema, .theorem => {
                 self.sink.add(task.loc, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
                 return; // no publish
             },
-            else => {
-                // constant/func/pred/define/alias: need expression elaboration /
-                // reference resolution — the next fetch layer (W4.5).
+            .define, .alias => {
+                // defines (need body elaboration) + aliases (incl. predicated sorts):
+                // later fetch layers.
                 self.sink.add(task.loc, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
                 return; // no publish
             },
+            .forward, .model => unreachable, // skipped by the name match above
         }
     }
     // the UndefinedError terminal: nothing in the file declares this name.
     self.sink.add(task.loc, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+}
+
+// --- layer-2 sub-demand resolution ----------------------------------------------------
+
+/// `Unresolved` = "this production cannot finish THIS run" — either SUSPENDED (a
+/// sub-fetch was racked and `h.suspendOn` set; resume re-runs `produce`) or DIAGNOSED
+/// (a kind mismatch / unsupported form was reported; no publish, demanders wedge — the
+/// red-phase failure mode). Callers yield identically for both.
+const ResolveError = std.mem.Allocator.Error || error{Unresolved};
+
+/// One sub-demand: `name` in `file`'s universe namespace. `done` = the Index; `pending`
+/// = the TaskIndex to suspend on (an in-flight fetch, or a sub-fetch just racked here).
+const Demand = union(enum) { done: InternPool.Index, pending: Engine.TaskIndex };
+
+fn demandIdent(self: *Context, h: *Engine.Handle, file: InternPool.Index, name: InternPool.StrId, loc: u32) std.mem.Allocator.Error!Demand {
+    const ns = try self.interner.namespace(.universe, file);
+    if (self.idents.lookup(self.io, .{ .namespace = ns, .name = name })) |state| switch (state) {
+        .done => |ix| return .{ .done = ix },
+        .in_flight => |owner| return .{ .pending = owner },
+    };
+    // absent: rack the sub-fetch ourselves. (A racing demander racks a duplicate — the
+    // sub-fetch's own claimOrLookup dedups; the loser becomes a waiter.)
+    const t = try h.rackIndexed(try new(self.arena, .{ .file = file, .name = name, .loc = loc }));
+    return .{ .pending = t };
+}
+
+/// Resolve a SORT-position token (possibly `ns.Name`-qualified) to a pool sort `Index`,
+/// demanding the import and/or sort as needed. Suspends on the FIRST miss (no batching
+/// — each resume re-runs `produce` cheaply and gets one name further; simplicity wins
+/// while single-threaded).
+fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token) ResolveError!InternPool.Index {
+    const text = source[tok.start..tok.end];
+    var target_file = file;
+    var base = text;
+    if (std.mem.indexOfScalar(u8, text, '.')) |i| {
+        const ns_name = self.interner.internString(text[0..i]) catch return error.OutOfMemory;
+        const imp_ix = switch (try demandIdent(self, h, file, ns_name, tok.start)) {
+            .done => |ix| ix,
+            .pending => |t| {
+                h.suspendOn(t);
+                return error.Unresolved;
+            },
+        };
+        const imp = self.interner.keyOf(imp_ix);
+        if (imp != .import) {
+            self.sink.add(tok.start, "'{s}' is not a namespace", .{text[0..i]}) catch return error.OutOfMemory;
+            return error.Unresolved;
+        }
+        // the sort lives in the imported namespace's FILE
+        target_file = self.interner.keyOf(imp.import.namespace).namespace.file;
+        base = text[i + 1 ..];
+    }
+    const base_id = self.interner.internString(base) catch return error.OutOfMemory;
+    const ix = switch (try demandIdent(self, h, target_file, base_id, tok.start)) {
+        .done => |x| x,
+        .pending => |t| {
+            h.suspendOn(t);
+            return error.Unresolved;
+        },
+    };
+    if (self.interner.keyOf(ix) != .sort) {
+        self.sink.add(tok.start, "'{s}' is not a sort", .{text}) catch return error.OutOfMemory;
+        return error.Unresolved;
+    }
+    return ix;
+}
+
+const SigParts = struct { sig: InternPool.Index, param_names: []const InternPool.StrId };
+
+/// Assemble a callable's deduped Sig + param names from its binder params and optional
+/// result token (null = predicate, result Prop). Static rejections (predicated params)
+/// fire before any demand so a diagnostic can't repeat across resumes.
+fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, params: []const ast.Binder, result_tok: ?lexer.Token) ResolveError!SigParts {
+    for (params) |b| {
+        if (b.guard != null) {
+            self.sink.add(b.name.start, "predicated parameters ('where') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+            return error.Unresolved;
+        }
+    }
+    const args = try self.arena.alloc(InternPool.Index, params.len);
+    const names = try self.arena.alloc(InternPool.StrId, params.len);
+    for (params, args, names) |b, *a, *n| {
+        a.* = try resolveSortDemand(self, h, file, source, b.sort);
+        n.* = self.interner.internString(source[b.name.start..b.name.end]) catch return error.OutOfMemory;
+    }
+    const result: InternPool.Index = if (result_tok) |rt|
+        try resolveSortDemand(self, h, file, source, rt)
+    else
+        .prop;
+    const sig = self.interner.get(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
+    return .{ .sig = sig, .param_names = names };
 }
 
 // --- tests ----------------------------------------------------------------------------
@@ -285,6 +426,129 @@ test "fetch: an undeclared name diagnoses 'reference not found' and publishes no
     const ns = try ctx.interner.namespace(.universe, f);
     const outcome = try ctx.idents.claimOrLookup(io, .{ .namespace = ns, .name = missing }, @enumFromInt(99));
     try testing.expect(outcome != .done);
+}
+
+test "fetch layer 2: a func's sorts are sub-demanded; sig + param names assemble" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+        \\sort Nat
+        \\func add(a: Nat, b: Nat): Nat
+        \\pred le(a: Nat, b: Nat)
+        \\const ZERO: Nat
+    );
+    const f = try ctx.fileIndex("/t/a.bpa");
+    const add = try ctx.interner.internString("add");
+    const le = try ctx.interner.internString("le");
+    const zero = try ctx.interner.internString("ZERO");
+
+    var eng = Engine.init(arena, ctx);
+    defer eng.deinit();
+    // demand ONLY the callables/constant — the sort Nat is sub-demanded automatically.
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = add, .loc = 0 }));
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = le, .loc = 0 }));
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = zero, .loc = 0 }));
+    try eng.run();
+    try testing.expectEqual(eng.racked, eng.completed); // quiescent, no wedge
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+
+    const ns = try ctx.interner.namespace(.universe, f);
+    const nat_state = ctx.idents.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("Nat") }).?;
+    const nat = nat_state.done; // the sub-demanded sort published
+
+    { // func add: sig (Nat,Nat)->Nat, unguarded, param names [a,b]
+        const add_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = add }).?.done;
+        const c = ctx.interner.keyOf(add_ix).func;
+        try testing.expectEqual(InternPool.no_term, c.guard);
+        const sig = ctx.interner.keyOf(c.sig).sig;
+        try testing.expectEqual(nat, sig.result);
+        try testing.expectEqual(@as(usize, 2), sig.args.len);
+        try testing.expectEqual(nat, sig.args[0]);
+        try testing.expectEqual(nat, sig.args[1]);
+        try testing.expectEqual(try ctx.interner.internString("a"), c.param_names[0]);
+        try testing.expectEqual(try ctx.interner.internString("b"), c.param_names[1]);
+    }
+    { // pred le: result is the reserved Prop
+        const le_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = le }).?.done;
+        const sig = ctx.interner.keyOf(ctx.interner.keyOf(le_ix).pred.sig).sig;
+        try testing.expectEqual(InternPool.Index.prop, sig.result);
+        try testing.expectEqual(@as(usize, 2), sig.args.len);
+    }
+    { // const ZERO: sort Nat
+        const zero_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = zero }).?.done;
+        try testing.expectEqual(nat, ctx.interner.keyOf(zero_ix).constant.sort);
+    }
+}
+
+test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try fixtureCtx(arena, io, "/t/parent.bpa",
+        \\import peano <<< "child.bpa"
+        \\func double(n: peano.Nat): peano.Nat
+    );
+    const child_fid = try ctx.discover("/t/child.bpa", "sort Nat");
+    {
+        var p: parser.Parser = .init(arena, "sort Nat", ctx.sink);
+        ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
+    }
+    const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
+    const raw = try ctx.interner.internString("child.bpa");
+    try ctx.import_maps.items[@intFromEnum(parent_fid)].put(arena, raw, child_fid);
+
+    const parent = try ctx.fileIndex("/t/parent.bpa");
+    const double = try ctx.interner.internString("double");
+    var eng = Engine.init(arena, ctx);
+    defer eng.deinit();
+    _ = try eng.rack(try new(arena, .{ .file = parent, .name = double, .loc = 0 }));
+    try eng.run();
+    try testing.expectEqual(eng.racked, eng.completed);
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+
+    // the func's arg/result sort is the CHILD file's Nat
+    const parent_ns = try ctx.interner.namespace(.universe, parent);
+    const child_file = try ctx.fileIndex("/t/child.bpa");
+    const child_ns = try ctx.interner.namespace(.universe, child_file);
+    const nat = ctx.idents.lookup(io, .{ .namespace = child_ns, .name = try ctx.interner.internString("Nat") }).?.done;
+    const dbl = ctx.idents.lookup(io, .{ .namespace = parent_ns, .name = double }).?.done;
+    const sig = ctx.interner.keyOf(ctx.interner.keyOf(dbl).func.sig).sig;
+    try testing.expectEqual(nat, sig.result);
+    try testing.expectEqual(nat, sig.args[0]);
+}
+
+test "fetch layer 2: a guarded func ('requires') diagnoses unsupported, publishes nothing" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+        \\sort Nat
+        \\pred pos(n: Nat)
+        \\func dec(n: Nat): Nat requires pos(n)
+    );
+    const f = try ctx.fileIndex("/t/a.bpa");
+    const dec = try ctx.interner.internString("dec");
+
+    var eng = Engine.init(arena, ctx);
+    defer eng.deinit();
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = dec, .loc = 0 }));
+    try eng.run();
+
+    try testing.expectEqual(@as(usize, 1), ctx.sink.list.items.len);
+    try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "guarded functions") != null);
+    const ns = try ctx.interner.namespace(.universe, f);
+    const state = ctx.idents.lookup(io, .{ .namespace = ns, .name = dec }).?;
+    try testing.expect(state != .done); // never published
 }
 
 test "fetch: a fact name demanded as an identifier is a kind mismatch" {
