@@ -17,6 +17,7 @@ pub const Verify = elaborate.Verify;
 pub const Engine = @import("Engine.zig");
 pub const Context = @import("Context.zig");
 pub const Prover = @import("Engine/ProveTask/Prover.zig");
+pub const Walk = @import("Engine/ProveTask/Walk.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");
