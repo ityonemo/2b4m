@@ -44,9 +44,12 @@ const ProveTask = @This();
 /// identity, which the namespace is built from).
 file: InternPool.Index,
 name: InternPool.StrId,
-/// the demanding reference's source offset — where "reference not found" points. 0 for
-/// the root-file scan (the declaration is its own demand site).
+/// the DEMANDING reference's source offset — where "reference not found" / "not a fact"
+/// points. Relative to `loc_file` (the citing file), NOT `file` (a cross-file citation
+/// demands into an imported `file`). 0 for the root scan (the decl is its own site).
 loc: u32 = 0,
+/// the file `loc` indexes into; `null` = relative to `file` (a same-file / root demand).
+loc_file: ?InternPool.Index = null,
 /// resumable production state; created on the first owning entry.
 st: ?*State = null,
 
@@ -99,6 +102,15 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         },
         .claimed => {},
     }
+
+    // the fact's file must be PARSED before `locate` can scan its decls (lazy parsing,
+    // Step 11): demand its parse and suspend if it isn't ready. Runs before `locate` on
+    // the first entry; on a resume `st` is already built so we skip straight past.
+    if (task.st == null) switch (try self.demandParse(h, task.file)) {
+        .parsed => {},
+        .parsing => |t| return h.suspendOn(t),
+        .unparsed => {}, // undiscovered — locate reports the internal wiring error
+    };
 
     const st = task.st orelse blk: {
         const st = (try locate(self, task, h, ns)) orelse return; // diagnosed; no publish
@@ -154,12 +166,21 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     }
 }
 
+/// Point the sink at the file `task.loc` is relative to (the DEMANDER, `loc_file`, or
+/// `file` for a same-file / root demand), then record a demand-site diagnostic. Must
+/// precede any `sink.add(task.loc, …)` so the offset renders against the right source.
+fn demandDiag(self: *Context, task: *ProveTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
+    const loc_file = task.loc_file orelse task.file;
+    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
+    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+}
+
 /// Find the fact's declaration in its file's parsed AST and build the production state.
 /// Null = diagnosed (missing / not-a-fact / unsupported kind); the task completes
 /// without publishing.
 fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index) std.mem.Allocator.Error!?*State {
     const fid = self.pool_file.get(task.file) orelse {
-        self.sink.add(task.loc, "internal: prove into an undiscovered file", .{}) catch return error.OutOfMemory;
+        try demandDiag(self, task, "internal: prove into an undiscovered file", .{});
         return null;
     };
     const parsed = self.parsed.items[@intFromEnum(fid)];
@@ -195,7 +216,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
                 return null;
             },
             else => {
-                self.sink.add(task.loc, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+                try demandDiag(self, task, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)});
                 return null;
             },
         };
@@ -212,6 +233,6 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         };
         return st;
     }
-    self.sink.add(task.loc, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+    try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
     return null;
 }

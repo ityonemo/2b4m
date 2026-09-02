@@ -38,8 +38,12 @@ const FetchTask = @This();
 /// (the demander resolves qualifiers first, so this is always the declaring file).
 file: InternPool.Index,
 name: InternPool.StrId,
-/// the demanding reference's source offset — where "reference not found" points.
+/// the DEMANDING reference's source offset — where a demand-site diagnostic ("reference
+/// not found", kind mismatch, unsupported kind) points. Relative to `loc_file`, NOT to
+/// `file` (a cross-file citation demands into an imported `file` but the offset lives in
+/// the citing file). `null` `loc_file` means "relative to `file`" (a same-file demand).
 loc: u32,
+loc_file: ?InternPool.Index = null,
 
 /// Package a payload into a rack-ready `Engine.Task` (arena-allocated payload + typed
 /// erased run), mirroring `ParseTask.new` / `ProveTask.new`.
@@ -71,6 +75,13 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
         },
         .claimed => {},
     }
+    // the declaring file must be PARSED before we can scan its decls (lazy parsing,
+    // Step 11): demand its parse and suspend if it isn't ready. Idempotent across resumes.
+    switch (try self.demandParse(h, task.file)) {
+        .parsed => {},
+        .parsing => |t| return h.suspendOn(t),
+        .unparsed => {}, // undiscovered — produce() reports the internal wiring error
+    }
     try produce(self, task, h, key);
 }
 
@@ -78,10 +89,19 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
 /// imports (no identifier references — never suspends). Layer 2: constants/funcs/preds
 /// — referenced sorts are demanded via `resolveSortDemand`, which may rack sub-fetches
 /// and SUSPEND; each resume re-enters here idempotently (earlier demands hit `done`).
+/// Point the sink at the file `task.loc` is relative to (the DEMANDER, `loc_file`, or
+/// `file` for a same-file demand), then record a demand-site diagnostic. Must precede
+/// any such `sink.add(task.loc, …)` so the offset renders against the right source.
+fn demandDiag(self: *Context, task: FetchTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
+    const loc_file = task.loc_file orelse task.file;
+    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
+    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+}
+
 fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
     const fid = self.pool_file.get(task.file) orelse {
         // the namespace's file was never discovered — an internal wiring error
-        self.sink.add(task.loc, "internal: fetch into an undiscovered file", .{}) catch return error.OutOfMemory;
+        try demandDiag(self, task, "internal: fetch into an undiscovered file", .{});
         return;
     };
     const parsed = self.parsed.items[@intFromEnum(fid)];
@@ -181,20 +201,20 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 return;
             },
             .axiom, .hole, .schema, .theorem => {
-                self.sink.add(task.loc, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+                try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
             .define, .alias => {
                 // defines (need body elaboration) + aliases (incl. predicated sorts):
                 // later fetch layers.
-                self.sink.add(task.loc, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+                try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
             .forward, .model => unreachable, // skipped by the name match above
         }
     }
     // the UndefinedError terminal: nothing in the file declares this name.
-    self.sink.add(task.loc, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+    try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
 }
 
 // --- layer-2 sub-demand resolution ----------------------------------------------------

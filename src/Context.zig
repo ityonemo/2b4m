@@ -72,11 +72,24 @@ declarations: usize = 0,
 /// FILL-ON-PARSE tables, indexed by FileId (grown in lockstep with `files`, so
 /// `@intFromEnum(fid)` is the index). The engine's parse tasks populate these; the
 /// demand tasks read them. `import_maps[fid]` is that file's raw->child import
-/// resolution; `parsed[fid]` its AST.
+/// resolution; `parsed[fid]` its AST; `parse_state[fid]` its demand-parse lifecycle.
 parsed: std.ArrayList(ast.File) = .empty,
 import_maps: std.ArrayList(ImportMap) = .empty,
+/// LAZY-PARSE state per FileId (Step 11): a file is discovered (source read, FileId +
+/// table slots reserved) LONG before it is parsed — parsing is on demand, when a
+/// Fetch/Prove task first needs the file's AST. `unparsed` = discovered only;
+/// `parsing` = a ParseTask (this TaskIndex) is parsing it, suspend blocked-on it;
+/// `parsed` = `parsed[fid]` is populated, proceed. Mirrors the FactKV/IdentKV protocol
+/// but keyed by the dense FileId (a plain array, not a hashmap).
+parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
+
+pub const ParseState = union(enum) {
+    unparsed,
+    parsing: Engine.TaskIndex,
+    parsed,
+};
 
 /// Intern a resolved path to its `.file` entity Index — the context-global file
 /// identity. The InternPool dedups: the same path always yields the same Index.
@@ -103,34 +116,45 @@ pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !
     try self.files.append(self.arena, .{ .path = resolved_path, .source = source });
     try self.parsed.append(self.arena, .{ .decls = &.{} });
     try self.import_maps.append(self.arena, .{});
+    try self.parse_state.append(self.arena, .unparsed);
     try self.pool_file.put(self.arena, file_index, file_id);
     return file_id;
 }
 
-/// The demand entry, two engine-driven phases (both to quiescence). PHASE A: parse the
-/// transitive file set (the root ParseTask fans out over imports). PHASE B: scan the
-/// root file's theorems, rack a ProveTask each, and let demand pull everything cited
-/// (Fetch/Prove, suspending/resuming on the KV protocols). A is separate from B because
-/// a ProveTask reads a CITED file's parsed AST — every file must be parsed first.
-/// (Loading is a thing you DO with a context.)
+/// Ensure `file`'s AST is available, the LAZY-PARSE demand step. Returns:
+///   - `.parsed`  → `parsed[fid]` is populated; the caller proceeds.
+///   - `.parsing` → a ParseTask is producing it; the caller SUSPENDS on that TaskIndex.
+/// On the first (`unparsed`) call it racks the file's ParseTask (claiming `parsing` with
+/// that task's index) and returns `.parsing`. Idempotent: a second demander sees the
+/// live `parsing` and suspends on the same task. `h` racks; single-threaded so the
+/// discover→check→rack window is uncontended.
+pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) std.mem.Allocator.Error!ParseState {
+    const fid = self.pool_file.get(file) orelse return .unparsed; // undiscovered — caller errors
+    const idx = @intFromEnum(fid);
+    switch (self.parse_state.items[idx]) {
+        .parsed => return .parsed,
+        .parsing => |t| return .{ .parsing = t },
+        .unparsed => {
+            const src = self.files.items[idx].source;
+            const path = self.files.items[idx].path;
+            const t = try h.rackIndexed(try Engine.ParseTask.new(self.arena, .{ .file_id = fid, .source = src, .path = path }));
+            self.parse_state.items[idx] = .{ .parsing = t };
+            return .{ .parsing = t };
+        },
+    }
+}
+
+/// The demand entry — ONE engine pass to quiescence (Step 11: parsing is itself lazy).
+/// Rack the root ParseTask; it parses the root and, being the root, scans its theorems
+/// and racks a ProveTask each. From there DEMAND drives everything: a Prove/Fetch task
+/// that needs a not-yet-parsed cited file racks that file's ParseTask (`demandParse`) and
+/// suspends until it completes. Imported files are parsed only when cited into — no eager
+/// transitive parse. (Loading is a thing you DO with a context.)
 pub fn loadProject(self: *Context, root_path: []const u8, root_source: []const u8) !FileId {
     self.root_file = try self.discover(root_path, root_source);
-
-    var parse_eng = Engine.init(self.arena, self);
-    _ = try parse_eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = self.root_file, .source = root_source, .path = root_path }));
-    try parse_eng.run();
-
-    var prove_eng = Engine.init(self.arena, self);
-    const root_idx = @intFromEnum(self.root_file);
-    const root_parsed = self.parsed.items[root_idx];
-    const root_source_text = self.files.items[root_idx].source;
-    const file_index = try self.fileIndex(self.files.items[root_idx].path);
-    for (root_parsed.decls) |decl| {
-        if (decl != .theorem) continue;
-        const name = decl.theorem.name;
-        const name_id = try self.interner.internString(root_source_text[name.start..name.end]);
-        _ = try prove_eng.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
-    }
-    try prove_eng.run();
+    var eng = Engine.init(self.arena, self);
+    const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = self.root_file, .source = root_source, .path = root_path }));
+    self.parse_state.items[@intFromEnum(self.root_file)] = .{ .parsing = t };
+    try eng.run();
     return self.root_file;
 }
