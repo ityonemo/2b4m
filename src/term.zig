@@ -14,8 +14,10 @@ const InternPool = @import("InternPool.zig");
 const StrId = InternPool.StrId;
 
 pub const SortId = enum(u32) {
-    /// the builtin sort of propositions
-    prop = 0,
+    /// the builtin sort of propositions — numerically the POOL's reserved Prop Item
+    /// (`InternPool.Index.prop`): in the demand world a SortId IS a pool Index, and the
+    /// pool seeds universe(0) / "Prop" string(1) / Prop sort(2).
+    prop = 2,
     _,
 };
 pub const SymId = enum(u32) { _ };

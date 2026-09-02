@@ -55,6 +55,9 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 }
 
 pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+    // point the sink at THIS task's file (see the same note in ProveTask.run): a fetch's
+    // "reference not found" / kind-mismatch offset is relative to its own file's source.
+    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.idents.claimOrLookup(self.io, key, h.self_index)) {
@@ -290,7 +293,6 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
 const testing = std.testing;
 const parser = @import("../parser.zig");
 const term = @import("../term.zig");
-const env_mod = @import("../env.zig");
 const diagnostics = @import("../diagnostics.zig");
 const FactKV = @import("../FactKV.zig");
 
@@ -307,8 +309,6 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
     interner.* = try .init(arena);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
-    const environment = try arena.create(env_mod.Env);
-    environment.* = try .init(arena, interner);
 
     const ctx = try arena.create(Context);
     ctx.* = .{
@@ -319,7 +319,6 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
         .facts = FactKV.init(interner),
         .idents = IdentKV.init(interner),
         .pool = pool,
-        .environment = environment,
         .read_ctx = null,
         .read_fn = &readNothing,
         .verify = .{},

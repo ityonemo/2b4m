@@ -15,9 +15,9 @@
 //! eigenvariables are identified here by their interned name) but can never
 //! accept an invalid one. The elaborator keeps this over-approximation from
 //! biting by binding each fix/unpack var to a fresh disambiguated identity
-//! `x#<n>` (see `elaborate.zig` `bindProofVar`), so sibling `fix x` blocks
-//! produce distinct eigenvariables the kernel never conflates; the `#<n>` is
-//! trimmed away on render, so proofs still read `x`.
+//! `x#<n>` (the demand prover's hygienic binder minting), so sibling `fix x`
+//! blocks produce distinct eigenvariables the kernel never conflates; the
+//! `#<n>` is trimmed away on render, so proofs still read `x`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -26,8 +26,6 @@ const StrId = InternPool.StrId;
 const term = @import("term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
-const Env = @import("env.zig").Env;
-const StatementId = @import("env.zig").StatementId;
 const Diagnostics = @import("diagnostics.zig");
 const print = @import("print.zig");
 
@@ -67,8 +65,10 @@ pub const Step = struct {
 
 pub const Justification = union(enum) {
     hypothesis: BRef,
-    axiom_ref: struct { stmt: StatementId, loc: u32 },
-    theorem_ref: struct { stmt: StatementId, loc: u32 },
+    /// `stmt` is the cited fact's POOL `Index` (a `.fact` Item). The kernel re-reads its
+    /// kind + formula from the pool — it does not trust the lowering's copy.
+    axiom_ref: struct { stmt: InternPool.Index, loc: u32 },
+    theorem_ref: struct { stmt: InternPool.Index, loc: u32 },
     modus_ponens: struct { implication: SRef, antecedent: SRef },
     implies_intro: BRef,
     forall_intro: BRef,
@@ -117,7 +117,6 @@ pub const Proof = struct {
 pub const Kernel = struct {
     arena: Allocator,
     pool: *term.Pool,
-    env: *const Env,
     interner: *const InternPool,
     sink: *Diagnostics.Sink,
 
@@ -163,11 +162,22 @@ pub const Kernel = struct {
     }
 
     fn render(self: *Kernel, id: TermId) Allocator.Error![]const u8 {
-        return print.render(self.arena, self.pool, self.env, self.interner, id);
+        return print.render(self.arena, self.pool, self.interner, id);
     }
 
     fn str(self: *const Kernel, id: StrId) []const u8 {
         return self.interner.stringBytes(id);
+    }
+
+    /// The cited fact's pool payload; rejects a forged non-fact Index.
+    fn factOf(self: *Kernel, stmt: InternPool.Index, loc: u32) Fail!InternPool.Key.Fact {
+        const key = self.interner.keyOf(stmt);
+        if (key != .fact) return self.fail(loc, "internal: citation does not reference a fact", .{});
+        return key.fact;
+    }
+
+    fn sortName(self: *const Kernel, sort: SortId) []const u8 {
+        return self.interner.sortName(@enumFromInt(@intFromEnum(sort)));
     }
 
     fn block(proof: Proof, id: BlockId) *const Block {
@@ -308,7 +318,7 @@ pub const Kernel = struct {
             .fvar => |v| return v.sort,
             .app => |a| {
                 for (self.pool.args(a)) |arg| _ = try self.sortOfTerm(arg, loc);
-                return self.env.sym(a.sym).result;
+                return @enumFromInt(@intFromEnum(self.interner.symResult(@enumFromInt(@intFromEnum(a.sym)))));
             },
             .bvar => return self.fail(loc, "internal: term argument has a loose bound variable", .{}),
             else => return self.fail(loc, "expected a term, got the proposition '{s}'", .{try self.render(id)}),
@@ -340,21 +350,23 @@ pub const Kernel = struct {
                 try self.requireClaim(step, "the hypothesis", hyp);
             },
             .axiom_ref => |r| {
-                const stmt = self.env.statements.items[@intFromEnum(r.stmt)];
-                if (stmt != .axiom) {
-                    return self.fail(r.loc, "'{s}' is not an axiom", .{self.str(statementName(stmt))});
+                // the cited fact is re-read from the POOL: kind tag checked, its durable
+                // formula copied into the working pool for the alpha-comparison. A fact
+                // being interned at all means it was established (interned ⇒ proven).
+                const fact = try self.factOf(r.stmt, r.loc);
+                if (fact.kind != .axiom) {
+                    return self.fail(r.loc, "'{s}' is not an axiom", .{self.str(fact.name)});
                 }
-                try self.requireClaim(step, "the axiom", stmt.axiom.formula);
+                const formula = try self.pool.copyIn(self.interner, fact.formula);
+                try self.requireClaim(step, "the axiom", formula);
             },
             .theorem_ref => |r| {
-                const stmt = self.env.statements.items[@intFromEnum(r.stmt)];
-                if (stmt != .theorem) {
-                    return self.fail(r.loc, "'{s}' is not a theorem", .{self.str(statementName(stmt))});
+                const fact = try self.factOf(r.stmt, r.loc);
+                if (fact.kind != .theorem) {
+                    return self.fail(r.loc, "'{s}' is not a theorem", .{self.str(fact.name)});
                 }
-                if (!stmt.theorem.proven) {
-                    return self.fail(r.loc, "cites unproven theorem '{s}'", .{self.str(stmt.theorem.name)});
-                }
-                try self.requireClaim(step, "the theorem", stmt.theorem.formula);
+                const formula = try self.pool.copyIn(self.interner, fact.formula);
+                try self.requireClaim(step, "the theorem", formula);
             },
             .modus_ponens => |r| {
                 const imp = try self.checkStepRef(proof, r.implication, i, at);
@@ -418,8 +430,7 @@ pub const Kernel = struct {
                 const with_sort = try self.sortOfTerm(r.with, r.with_loc);
                 if (with_sort != node.quant.sort) {
                     return self.fail(r.with_loc, "expected sort '{s}', got '{s}'", .{
-                        self.env.sortName(self.interner, node.quant.sort),
-                        self.env.sortName(self.interner, with_sort),
+                        self.sortName(node.quant.sort), self.sortName(with_sort),
                     });
                 }
                 const derived = try self.pool.open(node.quant.body, r.with);
@@ -436,8 +447,7 @@ pub const Kernel = struct {
                 const wit_sort = try self.sortOfTerm(r.witness, r.witness_loc);
                 if (wit_sort != node.quant.sort) {
                     return self.fail(r.witness_loc, "expected sort '{s}', got '{s}'", .{
-                        self.env.sortName(self.interner, node.quant.sort),
-                        self.env.sortName(self.interner, wit_sort),
+                        self.sortName(node.quant.sort), self.sortName(wit_sort),
                     });
                 }
                 const expected = try self.pool.open(node.quant.body, r.witness);
@@ -708,14 +718,6 @@ pub const Kernel = struct {
     }
 };
 
-fn statementName(stmt: @import("env.zig").Statement) StrId {
-    return switch (stmt) {
-        .axiom => |f| f.name,
-        .theorem => |f| f.name,
-        .schema => |s| s.name,
-    };
-}
-
 // --- adversarial tests: forged proofs fed directly to the kernel API ---
 // The elaborator cannot produce these; the kernel must reject them anyway.
 
@@ -724,7 +726,6 @@ const testing = std.testing;
 const Rig = struct {
     interner: *InternPool,
     pool: *term.Pool,
-    env: *Env,
     sink: *Diagnostics.Sink,
     nat: SortId,
     d: term.SymId, // pred d(nat)
@@ -734,45 +735,52 @@ const Rig = struct {
         return .{
             .arena = arena,
             .pool = self.pool,
-            .env = @ptrCast(self.env),
             .interner = self.interner,
             .sink = self.sink,
         };
+    }
+
+    /// Mint an axiom fact from a working-pool formula (reify -> mintFact).
+    fn mintAxiom(self: *Rig, name: []const u8, formula: TermId) !InternPool.Index {
+        const off = try self.pool.reify(formula, self.interner);
+        return self.interner.mintFact(.axiom, off, try self.interner.internString(name), 0);
     }
 };
 
 fn buildRig(arena: Allocator) !Rig {
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    const env = try arena.create(Env);
-    env.* = try .init(arena, interner);
     const pool = try arena.create(term.Pool);
     pool.* = .init(arena);
     const sink = try arena.create(Diagnostics.Sink);
     sink.* = .init(arena);
 
-    const file = try env.newFile();
-    const nat = try env.addSort(file, try interner.internString("nat"), 0);
-    const nat_args = try arena.dupe(SortId, &.{nat});
-    const d = try env.addSym(file, .{
+    const nat_ix = try interner.mintSort(.{ .name = try interner.internString("nat"), .loc = 0, .refinement = null });
+    const nat_args = [_]InternPool.Index{nat_ix};
+    const d_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat_args } });
+    const d_ix = try interner.mintPred(.{
+        .sig = d_sig,
+        .guard = InternPool.no_term,
+        .param_names = &.{},
         .name = try interner.internString("d"),
-        .kind = .pred,
-        .arg_sorts = nat_args,
-        .result = .prop,
-        .guard = null,
-        .param_names = &.{},
         .loc = 0,
     });
-    const p = try env.addSym(file, .{
+    const p_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &.{} } });
+    const p_ix = try interner.mintPred(.{
+        .sig = p_sig,
+        .guard = InternPool.no_term,
+        .param_names = &.{},
         .name = try interner.internString("p"),
-        .kind = .pred,
-        .arg_sorts = &.{},
-        .result = .prop,
-        .guard = null,
-        .param_names = &.{},
         .loc = 0,
     });
-    return .{ .interner = interner, .pool = pool, .env = env, .sink = sink, .nat = nat, .d = d, .p = p };
+    return .{
+        .interner = interner,
+        .pool = pool,
+        .sink = sink,
+        .nat = @enumFromInt(@intFromEnum(nat_ix)),
+        .d = @enumFromInt(@intFromEnum(d_ix)),
+        .p = @enumFromInt(@intFromEnum(p_ix)),
+    };
 }
 
 fn expectRejected(rig: *Rig, arena: Allocator, proof: Proof, goal: TermId, msg_prefix: []const u8) !void {
@@ -794,11 +802,7 @@ test "forged proof: eigenvariable leak is rejected" {
     const x_name = try rig.interner.internString("x");
     const x = try rig.pool.add(.{ .fvar = .{ .name = x_name, .sort = rig.nat } });
     const dx = try rig.pool.addApp(.pred, rig.d, &.{x});
-    const leak_stmt = try rig.env.addStatement(@enumFromInt(0), try rig.interner.internString("leak"), .{ .axiom = .{
-        .name = try rig.interner.internString("leak"),
-        .formula = dx,
-        .loc = 0,
-    } });
+    const leak_stmt = try rig.mintAxiom("leak", dx);
 
     // forall x: nat. d(x) — the "generalization" the leak would license
     const body = try rig.pool.close(dx, x_name);

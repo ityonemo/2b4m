@@ -1,30 +1,74 @@
-//! The prove task — the SECOND task type, racked by the parse SCAN for each theorem in
-//! the requested (root) file. It is the root of demand: in the target design a prove task
-//! resolves its theorem (pulling parses/proofs of what it cites), then checks the proof.
+//! The prove task — produces a FACT (axiom or theorem) on demand. Racked by the parse
+//! scan for each requested (root-file) theorem, and by a read pass for each CITED fact
+//! that is absent from FactKV. See memory `provetask-step-walk-design`.
 //!
-//! ITS FIRST REAL JOB is to create the INTERNED REPRESENTATION of the theorem: intern
-//! `(namespace, name)` into the pool, so the theorem exists as an entity whose `Index` IS
-//! its identity. It does NOT check the proof yet — the existing eager `Context` back-end
-//! still verifies — so this stays behavior-neutral. The proof-checking body grows later.
+//! ENTRY PROTOCOL (FactKV.claimOrLookup):
+//!   - proven               -> someone already produced it; complete.
+//!   - in_flight (another)  -> SUSPEND blocked on that task.
+//!   - in_flight (SELF)     -> we own it and were RESUMED mid-proof — continue.
+//!   - claimed              -> we own it; produce.
 //!
-//! Payload = which theorem: its file's pool `.file` Index + its interned name. The
-//! theorem's namespace is the file's universe-namespace `(universe, file)`.
+//! PRODUCTION: find the declaration by name in the file's parsed AST.
+//!   - AXIOM: a leaf — read-pass its formula (rack fetches, suspend), elaborate, reify,
+//!     publish. No proof.
+//!   - THEOREM: the real one — goal phase (read-pass + elaborate the stated formula),
+//!     then the WALK phase: `Walk.drive` with the `Prove` driver steps through the proof
+//!     (each step read-passes, suspending at the step on any missing global; resume
+//!     re-drives from the reified cursor); on done, `Prove.finish` kernel-checks the
+//!     whole lowering and the goal reifies + publishes.
+//!   - hole / schema: not yet supported (diagnosed; red until the Phase-5 rebuilds).
+//!
+//! A FAILED proof publishes NOTHING: the FactKV entry stays in_flight-ours, so demanders
+//! of this fact stay parked (a wedge — the engine still terminates; the root-cause
+//! diagnostic is in the sink; wedge REPORTING is deferred).
+//!
+//! The payload is MUTABLE task state (run takes `*ProveTask`): the goal TermId, the Walk
+//! (whose frame stack IS the resumable cursor), and the Prove driver all live across
+//! suspends, arena-resident.
 
 const std = @import("std");
+const ast = @import("../ast.zig");
 const InternPool = @import("../InternPool.zig");
+const term = @import("../term.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 const FactKV = @import("../FactKV.zig");
+const Walk = @import("ProveTask/Walk.zig");
+const RefScan = @import("ProveTask/RefScan.zig");
+const Elab = @import("ProveTask/Elab.zig");
+const Prove = @import("ProveTask/Prove.zig");
 
 const ProveTask = @This();
 
-/// the `.file` entity Index of the theorem's home file (not the dense FileId — the pool
+/// the `.file` entity Index of the fact's home file (not the dense FileId — the pool
 /// identity, which the namespace is built from).
 file: InternPool.Index,
 name: InternPool.StrId,
+/// the demanding reference's source offset — where "reference not found" points. 0 for
+/// the root-file scan (the declaration is its own demand site).
+loc: u32 = 0,
+/// resumable production state; created on the first owning entry.
+st: ?*State = null,
+
+const State = struct {
+    source: []const u8,
+    ns: InternPool.Index,
+    decl: Decl,
+    walk: *Walk,
+    prove: *Prove,
+    /// the elaborated stated formula (axiom assertion / theorem goal); null until the
+    /// goal phase completes.
+    goal: ?term.TermId = null,
+    goal_loc: u32,
+
+    const Decl = union(enum) {
+        axiom: struct { formula: *const ast.Expr },
+        theorem: struct { formula: *const ast.Expr, steps: []const ast.Step },
+    };
+};
 
 /// Package a payload into a rack-ready `Engine.Task` (arena-allocated payload + typed
-/// erased run), mirroring `ParseTask.new`.
+/// erased run), mirroring `ParseTask.new` / `FetchTask.new`.
 pub fn new(arena: std.mem.Allocator, payload: ProveTask) std.mem.Allocator.Error!Engine.Task {
     const p = try arena.create(ProveTask);
     p.* = payload;
@@ -33,37 +77,139 @@ pub fn new(arena: std.mem.Allocator, payload: ProveTask) std.mem.Allocator.Error
 
 fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const task: *ProveTask = @ptrCast(@alignCast(payload));
-    return run(self, task.*, h);
+    return run(self, task, h);
 }
 
-/// The demand ENTRY PROTOCOL (see FactKV): look up `(namespace, name)`, claiming it if
-/// absent. Branches:
-///   - proven    -> nothing to do.
-///   - in_flight -> SUSPEND blocked-on the task already proving it (a redundant duplicate
-///                  prove-task dedups to a no-op waiter; on resume it re-runs, finds
-///                  `proven`, and completes).
-///   - claimed   -> we own it: BEGIN PROVING. For now the eager back-end still does the
-///                  actual checking, so we immediately `publish` (mint the fact token,
-///                  in_flight -> proven). When the reentrant prover lands, "begin proving"
-///                  becomes the real suspendable lowering, and publish moves to its
-///                  success path.
-pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+    // diagnostics this run records belong to THIS task's file — point the sink at it (a
+    // task runs synchronously to its next suspend, so it is the last writer before any of
+    // its own `sink.add`s; sub-tasks reset it when they run). Prevents an imported fact's
+    // offset from being rendered against another file's (shorter) source.
+    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = FactKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,
-        .in_flight => |blocker| {
+        .in_flight => |owner| {
+            if (owner != h.self_index) {
+                h.suspendOn(owner);
+                return;
+            }
+            // ours — resumed mid-proof; fall through and continue.
+        },
+        .claimed => {},
+    }
+
+    const st = task.st orelse blk: {
+        const st = (try locate(self, task, h, ns)) orelse return; // diagnosed; no publish
+        task.st = st;
+        break :blk st;
+    };
+    st.prove.h = h; // each (re)entry gets a fresh handle; racking goes through it
+
+    // GOAL PHASE: the stated formula's own read pass + elaboration ("step -1").
+    if (st.goal == null) {
+        const formula = switch (st.decl) {
+            inline else => |d| d.formula,
+        };
+        var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
+        const refs = try scanner.scanFormula(formula);
+        if (try Prove.resolveRefs(self, h, task.file, ns, refs)) |blocker| {
             h.suspendOn(blocker);
             return;
+        }
+        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, self.pool, self.sink, st.source, st.walk, ns, &st.prove.fresh_counter);
+        const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return, // diagnosed; no publish
+        }, formula) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return,
+        };
+        st.goal = typed.id;
+    }
+
+    switch (st.decl) {
+        .axiom => {
+            // an axiom is a LEAF: its assertion IS the fact.
+            const off = try self.pool.reify(st.goal.?, self.interner);
+            _ = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
         },
-        .claimed => {
-            // BEGIN PROVING — eager back-end still verifies (scaffolding); publish flips
-            // in_flight -> proven. (No demand/suspend on citations yet — the risky slice.)
-            // The fact carries a formula = a reified-term `extra` offset; the REAL asserted
-            // proposition comes with the one-walk lowering (Step 8). For now this path isn't
-            // wired to actual proving, so a placeholder offset stands in.
-            const formula: InternPool.TermOff = InternPool.no_term;
-            _ = try self.facts.publish(self.io, key, .theorem, formula, 0);
+        .theorem => |t| {
+            switch (try st.walk.drive(t.steps, st.prove)) {
+                .blocked => |blocker| {
+                    h.suspendOn(blocker);
+                    return;
+                },
+                .failed => return, // diagnosed; no publish
+                .done => {
+                    if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
+                    const off = try self.pool.reify(st.goal.?, self.interner);
+                    _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+                },
+            }
         },
     }
+}
+
+/// Find the fact's declaration in its file's parsed AST and build the production state.
+/// Null = diagnosed (missing / not-a-fact / unsupported kind); the task completes
+/// without publishing.
+fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index) std.mem.Allocator.Error!?*State {
+    const fid = self.pool_file.get(task.file) orelse {
+        self.sink.add(task.loc, "internal: prove into an undiscovered file", .{}) catch return error.OutOfMemory;
+        return null;
+    };
+    const parsed = self.parsed.items[@intFromEnum(fid)];
+    const source = self.files.items[@intFromEnum(fid)].source;
+
+    for (parsed.decls) |*decl| {
+        const name_tok = switch (decl.*) {
+            .axiom => |d| d.name,
+            .theorem => |d| d.name,
+            .hole => |d| d.name,
+            .schema => |d| d.name,
+            .sort => |d| d.name,
+            .import => |d| d.ns,
+            .constant => |d| d.name,
+            .func => |d| d.name,
+            .pred => |d| d.name,
+            .define => |d| d.name,
+            .alias => |d| d.name,
+            .forward, .model => continue,
+        };
+        const decl_name = self.interner.internString(source[name_tok.start..name_tok.end]) catch return error.OutOfMemory;
+        if (decl_name != task.name) continue;
+
+        const d: State.Decl = switch (decl.*) {
+            .axiom => |d| .{ .axiom = .{ .formula = d.formula } },
+            .theorem => |d| .{ .theorem = .{ .formula = d.formula, .steps = d.steps } },
+            .hole => {
+                self.sink.add(name_tok.start, "holes are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+                return null;
+            },
+            .schema => {
+                self.sink.add(name_tok.start, "schemas are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+                return null;
+            },
+            else => {
+                self.sink.add(task.loc, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+                return null;
+            },
+        };
+        const st = try self.arena.create(State);
+        const walk = try self.arena.create(Walk);
+        walk.* = Walk.init(self.arena, self.interner, source, self.sink);
+        st.* = .{
+            .source = source,
+            .ns = ns,
+            .decl = d,
+            .walk = walk,
+            .prove = try Prove.init(self, h, source, task.file, ns),
+            .goal_loc = name_tok.start,
+        };
+        return st;
+    }
+    self.sink.add(task.loc, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)}) catch return error.OutOfMemory;
+    return null;
 }

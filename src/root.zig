@@ -1,5 +1,12 @@
 //! bpa core library. All proof-checking logic is exposed from here;
 //! src/main.zig is a thin CLI wrapper.
+//!
+//! POST-FLIP (Step 8 W5): checking runs on the DEMAND ENGINE — parse tasks discover the
+//! file set, the root scan racks a ProveTask per theorem, and Fetch/Prove tasks pull
+//! everything cited on demand (see Engine.zig / Context.zig). The eager Elaborator and
+//! `env` are gone. RED-PHASE degradations (until the Phase-5 rebuilds): schemas, models,
+//! accelerants, defines, aliases, guarded funcs and holes are unsupported (their files
+//! diagnose); the summary no longer reports accelerated/trusted/hole buckets.
 
 const std = @import("std");
 
@@ -11,27 +18,79 @@ pub const InternPool = @import("InternPool.zig");
 pub const FactKV = @import("FactKV.zig");
 pub const IdentKV = @import("IdentKV.zig");
 pub const term = @import("term.zig");
-pub const env = @import("env.zig");
-pub const elaborate = @import("elaborate.zig");
-pub const Verify = elaborate.Verify;
+pub const Verify = @import("Verify.zig");
 pub const Engine = @import("Engine.zig");
 pub const Context = @import("Context.zig");
-pub const Prover = @import("Engine/ProveTask/Prover.zig");
 pub const Walk = @import("Engine/ProveTask/Walk.zig");
 pub const RefScan = @import("Engine/ProveTask/RefScan.zig");
 pub const Elab = @import("Engine/ProveTask/Elab.zig");
+pub const Prove = @import("Engine/ProveTask/Prove.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");
 pub const literate = @import("literate.zig");
 pub const lint = @import("lint.zig");
-pub const simplify = @import("simplify.zig");
-pub const smt = @import("accelerant/arithmetic/smt.zig");
-pub const presburger = @import("accelerant/arithmetic/presburger.zig");
-pub const farkas = @import("accelerant/arithmetic/farkas.zig");
 
 pub const query = @import("query.zig");
 pub const debug = @import("debug.zig");
+
+pub const ReadFileFn = Context.ReadFileFn;
+
+/// Build a fresh demand-checking Context (interner + KV tables + shared scratchpad).
+fn newContext(
+    io: std.Io,
+    arena: std.mem.Allocator,
+    read_ctx: ?*anyopaque,
+    read_fn: ReadFileFn,
+    verify: Verify,
+    std_root: []const u8,
+) !*Context {
+    const sink = try arena.create(diagnostics.Sink);
+    sink.* = .init(arena);
+    const interner = try arena.create(InternPool);
+    interner.* = try .init(arena);
+    const pool = try arena.create(term.Pool);
+    pool.* = .init(arena);
+    const context = try arena.create(Context);
+    context.* = .{
+        .arena = arena,
+        .io = io,
+        .sink = sink,
+        .interner = interner,
+        .facts = .init(interner),
+        .idents = .init(interner),
+        .pool = pool,
+        .read_ctx = read_ctx,
+        .read_fn = read_fn,
+        .verify = verify,
+        .std_root = std_root,
+    };
+    return context;
+}
+
+/// Count the root file's checking outcome: how many theorem DECLARATIONS it has, and how
+/// many of them are `proven` facts in FactKV (published by their ProveTasks).
+const Counts = struct { theorem_decls: usize, proven: usize };
+
+fn countRoot(context: *Context) !Counts {
+    const root_idx = @intFromEnum(context.root_file);
+    const root_parsed = context.parsed.items[root_idx];
+    const root_source = context.files.items[root_idx].source;
+    const root_pool_file = try context.fileIndex(context.files.items[root_idx].path);
+    const ns = try context.interner.namespace(.universe, root_pool_file);
+    var decls: usize = 0;
+    var proven: usize = 0;
+    for (root_parsed.decls) |decl| {
+        if (decl != .theorem) continue;
+        decls += 1;
+        const name_tok = decl.theorem.name;
+        const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
+        if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
+            if (state == .proven) proven += 1;
+        }
+    }
+    return .{ .theorem_decls = decls, .proven = proven };
+}
 
 pub const CheckResult = struct {
     file: ast.File,
@@ -44,43 +103,28 @@ pub const CheckResult = struct {
     }
 };
 
-/// Check a .bpa source. All allocations go into `arena`; diagnostics are
-/// collected in the result's sink (rendered by the caller).
+/// A read_fn for single-source checks (no imports resolvable).
+fn readNone(_: ?*anyopaque, _: std.mem.Allocator, _: []const u8) anyerror![]const u8 {
+    return error.FileNotFound;
+}
+
+/// Check a .bpa source (single file; imports unresolvable). All allocations go into
+/// `arena`; diagnostics are collected in the result's sink (rendered by the caller).
 pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
-    const sink = try arena.create(diagnostics.Sink);
-    sink.* = .init(arena);
-
-    var p: parser.Parser = .init(arena, source, sink);
-    const file = try p.parseFile();
-
-    const interner = try arena.create(InternPool);
-    interner.* = try .init(arena);
-    const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
-    const environment = try arena.create(env.Env);
-    environment.* = try .init(arena, interner);
-    const file_id = try environment.newFile();
-
-    var elab: elaborate.Elaborator = .init(arena, source, interner, pool, environment, sink, file_id);
-    try elab.elaborateFile(file);
-
-    var proven: usize = 0;
-    for (environment.statements.items) |stmt| {
-        // synthetic `model`-materialized theorems are machinery, not authored —
-        // suppressed from the user-facing count.
-        if (stmt == .theorem and stmt.theorem.proven and !stmt.theorem.synthetic) proven += 1;
-    }
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+    const context = try newContext(io, arena, null, &readNone, .{}, "");
+    _ = try context.loadProject("/check/source.bpa", source);
+    const counts = try countRoot(context);
     return .{
-        .file = file,
-        .sink = sink,
-        .declarations = file.decls.len,
-        .theorems_proven = proven,
+        .file = context.parsed.items[@intFromEnum(context.root_file)],
+        .sink = context.sink,
+        .declarations = context.declarations,
+        .theorems_proven = counts.proven,
     };
 }
 
 // --- multi-file checking (imports) ---
-
-pub const ReadFileFn = @import("Context.zig").ReadFileFn;
 
 pub const ProjectResult = struct {
     files: []const diagnostics.FileSrc,
@@ -93,14 +137,11 @@ pub const ProjectResult = struct {
     /// that declared theorems but proved none (a real footgun). See the
     /// `theorems_proven == 0` branch in main.zig.
     target_theorem_decls: usize,
+    /// RED-PHASE: trusted/accelerated/hole tracking is not yet rebuilt on the demand
+    /// path — these report empty until Phase 5.
     theorems_trusted: usize,
-    /// count of proven theorems that leaned on an accelerated tactic (the rest
-    /// are just proven — no bucket). Disclosed in the summary.
     theorems_accelerated: usize,
-    /// distinct accelerated-tactic names across accelerated theorems, first-use order
     accelerated_names: []const []const u8,
-    /// every declared `hole`, each with where it sits and which theorems rest on
-    /// it (transitively). Default mode rejects a nonempty list; --draft allows.
     holes: []const Hole,
 
     pub const Hole = struct {
@@ -116,29 +157,20 @@ pub const ProjectResult = struct {
     }
 };
 
-/// Check a root file and everything it imports. `verify` selects which layers
-/// are actually verified (default: everything). When `verify.recheck_imports`
-/// is false, imported files contribute their declarations but their proofs are
-/// TRUSTED, not re-checked.
-/// The elaborated project state: the shared interner/pool/env after loading the
-/// root file and all its imports (imports resolved, synthetics materialized).
-/// Returned by `loadProject` for tools that must READ the elaboration result
-/// rather than just count it — e.g. `bpa debug accelerant`, which reads a
-/// synthetic theorem (only created during elaboration) out of `environment`, and
-/// needs imports loaded so cited statements resolve (incl. nested/recursive
-/// synthetics like a `model` materialization citing another).
+/// The loaded project state after a demand run: for tools that must READ the result
+/// rather than just count it.
 pub const LoadedProject = struct {
     interner: *InternPool,
     pool: *term.Pool,
-    environment: *env.Env,
+    context: *Context,
     sink: *diagnostics.Sink,
-    root_file: env.FileId,
+    root_file: Context.FileId,
     files: []const diagnostics.FileSrc,
     declarations: usize,
 };
 
-/// Run the multi-file loader (imports depth-first, same as `checkProject`) and
-/// hand back the elaborated env. `checkProject` is this + the count/hole summary.
+/// Run the demand loader/checker and hand back the world. `checkProject` is this + the
+/// count summary.
 pub fn loadProject(
     io: std.Io,
     arena: std.mem.Allocator,
@@ -146,39 +178,17 @@ pub fn loadProject(
     root_source: []const u8,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
-    verify: elaborate.Verify,
+    verify: Verify,
     std_root: []const u8,
 ) !LoadedProject {
-    const sink = try arena.create(diagnostics.Sink);
-    sink.* = .init(arena);
-    const interner = try arena.create(InternPool);
-    interner.* = try .init(arena);
-    const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
-    const environment = try arena.create(env.Env);
-    environment.* = try .init(arena, interner);
-
-    var context: Context = .{
-        .arena = arena,
-        .io = io,
-        .sink = sink,
-        .interner = interner,
-        .facts = .init(interner),
-        .idents = .init(interner),
-        .pool = pool,
-        .environment = environment,
-        .read_ctx = read_ctx,
-        .read_fn = read_fn,
-        .verify = verify,
-        .std_root = std_root,
-    };
+    const context = try newContext(io, arena, read_ctx, read_fn, verify, std_root);
     const canonical_root = try std.fs.path.resolve(arena, &.{root_path});
     const root_file = try context.loadProject(canonical_root, root_source);
     return .{
-        .interner = interner,
-        .pool = pool,
-        .environment = environment,
-        .sink = sink,
+        .interner = context.interner,
+        .pool = context.pool,
+        .context = context,
+        .sink = context.sink,
         .root_file = root_file,
         .files = context.files.items,
         .declarations = context.declarations,
@@ -192,88 +202,21 @@ pub fn checkProject(
     root_source: []const u8,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
-    verify: elaborate.Verify,
+    verify: Verify,
     std_root: []const u8,
 ) !ProjectResult {
     const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root);
-    const sink = loaded.sink;
-    const interner = loaded.interner;
-    const environment = loaded.environment;
-    const root_file = loaded.root_file;
-    const loaded_view = struct { files: []const diagnostics.FileSrc, declarations: usize }{ .files = loaded.files, .declarations = loaded.declarations };
-
-    var proven: usize = 0;
-    var trusted: usize = 0;
-    var accelerated: usize = 0;
-    var target_theorem_decls: usize = 0;
-    var accelerated_names: std.ArrayList([]const u8) = .empty;
-    for (environment.statements.items) |stmt| {
-        if (stmt != .theorem) continue;
-        // synthetic `model`-materialized theorems are machinery, not authored.
-        if (stmt.theorem.synthetic) continue;
-        // count authored theorem DECLARATIONS in the target file (proven or not)
-        // — the signal for "this file had something to prove".
-        if (stmt.theorem.file == root_file) target_theorem_decls += 1;
-        // a trusted import IS proven (it was proven in its own file; --faster/
-        // --reckless just skipped re-checking it here) — so it counts toward
-        // `proven`, with `trusted` as the disclosed subset.
-        if (stmt.theorem.trusted) {
-            proven += 1;
-            trusted += 1;
-        } else if (stmt.theorem.proven) {
-            proven += 1;
-            // a theorem that leaned on any accelerated tactic is disclosed; one
-            // proved with no accelerated tactic is just proven (no bucket).
-            if (stmt.theorem.accelerated.len != 0) {
-                accelerated += 1;
-                outer: for (stmt.theorem.accelerated) |o| {
-                    const s = interner.stringBytes(o);
-                    for (accelerated_names.items) |seen| {
-                        if (std.mem.eql(u8, seen, s)) continue :outer;
-                    }
-                    try accelerated_names.append(arena, s);
-                }
-            }
-        }
-    }
-    // enumerate holes: each `hole` decl (an axiom-kind Fact with is_hole), with
-    // its location and the theorems that transitively rest on it.
-    var holes: std.ArrayList(ProjectResult.Hole) = .empty;
-    for (environment.statements.items) |stmt| {
-        if (stmt != .axiom or !stmt.axiom.is_hole) continue;
-        const h = stmt.axiom;
-        var dependents: std.ArrayList([]const u8) = .empty;
-        for (environment.statements.items) |dep| {
-            if (dep != .theorem) continue;
-            for (dep.theorem.holes) |hn| {
-                if (hn == h.name) {
-                    try dependents.append(arena, interner.stringBytes(dep.theorem.name));
-                    break;
-                }
-            }
-        }
-        const src = loaded_view.files[@intFromEnum(h.file)].source;
-        var line: usize = 1;
-        for (src[0..@min(h.loc, src.len)]) |ch| {
-            if (ch == '\n') line += 1;
-        }
-        try holes.append(arena, .{
-            .name = interner.stringBytes(h.name),
-            .path = loaded_view.files[@intFromEnum(h.file)].path,
-            .line = line,
-            .dependents = dependents.items,
-        });
-    }
+    const counts = try countRoot(loaded.context);
     return .{
-        .files = loaded_view.files,
-        .sink = sink,
-        .declarations = loaded_view.declarations,
-        .theorems_proven = proven,
-        .target_theorem_decls = target_theorem_decls,
-        .theorems_trusted = trusted,
-        .theorems_accelerated = accelerated,
-        .accelerated_names = accelerated_names.items,
-        .holes = holes.items,
+        .files = loaded.files,
+        .sink = loaded.sink,
+        .declarations = loaded.declarations,
+        .theorems_proven = counts.proven,
+        .target_theorem_decls = counts.theorem_decls,
+        .theorems_trusted = 0,
+        .theorems_accelerated = 0,
+        .accelerated_names = &.{},
+        .holes = &.{},
     };
 }
 
@@ -284,7 +227,6 @@ test {
     std.testing.refAllDecls(query.whereis);
     std.testing.refAllDecls(query.search);
     std.testing.refAllDecls(query.uses);
-    std.testing.refAllDecls(debug.accelerant);
     std.testing.refAllDecls(debug.taint);
     std.testing.refAllDecls(literate);
     std.testing.refAllDecls(lint);

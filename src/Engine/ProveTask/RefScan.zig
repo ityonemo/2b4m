@@ -96,6 +96,16 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
     return self.out.items;
 }
 
+/// Enumerate a bare FORMULA's global candidates (a theorem's goal / an axiom's asserted
+/// proposition — the "step -1" read pass that runs before any proof step walks).
+pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const Ref {
+    self.out.clearRetainingCapacity();
+    self.seen.clearRetainingCapacity();
+    self.expr_locals.clearRetainingCapacity();
+    try self.scanExpr(e);
+    return self.out.items;
+}
+
 /// Which resolution domain a rule's refs live in. Only axiom/theorem citations are
 /// global facts; everything else cites local steps/blocks (including accelerant names,
 /// which hard-error as unsupported at process time — their refs never fetch).
@@ -241,6 +251,12 @@ const ScanRecorder = struct {
         _ = step;
         _ = block;
         return true;
+    }
+
+    pub fn exitBlock(self: *ScanRecorder, w: *Walk, block: Walk.BlockOrdinal) Allocator.Error!void {
+        _ = self;
+        _ = w;
+        _ = block;
     }
 
     fn refsOf(self: *const ScanRecorder, label: []const u8) []const []const u8 {

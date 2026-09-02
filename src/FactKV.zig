@@ -51,6 +51,16 @@ pub fn init(pool: *InternPool) FactKV {
     return .{ .pool = pool };
 }
 
+/// A plain READ of the current state — no claim, no side effects. Used by citation
+/// resolution (a step's read pass ensures its cited facts are `proven` before the
+/// justification lowering maps name -> fact Index). Exclusive lock for simplicity
+/// (uncontended single-threaded; a shared-read optimization can come with real threads).
+pub fn lookup(self: *FactKV, io: std.Io, key: Key) ?State {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    return self.map.get(key);
+}
+
 /// The ProveTask ENTRY PROTOCOL, atomic under the EXCLUSIVE lock (the claim in the absent
 /// case must be part of the same critical section as the lookup, or two provers both see
 /// "absent" and both claim). `self_task` is the calling prove-task's own `TaskIndex`.

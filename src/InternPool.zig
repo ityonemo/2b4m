@@ -504,13 +504,14 @@ pub fn qualifiersOf(self: *const InternPool, arena: std.mem.Allocator, sort: Ind
     return acc.toOwnedSlice(arena);
 }
 
-/// A func/pred symbol's RESULT sort `Index` (from its signature). Mirrors the kernel's
-/// `env.sym(id).result`. Asserts `sym` names a `.func` or `.pred` Item.
+/// A symbol's RESULT sort `Index`: a func/pred's signature result, or a constant's sort
+/// (a constant is a nullary application to every term reader). Asserts `sym` names a
+/// `.func`/`.pred`/`.constant` Item.
 pub fn symResult(self: *const InternPool, sym: Index) Index {
-    const key = self.keyOf(sym);
-    const callable = switch (key) {
+    const callable = switch (self.keyOf(sym)) {
         .func => |c| c,
         .pred => |c| c,
+        .constant => |c| return c.sort,
         else => unreachable,
     };
     return self.keyOf(callable.sig).sig.result;

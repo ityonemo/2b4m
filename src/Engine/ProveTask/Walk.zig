@@ -34,6 +34,8 @@
 //!     recorded by the driver).
 //!   - `caseConclude(w, step, block) !bool` — a `case` step's or_elim conclusion check,
 //!     which runs only after ALL its arms have walked.
+//!   - `exitBlock(w, block) !void` — the block just descoped; the driver closes its side
+//!     (e.g. seals the kernel block's step range).
 //! W1 tests fake the driver; later W-steps plug real resolution/checking into this seam.
 //!
 //! CASE ARMS are assume-shaped (`{label, assumption, steps}` ≅ an `assume` step), so the
@@ -159,6 +161,9 @@ pub fn drive(self: *Walk, steps: []const ast.Step, driver: anytype) Allocator.Er
                 _ = self.stack.pop();
                 self.local_steps.shrinkRetainingCapacity(e.steps_mark);
                 self.local_idents.shrinkRetainingCapacity(e.idents_mark);
+                // the driver closes its side of the block (e.g. the kernel block's
+                // step range) at the same moment the walk descopes it.
+                try driver.exitBlock(self, e.block);
             },
             .case_conclude => |fr| {
                 _ = self.stack.pop();
@@ -453,6 +458,12 @@ const FakeDriver = struct {
         _ = block;
         try self.processed.append(self.arena, self.label(step));
         return true;
+    }
+
+    pub fn exitBlock(self: *FakeDriver, w: *Walk, block: Walk.BlockOrdinal) Allocator.Error!void {
+        _ = self;
+        _ = w;
+        _ = block;
     }
 };
 
