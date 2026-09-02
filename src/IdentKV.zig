@@ -67,11 +67,11 @@ pub fn claimOrLookup(self: *IdentKV, io: std.Io, key: Key, self_task: Engine.Tas
 /// mints it under the correct nested lock). Mirrors the pool's identifier `Key`s.
 pub const Mint = union(enum) {
     sort: InternPool.Key.Sort,
-    constant: InternPool.Index, // its sort
+    constant: InternPool.Key.Constant,
     func: InternPool.Key.Callable,
     pred: InternPool.Key.Callable,
     define: InternPool.Key.Define,
-    import: InternPool.Index, // the namespace it binds
+    import: InternPool.Key.Import,
 };
 
 /// SUCCESS transition: the claiming task fetched `key`, so mint its concrete identifier
@@ -96,11 +96,11 @@ pub fn publish(self: *IdentKV, io: std.Io, key: Key, mint: Mint) std.mem.Allocat
 fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.Index {
     return switch (mint) {
         .sort => |s| self.pool.mintSort(s),
-        .constant => |sort| self.pool.mintConstant(sort),
+        .constant => |c| self.pool.mintConstant(c),
         .func => |c| self.pool.mintFunc(c),
         .pred => |c| self.pool.mintPred(c),
         .define => |d| self.pool.mintDefine(d),
-        .import => |ns| self.pool.mintImport(ns),
+        .import => |m| self.pool.mintImport(m),
     };
 }
 
@@ -126,7 +126,7 @@ test "IdentKV demand table: claim -> in_flight -> publish -> done, deduped per k
     // now IN-FLIGHT -> a second fetcher is told to suspend on the claiming task.
     try std.testing.expectEqual(IdentKV.Outcome{ .in_flight = my_task }, try kv.claimOrLookup(io, k, other_task));
     // PUBLISH -> mints the concrete identifier (a root sort here), flips in_flight -> done.
-    const ident = try kv.publish(io, k, .{ .sort = .{ .refinement = null } });
+    const ident = try kv.publish(io, k, .{ .sort = .{ .name = k.name, .loc = 0, .refinement = null } });
     try std.testing.expect(pool.keyOf(ident).sort.refinement == null);
     // now DONE -> lookups return the token, fetch-nothing.
     try std.testing.expectEqual(IdentKV.Outcome{ .done = ident }, try kv.claimOrLookup(io, k, other_task));

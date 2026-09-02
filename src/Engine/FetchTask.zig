@@ -85,7 +85,7 @@ test "FetchTask through the engine: two fetches of one identifier dedup (claim, 
     var eng = Engine.init(arena, &ctx);
     defer eng.deinit();
     // rack TWO fetches of the same identifier — the second must dedup to a no-op waiter.
-    const mint: IdentKV.Mint = .{ .sort = .{ .refinement = null } };
+    const mint: IdentKV.Mint = .{ .sort = .{ .name = nat, .loc = 0, .refinement = null } };
     _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .mint = mint }));
     _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .mint = mint }));
     try eng.run();

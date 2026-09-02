@@ -63,7 +63,7 @@ pub fn run(self: *Context, task: ProveTask, h: *Engine.Handle) std.mem.Allocator
             // proposition comes with the one-walk lowering (Step 8). For now this path isn't
             // wired to actual proving, so a placeholder offset stands in.
             const formula: InternPool.TermOff = InternPool.no_term;
-            _ = try self.facts.publish(self.io, key, .theorem, formula);
+            _ = try self.facts.publish(self.io, key, .theorem, formula, 0);
         },
     }
 }

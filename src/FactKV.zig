@@ -76,11 +76,12 @@ pub fn claimOrLookup(self: *FactKV, io: std.Io, key: Key, self_task: Engine.Task
 /// the fact `Index`. The mint nests the InternPool write-mutex inside the FactKV exclusive
 /// lock (order FactKV -> InternPool). Callers then wake anyone parked on the claiming
 /// task's index (engine-side).
-pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, formula: InternPool.TermOff) std.mem.Allocator.Error!InternPool.Index {
+pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, formula: InternPool.TermOff, loc: u32) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
     self.pool.lockWrite(io);
-    const index = self.pool.mintFact(kind, formula) catch |e| {
+    // the fact's name IS its identity key's name; loc comes from the caller (declaration site).
+    const index = self.pool.mintFact(kind, formula, key.name, loc) catch |e| {
         self.pool.unlockWrite(io);
         return e;
     };
@@ -119,9 +120,10 @@ test "FactKV demand table: claim -> in_flight -> publish -> proven; the entry pr
     // PUBLISH on success: in-flight -> proven, minting the fact token (kind + formula).
     // formula = a reified-term `extra` offset (Step 3); any u32 works for this round-trip.
     const formula: InternPool.TermOff = 5;
-    const fact = try kv.publish(io, k, .theorem, formula);
+    const fact = try kv.publish(io, k, .theorem, formula, 0);
     try std.testing.expectEqual(InternPool.Key.Kind.theorem, pool.keyOf(fact).fact.kind);
     try std.testing.expectEqual(formula, pool.keyOf(fact).fact.formula);
+    try std.testing.expectEqual(k.name, pool.keyOf(fact).fact.name);
 
     // now PROVEN -> any lookup returns the fact index, prove-nothing.
     try std.testing.expectEqual(
