@@ -1,8 +1,10 @@
 //! The checker's shared world — the CONTEXT everything operates against: the interner,
-//! the demand tables (FactKV/IdentKV), the shared term scratchpad, diagnostics sink,
-//! verify config, and the per-file tables (files/parsed/import_maps) keyed by FileId. It
-//! is threaded to every engine task (the engine's `ctx`). LOADING is a thing you DO with
-//! a context (`loadProject`), not a separate abstraction — hence Context, not "Loader".
+//! the demand tables (FactKV/IdentKV), diagnostics sink, verify config, and the per-file
+//! tables (files/parsed/import_maps) keyed by FileId. It is threaded to every engine task
+//! (the engine's `ctx`). Term scratchpads are PER-PROOF (each ProveTask's `Prove` owns
+//! one), not shared here — the substitution calculus is per-proof construction work.
+//! LOADING is a thing you DO with a context (`loadProject`), not a separate abstraction —
+//! hence Context, not "Loader".
 //!
 //! `loadProject` racks the root ParseTask and runs the engine to quiescence: parsing
 //! discovers + parses the transitive file set, the root scan racks a ProveTask per
@@ -22,7 +24,6 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
 const InternPool = @import("InternPool.zig");
-const term = @import("term.zig");
 const Engine = @import("Engine.zig");
 const FactKV = @import("FactKV.zig");
 const IdentKV = @import("IdentKV.zig");
@@ -52,8 +53,6 @@ facts: FactKV,
 /// The identifier resolution/coordination table over `interner` (see IdentKV). Filled
 /// by FetchTask on demand.
 idents: IdentKV,
-/// the SHARED term scratchpad (Step 10 makes this per-ProveTask; one pool for now)
-pool: *term.Pool,
 files: std.ArrayList(diagnostics.FileSrc) = .empty,
 /// pool `.file` entity Index -> the dense FileId cursoring the per-file tables. The
 /// InternPool does the path dedup (same resolved path -> same file Index); this maps that

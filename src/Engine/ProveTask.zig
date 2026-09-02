@@ -118,7 +118,9 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             h.suspendOn(blocker);
             return;
         }
-        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, self.pool, self.sink, st.source, st.walk, ns, &st.prove.fresh_counter);
+        // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
+        // its steps and the kernel check use, and that it reifies back from at publish.
+        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, ns, &st.prove.fresh_counter);
         const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return, // diagnosed; no publish
@@ -132,7 +134,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     switch (st.decl) {
         .axiom => {
             // an axiom is a LEAF: its assertion IS the fact.
-            const off = try self.pool.reify(st.goal.?, self.interner);
+            const off = try st.prove.pool.reify(st.goal.?, self.interner);
             _ = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
         },
         .theorem => |t| {
@@ -144,7 +146,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
                 .failed => return, // diagnosed; no publish
                 .done => {
                     if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
-                    const off = try self.pool.reify(st.goal.?, self.interner);
+                    const off = try st.prove.pool.reify(st.goal.?, self.interner);
                     _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
                 },
             }

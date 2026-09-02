@@ -292,7 +292,6 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
 
 const testing = std.testing;
 const parser = @import("../parser.zig");
-const term = @import("../term.zig");
 const diagnostics = @import("../diagnostics.zig");
 const FactKV = @import("../FactKV.zig");
 
@@ -307,8 +306,6 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
     sink.* = .init(arena);
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
 
     const ctx = try arena.create(Context);
     ctx.* = .{
@@ -318,7 +315,6 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
         .interner = interner,
         .facts = FactKV.init(interner),
         .idents = IdentKV.init(interner),
-        .pool = pool,
         .read_ctx = null,
         .read_fn = &readNothing,
         .verify = .{},

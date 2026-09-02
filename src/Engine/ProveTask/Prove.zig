@@ -46,6 +46,11 @@ ctx: *Context,
 /// the engine handle of the CURRENT run — refreshed by the ProveTask on every (re)entry
 /// (a resume gets a fresh handle; racking/suspension go through it).
 h: *Engine.Handle,
+/// this proof's OWN term scratchpad (Step 10): the substitution calculus is per-proof
+/// construction workspace, so each ProveTask builds its terms here, not in one shared
+/// pool. Cited durable terms `copyIn` from `extra`; the goal `reify`s back at publish.
+/// Arena-resident (survives suspends); discarded with the task arena at conclusion.
+pool: *term.Pool,
 /// the proving file's source (step tokens index into it)
 source: []const u8,
 /// the proving file's pool `.file` Index and universe namespace
@@ -70,7 +75,9 @@ const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 
 pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPool.Index, ns: InternPool.Index) Allocator.Error!*Prove {
     const p = try ctx.arena.create(Prove);
-    p.* = .{ .ctx = ctx, .h = h, .source = source, .file = file, .ns = ns };
+    const pool = try ctx.arena.create(term.Pool);
+    pool.* = .init(ctx.arena);
+    p.* = .{ .ctx = ctx, .h = h, .pool = pool, .source = source, .file = file, .ns = ns };
     // kernel block 0 = the root proof body; sealed in finish().
     try p.low_blocks.append(ctx.arena, .{
         .parent = null,
@@ -84,7 +91,7 @@ pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPo
 }
 
 fn elab(self: *Prove, w: *const Walk) Elab {
-    return Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.ctx.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
+    return Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
 }
 
 // -- small utilities -------------------------------------------------------------------
@@ -109,7 +116,7 @@ fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
 }
 
 fn renderTerm(self: *Prove, id: TermId) Error![]const u8 {
-    return @import("../../print.zig").render(self.ctx.arena, self.ctx.pool, self.ctx.interner, id) catch error.OutOfMemory;
+    return @import("../../print.zig").render(self.ctx.arena, self.pool, self.ctx.interner, id) catch error.OutOfMemory;
 }
 
 // -- global demand resolution (shared with ProveTask's formula pass) -------------------
@@ -227,7 +234,7 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             const goal = try e.requireProp(try e.elaborateExpr(c.goal), c.goal);
             const disj = try self.resolveStepRef(w, c.disj);
             const disj_formula = self.low_steps.items[@intFromEnum(disj.id)].formula;
-            const node = self.ctx.pool.get(disj_formula);
+            const node = self.pool.get(disj_formula);
             if (node != .bin or node.bin.op != .or_op) {
                 return self.fail(step.label.start, "case: 'on' step is '{s}', not a disjunction", .{try self.renderTerm(disj_formula)});
             }
@@ -466,7 +473,7 @@ const rule_names = std.StaticStringMap(RuleKind).initComptime(.{
 });
 
 fn isBiconditionalShape(self: *const Prove, id: TermId) bool {
-    const pool = self.ctx.pool;
+    const pool = self.pool;
     const n = pool.get(id);
     if (n != .bin or n.bin.op != .and_op) return false;
     const l = pool.get(n.bin.lhs);
@@ -534,12 +541,12 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             var cur = try self.resolveStepRef(w, c.refs[0]);
             var cur_formula = self.low_steps.items[@intFromEnum(cur.id)].formula;
             for (c.args[0 .. c.args.len - 1]) |arg_expr| {
-                const node = self.ctx.pool.get(cur_formula);
+                const node = self.pool.get(cur_formula);
                 if (node != .quant or node.quant.q != .forall) {
                     return self.fail(Elab.exprLoc(arg_expr), "forall_elim: '{s}' is not universally quantified here", .{try self.renderTerm(cur_formula)});
                 }
                 const arg = try e.elaborateExpr(arg_expr);
-                const opened = try self.ctx.pool.open(node.quant.body, arg.id);
+                const opened = try self.pool.open(node.quant.body, arg.id);
                 cur = try self.emitSynthetic(kb, Elab.exprLoc(arg_expr), opened, .{
                     .forall_elim = .{ .step = cur, .with = arg.id, .with_loc = Elab.exprLoc(arg_expr) },
                 });
@@ -670,7 +677,7 @@ pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
     self.low_blocks.items[0].last_step = @intCast(self.low_steps.items.len);
     var k: kernel.Kernel = .{
         .arena = self.ctx.arena,
-        .pool = self.ctx.pool,
+        .pool = self.pool,
         .interner = self.ctx.interner,
         .sink = self.ctx.sink,
     };

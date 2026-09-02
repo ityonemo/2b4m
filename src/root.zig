@@ -49,8 +49,6 @@ fn newContext(
     sink.* = .init(arena);
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
     const context = try arena.create(Context);
     context.* = .{
         .arena = arena,
@@ -59,7 +57,6 @@ fn newContext(
         .interner = interner,
         .facts = .init(interner),
         .idents = .init(interner),
-        .pool = pool,
         .read_ctx = read_ctx,
         .read_fn = read_fn,
         .verify = verify,
@@ -161,7 +158,6 @@ pub const ProjectResult = struct {
 /// rather than just count it.
 pub const LoadedProject = struct {
     interner: *InternPool,
-    pool: *term.Pool,
     context: *Context,
     sink: *diagnostics.Sink,
     root_file: Context.FileId,
@@ -186,7 +182,6 @@ pub fn loadProject(
     const root_file = try context.loadProject(canonical_root, root_source);
     return .{
         .interner = context.interner,
-        .pool = context.pool,
         .context = context,
         .sink = context.sink,
         .root_file = root_file,
