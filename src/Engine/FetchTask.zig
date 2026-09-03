@@ -107,7 +107,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
     const parsed = self.parsed.items[@intFromEnum(fid)];
     const source = self.files.items[@intFromEnum(fid)].source;
 
-    for (parsed.decls) |*decl| {
+    for (parsed.decls, 0..) |*decl, decl_index| {
         const name_tok = switch (decl.*) {
             .sort => |d| d.name,
             .import => |d| d.ns,
@@ -200,7 +200,19 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 } });
                 return;
             },
-            .axiom, .hole, .schema, .theorem => {
+            .schema => {
+                // a SCHEMA resolves as an IdentKV identifier (it's a named non-fact) — mint
+                // a thin LOCATOR back to this decl; instantiation re-reads params/body/steps
+                // from the AST via (file, decl_index).
+                _ = try self.idents.publish(self.io, key, .{ .schema = .{
+                    .name = task.name,
+                    .file = task.file,
+                    .decl_index = @intCast(decl_index),
+                    .loc = name_tok.start,
+                } });
+                return;
+            },
+            .axiom, .hole, .theorem => {
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
@@ -587,4 +599,39 @@ test "fetch: a fact name demanded as an identifier is a kind mismatch" {
 
     try testing.expectEqual(@as(usize, 1), ctx.sink.list.items.len);
     try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "names a fact") != null);
+}
+
+test "fetch: a schema decl produces its locator (file + decl_index) into IdentKV" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    // decl 0 = sort, decl 1 = the schema — its locator must record decl_index 1.
+    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+        \\sort T
+        \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
+        \\proof
+        \\  @c | forall x: T; goal(x) [by axiom ax]
+        \\qed
+    );
+    const f = try ctx.fileIndex("/t/a.bpa");
+    const name = try ctx.interner.internString("everywhereGoal");
+
+    var eng = Engine.init(arena, ctx);
+    defer eng.deinit();
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = name, .loc = 0 }));
+    try eng.run();
+    try testing.expectEqual(eng.racked, eng.completed);
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+
+    const ns = try ctx.interner.namespace(.universe, f);
+    const outcome = try ctx.idents.claimOrLookup(io, .{ .namespace = ns, .name = name }, @enumFromInt(99));
+    try testing.expect(outcome == .done);
+    const key = ctx.interner.keyOf(outcome.done);
+    try testing.expect(key == .schema);
+    try testing.expectEqual(f, key.schema.file);
+    try testing.expectEqual(@as(u32, 1), key.schema.decl_index); // the schema is the 2nd decl
+    try testing.expectEqual(name, key.schema.name);
 }
