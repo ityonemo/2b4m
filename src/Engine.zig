@@ -45,6 +45,7 @@ pub const ParseTask = @import("Engine/ParseTask.zig");
 pub const ProveTask = @import("Engine/ProveTask.zig");
 pub const FetchTask = @import("Engine/FetchTask.zig");
 pub const SchemaCheckTask = @import("Engine/SchemaCheckTask.zig");
+pub const ModelTask = @import("Engine/ModelTask.zig");
 
 arena: std.mem.Allocator,
 ctx: *Context,

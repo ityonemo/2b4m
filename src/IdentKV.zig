@@ -84,6 +84,10 @@ pub const Mint = union(enum) {
     define: InternPool.Key.Define,
     import: InternPool.Key.Import,
     schema: InternPool.Key.Schema,
+    /// a MODEL (interpretation). Unlike the others, a model is DEDUPED by content
+    /// (parent+overlay), so it goes through `get`, not a `mint*`; a model name in IdentKV
+    /// maps to that (possibly shared) `.model` Index.
+    model: InternPool.Key.Model,
 };
 
 /// SUCCESS transition: the claiming task fetched `key`, so mint its concrete identifier
@@ -114,6 +118,7 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .define => |d| self.pool.mintDefine(d),
         .import => |m| self.pool.mintImport(m),
         .schema => |s| self.pool.mintSchema(s),
+        .model => |m| self.pool.get(.{ .model = m }), // deduped by content (parent+overlay)
     };
 }
 
