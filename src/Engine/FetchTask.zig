@@ -216,9 +216,40 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
-            .define, .alias => {
-                // defines (need body elaboration) + aliases (incl. predicated sorts):
-                // later fetch layers.
+            .alias => |d| {
+                // a SORT alias — the only alias form supported so far:
+                //   `sort H = G where inH`  → a REFINED sort {parent: G, qualifiers: [inH]}.
+                //   `sort A = G`            → a plain re-export {parent: G, qualifiers: []}
+                //                             (carrier walks to G; no guard).
+                // Non-sort aliases (const/func/pred/axiom/theorem re-exports) are the
+                // transitive alias-collapse — a later layer; still unsupported.
+                if (d.kind != .sort) {
+                    try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
+                    return;
+                }
+                const parent = resolveSortDemand(self, h, task.file, source, d.target) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return, // suspended or diagnosed
+                };
+                var quals: []const InternPool.Index = &.{};
+                if (d.guard) |g| {
+                    const gpred = resolveGuardPred(self, h, task.file, source, g, parent) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return,
+                    };
+                    const one = try self.arena.alloc(InternPool.Index, 1);
+                    one[0] = gpred;
+                    quals = one;
+                }
+                _ = try self.idents.publish(self.io, key, .{ .sort = .{
+                    .name = task.name,
+                    .loc = name_tok.start,
+                    .refinement = .{ .parent = parent, .qualifiers = quals },
+                } });
+                return;
+            },
+            .define => {
+                // defines need body elaboration — a later fetch layer.
                 try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
@@ -289,6 +320,34 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
     };
     if (self.interner.keyOf(ix) != .sort) {
         self.sink.add(tok.start, "'{s}' is not a sort", .{text}) catch return error.OutOfMemory;
+        return error.Unresolved;
+    }
+    return ix;
+}
+
+/// Resolve a refinement GUARD token (`inH` in `sort H = G where inH`) to a UNARY predicate
+/// Index over the parent sort's carrier. Demands the pred; checks it is a unary pred whose
+/// argument carrier matches the parent's carrier.
+fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token, parent: InternPool.Index) ResolveError!InternPool.Index {
+    const name = self.interner.internString(source[tok.start..tok.end]) catch return error.OutOfMemory;
+    const ix = switch (try demandIdent(self, h, file, name, tok.start)) {
+        .done => |x| x,
+        .pending => |t| {
+            h.suspendOn(t);
+            return error.Unresolved;
+        },
+    };
+    const cb = switch (self.interner.keyOf(ix)) {
+        .pred => |c| c,
+        else => {
+            self.sink.add(tok.start, "sort refinement '{s}' is not a predicate in scope", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+            return error.Unresolved;
+        },
+    };
+    const sig = self.interner.keyOf(cb.sig).sig;
+    const ok = sig.args.len == 1 and self.interner.carrierOf(sig.args[0]) == self.interner.carrierOf(parent);
+    if (!ok) {
+        self.sink.add(tok.start, "sort refinement '{s}' must be a unary predicate over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
     return ix;
@@ -389,6 +448,41 @@ test "fetch: a root sort is produced from its declaration and published (demande
     try testing.expect(key.sort.refinement == null); // a root sort
     try testing.expectEqual(nat, key.sort.name);
     try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+}
+
+test "fetch: a `where`-alias produces a refined sort {parent, [guard]}" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+        \\sort Nat
+        \\pred nonzero(n: Nat)
+        \\sort Pos = Nat where nonzero
+    );
+    const f = try ctx.fileIndex("/t/a.bpa");
+    const pos = try ctx.interner.internString("Pos");
+
+    var eng = Engine.init(arena, ctx);
+    defer eng.deinit();
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = pos, .loc = 0 }));
+    try eng.run();
+    try testing.expectEqual(eng.racked, eng.completed);
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+
+    const ns = try ctx.interner.namespace(.universe, f);
+    const pos_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = pos }).?.done;
+    const key = ctx.interner.keyOf(pos_ix).sort;
+    try testing.expect(key.refinement != null); // a refined sort
+    const nat_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("Nat") }).?.done;
+    const nz_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("nonzero") }).?.done;
+    try testing.expectEqual(nat_ix, key.refinement.?.parent);
+    try testing.expectEqual(@as(usize, 1), key.refinement.?.qualifiers.len);
+    try testing.expectEqual(nz_ix, key.refinement.?.qualifiers[0]);
+    // carrierOf walks the refinement to the root Nat
+    try testing.expectEqual(nat_ix, ctx.interner.carrierOf(pos_ix));
 }
 
 test "fetch: an import binds to the target file's namespace" {
