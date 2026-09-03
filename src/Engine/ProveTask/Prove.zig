@@ -552,6 +552,34 @@ fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *s
     }
 }
 
+/// Produce a PROVEN step whose formula is the guard `g`, and return its SRef — for
+/// auto-discharging a refined-sort `forall_elim`'s guard (`good(t)`). Sources, in order:
+///   (1) a prior in-scope step already asserting `g` → cite it directly (no new step);
+///   (2) an enclosing fix-block whose guard is `g` → emit a `[by predicate]` (hypothesis)
+///       step over that block;
+/// Returns null if `g` isn't dischargeable this way (the caller falls back to the plain,
+/// guard-leaking elim). (Composite-closure discharge — applying a closure axiom, recursing
+/// — is a later extension.)
+fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
+    // (1) an accessible prior step already proves g.
+    for (self.low_steps.items, 0..) |s, i| {
+        if (!lowAncestorOrSelf(self.low_blocks.items, s.block, kb)) continue;
+        if (self.pool.alphaEq(s.formula, g)) return .{ .id = @enumFromInt(i), .loc = loc };
+    }
+    // (2) an enclosing fix-block's guard is g → restate it via [by predicate] (hypothesis).
+    var cur: ?kernel.BlockId = kb;
+    while (cur) |c| {
+        const b = self.low_blocks.items[@intFromEnum(c)];
+        if (b.kind == .fix) if (b.kind.fix.guard) |bg| {
+            if (self.pool.alphaEq(bg, g)) {
+                return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
+            }
+        };
+        cur = b.parent;
+    }
+    return null;
+}
+
 fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
     for (self.result_facts.items) |fact| if (self.pool.alphaEq(fact, f)) return true;
     // enclosing block guards (fix) + assumptions, walking to the root.
@@ -1142,10 +1170,26 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             }
             const last = c.args[c.args.len - 1];
             const arg = try e.elaborateExpr(last);
+            const last_loc = Elab.exprLoc(last);
+            // REFINED-SORT elim: `∀h:H; P` is stored `∀h; good(h) -> P`, so opening at t
+            // yields `good(t) -> P(t)` while the step claims bare `P(t)` (the "for h IN H"
+            // abstraction). If the opened form peels its leading antecedent to the claim,
+            // auto-DISCHARGE that guard: emit the elim, prove the guard, modus_ponens.
+            const qn = self.pool.get(cur_formula);
+            if (qn == .quant and qn.quant.q == .forall) {
+                const opened = try self.pool.open(qn.quant.body, arg.id);
+                const on = self.pool.get(opened);
+                if (!self.pool.alphaEq(opened, goal) and on == .bin and on.bin.op == .implies and self.pool.alphaEq(on.bin.rhs, goal)) {
+                    if (try self.emitDischargeStep(kb, last_loc, on.bin.lhs)) |g_step| {
+                        const elim = try self.emitSynthetic(kb, last_loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg.id, .with_loc = last_loc } });
+                        return .{ .modus_ponens = .{ .implication = elim, .antecedent = g_step } };
+                    }
+                }
+            }
             return .{ .forall_elim = .{
                 .step = cur,
                 .with = arg.id,
-                .with_loc = Elab.exprLoc(last),
+                .with_loc = last_loc,
             } };
         },
         .exists_intro => {
