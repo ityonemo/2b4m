@@ -1,24 +1,24 @@
-// GLOBAL-FACT DISCHARGE — the CONSTANT witness (model-free).
+// REFINED-SORT elim at a CONSTANT witness — the guard is discharged EXPLICITLY.
 //
-// A `forall_elim` over a refined universal `forall h: H` at a CONSTANT `c` owes the guard
-// `good(c)`. Here `good(c)` is proven by a GLOBAL AXIOM `goodC` — NOT by any prior step or
-// enclosing binder. The discharge must demand + cite that global fact. (This is exactly the
-// "constant -> base closure fact" shape a guarded-sort model transfer needs, isolated from
-// any model: it is a plain refined-sort proof.)
+// `forall_elim(c)` over a refined universal `forall h: H` yields `good(c) -> f(c) = c`.
+// bpa is an EXPLICIT prover: the author establishes `good(c)` as a step (here from the
+// axiom `goodC`), and the refined-sort auto-discharge then folds it — the elim's guard
+// matches the prior `good(c)` step, so the conclusion step claims the bare `f(c) = c`.
+// (No global fact SEARCH — the guard is an ordinary obligation, cited like any other.)
 sort G
 pred good(x: G)
 sort H = G where good
 const c: G
 func f(x: G): G
 
-axiom goodC: good(c)              // the global discharge fact for the constant witness
-axiom fLaw: forall h: H; f(h) = h // a law over the refined subset
+axiom goodC: good(c)
+axiom fLaw: forall h: H; f(h) = h
 
-// forall_elim(c) derives `good(c) -> f(c) = c`; the guard good(c) must discharge from
-// `goodC` (global) so the step claims bare `f(c) = c`. No prior `good(c)` step is written —
-// the discharge finds the global axiom itself.
 theorem fAtConst: f(c) = c
 proof
+  @c-is-good |
+    good(c)
+    [by axiom goodC]
   @the-law |
     forall h: H; f(h) = h
     [by axiom fLaw]
