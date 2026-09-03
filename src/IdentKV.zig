@@ -83,6 +83,7 @@ pub const Mint = union(enum) {
     pred: InternPool.Key.Callable,
     define: InternPool.Key.Define,
     import: InternPool.Key.Import,
+    schema: InternPool.Key.Schema,
 };
 
 /// SUCCESS transition: the claiming task fetched `key`, so mint its concrete identifier
@@ -112,6 +113,7 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .pred => |c| self.pool.mintPred(c),
         .define => |d| self.pool.mintDefine(d),
         .import => |m| self.pool.mintImport(m),
+        .schema => |s| self.pool.mintSchema(s),
     };
 }
 
