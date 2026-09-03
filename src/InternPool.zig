@@ -726,6 +726,22 @@ pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator
     return self.get(.{ .namespace = .{ .model = model, .file = file } });
 }
 
+/// Interpret a SOURCE entity `Index` THROUGH a model: walk `model`'s overlay chain (its
+/// own overlay, then its parent's, … up to the universe fixpoint) and return the TARGET
+/// the source is mapped to. An UNMAPPED source returns unchanged (universe = empty overlay
+/// = identity). This is how resolving a name in a model namespace remaps it: resolve the
+/// name to its source `Index` (in the source file's universe namespace), then `applyModel`.
+/// Lock-free (models are immutable once interned).
+pub fn applyModel(self: *const InternPool, model: Index, source: Index) Index {
+    var cur = model;
+    while (true) {
+        const m = self.keyOf(cur).model;
+        for (m.overlay) |e| if (e.src == source) return e.tgt;
+        if (cur == m.parent) return source; // universe fixpoint: unmapped ⇒ identity
+        cur = m.parent;
+    }
+}
+
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
 // A model's parent + sparse overlay; variable-length, so the fixed-struct reflection
 // encoder can't express it. The overlay is empty for now (mappings deferred).

@@ -105,6 +105,9 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                     const name_id = try self.interner.internString(task.source[s.name.start..s.name.end]);
                     try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = name_id, .loc = s.name.start }));
                 },
+                // a `model` decl is NOT built eagerly — a model is validated only when it is
+                // actually CITED (`[by model(M) …]` racks its ModelTask). An unused model,
+                // even a malformed one, is inert: nothing depends on it, so nothing is wrong.
                 else => {},
             }
         }

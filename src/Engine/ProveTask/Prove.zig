@@ -39,6 +39,7 @@ const Schema = @import("Schema.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
+const ModelTask = @import("../../Engine/ModelTask.zig");
 const ProveTask = @import("../ProveTask.zig");
 
 const Prove = @This();
@@ -78,6 +79,11 @@ extra_reachable_steps: std.ArrayList(u32) = .empty,
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
 schema_args: ?*const Schema.SchemaArgs = null,
 schema_params: []const StrId = &.{},
+/// MODEL this proof runs THROUGH (Step 13): when non-`.universe`, this Prove is
+/// re-proving a source theorem in a model namespace — every global (sym via Elab, fact
+/// via resolveFactRef) is filtered `applyModel(model, source)`, so source names remap to
+/// their targets. `.universe` = an ordinary (identity) proof.
+model: InternPool.Index = .universe,
 
 const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 
@@ -101,6 +107,7 @@ pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPo
 fn elab(self: *Prove, w: *const Walk) Elab {
     var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
+    e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
     return e;
 }
 
@@ -183,6 +190,20 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                     .done => {},
                 }
             },
+            // a model name resolves via IdentKV too, but its producer is a ModelTask (which
+            // builds the overlay), not a FetchTask.
+            .model => {
+                const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
+                    blocker = try h.rackIndexed(try ModelTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
+                    continue;
+                };
+                switch (state) {
+                    .in_flight => |owner| {
+                        if (owner != h.self_index) blocker = owner;
+                    },
+                    .done => {},
+                }
+            },
             .fact => {
                 const state = ctx.facts.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
                     blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
@@ -220,6 +241,15 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
                 .proven => return null, // ready — process can run lowerInstantiate
                 .blocked => |t| return t,
                 .failed => return null, // diagnosed; process will re-hit .failed and reject
+            }
+        }
+        // a `[by model(M) src.thm]` step DEMANDS the transferred fact (its own ProveTask in
+        // (M, src_file)); the model name resolved above, so demand the transfer + suspend.
+        if (std.mem.eql(u8, self.text(c.rule), "model")) {
+            switch (try self.demandTransfer(c)) {
+                .proven => return null,
+                .blocked => |t| return t,
+                .failed => return null,
             }
         }
     }
@@ -501,7 +531,9 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
         return self.fail(tok.start, "unknown statement '{s}'", .{text_});
     };
     return switch (state) {
-        .proven => |ix| ix,
+        // in a model transfer, a source-axiom citation remaps (via the overlay) to its
+        // discharging LOCAL fact — an obligation. `.universe` = identity (ordinary proof).
+        .proven => |ix| self.ctx.interner.applyModel(self.model, ix),
         .in_flight => self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{text_}),
     };
 }
@@ -738,6 +770,96 @@ fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) E
     return .{ .schema_instance = .{ .instance = instance, .premises = premises } };
 }
 
+// -- model transfer --------------------------------------------------------------------
+
+/// Demand the TRANSFERRED FACT for `[by model(M) src.thm]`: resolve M's `.model` Index
+/// (read pass racked its ModelTask), split `src.thm` into (source file, name), and demand
+/// that fact in namespace `(M, src_file)` — a ProveTask carrying `model = M` re-proves the
+/// source theorem's proof with every global overlay-remapped. Returns the transferred fact
+/// Index, or a blocker to suspend on. Called from the READ PASS (and re-checked in process).
+fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
+    if (c.schema == null) {
+        self.ctx.sink.add(c.rule.start, "model citation requires a model name: `[by model(M) src.thm]`", .{}) catch return error.OutOfMemory;
+        return .failed;
+    }
+    if (c.refs.len != 1) {
+        self.ctx.sink.add(c.rule.start, "`[by model(M) …]` cites exactly one transferred theorem", .{}) catch return error.OutOfMemory;
+        return .failed;
+    }
+    // resolve M (a `.model` Index) in the CITING file's namespace.
+    const mtok = c.schema.?;
+    const mname = self.ctx.interner.internString(self.text(mtok)) catch return error.OutOfMemory;
+    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = mname }) orelse {
+        self.ctx.sink.add(mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const model_ix = switch (mstate) {
+        .done => |ix| ix,
+        .in_flight => |owner| return .{ .blocked = owner },
+    };
+    if (self.ctx.interner.keyOf(model_ix) != .model) {
+        self.ctx.sink.add(mtok.start, "'{s}' is not a model", .{self.text(mtok)}) catch return error.OutOfMemory;
+        return .failed;
+    }
+    // split `src.thm` into (source file via its import, base name).
+    const rtok = c.refs[0];
+    const rtext = self.text(rtok);
+    const dot = std.mem.indexOfScalar(u8, rtext, '.') orelse {
+        self.ctx.sink.add(rtok.start, "`[by model(M) src.thm]` needs a qualified source theorem (e.g. `group.cancelLeft`)", .{}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const imp_name = self.ctx.interner.internString(rtext[0..dot]) catch return error.OutOfMemory;
+    const base = self.ctx.interner.internString(rtext[dot + 1 ..]) catch return error.OutOfMemory;
+    const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = imp_name }) orelse {
+        self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{rtext[0..dot]}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const src_file = switch (imp_state) {
+        .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+            .import => |imp| self.ctx.interner.keyOf(imp.namespace).namespace.file,
+            else => {
+                self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{rtext[0..dot]}) catch return error.OutOfMemory;
+                return .failed;
+            },
+        },
+        .in_flight => |owner| return .{ .blocked = owner },
+    };
+    // demand the transferred fact in namespace (M, src_file).
+    const tns = self.ctx.interner.namespace(model_ix, src_file) catch return error.OutOfMemory;
+    if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = base })) |st| switch (st) {
+        .proven => |ix| return .{ .proven = ix },
+        .in_flight => |owner| {
+            if (owner == self.h.self_index) {
+                self.ctx.sink.add(rtok.start, "model transfer of '{s}' depends on itself", .{rtext}) catch return error.OutOfMemory;
+                return .failed;
+            }
+            return .{ .blocked = owner };
+        },
+    };
+    const blocker = try self.h.rackIndexed(try ProveTask.new(self.ctx.arena, .{
+        .file = src_file,
+        .name = base,
+        .loc = rtok.start,
+        .loc_file = self.file,
+        .model = model_ix,
+    }));
+    return .{ .blocked = blocker };
+}
+
+/// The `[by model(M) src.thm]` justification (in process, after the read pass proved the
+/// transferred fact): copyIn its formula and cite it as a proven theorem. (The transferred
+/// fact's formula is already in TARGET terms — proved under M's overlay.)
+fn lowerModel(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error!kernel.Justification {
+    _ = w;
+    const outcome = try self.demandTransfer(c);
+    const fact = switch (outcome) {
+        .proven => |ix| ix,
+        .failed => return error.Recover,
+        .blocked => return self.fail(c.rule.start, "internal: model transfer not resolved before process (read-pass bug)", .{}),
+    };
+    return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
+}
+
 // -- justification lowering ------------------------------------------------------------
 
 const RuleKind = enum {
@@ -824,6 +946,10 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
     // proven) in the read pass; here we look it up, copyIn its formula, and emit the
     // kernel schema_instance justification (which peels premises against `c.refs`).
     if (std.mem.eql(u8, rule_text, "instantiate")) return self.lowerInstantiate(w, e, c);
+    // `[by model(M) src.thm]` transfers a source theorem: the transferred fact was demanded
+    // (racked + proved in namespace (M, src_file)) in the read pass; here we look it up,
+    // copyIn its formula, and cite it as a theorem_ref (a proven fact).
+    if (std.mem.eql(u8, rule_text, "model")) return self.lowerModel(w, c);
     const kind = rule_names.get(rule_text) orelse {
         // a genuine typo, or a schema `instantiate` / `model` / accelerant — none of
         // which the demand prover supports yet. Hard-error rather than misbehave.
@@ -840,13 +966,20 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         });
     }
     switch (kind) {
-        .axiom => {
+        .axiom, .theorem => {
             try self.wantRefs(c, 1);
-            return .{ .axiom_ref = .{ .stmt = try self.resolveFactRef(c.refs[0]), .loc = c.refs[0].start } };
-        },
-        .theorem => {
-            try self.wantRefs(c, 1);
-            return .{ .theorem_ref = .{ .stmt = try self.resolveFactRef(c.refs[0]), .loc = c.refs[0].start } };
+            const stmt = try self.resolveFactRef(c.refs[0]);
+            // Emit the justification matching the RESOLVED fact's kind, not the rule word.
+            // Identity in an ordinary proof (a `by axiom` cites an axiom). In a MODEL
+            // transfer a source-axiom citation may remap (via the obligation overlay) to a
+            // discharging THEOREM — so `by axiom srcAx` legitimately lands on a theorem;
+            // pick the kernel arm by the fact's actual kind (the kernel re-matches the
+            // formula regardless — the kind gate is the only thing that'd wrongly reject).
+            const loc = c.refs[0].start;
+            return switch (self.ctx.interner.keyOf(stmt).fact.kind) {
+                .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
+                .theorem => .{ .theorem_ref = .{ .stmt = stmt, .loc = loc } },
+            };
         },
         .hypothesis, .predicate => {
             try self.wantRefs(c, 1);

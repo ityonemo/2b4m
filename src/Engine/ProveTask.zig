@@ -53,6 +53,12 @@ name: InternPool.StrId,
 loc: u32 = 0,
 /// the file `loc` indexes into; `null` = relative to `file` (a same-file / root demand).
 loc_file: ?InternPool.Index = null,
+/// the MODEL this fact is proved THROUGH (Step 13): `.universe` (default) = an ordinary
+/// proof; a model M = a TRANSFER, where `[by model(M) src.thm]` racks a ProveTask keyed on
+/// `(M, file)` that re-proves `src.thm`'s proof with every global remapped via M's overlay.
+/// The fact is minted in the namespace `(model, file)`, so two models of one source give
+/// distinct transferred facts.
+model: InternPool.Index = .universe,
 /// a SCHEMA INSTANCE payload (Step 12): present iff this task proves a monomorphized
 /// schema instance rather than a named decl. Carries the schema decl locator + the bound
 /// args (durable TermOffs — copied into the task's own scratchpad on the first run). When
@@ -120,7 +126,9 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     // its own `sink.add`s; sub-tasks reset it when they run). Prevents an imported fact's
     // offset from being rendered against another file's (shorter) source.
     if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
-    const ns = try self.interner.namespace(.universe, task.file);
+    // the fact's identity namespace is `(model, file)` — `.universe` for an ordinary proof,
+    // model M for a transfer (so `(M,file) src.thm` is a distinct fact from the source).
+    const ns = try self.interner.namespace(task.model, task.file);
     const key = FactKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,
@@ -163,14 +171,17 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
         scanner.schema_params = st.prove.schema_params;
         const refs = try scanner.scanFormula(formula);
-        if (try Prove.resolveRefs(self, h, task.file, ns, refs)) |blocker| {
+        // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
+        // ns — a model transfer's source names resolve there + get overlay-redirected.
+        if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, refs)) |blocker| {
             h.suspendOn(blocker);
             return;
         }
         // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
         // its steps and the kernel check use, and that it reifies back from at publish.
-        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, ns, &st.prove.fresh_counter);
+        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
         e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
+        e.model = st.prove.model; // remap source globals for a model transfer (identity else)
         const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return, // diagnosed; no publish
@@ -279,12 +290,18 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         const st = try self.arena.create(State);
         const walk = try self.arena.create(Walk);
         walk.* = Walk.init(self.arena, self.interner, source, self.sink);
+        // RESOLUTION ns is the UNIVERSE ns of the file — the proof's source names resolve
+        // there, then `applyModel(prove.model)` redirects for a transfer. (The fact's
+        // IDENTITY ns `(model, file)` = `ns`, used only for the FactKV key/publish.)
+        const resolve_ns = try self.interner.namespace(.universe, task.file);
+        const prove = try Prove.init(self, h, source, task.file, resolve_ns);
+        prove.model = task.model;
         st.* = .{
             .source = source,
             .ns = ns,
             .decl = d,
             .walk = walk,
-            .prove = try Prove.init(self, h, source, task.file, ns),
+            .prove = prove,
             .goal_loc = name_tok.start,
         };
         return st;

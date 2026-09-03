@@ -64,6 +64,11 @@ fresh_counter: *u32,
 /// value param resolves to its term, a generator param BETA-REDUCES at a call. Set by the
 /// instance ProveTask (post-init) on the Elab it uses for the schema body/steps.
 schema_args: ?*const Schema.SchemaArgs = null,
+/// MODEL this elaboration resolves THROUGH (Step 13): when set, every global identifier
+/// resolved here is filtered `interner.applyModel(model, source)` — so proving a source
+/// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
+/// site) in an ordinary proof = identity. Set by the model ProveTask on its Elab.
+model: InternPool.Index = .universe,
 
 /// expression-local binders (quantifiers), innermost last; transient per elaboration
 scope: std.ArrayList(ScopeEntry) = .empty,
@@ -377,10 +382,12 @@ fn resolveQualified(self: *Elab, tok: lexer.Token) Error!Qualified {
 
 /// A `done` IdentKV entry's Index, or null. The read pass ran first, so a live name is
 /// expected to be done; absent/in-flight reads as unresolved (diagnosed by callers).
+/// The resolved source Index is filtered through `self.model` (identity for `.universe`),
+/// so a model proof remaps source symbols to their targets (Step 13).
 fn lookupIdent(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index {
     const state = self.idents.lookup(self.io, .{ .namespace = ns, .name = name }) orelse return null;
     return switch (state) {
-        .done => |ix| ix,
+        .done => |ix| self.interner.applyModel(self.model, ix),
         .in_flight => null,
     };
 }

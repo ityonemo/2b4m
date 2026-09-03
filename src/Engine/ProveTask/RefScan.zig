@@ -51,6 +51,9 @@ pub const Ref = struct {
         /// a schema name in an `instantiate` step — resolved via IdentKV (a FetchTask mints
         /// the .schema locator); the instantiate handler then demands the instance FACT.
         schema,
+        /// a model name in a `[by model(M) …]` step — resolved via IdentKV (a ModelTask
+        /// builds M's overlay); the model-cite handler then demands the TRANSFERRED FACT.
+        model,
     };
 };
 
@@ -90,6 +93,9 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                 .fact => for (c.refs) |r| try self.addTok(r, .fact),
                 .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema
                 // NAME (its `c.refs` are LOCAL premise labels — not enumerated)
+                .model => if (c.schema) |s| try self.addTok(s, .model), // the model NAME (the
+                // `(M)` selector lands in c.schema); the transferred fact ref is demanded by
+                // the cite handler once M resolves.
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }
             for (c.args) |a| try self.scanExpr(a);
@@ -119,9 +125,10 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// `instantiate` names a global schema (in `c.schema`); everything else cites local
 /// steps/blocks (including accelerant names, which hard-error as unsupported at process
 /// time — their refs never fetch).
-fn ruleDomain(rule: []const u8) enum { fact, instantiate, local } {
+fn ruleDomain(rule: []const u8) enum { fact, instantiate, model, local } {
     if (std.mem.eql(u8, rule, "axiom") or std.mem.eql(u8, rule, "theorem")) return .fact;
     if (std.mem.eql(u8, rule, "instantiate")) return .instantiate;
+    if (std.mem.eql(u8, rule, "model")) return .model;
     return .local;
 }
 
