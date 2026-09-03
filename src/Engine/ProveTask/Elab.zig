@@ -150,14 +150,16 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
             return .{ .id = id, .sort = prop_sort };
         },
         .quant => |q| {
-            // one shared sort for all binders of this quantifier (surface rule)
-            const sort = try self.resolveBinderSort(q.binders[0]);
+            // one shared sort for all binders of this quantifier (surface rule). A REFINED
+            // sort lowers to its CARRIER for the kernel term; its qualifiers are injected as
+            // guards around the body (`inH(x) -> body` for forall, `inH(x) and body` for
+            // exists) — the intrinsic relativization of a predicated sort.
+            const refined = try self.resolveBinderSort(q.binders[0]);
+            const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
+            const quals = self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
             const fresh = try self.arena.alloc(StrId, q.binders.len);
             const mark = self.scope.items.len;
             for (q.binders, fresh) |b, *fr| {
-                if (b.guard != null) {
-                    return self.fail(b.name.start, "predicated binders ('where') are not yet supported by the demand prover", .{});
-                }
                 const bname = try self.internTok(b.name);
                 try self.checkNoShadow(bname, b.name);
                 fr.* = try self.freshName();
@@ -169,6 +171,13 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
             var i = q.binders.len;
             while (i > 0) {
                 i -= 1;
+                // inject each qualifier guard over this binder's fresh fvar, innermost-first.
+                for (quals) |qpred| {
+                    const bfv = try self.scratch.add(.{ .fvar = .{ .name = fresh[i], .sort = sort } });
+                    const guard = try self.qualifierApp(qpred, bfv);
+                    const connective: term.BinOp = if (q.q == .forall) .implies else .and_op;
+                    id = try self.scratch.add(.{ .bin = .{ .op = connective, .lhs = guard, .rhs = id } });
+                }
                 id = try self.scratch.close(id, fresh[i]);
                 id = try self.scratch.add(.{ .quant = .{
                     .q = if (q.q == .forall) .forall else .exists,
@@ -338,9 +347,39 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
     return .{ .id = id, .sort = result };
 }
 
-/// Resolve a binder's sort token to its pool sort Index (as a SortId).
+/// Resolve a binder's sort to its pool sort Index. A plain binder → the (possibly refined)
+/// sort. An INLINE-refined binder `x: S where inH` → an ANONYMOUS refined sort narrowing S
+/// by the guard pred (minted fresh, no IdentKV name).
 pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
-    return self.resolveSortTok(b.sort);
+    const base = try self.resolveSortTok(b.sort);
+    const g = b.guard orelse return base;
+    const gname = try self.internTok(g);
+    const gpred = self.lookupIdent(self.ns, gname) orelse {
+        return self.fail(g.start, "sort refinement '{s}' is not a predicate in scope", .{self.text(g)});
+    };
+    const carrier = self.interner.carrierOf(@enumFromInt(@intFromEnum(base)));
+    const cb = switch (self.interner.keyOf(gpred)) {
+        .pred => |c| c,
+        else => return self.fail(g.start, "sort refinement '{s}' must be a unary predicate", .{self.text(g)}),
+    };
+    const sig = self.interner.keyOf(cb.sig).sig;
+    if (sig.args.len != 1 or self.interner.carrierOf(sig.args[0]) != carrier) {
+        return self.fail(g.start, "sort refinement '{s}' must be a unary predicate over '{s}'", .{ self.text(g), self.text(b.sort) });
+    }
+    // mint an anonymous refined sort (no IdentKV identity — scratchpad-only interpretation).
+    const quals = try self.arena.alloc(InternPool.Index, 1);
+    quals[0] = gpred;
+    const label = std.fmt.allocPrint(self.arena, "{s} where {s}", .{ self.text(b.sort), self.text(g) }) catch return error.OutOfMemory;
+    const nm = self.interner.internString(label) catch return error.OutOfMemory;
+    self.interner.lockWrite(self.io);
+    defer self.interner.unlockWrite(self.io);
+    const ix = self.interner.mintSort(.{ .name = nm, .loc = b.sort.start, .refinement = .{ .parent = @enumFromInt(@intFromEnum(base)), .qualifiers = quals } }) catch return error.OutOfMemory;
+    return @enumFromInt(@intFromEnum(ix));
+}
+
+/// Build the guard proposition `qpred(arg)` for a refinement qualifier.
+fn qualifierApp(self: *Elab, qpred: InternPool.Index, arg: TermId) Error!TermId {
+    return self.scratch.addApp(.pred, @enumFromInt(@intFromEnum(qpred)), &.{arg});
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {

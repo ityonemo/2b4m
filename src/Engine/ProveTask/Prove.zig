@@ -286,13 +286,13 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             try self.newBlock(w, label, kb, .{ .assume = f.id });
         },
         .fix => |blk| {
-            const v = try self.bindProofVar(w, blk.name, blk.sort);
-            try self.newBlock(w, label, kb, .{ .fix = .{ .v = v, .guard = null } });
+            const b = try self.bindProofVar(w, .{ .name = blk.name, .sort = blk.sort });
+            try self.newBlock(w, label, kb, .{ .fix = .{ .v = b.v, .guard = b.guard } });
         },
         .unpack => |blk| {
             const source_ref = try self.resolveStepRef(w, blk.from);
-            const v = try self.bindProofVar(w, blk.name, blk.sort);
-            try self.newBlock(w, label, kb, .{ .unpack = .{ .v = v, .source = source_ref } });
+            const b = try self.bindProofVar(w, .{ .name = blk.name, .sort = blk.sort });
+            try self.newBlock(w, label, kb, .{ .unpack = .{ .v = b.v, .source = source_ref } });
         },
         .case => |c| {
             var e = self.elab(w);
@@ -458,18 +458,32 @@ fn closeSyntheticBlock(self: *Prove, id: kernel.BlockId) void {
     self.low_blocks.items[@intFromEnum(id)].last_step = @intCast(self.low_steps.items.len);
 }
 
-/// A fix/unpack binder: resolve its sort, mint the hygienic fvar identity, and hand the
-/// semantic half to the Walk (pending_binder; enterBlock binds it into LocalIdentKV).
-fn bindProofVar(self: *Prove, w: *Walk, name_tok: lexer.Token, sort_tok: lexer.Token) Error!term.Node.Fvar {
-    const name = try self.internTok(name_tok);
+const BoundVar = struct { v: term.Node.Fvar, guard: ?TermId };
+
+/// A fix/unpack binder: resolve its (possibly refined/inline-`where`) sort, mint the
+/// hygienic fvar at the CARRIER, and — for a refined sort — build its guard `inH(v)`
+/// (conjoined over multiple qualifiers). The fvar (carrier sort) goes to the Walk via
+/// pending_binder; the guard is returned for the block's `fix.guard` slot ([by predicate]
+/// surfaces it; forall_intro makes it the antecedent).
+fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
+    const name = try self.internTok(b.name);
     if (w.findIdent(name) != null) {
-        return self.fail(name_tok.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(name_tok)});
+        return self.fail(b.name.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(b.name)});
     }
     var e = self.elab(w);
-    const sort = try e.resolveSortTok(sort_tok);
-    const fvar = try self.freshNamed(self.text(name_tok));
+    const refined = try e.resolveBinderSort(b); // handles inline `S where inH`
+    const sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
+    const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
+    const fvar = try self.freshNamed(self.text(b.name));
     w.pending_binder = .{ .sort = sort, .fvar = fvar };
-    return .{ .name = fvar, .sort = sort };
+    // build the guard over the fresh fvar (conjunction if multiple qualifiers).
+    var guard: ?TermId = null;
+    for (quals) |qpred| {
+        const fv = try self.pool.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
+        const app = try self.pool.addApp(.pred, @enumFromInt(@intFromEnum(qpred)), &.{fv});
+        guard = if (guard) |prev| try self.pool.add(.{ .bin = .{ .op = .and_op, .lhs = prev, .rhs = app } }) else app;
+    }
+    return .{ .v = .{ .name = fvar, .sort = sort }, .guard = guard };
 }
 
 // -- reference resolution --------------------------------------------------------------
