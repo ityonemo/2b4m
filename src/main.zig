@@ -380,19 +380,18 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
-    // Speed presets over the verification knobs (default = verify everything).
-    // Each preset turns off one more layer; at most one may be given.
+    // SUSPENDED (demand-rebuild): the --fast/--faster/--reckless SPEED PRESETS are
+    // disabled — nothing is trusted-without-verification during the rebuild; everything
+    // is checked STRICT (the default). The flags are still ACCEPTED (so scripts/gates
+    // don't break on an unknown arg) but are NO-OPS. `--draft` stays (it allows holes /
+    // relaxes author-hygiene; it is not a trust bypass). When the accelerant/import-trust
+    // layers are rebuilt, re-enable the presets by restoring the `verify` mutation here.
     var verify: bpa.Verify = .{};
-    var speed_flag = false;
-    var draft = false; // --draft: allow holes (orthogonal to the speed flags)
+    var draft = false;
     var path: ?[]const u8 = null;
     for (args[2..]) |arg| {
-        const preset: ?bpa.Verify =
-            if (std.mem.eql(u8, arg, "--fast")) .{ .certify_arithmetic = false } else if (std.mem.eql(u8, arg, "--faster")) .{ .certify_arithmetic = false, .recheck_imports = false } else if (std.mem.eql(u8, arg, "--reckless")) .{ .certify_arithmetic = false, .recheck_imports = false, .recheck_schemas = false } else null;
-        if (preset) |p| {
-            if (speed_flag) return fail("error: at most one of --fast / --faster / --reckless\n", .{});
-            verify = p;
-            speed_flag = true;
+        if (std.mem.eql(u8, arg, "--fast") or std.mem.eql(u8, arg, "--faster") or std.mem.eql(u8, arg, "--reckless")) {
+            // accepted but ignored — strict-only during the rebuild.
         } else if (std.mem.eql(u8, arg, "--draft")) {
             draft = true;
         } else if (path == null) {
@@ -463,17 +462,9 @@ pub fn main(init: std.process.Init) !u8 {
     if (result.theorems_trusted > 0) {
         try out.print(" ({d} via trusted imports)", .{result.theorems_trusted});
     }
-    // loud disclosure: a speed flag skipped verification work. The two axes are
-    // separate — --fast accelerates (accepts a procedure's verdict without a
-    // kernel chain); --faster/--reckless trust imports (skip re-checking imported
-    // proofs/schemas). Name whichever applies and how to fully verify.
-    if (speed_flag) {
-        try out.writeAll("\n  \u{2014} NOT FULLY VERIFIED:");
-        if (!verify.certify_arithmetic) try out.writeAll(" accelerated (a procedure's verdict was trusted without a kernel derivation);");
-        if (!verify.recheck_imports) try out.writeAll(" imported proofs were trusted, not re-checked;");
-        if (!verify.recheck_schemas) try out.writeAll(" imported schemas were trusted, not re-instantiated;");
-        try out.writeAll(" re-run `bpa check` to fully verify.");
-    }
+    // (The "NOT FULLY VERIFIED" speed-flag banner is gone — the --fast/--faster/--reckless
+    // presets are suspended during the rebuild; everything is checked strict, so there is
+    // never a trust disclosure to make. Restore it when the presets are re-enabled.)
     // --draft with holes: loud disclosure that the result rests on aspirational
     // placeholders, listing them (like the --fast banner). Exit stays 0.
     if (draft and result.holes.len > 0) {
