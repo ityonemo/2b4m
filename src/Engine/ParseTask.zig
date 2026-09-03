@@ -92,10 +92,21 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     if (task.file_id == self.root_file) {
         const file_index = try self.fileIndex(task.path);
         for (parsed.decls) |decl| {
-            if (decl != .theorem) continue;
-            const name = decl.theorem.name;
-            const name_id = try self.interner.internString(task.source[name.start..name.end]);
-            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
+            switch (decl) {
+                .theorem => |t| {
+                    const name_id = try self.interner.internString(task.source[t.name.start..t.name.end]);
+                    try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
+                },
+                // STRICT well-formedness: check each proof-carrying schema at its decl
+                // (opaque self-instantiation). Gated on `certify_arithmetic` (the strict
+                // bit — `--fast`/`--faster`/`--reckless` clear it and keep the body lazy).
+                // Non-proof-carrying schemas (axiom-schemas) have no body to check.
+                .schema => |s| if (s.steps != null and self.verify.certify_arithmetic) {
+                    const name_id = try self.interner.internString(task.source[s.name.start..s.name.end]);
+                    try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = name_id, .loc = s.name.start }));
+                },
+                else => {},
+            }
         }
     }
 }

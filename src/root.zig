@@ -230,4 +230,5 @@ test {
     std.testing.refAllDecls(Engine.ParseTask);
     std.testing.refAllDecls(Engine.ProveTask);
     std.testing.refAllDecls(Engine.FetchTask);
+    std.testing.refAllDecls(Engine.SchemaCheckTask);
 }
