@@ -273,11 +273,11 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             if (node != .bin or node.bin.op != .or_op) {
                 return self.fail(step.label.start, "case: 'on' step is '{s}', not a disjunction", .{try self.renderTerm(disj_formula)});
             }
-            if (c.arms.len != 2) {
-                // >2 arms need the nested or_elim tree — a later slice of the demand
-                // prover. (< 2 is malformed regardless.)
-                return self.fail(step.label.start, "case with {d} arms is not yet supported by the demand prover (exactly 2 for now)", .{c.arms.len});
+            if (c.arms.len < 2) {
+                return self.fail(step.label.start, "case over a disjunction needs at least two arms", .{});
             }
+            // the arm blocks walk as siblings (assume-shaped); caseConclude assembles the
+            // (possibly nested, for N>2) or_elim tree over the disjunction structure.
             try self.case_stack.append(self.ctx.arena, .{ .goal = goal.id, .disj = disj, .loc = step.label.start });
         },
     }
@@ -295,15 +295,54 @@ pub fn caseConclude(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.B
 fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Error!void {
     const c = step.body.case;
     const cc = self.case_stack.pop().?;
-    const left = try self.resolveBlockRef(w, c.arms[0].label);
-    const right = try self.resolveBlockRef(w, c.arms[1].label);
+    const kb = self.kernelBlock(block);
+    // resolve each arm's walked assume-block (each assumes its disjunct + concludes goal).
+    const arm_blocks = try self.ctx.arena.alloc(kernel.BRef, c.arms.len);
+    for (c.arms, arm_blocks) |arm, *out| out.* = try self.resolveBlockRef(w, arm.label);
+
+    const disj_formula = self.low_steps.items[@intFromEnum(cc.disj.id)].formula;
+    const just = try self.emitCaseTree(kb, cc.loc, cc.disj, disj_formula, arm_blocks, cc.goal);
     try self.appendMainStep(w, .{
         .formula = cc.goal,
-        .just = .{ .or_elim = .{ .disj = cc.disj, .left = left, .right = right } },
-        .block = self.kernelBlock(block),
+        .just = just,
+        .block = kb,
         .label = try self.internTok(step.label),
         .loc = cc.loc,
     });
+}
+
+/// Build the (possibly nested) or_elim justification for a `case` over a LEFT-NESTED
+/// disjunction. `disj_ref`/`disj_formula` are the disjunction step + its term; `arms` are
+/// the walked arm assume-blocks, one per disjunct, in left-to-right disjunct order.
+///   - 2 arms: one `or_elim{disj, arms[0], arms[1]}`.
+///   - N>2: the disjunction is `LHS or arms[N-1]` where LHS is the (N-1)-way nested
+///     disjunction; build a SYNTHETIC block that assumes LHS, re-derives it as a
+///     hypothesis, recurses over `arms[0..N-1]` inside it, concludes the goal, and the
+///     top or_elim uses that synthetic block as its left, `arms[N-1]` as its right.
+/// (Ported from the eager Prover's emitCaseTree, retargeted to synthetic blocks.)
+fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel.SRef, disj_formula: TermId, arms: []const kernel.BRef, goal: TermId) Error!kernel.Justification {
+    const node = self.pool.get(disj_formula);
+    if (node != .bin or node.bin.op != .or_op) {
+        return self.fail(loc, "case: 'on' step is '{s}', not a disjunction", .{try self.renderTerm(disj_formula)});
+    }
+    std.debug.assert(arms.len >= 2);
+    if (arms.len == 2) {
+        return .{ .or_elim = .{ .disj = disj_ref, .left = arms[0], .right = arms[1] } };
+    }
+    // N>2: left = a synthetic block over the nested LHS disjunction.
+    const lhs = node.bin.lhs; // the (N-1)-way disjunction
+    const lb = try self.newSyntheticBlock(try self.freshNamed("case"), parent, .{ .assume = lhs });
+    // step 1: the assumed LHS disjunction, as this block's hypothesis.
+    const hyp = try self.emitSynthetic(lb, loc, lhs, .{ .hypothesis = .{ .id = lb, .loc = loc } });
+    // step 2: recurse — an or_elim over `hyp` splitting the first N-1 arms into the goal.
+    const inner = try self.emitCaseTree(lb, loc, hyp, lhs, arms[0 .. arms.len - 1], goal);
+    _ = try self.emitSynthetic(lb, loc, goal, inner);
+    self.closeSyntheticBlock(lb);
+    return .{ .or_elim = .{
+        .disj = disj_ref,
+        .left = .{ .id = lb, .loc = loc },
+        .right = arms[arms.len - 1],
+    } };
 }
 
 /// A block descoped: seal its kernel step range (same closing the eager path did).
@@ -367,6 +406,26 @@ fn newBlock(self: *Prove, w: *const Walk, label: StrId, parent: kernel.BlockId, 
         .last_step = 0,
     });
     try self.ordinal_block.append(self.ctx.arena, id);
+}
+
+/// Create a SYNTHETIC kernel block (no Walk counterpart, so no ordinal record) and return
+/// its id — for the nested or_elim spine of an N-arm `case`. `first_step` opens at the
+/// current step count; seal with `closeSyntheticBlock`.
+fn newSyntheticBlock(self: *Prove, label: StrId, parent: kernel.BlockId, kind: kernel.Block.Kind) Error!kernel.BlockId {
+    const id: kernel.BlockId = @enumFromInt(self.low_blocks.items.len);
+    try self.low_blocks.append(self.ctx.arena, .{
+        .parent = parent,
+        .label = label,
+        .kind = kind,
+        .first_step = @intCast(self.low_steps.items.len),
+        .last_step = 0,
+    });
+    return id;
+}
+
+/// Seal a synthetic block's step range (its `last_step`). Call after emitting its steps.
+fn closeSyntheticBlock(self: *Prove, id: kernel.BlockId) void {
+    self.low_blocks.items[@intFromEnum(id)].last_step = @intCast(self.low_steps.items.len);
 }
 
 /// A fix/unpack binder: resolve its sort, mint the hygienic fvar identity, and hand the
