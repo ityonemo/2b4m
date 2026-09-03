@@ -74,6 +74,13 @@ case_stack: std.ArrayList(CaseCtx) = .empty,
 fresh_counter: u32 = 0,
 /// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
 extra_reachable_steps: std.ArrayList(u32) = .empty,
+/// REFINED-SORT proof obligations (Step 3c): a guarded-function application over a refined
+/// param appends `inH(arg)` here (via the Elab); `dischargeTccs` after each formula proves
+/// them against the LOCAL context (result_facts + block guards/assumes + prior steps) — no
+/// global scan (the plan's fetch-only mandate; global-fact discharge is deferred).
+pending_tccs: std.ArrayList(Elab.Tcc) = .empty,
+/// closure facts surfaced by refined-RESULT funcs/consts (an available discharger).
+result_facts: std.ArrayList(TermId) = .empty,
 /// SCHEMA CONTEXT (set only when this Prove drives a schema INSTANCE): the bound args
 /// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
@@ -108,6 +115,8 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
+    e.tccs = &self.pending_tccs; // refined-sort obligation sink (Step 3c)
+    e.result_facts = &self.result_facts;
     return e;
 }
 
@@ -269,9 +278,11 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     const label = try self.internTok(step.label);
     switch (step.body) {
         .claim => |c| {
+            const tcc_start = self.pending_tccs.items.len;
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(c.formula), c.formula);
             const just = try self.lowerJustification(w, &e, kb, f.id, c);
+            try self.dischargeTccs(kb, tcc_start);
             try self.appendMainStep(w, .{
                 .formula = f.id,
                 .just = just,
@@ -281,8 +292,10 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             });
         },
         .assume => |blk| {
+            const tcc_start = self.pending_tccs.items.len;
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(blk.formula), blk.formula);
+            try self.dischargeTccs(kb, tcc_start);
             try self.newBlock(w, label, kb, .{ .assume = f.id });
         },
         .fix => |blk| {
@@ -484,6 +497,94 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
         guard = if (guard) |prev| try self.pool.add(.{ .bin = .{ .op = .and_op, .lhs = prev, .rhs = app } }) else app;
     }
     return .{ .v = .{ .name = fvar, .sort = sort }, .guard = guard };
+}
+
+// -- refined-sort obligation discharge (Step 3c) ---------------------------------------
+
+/// Discharge the obligations accrued since `start` (a guarded application over a refined
+/// param demands `inH(arg)`), proving each against the LOCAL proof context. On any failure
+/// records "unproved obligation" and rejects. Obligations discharged here also mark their
+/// discharging step reachable (so the use-all-facts pass doesn't flag it dead).
+fn dischargeTccs(self: *Prove, kb: kernel.BlockId, start: usize) Error!void {
+    var any_failed = false;
+    for (self.pending_tccs.items[start..]) |t| {
+        if (!self.tccDischarged(kb, t.formula)) {
+            self.ctx.sink.add(t.loc, "unproved obligation: '{s}'", .{try self.renderTerm(t.formula)}) catch return error.OutOfMemory;
+            any_failed = true;
+        }
+    }
+    self.pending_tccs.shrinkRetainingCapacity(start);
+    if (start == 0) self.result_facts.clearRetainingCapacity();
+    if (any_failed) return error.Recover;
+}
+
+/// True if obligation `f` follows from the LOCAL context. Peels `->`/`and`/`forall` (adding
+/// antecedents as local hypotheses, monomorphizing `forall` at a fresh fvar) and matches
+/// each atom against: result_facts (surfaced closures), enclosing block guards/assumes, and
+/// prior in-scope steps. NO global-statement scan — the demand model has no "all facts" set
+/// (the plan's fetch-only mandate); an obligation needing a global fact goes red for now.
+fn tccDischarged(self: *Prove, kb: kernel.BlockId, formula: TermId) bool {
+    var hyps: std.ArrayList(TermId) = .empty;
+    return self.tccDischargedHyps(kb, formula, &hyps);
+}
+
+fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *std.ArrayList(TermId)) bool {
+    var f = formula;
+    while (true) {
+        for (hyps.items) |h| if (self.pool.alphaEq(h, f)) return true;
+        if (self.tccMatches(kb, f)) return true;
+        const node = self.pool.get(f);
+        if (node == .bin and node.bin.op == .implies) {
+            hyps.append(self.ctx.arena, node.bin.lhs) catch return false;
+            f = node.bin.rhs;
+            continue;
+        }
+        if (node == .bin and node.bin.op == .and_op) {
+            return self.tccDischargedHyps(kb, node.bin.lhs, hyps) and self.tccDischargedHyps(kb, node.bin.rhs, hyps);
+        }
+        if (node == .quant and node.quant.q == .forall) {
+            const fresh = self.freshNamed("obl") catch return false;
+            const fv = self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } }) catch return false;
+            f = self.pool.open(node.quant.body, fv) catch return false;
+            continue;
+        }
+        return false;
+    }
+}
+
+fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
+    for (self.result_facts.items) |fact| if (self.pool.alphaEq(fact, f)) return true;
+    // enclosing block guards (fix) + assumptions, walking to the root.
+    var cur: ?kernel.BlockId = kb;
+    while (cur) |c| {
+        const b = self.low_blocks.items[@intFromEnum(c)];
+        switch (b.kind) {
+            .assume => |a| if (self.pool.alphaEq(a, f)) return true,
+            .fix => |fx| if (fx.guard) |g| {
+                if (self.pool.alphaEq(g, f)) return true;
+            },
+            else => {},
+        }
+        cur = b.parent;
+    }
+    // prior in-scope proof steps.
+    for (self.low_steps.items, 0..) |s, i| {
+        if (!lowAncestorOrSelf(self.low_blocks.items, s.block, kb)) continue;
+        if (self.pool.alphaEq(s.formula, f)) {
+            self.extra_reachable_steps.append(self.ctx.arena, @intCast(i)) catch {};
+            return true;
+        }
+    }
+    return false;
+}
+
+fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.BlockId) bool {
+    var cur: ?kernel.BlockId = b;
+    while (cur) |c| {
+        if (c == a) return true;
+        cur = blocks[@intFromEnum(c)].parent;
+    }
+    return false;
 }
 
 // -- reference resolution --------------------------------------------------------------

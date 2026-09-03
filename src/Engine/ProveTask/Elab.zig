@@ -40,6 +40,8 @@ const Elab = @This();
 
 pub const Error = error{ Recover, OutOfMemory };
 pub const Typed = struct { id: TermId, sort: SortId };
+/// A refined-sort proof obligation `inH(arg)` from a guarded application (Step 3c).
+pub const Tcc = struct { formula: TermId, loc: u32 };
 
 /// The pool's reserved Prop sort, as a scratchpad SortId. Numerically `Index.prop`; the
 /// flip renumbers `term.SortId.prop` onto it.
@@ -69,6 +71,14 @@ schema_args: ?*const Schema.SchemaArgs = null,
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
 /// site) in an ordinary proof = identity. Set by the model ProveTask on its Elab.
 model: InternPool.Index = .universe,
+/// REFINED-SORT obligation sinks (Step 3c), owned by the driving Prove (so they persist
+/// across the several Elabs a proof builds). A guarded-function application over a refined
+/// param sort `H` appends the obligation `inH(arg)` to `tccs`; a refined-RESULT func/const
+/// surfaces `inH(result)` into `result_facts` (an available discharger). Null = obligations
+/// not tracked (e.g. a throwaway sort-resolution Elab). Prove discharges `tccs` after each
+/// formula against the LOCAL proof context (result_facts + block guards + prior steps).
+tccs: ?*std.ArrayList(Tcc) = null,
+result_facts: ?*std.ArrayList(TermId) = null,
 
 /// expression-local binders (quantifiers), innermost last; transient per elaboration
 scope: std.ArrayList(ScopeEntry) = .empty,
@@ -109,7 +119,16 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
         .binary => |b| switch (b.op) {
             .implies, .and_op, .or_op => {
                 const lhs = try self.requireProp(try self.elaborateExpr(b.lhs), b.lhs);
+                // obligations arising in the RHS may depend on the LHS (an antecedent /
+                // conjunct in scope for the rest), so relativize them: an obligation `O`
+                // from the rhs becomes `lhs -> O` under `->`/`and`. (Step 3c.)
+                const tcc_start = if (self.tccs) |t| t.items.len else 0;
                 const rhs = try self.requireProp(try self.elaborateExpr(b.rhs), b.rhs);
+                if ((b.op == .implies or b.op == .and_op)) if (self.tccs) |t| {
+                    for (t.items[tcc_start..]) |*obl| {
+                        obl.formula = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = lhs.id, .rhs = obl.formula } });
+                    }
+                };
                 const op: term.BinOp = switch (b.op) {
                     .implies => .implies,
                     .and_op => .and_op,
@@ -165,6 +184,7 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 fr.* = try self.freshName();
                 try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
             }
+            const tcc_start = if (self.tccs) |t| t.items.len else 0;
             const body = try self.requireProp(try self.elaborateExpr(q.body), q.body);
             self.scope.shrinkRetainingCapacity(mark);
             var id = body.id;
@@ -185,6 +205,20 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                     .hint = try self.internTok(q.binders[i].name),
                     .body = id,
                 } });
+                // an obligation from the body over binder `i` must be discharged for ALL
+                // values of it: close it under a `forall` with the binder's guard as
+                // antecedent — `∀x; inH(x) -> O` — so the discharge sees the same shape as
+                // the relativized goal. (Step 3c; mirrors the body relativization above.)
+                if (self.tccs) |t| for (t.items[tcc_start..]) |*obl| {
+                    var f = obl.formula;
+                    for (quals) |qpred| {
+                        const bound = try self.scratch.add(.{ .fvar = .{ .name = fresh[i], .sort = sort } });
+                        const guard = try self.qualifierApp(qpred, bound);
+                        f = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = guard, .rhs = f } });
+                    }
+                    const closed = try self.scratch.close(f, fresh[i]);
+                    obl.formula = try self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = try self.internTok(q.binders[i].name), .body = closed } });
+                };
             }
             return .{ .id = id, .sort = prop_sort };
         },
@@ -303,9 +337,23 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
                 self.sortName(expected), self.sortName(typed.sort),
             });
         }
+        // a REFINED param sort demands `inH(arg)` — a proof obligation (Step 3c).
+        try self.emitArgObligations(expected_ix, typed.id, exprLoc(arg));
         out.* = typed.id;
     }
     return self.applyResolved(sym, arg_ids);
+}
+
+/// For a refined param sort, append `qpred(arg)` obligations to `tccs` (one per qualifier).
+/// No-op for a root param sort or when obligations aren't tracked.
+fn emitArgObligations(self: *Elab, param_sort: InternPool.Index, arg: TermId, loc: u32) Error!void {
+    const sink = self.tccs orelse return;
+    if (!self.interner.isRefined(param_sort)) return;
+    const quals = self.interner.qualifiersOf(self.arena, param_sort) catch return error.OutOfMemory;
+    for (quals) |qpred| {
+        const app = try self.qualifierApp(qpred, arg);
+        sink.append(self.arena, .{ .formula = app, .loc = loc }) catch return error.OutOfMemory;
+    }
 }
 
 /// Apply a schema GENERATOR param at a call site: elaborate each actual, sort-check against
@@ -337,6 +385,8 @@ fn applyGeneratorParam(self: *Elab, c: ast.Expr.Call, lam: @FieldType(Schema.Sch
 }
 
 /// Build the app/pred node for a resolved callable symbol; result sort from its sig.
+/// A refined RESULT sort SURFACES its closure facts `inH(result)` (an available discharger
+/// for later obligations — e.g. `op(h,h): H` lets `f(op(h,h))` type-check).
 fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error!Typed {
     const kind: term.AppKind = switch (self.interner.keyOf(sym)) {
         .pred => .pred,
@@ -344,6 +394,16 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
     };
     const id = try self.scratch.addApp(kind, @enumFromInt(@intFromEnum(sym)), args);
     const result: SortId = @enumFromInt(@intFromEnum(self.interner.symResult(sym)));
+    if (self.result_facts) |sink| {
+        const result_ix: InternPool.Index = @enumFromInt(@intFromEnum(result));
+        if (self.interner.isRefined(result_ix)) {
+            const quals = self.interner.qualifiersOf(self.arena, result_ix) catch return error.OutOfMemory;
+            for (quals) |qpred| {
+                const fact = try self.qualifierApp(qpred, id);
+                sink.append(self.arena, fact) catch return error.OutOfMemory;
+            }
+        }
+    }
     return .{ .id = id, .sort = result };
 }
 
