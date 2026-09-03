@@ -153,7 +153,9 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
             }
         }
         switch (r.domain) {
-            .ident => {
+            // a schema resolves via IdentKV like an identifier (a FetchTask mints its
+            // locator); the instantiate handler then demands the instance FACT separately.
+            .ident, .schema => {
                 const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
                     // loc is in the DEMANDING file (`file`); the fetch targets `target_file`.
                     blocker = try h.rackIndexed(try FetchTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));

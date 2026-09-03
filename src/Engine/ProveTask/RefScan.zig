@@ -48,6 +48,9 @@ pub const Ref = struct {
         fact,
         /// a sort/const/func/pred/import — resolved via IdentKV (a FetchTask produces it)
         ident,
+        /// a schema name in an `instantiate` step — resolved via IdentKV (a FetchTask mints
+        /// the .schema locator); the instantiate handler then demands the instance FACT.
+        schema,
     };
 };
 
@@ -81,6 +84,8 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
             try self.scanExpr(c.formula);
             switch (ruleDomain(self.source[c.rule.start..c.rule.end])) {
                 .fact => for (c.refs) |r| try self.addTok(r, .fact),
+                .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema
+                // NAME (its `c.refs` are LOCAL premise labels — not enumerated)
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }
             for (c.args) |a| try self.scanExpr(a);
@@ -106,11 +111,13 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
     return self.out.items;
 }
 
-/// Which resolution domain a rule's refs live in. Only axiom/theorem citations are
-/// global facts; everything else cites local steps/blocks (including accelerant names,
-/// which hard-error as unsupported at process time — their refs never fetch).
-fn ruleDomain(rule: []const u8) enum { fact, local } {
+/// Which resolution domain a rule's refs live in. Axiom/theorem citations are global facts;
+/// `instantiate` names a global schema (in `c.schema`); everything else cites local
+/// steps/blocks (including accelerant names, which hard-error as unsupported at process
+/// time — their refs never fetch).
+fn ruleDomain(rule: []const u8) enum { fact, instantiate, local } {
     if (std.mem.eql(u8, rule, "axiom") or std.mem.eql(u8, rule, "theorem")) return .fact;
+    if (std.mem.eql(u8, rule, "instantiate")) return .instantiate;
     return .local;
 }
 
@@ -326,4 +333,37 @@ test "scan: kernel-rule refs are local-only (not enumerated); qualified names sp
     // @q: modus_ponens refs (imp, p) are LOCAL-only labels — not enumerated; only the
     // formula's Q is a global candidate.
     try rec.expectRefs("q", &.{"ident:Q"});
+}
+
+test "scan: instantiate emits the schema name (schema domain); its refs are local; args scanned" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const rec = try scanAll(arena,
+        \\theorem t: P
+        \\proof
+        \\  @c |
+        \\    P
+        \\    [by instantiate foo(bar) premiseStep]
+        \\qed
+    );
+    // @c: the schema `foo` is a .schema candidate; the arg `bar` is a global ident; the
+    // ref `premiseStep` is a LOCAL premise label (not enumerated). Formula P is an ident.
+    try rec.expectRefs("c", &.{ "ident:P", "schema:foo", "ident:bar" });
+}
+
+test "scan: a qualified schema name splits into import + schema base" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const rec = try scanAll(arena,
+        \\theorem t: P
+        \\proof
+        \\  @c |
+        \\    P
+        \\    [by instantiate lib.foo(bar)]
+        \\qed
+    );
+    // qualified schema: import `lib` (ident) + base `foo` in its namespace (schema).
+    try rec.expectRefs("c", &.{ "ident:P", "ident:lib", "schema:lib.foo", "ident:bar" });
 }
