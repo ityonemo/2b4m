@@ -84,6 +84,13 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
+/// SCHEMA-INSTANCE names currently being proved (the synthetic `<schema>{hash}` fact
+/// names), for indirect-cycle + runaway-depth detection during instantiation. A direct
+/// self-instantiation is ALSO caught by FactKV in_flight-self; this set catches an
+/// indirect A→B→A chain with a clean diagnostic instead of a wedge. Single-threaded, so a
+/// plain set is safe (an instance task runs to its next suspend synchronously).
+instantiating: std.AutoHashMapUnmanaged(InternPool.StrId, void) = .empty,
+pub const inst_depth_cap: usize = 1024;
 
 pub const ParseState = union(enum) {
     unparsed,

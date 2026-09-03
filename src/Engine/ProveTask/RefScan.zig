@@ -59,6 +59,10 @@ interner: *InternPool,
 source: []const u8,
 /// consulted to SKIP proof-local binders (fix eigenvariables, unpack witnesses)
 walk: *const Walk,
+/// SCHEMA PARAM NAMES to skip while scanning a schema body/steps (they resolve via the
+/// instance's schema_args, not as globals); empty for an ordinary proof. Set by the
+/// instance ProveTask before scanning its schema body/steps.
+schema_params: []const StrId = &.{},
 
 out: std.ArrayList(Ref) = .empty,
 seen: std.AutoHashMapUnmanaged(SeenKey, void) = .empty,
@@ -159,6 +163,7 @@ fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
         const name = try self.interner.internString(text);
         for (self.expr_locals.items) |b| if (b == name) return; // expr-local binder
         if (self.walk.findIdent(name) != null) return; // proof-local binder
+        for (self.schema_params) |p| if (p == name) return; // schema parameter
     }
     try self.addTok(tok, .ident);
 }

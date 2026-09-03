@@ -27,6 +27,7 @@ const InternPool = @import("../../InternPool.zig");
 const StrId = InternPool.StrId;
 const term = @import("../../term.zig");
 const TermId = term.TermId;
+const SortId = term.SortId;
 const Diagnostics = @import("../../diagnostics.zig");
 const kernel = @import("../../kernel.zig");
 const Engine = @import("../../Engine.zig");
@@ -34,7 +35,9 @@ const Context = @import("../../Context.zig");
 const Walk = @import("Walk.zig");
 const RefScan = @import("RefScan.zig");
 const Elab = @import("Elab.zig");
+const Schema = @import("Schema.zig");
 const IdentKV = @import("../../IdentKV.zig");
+const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
 const ProveTask = @import("../ProveTask.zig");
 
@@ -70,6 +73,11 @@ case_stack: std.ArrayList(CaseCtx) = .empty,
 fresh_counter: u32 = 0,
 /// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
 extra_reachable_steps: std.ArrayList(u32) = .empty,
+/// SCHEMA CONTEXT (set only when this Prove drives a schema INSTANCE): the bound args
+/// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
+/// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
+schema_args: ?*const Schema.SchemaArgs = null,
+schema_params: []const StrId = &.{},
 
 const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 
@@ -91,7 +99,9 @@ pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPo
 }
 
 fn elab(self: *Prove, w: *const Walk) Elab {
-    return Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
+    var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
+    e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
+    return e;
 }
 
 // -- small utilities -------------------------------------------------------------------
@@ -117,6 +127,11 @@ fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
 
 fn renderTerm(self: *Prove, id: TermId) Error![]const u8 {
     return @import("../../print.zig").render(self.ctx.arena, self.pool, self.ctx.interner, id) catch error.OutOfMemory;
+}
+
+fn sortName(self: *const Prove, sort: SortId) []const u8 {
+    if (sort == Elab.prop_sort) return "Prop";
+    return self.ctx.interner.sortName(@enumFromInt(@intFromEnum(sort)));
 }
 
 // -- global demand resolution (shared with ProveTask's formula pass) -------------------
@@ -190,8 +205,25 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
 pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!?Engine.TaskIndex {
     _ = block;
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
+    scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
     const refs = try scanner.scanStep(step);
-    return resolveRefs(self.ctx, self.h, self.file, self.ns, refs);
+    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, refs)) |blocker| return blocker;
+
+    // an `instantiate` step additionally DEMANDS the monomorphized instance FACT (its own
+    // ProveTask) — the schema name + args are now resolved, so build the instance and
+    // suspend until it's proved. `process`/`lowerInstantiate` then just looks it up.
+    if (step.body == .claim) {
+        const c = step.body.claim;
+        if (std.mem.eql(u8, self.text(c.rule), "instantiate")) {
+            var e = self.elab(w);
+            switch (try self.demandInstance(&e, c)) {
+                .proven => return null, // ready — process can run lowerInstantiate
+                .blocked => |t| return t,
+                .failed => return null, // diagnosed; process will re-hit .failed and reject
+            }
+        }
+    }
+    return null;
 }
 
 pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!bool {
@@ -415,6 +447,238 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     };
 }
 
+// -- schema instantiation --------------------------------------------------------------
+
+/// A resolved schema reference: the schema's file/namespace + its AST decl. Reachable only
+/// after the read pass resolved the `.schema` locator to `done`.
+const ResolvedSchema = struct {
+    file: InternPool.Index,
+    ns: InternPool.Index,
+    decl_index: u32,
+    decl: ast.Decl, // the `.schema` decl
+    source: []const u8,
+};
+
+/// Resolve a schema name token (optionally `ns.`-qualified) to its file/ns + AST decl.
+/// The `.schema` locator must be `done` in IdentKV (the read pass guarantees it).
+fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
+    const text_ = self.text(tok);
+    var ns = self.ns;
+    var base = text_;
+    if (std.mem.indexOfScalar(u8, text_, '.')) |i| {
+        if (std.mem.indexOfScalar(u8, text_[i + 1 ..], '.') != null) {
+            return self.fail(tok.start, "only one level of namespace qualification is allowed", .{});
+        }
+        const ns_name = self.ctx.interner.internString(text_[0..i]) catch return error.OutOfMemory;
+        const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = ns_name }) orelse
+            return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]});
+        switch (st) {
+            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+                .import => |m| ns = m.namespace,
+                else => return self.fail(tok.start, "'{s}' is not a namespace", .{text_[0..i]}),
+            },
+            .in_flight => return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]}),
+        }
+        base = text_[i + 1 ..];
+    }
+    const name = self.ctx.interner.internString(base) catch return error.OutOfMemory;
+    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = name }) orelse
+        return self.fail(tok.start, "unknown schema '{s}'", .{text_});
+    const ix = switch (st) {
+        .done => |x| x,
+        .in_flight => return self.fail(tok.start, "unknown schema '{s}'", .{text_}),
+    };
+    const loc = switch (self.ctx.interner.keyOf(ix)) {
+        .schema => |s| s,
+        else => return self.fail(tok.start, "'{s}' is not a schema", .{text_}),
+    };
+    const fid = self.ctx.pool_file.get(loc.file).?;
+    return .{
+        .file = loc.file,
+        .ns = ns,
+        .decl_index = loc.decl_index,
+        .decl = self.ctx.parsed.items[@intFromEnum(fid)].decls[loc.decl_index],
+        .source = self.ctx.files.items[@intFromEnum(fid)].source,
+    };
+}
+
+/// Elaborate the instantiation args in the CALLER's Elab `e` (caller scope + ns, so args
+/// may reference caller-local binders), binding each schema param to a `Schema.SchemaArg`.
+/// A value param → the elaborated arg term; an N-ary param → a lambda arg (or a bare
+/// symbol eta-expanded). Sort tokens resolve in the SCHEMA's ns via a schema-scoped Elab.
+fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim) Error!*Schema.SchemaArgs {
+    const params = rs.decl.schema.params;
+    if (c.args.len != params.len) {
+        return self.fail(c.schema.?.start, "schema '{s}' expects {d} argument(s), got {d}", .{
+            self.text(c.schema.?), params.len, c.args.len,
+        });
+    }
+    // a schema-scoped Elab just to resolve param SORT tokens in the schema's ns.
+    var empty_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
+    var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
+
+    const args = try self.ctx.arena.create(Schema.SchemaArgs);
+    args.* = .empty;
+    for (params, c.args) |p, arg_expr| {
+        const pname = self.ctx.interner.internString(rs.source[p.name.start..p.name.end]) catch return error.OutOfMemory;
+        if (p.arg_sorts.len == 0) {
+            // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
+            const want = try se.resolveSortTok(p.result);
+            const typed = try e.elaborateExpr(arg_expr);
+            const want_carrier = self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
+            const got_carrier = if (typed.sort == Elab.prop_sort) @intFromEnum(typed.sort) else @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort))));
+            if (@intFromEnum(want_carrier) != got_carrier) {
+                return self.fail(Elab.exprLoc(arg_expr), "expected sort '{s}', got '{s}'", .{
+                    self.ctx.interner.sortName(@enumFromInt(@intFromEnum(want))), self.sortName(typed.sort),
+                });
+            }
+            try args.put(self.ctx.arena, pname, .{ .value = .{ .id = typed.id, .sort = want } });
+        } else {
+            // N-ary GENERATOR param: a lambda arg (or a bare symbol → eta-expand).
+            const arg_sorts = try self.ctx.arena.alloc(SortId, p.arg_sorts.len);
+            for (p.arg_sorts, arg_sorts) |st, *out| out.* = try se.resolveSortTok(st);
+            const result_sort = try se.resolveSortTok(p.result);
+            const lam = try self.bindLambdaArg(e, arg_expr, arg_sorts, result_sort);
+            try args.put(self.ctx.arena, pname, lam);
+        }
+    }
+    return args;
+}
+
+/// Bind an N-ary generator param's argument: a `fun x.. => body` lambda (binders bound as
+/// fresh KEPT-FREE fvars, body elaborated with them in `e.scope`), or a bare symbol of the
+/// signature (eta-expanded to `fun x.. => sym(x..)`). Terms build in `self.pool`.
+fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: []const SortId, result_sort: SortId) Error!Schema.SchemaArg {
+    switch (arg_expr.*) {
+        .lambda => |l| {
+            if (l.binders.len != arg_sorts.len) {
+                return self.fail(l.tok.start, "schema parameter expects a {d}-argument lambda, got {d}", .{ arg_sorts.len, l.binders.len });
+            }
+            const fresh = try self.ctx.arena.alloc(StrId, l.binders.len);
+            const scope_mark = e.scopeMark();
+            for (l.binders, arg_sorts, fresh) |b, asort, *fr| {
+                const bsort = try e.resolveSortTok(b.sort);
+                if (@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(bsort)))) != @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(asort))))) {
+                    return self.fail(b.sort.start, "expected sort '{s}', got '{s}'", .{ self.sortName(asort), self.sortName(bsort) });
+                }
+                fr.* = try self.freshNamed(self.ctx.interner.stringBytes(try e.internTokPub(b.name)));
+                try e.pushBinder(try e.internTokPub(b.name), asort, fr.*);
+            }
+            const body = try e.elaborateExpr(l.body);
+            e.scopeTruncate(scope_mark);
+            if (@intFromEnum(body.sort) != @intFromEnum(result_sort)) {
+                return self.fail(Elab.exprLoc(l.body), "expected sort '{s}', got '{s}'", .{ self.sortName(result_sort), self.sortName(body.sort) });
+            }
+            return .{ .lambda = .{ .body = body.id, .params = fresh, .arg_sorts = arg_sorts, .result_sort = result_sort } };
+        },
+        .name => |tok| {
+            // eta-sugar: a bare symbol `p` of the signature → `fun x.. => p(x..)`.
+            const fresh = try self.ctx.arena.alloc(StrId, arg_sorts.len);
+            const fvars = try self.ctx.arena.alloc(TermId, arg_sorts.len);
+            for (arg_sorts, fresh, fvars) |asort, *fr, *fv| {
+                fr.* = try self.freshNamed("eta");
+                fv.* = try self.pool.add(.{ .fvar = .{ .name = fr.*, .sort = asort } });
+            }
+            const applied = try self.etaApply(e, tok, fvars, result_sort);
+            return .{ .lambda = .{ .body = applied, .params = fresh, .arg_sorts = arg_sorts, .result_sort = result_sort } };
+        },
+        else => return self.fail(Elab.exprLoc(arg_expr), "schema parameter requires a lambda or a bare symbol", .{}),
+    }
+}
+
+/// Build `sym(fvars…)` for eta-expansion, resolving `sym` in the caller ns and checking it
+/// is a func/pred of the right result sort.
+fn etaApply(self: *Prove, e: *Elab, tok: lexer.Token, fvars: []const TermId, result_sort: SortId) Error!TermId {
+    _ = result_sort;
+    // reuse the caller Elab's call machinery by synthesizing a call expr is awkward; apply
+    // directly via IdentKV lookup.
+    const name = try e.internTokPub(tok);
+    const sym = e.lookupIdentPub(self.ns, name) orelse
+        return self.fail(tok.start, "unknown identifier '{s}'", .{self.text(tok)});
+    const kind: term.AppKind = switch (self.ctx.interner.keyOf(sym)) {
+        .pred => .pred,
+        .func, .constant => .app,
+        else => return self.fail(tok.start, "'{s}' is not a symbol", .{self.text(tok)}),
+    };
+    return self.pool.addApp(kind, @enumFromInt(@intFromEnum(sym)), fvars);
+}
+
+/// Demand the monomorphized instance FACT for `[by instantiate schema(args)]`. Returns:
+///   - `.proven`  → the instance fact Index (its formula copyIn's into the citing proof).
+///   - `.blocked` → a TaskIndex to suspend on (the instance's ProveTask, just racked or
+///                  already in flight). Called from the READ PASS.
+/// Builds the payload idempotently (re-run on each wake); the hash keys FactKV dedup.
+const InstanceOutcome = union(enum) { proven: InternPool.Index, blocked: Engine.TaskIndex, failed };
+
+fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
+    const rs = self.resolveSchemaRef(c.schema.?) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    };
+    const args = self.bindSchemaArgs(e, rs, c) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    };
+    const params = rs.decl.schema.params;
+    const schema_name = self.ctx.interner.internString(self.text(c.schema.?)) catch return error.OutOfMemory;
+    // stable ordered param-name list for the hash + payload.
+    const pnames = try self.ctx.arena.alloc(StrId, params.len);
+    for (params, pnames) |p, *out| out.* = self.ctx.interner.internString(rs.source[p.name.start..p.name.end]) catch return error.OutOfMemory;
+
+    const hash = Schema.instanceHash(self.pool, schema_name, pnames, args);
+    const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(schema_name), hash }) catch return error.OutOfMemory;
+    const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
+    const key = FactKV.Key{ .namespace = rs.ns, .name = inst_name };
+
+    if (self.ctx.facts.lookup(self.ctx.io, key)) |state| switch (state) {
+        .proven => |ix| return .{ .proven = ix },
+        .in_flight => |owner| {
+            if (owner == self.h.self_index) {
+                // demanding the very instance THIS task is proving — a self-cycle.
+                self.ctx.sink.add(c.schema.?.start, "cyclic schema instantiation of '{s}'", .{self.text(c.schema.?)}) catch return error.OutOfMemory;
+                return .failed;
+            }
+            return .{ .blocked = owner };
+        },
+    };
+    // ABSENT: reify the args durably + rack the instance ProveTask.
+    const durable = try self.ctx.arena.alloc(ProveTask.DurableArg, params.len);
+    for (pnames, durable) |pname, *out| {
+        const arg = args.get(pname).?;
+        out.* = switch (arg) {
+            .value => |v| .{ .value = .{ .off = try self.pool.reify(v.id, self.ctx.interner), .sort = v.sort } },
+            .lambda => |l| .{ .lambda = .{ .off = try self.pool.reify(l.body, self.ctx.interner), .params = l.params, .arg_sorts = l.arg_sorts, .result_sort = l.result_sort } },
+        };
+    }
+    const blocker = try self.h.rackIndexed(try ProveTask.new(self.ctx.arena, .{
+        .file = rs.file,
+        .name = inst_name,
+        .loc = c.schema.?.start,
+        .loc_file = self.file,
+        .instance = .{ .decl_index = rs.decl_index, .params = pnames, .args = durable },
+    }));
+    return .{ .blocked = blocker };
+}
+
+/// The `instantiate` justification (in `process`, after the read pass demanded + proved the
+/// instance fact): look it up, copyIn its formula, and emit `schema_instance` with the
+/// caller's premise step-refs. The kernel peels the instance's `->` antecedents against the
+/// premises and requires the final consequent == the citing claim.
+fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) Error!kernel.Justification {
+    if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
+    const outcome = try self.demandInstance(e, c);
+    const fact = switch (outcome) {
+        .proven => |ix| ix,
+        .failed => return error.Recover,
+        .blocked => return self.fail(c.rule.start, "internal: instantiate not resolved before process (read-pass bug)", .{}),
+    };
+    const formula_off = self.ctx.interner.keyOf(fact).fact.formula;
+    const instance = try self.pool.copyIn(self.ctx.interner, formula_off);
+    const premises = try self.ctx.arena.alloc(kernel.SRef, c.refs.len);
+    for (c.refs, premises) |r, *out| out.* = try self.resolveStepRef(w, r);
+    return .{ .schema_instance = .{ .instance = instance, .premises = premises } };
+}
+
 // -- justification lowering ------------------------------------------------------------
 
 const RuleKind = enum {
@@ -496,6 +760,11 @@ fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
 
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     const rule_text = self.text(c.rule);
+    // `instantiate` is dispatched BEFORE the rule_names map — it needs `c.schema` and
+    // resolves a SCHEMA (not a kernel rule). The instance fact was demanded (racked +
+    // proven) in the read pass; here we look it up, copyIn its formula, and emit the
+    // kernel schema_instance justification (which peels premises against `c.refs`).
+    if (std.mem.eql(u8, rule_text, "instantiate")) return self.lowerInstantiate(w, e, c);
     const kind = rule_names.get(rule_text) orelse {
         // a genuine typo, or a schema `instantiate` / `model` / accelerant — none of
         // which the demand prover supports yet. Hard-error rather than misbehave.

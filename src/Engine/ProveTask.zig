@@ -29,6 +29,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const InternPool = @import("../InternPool.zig");
+const StrId = InternPool.StrId;
 const term = @import("../term.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
@@ -37,11 +38,13 @@ const Walk = @import("ProveTask/Walk.zig");
 const RefScan = @import("ProveTask/RefScan.zig");
 const Elab = @import("ProveTask/Elab.zig");
 const Prove = @import("ProveTask/Prove.zig");
+const Schema = @import("ProveTask/Schema.zig");
 
 const ProveTask = @This();
 
 /// the `.file` entity Index of the fact's home file (not the dense FileId — the pool
-/// identity, which the namespace is built from).
+/// identity, which the namespace is built from). For a schema INSTANCE, this is the
+/// SCHEMA's file (its body/steps resolve there; the fact is minted in its namespace).
 file: InternPool.Index,
 name: InternPool.StrId,
 /// the DEMANDING reference's source offset — where "reference not found" / "not a fact"
@@ -50,8 +53,33 @@ name: InternPool.StrId,
 loc: u32 = 0,
 /// the file `loc` indexes into; `null` = relative to `file` (a same-file / root demand).
 loc_file: ?InternPool.Index = null,
+/// a SCHEMA INSTANCE payload (Step 12): present iff this task proves a monomorphized
+/// schema instance rather than a named decl. Carries the schema decl locator + the bound
+/// args (durable TermOffs — copied into the task's own scratchpad on the first run). When
+/// set, `run` builds State from it directly, bypassing the name-scan `locate`.
+instance: ?Instance = null,
 /// resumable production state; created on the first owning entry.
 st: ?*State = null,
+
+/// A schema-instance production request. `args` are DURABLE (reify'd by the citer into
+/// `extra`) so they survive the payload and cross into the instance's own scratchpad.
+pub const Instance = struct {
+    decl_index: u32, // the schema decl in parsed[file].decls
+    params: []const StrId, // param names, in order (for schema_args keys + read-pass skip)
+    args: []const DurableArg, // one per param, in order
+};
+
+/// A schema argument as durable pool data (mirrors `Schema.SchemaArg` with TermOffs).
+/// `copyIn`'d into the instance task's scratchpad to rebuild the live `Schema.SchemaArg`.
+pub const DurableArg = union(enum) {
+    value: struct { off: InternPool.TermOff, sort: term.SortId },
+    lambda: struct {
+        off: InternPool.TermOff,
+        params: []const StrId,
+        arg_sorts: []const term.SortId,
+        result_sort: term.SortId,
+    },
+};
 
 const State = struct {
     source: []const u8,
@@ -59,14 +87,17 @@ const State = struct {
     decl: Decl,
     walk: *Walk,
     prove: *Prove,
-    /// the elaborated stated formula (axiom assertion / theorem goal); null until the
-    /// goal phase completes.
+    /// the elaborated stated formula (axiom assertion / theorem goal / schema-instance body);
+    /// null until the goal phase completes.
     goal: ?term.TermId = null,
     goal_loc: u32,
 
     const Decl = union(enum) {
         axiom: struct { formula: *const ast.Expr },
         theorem: struct { formula: *const ast.Expr, steps: []const ast.Step },
+        /// a schema INSTANCE: the schema's body is the goal, its steps are the proof, both
+        /// elaborated with `prove.schema_args` (already installed) resolving the params.
+        instance: struct { formula: *const ast.Expr, steps: ?[]const ast.Step },
     };
 };
 
@@ -113,18 +144,24 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     };
 
     const st = task.st orelse blk: {
-        const st = (try locate(self, task, h, ns)) orelse return; // diagnosed; no publish
+        const st = if (task.instance) |inst|
+            (try buildInstanceState(self, task, h, ns, inst)) orelse return // diagnosed
+        else
+            (try locate(self, task, h, ns)) orelse return; // diagnosed; no publish
         task.st = st;
         break :blk st;
     };
     st.prove.h = h; // each (re)entry gets a fresh handle; racking goes through it
 
-    // GOAL PHASE: the stated formula's own read pass + elaboration ("step -1").
+    // GOAL PHASE: the stated formula's own read pass + elaboration ("step -1"). For a
+    // schema instance the formula is the schema BODY (elaborated with schema_args resolving
+    // the params); the read pass skips param names via prove.schema_params.
     if (st.goal == null) {
         const formula = switch (st.decl) {
             inline else => |d| d.formula,
         };
         var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
+        scanner.schema_params = st.prove.schema_params;
         const refs = try scanner.scanFormula(formula);
         if (try Prove.resolveRefs(self, h, task.file, ns, refs)) |blocker| {
             h.suspendOn(blocker);
@@ -133,6 +170,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
         // its steps and the kernel check use, and that it reifies back from at publish.
         var e = Elab.init(self.arena, self.io, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, ns, &st.prove.fresh_counter);
+        e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
         const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return, // diagnosed; no publish
@@ -149,19 +187,35 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             _ = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
         },
-        .theorem => |t| {
-            switch (try st.walk.drive(t.steps, st.prove)) {
-                .blocked => |blocker| {
-                    h.suspendOn(blocker);
-                    return;
-                },
-                .failed => return, // diagnosed; no publish
-                .done => {
-                    if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
-                    const off = try st.prove.pool.reify(st.goal.?, self.interner);
-                    _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
-                },
+        .theorem => |t| return proveSteps(self, task, h, st, key, t.steps),
+        .instance => |i| {
+            // a schema instance: re-check the schema's proof at this instance (comptime
+            // semantics — the proof may hold for some args and fail for others). A
+            // non-proof-carrying schema (or !recheck_schemas) trusts the monomorphization
+            // and publishes a leaf fact.
+            if (i.steps) |steps| {
+                if (self.verify.recheck_schemas) return proveSteps(self, task, h, st, key, steps);
             }
+            const off = try st.prove.pool.reify(st.goal.?, self.interner);
+            _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+        },
+    }
+}
+
+/// Drive the Walk over `steps` proving `st.goal`; on success reify + publish the fact.
+/// Shared by ordinary theorems and proof-carrying schema instances.
+fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, key: FactKV.Key, steps: []const ast.Step) std.mem.Allocator.Error!void {
+    _ = task;
+    switch (try st.walk.drive(steps, st.prove)) {
+        .blocked => |blocker| {
+            h.suspendOn(blocker);
+            return;
+        },
+        .failed => return, // diagnosed; no publish
+        .done => {
+            if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
+            const off = try st.prove.pool.reify(st.goal.?, self.interner);
+            _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
         },
     }
 }
@@ -212,7 +266,9 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
                 return null;
             },
             .schema => {
-                self.sink.add(name_tok.start, "schemas are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+                // a schema is not a fact — it cannot be cited as an axiom/theorem; it is
+                // used via `[by instantiate <schema>(args)]`. (Reached only on a misuse.)
+                try demandDiag(self, task, "'{s}' is a schema; use `[by instantiate {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
                 return null;
             },
             else => {
@@ -235,4 +291,48 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     }
     try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
     return null;
+}
+
+/// Build the production State for a schema INSTANCE from its payload: copyIn the durable
+/// args into the task's fresh scratchpad, install them as `schema_args` on the Prove, and
+/// read the schema's body+steps from its decl AST. `task.file` is the SCHEMA's file, so
+/// `ns` is the schema namespace and the body/steps resolve there. Never diagnoses (the
+/// citer validated arity/binding); returns the ready State.
+fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index, inst: Instance) std.mem.Allocator.Error!?*State {
+    const fid = self.pool_file.get(task.file).?; // demandParse ensured it's parsed
+    const source = self.files.items[@intFromEnum(fid)].source;
+    const decl = self.parsed.items[@intFromEnum(fid)].decls[inst.decl_index].schema;
+
+    const prove = try Prove.init(self, h, source, task.file, ns);
+
+    // rebuild the live SchemaArgs by copying each durable arg into the task's scratchpad.
+    const args = try self.arena.create(Schema.SchemaArgs);
+    args.* = .empty;
+    for (inst.params, inst.args) |pname, darg| {
+        const live: Schema.SchemaArg = switch (darg) {
+            .value => |v| .{ .value = .{ .id = try prove.pool.copyIn(self.interner, v.off), .sort = v.sort } },
+            .lambda => |l| .{ .lambda = .{
+                .body = try prove.pool.copyIn(self.interner, l.off),
+                .params = l.params,
+                .arg_sorts = l.arg_sorts,
+                .result_sort = l.result_sort,
+            } },
+        };
+        try args.put(self.arena, pname, live);
+    }
+    prove.schema_args = args;
+    prove.schema_params = inst.params;
+
+    const st = try self.arena.create(State);
+    const walk = try self.arena.create(Walk);
+    walk.* = Walk.init(self.arena, self.interner, source, self.sink);
+    st.* = .{
+        .source = source,
+        .ns = ns,
+        .decl = .{ .instance = .{ .formula = decl.formula, .steps = decl.steps } },
+        .walk = walk,
+        .prove = prove,
+        .goal_loc = decl.name.start,
+    };
+    return st;
 }

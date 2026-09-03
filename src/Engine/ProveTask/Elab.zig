@@ -339,6 +339,9 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
+    // `Prop` is the reserved builtin sort (schema generator-param results `P: T -> Prop`,
+    // etc.) — never a userland-declared/fetched sort.
+    if (std.mem.eql(u8, self.text(tok), "Prop")) return prop_sort;
     const target = if (std.mem.indexOfScalar(u8, self.text(tok), '.') != null)
         try self.resolveQualified(tok)
     else
@@ -417,6 +420,35 @@ fn sortName(self: *const Elab, sort: SortId) []const u8 {
 
 fn internTok(self: *Elab, t: lexer.Token) Error!StrId {
     return self.interner.internString(self.source[t.start..t.end]) catch error.OutOfMemory;
+}
+
+// -- accessors for the schema-instantiation driver (Prove.zig) -------------------------
+// These expose the expression-local binder scope + name lookup so the instantiate handler
+// can elaborate a lambda ARG's body with its binders in scope (kept-free), reusing this
+// Elab's scratchpad + resolution.
+
+pub fn internTokPub(self: *Elab, t: lexer.Token) Error!StrId {
+    return self.internTok(t);
+}
+
+pub fn lookupIdentPub(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index {
+    return self.lookupIdent(ns, name);
+}
+
+/// Current expr-local scope depth — pair with `scopeTruncate` to bracket lambda binders.
+pub fn scopeMark(self: *const Elab) usize {
+    return self.scope.items.len;
+}
+
+pub fn scopeTruncate(self: *Elab, mark: usize) void {
+    self.scope.shrinkRetainingCapacity(mark);
+}
+
+/// Push an expression-local binder (`name` → the hygienic `fvar` of `sort`), so the lambda
+/// body elaborates with it in scope. The instantiate handler keeps these fvars FREE (it
+/// does not close them); beta-reduction substitutes them at application.
+pub fn pushBinder(self: *Elab, name: StrId, sort: SortId, fvar: StrId) Error!void {
+    self.scope.append(self.arena, .{ .name = name, .sort = sort, .fvar = fvar }) catch return error.OutOfMemory;
 }
 
 fn text(self: *const Elab, t: lexer.Token) []const u8 {
