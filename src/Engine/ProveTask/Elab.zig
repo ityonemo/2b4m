@@ -185,6 +185,7 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
             }
             const tcc_start = if (self.tccs) |t| t.items.len else 0;
+            const rf_start = if (self.result_facts) |r| r.items.len else 0;
             const body = try self.requireProp(try self.elaborateExpr(q.body), q.body);
             self.scope.shrinkRetainingCapacity(mark);
             var id = body.id;
@@ -210,14 +211,13 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 // antecedent — `∀x; inH(x) -> O` — so the discharge sees the same shape as
                 // the relativized goal. (Step 3c; mirrors the body relativization above.)
                 if (self.tccs) |t| for (t.items[tcc_start..]) |*obl| {
-                    var f = obl.formula;
-                    for (quals) |qpred| {
-                        const bound = try self.scratch.add(.{ .fvar = .{ .name = fresh[i], .sort = sort } });
-                        const guard = try self.qualifierApp(qpred, bound);
-                        f = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = guard, .rhs = f } });
-                    }
-                    const closed = try self.scratch.close(f, fresh[i]);
-                    obl.formula = try self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = try self.internTok(q.binders[i].name), .body = closed } });
+                    obl.formula = try self.relativizeUnderBinder(obl.formula, quals, fresh[i], sort, q.binders[i].name);
+                };
+                // SURFACED result-facts (closure facts like `inH(op2(h,h))`) over binder `i`
+                // relativize the SAME way (`∀x; inH(x) -> inH(op2(x,x))`) — so a discharge of
+                // the equally-relativized obligation matches them whole (Step 3c closure gap).
+                if (self.result_facts) |r| for (r.items[rf_start..]) |*rf| {
+                    rf.* = try self.relativizeUnderBinder(rf.*, quals, fresh[i], sort, q.binders[i].name);
                 };
             }
             return .{ .id = id, .sort = prop_sort };
@@ -284,10 +284,9 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
             }
             return self.applyResolved(sym, &.{});
         },
-        .constant => |c| {
-            const id = try self.scratch.addApp(.app, @enumFromInt(@intFromEnum(sym)), &.{});
-            return .{ .id = id, .sort = @enumFromInt(@intFromEnum(c.sort)) };
-        },
+        // a constant is a nullary application — route through applyResolved so a REFINED
+        // result sort (`const E: H`) surfaces its closure fact `inH(E)` (Step 3c).
+        .constant => return self.applyResolved(sym, &.{}),
         .sort => return self.fail(tok.start, "'{s}' is a sort, not a value", .{self.text(tok)}),
         .import => return self.fail(tok.start, "'{s}' is a namespace, not a value", .{self.text(tok)}),
         .define => return self.fail(tok.start, "defines are not yet supported by the demand prover", .{}),
@@ -440,6 +439,21 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
 /// Build the guard proposition `qpred(arg)` for a refinement qualifier.
 fn qualifierApp(self: *Elab, qpred: InternPool.Index, arg: TermId) Error!TermId {
     return self.scratch.addApp(.pred, @enumFromInt(@intFromEnum(qpred)), &.{arg});
+}
+
+/// Close a proposition `f` (mentioning the free fvar `fvar` at carrier `sort`) under a
+/// `forall` binder, injecting each qualifier guard as an antecedent: `∀x; q0(x) -> … -> f`.
+/// Used to relativize obligations AND surfaced result-facts through a `forall x: H` binder
+/// identically, so they match on discharge (Step 3c).
+fn relativizeUnderBinder(self: *Elab, f0: TermId, quals: []const InternPool.Index, fvar: StrId, sort: SortId, hint: lexer.Token) Error!TermId {
+    var f = f0;
+    for (quals) |qpred| {
+        const bound = try self.scratch.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
+        const guard = try self.qualifierApp(qpred, bound);
+        f = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = guard, .rhs = f } });
+    }
+    const closed = try self.scratch.close(f, fvar);
+    return self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = try self.internTok(hint), .body = closed } });
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
