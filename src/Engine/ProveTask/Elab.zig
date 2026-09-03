@@ -34,6 +34,7 @@ const TermId = term.TermId;
 const Diagnostics = @import("../../diagnostics.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const Walk = @import("Walk.zig");
+const Schema = @import("Schema.zig");
 
 const Elab = @This();
 
@@ -58,6 +59,11 @@ walk: *const Walk,
 ns: InternPool.Index,
 /// hygienic fresh-name counter, owned by the driving task (proof-unique names)
 fresh_counter: *u32,
+/// SCHEMA PARAMS in scope while elaborating a schema body/steps (param name -> bound arg);
+/// null in ordinary proofs. Consulted BEFORE the global lookup in name/call position: a
+/// value param resolves to its term, a generator param BETA-REDUCES at a call. Set by the
+/// instance ProveTask (post-init) on the Elab it uses for the schema body/steps.
+schema_args: ?*const Schema.SchemaArgs = null,
 
 /// expression-local binders (quantifiers), innermost last; transient per elaboration
 scope: std.ArrayList(ScopeEntry) = .empty,
@@ -204,7 +210,12 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
         const id = try self.scratch.add(.{ .fvar = .{ .name = local.info.fvar, .sort = local.info.sort } });
         return .{ .id = id, .sort = local.info.sort };
     }
-    // 3. global
+    // 3. schema parameter (only while elaborating a schema body/steps)
+    if (self.schema_args) |sa| if (sa.get(name)) |arg| switch (arg) {
+        .value => |v| return .{ .id = v.id, .sort = v.sort },
+        .lambda => return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
+    };
+    // 4. global
     return self.elaborateSymRef(tok, self.ns, name);
 }
 
@@ -237,10 +248,16 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
 }
 
 fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
-    const target = if (std.mem.indexOfScalar(u8, self.text(c.callee), '.') != null)
+    const dotted = std.mem.indexOfScalar(u8, self.text(c.callee), '.') != null;
+    const target = if (dotted)
         try self.resolveQualified(c.callee)
     else
         Qualified{ .ns = self.ns, .base = try self.internTok(c.callee) };
+    // schema GENERATOR param in call position: beta-reduce (only a bare name is a param).
+    if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base)) |arg| switch (arg) {
+        .lambda => |lam| return self.applyGeneratorParam(c, lam),
+        .value => return self.fail(c.callee.start, "schema parameter '{s}' takes no arguments", .{self.text(c.callee)}),
+    };
     const sym = self.lookupIdent(target.ns, target.base) orelse {
         return self.fail(c.callee.start, "unknown identifier '{s}'", .{self.text(c.callee)});
     };
@@ -275,6 +292,34 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         out.* = typed.id;
     }
     return self.applyResolved(sym, arg_ids);
+}
+
+/// Apply a schema GENERATOR param at a call site: elaborate each actual, sort-check against
+/// the param's `arg_sorts`, then BETA-REDUCE the kept-free param body — `substFvar` each
+/// `params[i]` fvar with the actual. Simultaneous-safe: the param fvars are fresh/distinct
+/// hygienic names and the actuals are locally closed, so sequential subst can't capture.
+fn applyGeneratorParam(self: *Elab, c: ast.Expr.Call, lam: @FieldType(Schema.SchemaArg, "lambda")) Error!Typed {
+    if (c.args.len != lam.arg_sorts.len) {
+        return self.fail(c.callee.start, "schema parameter '{s}' expects {d} argument(s), got {d}", .{
+            self.text(c.callee), lam.arg_sorts.len, c.args.len,
+        });
+    }
+    var reduced = lam.body;
+    for (c.args, lam.arg_sorts, lam.params) |arg, expected_sort, param_fvar| {
+        const typed = try self.elaborateExpr(arg);
+        const expected: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(expected_sort)))));
+        const actual: SortId = if (typed.sort == prop_sort)
+            typed.sort
+        else
+            @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort)))));
+        if (actual != expected) {
+            return self.fail(exprLoc(arg), "expected sort '{s}', got '{s}'", .{
+                self.sortName(expected_sort), self.sortName(typed.sort),
+            });
+        }
+        reduced = try self.scratch.substFvar(reduced, param_fvar, typed.id);
+    }
+    return .{ .id = reduced, .sort = lam.result_sort };
 }
 
 /// Build the app/pred node for a resolved callable symbol; result sort from its sig.
