@@ -719,9 +719,12 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim)
             self.text(c.schema.?), params.len, c.args.len,
         });
     }
-    // a schema-scoped Elab just to resolve param SORT tokens in the schema's ns.
+    // a schema-scoped Elab to resolve param SORT tokens in the schema's ns. Under a model
+    // TRANSFER it is model-aware, so a param sort `Elem` remaps to its target (`Num`) —
+    // matching the caller's already-remapped lambda args.
     var empty_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
     var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
+    se.model = self.model;
 
     const args = try self.ctx.arena.create(Schema.SchemaArgs);
     args.* = .empty;
@@ -834,7 +837,12 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
     const hash = Schema.instanceHash(self.pool, schema_name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(schema_name), hash }) catch return error.OutOfMemory;
     const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
-    const key = FactKV.Key{ .namespace = rs.ns, .name = inst_name };
+    // the instance is minted in the CURRENT model's namespace over the schema's file: an
+    // instantiate inside a model TRANSFER monomorphizes UNDER that model (so the schema
+    // body's source syms overlay-remap, matching the caller's remapped args). `.universe`
+    // (an ordinary proof) → the plain (universe, src_file) instance.
+    const inst_ns = self.ctx.interner.namespace(self.model, rs.file) catch return error.OutOfMemory;
+    const key = FactKV.Key{ .namespace = inst_ns, .name = inst_name };
 
     if (self.ctx.facts.lookup(self.ctx.io, key)) |state| switch (state) {
         .proven => |ix| return .{ .proven = ix },
@@ -861,6 +869,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
         .name = inst_name,
         .loc = c.schema.?.start,
         .loc_file = self.file,
+        .model = self.model, // monomorphize the schema body UNDER the transfer's model
         .instance = .{ .decl_index = rs.decl_index, .params = pnames, .args = durable },
     }));
     return .{ .blocked = blocker };

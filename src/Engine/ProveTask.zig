@@ -316,11 +316,17 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
 /// `ns` is the schema namespace and the body/steps resolve there. Never diagnoses (the
 /// citer validated arity/binding); returns the ready State.
 fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index, inst: Instance) std.mem.Allocator.Error!?*State {
+    // `ns` (the identity ns (model, file)) is stored as st.ns for the FactKV publish key;
+    // resolution uses the schema file's universe ns + prove.model (below).
     const fid = self.pool_file.get(task.file).?; // demandParse ensured it's parsed
     const source = self.files.items[@intFromEnum(fid)].source;
     const decl = self.parsed.items[@intFromEnum(fid)].decls[inst.decl_index].schema;
 
-    const prove = try Prove.init(self, h, source, task.file, ns);
+    // RESOLUTION ns is the schema file's UNIVERSE ns; a model instance remaps source syms
+    // via prove.model + applyModel (so the monomorphized body is in target terms).
+    const resolve_ns = try self.interner.namespace(.universe, task.file);
+    const prove = try Prove.init(self, h, source, task.file, resolve_ns);
+    prove.model = task.model;
 
     // rebuild the live SchemaArgs by copying each durable arg into the task's scratchpad.
     const args = try self.arena.create(Schema.SchemaArgs);
