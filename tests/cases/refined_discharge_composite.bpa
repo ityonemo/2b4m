@@ -1,0 +1,35 @@
+// GLOBAL-FACT DISCHARGE — the COMPOSITE witness + RECURSION (model-free).
+//
+// A `forall_elim` over `forall h: H` at a COMPOSITE term `op(c, a)` owes `good(op(c, a))`.
+// A CLOSURE axiom `forall x: H; good(op(c, x))` discharges it — but that itself is a refined
+// universal whose elim at `a` owes `good(a)`, which comes from the enclosing fix block. So
+// discharge RECURSES: composite guard → closure fact → its own guard → fix guard. (The
+// "composite -> closure fact, recursing over the term" shape, model-free.)
+sort G
+pred good(x: G)
+sort H = G where good
+const c: G
+func op(x: G, y: G): G
+func f(x: G): G
+
+axiom fLaw: forall h: H; f(h) = h        // a law over the refined subset
+axiom opClosed: forall x: H; good(op(c, x)) // closure: op(c, x) stays good (for good x)
+
+theorem fAtComposite: forall a: H; f(op(c, a)) = op(c, a)
+proof
+  @generalize-a |
+    fix a: H {
+      @the-law |
+        forall h: H; f(h) = h
+        [by axiom fLaw]
+      // forall_elim(op(c, a)) derives good(op(c,a)) -> f(op(c,a)) = op(c,a); the composite
+      // guard good(op(c,a)) discharges via opClosed at `a` (whose own guard good(a) is the
+      // fix guard). Recursive discharge.
+      @at-composite |
+        f(op(c, a)) = op(c, a)
+        [by forall_elim(op(c, a)) the-law]
+    }
+  @conclusion |
+    forall a: H; f(op(c, a)) = op(c, a)
+    [by forall_intro generalize-a]
+qed
