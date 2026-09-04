@@ -89,6 +89,10 @@ arena: std.mem.Allocator,
 /// universe model. Every model's parent chain bottoms out here.
 pub const Index = enum(u32) {
     universe = 0,
+    /// The "Prop" NAME STRING, reserved at Index 1 (the sort item's name field references
+    /// it, and a stamped `Token.name` for the surface word `Prop` compares against it —
+    /// the "no strcmp past parsing" invariant).
+    prop_name = 1,
     /// The builtin `Prop` sort, reserved at Index 2 (seeded by `init`: universe at 0, the
     /// "Prop" name string at 1, the Prop SORT at 2). `term.SortId.prop` is the same value:
     /// once `SortId` becomes a pool `Index` (demand-prover Step 5+6), `Prop` already sits at
@@ -101,6 +105,53 @@ pub const Index = enum(u32) {
     /// range is the sentinel. A `?Index` is encoded as this on `null`, decoded back to
     /// `null` on read. NOT a valid pool entry — never appears as a `get`/`keyOf` result.
     pub const none: Index = @enumFromInt(0xFFFF_FFFF);
+};
+
+/// The proof-rule vocabulary, RESERVED as StrIds at `init` (contiguously from Index 3, in
+/// declaration order — each field's NAME is the interned string, its VALUE its StrId). A
+/// stamped `Token.name` in rule position is dispatched by integer comparison via `of` —
+/// the "no strcmp past parsing" invariant. Accelerant/unknown rule words are simply not in
+/// this range (`of` returns null → diagnosed as unsupported at the use site).
+pub const RuleStr = enum(u32) {
+    axiom = 3,
+    theorem,
+    hypothesis,
+    predicate,
+    modus_ponens,
+    implies_intro,
+    forall_intro,
+    forall_elim,
+    exists_intro,
+    exists_elim,
+    and_intro,
+    and_elim_left,
+    and_elim_right,
+    iff_intro,
+    iff_elim_forward,
+    iff_elim_backward,
+    or_intro_left,
+    or_intro_right,
+    or_elim,
+    not_intro,
+    absurd,
+    double_negation,
+    symmetry,
+    reflexivity,
+    rewrite,
+    iff_rewrite,
+    instantiate,
+    model,
+
+    pub fn id(self: RuleStr) StrId {
+        return @enumFromInt(@intFromEnum(self));
+    }
+
+    /// The rule a stamped name-id denotes, or null if it is not a rule word.
+    pub fn of(sid: StrId) ?RuleStr {
+        const v = @intFromEnum(sid);
+        if (v < @intFromEnum(RuleStr.axiom) or v > @intFromEnum(RuleStr.model)) return null;
+        return @enumFromInt(v);
+    }
 };
 
 /// The packed storage form. `tag` discriminates; `data` is interpreted per the tag's doc
@@ -379,8 +430,15 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     // name field references the string). `Index.prop` names the sort. Ordering matters:
     // interning the name first fixes the sort at the next slot without a forward reference.
     const prop_name = try self.internString("Prop");
+    std.debug.assert(prop_name == .prop_name); // "Prop" string MUST land at Index.prop_name
     const prop = try self.mintSort(.{ .name = prop_name, .loc = 0, .refinement = null });
     std.debug.assert(prop == .prop); // Prop sort MUST land at Index.prop
+    // Reserve the rule-word strings contiguously from Index 3, each at its RuleStr value —
+    // the enum's field NAMES are the strings, so the vocabulary has one source of truth.
+    inline for (@typeInfo(RuleStr).@"enum".fields) |f| {
+        const sid = try self.internString(f.name);
+        std.debug.assert(@intFromEnum(sid) == f.value); // rule word MUST land at its RuleStr slot
+    }
     return self;
 }
 
@@ -1051,9 +1109,9 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expect(add != zero);
     try std.testing.expectEqualStrings("add", pool.stringBytes(add));
     try std.testing.expectEqualStrings("zero", pool.stringBytes(zero));
-    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2); then two
-    // more strings ("add", "zero") — "Prop" would dedup, but the test interns neither.
-    try std.testing.expectEqual(@as(usize, 5), pool.count());
+    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 28
+    // rule-word strings (3..30); then two more strings ("add", "zero").
+    try std.testing.expectEqual(@as(usize, 33), pool.count());
 }
 
 test "universe model is seeded at Index 0 as its own parent" {
@@ -1061,8 +1119,9 @@ test "universe model is seeded at Index 0 as its own parent" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2)
-    try std.testing.expectEqual(@as(usize, 3), pool.count());
+    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 28
+    // rule-word strings (3..30)
+    try std.testing.expectEqual(@as(usize, 31), pool.count());
     try std.testing.expect(pool.keyOf(.prop).sort.refinement == null); // Prop is a root sort
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);

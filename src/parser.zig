@@ -104,6 +104,11 @@ pub const Parser = struct {
                 self.intern_oom = true;
                 return tok;
             },
+            // keywords that double as RULE words (`[by axiom foo]`) — their StrIds are
+            // reserved, so stamping is a constant, no interning.
+            .keyword_axiom => tok.name = InternPool.RuleStr.axiom.id(),
+            .keyword_theorem => tok.name = InternPool.RuleStr.theorem.id(),
+            .keyword_model => tok.name = InternPool.RuleStr.model.id(),
             else => {},
         }
         return tok;
