@@ -20,6 +20,7 @@ const lexer = @import("lexer.zig");
 const Token = lexer.Token;
 const ast = @import("ast.zig");
 const Diagnostics = @import("diagnostics.zig");
+const InternPool = @import("InternPool.zig");
 
 const ParseError = error{ Recover, OutOfMemory };
 
@@ -40,6 +41,12 @@ pub const Parser = struct {
     lex: lexer.Lexer,
     tok: Token,
     sink: *Diagnostics.Sink,
+    /// When set, every non-reserved token the parser consumes is interned and
+    /// carries its `StrId` (`Token.name`/`.qualifier`) — see `initInterning`.
+    interner: ?*InternPool = null,
+    /// Interning failure is remembered here (stamping happens inside the
+    /// infallible `advance`) and surfaced as OutOfMemory when `parseFile` returns.
+    intern_oom: bool = false,
 
     pub fn init(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink) Parser {
         var lex: lexer.Lexer = .init(source);
@@ -47,10 +54,59 @@ pub const Parser = struct {
         return .{ .arena = arena, .source = source, .lex = lex, .tok = first, .sink = sink };
     }
 
+    /// Like `init`, but every non-reserved token is interned into `interner` as
+    /// it is consumed, so the AST's tokens carry their `StrId`s. This is the
+    /// ENGINE's parse entry: past parsing, names are integers — engine code
+    /// never re-derives (or compares) name text from source. Parse-only tools
+    /// (query/lint/fmt) keep plain `init`; their tokens' ids stay `.none`.
+    pub fn initInterning(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink, interner: *InternPool) Parser {
+        var p = init(arena, source, sink);
+        p.interner = interner;
+        p.tok = p.stamp(p.tok);
+        return p;
+    }
+
     fn advance(self: *Parser) Token {
         const t = self.tok;
-        self.tok = self.lex.next();
+        self.tok = self.stamp(self.lex.next());
         return t;
+    }
+
+    /// Stamp `Token.name`/`.qualifier` for the stringy tags (no-op without an
+    /// interner): identifier/kebab — the name, split at a `.` into
+    /// qualifier+name; at_label — the same, sans the `@` sigil; string — the
+    /// contents sans quotes (never split: paths contain dots). Reserved tokens
+    /// pass through untouched. A multi-dot name (`a.b.c`) stamps qualifier=`a`,
+    /// name=`b.c` verbatim — resolution diagnoses it downstream.
+    fn stamp(self: *Parser, t: Token) Token {
+        const ip = self.interner orelse return t;
+        var tok = t;
+        switch (t.tag) {
+            .identifier, .kebab_identifier, .at_label => {
+                const chars = self.source[t.start + @intFromBool(t.tag == .at_label) .. t.end];
+                if (std.mem.indexOfScalar(u8, chars, '.')) |i| {
+                    tok.qualifier = ip.internString(chars[0..i]) catch {
+                        self.intern_oom = true;
+                        return tok;
+                    };
+                    tok.name = ip.internString(chars[i + 1 ..]) catch {
+                        self.intern_oom = true;
+                        return tok;
+                    };
+                } else {
+                    tok.name = ip.internString(chars) catch {
+                        self.intern_oom = true;
+                        return tok;
+                    };
+                }
+            },
+            .string => tok.name = ip.internString(self.source[t.start + 1 .. t.end - 1]) catch {
+                self.intern_oom = true;
+                return tok;
+            },
+            else => {},
+        }
+        return tok;
     }
 
     fn text(self: *const Parser, t: Token) []const u8 {
@@ -78,7 +134,8 @@ pub const Parser = struct {
         switch (self.tok.tag) {
             .at_label => {
                 const t = self.advance();
-                return .{ .tag = .kebab_identifier, .start = t.start + 1, .end = t.end };
+                // the stamped ids already exclude the `@` — carry them forward.
+                return .{ .tag = .kebab_identifier, .start = t.start + 1, .end = t.end, .name = t.name, .qualifier = t.qualifier };
             },
             else => return self.fail("expected a step label '@name', got '{s}'", .{self.describe()}),
         }
@@ -123,6 +180,7 @@ pub const Parser = struct {
             };
             try decls.append(self.arena, decl);
         }
+        if (self.intern_oom) return error.OutOfMemory;
         return .{ .decls = try decls.toOwnedSlice(self.arena) };
     }
 
@@ -268,7 +326,8 @@ pub const Parser = struct {
             if (self.tok.tag == .at_label) {
                 if (kind != .obligation) return self.fail("a '@'-projection value is only valid on a '<-' obligation discharge, not a ':' symbol map", .{});
                 const at = self.advance();
-                projection = .{ .tag = .identifier, .start = at.start + 1, .end = at.end };
+                // stamped ids already exclude the `@` (and split a `ns.` qualifier).
+                projection = .{ .tag = .identifier, .start = at.start + 1, .end = at.end, .name = at.name, .qualifier = at.qualifier };
             }
             try mappings.append(self.arena, .{ .kind = kind, .source = source, .target = target, .projection = projection });
         }

@@ -395,7 +395,7 @@ const Rig = struct {
         interner.* = try .init(arena);
         const sink = try arena.create(Diagnostics.Sink);
         sink.* = .init(arena);
-        var p: parser.Parser = .init(arena, source, sink);
+        var p: parser.Parser = .initInterning(arena, source, sink, interner);
         const parsed = try p.parseFile();
         try testing.expectEqual(@as(usize, 0), sink.list.items.len); // source must parse
         return .{

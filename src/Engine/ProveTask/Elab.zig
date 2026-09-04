@@ -673,7 +673,7 @@ const World = struct {
     /// Parse `theorem t: <expr> ...` and hand back the formula expr + an Elab over it.
     fn elabOf(w: *World, comptime formula: []const u8) !struct { elab: *Elab, expr: *const ast.Expr } {
         const source = "theorem t: " ++ formula ++ "\nproof\n  @c |\n    " ++ formula ++ "\n    [by axiom ax]\nqed";
-        var p: parser.Parser = .init(w.arena, source, w.sink);
+        var p: parser.Parser = .initInterning(w.arena, source, w.sink, w.interner);
         const parsed = try p.parseFile();
         try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
         const elab = try w.arena.create(Elab);

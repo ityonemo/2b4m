@@ -51,7 +51,7 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     self.sink.current_file = idx;
-    var p: parser.Parser = .init(self.arena, task.source, self.sink);
+    var p: parser.Parser = .initInterning(self.arena, task.source, self.sink, self.interner);
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
     self.declarations += parsed.decls.len;

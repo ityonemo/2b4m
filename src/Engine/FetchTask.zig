@@ -412,7 +412,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
         .std_root = "",
     };
     const fid = try ctx.discover(path, source);
-    var p: parser.Parser = .init(arena, source, sink);
+    var p: parser.Parser = .initInterning(arena, source, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
@@ -499,7 +499,7 @@ test "fetch: an import binds to the target file's namespace" {
     );
     const child_fid = try ctx.discover("/t/child.bpa", "sort Nat");
     {
-        var p: parser.Parser = .init(arena, "sort Nat", ctx.sink);
+        var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
@@ -618,7 +618,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     );
     const child_fid = try ctx.discover("/t/child.bpa", "sort Nat");
     {
-        var p: parser.Parser = .init(arena, "sort Nat", ctx.sink);
+        var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;

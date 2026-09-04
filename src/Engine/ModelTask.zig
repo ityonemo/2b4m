@@ -214,7 +214,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
         .std_root = "",
     };
     const fid = try ctx.discover(path, src);
-    var p: parser.Parser = .init(arena, src, sink);
+    var p: parser.Parser = .initInterning(arena, src, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
     ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);

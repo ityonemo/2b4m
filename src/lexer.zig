@@ -2,11 +2,21 @@
 //! source (style of std/zig/tokenizer.zig). `//` comments are skipped.
 
 const std = @import("std");
+const InternPool = @import("InternPool.zig");
 
 pub const Token = struct {
     tag: Tag,
     start: u32,
     end: u32,
+    /// Interned name for the stringy (non-reserved) tags, stamped by the PARSER
+    /// as it consumes tokens — the lexer itself stays pure and leaves it `.none`.
+    /// identifier/kebab_identifier: the name (for a `ns.`-qualified token, the
+    /// part AFTER the dot); at_label: the label sans `@`; string: the contents
+    /// sans quotes. Past parsing, engine code compares these ids — never text.
+    name: InternPool.StrId = .none,
+    /// The `ns` of a dot-qualified identifier/at_label (`peano.Nat` — one token;
+    /// `qualifier` = `peano`, `name` = `Nat`). `.none` when unqualified.
+    qualifier: InternPool.StrId = .none,
 
     pub const Tag = enum {
         identifier,
