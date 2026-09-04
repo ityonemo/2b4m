@@ -81,17 +81,15 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
         self.sink.add(task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
         return;
     };
-    const parsed = self.parsed.items[@intFromEnum(fid)];
     const source = self.files.items[@intFromEnum(fid)].source;
 
-    const decl: ast.Decl = for (parsed.decls) |d| {
-        if (d != .model) continue;
-        if (d.model.name.name == task.name) break d; // stamped at parse — integer compare
-    } else {
+    // resolve the model decl by name (registry); require it actually be a `model`.
+    const found = self.declOf(fid, task.name);
+    if (found == null or found.?.* != .model) {
         try demandDiag(self, task, "reference not found: model '{s}'", .{self.interner.stringBytes(task.name)});
         return;
-    };
-    const m = decl.model;
+    }
+    const m = found.?.model;
 
     // resolve all mapping src+tgt; collect overlay entries. Rack + suspend on the FIRST
     // unresolved (re-run resolves one more each wake; the ones already done are cheap).
@@ -212,6 +210,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
     const fid = try ctx.discover(path, src);
     var p: parser.Parser = .initInterning(arena, src, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
+    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| try ctx.registerDecl(fid, decl);
     ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;

@@ -254,11 +254,13 @@ pub const Tag = enum(u8) {
     /// Its local name lives in IdentKV.
     import,
     /// A SCHEMA — a parametric proof TEMPLATE. Stored as its EXISTENCE + a LOCATOR only:
-    /// `data` is an offset into `extra` holding `[name, file, decl_index, loc]` — enough to
-    /// re-read the authoritative `ast.Decl.schema` (params/body/steps) from
-    /// `parsed[file].decls[decl_index]` at instantiation time (lazy parsing keeps the AST
-    /// alive). NO term/step reification — a schema's content is never durably encoded; each
-    /// instantiation monomorphizes from the AST into its own `.fact`. Minted; name in IdentKV.
+    /// `data` is an offset into `extra` holding `[name, file, loc]` — enough to re-read the
+    /// authoritative `ast.Decl.schema` (params/body/steps) from the by-NAME AST registry
+    /// (`Context.declOf(file, name)`) at instantiation time. NO term/step reification — a
+    /// schema's content is never durably encoded; each instantiation monomorphizes from the
+    /// AST into its own `.fact`. Minted; name in IdentKV. (Resolving by name, not a
+    /// positional decl_index, lets accelerant-generated synthetic schemas — which have no
+    /// slot in `parsed[file].decls` — resolve identically.)
     schema,
 };
 
@@ -292,8 +294,8 @@ pub const Key = union(enum) {
     define: Define,
     /// An import identifier's content: the `.namespace` `Index` it binds to + name/loc.
     import: Import,
-    /// A schema identifier's content: a LOCATOR back to its AST decl (name/file/decl_index
-    /// + loc). The template itself (params/body/steps) is re-read from the AST, never stored.
+    /// A schema identifier's content: a LOCATOR back to its AST decl (name/file/loc). The
+    /// template itself (params/body/steps) is re-read from the by-name AST registry, not stored.
     schema: Schema,
 
     /// A source file's interned payload: its resolved-path string id. Identity IS the
@@ -349,10 +351,11 @@ pub const Key = union(enum) {
     /// An import's content: the `.namespace` `Index` it binds to + name/loc.
     pub const Import = struct { namespace: Index, name: StrId, loc: u32 };
 
-    /// A schema's content: a LOCATOR — its name, the `.file` Index it is declared in, the
-    /// index of its `ast.Decl` within that file's `parsed.decls`, and its source `loc`. The
-    /// authoritative params/body/steps come from `parsed[file].decls[decl_index].schema`.
-    pub const Schema = struct { name: StrId, file: Index, decl_index: u32, loc: u32 };
+    /// A schema's content: a LOCATOR — its name, the `.file` Index it is declared in, and its
+    /// source `loc`. The authoritative params/body/steps come from the by-name AST registry,
+    /// `Context.declOf(file, name).schema` (so a synthetic schema with no positional slot
+    /// resolves the same way as a parsed one).
+    pub const Schema = struct { name: StrId, file: Index, loc: u32 };
 
     /// `.string` storage payload: where the bytes live in `string_bytes`.
     const String = struct { off: u32, len: u32 };
@@ -503,7 +506,6 @@ pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff, name: StrId
     try self.items.append(self.arena, .{ .tag = .fact, .data = off });
     return index;
 }
-
 
 /// Mint a fresh SORT identifier, ALWAYS appending (no dedup; IdentKV owns identity). Spills
 /// `[name, loc, parent, qualc, q0, …]` into `extra` (`parent == Index.none` ⇒ a ROOT sort,
@@ -698,11 +700,11 @@ pub fn mintImport(self: *InternPool, m: Key.Import) std.mem.Allocator.Error!Inde
 }
 
 /// Mint a fresh SCHEMA locator, ALWAYS appending (no dedup; IdentKV owns identity).
-/// Spills `[name, file, decl_index, loc]` into `extra` (reflection). The template content
-/// is NOT stored — it is re-read from the AST via `file`+`decl_index`.
+/// Spills `[name, file, loc]` into `extra` (reflection). The template content is NOT stored
+/// — it is re-read from the by-name AST registry via `file`+`name`.
 pub fn mintSchema(self: *InternPool, s: Key.Schema) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
-    const off = try self.addExtra(s); // reflection: [name, file, decl_index, loc]
+    const off = try self.addExtra(s); // reflection: [name, file, loc]
     try self.items.append(self.arena, .{ .tag = .schema, .data = off });
     return index;
 }
@@ -986,7 +988,7 @@ test "refinement queries: carrierOf/qualifiersOf/isRefined walk the chain" {
 
     // qualifiers accumulate innermost-first along the chain.
     try std.testing.expectEqualSlices(Index, &.{}, try pool.qualifiersOf(arena, a));
-    try std.testing.expectEqualSlices(Index, &.{in_c, in_b}, try pool.qualifiersOf(arena, c));
+    try std.testing.expectEqualSlices(Index, &.{ in_c, in_b }, try pool.qualifiersOf(arena, c));
 
     // symResult reads a func's signature result sort.
     const sig = try pool.get(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
@@ -1092,20 +1094,19 @@ test "import: data = the .namespace it binds; minted (two imports of one ns are 
     try std.testing.expectEqual(ns, pool.keyOf(imp).import.namespace);
 }
 
-test "schema: locator [name, file, decl_index, loc] minted fresh, round-trips" {
+test "schema: locator [name, file, loc] minted fresh, round-trips" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
     const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
     const nm = try pool.internString("induction");
-    const s = try pool.mintSchema(.{ .name = nm, .file = f, .decl_index = 3, .loc = 42 });
-    const s2 = try pool.mintSchema(.{ .name = nm, .file = f, .decl_index = 3, .loc = 42 }); // distinct
+    const s = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 });
+    const s2 = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 }); // distinct
     try std.testing.expect(s != s2); // minted → distinct
     const key = pool.keyOf(s).schema;
     try std.testing.expectEqual(nm, key.name);
     try std.testing.expectEqual(f, key.file);
-    try std.testing.expectEqual(@as(u32, 3), key.decl_index);
     try std.testing.expectEqual(@as(u32, 42), key.loc);
     try std.testing.expectEqual(nm, pool.nameOf(s)); // nameOf serves .schema
 }

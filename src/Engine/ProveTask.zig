@@ -70,7 +70,7 @@ st: ?*State = null,
 /// A schema-instance production request. `args` are DURABLE (reify'd by the citer into
 /// `extra`) so they survive the payload and cross into the instance's own scratchpad.
 pub const Instance = struct {
-    decl_index: u32, // the schema decl in parsed[file].decls
+    schema_name: StrId, // the schema decl's name — resolved via the by-name AST registry
     params: []const StrId, // param names, in order (for schema_args keys + read-pass skip)
     args: []const DurableArg, // one per param, in order
 };
@@ -248,65 +248,50 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         try demandDiag(self, task, "internal: prove into an undiscovered file", .{});
         return null;
     };
-    const parsed = self.parsed.items[@intFromEnum(fid)];
     const source = self.files.items[@intFromEnum(fid)].source;
 
-    for (parsed.decls) |*decl| {
-        const name_tok = switch (decl.*) {
-            .axiom => |d| d.name,
-            .theorem => |d| d.name,
-            .hole => |d| d.name,
-            .schema => |d| d.name,
-            .sort => |d| d.name,
-            .import => |d| d.ns,
-            .constant => |d| d.name,
-            .func => |d| d.name,
-            .pred => |d| d.name,
-            .define => |d| d.name,
-            .alias => |d| d.name,
-            .forward, .model => continue,
-        };
-        if (name_tok.name != task.name) continue; // stamped at parse — integer compare
-
-        const d: State.Decl = switch (decl.*) {
-            .axiom => |d| .{ .axiom = .{ .formula = d.formula } },
-            .theorem => |d| .{ .theorem = .{ .formula = d.formula, .steps = d.steps } },
-            .hole => {
-                self.sink.add(name_tok.start, "holes are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
-                return null;
-            },
-            .schema => {
-                // a schema is not a fact — it cannot be cited as an axiom/theorem; it is
-                // used via `[by instantiate <schema>(args)]`. (Reached only on a misuse.)
-                try demandDiag(self, task, "'{s}' is a schema; use `[by instantiate {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
-                return null;
-            },
-            else => {
-                try demandDiag(self, task, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)});
-                return null;
-            },
-        };
-        const st = try self.arena.create(State);
-        const walk = try self.arena.create(Walk);
-        walk.* = Walk.init(self.arena, self.interner, source, self.sink);
-        // RESOLUTION ns is the UNIVERSE ns of the file — the proof's source names resolve
-        // there, then `applyModel(prove.model)` redirects for a transfer. (The fact's
-        // IDENTITY ns `(model, file)` = `ns`, used only for the FactKV key/publish.)
-        const resolve_ns = try self.interner.namespace(.universe, task.file);
-        const prove = try Prove.init(self, h, source, task.file, resolve_ns);
-        prove.model = task.model;
-        st.* = .{
-            .source = source,
-            .ns = ns,
-            .decl = d,
-            .walk = walk,
-            .prove = prove,
-            .goal_loc = name_tok.start,
-        };
-        return st;
-    }
-    try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
-    return null;
+    // resolve the fact's decl by name (O(1) registry lookup); a miss is "reference not found".
+    const decl = self.declOf(fid, task.name) orelse {
+        try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
+        return null;
+    };
+    const name_tok = ast.declName(decl);
+    const d: State.Decl = switch (decl.*) {
+        .axiom => |a| .{ .axiom = .{ .formula = a.formula } },
+        .theorem => |t| .{ .theorem = .{ .formula = t.formula, .steps = t.steps } },
+        .hole => {
+            self.sink.add(name_tok.start, "holes are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+            return null;
+        },
+        .schema => {
+            // a schema is not a fact — it cannot be cited as an axiom/theorem; it is
+            // used via `[using instantiation <schema>(args)]`. (Reached only on a misuse.)
+            try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
+            return null;
+        },
+        else => {
+            try demandDiag(self, task, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)});
+            return null;
+        },
+    };
+    const st = try self.arena.create(State);
+    const walk = try self.arena.create(Walk);
+    walk.* = Walk.init(self.arena, self.interner, source, self.sink);
+    // RESOLUTION ns is the UNIVERSE ns of the file — the proof's source names resolve
+    // there, then `applyModel(prove.model)` redirects for a transfer. (The fact's
+    // IDENTITY ns `(model, file)` = `ns`, used only for the FactKV key/publish.)
+    const resolve_ns = try self.interner.namespace(.universe, task.file);
+    const prove = try Prove.init(self, h, source, task.file, resolve_ns);
+    prove.model = task.model;
+    st.* = .{
+        .source = source,
+        .ns = ns,
+        .decl = d,
+        .walk = walk,
+        .prove = prove,
+        .goal_loc = name_tok.start,
+    };
+    return st;
 }
 
 /// Build the production State for a schema INSTANCE from its payload: copyIn the durable
@@ -319,7 +304,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     // resolution uses the schema file's universe ns + prove.model (below).
     const fid = self.pool_file.get(task.file).?; // demandParse ensured it's parsed
     const source = self.files.items[@intFromEnum(fid)].source;
-    const decl = self.parsed.items[@intFromEnum(fid)].decls[inst.decl_index].schema;
+    const decl = self.declOf(fid, inst.schema_name).?.schema; // registry (parsed or synthetic)
 
     // RESOLUTION ns is the schema file's UNIVERSE ns; a model instance remaps source syms
     // via prove.model + applyModel (so the monomorphized body is in target terms).

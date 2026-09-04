@@ -699,13 +699,14 @@ fn resolveQualifier(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
 const ResolvedSchema = struct {
     file: InternPool.Index,
     ns: InternPool.Index,
-    decl_index: u32,
-    decl: ast.Decl, // the `.schema` decl
+    name: StrId, // the schema's name (keys the AST registry + the instance payload)
+    decl: ast.Decl, // the `.schema` decl (from the by-name registry)
     source: []const u8,
 };
 
 /// Resolve a schema name token (optionally `ns.`-qualified) to its file/ns + AST decl.
-/// The `.schema` locator must be `done` in IdentKV (the read pass guarantees it).
+/// The `.schema` locator must be `done` in IdentKV (the read pass guarantees it); the decl
+/// itself comes from the by-name AST registry (so a synthetic schema resolves too).
 fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
     const ns = try self.resolveQualifier(tok);
     const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse
@@ -719,11 +720,13 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
         else => return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)}),
     };
     const fid = self.ctx.pool_file.get(loc.file).?;
+    const decl = self.ctx.declOf(fid, loc.name) orelse
+        return self.fail(tok.start, "internal: schema '{s}' locator has no decl", .{self.text(tok)});
     return .{
         .file = loc.file,
         .ns = ns,
-        .decl_index = loc.decl_index,
-        .decl = self.ctx.parsed.items[@intFromEnum(fid)].decls[loc.decl_index],
+        .name = loc.name,
+        .decl = decl.*,
         .source = self.ctx.files.items[@intFromEnum(fid)].source,
     };
 }
@@ -891,7 +894,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
         .loc = c.schema.?.start,
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
-        .instance = .{ .decl_index = rs.decl_index, .params = pnames, .args = durable },
+        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable },
     }));
     return .{ .blocked = blocker };
 }

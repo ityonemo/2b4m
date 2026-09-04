@@ -55,6 +55,9 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
     self.declarations += parsed.decls.len;
+    // register each decl by name for O(1) by-name resolution (the demand tasks look up
+    // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
+    for (self.parsed.items[idx].decls) |*decl| try self.registerDecl(task.file_id, decl);
 
     for (parsed.decls) |decl| {
         if (decl != .import) continue;

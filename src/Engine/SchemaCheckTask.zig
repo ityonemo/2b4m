@@ -57,21 +57,14 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
         return;
     }
 
-    // find the schema's decl in its (root) file's AST directly — the root scan racked us
-    // for a decl it just saw, and the file is parsed. (No IdentKV round-trip needed: the
-    // instance ProveTask we rack carries the decl_index in its payload.)
+    // find the schema's decl by name in the AST registry (the root scan racked us for a decl
+    // it just saw; the instance ProveTask we rack carries the schema NAME in its payload).
     const ns = try self.interner.namespace(.universe, task.file);
     const fid = self.pool_file.get(task.file).?;
     const source = self.files.items[@intFromEnum(fid)].source;
-    const decls = self.parsed.items[@intFromEnum(fid)].decls;
-    var decl_index: u32 = 0;
-    const decl: ast.Decl = for (decls, 0..) |d, i| {
-        if (d != .schema) continue;
-        if (d.schema.name.name == task.name) { // stamped at parse — integer compare
-            decl_index = @intCast(i);
-            break d;
-        }
-    } else return; // no such schema (shouldn't happen)
+    const found = self.declOf(fid, task.name) orelse return; // no such schema (shouldn't happen)
+    if (found.* != .schema) return;
+    const decl = found.*;
     if (decl.schema.steps == null) return; // not proof-carrying — nothing to check
 
     // build OPAQUE args in a throwaway scratchpad, reify them durably for the instance task.
@@ -113,7 +106,7 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
         .name = inst_name,
         .loc = task.loc,
         .loc_file = task.file,
-        .instance = .{ .decl_index = decl_index, .params = pnames, .args = durable },
+        .instance = .{ .schema_name = task.name, .params = pnames, .args = durable },
     }));
     task.racked = true;
     h.suspendOn(t);

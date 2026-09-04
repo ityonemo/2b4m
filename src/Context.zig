@@ -40,6 +40,9 @@ pub const FileId = enum(u32) { _ };
 /// raw-import-path StrId -> resolved child FileId, for one file.
 const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, FileId);
 
+/// Key into the by-name AST registry: a decl is addressed by its file + stamped name.
+pub const DeclKey = struct { file: FileId, name: InternPool.StrId };
+
 arena: std.mem.Allocator,
 /// The Io handle (from Zig 0.16 "juicy main" `init.io`), threaded through the entry
 /// points. Writers use it to take the InternPool write-mutex / KV RwLocks. Reads are
@@ -74,6 +77,14 @@ declarations: usize = 0,
 /// demand tasks read them. `import_maps[fid]` is that file's raw->child import
 /// resolution; `parsed[fid]` its AST; `parse_state[fid]` its demand-parse lifecycle.
 parsed: std.ArrayList(ast.File) = .empty,
+/// BY-NAME AST registry: `(FileId, name StrId) -> the decl`. Populated by ParseTask
+/// alongside `parsed[fid]` (one entry per named decl, keyed by its stamped name). The
+/// demand tasks resolve a decl by NAME through this (O(1)) instead of linear-scanning
+/// `parsed[fid].decls`. SYNTHETIC decls (accelerant-generated schemas, e.g. specialize's
+/// `head[N]`) are inserted here under their mangled StrId with no positional slot — the
+/// instance/schema path finds them by name identically. `parsed[fid].decls` (the ordered
+/// slice) stays for the order/iteration consumers (root scan, queries, lint).
+ast_index: std.AutoHashMapUnmanaged(DeclKey, *const ast.Decl) = .empty,
 import_maps: std.ArrayList(ImportMap) = .empty,
 /// LAZY-PARSE state per FileId (Step 11): a file is discovered (source read, FileId +
 /// table slots reserved) LONG before it is parsed — parsing is on demand, when a
@@ -122,6 +133,21 @@ pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !
     try self.parse_state.append(self.arena, .unparsed);
     try self.pool_file.put(self.arena, file_index, file_id);
     return file_id;
+}
+
+/// Register one decl in the by-name AST registry under (file, its stamped name). A
+/// duplicate name in a file leaves the FIRST winning (later decls don't overwrite) — a
+/// name-collision is a separate diagnostic concern, not the registry's job. Called by
+/// ParseTask for each parsed decl, and by accelerant generators for synthetic decls.
+pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!void {
+    const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
+    if (!gop.found_existing) gop.value_ptr.* = decl;
+}
+
+/// Resolve a decl by NAME in a file (registry lookup; null = no such decl). Replaces the
+/// linear `parsed[fid].decls` name-scans, and transparently serves synthetic decls.
+pub fn declOf(self: *const Context, file: FileId, name: InternPool.StrId) ?*const ast.Decl {
+    return self.ast_index.get(.{ .file = file, .name = name });
 }
 
 /// Ensure `file`'s AST is available, the LAZY-PARSE demand step. Returns:

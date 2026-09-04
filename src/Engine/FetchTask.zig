@@ -104,27 +104,21 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
         try demandDiag(self, task, "internal: fetch into an undiscovered file", .{});
         return;
     };
-    const parsed = self.parsed.items[@intFromEnum(fid)];
     const source = self.files.items[@intFromEnum(fid)].source;
 
-    for (parsed.decls, 0..) |*decl, decl_index| {
-        const name_tok = switch (decl.*) {
-            .sort => |d| d.name,
-            .import => |d| d.ns,
-            .constant => |d| d.name,
-            .func => |d| d.name,
-            .pred => |d| d.name,
-            .define => |d| d.name,
-            .alias => |d| d.name,
-            .axiom => |d| d.name,
-            .hole => |d| d.name,
-            .schema => |d| d.name,
-            .theorem => |d| d.name,
-            .forward, .model => continue, // a promise / a model decl — not identifiers
-        };
-        if (name_tok.name != task.name) continue; // stamped at parse — integer compare
-
+    // resolve the decl by name (O(1) registry lookup); a miss is "reference not found".
+    const decl = self.declOf(fid, task.name) orelse {
+        try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
+        return;
+    };
+    const name_tok = ast.declName(decl);
+    {
         switch (decl.*) {
+            .forward, .model => {
+                // a promise / a model decl — not identifiers this fetch produces.
+                try demandDiag(self, task, "'{s}' is not an identifier", .{self.interner.stringBytes(task.name)});
+                return;
+            },
             .sort => {
                 // a plain `sort X` declaration is always a ROOT sort (predicated sorts
                 // arrive as aliases with a guard — a later layer).
@@ -201,11 +195,10 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
             .schema => {
                 // a SCHEMA resolves as an IdentKV identifier (it's a named non-fact) — mint
                 // a thin LOCATOR back to this decl; instantiation re-reads params/body/steps
-                // from the AST via (file, decl_index).
+                // from the by-name AST registry via (file, name).
                 _ = try self.idents.publish(self.io, key, .{ .schema = .{
                     .name = task.name,
                     .file = task.file,
-                    .decl_index = @intCast(decl_index),
                     .loc = name_tok.start,
                 } });
                 return;
@@ -251,11 +244,8 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
-            .forward, .model => unreachable, // skipped by the name match above
         }
     }
-    // the UndefinedError terminal: nothing in the file declares this name.
-    try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
 }
 
 // --- layer-2 sub-demand resolution ----------------------------------------------------
@@ -407,8 +397,38 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
     const fid = try ctx.discover(path, source);
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
+    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| try ctx.registerDecl(fid, decl);
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
+}
+
+test "ast registry: declOf resolves parsed decls by name; a miss is null; a synthetic inserts" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+        \\sort Nat
+        \\func succ(n: Nat): Nat
+        \\axiom refl: forall n: Nat; n = n
+    );
+    const fid = (try ctx.lookupFile("/t/a.bpa")).?;
+
+    // each named decl resolves by its stamped name, to the right kind.
+    try testing.expect(ctx.declOf(fid, try ctx.interner.internString("Nat")).?.* == .sort);
+    try testing.expect(ctx.declOf(fid, try ctx.interner.internString("succ")).?.* == .func);
+    try testing.expect(ctx.declOf(fid, try ctx.interner.internString("refl")).?.* == .axiom);
+    // an undeclared name misses cleanly.
+    try testing.expect(ctx.declOf(fid, try ctx.interner.internString("Missing")) == null);
+
+    // a SYNTHETIC decl (no positional slot) inserts under a mangled name and resolves the
+    // same way — the mechanism accelerant generators rely on.
+    const synth = try arena.create(ast.Decl);
+    synth.* = .{ .sort = .{ .name = .{ .tag = .identifier, .start = 0, .end = 0, .name = try ctx.interner.internString("foo[3]") } } };
+    try ctx.registerDecl(fid, synth);
+    try testing.expectEqual(synth, ctx.declOf(fid, try ctx.interner.internString("foo[3]")).?);
 }
 
 test "fetch: a root sort is produced from its declaration and published (demanders dedup)" {
@@ -494,6 +514,7 @@ test "fetch: an import binds to the target file's namespace" {
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
+        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| try ctx.registerDecl(child_fid, decl);
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
@@ -613,6 +634,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
+        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| try ctx.registerDecl(child_fid, decl);
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
@@ -688,14 +710,14 @@ test "fetch: a fact name demanded as an identifier is a kind mismatch" {
     try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "names a fact") != null);
 }
 
-test "fetch: a schema decl produces its locator (file + decl_index) into IdentKV" {
+test "fetch: a schema decl produces its locator (file + name) into IdentKV" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    // decl 0 = sort, decl 1 = the schema — its locator must record decl_index 1.
+    // the schema's locator records its file + name (resolved via the by-name registry).
     const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
         \\sort T
         \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
@@ -719,6 +741,5 @@ test "fetch: a schema decl produces its locator (file + decl_index) into IdentKV
     const key = ctx.interner.keyOf(outcome.done);
     try testing.expect(key == .schema);
     try testing.expectEqual(f, key.schema.file);
-    try testing.expectEqual(@as(u32, 1), key.schema.decl_index); // the schema is the 2nd decl
     try testing.expectEqual(name, key.schema.name);
 }

@@ -167,6 +167,28 @@ pub const Mapping = struct {
 
 pub const File = struct { decls: []const Decl };
 
+/// The NAME token of a declaration — the single token every named decl carries (import→ns,
+/// everything else→name). Used to key the by-name AST registry (`Context.ast_index`) and to
+/// read the stamped `name` StrId for name-keyed lookups. `intheory`/`forward` is a manifest
+/// promise, not a definition — it has a name but is not registry-addressable as a decl.
+pub fn declName(decl: *const Decl) Token {
+    return switch (decl.*) {
+        .import => |d| d.ns,
+        .forward => |d| d.name,
+        .alias => |d| d.name,
+        .sort => |d| d.name,
+        .constant => |d| d.name,
+        .define => |d| d.name,
+        .func => |d| d.name,
+        .pred => |d| d.name,
+        .axiom => |d| d.name,
+        .hole => |d| d.name,
+        .schema => |d| d.name,
+        .theorem => |d| d.name,
+        .model => |d| d.name,
+    };
+}
+
 /// Debug/test dump of an Expr as an s-expression. Identifier text comes from source.
 pub fn dumpExpr(w: *std.Io.Writer, source: []const u8, e: *const Expr) std.Io.Writer.Error!void {
     switch (e.*) {
