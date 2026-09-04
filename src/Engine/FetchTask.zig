@@ -122,8 +122,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
             .theorem => |d| d.name,
             .forward, .model => continue, // a promise / a model decl — not identifiers
         };
-        const decl_name = self.interner.internString(source[name_tok.start..name_tok.end]) catch return error.OutOfMemory;
-        if (decl_name != task.name) continue;
+        if (name_tok.name != task.name) continue; // stamped at parse — integer compare
 
         switch (decl.*) {
             .sort => {
@@ -139,10 +138,9 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
             .import => |d| {
                 // the parse phase resolved the raw path -> child FileId; map it to the
                 // child's pool `.file` Index and bind the import to its namespace.
-                const raw_quoted = source[d.path.start..d.path.end];
-                const raw = self.interner.internString(raw_quoted[1 .. raw_quoted.len - 1]) catch return error.OutOfMemory;
+                const raw = d.path.name; // the parser stamped the quote-stripped path
                 const target_fid = self.import_maps.items[@intFromEnum(fid)].get(raw) orelse {
-                    self.sink.add(d.path.start, "import '{s}' was not resolved at parse time", .{raw_quoted}) catch return error.OutOfMemory;
+                    self.sink.add(d.path.start, "import '{s}' was not resolved at parse time", .{source[d.path.start..d.path.end]}) catch return error.OutOfMemory;
                     return; // no publish — demanders of this import stay parked
                 };
                 const target_file = try self.fileIndex(self.files.items[@intFromEnum(target_fid)].path);
@@ -289,12 +287,10 @@ fn demandIdent(self: *Context, h: *Engine.Handle, file: InternPool.Index, name: 
 /// — each resume re-runs `produce` cheaply and gets one name further; simplicity wins
 /// while single-threaded).
 fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token) ResolveError!InternPool.Index {
-    const text = source[tok.start..tok.end];
+    const text = source[tok.start..tok.end]; // diagnostics only
     var target_file = file;
-    var base = text;
-    if (std.mem.indexOfScalar(u8, text, '.')) |i| {
-        const ns_name = self.interner.internString(text[0..i]) catch return error.OutOfMemory;
-        const imp_ix = switch (try demandIdent(self, h, file, ns_name, tok.start)) {
+    if (tok.qualifier != InternPool.Index.none) {
+        const imp_ix = switch (try demandIdent(self, h, file, tok.qualifier, tok.start)) {
             .done => |ix| ix,
             .pending => |t| {
                 h.suspendOn(t);
@@ -303,15 +299,13 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
         };
         const imp = self.interner.keyOf(imp_ix);
         if (imp != .import) {
-            self.sink.add(tok.start, "'{s}' is not a namespace", .{text[0..i]}) catch return error.OutOfMemory;
+            self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
             return error.Unresolved;
         }
         // the sort lives in the imported namespace's FILE
         target_file = self.interner.keyOf(imp.import.namespace).namespace.file;
-        base = text[i + 1 ..];
     }
-    const base_id = self.interner.internString(base) catch return error.OutOfMemory;
-    const ix = switch (try demandIdent(self, h, target_file, base_id, tok.start)) {
+    const ix = switch (try demandIdent(self, h, target_file, tok.name, tok.start)) {
         .done => |x| x,
         .pending => |t| {
             h.suspendOn(t);
@@ -329,8 +323,7 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
 /// Index over the parent sort's carrier. Demands the pred; checks it is a unary pred whose
 /// argument carrier matches the parent's carrier.
 fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token, parent: InternPool.Index) ResolveError!InternPool.Index {
-    const name = self.interner.internString(source[tok.start..tok.end]) catch return error.OutOfMemory;
-    const ix = switch (try demandIdent(self, h, file, name, tok.start)) {
+    const ix = switch (try demandIdent(self, h, file, tok.name, tok.start)) {
         .done => |x| x,
         .pending => |t| {
             h.suspendOn(t);
@@ -369,7 +362,7 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
     const names = try self.arena.alloc(InternPool.StrId, params.len);
     for (params, args, names) |b, *a, *n| {
         a.* = try resolveSortDemand(self, h, file, source, b.sort);
-        n.* = self.interner.internString(source[b.name.start..b.name.end]) catch return error.OutOfMemory;
+        n.* = b.name.name; // stamped at parse
     }
     const result: InternPool.Index = if (result_tok) |rt|
         try resolveSortDemand(self, h, file, source, rt)

@@ -126,8 +126,21 @@ fn text(self: *const Prove, tok: lexer.Token) []const u8 {
     return self.source[tok.start..tok.end];
 }
 
-fn internTok(self: *Prove, tok: lexer.Token) Error!StrId {
-    return self.ctx.interner.internString(self.text(tok)) catch error.OutOfMemory;
+/// A stamped token's interned name — the parser stamped every engine-parsed token, so past
+/// parsing names are integers, never re-derived from source text.
+fn tokName(tok: lexer.Token) StrId {
+    std.debug.assert(tok.name != InternPool.Index.none);
+    return tok.name;
+}
+
+/// A stamped name in a LOCAL-only position (step label, step/block ref, proof binder):
+/// a `ns.`-qualified token is rejected — matching only its base name would let `x.y`
+/// falsely resolve to a local `y`.
+fn localName(self: *Prove, tok: lexer.Token) Error!StrId {
+    if (tok.qualifier != InternPool.Index.none) {
+        return self.fail(tok.start, "'{s}' cannot be namespace-qualified here", .{self.text(tok)});
+    }
+    return tokName(tok);
 }
 
 fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Error {
@@ -244,7 +257,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     // suspend until it's proved. `process`/`lowerInstantiate` then just looks it up.
     if (step.body == .claim) {
         const c = step.body.claim;
-        if (std.mem.eql(u8, self.text(c.rule), "instantiate")) {
+        if (c.rule.name == InternPool.RuleStr.instantiate.id()) {
             var e = self.elab(w);
             switch (try self.demandInstance(&e, c)) {
                 .proven => return null, // ready — process can run lowerInstantiate
@@ -254,7 +267,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         }
         // a `[by model(M) src.thm]` step DEMANDS the transferred fact (its own ProveTask in
         // (M, src_file)); the model name resolved above, so demand the transfer + suspend.
-        if (std.mem.eql(u8, self.text(c.rule), "model")) {
+        if (c.rule.name == InternPool.RuleStr.model.id()) {
             switch (try self.demandTransfer(c)) {
                 .proven => return null,
                 .blocked => |t| return t,
@@ -275,7 +288,7 @@ pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockO
 
 fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Error!void {
     const kb = self.kernelBlock(block);
-    const label = try self.internTok(step.label);
+    const label = try self.localName(step.label);
     switch (step.body) {
         .claim => |c| {
             const tcc_start = self.pending_tccs.items.len;
@@ -349,7 +362,7 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
         .formula = cc.goal,
         .just = just,
         .block = kb,
-        .label = try self.internTok(step.label),
+        .label = try self.localName(step.label),
         .loc = cc.loc,
     });
 }
@@ -479,7 +492,7 @@ const BoundVar = struct { v: term.Node.Fvar, guard: ?TermId };
 /// pending_binder; the guard is returned for the block's `fix.guard` slot ([by predicate]
 /// surfaces it; forall_intro makes it the antecedent).
 fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
-    const name = try self.internTok(b.name);
+    const name = try self.localName(b.name);
     if (w.findIdent(name) != null) {
         return self.fail(b.name.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(b.name)});
     }
@@ -619,7 +632,7 @@ fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.
 
 /// A kernel-rule step reference: LOCAL-only (a live label in the walk's scope).
 fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.SRef {
-    const name = try self.internTok(tok);
+    const name = try self.localName(tok);
     const target = w.findStep(name) orelse {
         // nicety: a global fact cited where a step label belongs
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null) {
@@ -636,7 +649,7 @@ fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.S
 }
 
 fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.BRef {
-    const name = try self.internTok(tok);
+    const name = try self.localName(tok);
     const target = w.findStep(name) orelse {
         return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)});
     };
@@ -649,35 +662,33 @@ fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.
 /// An axiom/theorem citation: GLOBAL fact via FactKV (the read pass made it proven, or
 /// left an in_flight-self / failed entry — diagnosed here).
 fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
-    const text_ = self.text(tok);
-    var ns = self.ns;
-    var base = text_;
-    if (std.mem.indexOfScalar(u8, text_, '.')) |i| {
-        if (std.mem.indexOfScalar(u8, text_[i + 1 ..], '.') != null) {
-            return self.fail(tok.start, "only one level of namespace qualification is allowed", .{});
-        }
-        const ns_name = self.ctx.interner.internString(text_[0..i]) catch return error.OutOfMemory;
-        const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = ns_name }) orelse {
-            return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]});
-        };
-        switch (state) {
-            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
-                .import => |m| ns = m.namespace,
-                else => return self.fail(tok.start, "'{s}' is not a namespace", .{text_[0..i]}),
-            },
-            .in_flight => return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]}),
-        }
-        base = text_[i + 1 ..];
-    }
-    const name = self.ctx.interner.internString(base) catch return error.OutOfMemory;
-    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name }) orelse {
-        return self.fail(tok.start, "unknown statement '{s}'", .{text_});
+    const ns = try self.resolveQualifier(tok);
+    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
+        return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
     };
     return switch (state) {
         // in a model transfer, a source-axiom citation remaps (via the overlay) to its
         // discharging LOCAL fact — an obligation. `.universe` = identity (ordinary proof).
         .proven => |ix| self.ctx.interner.applyModel(self.model, ix),
-        .in_flight => self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{text_}),
+        .in_flight => self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
+    };
+}
+
+/// The namespace a (possibly `ns.`-qualified) stamped token resolves in: unqualified =
+/// this proof's ns; qualified = the import named by `tok.qualifier`. (Multi-level
+/// qualification was diagnosed at parse — the stamped qualifier is at most one level.)
+fn resolveQualifier(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
+    if (tok.qualifier == InternPool.Index.none) return self.ns;
+    const qtext = self.ctx.interner.stringBytes(tok.qualifier);
+    const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tok.qualifier }) orelse {
+        return self.fail(tok.start, "unknown namespace '{s}'", .{qtext});
+    };
+    return switch (state) {
+        .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+            .import => |m| m.namespace,
+            else => self.fail(tok.start, "'{s}' is not a namespace", .{qtext}),
+        },
+        .in_flight => self.fail(tok.start, "unknown namespace '{s}'", .{qtext}),
     };
 }
 
@@ -696,35 +707,16 @@ const ResolvedSchema = struct {
 /// Resolve a schema name token (optionally `ns.`-qualified) to its file/ns + AST decl.
 /// The `.schema` locator must be `done` in IdentKV (the read pass guarantees it).
 fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
-    const text_ = self.text(tok);
-    var ns = self.ns;
-    var base = text_;
-    if (std.mem.indexOfScalar(u8, text_, '.')) |i| {
-        if (std.mem.indexOfScalar(u8, text_[i + 1 ..], '.') != null) {
-            return self.fail(tok.start, "only one level of namespace qualification is allowed", .{});
-        }
-        const ns_name = self.ctx.interner.internString(text_[0..i]) catch return error.OutOfMemory;
-        const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = ns_name }) orelse
-            return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]});
-        switch (st) {
-            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
-                .import => |m| ns = m.namespace,
-                else => return self.fail(tok.start, "'{s}' is not a namespace", .{text_[0..i]}),
-            },
-            .in_flight => return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]}),
-        }
-        base = text_[i + 1 ..];
-    }
-    const name = self.ctx.interner.internString(base) catch return error.OutOfMemory;
-    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = name }) orelse
-        return self.fail(tok.start, "unknown schema '{s}'", .{text_});
+    const ns = try self.resolveQualifier(tok);
+    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse
+        return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
     const ix = switch (st) {
         .done => |x| x,
-        .in_flight => return self.fail(tok.start, "unknown schema '{s}'", .{text_}),
+        .in_flight => return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)}),
     };
     const loc = switch (self.ctx.interner.keyOf(ix)) {
         .schema => |s| s,
-        else => return self.fail(tok.start, "'{s}' is not a schema", .{text_}),
+        else => return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)}),
     };
     const fid = self.ctx.pool_file.get(loc.file).?;
     return .{
@@ -757,7 +749,7 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim)
     const args = try self.ctx.arena.create(Schema.SchemaArgs);
     args.* = .empty;
     for (params, c.args) |p, arg_expr| {
-        const pname = self.ctx.interner.internString(rs.source[p.name.start..p.name.end]) catch return error.OutOfMemory;
+        const pname = tokName(p.name);
         if (p.arg_sorts.len == 0) {
             // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
             const want = try se.resolveSortTok(p.result);
@@ -798,8 +790,8 @@ fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: [
                 if (@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(bsort)))) != @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(asort))))) {
                     return self.fail(b.sort.start, "expected sort '{s}', got '{s}'", .{ self.sortName(asort), self.sortName(bsort) });
                 }
-                fr.* = try self.freshNamed(self.ctx.interner.stringBytes(try e.internTokPub(b.name)));
-                try e.pushBinder(try e.internTokPub(b.name), asort, fr.*);
+                fr.* = try self.freshNamed(self.ctx.interner.stringBytes(tokName(b.name)));
+                try e.pushBinder(tokName(b.name), asort, fr.*);
             }
             const body = try e.elaborateExpr(l.body);
             e.scopeTruncate(scope_mark);
@@ -828,8 +820,9 @@ fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: [
 fn etaApply(self: *Prove, e: *Elab, tok: lexer.Token, fvars: []const TermId, result_sort: SortId) Error!TermId {
     _ = result_sort;
     // reuse the caller Elab's call machinery by synthesizing a call expr is awkward; apply
-    // directly via IdentKV lookup.
-    const name = try e.internTokPub(tok);
+    // directly via IdentKV lookup. (A qualified bare symbol was never supported here —
+    // matching only its base name could falsely hit a local, so reject.)
+    const name = try self.localName(tok);
     const sym = e.lookupIdentPub(self.ns, name) orelse
         return self.fail(tok.start, "unknown identifier '{s}'", .{self.text(tok)});
     const kind: term.AppKind = switch (self.ctx.interner.keyOf(sym)) {
@@ -857,10 +850,10 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
         error.Recover => return .failed,
     };
     const params = rs.decl.schema.params;
-    const schema_name = self.ctx.interner.internString(self.text(c.schema.?)) catch return error.OutOfMemory;
+    const schema_name = tokName(c.schema.?);
     // stable ordered param-name list for the hash + payload.
     const pnames = try self.ctx.arena.alloc(StrId, params.len);
-    for (params, pnames) |p, *out| out.* = self.ctx.interner.internString(rs.source[p.name.start..p.name.end]) catch return error.OutOfMemory;
+    for (params, pnames) |p, *out| out.* = tokName(p.name);
 
     const hash = Schema.instanceHash(self.pool, schema_name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(schema_name), hash }) catch return error.OutOfMemory;
@@ -938,10 +931,15 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         self.ctx.sink.add(c.rule.start, "`[by model(M) …]` cites exactly one transferred theorem", .{}) catch return error.OutOfMemory;
         return .failed;
     }
-    // resolve M (a `.model` Index) in the CITING file's namespace.
+    // resolve M (a `.model` Index) in the CITING file's namespace. A model name is a
+    // plain local identifier — a qualified one never resolved before and still doesn't
+    // (the base-name lookup below would be wrong for it, so keep it a miss).
     const mtok = c.schema.?;
-    const mname = self.ctx.interner.internString(self.text(mtok)) catch return error.OutOfMemory;
-    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = mname }) orelse {
+    if (mtok.qualifier != InternPool.Index.none) {
+        self.ctx.sink.add(mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
+        return .failed;
+    }
+    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(mtok) }) orelse {
         self.ctx.sink.add(mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     };
@@ -953,24 +951,23 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         self.ctx.sink.add(mtok.start, "'{s}' is not a model", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     }
-    // split `src.thm` into (source file via its import, base name).
+    // the qualifier of `src.thm` names the source file's import; the base is the theorem.
     const rtok = c.refs[0];
-    const rtext = self.text(rtok);
-    const dot = std.mem.indexOfScalar(u8, rtext, '.') orelse {
+    if (rtok.qualifier == InternPool.Index.none) {
         self.ctx.sink.add(rtok.start, "`[by model(M) src.thm]` needs a qualified source theorem (e.g. `group.cancelLeft`)", .{}) catch return error.OutOfMemory;
         return .failed;
-    };
-    const imp_name = self.ctx.interner.internString(rtext[0..dot]) catch return error.OutOfMemory;
-    const base = self.ctx.interner.internString(rtext[dot + 1 ..]) catch return error.OutOfMemory;
-    const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = imp_name }) orelse {
-        self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{rtext[0..dot]}) catch return error.OutOfMemory;
+    }
+    const base = tokName(rtok);
+    const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
+    const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse {
+        self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
         return .failed;
     };
     const src_file = switch (imp_state) {
         .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
             .import => |imp| self.ctx.interner.keyOf(imp.namespace).namespace.file,
             else => {
-                self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{rtext[0..dot]}) catch return error.OutOfMemory;
+                self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{qtext}) catch return error.OutOfMemory;
                 return .failed;
             },
         },
@@ -982,7 +979,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         .proven => |ix| return .{ .proven = ix },
         .in_flight => |owner| {
             if (owner == self.h.self_index) {
-                self.ctx.sink.add(rtok.start, "model transfer of '{s}' depends on itself", .{rtext}) catch return error.OutOfMemory;
+                self.ctx.sink.add(rtok.start, "model transfer of '{s}' depends on itself", .{self.text(rtok)}) catch return error.OutOfMemory;
                 return .failed;
             }
             return .{ .blocked = owner };
@@ -1014,64 +1011,6 @@ fn lowerModel(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error!kernel.Just
 
 // -- justification lowering ------------------------------------------------------------
 
-const RuleKind = enum {
-    axiom,
-    theorem,
-    hypothesis,
-    predicate,
-    modus_ponens,
-    implies_intro,
-    forall_intro,
-    forall_elim,
-    exists_intro,
-    exists_elim,
-    and_intro,
-    and_elim_left,
-    and_elim_right,
-    iff_intro,
-    iff_elim_forward,
-    iff_elim_backward,
-    or_intro_left,
-    or_intro_right,
-    or_elim,
-    not_intro,
-    absurd,
-    double_negation,
-    reflexivity,
-    symmetry,
-    rewrite,
-    iff_rewrite,
-};
-
-const rule_names = std.StaticStringMap(RuleKind).initComptime(.{
-    .{ "axiom", .axiom },
-    .{ "theorem", .theorem },
-    .{ "hypothesis", .hypothesis },
-    .{ "predicate", .predicate },
-    .{ "modus_ponens", .modus_ponens },
-    .{ "implies_intro", .implies_intro },
-    .{ "forall_intro", .forall_intro },
-    .{ "forall_elim", .forall_elim },
-    .{ "exists_intro", .exists_intro },
-    .{ "exists_elim", .exists_elim },
-    .{ "and_intro", .and_intro },
-    .{ "and_elim_left", .and_elim_left },
-    .{ "and_elim_right", .and_elim_right },
-    .{ "iff_intro", .iff_intro },
-    .{ "iff_elim_forward", .iff_elim_forward },
-    .{ "iff_elim_backward", .iff_elim_backward },
-    .{ "or_intro_left", .or_intro_left },
-    .{ "or_intro_right", .or_intro_right },
-    .{ "or_elim", .or_elim },
-    .{ "not_intro", .not_intro },
-    .{ "absurd", .absurd },
-    .{ "double_negation", .double_negation },
-    .{ "symmetry", .symmetry },
-    .{ "reflexivity", .reflexivity },
-    .{ "rewrite", .rewrite },
-    .{ "iff_rewrite", .iff_rewrite },
-});
-
 fn isBiconditionalShape(self: *const Prove, id: TermId) bool {
     const pool = self.pool;
     const n = pool.get(id);
@@ -1092,21 +1031,21 @@ fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
 }
 
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
-    const rule_text = self.text(c.rule);
-    // `instantiate` is dispatched BEFORE the rule_names map — it needs `c.schema` and
-    // resolves a SCHEMA (not a kernel rule). The instance fact was demanded (racked +
-    // proven) in the read pass; here we look it up, copyIn its formula, and emit the
-    // kernel schema_instance justification (which peels premises against `c.refs`).
-    if (std.mem.eql(u8, rule_text, "instantiate")) return self.lowerInstantiate(w, e, c);
-    // `[by model(M) src.thm]` transfers a source theorem: the transferred fact was demanded
-    // (racked + proved in namespace (M, src_file)) in the read pass; here we look it up,
-    // copyIn its formula, and cite it as a theorem_ref (a proven fact).
-    if (std.mem.eql(u8, rule_text, "model")) return self.lowerModel(w, c);
-    const kind = rule_names.get(rule_text) orelse {
-        // a genuine typo, or a schema `instantiate` / `model` / accelerant — none of
-        // which the demand prover supports yet. Hard-error rather than misbehave.
-        return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{rule_text});
+    // The rule word dispatches by its RESERVED StrId (integer comparison — no strcmp past
+    // parsing); a non-rule word is a typo or an accelerant, neither supported yet.
+    const kind = InternPool.RuleStr.of(c.rule.name) orelse {
+        return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
     };
+    switch (kind) {
+        // `instantiate` resolves a SCHEMA (not a kernel rule) — the instance fact was
+        // demanded (racked + proven) in the read pass; look it up, copyIn its formula, and
+        // emit the kernel schema_instance justification (peels premises against `c.refs`).
+        .instantiate => return self.lowerInstantiate(w, e, c),
+        // `[by model(M) src.thm]` transfers a source theorem: the transferred fact was
+        // demanded (proved in namespace (M, src_file)) in the read pass; cite it.
+        .model => return self.lowerModel(w, c),
+        else => {},
+    }
     const wants_args: usize = switch (kind) {
         .forall_elim => if (c.args.len == 0) 1 else c.args.len,
         .exists_intro => 1,
@@ -1114,10 +1053,11 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
     };
     if (c.args.len != wants_args) {
         return self.fail(c.rule.start, "'{s}' expects {d} argument(s), got {d}", .{
-            rule_text, wants_args, c.args.len,
+            self.text(c.rule), wants_args, c.args.len,
         });
     }
     switch (kind) {
+        .instantiate, .model => unreachable, // dispatched above
         .axiom, .theorem => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);

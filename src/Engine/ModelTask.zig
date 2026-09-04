@@ -86,8 +86,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 
     const decl: ast.Decl = for (parsed.decls) |d| {
         if (d != .model) continue;
-        const dn = self.interner.internString(source[d.model.name.start..d.model.name.end]) catch return error.OutOfMemory;
-        if (dn == task.name) break d;
+        if (d.model.name.name == task.name) break d; // stamped at parse — integer compare
     } else {
         try demandDiag(self, task, "reference not found: model '{s}'", .{self.interner.stringBytes(task.name)});
         return;
@@ -123,14 +122,12 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 /// or a bare LOCAL target. Returns the Index if `done`/`proven`; else racks the producer,
 /// sets `blocker`, returns null (the caller suspends after the whole pass).
 fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: @import("../lexer.zig").Token, kind: ast.Mapping.Kind, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?InternPool.Index {
-    const text = source[tok.start..tok.end];
+    _ = source;
     var target_file = file;
     var target_ns = try self.interner.namespace(.universe, file);
-    var base = text;
-    if (std.mem.indexOfScalar(u8, text, '.')) |i| {
-        const ns_name = self.interner.internString(text[0..i]) catch return error.OutOfMemory;
-        const st = self.idents.lookup(self.io, .{ .namespace = target_ns, .name = ns_name }) orelse {
-            blocker.* = try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = file, .name = ns_name, .loc = tok.start, .loc_file = file }));
+    if (tok.qualifier != InternPool.Index.none) {
+        const st = self.idents.lookup(self.io, .{ .namespace = target_ns, .name = tok.qualifier }) orelse {
+            blocker.* = try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = file, .name = tok.qualifier, .loc = tok.start, .loc_file = file }));
             return null;
         };
         switch (st) {
@@ -146,9 +143,8 @@ fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, sour
                 else => return null, // not a namespace — leave unresolved (diagnosed elsewhere)
             },
         }
-        base = text[i + 1 ..];
     }
-    const name = self.interner.internString(base) catch return error.OutOfMemory;
+    const name = tok.name;
     switch (kind) {
         .symbol => {
             const st = self.idents.lookup(self.io, .{ .namespace = target_ns, .name = name }) orelse {

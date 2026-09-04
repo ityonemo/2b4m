@@ -85,6 +85,14 @@ pub const Parser = struct {
             .identifier, .kebab_identifier, .at_label => {
                 const chars = self.source[t.start + @intFromBool(t.tag == .at_label) .. t.end];
                 if (std.mem.indexOfScalar(u8, chars, '.')) |i| {
+                    if (std.mem.indexOfScalar(u8, chars[i + 1 ..], '.') != null) {
+                        // diagnosed here (parse time) so resolution never has to re-inspect
+                        // name text; the token still stamps (qualifier + dotted remainder).
+                        self.sink.add(t.start, "only one level of namespace qualification is allowed", .{}) catch {
+                            self.intern_oom = true;
+                            return tok;
+                        };
+                    }
                     tok.qualifier = ip.internString(chars[0..i]) catch {
                         self.intern_oom = true;
                         return tok;

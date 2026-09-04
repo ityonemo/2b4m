@@ -266,8 +266,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
             .alias => |d| d.name,
             .forward, .model => continue,
         };
-        const decl_name = self.interner.internString(source[name_tok.start..name_tok.end]) catch return error.OutOfMemory;
-        if (decl_name != task.name) continue;
+        if (name_tok.name != task.name) continue; // stamped at parse — integer compare
 
         const d: State.Decl = switch (decl.*) {
             .axiom => |d| .{ .axiom = .{ .formula = d.formula } },

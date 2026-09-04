@@ -179,7 +179,7 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
             const fresh = try self.arena.alloc(StrId, q.binders.len);
             const mark = self.scope.items.len;
             for (q.binders, fresh) |b, *fr| {
-                const bname = try self.internTok(b.name);
+                const bname = try self.localName(b.name);
                 try self.checkNoShadow(bname, b.name);
                 fr.* = try self.freshName();
                 try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
@@ -203,7 +203,7 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 id = try self.scratch.add(.{ .quant = .{
                     .q = if (q.q == .forall) .forall else .exists,
                     .sort = sort,
-                    .hint = try self.internTok(q.binders[i].name),
+                    .hint = tokName(q.binders[i].name),
                     .body = id,
                 } });
                 // an obligation from the body over binder `i` must be discharged for ALL
@@ -238,11 +238,11 @@ pub fn requireProp(self: *Elab, typed: Typed, e: *const ast.Expr) Error!Typed {
 // -- name resolution -------------------------------------------------------------------
 
 fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
-    if (std.mem.indexOfScalar(u8, self.text(tok), '.') != null) {
+    if (tok.qualifier != InternPool.Index.none) {
         const target = try self.resolveQualified(tok);
         return self.elaborateSymRef(tok, target.ns, target.base);
     }
-    const name = try self.internTok(tok);
+    const name = tokName(tok);
     // 1. expression-local quantifier binders (innermost wins)
     var i = self.scope.items.len;
     while (i > 0) {
@@ -295,11 +295,11 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
 }
 
 fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
-    const dotted = std.mem.indexOfScalar(u8, self.text(c.callee), '.') != null;
+    const dotted = c.callee.qualifier != InternPool.Index.none;
     const target = if (dotted)
         try self.resolveQualified(c.callee)
     else
-        Qualified{ .ns = self.ns, .base = try self.internTok(c.callee) };
+        Qualified{ .ns = self.ns, .base = tokName(c.callee) };
     // schema GENERATOR param in call position: beta-reduce (only a bare name is a param).
     if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base)) |arg| switch (arg) {
         .lambda => |lam| return self.applyGeneratorParam(c, lam),
@@ -412,7 +412,7 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
 pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     const base = try self.resolveSortTok(b.sort);
     const g = b.guard orelse return base;
-    const gname = try self.internTok(g);
+    const gname = try self.localName(g);
     const gpred = self.lookupIdent(self.ns, gname) orelse {
         return self.fail(g.start, "sort refinement '{s}' is not a predicate in scope", .{self.text(g)});
     };
@@ -453,17 +453,18 @@ fn relativizeUnderBinder(self: *Elab, f0: TermId, quals: []const InternPool.Inde
         f = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = guard, .rhs = f } });
     }
     const closed = try self.scratch.close(f, fvar);
-    return self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = try self.internTok(hint), .body = closed } });
+    return self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = tokName(hint), .body = closed } });
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
     // `Prop` is the reserved builtin sort (schema generator-param results `P: T -> Prop`,
-    // etc.) — never a userland-declared/fetched sort.
-    if (std.mem.eql(u8, self.text(tok), "Prop")) return prop_sort;
-    const target = if (std.mem.indexOfScalar(u8, self.text(tok), '.') != null)
+    // etc.) — never a userland-declared/fetched sort. Its name string is reserved, so the
+    // check is an integer comparison.
+    if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return prop_sort;
+    const target = if (tok.qualifier != InternPool.Index.none)
         try self.resolveQualified(tok)
     else
-        Qualified{ .ns = self.ns, .base = try self.internTok(tok) };
+        Qualified{ .ns = self.ns, .base = tokName(tok) };
     const sym = self.lookupIdent(target.ns, target.base) orelse {
         return self.fail(tok.start, "unknown sort '{s}'", .{self.text(tok)});
     };
@@ -475,21 +476,16 @@ pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
 
 const Qualified = struct { ns: InternPool.Index, base: StrId };
 
-/// Split `ns.base`: the ns must be a `done` import; the base resolves in its namespace.
+/// A stamped `ns.base` token: the ns must be a `done` import; the base resolves in its
+/// namespace. (Multi-level qualification was diagnosed at parse.)
 fn resolveQualified(self: *Elab, tok: lexer.Token) Error!Qualified {
-    const text_ = self.text(tok);
-    const i = std.mem.indexOfScalar(u8, text_, '.').?;
-    if (std.mem.indexOfScalar(u8, text_[i + 1 ..], '.') != null) {
-        return self.fail(tok.start, "only one level of namespace qualification is allowed", .{});
-    }
-    const ns_name = self.interner.internString(text_[0..i]) catch return error.OutOfMemory;
-    const base = self.interner.internString(text_[i + 1 ..]) catch return error.OutOfMemory;
-    const imp = self.lookupIdent(self.ns, ns_name) orelse {
-        return self.fail(tok.start, "unknown namespace '{s}'", .{text_[0..i]});
+    const qtext = self.interner.stringBytes(tok.qualifier);
+    const imp = self.lookupIdent(self.ns, tok.qualifier) orelse {
+        return self.fail(tok.start, "unknown namespace '{s}'", .{qtext});
     };
     switch (self.interner.keyOf(imp)) {
-        .import => |m| return .{ .ns = m.namespace, .base = base },
-        else => return self.fail(tok.start, "'{s}' is not a namespace", .{text_[0..i]}),
+        .import => |m| return .{ .ns = m.namespace, .base = tokName(tok) },
+        else => return self.fail(tok.start, "'{s}' is not a namespace", .{qtext}),
     }
 }
 
@@ -538,18 +534,26 @@ fn sortName(self: *const Elab, sort: SortId) []const u8 {
     return self.interner.sortName(@enumFromInt(@intFromEnum(sort)));
 }
 
-fn internTok(self: *Elab, t: lexer.Token) Error!StrId {
-    return self.interner.internString(self.source[t.start..t.end]) catch error.OutOfMemory;
+/// A stamped token's interned name — the parser stamped every engine-parsed token, so past
+/// parsing names are integers, never re-derived from source text.
+fn tokName(t: lexer.Token) StrId {
+    std.debug.assert(t.name != InternPool.Index.none);
+    return t.name;
+}
+
+/// A stamped name in a LOCAL-only position (a binder name): a `ns.`-qualified token is
+/// rejected — binding only its base name would silently drop the qualifier.
+fn localName(self: *Elab, t: lexer.Token) Error!StrId {
+    if (t.qualifier != InternPool.Index.none) {
+        return self.fail(t.start, "'{s}' cannot be namespace-qualified here", .{self.text(t)});
+    }
+    return tokName(t);
 }
 
 // -- accessors for the schema-instantiation driver (Prove.zig) -------------------------
 // These expose the expression-local binder scope + name lookup so the instantiate handler
 // can elaborate a lambda ARG's body with its binders in scope (kept-free), reusing this
 // Elab's scratchpad + resolution.
-
-pub fn internTokPub(self: *Elab, t: lexer.Token) Error!StrId {
-    return self.internTok(t);
-}
 
 pub fn lookupIdentPub(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index {
     return self.lookupIdent(ns, name);

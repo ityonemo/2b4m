@@ -287,8 +287,7 @@ fn stepSiblingDeps(self: *Walk, step: *const ast.Step, index_of: std.AutoHashMap
 }
 
 fn depRef(self: *Walk, t: lexer.Token, index_of: std.AutoHashMapUnmanaged(StrId, usize), out: *std.ArrayList(usize)) Allocator.Error!void {
-    const name = self.interner.internString(self.source[t.start..t.end]) catch return error.OutOfMemory;
-    if (index_of.get(name)) |dep| try out.append(self.arena, dep);
+    if (index_of.get(try self.internTok(t))) |dep| try out.append(self.arena, dep);
 }
 
 /// Topological order of sibling steps by their citation dependencies. Ties break by
@@ -363,8 +362,14 @@ fn reportCycle(self: *Walk, steps: []const ast.Step, deps: []const []const usize
 
 // -- small utilities -------------------------------------------------------------------
 
+/// A stamped token's interned name — the parser stamped every engine-parsed token, so past
+/// parsing names are integers, never re-derived from source text. (Walk positions are all
+/// LOCAL: labels + binder names; a stray qualifier just fails lookup by base name, and the
+/// process-side resolution rejects it with a proper diagnostic.)
 fn internTok(self: *Walk, t: lexer.Token) Allocator.Error!StrId {
-    return self.interner.internString(self.source[t.start..t.end]) catch error.OutOfMemory;
+    _ = self;
+    std.debug.assert(t.name != InternPool.Index.none);
+    return t.name;
 }
 
 fn text(self: *const Walk, t: lexer.Token) []const u8 {

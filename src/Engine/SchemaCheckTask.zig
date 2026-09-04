@@ -67,8 +67,7 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
     var decl_index: u32 = 0;
     const decl: ast.Decl = for (decls, 0..) |d, i| {
         if (d != .schema) continue;
-        const dn = try self.interner.internString(source[d.schema.name.start..d.schema.name.end]);
-        if (dn == task.name) {
+        if (d.schema.name.name == task.name) { // stamped at parse — integer compare
             decl_index = @intCast(i);
             break d;
         }
@@ -81,7 +80,7 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
     const pnames = try self.arena.alloc(StrId, decl.schema.params.len);
     const durable = try self.arena.alloc(ProveTask.DurableArg, decl.schema.params.len);
     for (decl.schema.params, pnames, durable) |p, *pn, *dout| {
-        pn.* = try self.interner.internString(source[p.name.start..p.name.end]);
+        pn.* = p.name.name; // stamped at parse
         const brand = try std.fmt.allocPrint(self.arena, "opaque-schema-param#{s}", .{source[p.name.start..p.name.end]});
         if (p.arg_sorts.len == 0) {
             // a VALUE param: a fresh fvar of the param's result sort (opaque term).
@@ -122,10 +121,9 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
 
 /// Resolve a param sort token in the schema's namespace (handles the reserved `Prop`).
 fn resolveSort(self: *Context, ns: InternPool.Index, source: []const u8, tok: anytype) std.mem.Allocator.Error!SortId {
-    const text = source[tok.start..tok.end];
-    if (std.mem.eql(u8, text, "Prop")) return Elab.prop_sort;
-    const name = try self.interner.internString(text);
-    if (self.idents.lookup(self.io, .{ .namespace = ns, .name = name })) |state| switch (state) {
+    _ = source;
+    if (tok.name == InternPool.Index.prop_name) return Elab.prop_sort;
+    if (self.idents.lookup(self.io, .{ .namespace = ns, .name = tok.name })) |state| switch (state) {
         .done => |ix| return @enumFromInt(@intFromEnum(ix)),
         .in_flight => {},
     };

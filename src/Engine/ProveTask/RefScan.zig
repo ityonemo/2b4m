@@ -89,7 +89,7 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
     switch (step.body) {
         .claim => |c| {
             try self.scanExpr(c.formula);
-            switch (ruleDomain(self.source[c.rule.start..c.rule.end])) {
+            switch (ruleDomain(c.rule.name)) {
                 .fact => for (c.refs) |r| try self.addTok(r, .fact),
                 .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema
                 // NAME (its `c.refs` are LOCAL premise labels — not enumerated)
@@ -124,12 +124,16 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// Which resolution domain a rule's refs live in. Axiom/theorem citations are global facts;
 /// `instantiate` names a global schema (in `c.schema`); everything else cites local
 /// steps/blocks (including accelerant names, which hard-error as unsupported at process
-/// time — their refs never fetch).
-fn ruleDomain(rule: []const u8) enum { fact, instantiate, model, local } {
-    if (std.mem.eql(u8, rule, "axiom") or std.mem.eql(u8, rule, "theorem")) return .fact;
-    if (std.mem.eql(u8, rule, "instantiate")) return .instantiate;
-    if (std.mem.eql(u8, rule, "model")) return .model;
-    return .local;
+/// time — their refs never fetch). Dispatch is on the RESERVED rule-word StrId the parser
+/// stamped — integer comparison, no strcmp past parsing.
+fn ruleDomain(rule: StrId) enum { fact, instantiate, model, local } {
+    const word = InternPool.RuleStr.of(rule) orelse return .local;
+    return switch (word) {
+        .axiom, .theorem => .fact,
+        .instantiate => .instantiate,
+        .model => .model,
+        else => .local,
+    };
 }
 
 fn scanExpr(self: *Scanner, e: *const ast.Expr) Allocator.Error!void {
@@ -156,18 +160,18 @@ fn scanBinderBody(self: *Scanner, binders: []const ast.Binder, body: *const ast.
     for (binders) |b| {
         try self.addTok(b.sort, .ident);
         if (b.guard) |g| try self.addTok(g, .ident);
-        try self.expr_locals.append(self.arena, try self.intern(b.name));
+        try self.expr_locals.append(self.arena, b.name.name);
     }
     try self.scanExpr(body);
     self.expr_locals.shrinkRetainingCapacity(mark);
 }
 
-/// An expression NAME position: skip expression-local and proof-local binders; the rest
-/// are global ident candidates.
+/// An expression NAME position: skip expression-local and proof-local binders (only a
+/// BARE name can be one — a qualified token never shadows); the rest are global ident
+/// candidates.
 fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
-    const text = self.source[tok.start..tok.end];
-    if (std.mem.indexOfScalar(u8, text, '.') == null) {
-        const name = try self.interner.internString(text);
+    if (tok.qualifier == InternPool.Index.none) {
+        const name = tok.name;
         for (self.expr_locals.items) |b| if (b == name) return; // expr-local binder
         if (self.walk.findIdent(name) != null) return; // proof-local binder
         for (self.schema_params) |p| if (p == name) return; // schema parameter
@@ -175,19 +179,15 @@ fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
     try self.addTok(tok, .ident);
 }
 
-/// Record a (possibly dotted) token as a global candidate in `domain`, deduped. For a
-/// dotted `ns.base`: the ns is ALSO recorded as an ident candidate (the import must
-/// resolve), and the base carries the qualifier.
+/// Record a (possibly qualified) stamped token as a global candidate in `domain`, deduped.
+/// For a qualified `ns.base`: the ns is ALSO recorded as an ident candidate (the import
+/// must resolve), and the base carries the qualifier.
 fn addTok(self: *Scanner, tok: lexer.Token, domain: Ref.Domain) Allocator.Error!void {
-    const text = self.source[tok.start..tok.end];
-    if (std.mem.indexOfScalar(u8, text, '.')) |i| {
-        const ns = try self.interner.internString(text[0..i]);
-        const base = try self.interner.internString(text[i + 1 ..]);
-        try self.add(.{ .ns = null, .name = ns, .domain = .ident, .loc = tok.start });
-        try self.add(.{ .ns = ns, .name = base, .domain = domain, .loc = tok.start });
+    if (tok.qualifier != InternPool.Index.none) {
+        try self.add(.{ .ns = null, .name = tok.qualifier, .domain = .ident, .loc = tok.start });
+        try self.add(.{ .ns = tok.qualifier, .name = tok.name, .domain = domain, .loc = tok.start });
     } else {
-        const name = try self.interner.internString(text);
-        try self.add(.{ .ns = null, .name = name, .domain = domain, .loc = tok.start });
+        try self.add(.{ .ns = null, .name = tok.name, .domain = domain, .loc = tok.start });
     }
 }
 
@@ -196,10 +196,6 @@ fn add(self: *Scanner, ref: Ref) Allocator.Error!void {
     const gop = try self.seen.getOrPut(self.arena, key);
     if (gop.found_existing) return;
     try self.out.append(self.arena, ref);
-}
-
-fn intern(self: *Scanner, tok: lexer.Token) Allocator.Error!StrId {
-    return self.interner.internString(self.source[tok.start..tok.end]);
 }
 
 // --- tests ----------------------------------------------------------------------------

@@ -59,8 +59,9 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     for (parsed.decls) |decl| {
         if (decl != .import) continue;
         const d = decl.import;
-        const raw_quoted = task.source[d.path.start..d.path.end];
-        const raw = raw_quoted[1 .. raw_quoted.len - 1];
+        // the parser stamped the quote-stripped path string; path RESOLUTION (fs joins)
+        // works on its bytes — that's I/O, not name comparison.
+        const raw = self.interner.stringBytes(d.path.name);
         const resolved = if (std.mem.startsWith(u8, raw, "std/"))
             try std.fs.path.resolve(self.arena, &.{ self.std_root, raw["std/".len..] })
         else
@@ -79,8 +80,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
             };
             break :child try self.discover(resolved, src);
         };
-        const raw_id = try self.interner.internString(raw);
-        try self.import_maps.items[idx].put(self.arena, raw_id, child);
+        try self.import_maps.items[idx].put(self.arena, d.path.name, child);
     }
 
     // this file's AST is now populated — mark it parsed so `demandParse` waiters wake.
@@ -94,16 +94,14 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         for (parsed.decls) |decl| {
             switch (decl) {
                 .theorem => |t| {
-                    const name_id = try self.interner.internString(task.source[t.name.start..t.name.end]);
-                    try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
+                    try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = t.name.name }));
                 },
                 // STRICT well-formedness: check each proof-carrying schema at its decl
                 // (opaque self-instantiation). Gated on `certify_arithmetic` (the strict
                 // bit — `--fast`/`--faster`/`--reckless` clear it and keep the body lazy).
                 // Non-proof-carrying schemas (axiom-schemas) have no body to check.
                 .schema => |s| if (s.steps != null and self.verify.certify_arithmetic) {
-                    const name_id = try self.interner.internString(task.source[s.name.start..s.name.end]);
-                    try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = name_id, .loc = s.name.start }));
+                    try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = s.name.name, .loc = s.name.start }));
                 },
                 // a `model` decl is NOT built eagerly — a model is validated only when it is
                 // actually CITED (`[by model(M) …]` racks its ModelTask). An unused model,
