@@ -671,6 +671,14 @@ const World = struct {
             .name = le_name,
             .loc = 0,
         } });
+
+        // a global constant `a: Nat`, for tests that need a free term symbol.
+        const a_name = try interner.internString("a");
+        _ = try idents.publish(w.io, .{ .namespace = w.ns, .name = a_name }, .{ .constant = .{
+            .sort = w.nat,
+            .name = a_name,
+            .loc = 0,
+        } });
         return w;
     }
 
@@ -744,9 +752,8 @@ test "elab: sort mismatch and prop-in-'=' diagnose and Recover" {
     const arena = arena_state.allocator();
     const w = try World.init(arena);
 
-    { // le's args must be Nat; passing the prop le(...) itself mismatches
-        const rig = try w.elabOf("le(le(a, a), a)");
-        // `a` is unknown -> the FIRST failure is the unknown identifier
+    { // an unknown identifier diagnoses (zzz is not published in the World)
+        const rig = try w.elabOf("le(zzz, zzz)");
         try testing.expectError(error.Recover, rig.elab.elaborateExpr(rig.expr));
         try testing.expect(w.sink.list.items.len > 0);
         try testing.expect(std.mem.indexOf(u8, w.sink.list.items[0].message, "unknown identifier") != null);
@@ -780,4 +787,50 @@ test "elab: guarded funcs, defines-absent, and lambdas are cleanly unsupported/u
     const rig = try w.elabOf("forall k: Nat; le(div(k, k), k)");
     try testing.expectError(error.Recover, rig.elab.elaborateExpr(rig.expr));
     try testing.expect(std.mem.indexOf(u8, w.sink.list.items[0].message, "guarded functions are not yet supported") != null);
+}
+
+// -- delaborate (term -> ast.Expr) round-trips through elaboration -----------------------
+// The correctness oracle for `Delaborate`: elaborate a formula to a term, delaborate that
+// term back to AST, re-elaborate, and assert the result is alpha-equal to the original.
+// Elaboration is the real consumer, so this tests exactly the property that matters — the
+// delaborated AST re-elaborates to the same term.
+
+const Delaborate = @import("Delaborate.zig");
+
+/// elaborate `formula` -> T; delaborate T -> AST; re-elaborate -> T'; assert alphaEq(T, T').
+fn expectDelaborateRoundTrip(w: *World, comptime formula: []const u8) !void {
+    const rig = try w.elabOf(formula);
+    const t = try rig.elab.elaborateExpr(rig.expr);
+    try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
+
+    const back = try Delaborate.run(w.arena, w.scratch, w.interner, t.id, 0);
+    // a fresh Elab over the same world (new scope), re-elaborating the delaborated AST.
+    var fresh_counter: u32 = 0;
+    var e2 = Elab.init(w.arena, w.io, w.interner, w.idents, w.scratch, w.sink, "", w.walk, w.ns, &fresh_counter);
+    const t2 = try e2.elaborateExpr(back);
+    try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
+    try testing.expect(w.scratch.alphaEq(t.id, t2.id));
+}
+
+test "delaborate: round-trips atoms, applications, connectives, comparisons, quantifiers" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const w = try World.init(arena);
+
+    // a nested application under a predicate
+    try expectDelaborateRoundTrip(w, "le(add(a, a), a)");
+    // boolean connectives (and / or / implies), mixed + nested
+    try expectDelaborateRoundTrip(w, "(le(a, a) and le(a, a)) -> le(a, a)");
+    try expectDelaborateRoundTrip(w, "le(a, a) or (le(a, a) -> le(a, a))");
+    // equality and its `!=` (not(eq)) sugar
+    try expectDelaborateRoundTrip(w, "a = a");
+    try expectDelaborateRoundTrip(w, "a != a");
+    // a plain `not`
+    try expectDelaborateRoundTrip(w, "not le(a, a)");
+    // quantifiers: single, and NESTED (the b1/b2 fresh-binder + de Bruijn structure)
+    try expectDelaborateRoundTrip(w, "forall k: Nat; le(k, k)");
+    try expectDelaborateRoundTrip(w, "forall m: Nat; forall n: Nat; le(add(m, n), m) -> le(n, m)");
+    // a quantifier whose body mixes a bound var with a free global constant symbol
+    try expectDelaborateRoundTrip(w, "forall k: Nat; le(add(k, a), a)");
 }
