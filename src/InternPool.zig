@@ -139,7 +139,7 @@ pub const RuleStr = enum(u32) {
     reflexivity,
     rewrite,
     iff_rewrite,
-    instantiate,
+    instantiation,
     model,
 
     pub fn id(self: RuleStr) StrId {
@@ -151,6 +151,20 @@ pub const RuleStr = enum(u32) {
         const v = @intFromEnum(sid);
         if (v < @intFromEnum(RuleStr.axiom) or v > @intFromEnum(RuleStr.model)) return null;
         return @enumFromInt(v);
+    }
+
+    /// Which justification keyword this reserved rule word REQUIRES. `instantiation`/`model`
+    /// are engine proof-generation → `using`; every other reserved word is a kernel
+    /// primitive (incl. the `axiom`/`theorem` fact citations) → `by`. A NON-reserved word
+    /// (an accelerant name, or a typo) is `using`-side by definition — the parser handles
+    /// that case separately (it can't call this). Single source of truth for the parse-time
+    /// by/using vocabulary partition. (A bare two-variant enum, not the AST's Kind, to keep
+    /// InternPool free of an AST import — the parser maps it to `ast.Step.Claim.Kind`.)
+    pub fn keyword(self: RuleStr) enum { by, using } {
+        return switch (self) {
+            .instantiation, .model => .using,
+            else => .by,
+        };
     }
 };
 

@@ -48,10 +48,10 @@ pub const Ref = struct {
         fact,
         /// a sort/const/func/pred/import — resolved via IdentKV (a FetchTask produces it)
         ident,
-        /// a schema name in an `instantiate` step — resolved via IdentKV (a FetchTask mints
-        /// the .schema locator); the instantiate handler then demands the instance FACT.
+        /// a schema name in a `using instantiation` step — resolved via IdentKV (a FetchTask
+        /// mints the .schema locator); the instantiate handler then demands the instance FACT.
         schema,
-        /// a model name in a `[by model(M) …]` step — resolved via IdentKV (a ModelTask
+        /// a model name in a `using model(M) …` step — resolved via IdentKV (a ModelTask
         /// builds M's overlay); the model-cite handler then demands the TRANSFERRED FACT.
         model,
     };
@@ -130,7 +130,7 @@ fn ruleDomain(rule: StrId) enum { fact, instantiate, model, local } {
     const word = InternPool.RuleStr.of(rule) orelse return .local;
     return switch (word) {
         .axiom, .theorem => .fact,
-        .instantiate => .instantiate,
+        .instantiation => .instantiate,
         .model => .model,
         else => .local,
     };
@@ -352,7 +352,7 @@ test "scan: instantiate emits the schema name (schema domain); its refs are loca
         \\proof
         \\  @c |
         \\    P
-        \\    [by instantiate foo(bar) premiseStep]
+        \\    [using instantiation foo(bar) premiseStep]
         \\qed
     );
     // @c: the schema `foo` is a .schema candidate; the arg `bar` is a global ident; the
@@ -369,7 +369,7 @@ test "scan: a qualified schema name splits into import + schema base" {
         \\proof
         \\  @c |
         \\    P
-        \\    [by instantiate lib.foo(bar)]
+        \\    [using instantiation lib.foo(bar)]
         \\qed
     );
     // qualified schema: import `lib` (ident) + base `foo` in its namespace (schema).

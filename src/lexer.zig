@@ -50,6 +50,10 @@ pub const Token = struct {
         keyword_unpack,
         keyword_from,
         keyword_by,
+        /// `using` — the justification keyword for ACCELERANT steps (engine
+        /// proof-generation: accelerants + `using instantiation` + `using model`),
+        /// as opposed to `by` for the pure kernel primitives.
+        keyword_using,
         keyword_case,
         // formula keywords
         keyword_forall,
@@ -110,6 +114,7 @@ pub const Token = struct {
                 .keyword_unpack => "unpack",
                 .keyword_from => "from",
                 .keyword_by => "by",
+                .keyword_using => "using",
                 .keyword_case => "case",
                 .keyword_forall => "forall",
                 .keyword_exists => "exists",
@@ -165,6 +170,7 @@ const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
     .{ "unpack", .keyword_unpack },
     .{ "from", .keyword_from },
     .{ "by", .keyword_by },
+    .{ "using", .keyword_using },
     .{ "case", .keyword_case },
     .{ "forall", .keyword_forall },
     .{ "exists", .keyword_exists },

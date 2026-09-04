@@ -51,7 +51,8 @@ proof
 qed
 ```
 
-- Every step is `@label | <formula> [by <rule> <refs>]` (label, formula, justification — the formula and `[by …]` indented two spaces under the label). Blocks nest two spaces.
+- Every step is `@label | <formula> [<keyword> <rule> <refs>]` (label, formula, justification — the formula and `[…]` indented two spaces under the label). Blocks nest two spaces.
+- **TWO justification keywords**: `[by <rule> …]` for KERNEL PRIMITIVES (pure inference, always kernel-checked — the whole proof-rule table below); `[using <name> …]` for ACCELERANTS + `instantiation` + `model` (engine proof-generation). The parser ENFORCES the split: `by` on an accelerant, or `using` on a primitive, is a hard parse error. Mnemonic: `using` marks every step a future `--fast` could trust; a `by`-only proof means the same under every mode.
 - A `fix x: S { … }` block generalizes; a SEPARATE `forall_intro <block-label>` step discharges it (the block is not itself the universal). Same for `assume F { … }` + `implies_intro`.
 - Inside an `assume F { … }` block, restate the assumption with `[by hypothesis <block-label>]`. Inside a `fix h: H` (refined sort), get its guard `inH(h)` with `[by predicate <block-label>]`.
 - Refs are SPACE-separated: `[by and_intro a b]` NOT `a, b`.
@@ -83,7 +84,8 @@ qed
 | `symmetry STEP` | 1 | `x=y` → `y=x` |
 | `rewrite EQ TARGET` | 2 | replace EQ's lhs by rhs (or rhs by lhs) in TARGET — **bidirectional**, no `symmetry` needed to reorient |
 | `iff_rewrite BICOND TARGET` | 2 | from `P iff Q`, replace sub-prop P by Q (or Q by P) in TARGET (any position). Bidirectional, kernel-checked, no taint |
-| `instantiate NAME(args) refs…` | schema + premise refs | monomorphize a schema; refs discharge its leading antecedents |
+
+(`instantiation`/`model` are NOT in this table — they are `using` accelerants, below.)
 
 `case <disj-step> { @when-left| assume A { … } @when-right| assume B { … } }` — the 3-way (or N-way) disjunction eliminator. Use this instead of trying to give `or_elim` more than 2 arms.
 
@@ -103,7 +105,11 @@ qed
 - `iff_rewrite BICOND TARGET` substitutes P↔Q across a goal (subformula congruence).
 - The shape `(X -> Y) and (Y -> X)` is CANONICALLY an iff: `and_intro` refuses it (use `iff_intro`), `iff_intro` requires it. So write biconditionals as `iff`, not hand-rolled conjunctions.
 
-## Accelerants (tactics) — one-liners; detail at `### TACTIC: <name>` in GUIDE.md
+## Accelerants (tactics) — cited with `using`, NOT `by` — one-liners; detail at `### TACTIC: <name>` in GUIDE.md
+
+All of these take the `using` keyword: `[using simplify …]`, `[using specialize HEAD(args) …]`,
+`[using instantiation NAME(args) refs…]` (monomorphize a schema; refs discharge its leading
+antecedents), `[using model(M) src.thm]` (transfer a source theorem through model M).
 
 - `simplify` — equational rewriting to a shared normal form (always emits kernel steps).
 - `assoc_commut` / `assoc_commut_quantified` — reorder an A/C sum; bare = add/mul, `(assoc,comm,swap)` for a custom op; `_quantified` peels a `forall` prefix.
@@ -117,15 +123,15 @@ qed
 
 ## Declaration keywords — one-liners; detail at `### KEYWORD: <name>` in GUIDE.md
 
-`sort` (a type; `sort H = G where inH` is a refined subsort), `const` (0-ary), `func` (returns a term-sort, never Prop), `pred` (opaque predicate; no `:=` body), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[by model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only).
+`sort` (a type; `sort H = G where inH` is a refined subsort), `const` (0-ary), `func` (returns a term-sort, never Prop), `pred` (opaque predicate; no `:=` body), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[using model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only).
 
 ## `import` and `model` — unlearn the Python prior (these are two different axes)
 
 A recurring wrong assumption, imported from Python, is that `import` dumps names into your namespace and that `model` is some flavor of import. Neither is true.
 
 - **`import` is LIKE a Zig import, not a Python one.** `import peano <<< "std/peano.bpa"` binds a namespace VALUE (the mental model is `const peano = @import("...")`, not `from peano import *`). You reach members fully-qualified: `peano.mulAddDistribLeft`. There is NO bulk open, no bare re-export. Importing `field` never gives you a bare `mulAddDistribLeft` in scope; only `field.mulAddDistribLeft`. To get a bare local name you must ALIAS (`func add = field.add`) or DECLARE a local theorem.
-- **`model` is NOT `import` — it is structure interpretation.** A `model` maps an abstract theory's symbols to YOUR local symbols and discharges its axioms; in return its THEOREMS become true of your symbols and citable via `[by model(NAME) src.thm]`. It does **not** put any name into your scope. The theorem is a fact about your symbols; it has no bare local name until you write one.
-- **Consequence — the shim idiom.** When an accelerant (`polynomial(myTheory)`, `arithmetic`) resolves a lemma by BARE name in your file's scope (self-theory), a model-transferred fact won't resolve — it has no bare name. Bridge the two axes with a one-line SHIM theorem: `theorem barelyNamedLemma: <stmt in your symbols> [by model(NAME) src.thm]`. Every model-based concrete sort (e.g. ℚ/ℝ/ℂ modeling `field`) pays this shim cost to use bare-name accelerants; the aliased case does not. This is the price of the model system, not a bug.
+- **`model` is NOT `import` — it is structure interpretation.** A `model` maps an abstract theory's symbols to YOUR local symbols and discharges its axioms; in return its THEOREMS become true of your symbols and citable via `[using model(NAME) src.thm]`. It does **not** put any name into your scope. The theorem is a fact about your symbols; it has no bare local name until you write one.
+- **Consequence — the shim idiom.** When an accelerant (`polynomial(myTheory)`, `arithmetic`) resolves a lemma by BARE name in your file's scope (self-theory), a model-transferred fact won't resolve — it has no bare name. Bridge the two axes with a one-line SHIM theorem: `theorem barelyNamedLemma: <stmt in your symbols> [using model(NAME) src.thm]`. Every model-based concrete sort (e.g. ℚ/ℝ/ℂ modeling `field`) pays this shim cost to use bare-name accelerants; the aliased case does not. This is the price of the model system, not a bug.
 
 ## Gotchas that bite (memorize)
 

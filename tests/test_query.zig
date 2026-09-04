@@ -127,7 +127,7 @@ pub fn addTests(
         \\  // base case: addZeroLeft specialized at b := ZERO
         \\  @base-case |
         \\    add(ZERO, ZERO) = ZERO
-        \\    [by simplify addZeroLeft]
+        \\    [using simplify addZeroLeft]
         \\
         \\  // inductive step: unfold add on succ(k), then rewrite with the IH
         \\  @induction-step |
@@ -139,7 +139,7 @@ pub fn addTests(
         \\            [by hypothesis given-inductive-hypothesis]
         \\          @succ-case |
         \\            add(succ(k), ZERO) = succ(k)
-        \\            [by simplify addSuccLeft inductive-hypothesis]
+        \\            [using simplify addSuccLeft inductive-hypothesis]
         \\        }
         \\      @induction-step-at-k |
         \\        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
@@ -151,12 +151,12 @@ pub fn addTests(
         \\
         \\  @conclusion |
         \\    forall n: Nat; add(n, ZERO) = n
-        \\    [by instantiate induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
+        \\    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
         \\qed
         \\
     ;
 
-    // The synthetic theorem `simplify` produced for the ground `[by simplify
+    // The synthetic theorem `simplify` produced for the ground `[using simplify
     // addSuccLeft addZeroLeft]`: context-free (both cited axioms closed as
     // premises), proof = assume both, then the reflexivity+forall_elim+rewrite
     // certificate, closed by implies_intro. Fresh legal labels (s*/b*) so the

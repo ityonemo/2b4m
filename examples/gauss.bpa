@@ -3,7 +3,7 @@
 // This is the automation-assisted twin of examples/gauss-pure.bpa: same
 // theory, same theorem, but the sum-reordering that the by-hand version
 // needed a 40-line `sumSwap` exchange lemma (plus a tower of forall_elim
-// specializations) for is now a single `[by assoc_commut]` step. `ac` reorders a sum
+// specializations) for is now a single `[using assoc_commut]` step. `ac` reorders a sum
 // by associativity and commutativity over arbitrary opaque summands — here
 // the opaque term is sumTo(k) — and emits a pure kernel certificate, so the
 // whole file still passes `--pure`.
@@ -50,7 +50,7 @@ axiom sumToSucc: forall n: Nat; sumTo(succ(n)) = add(sumTo(n), succ(n))
 //   base   2 * sumTo(0) = 0 = 0 * 1
 //   step   assuming 2 * sumTo(k) = k * (k+1),
 //          2 * sumTo(k+1) = 2 * (sumTo(k) + (k+1))
-//                         = 2*sumTo(k) + 2*(k+1)       ([by assoc_commut] regroups)
+//                         = 2*sumTo(k) + 2*(k+1)       ([using assoc_commut] regroups)
 //                         = k*(k+1) + 2*(k+1)          (inductive hypothesis)
 //                         = (k+1) * (k+2)              (simplify)
 theorem gaussSum: forall n: Nat; add(sumTo(n), sumTo(n)) = mul(n, succ(n))
@@ -58,7 +58,7 @@ proof
   // base case: 2 * sumTo(0) = 0 = 0 * succ(0)
   @base-case |
     add(sumTo(ZERO), sumTo(ZERO)) = mul(ZERO, succ(ZERO))
-    [by simplify sumToZero addZeroLeft mulZeroLeft]
+    [using simplify sumToZero addZeroLeft mulZeroLeft]
 
   @induction-step |
     fix k: Nat {
@@ -71,27 +71,27 @@ proof
           // unfold both copies of sumTo(succ k) = sumTo(k) + succ(k)
           @unfolded |
             add(sumTo(succ(k)), sumTo(succ(k))) = add(add(sumTo(k), succ(k)), add(sumTo(k), succ(k)))
-            [by simplify sumToSucc]
+            [using simplify sumToSucc]
 
           // regroup (s+c)+(s+c) into (s+s)+(c+c) — one linear-arithmetic step
           @regrouped |
             add(sumTo(succ(k)), sumTo(succ(k))) = add(add(sumTo(k), sumTo(k)), add(succ(k), succ(k)))
-            [by arithmetic unfolded]
+            [using arithmetic unfolded]
 
           // fold the inductive hypothesis into the first summand
           @with-ih |
             add(sumTo(succ(k)), sumTo(succ(k))) = add(mul(k, succ(k)), add(succ(k), succ(k)))
-            [by arithmetic regrouped inductive-hypothesis]
+            [using arithmetic regrouped inductive-hypothesis]
 
           // k*(k+1) + 2*(k+1) = (k+1)*(k+2): expand every product and right-nest
           // the additive residue; both sides normalize to succ(succ(k*k + 3k))
           @target |
             add(mul(k, succ(k)), add(succ(k), succ(k))) = mul(succ(k), succ(succ(k)))
-            [by simplify mulSuccLeft mulSuccRight addSuccLeft addSuccRight addZeroLeft addZeroRight mulZeroLeft mulZeroRight addIsAssociative]
+            [using simplify mulSuccLeft mulSuccRight addSuccLeft addSuccRight addZeroLeft addZeroRight mulZeroLeft mulZeroRight addIsAssociative]
 
           @succ-case |
             add(sumTo(succ(k)), sumTo(succ(k))) = mul(succ(k), succ(succ(k)))
-            [by arithmetic with-ih target]
+            [using arithmetic with-ih target]
         }
       @induction-step-at-k |
         add(sumTo(k), sumTo(k)) = mul(k, succ(k)) -> add(sumTo(succ(k)), sumTo(succ(k))) = mul(succ(k), succ(succ(k)))
@@ -103,5 +103,5 @@ proof
 
   @conclusion |
     forall n: Nat; add(sumTo(n), sumTo(n)) = mul(n, succ(n))
-    [by instantiate induction((fun k: Nat => add(sumTo(k), sumTo(k)) = mul(k, succ(k)))) base-case induction-step-for-all-k]
+    [using instantiation induction((fun k: Nat => add(sumTo(k), sumTo(k)) = mul(k, succ(k)))) base-case induction-step-for-all-k]
 qed

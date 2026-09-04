@@ -235,7 +235,7 @@ words — the role IS the content for these):
 | a flipped equation (`[by symmetry x]`) | `@<content>-flipped` |
 
 The induction payoff line reads
-`[by instantiate induction((fun ...)) base-case induction-step-for-all-k]`.
+`[using instantiation induction((fun ...)) base-case induction-step-for-all-k]`.
 
 **The apply-a-lemma idiom** — cite, specialize, discharge; three nameable
 steps, no filler:
@@ -249,7 +249,7 @@ steps, no filler:
     [by forall_elim(NINE, SIX, ONE, THREE) remainder-is-unique]
   @conclusion |
     mod(NINE, SIX) = THREE
-    [by tautology remainder-is-determined-nine-six six-is-nonzero three-is-below-six sum-is-nine]
+    [using tautology remainder-is-determined-nine-six six-is-nonzero three-is-below-six sum-is-nine]
   ```
 
   (`tautology` replays as a kernel-checked certificate here — a Horn-shaped discharge
@@ -314,7 +314,7 @@ steps, no filler:
   ```
   @conclusion |
     forall n: Nat; add(n, ZERO) = n
-    [by instantiate induction((fun k: Nat => add(k, ZERO) = k)) base step]
+    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base step]
   ```
 
   The `@` marks a definition and sits at the left margin, so labels form a

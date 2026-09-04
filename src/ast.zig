@@ -65,8 +65,13 @@ pub const Step = struct {
     };
     pub const Claim = struct {
         formula: *const Expr,
+        /// which justification keyword introduced this step: `by` for the kernel
+        /// primitives (pure inference, always checked), `using` for accelerants
+        /// (engine proof-generation: accelerants + `instantiation` + `model`). The
+        /// parser enforces the vocabulary partition; dispatch keys on `rule`, not this.
+        kind: Kind,
         rule: Token,
-        /// schema name, only when rule is `instantiate`
+        /// schema name, only when rule is `instantiation`
         schema: ?Token,
         args: []const *const Expr,
         refs: []const Token,
@@ -74,6 +79,8 @@ pub const Step = struct {
         /// as the certificate when the certifier chain declines (instead of the
         /// hard error). Keeps the step kernel-checked. Arithmetic-only for now.
         fallback: ?Token = null,
+
+        pub const Kind = enum { by, using };
     };
     pub const Block = struct { formula: *const Expr, steps: []const Step };
     pub const FixBlock = struct { name: Token, sort: Token, steps: []const Step };

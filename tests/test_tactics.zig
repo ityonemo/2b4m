@@ -180,7 +180,7 @@ pub fn addTests(
     // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA
     // (elemInduction) is discharged by a local guard-relativized schema
     // (goodInduction), α-checked at the model decl against the remapped source;
-    // `[by model(...) source.elemInduction]` then instantiates the discharge.
+    // `[using model(...) source.elemInduction]` then instantiates the discharge.
     ctx.okSilent(&.{ "check", "tests/cases/model_schema_source.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/model_schema.bpa" });
     // RED: a schema source must be discharged by a SCHEMA (matching predicate
@@ -503,7 +503,7 @@ pub fn addTests(
         \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
         \\
     );
-    // ...and `[by arithmetic fallback(<thm>)]` closes the gap fully proven in default
+    // ...and `[using arithmetic fallback(<thm>)]` closes the gap fully proven in default
     // mode: the chain declines, so the cited manual theorem (which reduces the
     // ∀∀∃ to the cooper-certified single-variable evenOrOddArith) stands as the
     // certificate — no --fast, no acceleration.

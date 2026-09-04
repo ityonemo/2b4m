@@ -33,10 +33,10 @@ proof
     fix a: T {
       @commute |
         op(E, a) = op(a, E)
-        [by specialize opComm(E, a)]
+        [using specialize opComm(E, a)]
       @a-op-e |
         op(a, E) = a
-        [by specialize opIdRight(a)]
+        [using specialize opIdRight(a)]
       @conclusion-inner |
         op(E, a) = a
         [by rewrite a-op-e commute]

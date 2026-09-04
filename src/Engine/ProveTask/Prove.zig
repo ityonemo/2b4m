@@ -257,7 +257,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     // suspend until it's proved. `process`/`lowerInstantiate` then just looks it up.
     if (step.body == .claim) {
         const c = step.body.claim;
-        if (c.rule.name == InternPool.RuleStr.instantiate.id()) {
+        if (c.rule.name == InternPool.RuleStr.instantiation.id()) {
             var e = self.elab(w);
             switch (try self.demandInstance(&e, c)) {
                 .proven => return null, // ready — process can run lowerInstantiate
@@ -1037,11 +1037,11 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
     };
     switch (kind) {
-        // `instantiate` resolves a SCHEMA (not a kernel rule) — the instance fact was
+        // `instantiation` resolves a SCHEMA (not a kernel rule) — the instance fact was
         // demanded (racked + proven) in the read pass; look it up, copyIn its formula, and
         // emit the kernel schema_instance justification (peels premises against `c.refs`).
-        .instantiate => return self.lowerInstantiate(w, e, c),
-        // `[by model(M) src.thm]` transfers a source theorem: the transferred fact was
+        .instantiation => return self.lowerInstantiate(w, e, c),
+        // `using model(M) src.thm` transfers a source theorem: the transferred fact was
         // demanded (proved in namespace (M, src_file)) in the read pass; cite it.
         .model => return self.lowerModel(w, c),
         else => {},
@@ -1057,7 +1057,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         });
     }
     switch (kind) {
-        .instantiate, .model => unreachable, // dispatched above
+        .instantiation, .model => unreachable, // dispatched above
         .axiom, .theorem => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);

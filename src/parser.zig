@@ -24,6 +24,19 @@ const InternPool = @import("InternPool.zig");
 
 const ParseError = error{ Recover, OutOfMemory };
 
+/// Is `name` a `by`-side KERNEL primitive? Derived from `InternPool.RuleStr` (the reserved
+/// rule vocabulary) minus the `using`-side words its `keyword()` marks (`instantiation`,
+/// `model`) — one source of truth, so a new kernel rule added to RuleStr is admitted here
+/// automatically. Anything else (accelerant names, typos) is `using`-side.
+fn isKernelRule(name: []const u8) bool {
+    inline for (@typeInfo(InternPool.RuleStr).@"enum".fields) |f| {
+        if (@field(InternPool.RuleStr, f.name).keyword() == .by and std.mem.eql(u8, name, f.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Tactics that accept a `(theory)` argument naming the module their
 /// vocabulary + lemmas resolve against (reusing the claim's `schema` slot).
 fn isTheoryRule(name: []const u8) bool {
@@ -160,6 +173,23 @@ pub const Parser = struct {
         return switch (self.tok.tag) {
             .identifier, .kebab_identifier => self.advance(),
             else => self.fail("expected a label reference, got '{s}'", .{self.describe()}),
+        };
+    }
+
+    /// Enforce the by/using vocabulary partition at parse time: `by` admits only
+    /// kernel-primitive rule words, `using` only accelerant / engine-generation words.
+    /// Classified BY TEXT (this is the parser — strcmp is legal here, and the parse-only
+    /// tools use `init` without an interner so the token isn't stamped): a KERNEL word (the
+    /// pure primitives) requires `by`; everything else — accelerants, `instantiation`,
+    /// `model`, and any unknown word — requires `using`. An unknown word therefore surfaces
+    /// as "cite with `using`" if written after `by`; if written after `using` it passes here
+    /// and the "unsupported by the demand prover" diagnostic fires later.
+    fn checkKeyword(self: *Parser, kw: ast.Step.Claim.Kind, rule: Token) ParseError!void {
+        const want: ast.Step.Claim.Kind = if (isKernelRule(self.text(rule))) .by else .using;
+        if (kw == want) return;
+        return switch (want) {
+            .by => self.fail("'{s}' is a kernel rule; cite it with `by`, not `using`", .{self.text(rule)}),
+            .using => self.fail("'{s}' is an accelerant; cite it with `using`, not `by`", .{self.text(rule)}),
         };
     }
 
@@ -464,19 +494,27 @@ pub const Parser = struct {
                 //   label| formula
                 //     [by rule refs...]
                 _ = try self.expect(.l_bracket);
-                _ = try self.expect(.keyword_by);
+                // the justification keyword: `by` = kernel primitives (pure inference),
+                // `using` = accelerants + `instantiation`/`model` (engine proof-generation).
+                const kw: ast.Step.Claim.Kind = switch (self.tok.tag) {
+                    .keyword_by => .by,
+                    .keyword_using => .using,
+                    else => return self.fail("expected 'by' or 'using', got '{s}'", .{self.describe()}),
+                };
+                _ = self.advance();
                 // rule position admits `axiom`, `theorem`, and `model` (citation
                 // rules) even though they are declaration keywords
                 const rule = switch (self.tok.tag) {
                     .identifier, .keyword_axiom, .keyword_theorem, .keyword_model => self.advance(),
                     else => return self.fail("expected a rule name, got '{s}'", .{self.describe()}),
                 };
-                // `instantiate NAME(args)` cites a schema by name (always a plain
+                try self.checkKeyword(kw, rule);
+                // `instantiation NAME(args)` cites a schema by name (always a plain
                 // identifier). `specialize HEAD(args)` cites a forall-quantified
                 // THEOREM/AXIOM by name OR a local `forall`-shaped STEP by its label
                 // — so its head parses like a reference (plain OR kebab identifier).
                 var schema: ?Token = null;
-                if (std.mem.eql(u8, self.text(rule), "instantiate")) {
+                if (std.mem.eql(u8, self.text(rule), "instantiation")) {
                     schema = try self.expect(.identifier);
                 } else if (std.mem.eql(u8, self.text(rule), "specialize")) {
                     schema = try self.expectLabelRef();
@@ -524,6 +562,7 @@ pub const Parser = struct {
                 _ = try self.expect(.r_bracket);
                 return .{ .label = label, .body = .{ .claim = .{
                     .formula = formula,
+                    .kind = kw,
                     .rule = rule,
                     .schema = schema,
                     .args = args,
@@ -878,7 +917,7 @@ test "theorem with nested proof blocks and instantiate" {
         \\theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
         \\proof
         \\  @conc | forall n: Nat; add(n, ZERO) = n
-        \\    [by instantiate induction((fun k: Nat => add(k, ZERO) = k)) base stepcase]
+        \\    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base stepcase]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -902,7 +941,7 @@ test "theorem with nested proof blocks and instantiate" {
     try testing.expectEqual(1, done.refs.len);
 
     const inst = file.decls[1].theorem.steps[0].body.claim;
-    try testing.expectEqualStrings("instantiate", source[inst.rule.start..inst.rule.end]);
+    try testing.expectEqualStrings("instantiation", source[inst.rule.start..inst.rule.end]);
     try testing.expectEqualStrings("induction", source[inst.schema.?.start..inst.schema.?.end]);
     try testing.expectEqual(1, inst.args.len);
     try testing.expect(inst.args[0].* == .lambda);
@@ -913,7 +952,7 @@ test "arithmetic fallback(<thm>) parses; fallback stays an ordinary identifier e
     const source =
         \\theorem t: forall a: Nat; p(a)
         \\proof
-        \\  @c | forall a: Nat; p(a) [by arithmetic fallback(manualProof)]
+        \\  @c | forall a: Nat; p(a) [using arithmetic fallback(manualProof)]
         \\qed
         \\theorem u: q
         \\proof
@@ -1048,6 +1087,45 @@ test "consecutive claim steps: a following label is not swallowed as a ref" {
     try testing.expectEqual(1, steps[0].body.claim.refs.len);
     try testing.expectEqual(2, steps[1].body.claim.refs.len);
     try testing.expectEqual(1, steps[2].body.claim.refs.len);
+}
+
+test "by/using keyword: records the kind + enforces the vocabulary partition" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // a kernel rule under `by` and an accelerant under `using` both parse clean, and the
+    // Claim records which keyword introduced the step.
+    {
+        var sink: Diagnostics.Sink = .init(arena);
+        var p: Parser = .init(arena,
+            \\pred p
+            \\theorem t: p
+            \\proof
+            \\  @a | p [by axiom x]
+            \\  @b | p [using specialize head]
+            \\qed
+        , &sink);
+        const file = try p.parseFile();
+        try testing.expectEqual(0, sink.list.items.len);
+        const steps = file.decls[1].theorem.steps;
+        try testing.expectEqual(ast.Step.Claim.Kind.by, steps[0].body.claim.kind);
+        try testing.expectEqual(ast.Step.Claim.Kind.using, steps[1].body.claim.kind);
+    }
+    // `using` on a KERNEL rule is rejected at parse.
+    {
+        var sink: Diagnostics.Sink = .init(arena);
+        var p: Parser = .init(arena, "pred p\ntheorem t: p\nproof\n  @a | p [using axiom x]\nqed", &sink);
+        _ = try p.parseFile();
+        try testing.expect(sink.list.items.len >= 1);
+    }
+    // `by` on an ACCELERANT (here `model`, and a bare accelerant word) is rejected at parse.
+    {
+        var sink: Diagnostics.Sink = .init(arena);
+        var p: Parser = .init(arena, "pred p\ntheorem t: p\nproof\n  @a | p [by tautology]\nqed", &sink);
+        _ = try p.parseFile();
+        try testing.expect(sink.list.items.len >= 1);
+    }
 }
 
 test "ZERO-ary predicates: bare and empty-paren forms" {

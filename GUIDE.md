@@ -60,7 +60,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: symmetry` | from `x = y`, conclude `y = x` |
 | `RULE: rewrite` | replace an equation's LHS by its RHS in a target |
 | `RULE: iff_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
-| `RULE: instantiate` | monomorphize a schema |
+| `TACTIC: instantiation` | monomorphize a schema (`using`) |
 | `RULE: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
 | `RULE: chain` | prove A = Z from equations used any direction + congruence |
 | `RULE: model` | transfer a theory's theorem through a named model |
@@ -289,7 +289,7 @@ by reference thereafter, but a schema's proof is re-run at every instantiation
 site (the parameters differ, so there is no single fixed result to cache) — plus
 the strict declaration-time opaque check described above. If
 an expensive instance is reused, **realize it into a named theorem** — write a
-plain `theorem` whose one step is `[by instantiate NAME(args) ...]`, and cite
+plain `theorem` whose one step is `[using instantiation NAME(args) ...]`, and cite
 that theorem from then on. Naming pays the instantiation cost once and reuses
 it through the ordinary `proven`-flag mechanism; it also keeps the reuse
 explicit and greppable rather than hidden in a kernel memo table.
@@ -347,7 +347,7 @@ that theory's whole proven corpus transfers to the local sort — a working
 feature used throughout `std/`. A `model NAME { … }` block interprets the
 abstract theory's primitives as local symbols (with `:`) and discharges its
 axiom obligations with local facts (with `<-`), and in exchange every theorem the
-theory proves becomes citable at your sort via `[by model(NAME) source.thm]`.
+theory proves becomes citable at your sort via `[using model(NAME) source.thm]`.
 Where an alias
 identifies one entity with another, a `model` is a **named namespace of overloads** —
 you map each of the theory's primitives (its sorts, operations, constants) and
@@ -430,11 +430,11 @@ theorem addCancelLeft: forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
 proof
   @conclusion |
     forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
-    [by model(AdditiveGroup) group.cancelLeft]
+    [using model(AdditiveGroup) group.cancelLeft]
 qed
 ```
 
-`[by model(AdditiveGroup) group.cancelLeft]` takes `group`'s abstract
+`[using model(AdditiveGroup) group.cancelLeft]` takes `group`'s abstract
 theorem, rewrites it through the `AdditiveGroup` mapping (relativizing by the
 guard if any), and checks the result equals the goal. It is an **accelerant**:
 under `--fast` the transfer is trusted wholesale and marks the theorem
@@ -461,7 +461,7 @@ model NonNegInt {
 The discharge target (`nonnegInduction`) must itself be a schema; its statement
 must be the **guard-relativized remap** of the source's body (every `∀` over the
 sort gains `non_neg(x) ->`). That match is verified once, at the model declaration
-(even if the schema is never cited). Then `[by model(NonNegInt) peano.induction]`
+(even if the schema is never cited). Then `[using model(NonNegInt) peano.induction]`
 inside a schema body instantiates the discharge at the caller's predicate
 parameter — kernel-checked, untainted. (A schema transfer is only cited *inside a
 schema body*, where a predicate parameter exists to instantiate.)
@@ -656,7 +656,7 @@ leaf below it (see the Index for the full anchor list).
 | `symmetry STEP` | from a proven `x = y`, conclude `y = x` |
 | `rewrite EQ TARGET` | replace occurrences of the equation's left side with its right side in `TARGET` |
 | `iff_rewrite BICOND TARGET` | the propositional analogue of `rewrite`: from `P iff Q`, replace the sub-proposition `P` by `Q` at any position in `TARGET` (under connectives and quantifiers). A kernel-checked rule, no accelerant taint |
-| `instantiate NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
+| `using instantiation NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
 | `simplify refs...` | tactic: join both sides of an equation by rewriting (see Automation) |
 | `simplify_quantified refs...` | tactic: `simplify` under a `forall` prefix, without a hand `fix` (see Automation) |
 | `assoc_commut [(assoc, comm, swap)] [refs...]` | tactic: reorder an associative-commutative sum by its A/C laws — bare uses well-known `add`/`mul`; `(assoc, comm, swap)` supplies the triple for a custom operator; cited refs (e.g. distributivity) pre-normalize first (see Automation) |
@@ -884,9 +884,9 @@ term-equation rule) cannot reach. A kernel-checked rule with **no accelerant tai
   [by iff_rewrite bicond-P-Q target-R-of-P]
 ```
 
-### RULE: instantiate
+### TACTIC: instantiation
 
-`[by instantiate NAME(args) refs...]` — monomorphize the schema `NAME` at the
+`[using instantiation NAME(args) refs...]` — monomorphize the schema `NAME` at the
 written-out `args` (formula params supplied as `fun … => …` lambdas). Trailing refs
 discharge the instance's **leading antecedents** (its `->` premises), left to right.
 The proof body is re-checked at this instance (see `KEYWORD: schematic`). Reusing an
@@ -895,12 +895,12 @@ expensive instance? Realize it into a named theorem and cite that instead.
 ```bpa
 @applied |
   (not q) -> (not p)
-  [by instantiate contrapositive(fun => p, fun => q) have-p-imp-q]
+  [using instantiation contrapositive(fun => p, fun => q) have-p-imp-q]
 ```
 
 ### RULE: specialize
 
-`[by specialize HEAD(args) hyps...]` — apply a `forall`-quantified fact `HEAD` in
+`[using specialize HEAD(args) hyps...]` — apply a `forall`-quantified fact `HEAD` in
 ONE step: it ∀-elims `HEAD` at each written-out `args` (peeling the universal
 prefix), then modus_ponens each trailing hyp ref against a leading `->` antecedent,
 left to right. The result must be the goal. **`HEAD` may be a declared THEOREM/AXIOM
@@ -919,17 +919,17 @@ throwaway `-rule`/`-at-args` labels.
 // forall a, d; d>0 -> exists q,r; a = dq+r ∧ 0≤r<d, applied at (a, d):
 @decomposed |
   exists q: Int; exists r: Int; a = add(mul(d, q), r) and (is_nonneg(r) and less_than(r, d))
-  [by specialize divisionAlgorithmExists(a, d) d-is-positive]
+  [using specialize divisionAlgorithmExists(a, d) d-is-positive]
 ```
 
 Multi-arg peels several binders; multiple hyps discharge several antecedents in
 order. With NO hyps it is a bare specialization (just the ∀-elim chain). For a
-parameterized SCHEMA (a `prop`-parameter), use `instantiate` instead — `specialize`
+parameterized SCHEMA (a `prop`-parameter), use `instantiation` instead — `specialize`
 is for ordinary quantified theorems.
 
 ### RULE: chain
 
-`[by chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited
+`[using chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited
 equations, used in ANY direction and closed under congruence. Each `eqN` is a
 proven step / axiom / theorem of the form `X = Y`; `chain` searches (BFS) for
 a rewrite path connecting `A` to `Z`, using each equation forward OR backward, and
@@ -946,7 +946,7 @@ chain (`A = B`, `C = B`, `D = C` ⊢ `A = D`). It emits a `reflexivity` +
 // A = B, C = B (backwards), D = C ⊢ A = D, plus a congruence in one:
 @a-equals-d |
   mul(pu(s, k), at(s, k)) = mul(pu(t2, lprev), at(s, k))
-  [by chain s-succ-product-splits equal-products t2-product-is-l-product tm-equals-sk]
+  [using chain s-succ-product-splits equal-products t2-product-is-l-product tm-equals-sk]
 ```
 
 Use `simplify` for oriented normal-form equalities (ring identities), `chain`
@@ -963,12 +963,12 @@ antecedents automatically:
 // forall k; is_nonneg(k) -> forall s,t,l; is_nonneg(l) -> … -> k = l
 @k-equals-l |
   k = l
-  [by specialize factorizationLengthUnique(k, s, t, l) k-nonneg l-nonneg s-primes t-primes eq]
+  [using specialize factorizationLengthUnique(k, s, t, l) k-nonneg l-nonneg s-primes t-primes eq]
 ```
 
 ### RULE: model
 
-`[by model(INSTANCE) source.theorem]` — transfer an abstract theory's proven theorem
+`[using model(INSTANCE) source.theorem]` — transfer an abstract theory's proven theorem
 to a sort that models it. It takes the source theorem, rewrites it through the named
 model's mapping (relativizing by the guard if the model is guarded), and checks the
 result equals the goal. See `KEYWORD: model` for the mapping block.
@@ -976,7 +976,7 @@ result equals the goal. See `KEYWORD: model` for the mapping block.
 ```bpa
 @conclusion |
   forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
-  [by model(AdditiveGroup) group.cancelLeft]
+  [using model(AdditiveGroup) group.cancelLeft]
 ```
 
 It is an **accelerant**: in default (strict) mode it is legitimate because the
@@ -1040,7 +1040,7 @@ countermodels, concrete arithmetic counterexamples).
 
 Equational rewriting (always emits kernel steps).
 
-`[by simplify f1 f2 ...]` proves an equation by rewriting both sides to a
+`[using simplify f1 f2 ...]` proves an equation by rewriting both sides to a
 common normal form using the cited facts (universally quantified equations
 or equation steps) as left-to-right rules. The certificate *is* the
 rewrite chain; there is no accelerated path. Cycling rule sets hit a hard rewrite cap
@@ -1049,7 +1049,7 @@ instead of hanging.
 ```bpa
 @succ-case |
   add(succ(k), ZERO) = succ(k)
-  [by simplify addSuccLeft inductive-hypothesis]
+  [using simplify addSuccLeft inductive-hypothesis]
 ```
 
 `simplify` proves a bare equation; on a `forall x…; s = t` goal use
@@ -1061,7 +1061,7 @@ suggests the other if you pick the wrong one for the goal shape.
 
 Associative-commutative reordering.
 
-`[by assoc_commut]` proves `s = t` when both are sums over an associative-
+`[using assoc_commut]` proves `s = t` when both are sums over an associative-
 commutative operator with the same multiset of summands, differing only by
 associativity and commutativity — including sums whose summands are **arbitrary
 opaque terms** (`sumTo(k)`, `mul(k, k)`), which `simplify` cannot reorder (a
@@ -1073,7 +1073,7 @@ have different summands` error.
 ```bpa
 @swapped |
   add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
-  [by assoc_commut]
+  [using assoc_commut]
 ```
 
 **Two forms, no partials** — you either supply the whole AC triple or rely on
@@ -1092,7 +1092,7 @@ the well-known one:
 // a custom operator `join` with its own (non-conventionally-named) AC laws
 @reorder |
   join(join(a, b), join(c, d)) = join(join(a, c), join(b, d))
-  [by assoc_commut(joinAssoc, joinComm, joinSwap)]
+  [using assoc_commut(joinAssoc, joinComm, joinSwap)]
 ```
 
 **Under a `forall` prefix**, use `assoc_commut_quantified` (peels the binders,
@@ -1106,7 +1106,7 @@ certifies in one step (distribute, then AC-sort the resulting sum of products):
 ```bpa
 @conclusion |
   forall a, b, c: Nat; mul(add(a, b), c) = add(mul(b, c), mul(a, c))
-  [by assoc_commut_quantified mulAddDistribRight]
+  [using assoc_commut_quantified mulAddDistribRight]
 ```
 
 **The `--fast` accelerated path** (bare form only): a theory that declares an operator
@@ -1122,7 +1122,7 @@ certifies (the triple is checkable), so it has no accelerated path.
 
 Associativity-only reordering.
 
-`[by assoc(assocLemma)]` proves `s = t` when both are equal by **associativity
+`[using assoc(assocLemma)]` proves `s = t` when both are equal by **associativity
 alone** of a single operator — the non-commutative sibling of `assoc_commut`.
 It right-nests each side (associativity is confluent and terminating, so
 right-nesting is a canonical form) and compares; no reordering, no
@@ -1133,14 +1133,14 @@ theory: rearranging `(ab)c` ↔ `a(bc)`), where `assoc_commut` does not apply.
 // a custom group operator `op` with its associativity axiom `opAssoc`
 @rearrange |
   op(op(op(a, b), c), d) = op(a, op(b, op(c, d)))
-  [by assoc(opAssoc)]
+  [using assoc(opAssoc)]
 ```
 
 **The associativity lemma is REQUIRED** — there is no bare form and no
 assumption the operator is `add`/`mul`. `assoc` takes exactly one argument, the
 lemma of shape `f(f(a,b),c) = f(a,f(b,c))`, and recovers the operator `f` from
 it. This keeps `assoc` fully parameterized by its cited axiom (zero dependence
-on ambient scope or well-known names). Bare `[by assoc]` is a located error;
+on ambient scope or well-known names). Bare `[using assoc]` is a located error;
 sides that differ by more than associativity report `assoc: sides differ by more
 than associativity`. **Under a `forall` prefix**, use `assoc_quantified`.
 
@@ -1153,7 +1153,7 @@ operator is associative without kernel-checking the rearrangement — and is mar
 
 Nonlinear identities.
 
-`[by polynomial(theory)]` proves an `add`/`mul` polynomial identity `s = t`
+`[using polynomial(theory)]` proves an `add`/`mul` polynomial identity `s = t`
 when both sides expand to the same polynomial — the nonlinear analogue of
 `assoc_commut`. It canonicalizes each side to a **sorted sum of sorted
 monomials**: distribute `mul` over `add`, sort each monomial's factors, sort the
@@ -1169,7 +1169,7 @@ differently: '<nf(s)>' vs '<nf(t)>'` error.
 @square |
   forall a, b: Nat;
     mul(add(a, b), add(a, b)) = add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))
-  [by polynomial_quantified(peano)]
+  [using polynomial_quantified(peano)]
 ```
 
 Like `arithmetic`, it is **theory-parameterized**: `polynomial(peano)` resolves
@@ -1207,7 +1207,7 @@ acceleration is for the unproven ring-structure assumption, not for the comparis
 
 Extensionality-reduction.
 
-`[by ext(theory)]` proves an equation `LHS = RHS` between extensional objects
+`[using ext(theory)]` proves an equation `LHS = RHS` between extensional objects
 by the *element-chase*: reduce `LHS = RHS`, through the theory's extensionality
 lemma, to its pointwise obligation; fix an element; unfold the operators; and
 close the residue. It is the mapping/set analogue of `polynomial` — a
@@ -1218,18 +1218,18 @@ theory argument. (Prior art: Lean's `ext`.)
 ```bpa
 @intersection-commutes |
   forall a, b: Set; intersection(a, b) = intersection(b, a)
-  [by ext_quantified(set)]
+  [using ext_quantified(set)]
 
 @compose-associates |
   forall h, g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
-  [by ext_quantified(function)]
+  [using ext_quantified(function)]
 ```
 
 It reads the residue's shape to pick its closer: a **set** equation unfolds
 `member(x, ·)` via the `<op>Member` lemmas and closes the propositional residue
 with `tautology`; a **function** equation unfolds `apply(·, x)` via the
 `<op>Apply` lemmas and closes the equational residue with the rewrite join. One
-`[by ext…]` line replaces the ~85-line hand element-chase. Like `arithmetic`, it
+`[using ext…]` line replaces the ~85-line hand element-chase. Like `arithmetic`, it
 is **theory-parameterized** (`ext(set)` / `ext(function)` resolve the
 extensionality lemma, the `Universe` sort, and the operator lemmas against the
 named module); **under a `forall` prefix**, use `ext_quantified`. A false
@@ -1240,7 +1240,7 @@ values differ. It emits kernel steps (its closers do), so uses are kernel-checke
 
 Propositional consequence.
 
-`[by tautology refs...]` proves any goal that follows propositionally from
+`[using tautology refs...]` proves any goal that follows propositionally from
 the cited premises, treating non-propositional subformulas as opaque
 atoms. Valid goals replay as certificates (case splits via an inline
 excluded middle); non-consequences report a countermodel
@@ -1250,7 +1250,7 @@ excluded middle); non-consequences report a countermodel
 
 Linear arithmetic over Nat.
 
-`[by arithmetic refs...]` decides goals over `ZERO`, `ONE`, `succ`, `add`,
+`[using arithmetic refs...]` decides goals over `ZERO`, `ONE`, `succ`, `add`,
 `mul`-by-literal, `=`, `!=`, and `less_than`, with full propositional
 structure and quantifiers over Nat; anything else becomes an opaque
 propositional atom in an SMT-style combination. The vocabulary is
@@ -1269,7 +1269,7 @@ reports `'mul(a, b)' is outside linear arithmetic` rather than a countermodel.
 ```bpa
 @conc-in |
   less_than(a, succ(b))
-  [by arithmetic have]
+  [using arithmetic have]
 ```
 
 > [!WARNING]
@@ -1284,7 +1284,7 @@ certificate coverage — lives in `ACCELERATION.md`.
 `bpa query <op>` inspects `.bpa` files (and `.md` literate documents — the
 `bpa` blocks are extracted the same way `check` does) without checking them,
 for navigating a proof corpus. grep is the right tool for most searches (label
-audits, "who uses `[by arithmetic]`", counting); these cover the cases grep
+audits, "who uses `[using arithmetic]`", counting); these cover the cases grep
 can't do cleanly.
 
 | Command | What it does |
