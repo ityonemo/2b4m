@@ -1185,34 +1185,43 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.tok(sort_name) };
     }
 
-    // body = the fully-instantiated tail; for a LOCAL head, prepend the head formula as an
-    // antecedent (so the schema proof can `assume` it rather than cite it externally).
+    // WALK the head formula (as `tail` was built) collecting, IN ORDER, the ∀-binders'
+    // params and the kept `->` ANTECEDENTS — the schema body is `ant0 -> ant1 -> … -> C`
+    // and its proof assumes each antecedent, threads forall_elim(param)/modus_ponens(ant)
+    // to C, then implies_intro back. For a LOCAL head the head formula is antecedent #0.
+    var ants: std.ArrayList(TermId) = .empty; // kept antecedents, in body order
+    if (head_local) try ants.append(self.ctx.arena, head_formula);
+    // re-walk head_formula interleaving to enumerate the `->` LHSs at the params.
+    {
+        var t2 = head_formula;
+        var ai: usize = 0;
+        while (true) {
+            const node = self.pool.get(t2);
+            if (node == .quant and node.quant.q == .forall and ai < nargs) {
+                const pf = try self.pool.add(.{ .fvar = .{ .name = pnames[ai], .sort = node.quant.sort } });
+                t2 = try self.pool.open(node.quant.body, pf);
+                ai += 1;
+            } else if (node == .bin and node.bin.op == .implies) {
+                try ants.append(self.ctx.arena, node.bin.lhs);
+                t2 = node.bin.rhs;
+            } else break;
+        }
+    }
+    const consequent = tail_consequent: {
+        // C = tail with all leading `->` antecedents stripped (they're the kept ants after
+        // the local-head one). Strip (ants.len - localOffset) implications off `tail`.
+        var t3 = tail;
+        var strip = ants.items.len - @intFromBool(head_local);
+        while (strip > 0) : (strip -= 1) {
+            t3 = self.pool.get(t3).bin.rhs;
+        }
+        break :tail_consequent t3;
+    };
+
     var body_expr = try b.termExpr(tail);
     if (head_local) body_expr = try b.implies(try b.termExpr(head_formula), body_expr);
 
-    // proof steps.
-    const law_label = try b.intern("the-head-law");
-    const concl_label = try b.intern("conclusion");
-    var steps: std.ArrayList(ast.Step) = .empty;
-    const param_arg_exprs = try self.ctx.arena.alloc(*const ast.Expr, nargs);
-    for (pnames, param_arg_exprs) |pn, *out| out.* = try b.nameExpr(pn);
-
-    if (head_local) {
-        // assume the head formula, forall_elim it at the params inside the block, export.
-        const head_expr = try b.termExpr(head_formula);
-        const tail_expr = try b.termExpr(tail);
-        var inner: std.ArrayList(ast.Step) = .empty;
-        try inner.append(self.ctx.arena, try b.claimStep(law_label, head_expr, .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(&b, try b.intern("assume-head"))));
-        try inner.append(self.ctx.arena, try b.claimStep(concl_label, tail_expr, .by, try self.internStr("forall_elim"), param_arg_exprs, try self.oneRef(&b, law_label)));
-        try steps.append(self.ctx.arena, try b.assumeStep(try b.intern("assume-head"), head_expr, try inner.toOwnedSlice(self.ctx.arena)));
-        try steps.append(self.ctx.arena, try b.claimStep(try b.intern("export"), body_expr, .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(&b, try b.intern("assume-head"))));
-    } else {
-        // cite the head globally, forall_elim at the params.
-        const head_expr = try b.termExpr(head_formula);
-        const rule: []const u8 = if (head_kind_axiom) "axiom" else "theorem";
-        try steps.append(self.ctx.arena, try b.claimStep(law_label, head_expr, .by, try self.internStrRt(rule), &.{}, try self.headRef(head)));
-        try steps.append(self.ctx.arena, try b.claimStep(concl_label, body_expr, .by, try self.internStr("forall_elim"), param_arg_exprs, try self.oneRef(&b, law_label)));
-    }
+    const steps = try self.buildSpecializeProof(&b, head, head_local, head_kind_axiom, head_formula, pnames, ants.items, consequent);
 
     // deterministic hash-name from the head formula + arg count (re-entry stable).
     const hash = Schema.termHash(self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
@@ -1220,10 +1229,113 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = try steps.toOwnedSlice(self.ctx.arena) } },
+        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
         .args = c.args,
         .premises = c.refs,
     };
+}
+
+/// Build the synthetic schema's PROOF for specialize: prove `ants[0] -> … -> consequent`
+/// from the head. Structure: assume each antecedent (nested blocks), and in the innermost
+/// context walk the head interleaving forall_elim(param) and modus_ponens(the matching
+/// assumed antecedent) to reach `consequent`; then implies_intro back out through each block.
+/// A GLOBAL head is cited (axiom/theorem); a LOCAL head is antecedent #0 (assumed, restated
+/// by hypothesis). Handles the contiguous case (no interior `->`) as the ants-empty subset.
+fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token, head_local: bool, head_axiom: bool, head_formula: TermId, pnames: []const StrId, ants: []const TermId, consequent: TermId) Error![]const ast.Step {
+    // labels for each assumed antecedent's block + its hypothesis restatement.
+    const ablk = try self.ctx.arena.alloc(StrId, ants.len);
+    const ahyp = try self.ctx.arena.alloc(StrId, ants.len);
+    for (0..ants.len) |i| {
+        ablk[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "assume-ant{d}", .{i}));
+        ahyp[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "ant{d}", .{i}));
+    }
+
+    // the INNERMOST steps: cite/restate the head, then interleave elim/mp to `consequent`.
+    var inner: std.ArrayList(ast.Step) = .empty;
+    const law = try b.intern("the-head-law");
+    if (head_local) {
+        // head is antecedent #0 — restate it by hypothesis on its block.
+        try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, ablk[0])));
+    } else {
+        const rule: []const u8 = if (head_axiom) "axiom" else "theorem";
+        try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStrRt(rule), &.{}, try self.headRef(head)));
+    }
+    // walk the head, emitting a forall_elim step per binder and a modus_ponens step per `->`
+    // (discharged by the matching assumed antecedent). `cur`/`cur_label` track the running
+    // step; `ai` indexes params, `hi` indexes antecedents (offset past the local-head one).
+    var cur = head_formula;
+    var cur_label = law;
+    var hi: usize = @intFromBool(head_local); // ant0 is the head itself for a local head
+    var pi: usize = 0; // param index
+    var stepn: u32 = 0;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .quant and node.quant.q == .forall and pi < pnames.len) {
+            const pf = try self.pool.add(.{ .fvar = .{ .name = pnames[pi], .sort = node.quant.sort } });
+            const opened = try self.pool.open(node.quant.body, pf);
+            const lbl = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "elim{d}", .{stepn}));
+            const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
+            arg1[0] = try b.nameExpr(pnames[pi]);
+            try inner.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(opened), .by, try self.internStr("forall_elim"), arg1, try self.oneRef(b, cur_label)));
+            cur = opened;
+            cur_label = lbl;
+            pi += 1;
+            stepn += 1;
+        } else if (node == .bin and node.bin.op == .implies and hi < ants.len) {
+            const lbl = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "mp{d}", .{stepn}));
+            const refs2 = try self.ctx.arena.alloc(lexer.Token, 2);
+            refs2[0] = b.tok(cur_label);
+            refs2[1] = b.tok(ahyp[hi]);
+            try inner.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(node.bin.rhs), .by, try self.internStr("modus_ponens"), &.{}, refs2));
+            cur = node.bin.rhs;
+            cur_label = lbl;
+            hi += 1;
+            stepn += 1;
+        } else break;
+    }
+    // the innermost block's LAST step (cur_label) IS `consequent`; wrap up below.
+    // now wrap `inner` in nested assume blocks (innermost = ants[last]) + implies_intro out.
+    // build from the innermost outward.
+    var body_steps = try inner.toOwnedSlice(self.ctx.arena);
+    var i: usize = ants.len;
+    while (i > 0) {
+        i -= 1;
+        // the block's body: restate THIS level's hypothesis (unless it's the local head's
+        // ant0, already restated as `law` in the innermost steps), then the inner body.
+        const needs_restate = !(head_local and i == 0);
+        var blk_body: []const ast.Step = body_steps;
+        if (needs_restate) {
+            var bb = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, body_steps.len + 1);
+            bb.appendAssumeCapacity(try b.claimStep(ahyp[i], try b.termExpr(ants[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, ablk[i])));
+            bb.appendSliceAssumeCapacity(body_steps);
+            blk_body = bb.items;
+        }
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try b.assumeStep(ablk[i], try b.termExpr(ants[i]), blk_body));
+        // export this level: `ants[i] -> <what the block concluded>`.
+        const exported = try impliesFrom(b, ants[i..ants.len], consequent);
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try b.intern(try std.fmt.allocPrint(self.ctx.arena, "export{d}", .{i})),
+            exported,
+            .by,
+            try self.internStr("implies_intro"),
+            &.{},
+            try self.oneRef(b, ablk[i]),
+        ));
+        body_steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return body_steps;
+}
+
+/// `ants[0] -> ants[1] -> … -> consequent` as an AST expr (right-assoc `->`).
+fn impliesFrom(b: *Accelerant.Builder, ants: []const TermId, consequent: TermId) Error!*const ast.Expr {
+    var acc = try b.termExpr(consequent);
+    var i: usize = ants.len;
+    while (i > 0) {
+        i -= 1;
+        acc = try b.implies(try b.termExpr(ants[i]), acc);
+    }
+    return acc;
 }
 
 /// Instantiate the NEXT `forall` reachable through a leading `->` chain, at a fresh fvar
