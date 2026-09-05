@@ -37,6 +37,7 @@ const RefScan = @import("RefScan.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
+const smt = @import("smt.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
@@ -649,7 +650,7 @@ fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.
 /// A kernel-rule step reference: LOCAL-only (a live label in the walk's scope).
 fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.SRef {
     const name = try self.localName(tok);
-    const target = w.findStep(name) orelse {
+    const target = w.resolveStep(name) orelse {
         // nicety: a global fact cited where a step label belongs
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null) {
             return self.fail(tok.start, "'{s}' is a fact, not a proof step; introduce it as a step first with `[by axiom {s}]` or `[by theorem {s}]`, then reference that step", .{
@@ -666,7 +667,7 @@ fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.S
 
 fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.BRef {
     const name = try self.localName(tok);
-    const target = w.findStep(name) orelse {
+    const target = w.resolveStep(name) orelse {
         return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)});
     };
     return switch (target) {
@@ -1108,13 +1109,22 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.
 fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = e;
     if (c.rule.name == try self.internStr("specialize")) return try self.produceSpecialize(w, goal, c);
+    if (c.rule.name == try self.internStr("tautology")) return try self.produceTautology(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
 /// The premise refs an accelerant's `schema_instance` discharges, in the synthetic body's
-/// antecedent order. For specialize: the head-cite step (only when the head is LOCAL — a
-/// global head is cited inside the synthetic proof, not discharged here) followed by the hyps.
+/// antecedent order. Each accelerant's body has a matching antecedent order:
+///   - tautology: exactly the cited refs (the schema body's `prem0 -> … -> goal`), no head.
+///   - specialize: the head-cite step (only when the head is LOCAL — a global head is cited
+///     inside the synthetic proof, not discharged here) followed by the hyps.
 fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]const kernel.SRef {
+    // tautology has no head: its antecedents ARE the cited refs, in order.
+    if (c.schema == null) {
+        const out = try self.ctx.arena.alloc(kernel.SRef, c.refs.len);
+        for (c.refs, out) |r, *o| o.* = try self.resolveStepRef(w, r);
+        return out;
+    }
     // specialize: head is c.schema; hyps are c.refs. A LOCAL head becomes the FIRST premise
     // (its formula is the synthetic schema's first antecedent); a GLOBAL head is not a premise.
     const head = c.schema.?;
@@ -1380,6 +1390,404 @@ fn headRef(self: *Prove, head: lexer.Token) Error![]const lexer.Token {
 fn internStrRt(self: *Prove, s: []const u8) Error!StrId {
     return self.ctx.interner.internString(s) catch error.OutOfMemory;
 }
+
+// -- tautology (the second accelerant producer) ----------------------------------------
+
+/// Build the synthetic schema for `using tautology refs…`, closing a goal that is a
+/// PROPOSITIONAL CONSEQUENCE of the cited premises. `smt.tautology` DECIDES validity (an
+/// honest oracle — rejects a non-consequence with a countermodel / over-cap with the atom
+/// count); on `valid` the truth search REPLAYS as a natural-deduction certificate emitted
+/// as AST (`TautAst`) — every step re-checked by the kernel.
+///
+/// The synthetic schema (same shape as specialize): body = `prem0 -> … -> premN -> goal`;
+/// proof = nest one `assume prem_i` per premise (restating each hypothesis), then in the
+/// innermost context emit the cert. The call site discharges the antecedents with `c.refs`.
+///
+/// PARAMS: the fixtures (+ every propositional consequence at a closed site) have no caller-
+/// local free fvars, so no params are abstracted (unlike specialize's value params). A
+/// tautology inside a `fix` would surface a free fvar in a premise/goal; that abstraction is
+/// left for a follow-up; a goal/premise carrying a free fvar is rejected gracefully below.
+fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "tautology takes no arguments", .{});
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // premises = the cited LOCAL steps' formulae (in ref order — the body's antecedent order).
+    const prems = try self.ctx.arena.alloc(TautAst.Prem, c.refs.len);
+    for (c.refs, prems) |r, *out| {
+        const sref = try self.resolveStepRef(w, r);
+        out.* = .{
+            .formula = self.low_steps.items[@intFromEnum(sref.id)].formula,
+            .label = try self.freshNamed("prem"), // the restated-hypothesis step (in the block)
+            .blk_label = try self.freshNamed("assume-prem"), // the assume block itself
+        };
+    }
+
+    // DECIDE. A non-consequence / over-cap is a HARD failure (strict-only — no --fast escape).
+    const prem_formulae = try self.ctx.arena.alloc(TermId, prems.len);
+    for (prems, prem_formulae) |p, *out| out.* = p.formula;
+    const verdict = smt.tautology(self.ctx.arena, self.pool, prem_formulae, goal) catch return error.OutOfMemory;
+    switch (verdict) {
+        .valid => {},
+        .too_many_atoms => |n| return self.fail(c.rule.start, "tautology: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
+        .countermodel => |lits| {
+            var msg: std.Io.Writer.Allocating = .init(self.ctx.arena);
+            for (lits, 0..) |lit, i| {
+                msg.writer.print("{s}{s} := {s}", .{
+                    if (i > 0) ", " else "",
+                    try self.renderTerm(lit.atom),
+                    if (lit.value) "true" else "false",
+                }) catch return error.OutOfMemory;
+            }
+            return self.fail(c.rule.start, "tautology: not a propositional consequence; countermodel: {s}", .{msg.written()});
+        },
+    }
+
+    // GENERATE the certificate. Collect the atoms once (the cert's split order), then replay.
+    var atom_list: std.ArrayList(TermId) = .empty;
+    for (prem_formulae) |f| smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, f) catch return error.OutOfMemory;
+    smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, goal) catch return error.OutOfMemory;
+
+    // A free caller-local fvar (a `fix` eigenvariable in the goal/premises — tautology inside
+    // a fix block) would delaborate to a name unresolvable in the empty-scope schema body.
+    // Abstracting such fvars into schema value params (as specialize does with its args) is a
+    // shared-framework follow-up; until then this is a clean FAILURE, never a crash.
+    if (self.hasFreeFvar(goal)) return self.fail(c.rule.start, "tautology over a proof-local variable is not yet supported (free variable in the goal)", .{});
+    for (prem_formulae) |f| {
+        if (self.hasFreeFvar(f)) return self.fail(c.rule.start, "tautology over a proof-local variable is not yet supported (free variable in a premise)", .{});
+    }
+
+    const assignment = try self.ctx.arena.alloc(?bool, atom_list.items.len);
+    @memset(assignment, null);
+    const lit_blocks = try self.ctx.arena.alloc(?StrId, atom_list.items.len);
+    @memset(lit_blocks, null);
+    var cert: TautAst = .{
+        .p = self,
+        .b = &b,
+        .goal = goal,
+        .premises = prems,
+        .atoms = atom_list.items,
+        .assignment = assignment,
+        .lit_blocks = lit_blocks,
+    };
+
+    // the innermost block's steps: the whole cert, concluding `goal`.
+    var inner: std.ArrayList(ast.Step) = .empty;
+    _ = try cert.deriveGoal(&inner);
+
+    // wrap in nested `assume prem_i { restate hyp; … }` blocks, exporting each `->` back out.
+    const steps = try self.wrapTautologyPremises(&b, prems, goal, inner.items);
+
+    // schema body = `prem0 -> … -> goal` (an ordinary proof with no premises just = goal).
+    var body_expr = try b.termExpr(goal);
+    var i: usize = prems.len;
+    while (i > 0) {
+        i -= 1;
+        body_expr = try b.implies(try b.termExpr(prems[i].formula), body_expr);
+    }
+
+    // deterministic hash-name from the goal + all premise formulae (re-entry stable).
+    var hash = Schema.termHash(self.pool, goal);
+    for (prem_formulae) |f| hash ^= Schema.termHash(self.pool, f) *% 0x9E3779B97F4A7C15;
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "tautology{{{x}}}", .{hash}));
+
+    return .{
+        .name = name,
+        .decl = .{ .schema = .{ .name = b.tok(name), .params = &.{}, .formula = body_expr, .steps = steps } },
+        .args = &.{},
+        .premises = c.refs,
+    };
+}
+
+/// True if `id` contains any FREE fvar — a caller-local variable the delaborated schema body
+/// could not re-resolve in its empty scope. The tautology producer rejects such a goal/premise
+/// gracefully (the abstraction of free locals into params is deferred; see `produceTautology`).
+fn hasFreeFvar(self: *Prove, id: TermId) bool {
+    return switch (self.pool.get(id)) {
+        .fvar => true,
+        .bvar => false,
+        .app, .pred => |a| {
+            for (self.pool.args(a)) |arg| if (self.hasFreeFvar(arg)) return true;
+            return false;
+        },
+        .eq => |p| self.hasFreeFvar(p.lhs) or self.hasFreeFvar(p.rhs),
+        .not => |t| self.hasFreeFvar(t),
+        .bin => |bn| self.hasFreeFvar(bn.lhs) or self.hasFreeFvar(bn.rhs),
+        .quant => |q| self.hasFreeFvar(q.body),
+    };
+}
+
+/// Wrap the innermost cert `inner` (which concludes `goal`) in nested `assume prem_i { … }`
+/// blocks (innermost = the last premise), restating each hypothesis and exporting `prem_i ->
+/// …` with `implies_intro` out through each level — the shape `buildSpecializeProof` uses.
+/// With no premises the cert steps are the proof body verbatim.
+fn wrapTautologyPremises(self: *Prove, b: *Accelerant.Builder, prems: []const TautAst.Prem, goal: TermId, inner: []const ast.Step) Error![]const ast.Step {
+    var body_steps = inner;
+    var i: usize = prems.len;
+    while (i > 0) {
+        i -= 1;
+        // this level's block: restate its hypothesis, then the inner body.
+        var blk_body = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, body_steps.len + 1);
+        blk_body.appendAssumeCapacity(try b.claimStep(prems[i].label, try b.termExpr(prems[i].formula), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, prems[i].blk_label)));
+        blk_body.appendSliceAssumeCapacity(body_steps);
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try b.assumeStep(prems[i].blk_label, try b.termExpr(prems[i].formula), blk_body.items));
+        // export: `prem_i -> prem_{i+1} -> … -> goal`.
+        var exported = try b.termExpr(goal);
+        var j: usize = prems.len;
+        while (j > i) {
+            j -= 1;
+            exported = try b.implies(try b.termExpr(prems[j].formula), exported);
+        }
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try self.freshNamed("export"),
+            exported,
+            .by,
+            try self.internStr("implies_intro"),
+            &.{},
+            try self.oneRef(b, prems[i].blk_label),
+        ));
+        body_steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return body_steps;
+}
+
+/// The truth-search certificate, emitted as AST steps. A faithful port of the eager
+/// `TautCert` (which emitted kernel steps into a shared `Lowering`): every recursive site
+/// that opened a kernel block instead builds a fresh `assume { … }` AST block here. The
+/// step vocabulary is identical (excluded-middle split per atom → `or_elim`; leaves derive
+/// the goal structurally or `absurd` a refuted premise). No step budget (strict-only: the
+/// cert MUST build for a `valid` verdict — an unbuildable one is an internal bug, not a
+/// fallback). `theoryLeaf` (arithmetic) is DROPPED — pure propositional never needs it.
+const TautAst = struct {
+    p: *Prove,
+    b: *Accelerant.Builder,
+    goal: TermId,
+    premises: []const Prem,
+    atoms: []const TermId,
+    assignment: []?bool,
+    /// per atom: the assume-block LABEL whose hypothesis is the (positive/negative) literal
+    lit_blocks: []?StrId,
+
+    /// A cited premise surfaced as an antecedent: its formula + its restated-hypothesis label.
+    pub const Prem = struct {
+        formula: TermId,
+        /// the label of the restated `[by hypothesis]` step inside the enclosing assume block
+        label: StrId,
+        /// the assume block's own label (referenced by the hypothesis / implies_intro steps)
+        blk_label: StrId,
+    };
+
+    const CertError = Error;
+
+    fn pool(self: *const TautAst) *term.Pool {
+        return self.p.pool;
+    }
+
+    fn eval(self: *const TautAst, f: TermId) ?bool {
+        return smt.eval(self.pool(), self.atoms, self.assignment, f);
+    }
+
+    /// The assume-block label whose hypothesis is the literal for atom `f` (assigned, else
+    /// eval could not have decided the branch that calls this).
+    fn litBlock(self: *const TautAst, f: TermId) StrId {
+        for (self.atoms, self.lit_blocks) |a, blk| {
+            if (self.pool().alphaEq(a, f)) return blk.?;
+        }
+        unreachable; // every leaf is a collected atom
+    }
+
+    /// Append a claim step proving `formula` by `rule` citing `refs` (given as labels); return
+    /// its fresh label. The variadic `refs` are label StrIds, wrapped as tokens here.
+    fn emit(self: *TautAst, block: *std.ArrayList(ast.Step), formula: TermId, rule: []const u8, refs: []const StrId) CertError!StrId {
+        const toks = try self.p.ctx.arena.alloc(lexer.Token, refs.len);
+        for (refs, toks) |r, *out| out.* = self.b.tok(r);
+        const label = try self.p.freshNamed("taut");
+        try block.append(self.p.ctx.arena, try self.b.claimStep(label, try self.b.termExpr(formula), .by, try self.p.internStrRt(rule), &.{}, toks));
+        return label;
+    }
+
+    /// A block under construction: its label + its step list. Close with `finishBlock`.
+    const OpenBlock = struct { label: StrId, body: std.ArrayList(ast.Step) = .empty };
+
+    fn openBlock(self: *TautAst) CertError!OpenBlock {
+        return .{ .label = try self.p.freshNamed("tautology") };
+    }
+
+    /// Wrap a filled OpenBlock as `assume formula { body } @label` in `parent`.
+    fn finishBlock(self: *TautAst, parent: *std.ArrayList(ast.Step), blk: *OpenBlock, formula: TermId) CertError!void {
+        try parent.append(self.p.ctx.arena, try self.b.assumeStep(blk.label, try self.b.termExpr(formula), blk.body.items));
+    }
+
+    /// Restate an assume block's hypothesis `formula` as `[by hypothesis <blk>]`.
+    fn hyp(self: *TautAst, blk: *OpenBlock, formula: TermId) CertError!StrId {
+        return self.emit(&blk.body, formula, "hypothesis", &.{blk.label});
+    }
+
+    /// Prove `goal` in `block`. The entry point: a refuted premise closes by `absurd`; a
+    /// true goal derives structurally; otherwise split on the first unassigned atom via an
+    /// excluded-middle lemma + `or_elim` over the two assumption branches.
+    fn deriveGoal(self: *TautAst, block: *std.ArrayList(ast.Step)) CertError!StrId {
+        for (self.premises) |pr| {
+            if (self.eval(pr.formula) == false) {
+                // the premise's hypothesis step is `pr.label`; refute its formula and explode.
+                const refuted = try self.deriveFalse(block, pr.formula);
+                return self.emit(block, self.goal, "absurd", &.{ pr.label, refuted });
+            }
+        }
+        if (self.eval(self.goal) == true) {
+            return self.deriveTrue(block, self.goal);
+        }
+        // eval(goal) == false on a FULLY decided branch would be an unclosable boolean dead
+        // end — impossible for a `valid` verdict over pure-propositional atoms (no theory
+        // leaf). Some atom is still unassigned; split on it.
+        std.debug.assert(std.mem.indexOfScalar(?bool, self.assignment, null) != null);
+        const idx = for (self.assignment, 0..) |v, i| {
+            if (v == null) break i;
+        } else unreachable;
+        const atom = self.atoms[idx];
+        const not_atom = try self.pool().add(.{ .not = atom });
+        const disj = try self.pool().add(.{ .bin = .{ .op = .or_op, .lhs = atom, .rhs = not_atom } });
+        const lem = try self.emitLem(block, atom, not_atom, disj);
+
+        // left arm: assume atom; recurse with idx := true, the arm block IS its literal source.
+        var left = try self.openBlock();
+        self.assignment[idx] = true;
+        self.lit_blocks[idx] = left.label;
+        _ = try self.deriveGoal(&left.body);
+        try self.finishBlock(block, &left, atom);
+
+        var right = try self.openBlock();
+        self.assignment[idx] = false;
+        self.lit_blocks[idx] = right.label;
+        _ = try self.deriveGoal(&right.body);
+        try self.finishBlock(block, &right, not_atom);
+
+        self.assignment[idx] = null;
+        self.lit_blocks[idx] = null;
+        return self.emit(block, self.goal, "or_elim", &.{ lem, left.label, right.label });
+    }
+
+    /// `atom or not atom` the classical way: not_intro on the negated disjunction, then
+    /// double_negation. A fixed AST gadget (the port of `TautCert.emitLem`).
+    fn emitLem(self: *TautAst, block: *std.ArrayList(ast.Step), atom: TermId, not_atom: TermId, disj: TermId) CertError!StrId {
+        const not_disj = try self.pool().add(.{ .not = disj });
+        const not_not = try self.pool().add(.{ .not = not_disj });
+
+        var outer = try self.openBlock();
+        const hyp_outer = try self.hyp(&outer, not_disj);
+        // inner: assume atom, derive the disjunction by or_intro_left.
+        var inner = try self.openBlock();
+        const hyp_inner = try self.hyp(&inner, atom);
+        const or_left = try self.emit(&inner.body, disj, "or_intro_left", &.{hyp_inner});
+        try self.finishBlock(&outer.body, &inner, atom);
+        const derived_not = try self.emit(&outer.body, not_atom, "not_intro", &.{ inner.label, or_left, hyp_outer });
+        const or_right = try self.emit(&outer.body, disj, "or_intro_right", &.{derived_not});
+        try self.finishBlock(block, &outer, not_disj);
+
+        const nn = try self.emit(block, not_not, "not_intro", &.{ outer.label, or_right, hyp_outer });
+        return self.emit(block, disj, "double_negation", &.{nn});
+    }
+
+    /// Emit a step proving `f` (which evaluates true) in `block`; return its label.
+    fn deriveTrue(self: *TautAst, block: *std.ArrayList(ast.Step), f: TermId) CertError!StrId {
+        switch (self.pool().get(f)) {
+            .bin => |bn| switch (bn.op) {
+                .and_op => {
+                    const left = try self.deriveTrue(block, bn.lhs);
+                    const right = try self.deriveTrue(block, bn.rhs);
+                    // a biconditional `(X->Y) and (Y->X)` is canonically an iff — the kernel
+                    // forbids `and_intro` from producing it (must be `iff_intro`, the same rule
+                    // named for what it proves). A tautology goal / hypothesis is routinely an
+                    // iff (the membership-axiom pattern), so pick the rule by the shape.
+                    const rule: []const u8 = if (self.p.isBiconditionalShape(f)) "iff_intro" else "and_intro";
+                    return self.emit(block, f, rule, &.{ left, right });
+                },
+                .or_op => {
+                    if (self.eval(bn.lhs) == true) {
+                        const l = try self.deriveTrue(block, bn.lhs);
+                        return self.emit(block, f, "or_intro_left", &.{l});
+                    }
+                    const r = try self.deriveTrue(block, bn.rhs);
+                    return self.emit(block, f, "or_intro_right", &.{r});
+                },
+                .implies => {
+                    var blk = try self.openBlock();
+                    if (self.eval(bn.rhs) == true) {
+                        _ = try self.deriveTrue(&blk.body, bn.rhs);
+                    } else {
+                        // the antecedent is false here: assume it and explode into the consequent.
+                        const h = try self.hyp(&blk, bn.lhs);
+                        const refuted = try self.deriveFalse(&blk.body, bn.lhs);
+                        _ = try self.emit(&blk.body, bn.rhs, "absurd", &.{ h, refuted });
+                    }
+                    try self.finishBlock(block, &blk, bn.lhs);
+                    return self.emit(block, f, "implies_intro", &.{blk.label});
+                },
+            },
+            // f = not inner, true: exactly a proof that inner is false.
+            .not => |inner| return self.deriveFalse(block, inner),
+            // an atom assigned true: restate its assumption's hypothesis.
+            else => return self.emit(block, f, "hypothesis", &.{self.litBlock(f)}),
+        }
+    }
+
+    /// Emit a step proving `not f` (f evaluates false) in `block`; return its label.
+    fn deriveFalse(self: *TautAst, block: *std.ArrayList(ast.Step), f: TermId) CertError!StrId {
+        const nf = try self.pool().add(.{ .not = f });
+        switch (self.pool().get(f)) {
+            .bin => |bn| switch (bn.op) {
+                .and_op => {
+                    // a false conjunct refutes the conjunction.
+                    const left_false = self.eval(bn.lhs) == false;
+                    const side = if (left_false) bn.lhs else bn.rhs;
+                    const refuted = try self.deriveFalse(block, side);
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    const elim = try self.emit(&blk.body, side, if (left_false) "and_elim_left" else "and_elim_right", &.{h});
+                    try self.finishBlock(block, &blk, f);
+                    return self.emit(block, nf, "not_intro", &.{ blk.label, elim, refuted });
+                },
+                .or_op => {
+                    // both disjuncts false; case-split to reproduce the left one, contradicting it.
+                    const not_left = try self.deriveFalse(block, bn.lhs);
+                    const not_right = try self.deriveFalse(block, bn.rhs);
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    var left = try self.openBlock();
+                    _ = try self.hyp(&left, bn.lhs);
+                    try self.finishBlock(&blk.body, &left, bn.lhs);
+                    var right = try self.openBlock();
+                    const rh = try self.hyp(&right, bn.rhs);
+                    _ = try self.emit(&right.body, bn.lhs, "absurd", &.{ rh, not_right });
+                    try self.finishBlock(&blk.body, &right, bn.rhs);
+                    const conc = try self.emit(&blk.body, bn.lhs, "or_elim", &.{ h, left.label, right.label });
+                    try self.finishBlock(block, &blk, f);
+                    return self.emit(block, nf, "not_intro", &.{ blk.label, conc, not_left });
+                },
+                .implies => {
+                    // true antecedent, false consequent.
+                    const ante = try self.deriveTrue(block, bn.lhs);
+                    const not_conseq = try self.deriveFalse(block, bn.rhs);
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    const conseq = try self.emit(&blk.body, bn.rhs, "modus_ponens", &.{ h, ante });
+                    try self.finishBlock(block, &blk, f);
+                    return self.emit(block, nf, "not_intro", &.{ blk.label, conseq, not_conseq });
+                },
+            },
+            .not => |inner| {
+                // not f = not not inner, with inner true.
+                const truth = try self.deriveTrue(block, inner);
+                var blk = try self.openBlock();
+                const h = try self.hyp(&blk, f);
+                try self.finishBlock(block, &blk, f);
+                return self.emit(block, nf, "not_intro", &.{ blk.label, truth, h });
+            },
+            // an atom assigned false: its assumption IS the negation.
+            else => return self.emit(block, nf, "hypothesis", &.{self.litBlock(f)}),
+        }
+    }
+};
 
 // -- justification lowering ------------------------------------------------------------
 

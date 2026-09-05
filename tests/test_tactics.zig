@@ -337,10 +337,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tautology.bpa" });
 
     // non-consequence: the diagnostic carries the countermodel
-    ctx.fail(&.{ "check", "tests/cases/tautology_bad.bpa" }, "tests/cases/tautology_bad.bpa:10:9: error: tautology: not a propositional consequence; countermodel: p := true, q := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tautology_bad.bpa" }, "tests/cases/tautology_bad.bpa:10:12: error: tautology: not a propositional consequence; countermodel: p := true, q := false\n");
 
     // the atom cap is a hard, honest limit
-    ctx.fail(&.{ "check", "tests/cases/tautology_cap.bpa" }, "tests/cases/tautology_cap.bpa:25:9: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
+    ctx.fail(&.{ "check", "tests/cases/tautology_cap.bpa" }, "tests/cases/tautology_cap.bpa:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
 
     // `iff` surface sugar: `P iff Q` desugars to `(P -> Q) and (Q -> P)` (never
     // reaches the kernel). iff_intro/iff_elim_forward/iff_elim_backward are thin
@@ -351,7 +351,7 @@ pub fn addTests(
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
-    ctx.fail(&.{ "check", "tests/cases/iff_bad.bpa" }, "tests/cases/iff_bad.bpa:19:22: error: tautology: not a propositional consequence; countermodel: A := true, B := true, C := false\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_bad.bpa" }, "tests/cases/iff_bad.bpa:19:25: error: tautology: not a propositional consequence; countermodel: A := true, B := true, C := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
     // iff — `and_intro` is forbidden from producing it (must use `iff_intro`)…

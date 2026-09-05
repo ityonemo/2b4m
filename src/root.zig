@@ -27,6 +27,7 @@ pub const Elab = @import("Engine/ProveTask/Elab.zig");
 pub const Prove = @import("Engine/ProveTask/Prove.zig");
 pub const Schema = @import("Engine/ProveTask/Schema.zig");
 pub const Delaborate = @import("Engine/ProveTask/Delaborate.zig");
+pub const smt = @import("Engine/ProveTask/smt.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");

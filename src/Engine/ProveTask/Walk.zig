@@ -108,6 +108,14 @@ sink: *Diagnostics.Sink,
 stack: std.ArrayList(Frame) = .empty,
 /// LocalStepKV — live step/block labels, innermost-last (reverse-scan lookup).
 local_steps: std.ArrayList(LocalStep) = .empty,
+/// EVERY bound step/block label, appended and NEVER truncated. `resolveStep` falls back
+/// here for a label that has descoped (a not_intro / or_elim citing steps at the CONCLUSION
+/// of a closed sibling subproof — the kernel then enforces the ancestor accessibility rule,
+/// per the module's "resolution time" contract). Shadow/duplicate checks stay on the LIVE
+/// `local_steps`; this map is resolution-only. Reverse scan = most-recent binding wins (fine
+/// for the fresh-label synthetic certs; a hand-proof's reused label is a closed-subtree name
+/// the kernel would reject anyway if cited across scopes).
+closed_steps: std.ArrayList(LocalStep) = .empty,
 /// LocalIdentKV — live binders, innermost-last (reverse-scan lookup).
 local_idents: std.ArrayList(LocalIdent) = .empty,
 next_step: u32 = 0,
@@ -125,12 +133,26 @@ pub fn init(arena: Allocator, interner: *InternPool, source: []const u8, sink: *
 
 // -- local scope lookups (pub: drivers resolve local-first through these) --------------
 
-/// Resolve a label against LocalStepKV (innermost wins). Null = not a live local label.
+/// Resolve a label against the LIVE LocalStepKV (innermost wins). Null = not a live local
+/// label. Used for shadow checks and the primary (in-scope) resolution.
 pub fn findStep(self: *const Walk, name: StrId) ?LocalTarget {
     var i = self.local_steps.items.len;
     while (i > 0) {
         i -= 1;
         if (self.local_steps.items[i].name == name) return self.local_steps.items[i].target;
+    }
+    return null;
+}
+
+/// Resolve a label for a CITATION: the live scope first, then any closed subproof's label
+/// (the kernel enforces cross-scope accessibility). This is what step/block references use;
+/// not_intro/or_elim cite steps at a closed subproof's conclusion through the fallback.
+pub fn resolveStep(self: *const Walk, name: StrId) ?LocalTarget {
+    if (self.findStep(name)) |t| return t;
+    var i = self.closed_steps.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.closed_steps.items[i].name == name) return self.closed_steps.items[i].target;
     }
     return null;
 }
@@ -218,7 +240,9 @@ fn bindStepLabel(self: *Walk, label_tok: lexer.Token) Allocator.Error!void {
     const label = try self.internTok(label_tok);
     const ord: StepOrdinal = @enumFromInt(self.next_step);
     self.next_step += 1;
-    try self.local_steps.append(self.arena, .{ .name = label, .target = .{ .step = ord } });
+    const entry: LocalStep = .{ .name = label, .target = .{ .step = ord } };
+    try self.local_steps.append(self.arena, entry);
+    try self.closed_steps.append(self.arena, entry); // persistent (never truncated)
 }
 
 /// Enter a block step: bind its label in the PARENT scope (outlives the block — a closed
@@ -228,7 +252,9 @@ fn enterBlock(self: *Walk, label_tok: lexer.Token, binder: ?lexer.Token, body: [
     const label = try self.internTok(label_tok);
     const ord: BlockOrdinal = @enumFromInt(self.next_block);
     self.next_block += 1;
-    try self.local_steps.append(self.arena, .{ .name = label, .target = .{ .block = ord } });
+    const blk_entry: LocalStep = .{ .name = label, .target = .{ .block = ord } };
+    try self.local_steps.append(self.arena, blk_entry);
+    try self.closed_steps.append(self.arena, blk_entry); // persistent (never truncated)
     const steps_mark: u32 = @intCast(self.local_steps.items.len);
     const idents_mark: u32 = @intCast(self.local_idents.items.len);
     try self.stack.append(self.arena, .{ .exit_block = .{ .block = ord, .steps_mark = steps_mark, .idents_mark = idents_mark } });

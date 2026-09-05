@@ -34,10 +34,18 @@ pub const Sink = struct {
         try self.list.append(self.arena, .{ .file = self.current_file, .offset = offset, .message = msg });
     }
 
-    /// Render all diagnostics, ordered by (file, byte offset).
+    /// Render all diagnostics, ordered by (file, byte offset). Identical duplicates collapse:
+    /// the demand model re-runs a step's read pass and its process pass, so a diagnostic keyed
+    /// to the same (file, offset, message) can be recorded twice (e.g. an accelerant producer
+    /// diagnosing on both passes) — the user should see it once.
     pub fn render(self: *Sink, w: *std.Io.Writer, files: []const FileSrc) !void {
         std.mem.sort(Diagnostic, self.list.items, {}, lessThan);
+        var prev: ?Diagnostic = null;
         for (self.list.items) |d| {
+            if (prev) |p| {
+                if (p.file == d.file and p.offset == d.offset and std.mem.eql(u8, p.message, d.message)) continue;
+            }
+            prev = d;
             const f = files[d.file];
             const loc = std.zig.findLineColumn(f.source, d.offset);
             try w.print("{s}:{d}:{d}: error: {s}\n", .{ f.path, loc.line + 1, loc.column + 1, d.message });
