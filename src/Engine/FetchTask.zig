@@ -254,10 +254,22 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
-            .define => {
-                // defines need body expansion — Foundation B (DefinesKV); a later fetch layer.
-                try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
-                return; // no publish
+            // a DEFINE (transparent macro). We do NOT reify its body — a define is expanded
+            // IN PLACE by Elab. But we DO (a) demand its body's transitive reference closure
+            // here (so by the time an expansion happens every leaf name is resolved — Elab
+            // cannot suspend), following remote defines recursively; then (b) publish a thin
+            // LOCATOR so the NAME resolves in IdentKV (satisfying the read-pass ident demand).
+            .define => |d| {
+                demandDefineClosure(self, h, task.file, d, task.name) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return, // suspended on a body ref, or diagnosed
+                };
+                _ = try self.idents.publish(self.io, key, .{ .define = .{
+                    .name = task.name,
+                    .file = task.file,
+                    .loc = name_tok.start,
+                } });
+                return;
             },
         }
     }
@@ -354,6 +366,111 @@ fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, s
         return error.Unresolved;
     }
     return ix;
+}
+
+/// Demand the TRANSITIVE REFERENCE CLOSURE of a define's body. A `define` is a transparent
+/// macro expanded in place by Elab, which CANNOT suspend — so every leaf name its body
+/// (recursively, through nested/remote defines) reaches must be resolved BEFORE any
+/// expansion. This walk demands each free reference (following imports to the right file);
+/// a reference that is itself a define is recursed into (under ITS home file). Suspends on
+/// the FIRST unresolved name (idempotent: each resume re-walks and gets one further).
+/// `visited` cycle-guards `define TWO = TWO` / mutual define cycles.
+fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index, d: anytype, name: InternPool.StrId) ResolveError!void {
+    var visited: std.ArrayList(DefineSite) = .empty;
+    try visited.append(self.arena, .{ .file = file, .name = name });
+    try demandDefineBody(self, h, file, d.value, d.params, &visited);
+}
+
+const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
+
+/// Walk one define body Expr, demanding its free global references. `params` (the define's
+/// parameters) and quantifier/lambda binders are LOCALS — skipped. `visited` = the define
+/// call-stack (cycle guard). All resolution is under `file`'s namespace.
+fn demandDefineBody(self: *Context, h: *Engine.Handle, file: InternPool.Index, e: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+    switch (e.*) {
+        .name => |tok| try demandDefineRef(self, h, file, tok, params, visited),
+        .call => |c| {
+            try demandDefineRef(self, h, file, c.callee, params, visited);
+            for (c.args) |a| try demandDefineBody(self, h, file, a, params, visited);
+        },
+        .binary => |b| {
+            try demandDefineBody(self, h, file, b.lhs, params, visited);
+            try demandDefineBody(self, h, file, b.rhs, params, visited);
+        },
+        .not => |n| try demandDefineBody(self, h, file, n.operand, params, visited),
+        .quant => |q| try demandDefineBinders(self, h, file, q.binders, q.body, params, visited),
+        .lambda => |l| try demandDefineBinders(self, h, file, l.binders, l.body, params, visited),
+    }
+}
+
+fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+    // binder SORTS/GUARDS are global references; the binder NAMES shadow for the body. Rather
+    // than track a second local set, append the binders to `params` for the body walk (both
+    // are just "names that are not global here").
+    for (binders) |b| {
+        _ = try demandTok(self, h, file, b.sort);
+        if (b.guard) |g| _ = try demandTok(self, h, file, g);
+    }
+    const extended = try self.arena.alloc(ast.Binder, params.len + binders.len);
+    @memcpy(extended[0..params.len], params);
+    @memcpy(extended[params.len..], binders);
+    try demandDefineBody(self, h, file, body, extended, visited);
+}
+
+/// One reference token in a define body. A param/binder-local bare name is skipped. Else
+/// resolve its target file (qualifier → import) + demand it; if it names a define, recurse.
+fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+    if (tok.qualifier == InternPool.Index.none) {
+        for (params) |p| if (p.name.name == tok.name) return; // a define param / binder local
+    }
+    const target = try demandTok(self, h, file, tok);
+    if (self.interner.keyOf(target) == .define) {
+        const dfile = self.interner.keyOf(target).define.file;
+        for (visited.items) |v| if (v.file == dfile and v.name == tok.name) return; // cycle
+        // the target define's home file is parsed (demandTok resolved it there); recurse.
+        const dfid = self.pool_file.get(dfile).?;
+        const ddecl = self.declOf(dfid, tok.name).?;
+        try visited.append(self.arena, .{ .file = dfile, .name = tok.name });
+        try demandDefineBody(self, h, dfile, ddecl.define.value, ddecl.define.params, visited);
+    }
+}
+
+/// Resolve a (possibly `ns.`-qualified) token to its pool Index, demanding the import +
+/// (if qualified) parsing the target file. Suspends on the first miss. Kind-AGNOSTIC — the
+/// caller inspects the returned Index (a define recurses; anything else is just demanded).
+fn demandTok(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token) ResolveError!InternPool.Index {
+    var target_file = file;
+    if (tok.qualifier != InternPool.Index.none) {
+        const imp_ix = switch (try demandIdent(self, h, file, tok.qualifier, tok.start)) {
+            .done => |ix| ix,
+            .pending => |t| {
+                h.suspendOn(t);
+                return error.Unresolved;
+            },
+        };
+        if (self.interner.keyOf(imp_ix) != .import) {
+            self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
+            return error.Unresolved;
+        }
+        target_file = self.interner.keyOf(imp_ix).import.namespace;
+        target_file = self.interner.keyOf(target_file).namespace.file;
+        // the target file must be parsed before we can recurse into a define it declares.
+        switch (try self.demandParse(h, target_file)) {
+            .parsed => {},
+            .parsing => |t| {
+                h.suspendOn(t);
+                return error.Unresolved;
+            },
+            .unparsed => {},
+        }
+    }
+    return switch (try demandIdent(self, h, target_file, tok.name, tok.start)) {
+        .done => |ix| ix,
+        .pending => |t| {
+            h.suspendOn(t);
+            return error.Unresolved;
+        },
+    };
 }
 
 const SigParts = struct { sig: InternPool.Index, param_names: []const InternPool.StrId };

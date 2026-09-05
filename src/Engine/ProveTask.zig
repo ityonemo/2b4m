@@ -179,9 +179,10 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         }
         // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
         // its steps and the kernel check use, and that it reifies back from at publish.
-        var e = Elab.init(self.arena, self.io, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
+        var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
         e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
         e.model = st.prove.model; // remap source globals for a model transfer (identity else)
+        e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
         const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return, // diagnosed; no publish

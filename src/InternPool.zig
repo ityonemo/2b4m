@@ -290,7 +290,8 @@ pub const Key = union(enum) {
     func: Callable,
     /// A predicate identifier's content — same `Callable` payload, a distinct kind. Minted.
     pred: Callable,
-    /// A define identifier's content: its template body term + param names + name/loc.
+    /// A define identifier's content: a LOCATOR back to its AST decl (name/file/loc). The
+    /// macro body (params/body) is re-read from the by-name AST registry and expanded in place.
     define: Define,
     /// An import identifier's content: the `.namespace` `Index` it binds to + name/loc.
     import: Import,
@@ -346,7 +347,14 @@ pub const Key = union(enum) {
 
     /// A define's content: the `extra`-offset of its template body term, its param-name
     /// string `Index`es, and name/loc. Variable-length.
-    pub const Define = struct { body: TermOff, param_names: []const Index, name: StrId, loc: u32 };
+    /// A define's content: a LOCATOR — its name, the `.file` Index it is declared in, and its
+    /// source `loc`. A `define` is a TRANSPARENT MACRO: its params/body are re-read from the
+    /// by-name AST registry (`Context.declOf(file, name).define`) and EXPANDED IN PLACE at
+    /// elaboration time (under the define's HOME namespace, so its body's qualifiers resolve
+    /// against the define's own imports). The body is NEVER reified into a durable term — a
+    /// define is not a kernel entity. FetchTask mints this locator (so the NAME resolves +
+    /// its body's transitive references get demanded); Elab expands it inline.
+    pub const Define = struct { name: StrId, file: Index, loc: u32 };
 
     /// An import's content: the `.namespace` `Index` it binds to + name/loc.
     pub const Import = struct { namespace: Index, name: StrId, loc: u32 };
@@ -659,33 +667,12 @@ pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Inde
     return index;
 }
 
-/// Append `[body, name, loc, paramc, pn0, …]` to `extra`; return the start offset.
-fn addDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 4 + d.param_names.len);
-    self.extra.appendAssumeCapacity(d.body); // TermOff (u32), not an Index
-    self.extra.appendAssumeCapacity(@intFromEnum(d.name));
-    self.extra.appendAssumeCapacity(d.loc);
-    self.extra.appendAssumeCapacity(@intCast(d.param_names.len));
-    for (d.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
-    return off;
-}
-
-/// Read a define payload at `off` back — the inverse of `addDefine`.
-fn defineData(self: *const InternPool, off: u32) Key.Define {
-    const body: TermOff = self.extra.items[off]; // TermOff (u32), not an Index
-    const name: StrId = @enumFromInt(self.extra.items[off + 1]);
-    const loc = self.extra.items[off + 2];
-    const n = self.extra.items[off + 3];
-    const raw = self.extra.items[off + 4 .. off + 4 + n];
-    return .{ .body = body, .name = name, .loc = loc, .param_names = @ptrCast(raw) };
-}
-
-/// Mint a fresh DEFINE identifier, ALWAYS appending (no dedup; IdentKV owns identity).
-/// Spills `[body, paramc, pn0, …]` into `extra`.
+/// Mint a fresh DEFINE locator, ALWAYS appending (no dedup; IdentKV owns identity).
+/// Spills `[name, file, loc]` into `extra` (reflection). The macro body is NOT stored —
+/// it is re-read from the by-name AST registry via `file`+`name` and expanded in place.
 pub fn mintDefine(self: *InternPool, d: Key.Define) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
-    const off = try self.addDefine(d);
+    const off = try self.addExtra(d); // reflection: [name, file, loc]
     try self.items.append(self.arena, .{ .tag = .define, .data = off });
     return index;
 }
@@ -767,7 +754,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .constant => .{ .constant = self.extraData(Key.Constant, item.data) },
         .func => .{ .func = self.callableData(item.data) },
         .pred => .{ .pred = self.callableData(item.data) },
-        .define => .{ .define = self.defineData(item.data) },
+        .define => .{ .define = self.extraData(Key.Define, item.data) },
         .import => .{ .import = self.extraData(Key.Import, item.data) },
         .schema => .{ .schema = self.extraData(Key.Schema, item.data) },
     };
@@ -1061,22 +1048,23 @@ test "pred: same Callable payload as func, minted under a DISTINCT kind" {
     try std.testing.expectEqual(x, k.param_names[0]);
 }
 
-test "define: [body, paramc, names…] minted fresh, round-trips its template body + params" {
+test "define: [name, file, loc] LOCATOR minted fresh, round-trips (macro body re-read from AST)" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const body: TermOff = 7; // stand-in template body term-offset (a reified extra offset)
     const n = try pool.internString("n");
+    const path = try pool.internString("f.bpa");
+    const f = try pool.get(.{ .file = .{ .path = path } });
 
-    const def = try pool.mintDefine(.{ .body = body, .param_names = &.{n}, .name = n, .loc = 0 });
-    const def2 = try pool.mintDefine(.{ .body = body, .param_names = &.{n}, .name = n, .loc = 0 });
+    const def = try pool.mintDefine(.{ .name = n, .file = f, .loc = 3 });
+    const def2 = try pool.mintDefine(.{ .name = n, .file = f, .loc = 3 });
     try std.testing.expect(def != def2); // minted → distinct
 
     const k = pool.keyOf(def).define;
-    try std.testing.expectEqual(body, k.body);
-    try std.testing.expectEqual(@as(usize, 1), k.param_names.len);
-    try std.testing.expectEqual(n, k.param_names[0]);
+    try std.testing.expectEqual(n, k.name);
+    try std.testing.expectEqual(f, k.file);
+    try std.testing.expectEqual(@as(u32, 3), k.loc);
 }
 
 test "import: data = the .namespace it binds; minted (two imports of one ns are distinct)" {

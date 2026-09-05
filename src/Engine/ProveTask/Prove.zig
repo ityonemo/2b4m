@@ -86,6 +86,10 @@ extra_reachable_steps: std.ArrayList(u32) = .empty,
 pending_tccs: std.ArrayList(Elab.Tcc) = .empty,
 /// closure facts surfaced by refined-RESULT funcs/consts (an available discharger).
 result_facts: std.ArrayList(TermId) = .empty,
+/// currently-expanding define locators — the cycle guard for `define TWO = TWO` and mutual
+/// define cycles. Reset per formula (an expansion always unwinds before the next one), so a
+/// leftover entry can't leak across formulae. Installed on every Elab this Prove builds.
+define_stack: std.ArrayList(InternPool.Index) = .empty,
 /// SCHEMA CONTEXT (set only when this Prove drives a schema INSTANCE): the bound args
 /// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
@@ -117,11 +121,12 @@ pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPo
 }
 
 fn elab(self: *Prove, w: *const Walk) Elab {
-    var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
+    var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
     e.tccs = &self.pending_tccs; // refined-sort obligation sink (Step 3c)
     e.result_facts = &self.result_facts;
+    e.define_stack = &self.define_stack; // define-expansion cycle guard
     return e;
 }
 
@@ -771,7 +776,7 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim)
     // TRANSFER it is model-aware, so a param sort `Elem` remaps to its target (`Num`) —
     // matching the caller's already-remapped lambda args.
     var empty_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
-    var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
+    var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
     se.model = self.model;
 
     const args = try self.ctx.arena.create(Schema.SchemaArgs);

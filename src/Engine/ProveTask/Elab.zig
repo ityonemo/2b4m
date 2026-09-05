@@ -33,8 +33,10 @@ const SortId = term.SortId;
 const TermId = term.TermId;
 const Diagnostics = @import("../../diagnostics.zig");
 const IdentKV = @import("../../IdentKV.zig");
+const FactKV = @import("../../FactKV.zig");
 const Walk = @import("Walk.zig");
 const Schema = @import("Schema.zig");
+const Context = @import("../../Context.zig");
 
 const Elab = @This();
 
@@ -49,6 +51,10 @@ pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.prop));
 
 arena: Allocator,
 io: std.Io,
+/// the owning Context — read-only here, consulted ONLY to resolve a `.define` locator to
+/// its AST decl (`declOf`) for in-place macro expansion. Every other resolution goes
+/// through `idents`/`interner`.
+ctx: *Context,
 interner: *InternPool,
 idents: *IdentKV,
 /// the task's term SCRATCHPAD — every term this elaboration builds lives here
@@ -66,6 +72,16 @@ fresh_counter: *u32,
 /// value param resolves to its term, a generator param BETA-REDUCES at a call. Set by the
 /// instance ProveTask (post-init) on the Elab it uses for the schema body/steps.
 schema_args: ?*const Schema.SchemaArgs = null,
+/// DEFINE-EXPANSION param bindings (param name -> the caller's already-elaborated arg term),
+/// installed while elaborating a define's BODY (under the define's home namespace). Consulted
+/// in name/call position BEFORE the global lookup — a param resolves to its bound arg term.
+/// Save/restored around each `expandDefine`, so nested/remote defines each see their own map.
+/// Distinct from `schema_args` (schemas may have generator params; a define's are value-only).
+define_args: ?*const std.AutoHashMapUnmanaged(StrId, Typed) = null,
+/// currently-expanding defines (by their locator Index), the cycle guard for a define whose
+/// body reaches itself. Owned by the driving Prove so it persists across the Elabs a proof
+/// builds; null = not tracked (a throwaway sort-resolution Elab, which sees no defines).
+define_stack: ?*std.ArrayList(InternPool.Index) = null,
 /// MODEL this elaboration resolves THROUGH (Step 13): when set, every global identifier
 /// resolved here is filtered `interner.applyModel(model, source)` — so proving a source
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
@@ -88,6 +104,7 @@ const ScopeEntry = struct { name: StrId, sort: SortId, fvar: StrId };
 pub fn init(
     arena: Allocator,
     io: std.Io,
+    ctx: *Context,
     interner: *InternPool,
     idents: *IdentKV,
     scratch: *term.Pool,
@@ -100,6 +117,7 @@ pub fn init(
     return .{
         .arena = arena,
         .io = io,
+        .ctx = ctx,
         .interner = interner,
         .idents = idents,
         .scratch = scratch,
@@ -243,6 +261,11 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
         return self.elaborateSymRef(tok, target.ns, target.base);
     }
     const name = tokName(tok);
+    // 0. define parameter (while expanding a define body): a param SHADOWS everything in the
+    // body — it must win over proof-local/expression-local binders that happen to share its
+    // spelling (the capture the `define_no_capture` fixture guards). The bound value is the
+    // caller's already-elaborated arg term, so it carries the caller's own binder identities.
+    if (self.define_args) |da| if (da.get(name)) |bound| return bound;
     // 1. expression-local quantifier binders (innermost wins)
     var i = self.scope.items.len;
     while (i > 0) {
@@ -263,7 +286,7 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
         .value => |v| return .{ .id = v.id, .sort = v.sort },
         .lambda => return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
     };
-    // 4. global
+    // 4. global (define params were consulted at step 0 — they shadow everything)
     return self.elaborateSymRef(tok, self.ns, name);
 }
 
@@ -289,7 +312,7 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
         .constant => return self.applyResolved(sym, &.{}),
         .sort => return self.fail(tok.start, "'{s}' is a sort, not a value", .{self.text(tok)}),
         .import => return self.fail(tok.start, "'{s}' is a namespace, not a value", .{self.text(tok)}),
-        .define => return self.fail(tok.start, "defines are not yet supported by the demand prover", .{}),
+        .define => return self.expandDefine(sym, tok, &.{}),
         else => return self.fail(tok.start, "'{s}' cannot appear in an expression", .{self.text(tok)}),
     }
 }
@@ -300,6 +323,11 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         try self.resolveQualified(c.callee)
     else
         Qualified{ .ns = self.ns, .base = tokName(c.callee) };
+    // a define VALUE param in call position is an error (params are value-only, not callable);
+    // consulted before the global lookup so a param shadowing a global func still errors.
+    if (!dotted) if (self.define_args) |da| if (da.get(target.base) != null) {
+        return self.fail(c.callee.start, "define parameter '{s}' is not callable", .{self.text(c.callee)});
+    };
     // schema GENERATOR param in call position: beta-reduce (only a bare name is a param).
     if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base)) |arg| switch (arg) {
         .lambda => |lam| return self.applyGeneratorParam(c, lam),
@@ -310,7 +338,7 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
     };
     const callable = switch (self.interner.keyOf(sym)) {
         .func, .pred => |cb| cb,
-        .define => return self.fail(c.callee.start, "defines are not yet supported by the demand prover", .{}),
+        .define => return self.expandDefine(sym, c.callee, c.args),
         else => return self.fail(c.callee.start, "'{s}' is not callable", .{self.text(c.callee)}),
     };
     const sig = self.interner.keyOf(callable.sig).sig;
@@ -341,6 +369,82 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         out.* = typed.id;
     }
     return self.applyResolved(sym, arg_ids);
+}
+
+/// Expand a `define` IN PLACE (transparent macro). `sym` is its `.define` LOCATOR Index; the
+/// authoritative params/body come from the AST registry (`ctx.declOf(home_file, name)`). Args
+/// (empty for a bare-name use) are elaborated in the CALLER's context, bound to the params,
+/// then the BODY is elaborated under the define's HOME namespace (so its own qualifiers
+/// resolve against the define's imports) with the param bindings in scope. Cycle-guarded.
+fn expandDefine(self: *Elab, sym: InternPool.Index, callee: lexer.Token, args: []const *const ast.Expr) Error!Typed {
+    const loc = self.interner.keyOf(sym).define;
+    // cycle guard: a define whose body reaches itself.
+    if (self.define_stack) |stk| {
+        for (stk.items) |seen| if (seen == sym) {
+            return self.fail(callee.start, "cyclic define '{s}'", .{self.interner.stringBytes(loc.name)});
+        };
+    }
+    const fid = self.ctx.pool_file.get(loc.file) orelse {
+        return self.fail(callee.start, "internal: define '{s}' in an undiscovered file", .{self.interner.stringBytes(loc.name)});
+    };
+    const decl = self.ctx.declOf(fid, loc.name) orelse {
+        return self.fail(callee.start, "internal: define '{s}' vanished from the AST registry", .{self.interner.stringBytes(loc.name)});
+    };
+    const d = decl.define;
+    if (args.len != d.params.len) {
+        return self.fail(callee.start, "'{s}' expects {d} argument(s), got {d}", .{ self.text(callee), d.params.len, args.len });
+    }
+
+    // elaborate each arg in the CALLER's context (current ns, scope, define_args); bind to
+    // its param name. Sort-check against the param's declared sort (resolved in HOME ns).
+    const home_ns = try self.interner.namespace(self.model, loc.file);
+    var bindings: std.AutoHashMapUnmanaged(StrId, Typed) = .empty;
+    for (d.params, args) |p, arg| {
+        const typed = try self.elaborateExpr(arg);
+        const pname = try self.localName(p.name);
+        const expected = try self.resolveSortIn(home_ns, p.sort);
+        const want: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(expected)))));
+        const got: SortId = if (typed.sort == prop_sort)
+            typed.sort
+        else
+            @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort)))));
+        if (got != want) {
+            return self.fail(exprLoc(arg), "expected sort '{s}', got '{s}'", .{ self.sortName(want), self.sortName(typed.sort) });
+        }
+        try bindings.put(self.arena, pname, typed);
+    }
+
+    // elaborate the BODY under the home namespace with the param bindings, restoring on exit.
+    const saved_ns = self.ns;
+    const saved_args = self.define_args;
+    self.ns = home_ns;
+    self.define_args = &bindings;
+    if (self.define_stack) |stk| try stk.append(self.arena, sym);
+    defer {
+        self.ns = saved_ns;
+        self.define_args = saved_args;
+        if (self.define_stack) |stk| _ = stk.pop();
+    }
+    return self.elaborateExpr(d.value);
+}
+
+/// Resolve a sort token in a GIVEN namespace (not necessarily `self.ns`) to a scratchpad
+/// SortId. Used to type-check define args against param sorts declared in the define's home
+/// namespace. The read pass already fetched the sort (a define's body-closure demand covers
+/// its param sorts), so a miss reads as an error rather than a suspend.
+fn resolveSortIn(self: *Elab, ns: InternPool.Index, tok: lexer.Token) Error!SortId {
+    const base = if (tok.qualifier != InternPool.Index.none) blk: {
+        const imp = self.lookupIdent(ns, tok.qualifier) orelse
+            return self.fail(tok.start, "unknown namespace '{s}'", .{self.interner.stringBytes(tok.qualifier)});
+        switch (self.interner.keyOf(imp)) {
+            .import => |m| break :blk Qualified{ .ns = m.namespace, .base = tokName(tok) },
+            else => return self.fail(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}),
+        }
+    } else Qualified{ .ns = ns, .base = tokName(tok) };
+    const sym = self.lookupIdent(base.ns, base.base) orelse
+        return self.fail(tok.start, "unknown sort '{s}'", .{self.text(tok)});
+    if (self.interner.keyOf(sym) != .sort) return self.fail(tok.start, "'{s}' is not a sort", .{self.text(tok)});
+    return @enumFromInt(@intFromEnum(sym));
 }
 
 /// For a refined param sort, append `qpred(arg)` obligations to `tccs` (one per qualifier).
@@ -605,6 +709,7 @@ const parser = @import("../../parser.zig");
 const World = struct {
     arena: Allocator,
     io: std.Io,
+    ctx: *Context,
     interner: *InternPool,
     idents: *IdentKV,
     scratch: *term.Pool,
@@ -629,9 +734,26 @@ const World = struct {
         const sink = try arena.create(Diagnostics.Sink);
         sink.* = .init(arena);
         const walk = try arena.create(Walk);
+        // a minimal Context for Elab's define-locator resolution (`declOf`). These tests
+        // declare no defines, so its ast_index/pool_file stay empty; only the shared arena/
+        // io/interner/sink matter. `facts`/`idents` are embedded-by-value and unused here.
+        const ctx = try arena.create(Context);
+        ctx.* = .{
+            .arena = arena,
+            .io = threaded.io(),
+            .sink = sink,
+            .interner = interner,
+            .facts = FactKV.init(interner),
+            .idents = IdentKV.init(interner),
+            .read_ctx = null,
+            .read_fn = undefined,
+            .verify = .{},
+            .std_root = "",
+        };
         w.* = .{
             .arena = arena,
             .io = threaded.io(),
+            .ctx = ctx,
             .interner = interner,
             .idents = idents,
             .scratch = scratch,
@@ -689,7 +811,7 @@ const World = struct {
         const parsed = try p.parseFile();
         try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
         const elab = try w.arena.create(Elab);
-        elab.* = Elab.init(w.arena, w.io, w.interner, w.idents, w.scratch, w.sink, source, w.walk, w.ns, &w.fresh);
+        elab.* = Elab.init(w.arena, w.io, w.ctx, w.interner, w.idents, w.scratch, w.sink, source, w.walk, w.ns, &w.fresh);
         return .{ .elab = elab, .expr = parsed.decls[0].theorem.local.fact.formula };
     }
 };
@@ -808,7 +930,7 @@ fn expectDelaborateRoundTrip(w: *World, comptime formula: []const u8) !void {
     const back = try Delaborate.run(w.arena, w.scratch, w.interner, t.id, 0);
     // a fresh Elab over the same world (new scope), re-elaborating the delaborated AST.
     var fresh_counter: u32 = 0;
-    var e2 = Elab.init(w.arena, w.io, w.interner, w.idents, w.scratch, w.sink, "", w.walk, w.ns, &fresh_counter);
+    var e2 = Elab.init(w.arena, w.io, w.ctx, w.interner, w.idents, w.scratch, w.sink, "", w.walk, w.ns, &fresh_counter);
     const t2 = try e2.elaborateExpr(back);
     try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
     try testing.expect(w.scratch.alphaEq(t.id, t2.id));
