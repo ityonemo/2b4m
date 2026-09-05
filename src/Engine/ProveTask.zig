@@ -257,16 +257,35 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     };
     const name_tok = ast.declName(decl);
     const d: State.Decl = switch (decl.*) {
-        .axiom => |a| .{ .axiom = .{ .formula = a.formula } },
-        .theorem => |t| .{ .theorem = .{ .formula = t.formula, .steps = t.steps } },
+        .axiom => |a| switch (a) {
+            .local => |f| blk: {
+                // a bare axiom is a leaf; a SCHEMA (params != null) cited as a fact is misuse.
+                if (f.params != null) {
+                    try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
+                    return null;
+                }
+                break :blk .{ .axiom = .{ .formula = f.formula } };
+            },
+            .alias => {
+                try demandDiag(self, task, "fact aliases are not yet supported by the demand prover", .{});
+                return null;
+            },
+        },
+        .theorem => |t| switch (t) {
+            .local => |l| blk: {
+                if (l.fact.params != null) {
+                    try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
+                    return null;
+                }
+                break :blk .{ .theorem = .{ .formula = l.fact.formula, .steps = l.steps } };
+            },
+            .alias => {
+                try demandDiag(self, task, "fact aliases are not yet supported by the demand prover", .{});
+                return null;
+            },
+        },
         .hole => {
             self.sink.add(name_tok.start, "holes are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
-            return null;
-        },
-        .schema => {
-            // a schema is not a fact — it cannot be cited as an axiom/theorem; it is
-            // used via `[using instantiation <schema>(args)]`. (Reached only on a misuse.)
-            try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
             return null;
         },
         else => {
@@ -304,7 +323,12 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     // resolution uses the schema file's universe ns + prove.model (below).
     const fid = self.pool_file.get(task.file).?; // demandParse ensured it's parsed
     const source = self.files.items[@intFromEnum(fid)].source;
-    const decl = self.declOf(fid, inst.schema_name).?.schema; // registry (parsed or synthetic)
+    // the schema decl (parsed or synthetic) from the by-name registry: an axiom/theorem/hole
+    // WITH params. Its formula is the schema body; a proof-carrying schema (a theorem) also
+    // has steps (re-checked at this instance); an axiom-schema has none (trusted monomorph).
+    const schema_decl = self.declOf(fid, inst.schema_name).?;
+    const schema_fact = ast.factOf(schema_decl).?;
+    const schema_steps: ?[]const ast.Step = if (schema_decl.* == .theorem) schema_decl.theorem.local.steps else null;
 
     // RESOLUTION ns is the schema file's UNIVERSE ns; a model instance remaps source syms
     // via prove.model + applyModel (so the monomorphized body is in target terms).
@@ -336,10 +360,10 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     st.* = .{
         .source = source,
         .ns = ns,
-        .decl = .{ .instance = .{ .formula = decl.formula, .steps = decl.steps } },
+        .decl = .{ .instance = .{ .formula = schema_fact.formula, .steps = schema_steps } },
         .walk = walk,
         .prove = prove,
-        .goal_loc = decl.name.start,
+        .goal_loc = schema_fact.name.start,
     };
     return st;
 }

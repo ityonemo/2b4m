@@ -92,21 +92,27 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     const m = found.?.model;
 
     // resolve all mapping src+tgt; collect overlay entries. Rack + suspend on the FIRST
-    // unresolved (re-run resolves one more each wake; the ones already done are cheap).
-    const overlay = try self.arena.alloc(InternPool.Key.Mapping, m.mappings.len);
+    // unresolved (re-run resolves one more each wake; the ones already done are cheap). The
+    // `:` identifier maps and the `<-` obligation discharges are two lists now, but the
+    // overlay is uniform (src Index → tgt Index) — process both.
+    const overlay = try self.arena.alloc(InternPool.Key.Mapping, m.identifiers.len + m.obligations.len);
     var blocker: ?Engine.TaskIndex = null;
-    for (m.mappings, overlay) |mapping, *out| {
-        if (mapping.projection != null) {
-            // `<tgt>@<projected>` model-projection (discharge through another model) —
-            // deferred (13e). Diagnose so the corpus signal is honest, not silent.
-            try demandDiag(self, task, "model projection (`@`) is not yet supported by the demand prover", .{});
-            return;
+    var oi: usize = 0;
+    for ([_][]const ast.Mapping{ m.identifiers, m.obligations }) |list| {
+        for (list) |mapping| {
+            defer oi += 1;
+            if (mapping.projection != null) {
+                // `<tgt>@<projected>` model-projection (discharge through another model) —
+                // deferred (13e). Diagnose so the corpus signal is honest, not silent.
+                try demandDiag(self, task, "model projection (`@`) is not yet supported by the demand prover", .{});
+                return;
+            }
+            const src = try resolveEntity(self, h, task.file, source, mapping.source, mapping.kind, &blocker);
+            const tgt = try resolveEntity(self, h, task.file, source, mapping.target, mapping.kind, &blocker);
+            if (src) |s| if (tgt) |t| {
+                overlay[oi] = .{ .src = s, .tgt = t };
+            };
         }
-        const src = try resolveEntity(self, h, task.file, source, mapping.source, mapping.kind, &blocker);
-        const tgt = try resolveEntity(self, h, task.file, source, mapping.target, mapping.kind, &blocker);
-        if (src) |s| if (tgt) |t| {
-            out.* = .{ .src = s, .tgt = t };
-        };
     }
     if (blocker) |b| return h.suspendOn(b);
 

@@ -76,10 +76,15 @@ fn lintDecl(arena: Allocator, sink: *diagnostics.Sink, source: []const u8, decl:
     // (future casing/label rules will gate on `is_literate` — suspended for .md)
     _ = is_literate;
     const formula: *const ast.Expr = switch (decl.*) {
-        .axiom => |d| d.formula,
-        .theorem => |d| d.formula,
-        .hole => |d| d.formula,
-        .schema => |d| d.formula,
+        // only a LOCAL fact has a formula to lint; an alias points elsewhere.
+        .axiom, .hole => |a| switch (a) {
+            .local => |f| f.formula,
+            .alias => return,
+        },
+        .theorem => |t| switch (t) {
+            .local => |l| l.fact.formula,
+            .alias => return,
+        },
         else => return, // sorts/consts/funcs/preds/imports/aliases/models: nothing to lint
     };
     try checkBinderOrder(arena, sink, source, formula);

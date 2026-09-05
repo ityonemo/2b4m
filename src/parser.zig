@@ -243,15 +243,23 @@ pub const Parser = struct {
             .keyword_sort => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.sort, name)) |a| return a;
-                return .{ .sort = .{ .name = name } };
+                // `sort N` root | `sort N = T` alias | `sort N = T where p` guarded.
+                if (self.tok.tag != .equal) return .{ .sort = .{ .local = name } };
+                _ = self.advance();
+                const target = try self.expect(.identifier);
+                if (self.tok.tag == .keyword_where) {
+                    _ = self.advance();
+                    const guard = try self.expect(.identifier);
+                    return .{ .sort = .{ .guarded = .{ .name = name, .parent = target, .guard = guard } } };
+                }
+                return .{ .sort = .{ .alias = .{ .name = name, .target = target } } };
             },
             .keyword_const => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.constant, name)) |a| return a;
+                if (try self.parseAliasTail()) |target| return .{ .constant = .{ .alias = .{ .name = name, .target = target } } };
                 _ = try self.expect(.colon);
-                return .{ .constant = .{ .name = name, .sort = try self.expect(.identifier) } };
+                return .{ .constant = .{ .local = .{ .name = name, .sort = try self.expect(.identifier) } } };
             },
             .keyword_define => {
                 _ = self.advance();
@@ -265,7 +273,7 @@ pub const Parser = struct {
             .keyword_func => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.func, name)) |a| return a;
+                if (try self.parseAliasTail()) |target| return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
                 const params = try self.parseParams();
                 _ = try self.expect(.colon);
                 const result = try self.expect(.identifier);
@@ -274,63 +282,52 @@ pub const Parser = struct {
                     _ = self.advance();
                     requires = try self.parseExpr();
                 }
-                return .{ .func = .{ .name = name, .params = params, .result = result, .requires = requires } };
+                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires } } };
             },
             .keyword_pred => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.pred, name)) |a| return a;
+                if (try self.parseAliasTail()) |target| return .{ .pred = .{ .alias = .{ .name = name, .target = target } } };
                 const params = try self.parseParams();
-                return .{ .pred = .{ .name = name, .params = params } };
+                return .{ .pred = .{ .local = .{ .name = name, .params = params } } };
             },
             .keyword_axiom => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.axiom, name)) |a| return a;
-                // a parenthesized parameter list makes it an axiom-SCHEMA:
-                // an assumption family, instantiated per concrete argument
-                if (self.tok.tag == .l_paren) {
-                    const params = try self.parseSchemaParams();
-                    _ = try self.expect(.colon);
-                    const formula = try self.parseExpr();
-                    if (self.tok.tag == .keyword_proof) {
-                        return self.fail("an axiom does not carry a proof; declare it as a theorem", .{});
-                    }
-                    return .{ .schema = .{ .name = name, .params = params, .formula = formula, .steps = null } };
-                }
+                if (try self.parseAliasTail()) |target| return .{ .axiom = .{ .alias = .{ .name = name, .target = target } } };
+                // an optional `(params)` makes it an axiom-SCHEMA (a parametric assumption
+                // family) — recorded as Fact.params; "schema" is a downstream reading.
+                const params = try self.parseOptSchemaParams();
                 _ = try self.expect(.colon);
-                return .{ .axiom = .{ .name = name, .formula = try self.parseExpr() } };
+                const formula = try self.parseExpr();
+                if (self.tok.tag == .keyword_proof) {
+                    return self.fail("an axiom does not carry a proof; declare it as a theorem", .{});
+                }
+                return .{ .axiom = .{ .local = .{ .name = name, .formula = formula, .params = params } } };
             },
             .keyword_hole => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
+                const params = try self.parseOptSchemaParams();
                 _ = try self.expect(.colon);
                 if (self.tok.tag == .keyword_proof) {
                     return self.fail("a hole is a placeholder and carries no proof; once you prove it, make it a theorem", .{});
                 }
-                return .{ .hole = .{ .name = name, .formula = try self.parseExpr() } };
+                return .{ .hole = .{ .local = .{ .name = name, .formula = try self.parseExpr(), .params = params } } };
             },
             .keyword_theorem => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.maybeAlias(.theorem, name)) |a| return a;
-                // a parenthesized parameter list makes it a theorem-SCHEMA:
-                // its proof is re-checked at every instantiation
-                if (self.tok.tag == .l_paren) {
-                    const params = try self.parseSchemaParams();
-                    _ = try self.expect(.colon);
-                    const formula = try self.parseExpr();
-                    _ = try self.expect(.keyword_proof);
-                    const steps = try self.parseSteps(.keyword_qed);
-                    _ = try self.expect(.keyword_qed);
-                    return .{ .schema = .{ .name = name, .params = params, .formula = formula, .steps = steps } };
-                }
+                if (try self.parseAliasTail()) |target| return .{ .theorem = .{ .alias = .{ .name = name, .target = target } } };
+                // an optional `(params)` makes it a theorem-SCHEMA (proof re-checked per
+                // instantiation) — recorded as Fact.params.
+                const params = try self.parseOptSchemaParams();
                 _ = try self.expect(.colon);
                 const formula = try self.parseExpr();
                 _ = try self.expect(.keyword_proof);
                 const steps = try self.parseSteps(.keyword_qed);
                 _ = try self.expect(.keyword_qed);
-                return .{ .theorem = .{ .name = name, .formula = formula, .steps = steps } };
+                return .{ .theorem = .{ .local = .{ .fact = .{ .name = name, .formula = formula, .params = params }, .steps = steps } } };
             },
             .keyword_model => {
                 _ = self.advance();
@@ -338,8 +335,8 @@ pub const Parser = struct {
                 // no `= carrier [where guard]` header: the carrier is whatever the
                 // source carrier maps to, and the guard is inferred from a predicated
                 // target sort in the mappings.
-                const mappings = try self.parseModelMappings();
-                return .{ .model = .{ .name = name, .mappings = mappings } };
+                const m = try self.parseModelMappings();
+                return .{ .model = .{ .name = name, .identifiers = m.identifiers, .obligations = m.obligations } };
             },
             else => return self.fail("expected a declaration, got '{s}'", .{self.describe()}),
         }
@@ -351,9 +348,12 @@ pub const Parser = struct {
     /// A `<target>@<projected>` model-projection value is only valid on the `<-`
     /// form (it names a theorem transferred through another model to discharge the
     /// obligation).
-    fn parseModelMappings(self: *Parser) ParseError![]const ast.Mapping {
+    fn parseModelMappings(self: *Parser) ParseError!struct { identifiers: []const ast.Mapping, obligations: []const ast.Mapping } {
         _ = try self.expect(.l_brace);
-        var mappings: std.ArrayList(ast.Mapping) = .empty;
+        // the `:` symbol/sort interpretations and the `<-` obligation discharges go to
+        // SEPARATE lists — they resolve against different tables (idents vs facts).
+        var identifiers: std.ArrayList(ast.Mapping) = .empty;
+        var obligations: std.ArrayList(ast.Mapping) = .empty;
         while (self.tok.tag != .r_brace) {
             const source = try self.expect(.identifier);
             const kind: ast.Mapping.Kind = switch (self.tok.tag) {
@@ -372,25 +372,30 @@ pub const Parser = struct {
                 // stamped ids already exclude the `@` (and split a `ns.` qualifier).
                 projection = .{ .tag = .identifier, .start = at.start + 1, .end = at.end, .name = at.name, .qualifier = at.qualifier };
             }
-            try mappings.append(self.arena, .{ .kind = kind, .source = source, .target = target, .projection = projection });
+            const mapping: ast.Mapping = .{ .kind = kind, .source = source, .target = target, .projection = projection };
+            switch (kind) {
+                .symbol => try identifiers.append(self.arena, mapping),
+                .obligation => try obligations.append(self.arena, mapping),
+            }
         }
         _ = try self.expect(.r_brace);
-        return mappings.toOwnedSlice(self.arena);
+        return .{ .identifiers = try identifiers.toOwnedSlice(self.arena), .obligations = try obligations.toOwnedSlice(self.arena) };
     }
 
-    /// `<kind> name = target` — an alias declaration, if `=` follows the name.
-    /// A SORT alias may add `where <pred>` — a predicated sort
-    /// (`sort H = G where inH`).
-    fn maybeAlias(self: *Parser, kind: ast.AliasKind, name: Token) ParseError!?ast.Decl {
+    /// The alias tail `= target`, if `=` follows the name — returns the target token, else
+    /// null (a local decl). Guard-free: only a SORT alias admits `where`, handled inline in
+    /// the sort branch (a guarded sort is a distinct `Sort.guarded`, not an alias).
+    fn parseAliasTail(self: *Parser) ParseError!?Token {
         if (self.tok.tag != .equal) return null;
         _ = self.advance();
-        const target = try self.expect(.identifier);
-        var guard: ?Token = null;
-        if (kind == .sort and self.tok.tag == .keyword_where) {
-            _ = self.advance();
-            guard = try self.expect(.identifier);
-        }
-        return .{ .alias = .{ .kind = kind, .name = name, .target = target, .guard = guard } };
+        return try self.expect(.identifier);
+    }
+
+    /// An OPTIONAL `(params)` schema-parameter list — non-null makes the axiom/theorem/hole a
+    /// SCHEMA (a parametric template). Absent = a plain fact.
+    fn parseOptSchemaParams(self: *Parser) ParseError!?[]const ast.SchemaParam {
+        if (self.tok.tag != .l_paren) return null;
+        return try self.parseSchemaParams();
     }
 
     /// `( ident: sort, ... )` — absent or `()` means ZERO-ary.
@@ -892,14 +897,14 @@ test "declarations parse" {
     try testing.expectEqual(0, sink.list.items.len);
     try testing.expectEqual(6, file.decls.len);
 
-    const div = file.decls[2].func;
+    const div = file.decls[2].func.local;
     try testing.expectEqualStrings("div", source[div.name.start..div.name.end]);
     try testing.expectEqual(2, div.params.len);
     try testing.expect(div.requires != null);
 
-    const ind = file.decls[5].schema;
-    try testing.expectEqual(1, ind.params.len);
-    try testing.expectEqual(1, ind.params[0].arg_sorts.len);
+    const ind = file.decls[5].axiom.local;
+    try testing.expectEqual(1, ind.params.?.len);
+    try testing.expectEqual(1, ind.params.?[0].arg_sorts.len);
 }
 
 test "theorem with nested proof blocks and instantiate" {
@@ -931,16 +936,16 @@ test "theorem with nested proof blocks and instantiate" {
     try testing.expectEqual(2, file.decls.len);
 
     const thm = file.decls[0].theorem;
-    try testing.expectEqual(2, thm.steps.len);
-    const outer = thm.steps[0].body.assume;
+    try testing.expectEqual(2, thm.local.steps.len);
+    const outer = thm.local.steps[0].body.assume;
     try testing.expectEqual(2, outer.steps.len);
     const inner = outer.steps[0].body.assume;
     try testing.expectEqual(1, inner.steps.len);
-    const done = thm.steps[1].body.claim;
+    const done = thm.local.steps[1].body.claim;
     try testing.expectEqualStrings("implies_intro", source[done.rule.start..done.rule.end]);
     try testing.expectEqual(1, done.refs.len);
 
-    const inst = file.decls[1].theorem.steps[0].body.claim;
+    const inst = file.decls[1].theorem.local.steps[0].body.claim;
     try testing.expectEqualStrings("instantiation", source[inst.rule.start..inst.rule.end]);
     try testing.expectEqualStrings("induction", source[inst.schema.?.start..inst.schema.?.end]);
     try testing.expectEqual(1, inst.args.len);
@@ -969,7 +974,7 @@ test "arithmetic fallback(<thm>) parses; fallback stays an ordinary identifier e
     try testing.expectEqual(0, sink.list.items.len);
 
     // the arithmetic claim carries fallback = `manualProof`, no refs
-    const arith = file.decls[0].theorem.steps[0].body.claim;
+    const arith = file.decls[0].theorem.local.steps[0].body.claim;
     try testing.expectEqualStrings("arithmetic", source[arith.rule.start..arith.rule.end]);
     try testing.expect(arith.fallback != null);
     try testing.expectEqualStrings("manualProof", source[arith.fallback.?.start..arith.fallback.?.end]);
@@ -977,7 +982,7 @@ test "arithmetic fallback(<thm>) parses; fallback stays an ordinary identifier e
 
     // outside an arithmetic claim, `fallback` is a normal name: here a step
     // label cited as a hypothesis ref, with no fallback field set.
-    const hyp = file.decls[1].theorem.steps[0].body.claim;
+    const hyp = file.decls[1].theorem.local.steps[0].body.claim;
     try testing.expectEqualStrings("hypothesis", source[hyp.rule.start..hyp.rule.end]);
     try testing.expect(hyp.fallback == null);
     try testing.expectEqual(1, hyp.refs.len);
@@ -999,7 +1004,7 @@ test "hole declaration parses as ast.Decl.hole; carrying a proof is an error" {
         try testing.expectEqual(2, file.decls.len);
         try testing.expect(file.decls[1] == .hole);
         const h = file.decls[1].hole;
-        try testing.expectEqualStrings("aspirational", source[h.name.start..h.name.end]);
+        try testing.expectEqualStrings("aspirational", source[h.local.name.start..h.local.name.end]);
     }
     {
         // a hole with a proof body is rejected (once proved, it's a theorem)
@@ -1029,8 +1034,8 @@ test "@label step definitions; the label name interns without the sigil; refs st
     try testing.expectEqual(0, sink.list.items.len);
     const thm = file.decls[1].theorem;
     // the label token spans just `base` (no `@`), so it matches the bare ref
-    try testing.expectEqualStrings("base", source[thm.steps[0].label.start..thm.steps[0].label.end]);
-    const conc = thm.steps[1].body.claim;
+    try testing.expectEqualStrings("base", source[thm.local.steps[0].label.start..thm.local.steps[0].label.end]);
+    const conc = thm.local.steps[1].body.claim;
     try testing.expectEqualStrings("symmetry", source[conc.rule.start..conc.rule.end]);
     // the reference is bare `base`, no sigil
     try testing.expectEqualStrings("base", source[conc.refs[0].start..conc.refs[0].end]);
@@ -1057,10 +1062,10 @@ test "axiom and theorem citations are valid rule positions despite being keyword
     var p: Parser = .init(arena, source, &sink);
     const file = try p.parseFile();
     try testing.expectEqual(0, sink.list.items.len);
-    const c1 = file.decls[2].theorem.steps[0].body.claim;
+    const c1 = file.decls[2].theorem.local.steps[0].body.claim;
     try testing.expectEqualStrings("axiom", source[c1.rule.start..c1.rule.end]);
     try testing.expectEqual(1, c1.refs.len);
-    const c2 = file.decls[3].theorem.steps[0].body.claim;
+    const c2 = file.decls[3].theorem.local.steps[0].body.claim;
     try testing.expectEqualStrings("theorem", source[c2.rule.start..c2.rule.end]);
 }
 
@@ -1082,7 +1087,7 @@ test "consecutive claim steps: a following label is not swallowed as a ref" {
     var p: Parser = .init(arena, source, &sink);
     const file = try p.parseFile();
     try testing.expectEqual(0, sink.list.items.len);
-    const steps = file.decls[1].theorem.steps;
+    const steps = file.decls[1].theorem.local.steps;
     try testing.expectEqual(3, steps.len);
     try testing.expectEqual(1, steps[0].body.claim.refs.len);
     try testing.expectEqual(2, steps[1].body.claim.refs.len);
@@ -1108,7 +1113,7 @@ test "by/using keyword: records the kind + enforces the vocabulary partition" {
         , &sink);
         const file = try p.parseFile();
         try testing.expectEqual(0, sink.list.items.len);
-        const steps = file.decls[1].theorem.steps;
+        const steps = file.decls[1].theorem.local.steps;
         try testing.expectEqual(ast.Step.Claim.Kind.by, steps[0].body.claim.kind);
         try testing.expectEqual(ast.Step.Claim.Kind.using, steps[1].body.claim.kind);
     }
@@ -1143,8 +1148,8 @@ test "ZERO-ary predicates: bare and empty-paren forms" {
     const file = try p.parseFile();
     try testing.expectEqual(0, sink.list.items.len);
     try testing.expectEqual(3, file.decls.len);
-    try testing.expectEqual(0, file.decls[0].pred.params.len);
-    try testing.expectEqual(0, file.decls[1].pred.params.len);
+    try testing.expectEqual(0, file.decls[0].pred.local.params.len);
+    try testing.expectEqual(0, file.decls[1].pred.local.params.len);
 }
 
 test "error recovery: two bad declarations yield two diagnostics" {

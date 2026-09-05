@@ -690,7 +690,7 @@ const World = struct {
         try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
         const elab = try w.arena.create(Elab);
         elab.* = Elab.init(w.arena, w.io, w.interner, w.idents, w.scratch, w.sink, source, w.walk, w.ns, &w.fresh);
-        return .{ .elab = elab, .expr = parsed.decls[0].theorem.formula };
+        return .{ .elab = elab, .expr = parsed.decls[0].theorem.local.fact.formula };
     }
 };
 

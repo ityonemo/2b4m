@@ -96,15 +96,20 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         const file_index = try self.fileIndex(task.path);
         for (parsed.decls) |decl| {
             switch (decl) {
-                .theorem => |t| {
-                    try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = t.name.name }));
-                },
-                // STRICT well-formedness: check each proof-carrying schema at its decl
-                // (opaque self-instantiation). Gated on `certify_arithmetic` (the strict
-                // bit — `--fast`/`--faster`/`--reckless` clear it and keep the body lazy).
-                // Non-proof-carrying schemas (axiom-schemas) have no body to check.
-                .schema => |s| if (s.steps != null and self.verify.certify_arithmetic) {
-                    try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = s.name.name, .loc = s.name.start }));
+                // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a
+                // theorem-SCHEMA (params != null) is a template, NOT proved as a root (it is
+                // instantiated on demand). A schema is instead well-formedness-checked at its
+                // decl (opaque self-instantiation), gated on the strict bit. An alias theorem
+                // proves nothing new.
+                .theorem => |t| switch (t) {
+                    .local => |l| {
+                        if (l.fact.params == null) {
+                            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = l.fact.name.name }));
+                        } else if (self.verify.certify_arithmetic) {
+                            try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = l.fact.name.name, .loc = l.fact.name.start }));
+                        }
+                    },
+                    .alias => {},
                 },
                 // a `model` decl is NOT built eagerly — a model is validated only when it is
                 // actually CITED (`[by model(M) …]` racks its ModelTask). An unused model,

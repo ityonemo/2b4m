@@ -433,7 +433,7 @@ const Rig = struct {
             .arena = arena,
             .interner = interner,
             .sink = sink,
-            .steps = parsed.decls[parsed.decls.len - 1].theorem.steps,
+            .steps = parsed.decls[parsed.decls.len - 1].theorem.local.steps,
             .source = source,
         };
     }

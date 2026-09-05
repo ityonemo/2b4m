@@ -83,24 +83,24 @@ const Query = struct {
         for (file.decls) |decl| {
             const d = declName(source, decl);
             if (d == null or !std.mem.eql(u8, d.?.name, name)) continue;
+            // an alias (any kind) points onward: print this hop, then follow the target.
+            if (ast.aliasOf(&decl)) |a| {
+                try self.hop(path, source, a.name, false);
+                const target = tokenText(source, a.target);
+                if (std.mem.lastIndexOfScalar(u8, target, '.')) |dot| {
+                    const ns = target[0..dot];
+                    const local = target[dot + 1 ..];
+                    const maybe_next = findImportPath(source, path, ns, self.std_root, self.arena) catch return error.OutOfMemory;
+                    const next = maybe_next orelse
+                        return self.err("alias target namespace '{s}' is not imported", .{ns});
+                    const src = self.read_fn(self.read_ctx, self.arena, next) catch
+                        return self.err("cannot open '{s}'", .{next});
+                    return self.trace(next, src, local, depth + 1);
+                }
+                // bare target: a forward/local name in this same file.
+                return self.trace(path, source, target, depth + 1);
+            }
             switch (decl) {
-                // an alias points onward: print this hop, then follow the target.
-                .alias => |a| {
-                    try self.hop(path, source, a.name, false);
-                    const target = tokenText(source, a.target);
-                    if (std.mem.lastIndexOfScalar(u8, target, '.')) |dot| {
-                        const ns = target[0..dot];
-                        const local = target[dot + 1 ..];
-                        const maybe_next = findImportPath(source, path, ns, self.std_root, self.arena) catch return error.OutOfMemory;
-                        const next = maybe_next orelse
-                            return self.err("alias target namespace '{s}' is not imported", .{ns});
-                        const src = self.read_fn(self.read_ctx, self.arena, next) catch
-                            return self.err("cannot open '{s}'", .{next});
-                        return self.trace(next, src, local, depth + 1);
-                    }
-                    // bare target: a forward/local name in this same file.
-                    return self.trace(path, source, target, depth + 1);
-                },
                 // an import namespace: the origin IS the imported file.
                 .import => |im| {
                     const raw_quoted = tokenText(source, im.path);
@@ -126,21 +126,8 @@ const Named = struct { name: []const u8, token: Token };
 /// The declared name + its token for any named decl (null for `forward`, which
 /// is a manifest entry, not a definition — its real def appears elsewhere).
 fn declName(source: []const u8, decl: ast.Decl) ?Named {
-    const t: Token = switch (decl) {
-        .import => |d| d.ns,
-        .alias => |d| d.name,
-        .sort => |d| d.name,
-        .constant => |d| d.name,
-        .define => |d| d.name,
-        .func => |d| d.name,
-        .pred => |d| d.name,
-        .axiom => |d| d.name,
-        .hole => |d| d.name,
-        .schema => |d| d.name,
-        .theorem => |d| d.name,
-        .model => |d| d.name,
-        .forward => return null,
-    };
+    if (decl == .forward) return null; // a manifest entry, not a definition
+    const t = ast.declName(&decl);
     return .{ .name = source[t.start..t.end], .token = t };
 }
 

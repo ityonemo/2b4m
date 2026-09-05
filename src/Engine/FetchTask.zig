@@ -114,20 +114,57 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
     const name_tok = ast.declName(decl);
     {
         switch (decl.*) {
-            .forward, .model => {
+            .forward => {
                 // a promise / a model decl — not identifiers this fetch produces.
                 try demandDiag(self, task, "'{s}' is not an identifier", .{self.interner.stringBytes(task.name)});
                 return;
             },
-            .sort => {
-                // a plain `sort X` declaration is always a ROOT sort (predicated sorts
-                // arrive as aliases with a guard — a later layer).
-                _ = try self.idents.publish(self.io, key, .{ .sort = .{
-                    .name = task.name,
-                    .loc = name_tok.start,
-                    .refinement = null,
-                } });
+            .model => {
+                try demandDiag(self, task, "'{s}' is not an identifier", .{self.interner.stringBytes(task.name)});
                 return;
+            },
+            .sort => |s| switch (s) {
+                // `sort X` → a ROOT sort.
+                .local => {
+                    _ = try self.idents.publish(self.io, key, .{ .sort = .{
+                        .name = task.name,
+                        .loc = name_tok.start,
+                        .refinement = null,
+                    } });
+                    return;
+                },
+                // `sort A = G` → a plain re-export (refined sort, no guard: carrier walks to G).
+                .alias => |a| {
+                    const parent = resolveSortDemand(self, h, task.file, source, a.target) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return,
+                    };
+                    _ = try self.idents.publish(self.io, key, .{ .sort = .{
+                        .name = task.name,
+                        .loc = name_tok.start,
+                        .refinement = .{ .parent = parent, .qualifiers = &.{} },
+                    } });
+                    return;
+                },
+                // `sort H = G where inH` → a REFINED sort {parent: G, qualifiers: [inH]}.
+                .guarded => |g| {
+                    const parent = resolveSortDemand(self, h, task.file, source, g.parent) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return,
+                    };
+                    const gpred = resolveGuardPred(self, h, task.file, source, g.guard, parent) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return,
+                    };
+                    const quals = try self.arena.alloc(InternPool.Index, 1);
+                    quals[0] = gpred;
+                    _ = try self.idents.publish(self.io, key, .{ .sort = .{
+                        .name = task.name,
+                        .loc = name_tok.start,
+                        .refinement = .{ .parent = parent, .qualifiers = quals },
+                    } });
+                    return;
+                },
             },
             .import => |d| {
                 // the parse phase resolved the raw path -> child FileId; map it to the
@@ -146,106 +183,89 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 } });
                 return;
             },
-            .constant => |d| {
-                const sort_ix = resolveSortDemand(self, h, task.file, source, d.sort) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return, // suspended or diagnosed — yield either way
-                };
-                _ = try self.idents.publish(self.io, key, .{ .constant = .{
-                    .sort = sort_ix,
-                    .name = task.name,
-                    .loc = name_tok.start,
-                } });
-                return;
-            },
-            .func => |d| {
-                // STATIC rejection first (before any demand/suspend, so the diagnostic
-                // fires exactly once): the TCC machinery isn't built yet.
-                if (d.requires != null) {
-                    self.sink.add(name_tok.start, "guarded functions ('requires') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
-                    return; // no publish
-                }
-                const parts = assembleSig(self, h, task.file, source, d.params, d.result) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return,
-                };
-                _ = try self.idents.publish(self.io, key, .{ .func = .{
-                    .sig = parts.sig,
-                    .guard = InternPool.no_term,
-                    .param_names = parts.param_names,
-                    .name = task.name,
-                    .loc = name_tok.start,
-                } });
-                return;
-            },
-            .pred => |d| {
-                const parts = assembleSig(self, h, task.file, source, d.params, null) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return,
-                };
-                _ = try self.idents.publish(self.io, key, .{ .pred = .{
-                    .sig = parts.sig,
-                    .guard = InternPool.no_term,
-                    .param_names = parts.param_names,
-                    .name = task.name,
-                    .loc = name_tok.start,
-                } });
-                return;
-            },
-            .schema => {
-                // a SCHEMA resolves as an IdentKV identifier (it's a named non-fact) — mint
-                // a thin LOCATOR back to this decl; instantiation re-reads params/body/steps
-                // from the by-name AST registry via (file, name).
-                _ = try self.idents.publish(self.io, key, .{ .schema = .{
-                    .name = task.name,
-                    .file = task.file,
-                    .loc = name_tok.start,
-                } });
-                return;
-            },
-            .axiom, .hole, .theorem => {
-                try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
-                return; // no publish
-            },
-            .alias => |d| {
-                // a SORT alias — the only alias form supported so far:
-                //   `sort H = G where inH`  → a REFINED sort {parent: G, qualifiers: [inH]}.
-                //   `sort A = G`            → a plain re-export {parent: G, qualifiers: []}
-                //                             (carrier walks to G; no guard).
-                // Non-sort aliases (const/func/pred/axiom/theorem re-exports) are the
-                // transitive alias-collapse — a later layer; still unsupported.
-                if (d.kind != .sort) {
-                    try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
+            .constant => |c| switch (c) {
+                .local => |d| {
+                    const sort_ix = resolveSortDemand(self, h, task.file, source, d.sort) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return, // suspended or diagnosed — yield either way
+                    };
+                    _ = try self.idents.publish(self.io, key, .{ .constant = .{
+                        .sort = sort_ix,
+                        .name = task.name,
+                        .loc = name_tok.start,
+                    } });
                     return;
-                }
-                const parent = resolveSortDemand(self, h, task.file, source, d.target) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return, // suspended or diagnosed
-                };
-                var quals: []const InternPool.Index = &.{};
-                if (d.guard) |g| {
-                    const gpred = resolveGuardPred(self, h, task.file, source, g, parent) catch |e| switch (e) {
+                },
+                .alias => return aliasUnsupported(self, task), // Foundation C
+            },
+            .func => |fu| switch (fu) {
+                .local => |d| {
+                    // STATIC rejection first (before any demand/suspend, so the diagnostic
+                    // fires exactly once): the TCC machinery isn't built yet.
+                    if (d.requires != null) {
+                        self.sink.add(name_tok.start, "guarded functions ('requires') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+                        return; // no publish
+                    }
+                    const parts = assembleSig(self, h, task.file, source, d.params, d.result) catch |e| switch (e) {
                         error.OutOfMemory => return error.OutOfMemory,
                         error.Unresolved => return,
                     };
-                    const one = try self.arena.alloc(InternPool.Index, 1);
-                    one[0] = gpred;
-                    quals = one;
+                    _ = try self.idents.publish(self.io, key, .{ .func = .{
+                        .sig = parts.sig,
+                        .guard = InternPool.no_term,
+                        .param_names = parts.param_names,
+                        .name = task.name,
+                        .loc = name_tok.start,
+                    } });
+                    return;
+                },
+                .alias => return aliasUnsupported(self, task), // Foundation C
+            },
+            .pred => |pr| switch (pr) {
+                .local => |d| {
+                    const parts = assembleSig(self, h, task.file, source, d.params, null) catch |e| switch (e) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Unresolved => return,
+                    };
+                    _ = try self.idents.publish(self.io, key, .{ .pred = .{
+                        .sig = parts.sig,
+                        .guard = InternPool.no_term,
+                        .param_names = parts.param_names,
+                        .name = task.name,
+                        .loc = name_tok.start,
+                    } });
+                    return;
+                },
+                .alias => return aliasUnsupported(self, task), // Foundation C
+            },
+            // a FACT decl. A SCHEMA (a fact WITH params) resolves as an IdentKV identifier —
+            // mint a thin LOCATOR (instantiation re-reads params/body/steps from the by-name
+            // AST registry via (file, name)). A plain fact is not an identifier.
+            .axiom, .hole, .theorem => {
+                const fact = ast.factOf(decl);
+                if (fact != null and fact.?.params != null) {
+                    _ = try self.idents.publish(self.io, key, .{ .schema = .{
+                        .name = task.name,
+                        .file = task.file,
+                        .loc = name_tok.start,
+                    } });
+                    return;
                 }
-                _ = try self.idents.publish(self.io, key, .{ .sort = .{
-                    .name = task.name,
-                    .loc = name_tok.start,
-                    .refinement = .{ .parent = parent, .qualifiers = quals },
-                } });
-                return;
+                try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
+                return; // no publish
             },
             .define => {
-                // defines need body elaboration — a later fetch layer.
+                // defines need body expansion — Foundation B (DefinesKV); a later fetch layer.
                 try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
         }
     }
+}
+
+/// A non-sort alias (const/func/pred re-export) — alias-collapse is Foundation C; stubbed.
+fn aliasUnsupported(self: *Context, task: FetchTask) std.mem.Allocator.Error!void {
+    try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
 }
 
 // --- layer-2 sub-demand resolution ----------------------------------------------------
@@ -426,7 +446,7 @@ test "ast registry: declOf resolves parsed decls by name; a miss is null; a synt
     // a SYNTHETIC decl (no positional slot) inserts under a mangled name and resolves the
     // same way — the mechanism accelerant generators rely on.
     const synth = try arena.create(ast.Decl);
-    synth.* = .{ .sort = .{ .name = .{ .tag = .identifier, .start = 0, .end = 0, .name = try ctx.interner.internString("foo[3]") } } };
+    synth.* = .{ .sort = .{ .local = .{ .tag = .identifier, .start = 0, .end = 0, .name = try ctx.interner.internString("foo[3]") } } };
     try ctx.registerDecl(fid, synth);
     try testing.expectEqual(synth, ctx.declOf(fid, try ctx.interner.internString("foo[3]")).?);
 }

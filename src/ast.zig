@@ -98,7 +98,54 @@ pub const Step = struct {
     };
 };
 
-pub const AliasKind = enum { sort, constant, func, pred, axiom, theorem };
+/// A re-export alias `<kind> name = target` — binds a LOCAL name to an entity that lives
+/// under `target` (a qualified `ns.origin` or a same-file name). Uniform + GUARD-FREE: a
+/// sort's `where` guard is NOT here — a guarded sort is `Sort.guarded`, a distinct variant
+/// (the grammar only allows `where` on a sort, so no alias kind but sort ever carried one).
+/// "Identity by origin": resolution binds `name` to `target`'s existing entity, mints
+/// nothing (see memory `alias-collapse`).
+pub const Alias = struct { name: Token, target: Token };
+
+/// `sort N` (root) | `sort N = T` (re-export) | `sort N = T where p` (refined/predicated).
+pub const Sort = union(enum) {
+    local: Token, // the sort's name
+    alias: Alias,
+    /// `sort H = G where inH` — a PREDICATED SORT: carrier `parent` narrowed by `guard`
+    /// (a unary pred name). Every use injects the guard (hypothesis at binders, obligation
+    /// at applications).
+    guarded: struct { name: Token, parent: Token, guard: Token },
+};
+
+pub const Constant = union(enum) {
+    local: struct { name: Token, sort: Token },
+    alias: Alias,
+};
+
+pub const Func = union(enum) {
+    local: struct { name: Token, params: []const Binder, result: Token, requires: ?*const Expr },
+    alias: Alias,
+};
+
+pub const Pred = union(enum) {
+    local: struct { name: Token, params: []const Binder },
+    alias: Alias,
+};
+
+/// The stated proposition of an axiom/theorem/hole. `params` non-null ⇒ it is a SCHEMA (a
+/// parametric template — `axiom foo(prop: T -> Prop): …`); the parser sets it from the
+/// optional `(params)`, so "a schema is an axiom with params" is a downstream reading, not a
+/// separate decl kind. A theorem wraps a `Fact` + its proof steps.
+pub const Fact = struct { name: Token, formula: *const Expr, params: ?[]const SchemaParam = null };
+
+pub const Axiom = union(enum) {
+    local: Fact,
+    alias: Alias,
+};
+
+pub const Theorem = union(enum) {
+    local: struct { fact: Fact, steps: []const Step },
+    alias: Alias,
+};
 
 pub const Decl = union(enum) {
     /// `import ns <<< "path.bpa"` — binds a namespace to a loaded file
@@ -106,43 +153,28 @@ pub const Decl = union(enum) {
     /// `forward name` — a manifest entry: promises `name` is defined later in
     /// this file as a theorem (checked at end of file; nothing else)
     forward: struct { name: Token },
-    /// `sort Nat = peano.Nat` etc — a local name for an imported entity.
-    /// A SORT alias may carry `where <pred>` — a PREDICATED SORT
-    /// (`sort H = G where inH`): H resolves to G's sort but every use injects the
-    /// guard `inH` (hypothesis at binders, obligation at applications). `guard` is
-    /// null for a plain alias and for non-sort alias kinds.
-    alias: struct { kind: AliasKind, name: Token, target: Token, guard: ?Token = null },
-    sort: struct { name: Token },
-    constant: struct { name: Token, sort: Token },
+    sort: Sort,
+    constant: Constant,
     /// `define NAME[(params)] = expr` — a transparent (macro) abbreviation: every
     /// use expands to the body at elaboration (with actual args substituted for the
-    /// params); the kernel never sees the name. The body may be a term (a defined
-    /// const/function) or a prop (a defined predicate). `params` empty = nullary.
+    /// params); the kernel never sees the name. `params` empty = nullary.
     define: struct { name: Token, params: []const Binder, value: *const Expr },
-    func: struct { name: Token, params: []const Binder, result: Token, requires: ?*const Expr },
-    pred: struct { name: Token, params: []const Binder },
-    axiom: struct { name: Token, formula: *const Expr },
-    /// `hole name: formula` — an aspirational placeholder, accepted like an
-    /// axiom but disclosed as a hole (default mode rejects; --draft allows).
-    hole: struct { name: Token, formula: *const Expr },
-    schema: struct {
-        name: Token,
-        params: []const SchemaParam,
-        formula: *const Expr,
-        /// proof-carrying schema: re-checked per instantiation (never at decl)
-        steps: ?[]const Step,
-    },
-    theorem: struct { name: Token, formula: *const Expr, steps: []const Step },
-    /// `model <Name> { <src>: <tgt> ... }` — declares that some local structure is a
-    /// model of an imported theory. Each `Mapping` binds a source-theory entity
-    /// (`group.op`, `group.opAssoc` — a qualified token) to the local symbol/fact
-    /// that plays it. There is NO carrier/guard header: the target carrier is
-    /// whatever the source carrier maps to, and the model is GUARDED exactly when a
-    /// sort-mapping's TARGET is a predicated sort (`group.Grp: H`, `H = Grp where inH`)
-    /// — that mapping supplies the guard. See MODEL-DESIGN.md.
+    func: Func,
+    pred: Pred,
+    axiom: Axiom,
+    /// `hole name: formula` — an aspirational placeholder, accepted like an axiom but
+    /// disclosed as a hole (default mode rejects; --draft allows). Same shape as Axiom.
+    hole: Axiom,
+    theorem: Theorem,
+    /// `model <Name> { <src>: <tgt> …; <src> <- <localThm> … }` — a model of an imported
+    /// theory. The `:` symbol/sort interpretations and the `<-` obligation discharges are
+    /// SPLIT into two lists (they resolve against different tables — idents vs facts). NO
+    /// carrier/guard header: the model is GUARDED exactly when a sort mapping's TARGET is a
+    /// predicated sort. See MODEL-DESIGN.md.
     model: struct {
         name: Token,
-        mappings: []const Mapping,
+        identifiers: []const Mapping,
+        obligations: []const Mapping,
     },
 };
 
@@ -167,24 +199,93 @@ pub const Mapping = struct {
 
 pub const File = struct { decls: []const Decl };
 
+// -- per-entity name() accessors (the local/alias union → its declared name token) ---------
+pub fn sortName(s: Sort) Token {
+    return switch (s) {
+        .local => |t| t,
+        .alias => |a| a.name,
+        .guarded => |g| g.name,
+    };
+}
+pub fn constantName(c: Constant) Token {
+    return switch (c) {
+        .local => |l| l.name,
+        .alias => |a| a.name,
+    };
+}
+pub fn funcName(f: Func) Token {
+    return switch (f) {
+        .local => |l| l.name,
+        .alias => |a| a.name,
+    };
+}
+pub fn predName(p: Pred) Token {
+    return switch (p) {
+        .local => |l| l.name,
+        .alias => |a| a.name,
+    };
+}
+pub fn axiomName(a: Axiom) Token {
+    return switch (a) {
+        .local => |f| f.name,
+        .alias => |al| al.name,
+    };
+}
+pub fn theoremName(t: Theorem) Token {
+    return switch (t) {
+        .local => |l| l.fact.name,
+        .alias => |a| a.name,
+    };
+}
+
+/// The LOCAL `Fact` if `decl` is a local axiom/theorem/hole (else null — an alias, or a
+/// non-fact). `Fact.params != null` ⇒ it is a SCHEMA. For the schema/instance path, which
+/// keys off "is this a fact-with-params" rather than a distinct decl kind.
+pub fn factOf(decl: *const Decl) ?Fact {
+    return switch (decl.*) {
+        .axiom, .hole => |a| switch (a) {
+            .local => |f| f,
+            .alias => null,
+        },
+        .theorem => |t| switch (t) {
+            .local => |l| l.fact,
+            .alias => null,
+        },
+        else => null,
+    };
+}
+
+/// The re-export `Alias` if `decl` is ANY alias (sort/const/func/pred/axiom/theorem),
+/// else null. For consumers that FOLLOW an alias to its target (query whereis/theorem).
+pub fn aliasOf(decl: *const Decl) ?Alias {
+    return switch (decl.*) {
+        .sort => |s| if (s == .alias) s.alias else null,
+        .constant => |c| if (c == .alias) c.alias else null,
+        .func => |f| if (f == .alias) f.alias else null,
+        .pred => |p| if (p == .alias) p.alias else null,
+        .axiom => |a| if (a == .alias) a.alias else null,
+        .hole => |a| if (a == .alias) a.alias else null,
+        .theorem => |t| if (t == .alias) t.alias else null,
+        else => null,
+    };
+}
+
 /// The NAME token of a declaration — the single token every named decl carries (import→ns,
 /// everything else→name). Used to key the by-name AST registry (`Context.ast_index`) and to
-/// read the stamped `name` StrId for name-keyed lookups. `intheory`/`forward` is a manifest
-/// promise, not a definition — it has a name but is not registry-addressable as a decl.
+/// read the stamped `name` StrId for name-keyed lookups. `forward` is a manifest promise,
+/// not a definition — it has a name but is not registry-addressable as a decl.
 pub fn declName(decl: *const Decl) Token {
     return switch (decl.*) {
         .import => |d| d.ns,
         .forward => |d| d.name,
-        .alias => |d| d.name,
-        .sort => |d| d.name,
-        .constant => |d| d.name,
+        .sort => |s| sortName(s),
+        .constant => |c| constantName(c),
         .define => |d| d.name,
-        .func => |d| d.name,
-        .pred => |d| d.name,
-        .axiom => |d| d.name,
-        .hole => |d| d.name,
-        .schema => |d| d.name,
-        .theorem => |d| d.name,
+        .func => |f| funcName(f),
+        .pred => |p| predName(p),
+        .axiom => |a| axiomName(a),
+        .hole => |a| axiomName(a),
+        .theorem => |t| theoremName(t),
         .model => |d| d.name,
     };
 }

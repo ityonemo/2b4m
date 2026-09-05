@@ -39,9 +39,9 @@ pub const Result = struct {
 /// these is a potential acceleration site; every other rule is always
 /// kernel-checked.
 const accelerated_rules = [_][]const u8{
-    "arithmetic",  "tautology",
-    "polynomial",  "assoc_commut",
-    "assoc",       "assoc_commut_quantified",
+    "arithmetic",       "tautology",
+    "polynomial",       "assoc_commut",
+    "assoc",            "assoc_commut_quantified",
     "assoc_quantified", "ext",
     "ext_quantified",
 };
@@ -86,11 +86,10 @@ const Proof = struct { kind: []const u8, name: Token, steps: []const ast.Step };
 
 fn asProof(decl: ast.Decl) ?Proof {
     return switch (decl) {
-        .theorem => |t| .{ .kind = "theorem", .name = t.name, .steps = t.steps },
-        .schema => |s| if (s.steps) |steps|
-            .{ .kind = "schema", .name = s.name, .steps = steps }
-        else
-            null,
+        .theorem => |t| switch (t) {
+            .local => |l| .{ .kind = if (l.fact.params != null) "schema" else "theorem", .name = l.fact.name, .steps = l.steps },
+            .alias => null,
+        },
         else => null,
     };
 }

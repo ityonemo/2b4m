@@ -720,7 +720,9 @@ const ResolvedSchema = struct {
     file: InternPool.Index,
     ns: InternPool.Index,
     name: StrId, // the schema's name (keys the AST registry + the instance payload)
-    decl: ast.Decl, // the `.schema` decl (from the by-name registry)
+    /// the schema's Fact (params + formula) — a schema is an axiom/theorem/hole whose
+    /// `Fact.params != null` (extracted via `ast.factOf`, decl-kind-agnostic).
+    fact: ast.Fact,
     source: []const u8,
 };
 
@@ -742,11 +744,14 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
     const fid = self.ctx.pool_file.get(loc.file).?;
     const decl = self.ctx.declOf(fid, loc.name) orelse
         return self.fail(tok.start, "internal: schema '{s}' locator has no decl", .{self.text(tok)});
+    // a schema is an axiom/theorem/hole with params; extract its Fact decl-kind-agnostically.
+    const fact = ast.factOf(decl) orelse
+        return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
     return .{
         .file = loc.file,
         .ns = ns,
         .name = loc.name,
-        .decl = decl.*,
+        .fact = fact,
         .source = self.ctx.files.items[@intFromEnum(fid)].source,
     };
 }
@@ -756,7 +761,7 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
 /// A value param → the elaborated arg term; an N-ary param → a lambda arg (or a bare
 /// symbol eta-expanded). Sort tokens resolve in the SCHEMA's ns via a schema-scoped Elab.
 fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim) Error!*Schema.SchemaArgs {
-    const params = rs.decl.schema.params;
+    const params = rs.fact.params.?;
     if (c.args.len != params.len) {
         return self.fail(c.schema.?.start, "schema '{s}' expects {d} argument(s), got {d}", .{
             self.text(c.schema.?), params.len, c.args.len,
@@ -872,7 +877,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     };
-    const params = rs.decl.schema.params;
+    const params = rs.fact.params.?;
     const schema_name = tokName(c.schema.?);
     // stable ordered param-name list for the hash + payload.
     const pnames = try self.ctx.arena.alloc(StrId, params.len);
@@ -1262,7 +1267,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = c.args,
         .premises = c.refs,
     };
@@ -1515,7 +1520,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
 
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = &.{}, .formula = body_expr, .steps = steps } },
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = &.{} }, .steps = steps } } },
         .args = &.{},
         .premises = c.refs,
     };
@@ -2035,7 +2040,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
 
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
     };
@@ -2416,7 +2421,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "chain{{{x}}}", .{hash}));
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
     };
@@ -2805,7 +2810,7 @@ fn finishReorder(
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, name_prefix ++ "{{{x}}}", .{hash}));
     return .{
         .name = name,
-        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
     };

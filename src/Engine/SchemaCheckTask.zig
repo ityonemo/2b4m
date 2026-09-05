@@ -63,16 +63,19 @@ pub fn run(self: *Context, task: *SchemaCheckTask, h: *Engine.Handle) std.mem.Al
     const fid = self.pool_file.get(task.file).?;
     const source = self.files.items[@intFromEnum(fid)].source;
     const found = self.declOf(fid, task.name) orelse return; // no such schema (shouldn't happen)
-    if (found.* != .schema) return;
-    const decl = found.*;
-    if (decl.schema.steps == null) return; // not proof-carrying — nothing to check
+    // a PROOF-CARRYING schema is a local theorem with params; only those are checked here
+    // (an axiom-schema has no proof body). Anything else → nothing to check.
+    if (found.* != .theorem or found.theorem != .local) return;
+    const tlocal = found.theorem.local;
+    const schema_params = tlocal.fact.params orelse return; // not a schema
+    _ = tlocal.steps; // proof-carrying by construction (a theorem always has steps)
 
     // build OPAQUE args in a throwaway scratchpad, reify them durably for the instance task.
     var pool = term.Pool.init(self.arena);
     var counter: u32 = 0;
-    const pnames = try self.arena.alloc(StrId, decl.schema.params.len);
-    const durable = try self.arena.alloc(ProveTask.DurableArg, decl.schema.params.len);
-    for (decl.schema.params, pnames, durable) |p, *pn, *dout| {
+    const pnames = try self.arena.alloc(StrId, schema_params.len);
+    const durable = try self.arena.alloc(ProveTask.DurableArg, schema_params.len);
+    for (schema_params, pnames, durable) |p, *pn, *dout| {
         pn.* = p.name.name; // stamped at parse
         const brand = try std.fmt.allocPrint(self.arena, "opaque-schema-param#{s}", .{source[p.name.start..p.name.end]});
         if (p.arg_sorts.len == 0) {

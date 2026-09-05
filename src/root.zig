@@ -84,8 +84,11 @@ fn countRoot(context: *Context) !Counts {
     var proven: usize = 0;
     for (root_parsed.decls) |decl| {
         if (decl != .theorem) continue;
+        // count only LOCAL theorems (things this file sets out to PROVE); a theorem ALIAS is
+        // a re-export, not a proof obligation (its origin is proved elsewhere).
+        if (decl.theorem != .local) continue;
         decls += 1;
-        const name_tok = decl.theorem.name;
+        const name_tok = ast.theoremName(decl.theorem);
         const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
         if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
             if (state == .proven) proven += 1;

@@ -258,7 +258,7 @@ fn scanAll(arena: Allocator, source: []const u8) !*ScanRecorder {
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
     const parsed = try p.parseFile();
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
-    const steps = parsed.decls[parsed.decls.len - 1].theorem.steps;
+    const steps = parsed.decls[parsed.decls.len - 1].theorem.local.steps;
 
     const rec = try arena.create(ScanRecorder);
     rec.* = .{ .arena = arena, .interner = interner, .source = source };
