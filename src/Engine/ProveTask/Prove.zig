@@ -37,6 +37,8 @@ const RefScan = @import("RefScan.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
+const EqCert = @import("EqCert.zig");
+const simplify_mod = @import("simplify.zig");
 const smt = @import("smt.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
@@ -1110,15 +1112,23 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
     _ = e;
     if (c.rule.name == try self.internStr("specialize")) return try self.produceSpecialize(w, goal, c);
     if (c.rule.name == try self.internStr("tautology")) return try self.produceTautology(w, goal, c);
+    if (c.rule.name == try self.internStr("simplify")) return try self.produceSimplify(w, goal, c);
+    if (c.rule.name == try self.internStr("simplify_quantified")) return try self.produceSimplifyQuantified(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
 /// The premise refs an accelerant's `schema_instance` discharges, in the synthetic body's
 /// antecedent order. Each accelerant's body has a matching antecedent order:
 ///   - tautology: exactly the cited refs (the schema body's `prem0 -> … -> goal`), no head.
+///   - simplify(_quantified): only the LOCAL cited rules (a global rule is cited INSIDE the
+///     synthetic proof, not discharged here) — matching `produceSimplify`'s antecedents.
 ///   - specialize: the head-cite step (only when the head is LOCAL — a global head is cited
 ///     inside the synthetic proof, not discharged here) followed by the hyps.
 fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]const kernel.SRef {
+    // simplify's antecedents are only its LOCAL rule refs (globals are cited in the cert).
+    if (c.rule.name == try self.internStr("simplify") or c.rule.name == try self.internStr("simplify_quantified")) {
+        return self.localRefsToSteps(w, c.refs);
+    }
     // tautology has no head: its antecedents ARE the cited refs, in order.
     if (c.schema == null) {
         const out = try self.ctx.arena.alloc(kernel.SRef, c.refs.len);
@@ -1788,6 +1798,413 @@ const TautAst = struct {
         }
     }
 };
+
+// -- simplify / simplify_quantified (the equational accelerants) -----------------------
+
+/// The subset of `refs` that name LOCAL proof steps (in walk scope), resolved to step refs —
+/// the simplify accelerant's schema antecedents (a global rule is cited inside the cert).
+fn localRefsToSteps(self: *Prove, w: *const Walk, refs: []const lexer.Token) Error![]const kernel.SRef {
+    var out: std.ArrayList(kernel.SRef) = .empty;
+    for (refs) |r| {
+        if (r.qualifier == InternPool.Index.none and w.findStep(tokName(r)) != null) {
+            try out.append(self.ctx.arena, try self.resolveStepRef(w, r));
+        }
+    }
+    return out.items;
+}
+
+/// The fresh-label trampoline EqCert calls (type-erased `*Prove`).
+fn eqCertFresh(ctx: *anyopaque, prefix: []const u8) anyerror!StrId {
+    const self: *Prove = @ptrCast(@alignCast(ctx));
+    return self.freshNamed(prefix);
+}
+
+/// Prepare one rewrite rule from a cited ref: resolve its formula (LOCAL step or GLOBAL
+/// axiom/theorem), orient the (possibly ∀-prefixed) equation left→right opening each binder
+/// at a fresh `#`-mangled pattern fvar, and record how the cert cites it. A rule's binders
+/// must all occur on the lhs (else it is not a usable rewrite rule).
+const PreparedRule = struct { rule: simplify_mod.Rule, cite: EqCert.RuleCite, local: bool, formula: TermId };
+fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRule {
+    var formula: TermId = undefined;
+    var cite: EqCert.RuleCite = undefined;
+    const is_local = ref.qualifier == InternPool.Index.none and w.findStep(tokName(ref)) != null;
+    if (is_local) {
+        // a LOCAL equation step: it becomes a schema antecedent, restated by hypothesis.
+        const sref = try self.resolveStepRef(w, ref);
+        formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
+        cite = .{ .local = .{ .hyp = try self.premiseHypLabel(ref) } };
+    } else {
+        const fact = try self.resolveFactRef(ref);
+        formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+        cite = .{ .global = .{ .head = ref, .is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom } };
+    }
+    // orient: peel `forall` binders as fresh pattern fvars, require an equation body.
+    var binders: std.ArrayList(simplify_mod.Binder) = .empty;
+    var body = formula;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) break;
+        const fresh = try self.freshNamed("p#");
+        const fv = try self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } });
+        body = try self.pool.open(node.quant.body, fv);
+        try binders.append(self.ctx.arena, .{ .fvar = fresh, .sort = node.quant.sort });
+    }
+    const bn = self.pool.get(body);
+    if (bn != .eq) return self.fail(ref.start, "'{s}' is not an equation", .{self.text(ref)});
+    for (binders.items) |bd| {
+        if (!self.pool.occursFree(bn.eq.lhs, bd.fvar)) {
+            return self.fail(ref.start, "'{s}': not every bound variable occurs on the left-hand side", .{self.text(ref)});
+        }
+    }
+    return .{
+        .rule = .{ .binders = binders.items, .lhs = bn.eq.lhs, .rhs = bn.eq.rhs, .formula = formula },
+        .cite = cite,
+        .local = is_local,
+        .formula = formula,
+    };
+}
+
+/// The deterministic hypothesis-restatement label for a LOCAL rule premise `ref` (stable
+/// across re-entry: derived from the ref's stamped name, so the wrapper and the cert name
+/// the same step).
+fn premiseHypLabel(self: *Prove, ref: lexer.Token) Error!StrId {
+    return self.ctx.interner.internString(std.fmt.allocPrint(self.ctx.arena, "prem-{d}", .{@intFromEnum(tokName(ref))}) catch return error.OutOfMemory) catch return error.OutOfMemory;
+}
+
+/// `[using simplify refs…]` — prove an equation goal `s = t` by rewriting BOTH sides to a
+/// common normal form using each cited fact as a left→right rewrite rule. Certificate-total:
+/// on a shared NF the reflexivity/rewrite/symmetry chain is emitted (via the shared EqCert)
+/// as the synthetic schema's proof; on differing NFs or a rewrite-cap overflow it FAILS with
+/// the diagnostic. Synthetic schema (specialize-shaped): value params abstract the goal's
+/// free (fix-eigenvariable) fvars; LOCAL rule refs become premise antecedents restated by
+/// hypothesis; GLOBAL rules are cited inside the cert.
+fn produceSimplify(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "simplify takes no arguments", .{});
+    const gn = self.pool.get(goal);
+    if (gn != .eq) {
+        if (gn == .quant and gn.quant.q == .forall) {
+            return self.fail(c.rule.start, "simplify proves equations; did you mean simplify_quantified?", .{});
+        }
+        return self.fail(c.rule.start, "simplify: goal is not an equation", .{});
+    }
+    return self.buildSimplify(w, c, goal, &.{});
+}
+
+/// `[using simplify_quantified refs…]` — like simplify but the goal is `forall …; s = t`.
+/// Peel the ∀ prefix into fresh eigenvariable fvars, run the simplify core on the body
+/// equation, and re-generalize: the synthetic schema's proof `fix`es each eigenvariable,
+/// proves the body via the EqCert, and `forall_intro`s back out.
+fn produceSimplifyQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "simplify_quantified takes no arguments", .{});
+    // peel the ∀ prefix into fresh eigenvariables; the body must be an equation.
+    var eigen: std.ArrayList(term.Node.Fvar) = .empty;
+    var body = goal;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) break;
+        const hint = self.ctx.interner.stringBytes(node.quant.hint);
+        const fv: term.Node.Fvar = .{ .name = try self.freshNamed(if (hint.len > 0) hint else "q"), .sort = node.quant.sort };
+        body = try self.pool.open(node.quant.body, try self.pool.add(.{ .fvar = fv }));
+        try eigen.append(self.ctx.arena, fv);
+    }
+    if (eigen.items.len == 0) {
+        return self.fail(c.rule.start, "simplify_quantified expects a quantified goal; did you mean simplify?", .{});
+    }
+    if (self.pool.get(body) != .eq) {
+        return self.fail(c.rule.start, "simplify_quantified: the quantified body is not an equation", .{});
+    }
+    return self.buildSimplify(w, c, body, eigen.items);
+}
+
+/// Shared core for both simplify variants: prepare rules, normalize both sides of the body
+/// equation `eq_goal`, join (or fail on differing NFs / a cap overflow), then build the
+/// synthetic schema. `eigen` (empty for plain simplify) are the peeled ∀ eigenvariables the
+/// quantified variant re-generalizes over via `fix` blocks (they are NOT abstracted into
+/// params — the schema proof re-binds them; only genuinely-free caller-locals become params).
+fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // prepare the rewrite rules (in citation order) + how the cert cites each.
+    const prepared = try self.ctx.arena.alloc(PreparedRule, c.refs.len);
+    for (c.refs, prepared) |r, *out| out.* = try self.prepareRule(w, r);
+    const rules = try self.ctx.arena.alloc(simplify_mod.Rule, prepared.len);
+    const cites = try self.ctx.arena.alloc(EqCert.RuleCite, prepared.len);
+    for (prepared, rules, cites) |p, *ru, *ci| {
+        ru.* = p.rule;
+        ci.* = p.cite;
+    }
+
+    // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into
+    // value params UP FRONT — before normalizing — so `s`/`t`, the cert steps (built over the
+    // trace), and the schema body ALL speak the param names `p1, p2, …`. Eigenvariables (the
+    // quantified variant's peeled ∀ vars) are EXCLUDED: they stay free here and are re-bound
+    // by the `fix` wrapper. A local rule premise's formula may share such an fvar, so include
+    // each in the abstraction domain too.
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, eq_goal_raw);
+    for (prepared) |p| if (p.local) try abs_terms.append(self.ctx.arena, p.formula);
+    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
+    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+
+    const gn = self.pool.get(eq_goal).eq;
+    const s = gn.lhs;
+    const t = gn.rhs;
+
+    // normalize both sides; a looping rule set trips the cap (1000, as the eager core).
+    const rs = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules, s, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "simplify: rewrite limit reached (looping rule set?)", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const rt = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules, t, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "simplify: rewrite limit reached (looping rule set?)", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (!self.pool.alphaEq(rs.nf, rt.nf)) {
+        // render over the ORIGINAL caller names: undo the param abstraction (pK -> display
+        // fvar) so the diagnostic shows `add(n, ZERO)`, not the synthetic `add(p1, ZERO)`.
+        return self.fail(c.rule.start, "simplify: normal forms differ: '{s}' vs '{s}'", .{
+            try self.renderTerm(try self.unabstract(rs.nf, abs)),
+            try self.renderTerm(try self.unabstract(rt.nf, abs)),
+        });
+    }
+
+    // Build the equation-cert AST proving `s = t` into a fresh step list.
+    var cert: EqCert = .{
+        .b = &b,
+        .pool = self.pool,
+        .rules = rules,
+        .cites = cites,
+        .fresh_ctx = self,
+        .freshFn = eqCertFresh,
+    };
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    _ = try cert.emitJoin(&body_steps, s, t, rs, rt);
+    var steps: []const ast.Step = body_steps.items;
+
+    // LOCAL rules are schema antecedents (restated by hypothesis + discharged at the call
+    // site) in ref order; collect their (cite, param-substituted formula) for the wrappers.
+    var local_cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    var local_formulae: std.ArrayList(TermId) = .empty;
+    for (prepared) |p| if (p.local) {
+        try local_cites.append(self.ctx.arena, p.cite);
+        try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
+    };
+
+    // the inner proposition the cert proves under its assumptions: `prem0 -> … -> (s = t)`.
+    const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
+    const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
+
+    // wrap the cert in nested `assume <local-prem>` blocks (the `->` antecedents), then in
+    // `fix` blocks for the ∀ eigenvariables (the quantified variant's re-generalization).
+    steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps);
+    steps = try self.wrapSimplifyForall(&b, eigen, inner_prop, steps);
+
+    // the schema body proposition = the ∀-generalized `inner_prop` (params already in place).
+    var full_prop = inner_prop;
+    var ei: usize = eigen.len;
+    while (ei > 0) {
+        ei -= 1;
+        const closed = try self.pool.close(full_prop, eigen[ei].name);
+        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
+    }
+    const body_expr = try b.termExpr(full_prop);
+
+    // params from the abstracted free fvars (value params of the fvars' sorts).
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
+    for (abs.names, abs.sorts, params) |name, sort, *pp| {
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
+
+    // deterministic hash-name from the (pre-substitution) full proposition (re-entry stable).
+    const hash = Schema.termHash(self.pool, full_prop);
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "simplify{{{x}}}", .{hash}));
+
+    return .{
+        .name = name,
+        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .args = abs.args,
+        .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
+    };
+}
+
+/// The LOCAL rule ref TOKENS (for the `Synthetic.premises` slot — the demand plumbing rides
+/// these as the instance claim's `refs`; `accelerantPremises` re-resolves them to steps).
+fn localRefTokens(self: *Prove, w: *const Walk, refs: []const lexer.Token) Error![]const lexer.Token {
+    var out: std.ArrayList(lexer.Token) = .empty;
+    for (refs) |r| {
+        if (r.qualifier == InternPool.Index.none and w.findStep(tokName(r)) != null) {
+            try out.append(self.ctx.arena, r);
+        }
+    }
+    return out.items;
+}
+
+/// `ants[0] -> … -> ants[n] -> consequent` (right-assoc) as a kernel term.
+fn impliesChain(self: *Prove, consequent: TermId, ants: []const TermId) Error!TermId {
+    var acc = consequent;
+    var i: usize = ants.len;
+    while (i > 0) {
+        i -= 1;
+        acc = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ants[i], .rhs = acc } });
+    }
+    return acc;
+}
+
+/// Wrap the cert `inner` (proving the equation `eq_prop`) in nested `assume <local-prem>`
+/// blocks — one per LOCAL rule premise, restating its hypothesis (under the deterministic
+/// `prem-…` label the cert cites) and exporting `prem_i -> …` with `implies_intro` out
+/// through each level. With no local premises the cert steps pass through verbatim. (Same
+/// shape as tautology's `wrapTautologyPremises`.)
+fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step) Error![]const ast.Step {
+    var body_steps = inner;
+    var i: usize = formulae.len;
+    while (i > 0) {
+        i -= 1;
+        const hyp_label = cites[i].local.hyp;
+        const blk_label = try self.freshNamed("assume-prem");
+        var blk_body = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, body_steps.len + 1);
+        blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, blk_label)));
+        blk_body.appendSliceAssumeCapacity(body_steps);
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(formulae[i]), blk_body.items));
+        // export: `prem_i -> … -> (s = t)`.
+        const exported = try self.impliesChain(eq_prop, formulae[i..]);
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try self.freshNamed("export"),
+            try b.termExpr(exported),
+            .by,
+            try self.internStr("implies_intro"),
+            &.{},
+            try self.oneRef(b, blk_label),
+        ));
+        body_steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return body_steps;
+}
+
+/// Wrap the premise-wrapped `body_steps` (proving `inner_prop = prem0 -> … -> (s = t)`) in
+/// nested `fix` blocks for the ∀ eigenvariables (outermost = eigen[0]), concluding each level
+/// with `forall_intro`. With no eigenvariables the steps pass through unchanged (plain
+/// simplify). The `fix` binder re-uses each eigenvariable's DISPLAY name — the same name the
+/// cert body's delaborated fvars carry, so they re-resolve to the binder.
+fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.Node.Fvar, inner_prop: TermId, body_steps: []const ast.Step) Error![]const ast.Step {
+    if (eigen.len == 0) return body_steps;
+    var steps = body_steps;
+    var prop = inner_prop; // the proposition inside the current fix (before this ∀ closes)
+    var i: usize = eigen.len;
+    while (i > 0) {
+        i -= 1;
+        const fv = eigen[i];
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
+        const fix_label = try self.freshNamed("fix");
+        const bname = b.tok(try self.displayName(fv.name));
+        const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.tok(sort_name), .steps = steps } } };
+        const closed = try self.pool.close(prop, fv.name);
+        prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, fix_step);
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try self.freshNamed("gen"),
+            try b.termExpr(prop),
+            .by,
+            try self.internStr("forall_intro"),
+            &.{},
+            try self.oneRef(b, fix_label),
+        ));
+        steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return steps;
+}
+
+/// Abstract each distinct FREE fvar in `id` into a synthetic value param — the goal's
+/// genuinely-free caller-local fvars (an enclosing `fix` at the call site). Returns the param
+/// names/sorts (for the schema `params`), the original fvar names (for substitution), and the
+/// caller-site arg exprs (each the fvar's DISPLAY name, re-resolving to the caller binder).
+/// A closed `id` yields no params (like a plain tautology).
+const FvarAbstraction = struct {
+    names: []const StrId,
+    sorts: []const SortId,
+    origs: []const StrId,
+    args: []const *const ast.Expr,
+};
+fn abstractFreeFvars(self: *Prove, b: *Accelerant.Builder, terms: []const TermId, exclude: []const term.Node.Fvar) Error!FvarAbstraction {
+    var seen: std.ArrayList(term.Node.Fvar) = .empty;
+    for (terms) |t| try self.collectFreeFvars(t, &seen);
+    // drop excluded eigenvariables (they are `fix`-bound, not param-abstracted).
+    var kept: std.ArrayList(term.Node.Fvar) = .empty;
+    outer: for (seen.items) |fv| {
+        for (exclude) |e| if (e.name == fv.name) continue :outer;
+        try kept.append(self.ctx.arena, fv);
+    }
+    seen = kept;
+    const names = try self.ctx.arena.alloc(StrId, seen.items.len);
+    const sorts = try self.ctx.arena.alloc(SortId, seen.items.len);
+    const origs = try self.ctx.arena.alloc(StrId, seen.items.len);
+    const args = try self.ctx.arena.alloc(*const ast.Expr, seen.items.len);
+    for (seen.items, 0..) |fv, i| {
+        names[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "p{d}", .{i + 1}));
+        sorts[i] = fv.sort;
+        origs[i] = fv.name;
+        args[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // display name → caller binder
+    }
+    return .{ .names = names, .sorts = sorts, .origs = origs, .args = args };
+}
+
+/// Collect distinct free fvars (by name) into `out`.
+fn collectFreeFvars(self: *Prove, id: TermId, out: *std.ArrayList(term.Node.Fvar)) Error!void {
+    switch (self.pool.get(id)) {
+        .fvar => |v| {
+            for (out.items) |e| if (e.name == v.name) return;
+            try out.append(self.ctx.arena, v);
+        },
+        .bvar => {},
+        .app, .pred => |a| for (self.pool.args(a)) |arg| try self.collectFreeFvars(arg, out),
+        .eq => |p| {
+            try self.collectFreeFvars(p.lhs, out);
+            try self.collectFreeFvars(p.rhs, out);
+        },
+        .not => |t| try self.collectFreeFvars(t, out),
+        .bin => |bn| {
+            try self.collectFreeFvars(bn.lhs, out);
+            try self.collectFreeFvars(bn.rhs, out);
+        },
+        .quant => |q| try self.collectFreeFvars(q.body, out),
+    }
+}
+
+/// Substitute each `origs[i]` fvar with a fresh param fvar named `names[i]` (same sort)
+/// throughout `id`; the param fvar delaborates to the bare param name the schema Elab binds.
+fn substFvarsToParams(self: *Prove, id: TermId, abs: FvarAbstraction) Error!TermId {
+    var out = id;
+    for (abs.origs, abs.names, abs.sorts) |orig, name, sort| {
+        const pf = try self.pool.add(.{ .fvar = .{ .name = name, .sort = sort } });
+        out = try self.pool.substFvar(out, orig, pf);
+    }
+    return out;
+}
+
+/// The inverse of `substFvarsToParams` for DISPLAY: replace each param fvar `pK` with a
+/// fresh fvar named after the original caller-local (display-trimmed), so a diagnostic shows
+/// the name the author wrote instead of the synthetic `pK`.
+fn unabstract(self: *Prove, id: TermId, abs: FvarAbstraction) Error!TermId {
+    var out = id;
+    for (abs.names, abs.origs, abs.sorts) |name, orig, sort| {
+        const disp = try self.pool.add(.{ .fvar = .{ .name = try self.displayName(orig), .sort = sort } });
+        out = try self.pool.substFvar(out, name, disp);
+    }
+    return out;
+}
+
+/// An fvar's display name (trimmed at the hygiene `#`), re-interned — the bare name the `fix`
+/// binder + the cert's fvar references share, and what re-elaboration re-binds.
+fn displayName(self: *Prove, name: StrId) Error!StrId {
+    const s = self.ctx.interner.stringBytes(name);
+    if (std.mem.indexOfScalar(u8, s, '#')) |k| {
+        return self.ctx.interner.internString(s[0..k]) catch error.OutOfMemory;
+    }
+    return name;
+}
 
 // -- justification lowering ------------------------------------------------------------
 

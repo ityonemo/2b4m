@@ -96,11 +96,22 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                 .model => if (c.schema) |s| try self.addTok(s, .model), // the model NAME (the
                 // `(M)` selector lands in c.schema); the transferred fact ref is demanded by
                 // the cite handler once M resolves.
-                .accelerant => if (c.schema) |s| {
+                .accelerant => {
                     // an accelerant HEAD (specialize's `c.schema`): a GLOBAL theorem/axiom
-                    // citation UNLESS it's a live local step (then resolved locally at
-                    // process time). Its `c.refs` are LOCAL premise labels — not enumerated.
-                    if (self.walk.findStep(s.name) == null) try self.addTok(s, .fact);
+                    // citation UNLESS it's a live local step (then resolved locally at process
+                    // time).
+                    if (c.schema) |s| {
+                        if (self.walk.findStep(s.name) == null) try self.addTok(s, .fact);
+                    }
+                    // simplify's refs are its rewrite RULES — a mix of global axioms/theorems
+                    // and local equation steps; a ref that is NOT a live local step is a global
+                    // fact the producer will `resolveFactRef`, so demand it here. (For
+                    // specialize/tautology every ref IS a live local step → skipped, unchanged.)
+                    for (c.refs) |r| {
+                        if (r.qualifier != InternPool.Index.none or self.walk.findStep(r.name) == null) {
+                            try self.addTok(r, .fact);
+                        }
+                    }
                 },
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }

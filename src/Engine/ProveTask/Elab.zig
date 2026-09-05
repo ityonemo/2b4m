@@ -776,13 +776,15 @@ test "elab: guarded funcs, defines-absent, and lambdas are cleanly unsupported/u
     const nat2 = [_]InternPool.Index{ w.nat, w.nat };
     const div_sig = try w.interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
     const div_name = try w.interner.internString("div");
-    _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{ .func = .{
-        .sig = div_sig,
-        .guard = 123, // any reified guard offset — non-no_term means guarded
-        .param_names = &.{},
-        .name = div_name,
-        .loc = 0,
-    } });
+    _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{
+        .func = .{
+            .sig = div_sig,
+            .guard = 123, // any reified guard offset — non-no_term means guarded
+            .param_names = &.{},
+            .name = div_name,
+            .loc = 0,
+        },
+    });
 
     const rig = try w.elabOf("forall k: Nat; le(div(k, k), k)");
     try testing.expectError(error.Recover, rig.elab.elaborateExpr(rig.expr));

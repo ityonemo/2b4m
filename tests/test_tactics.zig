@@ -19,10 +19,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/simplify.bpa" });
 
     // unjoinable normal forms: the diagnostic shows both, copy-pasteable
-    ctx.fail(&.{ "check", "tests/cases/simplify_bad.bpa" }, "tests/cases/simplify_bad.bpa:14:13: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
+    ctx.fail(&.{ "check", "tests/cases/simplify_bad.bpa" }, "tests/cases/simplify_bad.bpa:14:16: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
 
     // cycling rules hit the hard rewrite cap instead of hanging
-    ctx.fail(&.{ "check", "tests/cases/simplify_loop.bpa" }, "tests/cases/simplify_loop.bpa:13:9: error: simplify: rewrite limit reached (looping rule set?)\n");
+    ctx.fail(&.{ "check", "tests/cases/simplify_loop.bpa" }, "tests/cases/simplify_loop.bpa:13:12: error: simplify: rewrite limit reached (looping rule set?)\n");
 
     // ac: associative-commutative sum reordering over opaque atoms, emits kernel steps
     ctx.okSilent(&.{ "check", "tests/cases/ac.bpa" });
@@ -321,10 +321,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/simplify_quantified.bpa" });
 
     // simplify_quantified on a bare equation redirects to simplify
-    ctx.fail(&.{ "check", "tests/cases/simplify_quantified_bad.bpa" }, "tests/cases/simplify_quantified_bad.bpa:12:9: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
+    ctx.fail(&.{ "check", "tests/cases/simplify_quantified_bad.bpa" }, "tests/cases/simplify_quantified_bad.bpa:12:12: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
 
     // plain simplify on a quantified goal redirects to simplify_quantified
-    ctx.fail(&.{ "check", "tests/cases/simplify_on_quantified.bpa" }, "tests/cases/simplify_on_quantified.bpa:12:9: error: simplify proves equations; did you mean simplify_quantified?\n");
+    ctx.fail(&.{ "check", "tests/cases/simplify_on_quantified.bpa" }, "tests/cases/simplify_on_quantified.bpa:12:12: error: simplify proves equations; did you mean simplify_quantified?\n");
 
     // symmetry: y = x from x = y in one step, emits kernel steps
     ctx.okSilent(&.{ "check", "tests/cases/symmetry.bpa" });
