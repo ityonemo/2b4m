@@ -215,6 +215,13 @@ pub fn addTests(
     // defines share the declaration namespace
     ctx.fail(&.{ "check", "tests/cases/define_bad.bpa" }, "tests/cases/define_bad.bpa:5:8: error: duplicate declaration of 'TWO'\n");
 
+    // ALIAS-COLLAPSE (Foundation C): an IDENT alias (sort/const/func/pred) binds to the
+    // target's origin Index, so a local proof matches a source axiom cited across the alias
+    // boundary (the collapsed sorts are one Index — no mismatch).
+    ctx.okSilent(&.{ "check", "tests/cases/alias_ident.bpa" });
+    // a FACT alias re-exports a proven fact by origin; citing the local name resolves to it.
+    ctx.okSilent(&.{ "check", "tests/cases/alias_fact.bpa" });
+
     // `specialize THM(args) hyps…` applies a forall-theorem (∀-elim + modus_ponens
     // chain, emitted + kernel-checked) in one step. Positive: single/multi-arg,
     // multi-hyp, no-hyp all check strict.

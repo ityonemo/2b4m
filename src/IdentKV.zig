@@ -88,6 +88,12 @@ pub const Mint = union(enum) {
     /// (parent+overlay), so it goes through `get`, not a `mint*`; a model name in IdentKV
     /// maps to that (possibly shared) `.model` Index.
     model: InternPool.Key.Model,
+    /// ALIAS-COLLAPSE (Foundation C): bind this name to an ALREADY-EXISTING pool `Index` —
+    /// mint NOTHING. `sort A = B` / `const X = Y` / `func f = g` / `pred p = q` bind the
+    /// local name to the target's origin Index, so kernel terms + lookups coincide
+    /// (identity by origin, transitive to the defining entity). The fetcher resolves the
+    /// target (demanding it + walking a chain of aliases) and publishes its Index here.
+    existing: InternPool.Index,
 };
 
 /// SUCCESS transition: the claiming task fetched `key`, so mint its concrete identifier
@@ -119,6 +125,7 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .import => |m| self.pool.mintImport(m),
         .schema => |s| self.pool.mintSchema(s),
         .model => |m| self.pool.get(.{ .model = m }), // deduped by content (parent+overlay)
+        .existing => |ix| ix, // alias-collapse: bind to the target's origin Index, mint nothing
     };
 }
 

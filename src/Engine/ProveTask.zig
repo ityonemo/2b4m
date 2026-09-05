@@ -28,7 +28,10 @@
 
 const std = @import("std");
 const ast = @import("../ast.zig");
+const lexer = @import("../lexer.zig");
 const InternPool = @import("../InternPool.zig");
+const IdentKV = @import("../IdentKV.zig");
+const FetchTask = @import("FetchTask.zig");
 const StrId = InternPool.StrId;
 const term = @import("../term.zig");
 const Engine = @import("../Engine.zig");
@@ -151,6 +154,17 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         .unparsed => {}, // undiscovered — locate reports the internal wiring error
     };
 
+    // FACT ALIAS (`theorem foo = bar.baz` / `axiom foo = bar.baz`): bind `foo` to the origin
+    // fact's Index — no goal/steps to walk, no State. Handled here (before `locate`, which
+    // builds the normal proof State) since it's a distinct, State-less flow. Idempotent across
+    // resumes: an alias never sets `task.st`, so each resume re-peeks and re-resolves.
+    if (task.st == null and task.instance == null) {
+        switch (try factAlias(self, task, h, key)) {
+            .handled => return,
+            .not_alias => {},
+        }
+    }
+
     const st = task.st orelse blk: {
         const st = if (task.instance) |inst|
             (try buildInstanceState(self, task, h, ns, inst)) orelse return // diagnosed
@@ -244,6 +258,76 @@ fn demandDiag(self: *Context, task: *ProveTask, comptime fmt: []const u8, args: 
 /// Find the fact's declaration in its file's parsed AST and build the production state.
 /// Null = diagnosed (missing / not-a-fact / unsupported kind); the task completes
 /// without publishing.
+const AliasOutcome = enum { handled, not_alias };
+
+/// FACT ALIAS resolution (`axiom/theorem LOCAL = TARGET`). `handled` = published (bound
+/// LOCAL to the origin fact), SUSPENDED (blocked on the origin's ProveTask; resume re-runs),
+/// or DIAGNOSED (no publish). `not_alias` = the decl is not a fact alias (fall through to the
+/// normal locate/prove path). Mirrors resolveRefs' `.fact` path: qualifier → import → target
+/// file/ns, then FactKV demand.
+fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Key) std.mem.Allocator.Error!AliasOutcome {
+    const fid = self.pool_file.get(task.file) orelse return .not_alias; // locate reports it
+    const decl = self.declOf(fid, task.name) orelse return .not_alias; // locate reports "not found"
+    const alias: ast.Alias = switch (decl.*) {
+        .axiom => |a| switch (a) {
+            .alias => |x| x,
+            .local => return .not_alias,
+        },
+        .theorem => |t| switch (t) {
+            .alias => |x| x,
+            .local => return .not_alias,
+        },
+        else => return .not_alias,
+    };
+    const origin = (try demandFactTarget(self, task, h, alias.target)) orelse return .handled; // suspended/diagnosed
+    try self.facts.publishExisting(self.io, key, origin);
+    return .handled;
+}
+
+/// Resolve a fact-reference token (possibly `ns.name`-qualified) to its PROVEN fact Index,
+/// demanding the import and/or the origin fact's ProveTask. Returns null if it SUSPENDED (a
+/// blocker was set) or DIAGNOSED. Diagnostics point at the alias's target token in
+/// `task.file` (where `sink.current_file` already points from `run`'s top).
+fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: lexer.Token) std.mem.Allocator.Error!?InternPool.Index {
+    var target_file = task.file;
+    var target_ns = try self.interner.namespace(.universe, task.file);
+    if (tok.qualifier != InternPool.Index.none) {
+        const self_ns = try self.interner.namespace(.universe, task.file);
+        const state = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = tok.qualifier }) orelse {
+            h.suspendOn(try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = task.file, .name = tok.qualifier, .loc = tok.start })));
+            return null;
+        };
+        switch (state) {
+            .in_flight => |owner| {
+                if (owner != h.self_index) h.suspendOn(owner);
+                return null;
+            },
+            .done => |ix| switch (self.interner.keyOf(ix)) {
+                .import => |m| {
+                    target_ns = m.namespace;
+                    target_file = self.interner.keyOf(m.namespace).namespace.file;
+                },
+                else => {
+                    self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
+                    return null;
+                },
+            },
+        }
+    }
+    // PLAIN lookup (not claimOrLookup): we are NOT proving the origin — we bind to it once
+    // its own ProveTask proves it. Absent → rack that prover + suspend.
+    const origin_key = FactKV.Key{ .namespace = target_ns, .name = tok.name };
+    if (self.facts.lookup(self.io, origin_key)) |state| switch (state) {
+        .proven => |ix| return ix,
+        .in_flight => |owner| {
+            h.suspendOn(owner); // the origin's own prover is running — wait for it
+            return null;
+        },
+    };
+    h.suspendOn(try h.rackIndexed(try ProveTask.new(self.arena, .{ .file = target_file, .name = tok.name, .loc = tok.start, .loc_file = task.file })));
+    return null;
+}
+
 fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index) std.mem.Allocator.Error!?*State {
     const fid = self.pool_file.get(task.file) orelse {
         try demandDiag(self, task, "internal: prove into an undiscovered file", .{});

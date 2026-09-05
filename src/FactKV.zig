@@ -100,6 +100,18 @@ pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, f
     return index;
 }
 
+/// ALIAS-COLLAPSE (Foundation C): bind `key` to an ALREADY-PROVEN fact `Index` — mint
+/// nothing. `theorem foo = bar.baz` / `axiom foo = bar.baz` maps `foo` to the origin fact's
+/// Index, so a citation of `foo` resolves to the same proven fact (identity by origin). The
+/// origin was kernel-checked by its own ProveTask; the alias re-uses that verified fact
+/// (sound in strict mode — the formula IS the origin's). Transitive: aliasing an alias binds
+/// to the origin the first alias already collapsed to.
+pub fn publishExisting(self: *FactKV, io: std.Io, key: Key, index: InternPool.Index) std.mem.Allocator.Error!void {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    try self.map.put(self.pool.arena, key, .{ .proven = index });
+}
+
 test "FactKV demand table: claim -> in_flight -> publish -> proven; the entry protocol" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();

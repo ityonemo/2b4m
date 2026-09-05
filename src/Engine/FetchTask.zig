@@ -133,17 +133,19 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     } });
                     return;
                 },
-                // `sort A = G` → a plain re-export (refined sort, no guard: carrier walks to G).
+                // `sort A = G` → ALIAS-COLLAPSE: bind A to G's EXISTING Index (identity by
+                // origin, mints nothing), so A and G are the SAME sort everywhere — kernel
+                // terms + every func/const/pred sig referencing either coincide. (A plain
+                // re-export is definitionally G; collapsing keeps sorts consistent with the
+                // const/func/pred aliases, which also collapse — otherwise a local `Int` and
+                // an aliased `mul`'s `integer.Int` sig would be distinct Indexes.) The GUARDED
+                // form below is the only sort alias that mints a new (refined) sort.
                 .alias => |a| {
-                    const parent = resolveSortDemand(self, h, task.file, source, a.target) catch |e| switch (e) {
+                    const target = resolveSortDemand(self, h, task.file, source, a.target) catch |e| switch (e) {
                         error.OutOfMemory => return error.OutOfMemory,
                         error.Unresolved => return,
                     };
-                    _ = try self.idents.publish(self.io, key, .{ .sort = .{
-                        .name = task.name,
-                        .loc = name_tok.start,
-                        .refinement = .{ .parent = parent, .qualifiers = &.{} },
-                    } });
+                    _ = try self.idents.publish(self.io, key, .{ .existing = target });
                     return;
                 },
                 // `sort H = G where inH` → a REFINED sort {parent: G, qualifiers: [inH]}.
@@ -196,7 +198,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     } });
                     return;
                 },
-                .alias => return aliasUnsupported(self, task), // Foundation C
+                .alias => |a| return publishAlias(self, h, task, key, a, .constant),
             },
             .func => |fu| switch (fu) {
                 .local => |d| {
@@ -219,7 +221,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     } });
                     return;
                 },
-                .alias => return aliasUnsupported(self, task), // Foundation C
+                .alias => |a| return publishAlias(self, h, task, key, a, .func),
             },
             .pred => |pr| switch (pr) {
                 .local => |d| {
@@ -236,7 +238,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     } });
                     return;
                 },
-                .alias => return aliasUnsupported(self, task), // Foundation C
+                .alias => |a| return publishAlias(self, h, task, key, a, .pred),
             },
             // a FACT decl. A SCHEMA (a fact WITH params) resolves as an IdentKV identifier —
             // mint a thin LOCATOR (instantiation re-reads params/body/steps from the by-name
@@ -275,9 +277,46 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
     }
 }
 
-/// A non-sort alias (const/func/pred re-export) — alias-collapse is Foundation C; stubbed.
-fn aliasUnsupported(self: *Context, task: FetchTask) std.mem.Allocator.Error!void {
-    try demandDiag(self, task, "identifier kind of '{s}' is not yet supported by the demand prover", .{self.interner.stringBytes(task.name)});
+/// The identifier kind an alias must resolve to (const/func/pred). Sort aliases take the
+/// refined-re-export path (they carry a carrier walk), not alias-collapse.
+const AliasKind = enum {
+    constant,
+    func,
+    pred,
+
+    fn matches(self: AliasKind, tag: std.meta.Tag(InternPool.Key)) bool {
+        return switch (self) {
+            .constant => tag == .constant,
+            .func => tag == .func,
+            .pred => tag == .pred,
+        };
+    }
+
+    fn label(self: AliasKind) []const u8 {
+        return switch (self) {
+            .constant => "constant",
+            .func => "function",
+            .pred => "predicate",
+        };
+    }
+};
+
+/// ALIAS-COLLAPSE (Foundation C): `const/func/pred LOCAL = TARGET` binds LOCAL to TARGET's
+/// EXISTING pool Index — mints nothing (identity by origin). Resolve TARGET (demanding it +
+/// following qualifiers; transitive through a chain of aliases for free, since each aliased
+/// target already resolved to its origin Index), check its kind, then publish `Mint.existing`.
+/// A diagnostic points at the alias's TARGET token (in `task.file`, where `sink.current_file`
+/// already points) — the local name has no meaning apart from its target.
+fn publishAlias(self: *Context, h: *Engine.Handle, task: FetchTask, key: IdentKV.Key, a: ast.Alias, kind: AliasKind) std.mem.Allocator.Error!void {
+    const target = demandTok(self, h, task.file, a.target) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unresolved => return, // suspended (resume re-runs) or diagnosed by demandTok
+    };
+    if (!kind.matches(self.interner.keyOf(target))) {
+        self.sink.add(a.target.start, "'{s}' is not a {s}", .{ self.interner.stringBytes(a.target.name), kind.label() }) catch return error.OutOfMemory;
+        return; // no publish
+    }
+    _ = try self.idents.publish(self.io, key, .{ .existing = target });
 }
 
 // --- layer-2 sub-demand resolution ----------------------------------------------------
