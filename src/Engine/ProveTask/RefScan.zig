@@ -115,7 +115,20 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                 },
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }
-            for (c.args) |a| try self.scanExpr(a);
+            // assoc / assoc_commut take their equation LEMMAS as ARGS (not refs) — a bare-name
+            // arg that isn't a live local step is a GLOBAL fact the producer resolves, so demand
+            // it here. Every OTHER accelerant's args are VALUE terms (scanned as idents below).
+            if (self.lemmaArgAccelerant(c)) {
+                for (c.args) |a| {
+                    if (a.* == .name and
+                        (a.name.qualifier != InternPool.Index.none or self.walk.findStep(a.name.name) == null))
+                    {
+                        try self.addTok(a.name, .fact);
+                    }
+                }
+            } else {
+                for (c.args) |a| try self.scanExpr(a);
+            }
         },
         .assume => |blk| try self.scanExpr(blk.formula),
         .fix => |blk| try self.addTok(blk.sort, .ident),
@@ -152,6 +165,18 @@ fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, 
     };
     // a non-reserved word under `using` is an accelerant (its HEAD may be a global fact).
     return if (kind == .using) .accelerant else .local;
+}
+
+/// True when the claim is an `assoc`/`assoc_commut` (or `_quantified`) accelerant, whose ARGS
+/// are equation-lemma NAMES (global facts) rather than value terms — so the read pass demands
+/// them in the `.fact` domain. Matched by interned rule name (integer compare, no strcmp).
+fn lemmaArgAccelerant(self: *Scanner, c: ast.Step.Claim) bool {
+    if (c.kind != .using) return false;
+    inline for (.{ "assoc", "assoc_quantified", "assoc_commut", "assoc_commut_quantified" }) |nm| {
+        const id = self.interner.internString(nm) catch return false;
+        if (c.rule.name == id) return true;
+    }
+    return false;
 }
 
 fn scanExpr(self: *Scanner, e: *const ast.Expr) Allocator.Error!void {

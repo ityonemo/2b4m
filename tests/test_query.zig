@@ -106,13 +106,13 @@ pub fn addTests(
     // variant runs the same accelerated core).
     ctx.ok(&.{ "debug", "taint", "tests/cases/assoc.bpa" },
         \\theorem reassoc1
-        \\  tests/cases/assoc.bpa:19:9: assoc_quantified
+        \\  tests/cases/assoc.bpa:19:12: assoc_quantified
         \\
         \\theorem reassoc2
-        \\  tests/cases/assoc.bpa:28:9: assoc_quantified
+        \\  tests/cases/assoc.bpa:28:12: assoc_quantified
         \\
         \\theorem reassoc3
-        \\  tests/cases/assoc.bpa:45:25: assoc
+        \\  tests/cases/assoc.bpa:45:28: assoc
         \\
     );
 

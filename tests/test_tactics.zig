@@ -285,37 +285,30 @@ pub fn addTests(
     // operator (emits kernel steps — the triple is kernel-checked).
     ctx.okSilent(&.{ "check", "tests/cases/assoc_commut_custom.bpa" });
 
-    // no partials: 1 or 2 args is an error (either bare or exactly three).
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_bad_arity.bpa" }, "tests/cases/assoc_commut_bad_arity.bpa:12:9: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
+    // no partials: 1 or 2 args is an error (either bare or exactly three). (Column 12: the
+    // rule word sits after `[using `.)
+    ctx.fail(&.{ "check", "tests/cases/assoc_commut_bad_arity.bpa" }, "tests/cases/assoc_commut_bad_arity.bpa:12:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
 
-    // the assoc_commut ACCELERATED TACTIC: bare form on a thin theory (no AC lemmas)
-    // DECLINES by default, but --fast decides structurally and is accelerated.
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:9: error: assoc_commut: needs addIsAssociative in scope\n");
-
-    ctx.ok(&.{ "check", "--fast", "tests/cases/assoc_commut_oracle.bpa" },
-        \\OK: 4 declarations, 1 theorems proven (1 accelerated: assoc_commut)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
-        \\
-    );
+    // the bare assoc_commut form on a thin theory (no AC lemmas) DECLINES with a located
+    // "needs <lemma> in scope" error. (The accelerated --fast verdict that would decide it
+    // structurally is SUSPENDED during the demand rebuild — strict-only, so --fast errors too.)
+    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: assoc_commut: needs addIsAssociative in scope\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: assoc_commut: needs addIsAssociative in scope\n");
 
     // `assoc(assocLemma)`: associativity-only reorder on a CUSTOM operator
     // (no add/mul assumption). Emits kernel steps.
     ctx.okSilent(&.{ "check", "tests/cases/assoc.bpa" });
 
     // sides differ by more than associativity (operands permuted) → error
-    ctx.fail(&.{ "check", "tests/cases/assoc_bad.bpa" }, "tests/cases/assoc_bad.bpa:11:9: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/assoc_bad.bpa" }, "tests/cases/assoc_bad.bpa:11:12: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
 
     // the required-arg contract: bare `assoc` is an error
-    ctx.fail(&.{ "check", "tests/cases/assoc_missing_arg.bpa" }, "tests/cases/assoc_missing_arg.bpa:10:9: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/assoc_missing_arg.bpa" }, "tests/cases/assoc_missing_arg.bpa:10:12: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
 
-    // the assoc ACCELERATED TACTIC: certifies by default, --fast is accelerated
+    // the assoc tactic certifies by default. (The --fast accelerated verdict is SUSPENDED —
+    // strict-only during the rebuild — so --fast just re-certifies, no acceleration banner.)
     ctx.okSilent(&.{ "check", "tests/cases/assoc_oracle.bpa" });
-
-    ctx.ok(&.{ "check", "--fast", "tests/cases/assoc_oracle.bpa" },
-        \\OK: 4 declarations, 1 theorems proven (1 accelerated: assoc)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
-        \\
-    );
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/assoc_oracle.bpa" });
 
     // simplify_quantified: peel forall over an equation, emits kernel steps
     ctx.okSilent(&.{ "check", "tests/cases/simplify_quantified.bpa" });

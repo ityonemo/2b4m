@@ -39,6 +39,7 @@ const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
 const EqCert = @import("EqCert.zig");
 const simplify_mod = @import("simplify.zig");
+const presburger_mod = @import("presburger.zig");
 const smt = @import("smt.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
@@ -1115,6 +1116,10 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
     if (c.rule.name == try self.internStr("simplify")) return try self.produceSimplify(w, goal, c);
     if (c.rule.name == try self.internStr("simplify_quantified")) return try self.produceSimplifyQuantified(w, goal, c);
     if (c.rule.name == try self.internStr("chain")) return try self.produceChain(w, goal, c);
+    if (c.rule.name == try self.internStr("assoc")) return try self.produceAssoc(w, goal, c);
+    if (c.rule.name == try self.internStr("assoc_quantified")) return try self.produceAssocQuantified(w, goal, c);
+    if (c.rule.name == try self.internStr("assoc_commut")) return try self.produceAssocCommut(w, goal, c);
+    if (c.rule.name == try self.internStr("assoc_commut_quantified")) return try self.produceAssocCommutQuantified(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
@@ -1126,8 +1131,15 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
 ///   - specialize: the head-cite step (only when the head is LOCAL — a global head is cited
 ///     inside the synthetic proof, not discharged here) followed by the hyps.
 fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]const kernel.SRef {
-    // simplify's/chain's antecedents are only their LOCAL equation refs (globals cited in the cert).
-    if (c.rule.name == try self.internStr("simplify") or c.rule.name == try self.internStr("simplify_quantified") or c.rule.name == try self.internStr("chain")) {
+    // simplify's/chain's/assoc('s)/assoc_commut's antecedents are only their LOCAL equation
+    // refs (globals — the assoc lemma arg, the AC triple, distribute pre-rules — cited in the
+    // cert). assoc has no refs (its lemma rides `c.args`); assoc_commut's `c.refs` are its
+    // optional distribute pre-rules, whose LOCAL members are antecedents.
+    if (c.rule.name == try self.internStr("simplify") or c.rule.name == try self.internStr("simplify_quantified") or
+        c.rule.name == try self.internStr("chain") or
+        c.rule.name == try self.internStr("assoc") or c.rule.name == try self.internStr("assoc_quantified") or
+        c.rule.name == try self.internStr("assoc_commut") or c.rule.name == try self.internStr("assoc_commut_quantified"))
+    {
         return self.localRefsToSteps(w, c.refs);
     }
     // tautology has no head: its antecedents ARE the cited refs, in order.
@@ -2408,6 +2420,520 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
     };
+}
+
+// -- assoc / assoc_commut (the reordering accelerants) ---------------------------------
+//
+// Both prove an equation `s = t` by NORMALIZING both sides with a fabricated rule set and
+// joining via the shared EqCert — the same certificate shape as `simplify`, differing only
+// in HOW the rules + traces are produced:
+//   - `assoc(lemma)`  right-nests each side with a single associativity rule (from the arg
+//     lemma), so the two right-nested combs coincide iff the sides differ by associativity
+//     alone. No reordering, no commutativity.
+//   - `assoc_commut`  additionally bubble-sorts the flattened summands into a canonical
+//     order (one fabricated rewrite per transposition, via the commutativity/swap lemmas),
+//     so the sides coincide iff they are the same multiset of atoms under A/C.
+// The synthetic schema is specialize-shaped exactly as simplify's (value params abstract the
+// goal's free fix-eigenvariable fvars; the `_quantified` variants re-generalize peeled ∀
+// eigenvariables via `fix`/`forall_intro`); the shared `finishReorder` builds it.
+
+/// Resolve an accelerant ARGUMENT (a bare-name expr naming an equation lemma) into a prepared
+/// rewrite rule + its cert cite — the arg-expr analogue of `prepareRule` (which takes a ref
+/// token). A GLOBAL lemma is cited `[by axiom|theorem …]` inside the cert; a LOCAL step is
+/// restated by hypothesis. (assoc/assoc_commut lemmas are demanded as `.fact` in the read
+/// pass when they are bare names — see RefScan's accelerant arm.)
+fn argRule(self: *Prove, w: *const Walk, arg: *const ast.Expr) Error!PreparedRule {
+    if (arg.* != .name) return self.fail(Elab.exprLoc(arg), "argument must name an equation lemma", .{});
+    return self.prepareRule(w, arg.name);
+}
+
+/// `using assoc(assocLemma)` — prove `s = t` when the sides differ by ASSOCIATIVITY ALONE of
+/// a single operator. The lemma (the sole arg) must have shape `f(f(a,b),c) = f(a,f(b,c))`;
+/// the operator `f` is recovered from its LHS head. Right-nests both sides with the lemma as
+/// a terminating rewrite and joins.
+fn produceAssoc(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    const gn = self.pool.get(goal);
+    if (gn != .eq) {
+        if (gn == .quant and gn.quant.q == .forall) {
+            return self.fail(c.rule.start, "assoc proves equations; use assoc_quantified for a 'forall …; s = t' goal", .{});
+        }
+        return self.fail(c.rule.start, "assoc proves equations; the goal is not an equation", .{});
+    }
+    return self.buildAssoc(w, c, goal, &.{});
+}
+
+/// `using assoc_quantified(assocLemma)` — like assoc but over a `forall …; s = t` goal: peel
+/// the ∀ prefix into eigenvariables, reorder the body, re-generalize.
+fn produceAssocQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    const peeled = try self.peelForallEq(goal, c, "assoc_quantified") orelse return null;
+    return self.buildAssoc(w, c, peeled.body, peeled.eigen);
+}
+
+/// Shared assoc core over the (possibly ∀-peeled) equation body `eq_goal_raw`. Abstracts the
+/// goal's free caller-locals into params, builds the one-rule assoc set from the arg lemma,
+/// right-nests both sides, and hands the join to `finishReorder`.
+fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    if (c.args.len != 1) {
+        return self.fail(c.rule.start, "assoc requires an associativity lemma: assoc(<assocLemma>); got {d} argument(s)", .{c.args.len});
+    }
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    const prepared = try self.argRule(w, c.args[0]);
+    // validate the shape `f(f(a,b),c) = f(a,f(b,c))`: the LHS must be a binary app whose head
+    // `f` is shared by the RHS. (The rule's binders/lhs/rhs carry pattern fvars already.)
+    const l = self.pool.get(prepared.rule.lhs);
+    if (l != .app or l.app.args_len != 2) {
+        return self.fail(Elab.exprLoc(c.args[0]), "assoc: the associativity lemma must have shape 'f(f(a, b), c) = f(a, f(b, c))'", .{});
+    }
+    const op_sym = l.app.sym;
+    const r = self.pool.get(prepared.rule.rhs);
+    if (r != .app or r.app.sym != op_sym) {
+        return self.fail(Elab.exprLoc(c.args[0]), "assoc: the associativity lemma's two sides must share the operator", .{});
+    }
+
+    // abstract free caller-local fvars into params UP FRONT (before normalizing) so the goal,
+    // the trace, and the schema body all speak `p1, p2, …`. Eigenvariables stay free (re-bound
+    // by the `fix` wrapper). A LOCAL lemma's formula may share such an fvar — include it.
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, eq_goal_raw);
+    if (prepared.local) try abs_terms.append(self.ctx.arena, prepared.formula);
+    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
+    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const gn = self.pool.get(eq_goal).eq;
+    const s = gn.lhs;
+    const t = gn.rhs;
+
+    const rules = [_]simplify_mod.Rule{prepared.rule};
+    const cites = [_]EqCert.RuleCite{prepared.cite};
+
+    // right-nest each side by the single associativity rule (terminating). The resulting
+    // canonical forms agree iff the sides differ by associativity alone.
+    const rs = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, &rules, s, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "assoc: rewrite limit reached", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const rt = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, &rules, t, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "assoc: rewrite limit reached", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (!self.pool.alphaEq(rs.nf, rt.nf)) {
+        return self.fail(c.rule.start, "assoc: sides differ by more than associativity: '{s}' vs '{s}'", .{
+            try self.renderTerm(try self.unabstract(rs.nf, abs)),
+            try self.renderTerm(try self.unabstract(rt.nf, abs)),
+        });
+    }
+    return self.finishReorder(w, &b, c, "assoc", s, t, &rules, &cites, rs, rt, abs, eigen, if (prepared.local) &.{prepared} else &.{});
+}
+
+/// `using assoc_commut` (bare = the well-known add/mul triple) or `assoc_commut(a, c, s)`
+/// (an explicit assoc/comm/swap triple for a custom operator) — reorder an A/C sum: optional
+/// distribute pre-pass (LOCAL cited refs → antecedents), then re-associate + flatten +
+/// bubble-sort each side into canonical order, joining the concatenated traces.
+fn produceAssocCommut(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    const gn = self.pool.get(goal);
+    if (gn != .eq) {
+        if (gn == .quant and gn.quant.q == .forall) {
+            return self.fail(c.rule.start, "assoc_commut proves equations; use assoc_commut_quantified for a 'forall …; s = t' goal", .{});
+        }
+        return self.fail(c.rule.start, "assoc_commut proves equations; the goal is not an equation", .{});
+    }
+    return self.buildAssocCommut(w, c, goal, &.{});
+}
+
+fn produceAssocCommutQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    const peeled = try self.peelForallEq(goal, c, "assoc_commut_quantified") orelse return null;
+    return self.buildAssocCommut(w, c, peeled.body, peeled.eigen);
+}
+
+/// Shared assoc_commut core over the (possibly ∀-peeled) equation body. Prepares the AC rule
+/// set (distribute pre-rules from `c.refs` at the FRONT, then the AC triple), abstracts the
+/// goal, distributes + AC-sorts both sides, and hands the concatenated traces to
+/// `finishReorder`.
+fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    // exactly two forms: bare (well-known add/mul) or three explicit lemmas. No partials.
+    if (c.args.len != 0 and c.args.len != 3) {
+        return self.fail(c.rule.start, "assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got {d}", .{c.args.len});
+    }
+    const explicit = c.args.len == 3;
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // optional distribute PRE-RULES from the cited refs (L→R before flattening); their rule
+    // indices sit at the FRONT so the AC bubble-sort's indices shift after them.
+    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    var pre_prepared: std.ArrayList(PreparedRule) = .empty;
+    for (c.refs) |ref| {
+        const p = try self.prepareRule(w, ref);
+        try rules.append(self.ctx.arena, p.rule);
+        try cites.append(self.ctx.arena, p.cite);
+        try pre_prepared.append(self.ctx.arena, p);
+    }
+    const pre_count = rules.items.len;
+
+    // resolve the AC triple + its operator BEFORE abstracting (an explicit lemma may carry
+    // pattern fvars — never caller-locals — so it is unaffected by abstraction). Bare form:
+    // pick the operator from the goal's LHS head and resolve the well-known triple.
+    var op_sym: term.SymId = undefined;
+    if (explicit) {
+        const a_rule = try self.argRule(w, c.args[0]);
+        const c_rule = try self.argRule(w, c.args[1]);
+        const w_rule = try self.argRule(w, c.args[2]);
+        const c_lhs = self.pool.get(c_rule.rule.lhs);
+        if (c_lhs != .app or c_lhs.app.args_len != 2) {
+            return self.fail(Elab.exprLoc(c.args[1]), "assoc_commut: the commutativity lemma must have shape 'f(a, b) = f(b, a)'", .{});
+        }
+        op_sym = c_lhs.app.sym;
+        try rules.append(self.ctx.arena, a_rule.rule);
+        try cites.append(self.ctx.arena, a_rule.cite);
+        try rules.append(self.ctx.arena, c_rule.rule);
+        try cites.append(self.ctx.arena, c_rule.cite);
+        try rules.append(self.ctx.arena, w_rule.rule);
+        try cites.append(self.ctx.arena, w_rule.cite);
+        // an explicit lemma cited by a LOCAL step is an antecedent too.
+        if (a_rule.local) try pre_prepared.append(self.ctx.arena, a_rule);
+        if (c_rule.local) try pre_prepared.append(self.ctx.arena, c_rule);
+        if (w_rule.local) try pre_prepared.append(self.ctx.arena, w_rule);
+    } else {
+        const gn = self.pool.get(eq_goal_raw).eq;
+        const s_head: ?term.SymId = if (self.pool.get(gn.lhs) == .app) self.pool.get(gn.lhs).app.sym else null;
+        const op = self.pickWellKnownOp(s_head) orelse
+            return self.fail(c.rule.start, "assoc_commut reorders an add- or mul-sum; the goal's left side is '{s}'", .{try self.renderTerm(gn.lhs)});
+        op_sym = op.sym;
+        // resolve the well-known triple via FactKV (proven facts in scope). Absent → the
+        // located "needs <lemma> in scope" error (the strict-cert boundary; the accelerated
+        // --fast verdict that would presume A/C is suspended during the rebuild).
+        const assoc = (try self.wellKnownRule(op.assoc, c.rule.start)) orelse
+            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.assoc});
+        const comm = (try self.wellKnownRule(op.comm, c.rule.start)) orelse
+            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.comm});
+        const swap = (try self.wellKnownRule(op.swap, c.rule.start)) orelse
+            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.swap});
+        try rules.append(self.ctx.arena, assoc.rule);
+        try cites.append(self.ctx.arena, assoc.cite);
+        try rules.append(self.ctx.arena, comm.rule);
+        try cites.append(self.ctx.arena, comm.cite);
+        try rules.append(self.ctx.arena, swap.rule);
+        try cites.append(self.ctx.arena, swap.cite);
+    }
+    const assoc_idx = pre_count;
+    const comm_idx = pre_count + 1;
+    const swap_idx = pre_count + 2;
+
+    // abstract free caller-locals into params (goal + any LOCAL premise formula), then rewrite
+    // both sides IN PARAM SPACE so the trace + schema body speak `p1, p2, …`.
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, eq_goal_raw);
+    for (pre_prepared.items) |p| try abs_terms.append(self.ctx.arena, p.formula);
+    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
+    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const gn = self.pool.get(eq_goal).eq;
+    const s0 = gn.lhs;
+    const t0 = gn.rhs;
+
+    const symbols: presburger_mod.Symbols = .{ .add = op_sym };
+    const pre_rules = rules.items[0..pre_count];
+
+    // distribute both sides (L→R with the pre-rules); traces feed the join unchanged.
+    const s_pre = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, s0, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const t_pre = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, t0, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+
+    // per side: re-associate to a right-nested comb, flatten, bubble-sort.
+    const plan_s = (try self.acPlan(symbols, rules.items, assoc_idx, comm_idx, swap_idx, s_pre.nf)) orelse
+        return self.fail(c.rule.start, "assoc_commut: could not re-associate the left side", .{});
+    const plan_t = (try self.acPlan(symbols, rules.items, assoc_idx, comm_idx, swap_idx, t_pre.nf)) orelse
+        return self.fail(c.rule.start, "assoc_commut: could not re-associate the right side", .{});
+    if (!self.pool.alphaEq(plan_s.sorted, plan_t.sorted)) {
+        return self.fail(c.rule.start, "assoc_commut: sides have different summands: '{s}' vs '{s}'", .{
+            try self.renderTerm(try self.unabstract(plan_s.sorted, abs)),
+            try self.renderTerm(try self.unabstract(plan_t.sorted, abs)),
+        });
+    }
+    // prepend the distribution trace so the join replays s0 -> distributed -> sorted.
+    const full_s = try self.concatTrace(s_pre.trace, plan_s.trace);
+    const full_t = try self.concatTrace(t_pre.trace, plan_t.trace);
+    const rs: simplify_mod.Result = .{ .nf = plan_s.sorted, .trace = full_s };
+    const rt: simplify_mod.Result = .{ .nf = plan_t.sorted, .trace = full_t };
+    return self.finishReorder(w, &b, c, "assoc_commut", s0, t0, rules.items, cites.items, rs, rt, abs, eigen, pre_prepared.items);
+}
+
+/// The well-known AC triple + operator for a bare `assoc_commut`, chosen by the goal LHS's
+/// head symbol NAME (`add` or `mul`). Null when the head is neither.
+const WellKnownOp = struct { sym: term.SymId, assoc: []const u8, comm: []const u8, swap: []const u8 };
+fn pickWellKnownOp(self: *Prove, head: ?term.SymId) ?WellKnownOp {
+    const h = head orelse return null;
+    const name = self.ctx.interner.stringBytes(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(h))));
+    if (std.mem.eql(u8, name, "add")) {
+        return .{ .sym = h, .assoc = "addIsAssociative", .comm = "addIsCommutative", .swap = "addLeftSwap" };
+    }
+    if (std.mem.eql(u8, name, "mul")) {
+        return .{ .sym = h, .assoc = "mulIsAssociative", .comm = "mulIsCommutative", .swap = "mulLeftSwap" };
+    }
+    return null;
+}
+
+/// Resolve a well-known lemma by name in this proof's namespace via FactKV (a proven fact),
+/// preparing it as an L→R rewrite rule cited GLOBALLY inside the cert. Null when the fact is
+/// absent/unproven (the bare-form "needs X in scope" boundary). NOT demanded in the read pass
+/// — a bare AC form on a theory whose lemmas are proven earlier resolves; a thin theory
+/// (`assoc_commut_oracle`) cleanly fails here.
+fn wellKnownRule(self: *Prove, name_text: []const u8, loc: u32) Error!?PreparedRule {
+    const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
+    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) orelse return null;
+    const fact = switch (state) {
+        .proven => |ix| self.ctx.interner.applyModel(self.model, ix),
+        .in_flight => return null,
+    };
+    const key = self.ctx.interner.keyOf(fact).fact;
+    const formula = try self.pool.copyIn(self.ctx.interner, key.formula);
+    // a synthesized head token stamped with the fact's name so the cert's `[by …]` resolves.
+    const head: lexer.Token = .{ .tag = .identifier, .start = loc, .end = loc, .name = name };
+    const rule = try self.orientRule(formula) orelse return null;
+    return .{ .rule = rule, .cite = .{ .global = .{ .head = head, .is_axiom = key.kind == .axiom } }, .local = false, .formula = formula };
+}
+
+/// Orient a (possibly ∀-prefixed) equation `formula` into an L→R rewrite rule, opening each
+/// binder at a fresh pattern fvar. Null when the body is not an equation or a binder is
+/// unused on the LHS (not a usable rewrite rule) — the extracted core of `prepareRule`.
+fn orientRule(self: *Prove, formula: TermId) Error!?simplify_mod.Rule {
+    var binders: std.ArrayList(simplify_mod.Binder) = .empty;
+    var body = formula;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) break;
+        const fresh = try self.freshNamed("p#");
+        const fv = try self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } });
+        body = try self.pool.open(node.quant.body, fv);
+        try binders.append(self.ctx.arena, .{ .fvar = fresh, .sort = node.quant.sort });
+    }
+    const bn = self.pool.get(body);
+    if (bn != .eq) return null;
+    for (binders.items) |bd| {
+        if (!self.pool.occursFree(bn.eq.lhs, bd.fvar)) return null;
+    }
+    return .{ .binders = binders.items, .lhs = bn.eq.lhs, .rhs = bn.eq.rhs, .formula = formula };
+}
+
+/// Peel a `forall …; s = t` goal's ∀ prefix into fresh eigenvariables (returned outermost
+/// first) and return the body equation. Diagnoses a non-∀ / non-equation goal per `who`.
+const PeeledEq = struct { body: TermId, eigen: []const term.Node.Fvar };
+fn peelForallEq(self: *Prove, goal: TermId, c: ast.Step.Claim, comptime who: []const u8) Error!?PeeledEq {
+    var eigen: std.ArrayList(term.Node.Fvar) = .empty;
+    var body = goal;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) break;
+        const hint = self.ctx.interner.stringBytes(node.quant.hint);
+        const fv: term.Node.Fvar = .{ .name = try self.freshNamed(if (hint.len > 0) hint else "q"), .sort = node.quant.sort };
+        body = try self.pool.open(node.quant.body, try self.pool.add(.{ .fvar = fv }));
+        try eigen.append(self.ctx.arena, fv);
+    }
+    if (eigen.items.len == 0) {
+        return self.fail(c.rule.start, who ++ " expects a quantified goal; drop the '_quantified' suffix for a bare equation", .{});
+    }
+    if (self.pool.get(body) != .eq) {
+        return self.fail(c.rule.start, who ++ ": the quantified body is not an equation", .{});
+    }
+    return .{ .body = body, .eigen = eigen.items };
+}
+
+/// The shared TAIL for both reordering accelerants (identical to `buildSimplify`'s tail): the
+/// rules/cites + the two normalized `Result`s are already built (in PARAM space); emit the
+/// EqCert join, wrap in the LOCAL-premise `assume`/`implies_intro` and ∀-eigenvariable
+/// `fix`/`forall_intro` shells, and package the synthetic schema. `local_prems` are the
+/// PreparedRules whose origin is a LOCAL step (restated by hypothesis + discharged at the call
+/// site); the AC triple / assoc lemma when global is cited INSIDE the cert. `name_prefix` seeds
+/// the schema hash name.
+fn finishReorder(
+    self: *Prove,
+    w: *const Walk,
+    b: *Accelerant.Builder,
+    c: ast.Step.Claim,
+    comptime name_prefix: []const u8,
+    s: TermId,
+    t: TermId,
+    rules: []const simplify_mod.Rule,
+    cites: []const EqCert.RuleCite,
+    rs: simplify_mod.Result,
+    rt: simplify_mod.Result,
+    abs: FvarAbstraction,
+    eigen: []const term.Node.Fvar,
+    local_prems: []const PreparedRule,
+) Error!?Accelerant.Synthetic {
+    // build the equation-cert AST proving `s = t`.
+    var cert: EqCert = .{ .b = b, .pool = self.pool, .rules = rules, .cites = cites, .fresh_ctx = self, .freshFn = eqCertFresh };
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    _ = try cert.emitJoin(&body_steps, s, t, rs, rt);
+    var steps: []const ast.Step = body_steps.items;
+
+    // LOCAL premises → schema antecedents (restated by hypothesis, discharged at the call
+    // site) in ref order; collect their (cite, param-substituted formula) for the wrappers.
+    var local_cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    var local_formulae: std.ArrayList(TermId) = .empty;
+    for (local_prems) |p| {
+        try local_cites.append(self.ctx.arena, p.cite);
+        try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
+    }
+
+    const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
+    const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
+    steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
+    steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
+
+    // the schema body proposition = the ∀-generalized `inner_prop`.
+    var full_prop = inner_prop;
+    var ei: usize = eigen.len;
+    while (ei > 0) {
+        ei -= 1;
+        const closed = try self.pool.close(full_prop, eigen[ei].name);
+        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
+    }
+    const body_expr = try b.termExpr(full_prop);
+
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
+    for (abs.names, abs.sorts, params) |name, sort, *pp| {
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
+
+    const hash = Schema.termHash(self.pool, full_prop);
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, name_prefix ++ "{{{x}}}", .{hash}));
+    return .{
+        .name = name,
+        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = steps } },
+        .args = abs.args,
+        .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
+    };
+}
+
+// -- the AC flatten / build / sort substrate (ported from the eager elaborate.zig) -----
+
+/// Flatten an `op`-tree into its atom summands (any maximal subterm that is not itself an
+/// `op(_, _)`), left-to-right.
+fn flattenSum(self: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
+    const node = self.pool.get(id);
+    if (node == .app and node.app.sym == op_sym and node.app.args_len == 2) {
+        // copy arg ids before recursing: pool.args aliases pool.extra, which a walk that grows
+        // the pool would dangle.
+        const args = self.pool.args(node.app);
+        const a0 = args[0];
+        const a1 = args[1];
+        try self.flattenSum(op_sym, a0, out);
+        try self.flattenSum(op_sym, a1, out);
+        return;
+    }
+    try out.append(self.ctx.arena, id);
+}
+
+/// Build a right-nested `op(l0, op(l1, … ln))` comb from the leaves (non-empty).
+fn buildRightNested(self: *Prove, op_sym: term.SymId, leaves: []const TermId) Error!TermId {
+    var cur = leaves[leaves.len - 1];
+    var i = leaves.len - 1;
+    while (i > 0) {
+        i -= 1;
+        cur = try self.pool.addApp(.app, op_sym, &.{ leaves[i], cur });
+    }
+    return cur;
+}
+
+/// In-place insertion sort by `termOrder` (stable, small lists).
+fn sortTerms(self: *Prove, items: []TermId) void {
+    var i: usize = 1;
+    while (i < items.len) : (i += 1) {
+        const v = items[i];
+        var j = i;
+        while (j > 0 and self.pool.termOrder(items[j - 1], v) == .gt) : (j -= 1) {
+            items[j] = items[j - 1];
+        }
+        items[j] = v;
+    }
+}
+
+const AcPlan = struct { sorted: TermId, trace: []const simplify_mod.Rewrite };
+
+/// Re-associate `start` to a right-nested comb (via associativity only, terminating), then
+/// bubble-sort its atoms into canonical `termOrder`, accumulating one trace. `assoc_idx` is
+/// the rule-array index of the associativity rule (after the distribute pre-rules); `comm_idx`
+/// / `swap_idx` the commutativity / swap rules.
+fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
+    const op_sym = symbols.add.?; // the reordered operator (the AC vocabulary's `add` slot)
+    // phase 1: right-nest via associativity ONLY (a single-rule slice, terminating).
+    const assoc_only = rules[assoc_idx .. assoc_idx + 1];
+    const rn = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, assoc_only, start, 1000) catch |e| switch (e) {
+        error.Limit => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    // phase 2: flatten the right-nested comb and bubble-sort.
+    var leaves: std.ArrayList(TermId) = .empty;
+    try self.flattenSum(op_sym, rn.nf, &leaves);
+    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    // phase-1 normalized over the single-rule slice, so its trace rule_idx is 0-relative;
+    // rebase it to the full-array index.
+    for (rn.trace) |rw| {
+        var r = rw;
+        r.rule_idx = rw.rule_idx + assoc_idx;
+        try trace.append(self.ctx.arena, r);
+    }
+    const sorted = (try self.sortTrace(rules, comm_idx, swap_idx, op_sym, leaves.items, &trace)) orelse return null;
+    return .{ .sorted = sorted, .trace = trace.items };
+}
+
+/// Bubble-sort a comb's summands, appending one rewrite per adjacent swap (the swap lemma
+/// inside the comb, the commutativity lemma for the final pair). Returns the sorted whole
+/// comb, or null when a fabricated rewrite fails to match its lemma. `leaves` is mutated.
+fn sortTrace(
+    self: *Prove,
+    rules: []const simplify_mod.Rule,
+    comm_idx: usize,
+    swap_idx: usize,
+    op_sym: term.SymId,
+    leaves_in: []const TermId,
+    trace: *std.ArrayList(simplify_mod.Rewrite),
+) Error!?TermId {
+    const leaves = try self.ctx.arena.dupe(TermId, leaves_in);
+    var whole = try self.buildRightNested(op_sym, leaves);
+    if (leaves.len > 1) {
+        for (0..leaves.len - 1) |pass| {
+            for (0..leaves.len - 1 - pass) |i| {
+                if (self.pool.termOrder(leaves[i], leaves[i + 1]) != .gt) continue;
+                // the FINAL adjacent pair is a bare `op(x, y)` → commutativity; an interior
+                // pair sits at the head of a longer tail `op(x, op(y, r))` → the swap lemma.
+                const tail_pair = i + 2 == leaves.len;
+                const rule_idx = if (tail_pair) comm_idx else swap_idx;
+                const sub_before = try self.buildRightNested(op_sym, leaves[i..]);
+                std.mem.swap(TermId, &leaves[i], &leaves[i + 1]);
+                const sub_after = try self.buildRightNested(op_sym, leaves[i..]);
+                const after = try self.buildRightNested(op_sym, leaves);
+                const rule = rules[rule_idx];
+                const bindings = (try simplify_mod.matchRule(self.ctx.arena, self.pool, self.ctx.interner, rule, rule.lhs, sub_before)) orelse return null;
+                try trace.append(self.ctx.arena, .{
+                    .before = whole,
+                    .after = after,
+                    .rule_idx = rule_idx,
+                    .bindings = bindings,
+                    .inst_lhs = sub_before,
+                    .inst_rhs = sub_after,
+                });
+                whole = after;
+            }
+        }
+    }
+    return whole;
+}
+
+/// Concatenate two rewrite traces (short-circuiting an empty side).
+fn concatTrace(self: *Prove, a: []const simplify_mod.Rewrite, bb: []const simplify_mod.Rewrite) Error![]const simplify_mod.Rewrite {
+    if (a.len == 0) return bb;
+    if (bb.len == 0) return a;
+    var out: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    try out.appendSlice(self.ctx.arena, a);
+    try out.appendSlice(self.ctx.arena, bb);
+    return out.items;
 }
 
 // -- justification lowering ------------------------------------------------------------
