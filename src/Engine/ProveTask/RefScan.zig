@@ -89,13 +89,19 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
     switch (step.body) {
         .claim => |c| {
             try self.scanExpr(c.formula);
-            switch (ruleDomain(c.rule.name)) {
+            switch (ruleDomain(c.rule.name, c.kind)) {
                 .fact => for (c.refs) |r| try self.addTok(r, .fact),
                 .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema
                 // NAME (its `c.refs` are LOCAL premise labels — not enumerated)
                 .model => if (c.schema) |s| try self.addTok(s, .model), // the model NAME (the
                 // `(M)` selector lands in c.schema); the transferred fact ref is demanded by
                 // the cite handler once M resolves.
+                .accelerant => if (c.schema) |s| {
+                    // an accelerant HEAD (specialize's `c.schema`): a GLOBAL theorem/axiom
+                    // citation UNLESS it's a live local step (then resolved locally at
+                    // process time). Its `c.refs` are LOCAL premise labels — not enumerated.
+                    if (self.walk.findStep(s.name) == null) try self.addTok(s, .fact);
+                },
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }
             for (c.args) |a| try self.scanExpr(a);
@@ -126,14 +132,15 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// steps/blocks (including accelerant names, which hard-error as unsupported at process
 /// time — their refs never fetch). Dispatch is on the RESERVED rule-word StrId the parser
 /// stamped — integer comparison, no strcmp past parsing.
-fn ruleDomain(rule: StrId) enum { fact, instantiate, model, local } {
-    const word = InternPool.RuleStr.of(rule) orelse return .local;
-    return switch (word) {
+fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, accelerant, local } {
+    if (InternPool.RuleStr.of(rule)) |word| return switch (word) {
         .axiom, .theorem => .fact,
         .instantiation => .instantiate,
         .model => .model,
         else => .local,
     };
+    // a non-reserved word under `using` is an accelerant (its HEAD may be a global fact).
+    return if (kind == .using) .accelerant else .local;
 }
 
 fn scanExpr(self: *Scanner, e: *const ast.Expr) Allocator.Error!void {

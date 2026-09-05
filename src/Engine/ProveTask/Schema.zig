@@ -118,6 +118,14 @@ fn indexOfName(canon: []const StrId, name: StrId) ?usize {
     return null;
 }
 
+/// A structural (alpha-consistent) hash of one term — for deriving a deterministic,
+/// re-entry-stable synthetic-schema name from an accelerant's head formula.
+pub fn termHash(pool: *const term.Pool, id: TermId) u64 {
+    var h = std.hash.Wyhash.init(0);
+    hashTerm(pool, &h, id, &.{});
+    return h.final();
+}
+
 // --- tests ----------------------------------------------------------------------------
 
 const testing = std.testing;

@@ -36,6 +36,7 @@ const Walk = @import("Walk.zig");
 const RefScan = @import("RefScan.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
+const Accelerant = @import("Accelerant.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
@@ -269,6 +270,21 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         // (M, src_file)); the model name resolved above, so demand the transfer + suspend.
         if (c.rule.name == InternPool.RuleStr.model.id()) {
             switch (try self.demandTransfer(c)) {
+                .proven => return null,
+                .blocked => |t| return t,
+                .failed => return null,
+            }
+        }
+        // an ACCELERANT step (`using <accel> …`) DEMANDS its generated synthetic-schema
+        // instance; the shared `demandUsing` builds+registers the schema (idempotent) and
+        // racks the instance ProveTask. RE-ENTRANT: first pass racks + suspends.
+        if (c.kind == .using and isAccelerant(c.rule.name)) {
+            var e = self.elab(w);
+            const goal_typed = elaborateGoal(&e, c.formula) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Recover => return null, // diagnosed; process re-hits + rejects
+            };
+            switch (try self.demandUsing(w, &e, goal_typed, c)) {
                 .proven => return null,
                 .blocked => |t| return t,
                 .failed => return null,
@@ -1012,6 +1028,247 @@ fn lowerModel(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error!kernel.Just
     return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
 }
 
+// -- the `using` accelerant framework --------------------------------------------------
+// An accelerant (`using specialize …`, later `using tautology …`, …) is sugar for a
+// GENERATED synthetic schema that the ordinary demand pipeline proves + the kernel
+// re-checks. The re-entry-safe demand PLUMBING lives here ONCE (`demandUsing` / `lowerUsing`);
+// each accelerant supplies only a PRODUCER (`produce*`) that builds the synthetic schema +
+// the args/premises. See memory `accelerants-emit-ast`.
+
+/// True for a `using` rule word that is an ACCELERANT (not the `instantiation`/`model`
+/// engine words, which have their own handlers). Any non-RuleStr word reaching a `using`
+/// step is an accelerant; `instantiation`/`model` are RuleStr but dispatched separately.
+fn isAccelerant(rule: StrId) bool {
+    return InternPool.RuleStr.of(rule) == null;
+}
+
+/// Elaborate an accelerant step's claim to its prop TermId (read-pass goal for the producer).
+fn elaborateGoal(e: *Elab, formula: *const ast.Expr) Error!TermId {
+    const f = try e.requireProp(try e.elaborateExpr(formula), formula);
+    return f.id;
+}
+
+/// Demand the synthetic-schema INSTANCE fact for an accelerant step (read pass). Runs the
+/// accelerant's producer, registers the synthetic schema (idempotently — falls through on
+/// re-entry), and demands its instance via the schema path. Returns proven/blocked/failed
+/// exactly like `demandInstance`. RE-ENTRANT: racks + suspends the first pass; on resume the
+/// front gates (IdentKV for the schema, FactKV for the instance) skip the already-done work.
+fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
+    const syn = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    } orelse return .failed; // producer diagnosed
+    // register the synthetic decl + mint its `.schema` locator ONCE (both idempotent).
+    const fid = self.ctx.pool_file.get(self.file).?;
+    const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
+    decl_ptr.* = syn.decl;
+    self.ctx.registerDecl(fid, decl_ptr) catch return error.OutOfMemory; // keep-first
+    const schema_key = IdentKV.Key{ .namespace = self.ns, .name = syn.name };
+    if (self.ctx.idents.lookup(self.ctx.io, schema_key) == null) {
+        _ = self.ctx.idents.publish(self.ctx.io, schema_key, .{ .schema = .{
+            .name = syn.name,
+            .file = self.file,
+            .loc = c.rule.start,
+        } }) catch return error.OutOfMemory;
+    }
+    // demand the instance via the ordinary schema path, using a synthesized claim that names
+    // the synthetic schema + carries the accelerant's args (premises ride c.refs separately).
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+    const inst_c: ast.Step.Claim = .{
+        .formula = c.formula,
+        .kind = .using,
+        .rule = c.rule,
+        .schema = b.tok(syn.name),
+        .args = syn.args,
+        .refs = syn.premises,
+    };
+    return self.demandInstance(e, inst_c);
+}
+
+/// The `using <accelerant>` justification (process): the instance fact is proven (read pass);
+/// emit `schema_instance` citing the accelerant's premise refs — the kernel peels the
+/// instance's `->` antecedents against them and requires the final consequent == the claim.
+fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
+    const outcome = try self.demandUsing(w, e, goal, c);
+    const fact = switch (outcome) {
+        .proven => |ix| ix,
+        .failed => return error.Recover,
+        .blocked => return self.fail(c.rule.start, "internal: accelerant instance not resolved before process (read-pass bug)", .{}),
+    };
+    const formula_off = self.ctx.interner.keyOf(fact).fact.formula;
+    const instance = try self.pool.copyIn(self.ctx.interner, formula_off);
+    // premises = the accelerant's own refs (the producer's premise order): the head-cite (if
+    // the head is local) then the hyps, matching the synthetic body's antecedent order.
+    const prems = try self.accelerantPremises(w, c);
+    return .{ .schema_instance = .{ .instance = instance, .premises = prems } };
+}
+
+/// Dispatch to the accelerant's producer by rule name. Returns null if the producer
+/// diagnosed (a Recover is mapped to null by the caller). Add new accelerants here.
+fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    _ = e;
+    if (c.rule.name == try self.internStr("specialize")) return try self.produceSpecialize(w, goal, c);
+    return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
+}
+
+/// The premise refs an accelerant's `schema_instance` discharges, in the synthetic body's
+/// antecedent order. For specialize: the head-cite step (only when the head is LOCAL — a
+/// global head is cited inside the synthetic proof, not discharged here) followed by the hyps.
+fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]const kernel.SRef {
+    // specialize: head is c.schema; hyps are c.refs. A LOCAL head becomes the FIRST premise
+    // (its formula is the synthetic schema's first antecedent); a GLOBAL head is not a premise.
+    const head = c.schema.?;
+    const head_local = w.findStep(tokName(head)) != null;
+    const n = c.refs.len + @intFromBool(head_local);
+    const out = try self.ctx.arena.alloc(kernel.SRef, n);
+    var i: usize = 0;
+    if (head_local) {
+        out[i] = try self.resolveStepRef(w, head);
+        i += 1;
+    }
+    for (c.refs) |r| {
+        out[i] = try self.resolveStepRef(w, r);
+        i += 1;
+    }
+    return out;
+}
+
+/// Intern a comptime literal once (cached on the Context's interner; cheap dedup).
+fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
+    return self.ctx.interner.internString(s) catch error.OutOfMemory;
+}
+
+// -- specialize (the first accelerant producer) ----------------------------------------
+
+/// Build the synthetic schema for `using specialize HEAD(args) hyps`. HEAD is a forall-
+/// quantified fact (global theorem/axiom) or a LOCAL forall-shaped step. The schema:
+///   params  = one value param per arg (sorts = the peeled ∀-binder sorts)
+///   body    = [HEAD-formula ->]  <arg-instantiated HEAD tail>   (the `->`-tail after the
+///             ∀ prefix is peeled at the params; a LOCAL head prepends its formula as the
+///             first antecedent so the schema proof needn't cite it externally)
+///   proof   = (global) cite HEAD; forall_elim(params)
+///             (local)  assume HEAD-formula; forall_elim(params) on the assumption
+/// The call site then instantiates at the args and discharges: (local head-step +) the hyps.
+fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    _ = goal;
+    const head = c.schema orelse return self.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // resolve HEAD → its formula term + how the schema proof cites it.
+    const head_local = w.findStep(tokName(head)) != null;
+    var head_formula: TermId = undefined;
+    var head_kind_axiom = false; // global: is it an axiom (else theorem)?
+    if (head_local) {
+        const sref = try self.resolveStepRef(w, head);
+        head_formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
+    } else {
+        const fact = try self.resolveFactRef(head);
+        head_formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+        head_kind_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+    }
+
+    // Instantiate one ∀ per arg at a fresh param fvar, INTERLEAVED with `->` antecedents:
+    // a head `∀k; guard(k) -> ∀s; …` opens `k`, then must descend past `guard(k) ->` to
+    // reach `∀s`. `openNextForall` walks the leading `->` chain (preserving it) to the next
+    // forall, opens it at the param, and rebuilds the `->` prefix around the opened body.
+    const nargs = c.args.len;
+    const pnames = try self.ctx.arena.alloc(StrId, nargs);
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, nargs);
+    var tail = head_formula;
+    for (0..nargs) |i| {
+        pnames[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "p{d}", .{i + 1}));
+        const opened = try self.openNextForall(tail, pnames[i]) orelse {
+            return self.fail(c.rule.start, "specialize: head is not universally quantified enough for {d} argument(s)", .{nargs});
+        };
+        tail = opened.body;
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(opened.sort)));
+        params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
+
+    // body = the fully-instantiated tail; for a LOCAL head, prepend the head formula as an
+    // antecedent (so the schema proof can `assume` it rather than cite it externally).
+    var body_expr = try b.termExpr(tail);
+    if (head_local) body_expr = try b.implies(try b.termExpr(head_formula), body_expr);
+
+    // proof steps.
+    const law_label = try b.intern("the-head-law");
+    const concl_label = try b.intern("conclusion");
+    var steps: std.ArrayList(ast.Step) = .empty;
+    const param_arg_exprs = try self.ctx.arena.alloc(*const ast.Expr, nargs);
+    for (pnames, param_arg_exprs) |pn, *out| out.* = try b.nameExpr(pn);
+
+    if (head_local) {
+        // assume the head formula, forall_elim it at the params inside the block, export.
+        const head_expr = try b.termExpr(head_formula);
+        const tail_expr = try b.termExpr(tail);
+        var inner: std.ArrayList(ast.Step) = .empty;
+        try inner.append(self.ctx.arena, try b.claimStep(law_label, head_expr, .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(&b, try b.intern("assume-head"))));
+        try inner.append(self.ctx.arena, try b.claimStep(concl_label, tail_expr, .by, try self.internStr("forall_elim"), param_arg_exprs, try self.oneRef(&b, law_label)));
+        try steps.append(self.ctx.arena, try b.assumeStep(try b.intern("assume-head"), head_expr, try inner.toOwnedSlice(self.ctx.arena)));
+        try steps.append(self.ctx.arena, try b.claimStep(try b.intern("export"), body_expr, .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(&b, try b.intern("assume-head"))));
+    } else {
+        // cite the head globally, forall_elim at the params.
+        const head_expr = try b.termExpr(head_formula);
+        const rule: []const u8 = if (head_kind_axiom) "axiom" else "theorem";
+        try steps.append(self.ctx.arena, try b.claimStep(law_label, head_expr, .by, try self.internStrRt(rule), &.{}, try self.headRef(head)));
+        try steps.append(self.ctx.arena, try b.claimStep(concl_label, body_expr, .by, try self.internStr("forall_elim"), param_arg_exprs, try self.oneRef(&b, law_label)));
+    }
+
+    // deterministic hash-name from the head formula + arg count (re-entry stable).
+    const hash = Schema.termHash(self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "specialize{{{x}}}", .{hash}));
+
+    return .{
+        .name = name,
+        .decl = .{ .schema = .{ .name = b.tok(name), .params = params, .formula = body_expr, .steps = try steps.toOwnedSlice(self.ctx.arena) } },
+        .args = c.args,
+        .premises = c.refs,
+    };
+}
+
+/// Instantiate the NEXT `forall` reachable through a leading `->` chain, at a fresh fvar
+/// named `pname`. Descends the RHS of `->` nodes (preserving them), opens the forall's body
+/// at the fvar, and rebuilds the `->` prefix around it. Returns the rebuilt term + the
+/// binder's sort, or null if no forall is reachable (only `->`s / a non-quant leaf).
+const OpenedForall = struct { body: TermId, sort: SortId };
+fn openNextForall(self: *Prove, id: TermId, pname: StrId) Error!?OpenedForall {
+    const node = self.pool.get(id);
+    switch (node) {
+        .quant => |q| {
+            if (q.q != .forall) return null;
+            const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = q.sort } });
+            return .{ .body = try self.pool.open(q.body, pf), .sort = q.sort };
+        },
+        .bin => |bn| {
+            if (bn.op != .implies) return null;
+            const rhs = (try self.openNextForall(bn.rhs, pname)) orelse return null;
+            // rebuild `lhs -> rhs'` with the opened rhs.
+            const rebuilt = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = bn.lhs, .rhs = rhs.body } });
+            return .{ .body = rebuilt, .sort = rhs.sort };
+        },
+        else => return null,
+    }
+}
+
+/// A single-token ref slice (arena) for a synthetic step's `refs`.
+fn oneRef(self: *Prove, b: *Accelerant.Builder, name: StrId) Error![]const lexer.Token {
+    const r = try self.ctx.arena.alloc(lexer.Token, 1);
+    r[0] = b.tok(name);
+    return r;
+}
+
+/// The head's own ref token (for a global head-cite step): reuse the head token verbatim.
+fn headRef(self: *Prove, head: lexer.Token) Error![]const lexer.Token {
+    const r = try self.ctx.arena.alloc(lexer.Token, 1);
+    r[0] = head;
+    return r;
+}
+
+/// Intern a runtime rule string (axiom/theorem chosen at runtime).
+fn internStrRt(self: *Prove, s: []const u8) Error!StrId {
+    return self.ctx.interner.internString(s) catch error.OutOfMemory;
+}
+
 // -- justification lowering ------------------------------------------------------------
 
 fn isBiconditionalShape(self: *const Prove, id: TermId) bool {
@@ -1034,8 +1291,11 @@ fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
 }
 
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
-    // The rule word dispatches by its RESERVED StrId (integer comparison — no strcmp past
-    // parsing); a non-rule word is a typo or an accelerant, neither supported yet.
+    // An ACCELERANT (`using <accel> …`) lowers to a schema_instance over its generated
+    // synthetic schema (the instance was demanded + proven in the read pass).
+    if (c.kind == .using and isAccelerant(c.rule.name)) return self.lowerUsing(w, e, goal, c);
+    // Otherwise the rule word dispatches by its RESERVED StrId (integer comparison — no
+    // strcmp past parsing); a non-rule word here is a typo.
     const kind = InternPool.RuleStr.of(c.rule.name) orelse {
         return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
     };
