@@ -233,7 +233,7 @@ pub fn addTests(
     // congruence (union-find + BFS, emits a rewrite/symmetry certificate).
     // Positive (transitivity, congruence, combined); negative (no path).
     ctx.okSilent(&.{ "check", "tests/cases/chain.bpa" });
-    ctx.fail(&.{ "check", "tests/cases/chain_bad.bpa" }, "tests/cases/chain_bad.bpa:11:18: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/chain_bad.bpa" }, "tests/cases/chain_bad.bpa:11:21: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
     // over-args (∀ prefix exhausted), extra hyp with no antecedent, and a schema
     // (redirect to instantiate) each fail cleanly.
     ctx.fail(&.{ "check", "tests/cases/specialize_overargs_bad.bpa" }, "tests/cases/specialize_overargs_bad.bpa:7:44: error: specialize: 'p(ZERO)' is not universally quantified here (too many arguments)\n");
