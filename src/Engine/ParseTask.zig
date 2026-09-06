@@ -59,6 +59,28 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
     for (self.parsed.items[idx].decls) |*decl| try self.registerDecl(task.file_id, decl);
 
+    // FORWARD (`intheory name`) is a manifest PROMISE that `name` is defined later in this file
+    // as a THEOREM. It lands NOWHERE durable (not the registry, not the pool); ParseTask just
+    // checks the promise holds (the real theorem registered above) and drops it. A missing name
+    // or a name defined as something OTHER than a theorem (an axiom, etc.) is diagnosed.
+    for (self.parsed.items[idx].decls) |decl| {
+        if (decl != .forward) continue;
+        const promised = decl.forward.name;
+        self.sink.current_file = idx;
+        const target = self.declOf(task.file_id, promised.name) orelse {
+            try self.sink.add(promised.start, "forwarded theorem '{s}' is never defined", .{self.interner.stringBytes(promised.name)});
+            continue;
+        };
+        if (target.* != .theorem) {
+            const kind: []const u8 = switch (target.*) {
+                .axiom => "an axiom",
+                .hole => "a hole",
+                else => "a non-theorem",
+            };
+            try self.sink.add(promised.start, "'{s}' is forwarded as a theorem but defined as {s}", .{ self.interner.stringBytes(promised.name), kind });
+        }
+    }
+
     for (parsed.decls) |decl| {
         if (decl != .import) continue;
         const d = decl.import;

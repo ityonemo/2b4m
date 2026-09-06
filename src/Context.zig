@@ -139,7 +139,11 @@ pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !
 /// duplicate name in a file leaves the FIRST winning (later decls don't overwrite) — a
 /// name-collision is a separate diagnostic concern, not the registry's job. Called by
 /// ParseTask for each parsed decl, and by accelerant generators for synthetic decls.
+/// A `forward` (`intheory`) decl is SKIPPED: it is a manifest PROMISE, not a definition —
+/// it must never occupy a name's registry slot (else it shadows the real theorem/axiom the
+/// promise refers to). ParseTask separately checks every forward is fulfilled.
 pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!void {
+    if (decl.* == .forward) return;
     const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
     if (!gop.found_existing) gop.value_ptr.* = decl;
 }

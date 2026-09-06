@@ -38,6 +38,7 @@ const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
 const EqCert = @import("EqCert.zig");
+const Polynomial = @import("Polynomial.zig");
 const simplify_mod = @import("simplify.zig");
 const presburger_mod = @import("presburger.zig");
 const smt = @import("smt.zig");
@@ -143,6 +144,16 @@ fn tokName(tok: lexer.Token) StrId {
     return tok.name;
 }
 
+/// A term's sort: an fvar's own sort, an app's head result sort; `.prop` for non-term
+/// structure. (The operand sort for polynomial's rule-pattern fvars comes from here.)
+fn termSort(self: *const Prove, t: TermId) SortId {
+    return switch (self.pool.get(t)) {
+        .fvar => |v| v.sort,
+        .app => |a| @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(a.sym))))),
+        else => @enumFromInt(@intFromEnum(InternPool.Index.prop)),
+    };
+}
+
 /// A stamped name in a LOCAL-only position (step label, step/block ref, proof binder):
 /// a `ns.`-qualified token is rejected — matching only its base name would let `x.y`
 /// falsely resolve to a local `y`.
@@ -158,7 +169,7 @@ fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Erro
     return error.Recover;
 }
 
-fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
+pub fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
     self.fresh_counter += 1;
     const s = std.fmt.allocPrint(self.ctx.arena, "{s}#{d}", .{ prefix, self.fresh_counter }) catch return error.OutOfMemory;
     return self.ctx.interner.internString(s) catch error.OutOfMemory;
@@ -1130,6 +1141,8 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
     if (c.rule.name == try self.internStr("assoc_quantified")) return try self.produceAssocQuantified(w, goal, c);
     if (c.rule.name == try self.internStr("assoc_commut")) return try self.produceAssocCommut(w, goal, c);
     if (c.rule.name == try self.internStr("assoc_commut_quantified")) return try self.produceAssocCommutQuantified(w, goal, c);
+    if (c.rule.name == try self.internStr("polynomial")) return try self.producePolynomial(w, goal, c);
+    if (c.rule.name == try self.internStr("polynomial_quantified")) return try self.producePolynomialQuantified(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
@@ -1148,8 +1161,11 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
     if (c.rule.name == try self.internStr("simplify") or c.rule.name == try self.internStr("simplify_quantified") or
         c.rule.name == try self.internStr("chain") or
         c.rule.name == try self.internStr("assoc") or c.rule.name == try self.internStr("assoc_quantified") or
-        c.rule.name == try self.internStr("assoc_commut") or c.rule.name == try self.internStr("assoc_commut_quantified"))
+        c.rule.name == try self.internStr("assoc_commut") or c.rule.name == try self.internStr("assoc_commut_quantified") or
+        c.rule.name == try self.internStr("polynomial") or c.rule.name == try self.internStr("polynomial_quantified"))
     {
+        // polynomial has NO refs (all rules are global well-known lemmas cited inside the cert);
+        // localRefsToSteps returns empty for it. The others' LOCAL equation refs are antecedents.
         return self.localRefsToSteps(w, c.refs);
     }
     // tautology has no head: its antecedents ARE the cited refs, in order.
@@ -2555,6 +2571,144 @@ fn produceAssocCommutQuantified(self: *Prove, w: *const Walk, goal: TermId, c: a
     return self.buildAssocCommut(w, c, peeled.body, peeled.eigen);
 }
 
+// -- polynomial / polynomial_quantified (the ring-identity accelerant) -----------------
+//
+// A theory-parameterized accelerant that proves a ring identity `s = t` by canonicalizing
+// BOTH sides to the same sorted-sum-of-sorted-monomials normal form and emitting the
+// distribute/fold/sort/cancel rewrite chain as a kernel-checked certificate. Per the design
+// (memory accelerant-ast-mapping-no-checks): a DETERMINISTIC (goal AST, selector) -> proof AST
+// function — the ring rewrite SHAPES are hardcoded (Polynomial.polyRules), the well-known
+// lemma NAMES are emitted as cite tokens QUALIFIED by the theory selector (`c.schema`, or
+// bare), and NOTHING is looked up here. The generated schema's ProveTask resolves the cited
+// names + kernel-checks each rewrite; a missing/mismatched lemma fails THERE.
+
+/// `[using polynomial(M) ]` — prove an equation goal `s = t` as a ring identity.
+fn producePolynomial(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "polynomial takes no arguments (the theory is the parenthesized selector)", .{});
+    const gn = self.pool.get(goal);
+    if (gn != .eq) {
+        if (gn == .quant and gn.quant.q == .forall) {
+            return self.fail(c.rule.start, "polynomial proves equations; did you mean polynomial_quantified?", .{});
+        }
+        return self.fail(c.rule.start, "polynomial: goal is not an equation", .{});
+    }
+    return self.buildPolynomial(w, c, goal, &.{});
+}
+
+/// `[using polynomial_quantified(M) ]` — like polynomial but the goal is `forall …; s = t`.
+fn producePolynomialQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "polynomial_quantified takes no arguments (the theory is the parenthesized selector)", .{});
+    const peeled = try self.peelForallEq(goal, c, "polynomial_quantified") orelse return null;
+    return self.buildPolynomial(w, c, peeled.body, peeled.eigen);
+}
+
+/// Shared polynomial core over the (possibly ∀-peeled) equation body `eq_goal_raw`. Reads the
+/// ring operator syms off the goal, builds the hardcoded rule set + selector-qualified cites,
+/// abstracts free caller-locals into params, canonicalizes both sides IN PARAM SPACE, and hands
+/// the traces to `finishReorder`. `polynomial` has no LOCAL premises (all its rules are global
+/// well-known lemmas cited inside the cert), so `local_prems` is empty.
+fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // read the ring operators off the goal (by well-known head NAME — inspecting the goal, not
+    // a scope lookup). `add`/`mul` are required; the rest are optional (present iff the goal
+    // has them). The theory selector's qualifier is stamped into every emitted cite.
+    const ops = (try self.readPolyOps(eq_goal_raw)) orelse
+        return self.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
+    const qualifier: StrId = if (c.schema) |s| s.name else .none;
+    const pr = try Polynomial.polyRules(self, ops, qualifier);
+
+    // abstract free caller-local fvars (an enclosing `fix`) into value params, then canonicalize
+    // in PARAM space so the trace + schema body speak `p1, p2, …`. Eigenvariables (the peeled ∀
+    // vars) stay free and are re-bound by the `fix` wrapper in finishReorder.
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, eq_goal_raw);
+    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
+    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const gn = self.pool.get(eq_goal).eq;
+    const s0 = gn.lhs;
+    const t0 = gn.rhs;
+
+    const rs = (try Polynomial.polyCanon(self, pr, s0)) orelse
+        return self.fail(c.rule.start, "polynomial: could not canonicalize the left side", .{});
+    const rt = (try Polynomial.polyCanon(self, pr, t0)) orelse
+        return self.fail(c.rule.start, "polynomial: could not canonicalize the right side", .{});
+    if (!self.pool.alphaEq(rs.nf, rt.nf)) {
+        return self.fail(c.rule.start, "polynomial: sides expand differently: '{s}' vs '{s}'", .{
+            try self.renderTerm(try self.unabstract(rs.nf, abs)),
+            try self.renderTerm(try self.unabstract(rt.nf, abs)),
+        });
+    }
+    return self.finishReorder(w, &b, c, "polynomial", s0, t0, pr.rules, pr.cites, rs, rt, abs, eigen, &.{});
+}
+
+/// Read the ring operator SymIds off `eq_goal` (an equation) by scanning for apps whose head
+/// NAME is a well-known ring operator. `add`/`mul` are required (null return if either is
+/// absent). The operand sort (for freshly-built rule-pattern fvars) is the equation's lhs sort.
+fn readPolyOps(self: *Prove, eq_goal: TermId) Error!?Polynomial.Ops {
+    const eqn = self.pool.get(eq_goal);
+    if (eqn != .eq) return null;
+    var found: Polynomial.Ops = .{
+        .add = undefined,
+        .mul = undefined,
+        .zero = null,
+        .one = null,
+        .neg = null,
+        .sub = null,
+        .succ = null,
+        .prev = null,
+        .sort = @enumFromInt(@intFromEnum(self.termSort(eqn.eq.lhs))),
+    };
+    var have_add = false;
+    var have_mul = false;
+    try self.collectPolyOps(eq_goal, &found, &have_add, &have_mul);
+    if (!have_add or !have_mul) return null;
+    return found;
+}
+
+/// Recursively match each app head's well-known NAME, filling `ops`. Pure goal inspection.
+fn collectPolyOps(self: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *bool, have_mul: *bool) Error!void {
+    const node = self.pool.get(id);
+    switch (node) {
+        .app => |a| {
+            const name = self.ctx.interner.stringBytes(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(a.sym))));
+            if (std.mem.eql(u8, name, "add")) {
+                ops.add = a.sym;
+                have_add.* = true;
+            } else if (std.mem.eql(u8, name, "mul")) {
+                ops.mul = a.sym;
+                have_mul.* = true;
+            } else if (std.mem.eql(u8, name, "ZERO")) {
+                ops.zero = a.sym;
+            } else if (std.mem.eql(u8, name, "ONE")) {
+                ops.one = a.sym;
+            } else if (std.mem.eql(u8, name, "neg")) {
+                ops.neg = a.sym;
+            } else if (std.mem.eql(u8, name, "sub")) {
+                ops.sub = a.sym;
+            } else if (std.mem.eql(u8, name, "succ")) {
+                ops.succ = a.sym;
+            } else if (std.mem.eql(u8, name, "prev")) {
+                ops.prev = a.sym;
+            }
+            // copy arg ids before recursing (pool.args aliases pool.extra).
+            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
+            for (args) |arg| try self.collectPolyOps(arg, ops, have_add, have_mul);
+        },
+        .eq => |p| {
+            try self.collectPolyOps(p.lhs, ops, have_add, have_mul);
+            try self.collectPolyOps(p.rhs, ops, have_add, have_mul);
+        },
+        .bin => |bb| {
+            try self.collectPolyOps(bb.lhs, ops, have_add, have_mul);
+            try self.collectPolyOps(bb.rhs, ops, have_add, have_mul);
+        },
+        .not => |n| try self.collectPolyOps(n, ops, have_add, have_mul),
+        .quant => |q| try self.collectPolyOps(q.body, ops, have_add, have_mul),
+        else => {},
+    }
+}
+
 /// Shared assoc_commut core over the (possibly ∀-peeled) equation body. Prepares the AC rule
 /// set (distribute pre-rules from `c.refs` at the FRONT, then the AC triple), abstracts the
 /// goal, distributes + AC-sorts both sides, and hands the concatenated traces to
@@ -2825,7 +2979,7 @@ fn finishReorder(
 
 /// Flatten an `op`-tree into its atom summands (any maximal subterm that is not itself an
 /// `op(_, _)`), left-to-right.
-fn flattenSum(self: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
+pub fn flattenSum(self: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
     const node = self.pool.get(id);
     if (node == .app and node.app.sym == op_sym and node.app.args_len == 2) {
         // copy arg ids before recursing: pool.args aliases pool.extra, which a walk that grows
@@ -2870,7 +3024,7 @@ const AcPlan = struct { sorted: TermId, trace: []const simplify_mod.Rewrite };
 /// bubble-sort its atoms into canonical `termOrder`, accumulating one trace. `assoc_idx` is
 /// the rule-array index of the associativity rule (after the distribute pre-rules); `comm_idx`
 /// / `swap_idx` the commutativity / swap rules.
-fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
+pub fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
     const op_sym = symbols.add.?; // the reordered operator (the AC vocabulary's `add` slot)
     // phase 1: right-nest via associativity ONLY (a single-rule slice, terminating).
     const assoc_only = rules[assoc_idx .. assoc_idx + 1];

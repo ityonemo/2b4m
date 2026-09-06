@@ -20,7 +20,13 @@ pub const Symbols = struct {
     zero: ?SymId = null,
     one: ?SymId = null,
     succ: ?SymId = null,
+    /// ℤ predecessor (absent for ℕ) — a negative tower offset needs it.
+    prev: ?SymId = null,
     add: ?SymId = null,
     mul: ?SymId = null,
+    /// additive inverse (ring theories) — polynomial's inverse-cancellation uses it.
+    neg: ?SymId = null,
+    /// subtraction (definitionOfSubtraction folds it away) — ring theories.
+    sub: ?SymId = null,
     less_than: ?SymId = null,
 };

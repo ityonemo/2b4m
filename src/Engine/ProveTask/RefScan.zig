@@ -99,9 +99,14 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                 .accelerant => {
                     // an accelerant HEAD (specialize's `c.schema`): a GLOBAL theorem/axiom
                     // citation UNLESS it's a live local step (then resolved locally at process
-                    // time).
+                    // time). EXCEPTION: for a THEORY-parameterized accelerant (polynomial…),
+                    // `c.schema` is the theory SELECTOR (an import), not a fact head — the outer
+                    // proof needn't resolve it at all (the generated schema's steps cite the
+                    // theory's lemmas qualified by it, and the INSTANCE ProveTask demands those).
                     if (c.schema) |s| {
-                        if (self.walk.findStep(s.name) == null) try self.addTok(s, .fact);
+                        if (!self.isTheorySelector(c.rule.name) and self.walk.findStep(s.name) == null) {
+                            try self.addTok(s, .fact);
+                        }
                     }
                     // simplify's refs are its rewrite RULES — a mix of global axioms/theorems
                     // and local equation steps; a ref that is NOT a live local step is a global
@@ -170,6 +175,18 @@ fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, 
 /// True when the claim is an `assoc`/`assoc_commut` (or `_quantified`) accelerant, whose ARGS
 /// are equation-lemma NAMES (global facts) rather than value terms — so the read pass demands
 /// them in the `.fact` domain. Matched by interned rule name (integer compare, no strcmp).
+/// True for a THEORY-parameterized accelerant whose `c.schema` is a theory SELECTOR (an
+/// import namespace), not a fact head — so the read pass must NOT demand `c.schema` as a fact.
+/// Matched by interned rule name (integer compare, no strcmp past parsing). Mirrors the
+/// parser's `isTheoryRule` (minus `model`, which is dispatched as its own RuleStr domain).
+fn isTheorySelector(self: *Scanner, rule: StrId) bool {
+    inline for (.{ "polynomial", "polynomial_quantified", "ext", "ext_quantified" }) |nm| {
+        const id = self.interner.internString(nm) catch return false;
+        if (rule == id) return true;
+    }
+    return false;
+}
+
 fn lemmaArgAccelerant(self: *Scanner, c: ast.Step.Claim) bool {
     if (c.kind != .using) return false;
     inline for (.{ "assoc", "assoc_quantified", "assoc_commut", "assoc_commut_quantified" }) |nm| {
