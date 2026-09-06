@@ -181,11 +181,12 @@ fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, 
 /// them in the `.fact` domain. Matched by interned rule name (integer compare, no strcmp).
 /// True for a THEORY-parameterized accelerant whose `c.schema` is a theory SELECTOR (an
 /// import namespace), not a fact head — so the read pass must NOT demand `c.schema` as a fact.
-/// Matched by interned rule name (integer compare, no strcmp past parsing). ONLY polynomial:
-/// extensionality's `c.schema` is the extensionality LEMMA (a fact — demanded), and its
-/// `c.refs` are the unfold lemmas (facts — demanded by the refs loop), so it is NOT listed.
+/// Matched by interned rule name (integer compare, no strcmp past parsing). polynomial +
+/// arithmetic (`arithmetic(ordering)` names the theory module). extensionality's `c.schema` is
+/// the extensionality LEMMA (a fact — demanded), and its `c.refs` are the unfold lemmas (facts
+/// — demanded by the refs loop), so it is NOT listed.
 fn isTheorySelector(self: *Scanner, rule: StrId) bool {
-    inline for (.{ "polynomial", "polynomial_quantified" }) |nm| {
+    inline for (.{ "polynomial", "polynomial_quantified", "arithmetic" }) |nm| {
         const id = self.interner.internString(nm) catch return false;
         if (rule == id) return true;
     }
