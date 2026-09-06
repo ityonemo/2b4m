@@ -46,11 +46,12 @@ pins it to a vetted theory.
 
 ## Naming couplings — hardcoded defaults are fine, but MUST be overridable
 
-Accelerators routinely *expect* conventional names: `ext` looks for a lemma
-called `extensionality`/`funcExtensionality`; `arithmetic`/`polynomial` presume
-a well-known `add`/`mul`/`succ`/`ZERO` vocabulary; a schema-driven tactic may
-expect an `induction`. **Hardcoding such a default name is fine** — it keeps the
-common case terse. The invariant is not "no hardcoded strings"; it is:
+Accelerators routinely *expect* conventional names: `arithmetic`/`polynomial`
+presume a well-known `add`/`mul`/`succ`/`ZERO` vocabulary; a schema-driven tactic
+may expect an `induction`. (`extensionality` sidesteps this entirely — its
+lemmas are named EXPLICITLY as args, so there is no expected name to couple on.)
+**Hardcoding such a default name is fine** — it keeps the common case terse. The
+invariant is not "no hardcoded strings"; it is:
 
 > **Every name an accelerator expects MUST be overridable — the user must be
 > able to satisfy the expectation from a bpa file, never from editing the
@@ -68,20 +69,24 @@ argument on each tactic:
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
   everything its own way can satisfy an accelerator's expectations wholesale.
-- The **theory argument** (`arithmetic(peano)`, `ext(set)`) already pins *which*
-  vetted theory's names to use — itself a form of override/selection.
+- The **theory argument** (`arithmetic(peano)`) already pins *which* vetted
+  theory's names to use — itself a form of override/selection.
 
 **Prefer structural derivation when the entity is recoverable from a cited
-lemma's shape.** `ext` reads its element sort off the extensionality lemma's
-obligation binder (`forall x: <elementSort>; …`) rather than demanding a sort
-named `Universe` — so there is no name to override at all. This is the strongest
-form (zero coupling), and is preferred where the shape makes it available; it is
-a *preference*, not a mandate (a hardcoded-but-overridable default is acceptable).
+lemma's shape**, and prefer **explicit citation** when the entity is a lemma the
+proof can name. `extensionality` takes its extensionality lemma + per-operator
+unfold lemmas as EXPLICIT args, and reads the element sort off the cited lemma's
+obligation binder — so there is no expected name to override at all (the
+strongest form: zero coupling). This is preferred where available; a
+hardcoded-but-overridable default is the acceptable fallback.
 
-Historical note: `ext` once looked the element sort up by the literal name
-`"Universe"`. Renaming that sort to `Element` broke the tactic — the coupling was
-invisible until it fired. The fix derived the sort structurally, which is why the
-tactic is now name-agnostic. That episode is the canonical example of this rule.
+Historical note: `ext` (now `extensionality`) once looked the element sort up by
+the literal name `"Universe"`, and once ENUMERATED the theory scope to find its
+`<op>Member`/`<op>Apply` unfold lemmas by shape. Renaming the sort broke it; the
+scope-scan couldn't survive the fetch-only demand engine and mis-derived
+irregular names (`identityFn` → `identityApply`, not `identityFnApply`). Both were
+fixed by making the couplings explicit/structural — the canonical example of this
+rule.
 
 ## Registered accelerated tactics
 

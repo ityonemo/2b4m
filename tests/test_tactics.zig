@@ -74,7 +74,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/extensionality_function.bpa" });
     // a FALSE set identity: the pointwise residue has a countermodel, so ext
     // declines with a located error (exit 1) — never accepts a false equation.
-    ctx.fail(&.{ "check", "tests/cases/extensionality_bad.bpa" }, "tests/cases/extensionality_bad.bpa:18:9: error: ext: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/extensionality_bad.bpa" }, "tests/cases/extensionality_bad.bpa:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // `model`: structure reuse. The source theory (a carrier + op + left-unit +
     // one proven theorem) is modeled by a concrete sort, and its theorem

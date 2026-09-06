@@ -1143,6 +1143,8 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
     if (c.rule.name == try self.internStr("assoc_commut_quantified")) return try self.produceAssocCommutQuantified(w, goal, c);
     if (c.rule.name == try self.internStr("polynomial")) return try self.producePolynomial(w, goal, c);
     if (c.rule.name == try self.internStr("polynomial_quantified")) return try self.producePolynomialQuantified(w, goal, c);
+    if (c.rule.name == try self.internStr("extensionality")) return try self.produceExtensionality(w, goal, c);
+    if (c.rule.name == try self.internStr("extensionality_quantified")) return try self.produceExtensionalityQuantified(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
@@ -1162,7 +1164,8 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
         c.rule.name == try self.internStr("chain") or
         c.rule.name == try self.internStr("assoc") or c.rule.name == try self.internStr("assoc_quantified") or
         c.rule.name == try self.internStr("assoc_commut") or c.rule.name == try self.internStr("assoc_commut_quantified") or
-        c.rule.name == try self.internStr("polynomial") or c.rule.name == try self.internStr("polynomial_quantified"))
+        c.rule.name == try self.internStr("polynomial") or c.rule.name == try self.internStr("polynomial_quantified") or
+        c.rule.name == try self.internStr("extensionality") or c.rule.name == try self.internStr("extensionality_quantified"))
     {
         // polynomial has NO refs (all rules are global well-known lemmas cited inside the cert);
         // localRefsToSteps returns empty for it. The others' LOCAL equation refs are antecedents.
@@ -3011,6 +3014,432 @@ fn finishReorder(
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
     };
+}
+
+// -- extensionality / extensionality_quantified ---------------------------------------
+
+/// `[using extensionality(extLemma) unfold1 unfold2 …]` — prove a bare `s = t` equation by
+/// extensionality. See `produceExtensionalityQuantified` for the `forall …; s = t` form.
+fn produceExtensionality(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.schema == null) return self.fail(c.rule.start, "extensionality requires an extensionality lemma: [using extensionality(<lemma>) <unfold lemmas>]", .{});
+    if (self.pool.get(goal) != .eq) {
+        if (self.pool.get(goal) == .quant and self.pool.get(goal).quant.q == .forall) {
+            return self.fail(c.rule.start, "extensionality proves equations; did you mean extensionality_quantified?", .{});
+        }
+        return self.fail(c.rule.start, "extensionality proves an equation 's = t'; the goal is not an equation", .{});
+    }
+    return self.buildExtensionality(w, c, goal, &.{});
+}
+
+/// `[using extensionality_quantified(extLemma) unfold1 …]` — like extensionality but the goal
+/// is `forall …; s = t`. Peel the ∀ prefix into fresh eigenvariables, run the core on the body
+/// equation, and re-generalize via the `fix`/`forall_intro` shell.
+fn produceExtensionalityQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.schema == null) return self.fail(c.rule.start, "extensionality_quantified requires an extensionality lemma: [using extensionality_quantified(<lemma>) <unfold lemmas>]", .{});
+    const peeled = (try self.peelForallEq(goal, c, "extensionality_quantified")) orelse return null;
+    return self.buildExtensionality(w, c, peeled.body, peeled.eigen);
+}
+
+/// A resolved extensionality lemma, read STRUCTURALLY off `c.schema`'s formula: its instantiated
+/// obligations (one per pointwise inclusion) + how the cert cites the lemma.
+const ExtLemma = struct {
+    formula: TermId,
+    is_axiom: bool,
+    head: lexer.Token,
+    /// each obligation `forall x: <elementSort>; body`, instantiated at (s, t) — outermost first.
+    obligations: []const TermId,
+    /// the element sort (the obligation binder's sort).
+    universe: SortId,
+};
+
+/// Shared core for both extensionality variants. Instantiate the ext lemma at (s, t), prove each
+/// pointwise obligation (`fix x` → unfold → close residue → forall_intro), then modus_ponens the
+/// chain to `s = t`; wrap in the ∀-eigenvariable `fix` shell and package the synthetic schema.
+fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into value
+    // params — the fully-quantified fixtures have none (all free vars are peeled eigenvariables),
+    // but a bare `[using extensionality(...)]` over fixed locals would surface them.
+    const abs = try self.abstractFreeFvars(&b, &.{eq_goal_raw}, eigen);
+    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const eq = self.pool.get(eq_goal).eq;
+    const s = eq.lhs;
+    const t = eq.rhs;
+
+    // resolve the ext lemma (global fact) + instantiate at (s, t).
+    const lemma = try self.resolveExtLemma(c.schema.?, s, t);
+
+    // resolve each cited UNFOLD lemma to its formula (global facts). For the SET model these are
+    // `member(x, op(...)) iff …`; for the FUNCTION model `apply(op(...), x) = …` rewrite rules.
+    const unfolds = try self.ctx.arena.alloc(ExtUnfold, c.refs.len);
+    for (c.refs, unfolds) |ref, *out| out.* = try self.resolveUnfold(ref);
+
+    // build the cert steps proving `s = t`.
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    try self.emitExtEquation(&b, &body_steps, lemma, unfolds, s, t, c);
+
+    // the inner proposition the cert proves: the equation `s = t` (no local premises — the ext +
+    // unfold lemmas are all globals cited inside the cert; a LOCAL cite is unusual but supported
+    // via the premises slot below).
+    const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
+
+    // wrap in `fix` blocks for the ∀ eigenvariables (the quantified variant's re-generalization).
+    var steps: []const ast.Step = body_steps.items;
+    steps = try self.wrapSimplifyForall(&b, eigen, eq_prop, steps);
+
+    // schema body = the ∀-generalized equation.
+    var full_prop = eq_prop;
+    var ei: usize = eigen.len;
+    while (ei > 0) {
+        ei -= 1;
+        const closed = try self.pool.close(full_prop, eigen[ei].name);
+        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
+    }
+    const body_expr = try b.termExpr(full_prop);
+
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
+    for (abs.names, abs.sorts, params) |name, sort, *pp| {
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
+
+    const hash = Schema.termHash(self.pool, full_prop);
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "extensionality{{{x}}}", .{hash}));
+    return .{
+        .name = name,
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
+        .args = abs.args,
+        .premises = try self.localRefTokens(w, c.refs), // a LOCAL unfold/ext cite, if any
+    };
+}
+
+/// Resolve the extensionality lemma token to its formula and instantiate its `forall A, B;`
+/// prefix at (s, t), reading off the leading `(forall x; …) ->` obligations. Requires a GLOBAL
+/// axiom/theorem (the ext lemma is never a local step in the fixtures).
+fn resolveExtLemma(self: *Prove, head: lexer.Token, s: TermId, t: TermId) Error!ExtLemma {
+    const fact = try self.resolveFactRef(head);
+    const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+    const is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+
+    // peel the two structure binders at (s, t).
+    var body = formula;
+    for ([_]TermId{ s, t }) |arg| {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) {
+            return self.fail(head.start, "extensionality: '{s}' is not a two-argument universal (forall A, B; …)", .{self.text(head)});
+        }
+        body = try self.pool.open(node.quant.body, arg);
+    }
+    // count the leading `(forall x; body) ->` obligations before the `s = t` conclusion.
+    var obligations: std.ArrayList(TermId) = .empty;
+    var universe: ?SortId = null;
+    var cur = body;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node != .bin or node.bin.op != .implies) break;
+        const premise = node.bin.lhs;
+        if (self.pool.get(premise) == .quant and self.pool.get(premise).quant.q == .forall) {
+            if (universe == null) universe = self.pool.get(premise).quant.sort;
+        }
+        try obligations.append(self.ctx.arena, premise);
+        cur = node.bin.rhs;
+    }
+    if (obligations.items.len == 0 or universe == null) {
+        return self.fail(head.start, "extensionality: '{s}' has no pointwise obligation (forall x: <element>; …)", .{self.text(head)});
+    }
+    // the residual conclusion must be `s = t`.
+    if (self.pool.get(cur) != .eq or !self.pool.alphaEq(self.pool.get(cur).eq.lhs, s) or !self.pool.alphaEq(self.pool.get(cur).eq.rhs, t)) {
+        return self.fail(head.start, "extensionality: '{s}' does not conclude the goal equation", .{self.text(head)});
+    }
+    return .{ .formula = formula, .is_axiom = is_axiom, .head = head, .obligations = obligations.items, .universe = universe.? };
+}
+
+/// A resolved unfold lemma: its formula + how the cert cites it. `set_op`/`fn_op` is the head
+/// symbol of the characterized operator (for matching a `member(x, op(...))` / `apply(op(...), x)`
+/// subterm to its lemma); null when the lemma has no such head (degenerate).
+const ExtUnfold = struct {
+    formula: TermId,
+    is_axiom: bool,
+    head: lexer.Token,
+    local: bool,
+    /// the operator head symbol this lemma characterizes (read off its stripped LHS).
+    op: ?term.SymId,
+    /// true = a FUNCTION model rewrite (`apply(op,x) = …`); false = a SET model `member iff`.
+    is_eq: bool,
+};
+
+fn resolveUnfold(self: *Prove, ref: lexer.Token) Error!ExtUnfold {
+    // ext unfold lemmas are always GLOBAL facts (membership / apply axioms) in practice.
+    const fact = try self.resolveFactRef(ref);
+    const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+    const is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+    // strip the forall prefix; classify by the stripped body shape + read the characterized op.
+    var body = formula;
+    while (self.pool.get(body) == .quant and self.pool.get(body).quant.q == .forall) {
+        const q = self.pool.get(body).quant;
+        const fv = try self.pool.add(.{ .fvar = .{ .name = try self.freshNamed("u"), .sort = q.sort } });
+        body = try self.pool.open(q.body, fv);
+    }
+    const bn = self.pool.get(body);
+    var op: ?term.SymId = null;
+    var is_eq = false;
+    if (bn == .eq) {
+        // FUNCTION model: `apply(op(...), x) = …` — the op is the head of the FIRST apply arg.
+        is_eq = true;
+        const lhs = self.pool.get(bn.eq.lhs);
+        if (lhs == .app and self.pool.args(lhs.app).len >= 1) {
+            const first = self.pool.get(self.pool.args(lhs.app)[0]);
+            if (first == .app) op = first.app.sym;
+        }
+    } else {
+        // SET model: `member(x, op(...)) iff …` — the op is the head of member's SECOND arg. The
+        // iff desugars to a conjunction; the lhs of a conjunct's implication carries `member`.
+        is_eq = false;
+        op = self.setUnfoldOp(body);
+    }
+    return .{ .formula = formula, .is_axiom = is_axiom, .head = ref, .local = false, .op = op, .is_eq = is_eq };
+}
+
+/// Read the characterized operator head from a SET unfold lemma body. The `iff` desugars to
+/// `(member(x, op(...)) -> R) and (R -> member(x, op(...)))`; find the `member(_, op(...))` atom
+/// and return `op`'s head symbol (a const head has no args → still a valid sym).
+fn setUnfoldOp(self: *Prove, body: TermId) ?term.SymId {
+    return self.findMemberOp(body);
+}
+
+fn findMemberOp(self: *Prove, id: TermId) ?term.SymId {
+    switch (self.pool.get(id)) {
+        .pred => |p| {
+            const args = self.pool.args(p);
+            if (args.len == 2) {
+                const set = self.pool.get(args[1]);
+                if (set == .app) return set.app.sym;
+            }
+            return null;
+        },
+        .bin => |bn| return self.findMemberOp(bn.lhs) orelse self.findMemberOp(bn.rhs),
+        .not => |inner| return self.findMemberOp(inner),
+        else => return null,
+    }
+}
+
+/// Emit the extensionality certificate proving `s = t` into `block`: cite the ext lemma,
+/// forall_elim it at (s, t) to reach `Ob1 -> (Ob2 ->) s = t`, prove each obligation, and
+/// modus_ponens the chain. The lemma cite + each obligation step live directly in `block`.
+fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), lemma: ExtLemma, unfolds: []const ExtUnfold, s: TermId, t: TermId, c: ast.Step.Claim) Error!void {
+    // step 0: cite the ext lemma.
+    const law = try self.freshNamed("extensionality");
+    const word: []const u8 = if (lemma.is_axiom) "axiom" else "theorem";
+    const law_refs = try self.ctx.arena.alloc(lexer.Token, 1);
+    law_refs[0] = lemma.head;
+    try block.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(lemma.formula), .by, try self.internStrRt(word), &.{}, law_refs));
+
+    // forall_elim at (s, t): one multi-arg elim peels both structure binders.
+    var chain_formula = lemma.formula;
+    for ([_]TermId{ s, t }) |arg| {
+        chain_formula = try self.pool.open(self.pool.get(chain_formula).quant.body, arg);
+    }
+    const elim_lbl = try self.freshNamed("extensionality-at-sides");
+    const elim_args = try self.ctx.arena.alloc(*const ast.Expr, 2);
+    elim_args[0] = try b.termExpr(s);
+    elim_args[1] = try b.termExpr(t);
+    try block.append(self.ctx.arena, try b.claimStep(elim_lbl, try b.termExpr(chain_formula), .by, try self.internStr("forall_elim"), elim_args, try self.oneRef(b, law)));
+
+    // prove each obligation + modus_ponens it into the chain; the last mp proves `s = t`.
+    var chain_label = elim_lbl;
+    for (lemma.obligations, 0..) |ob, i| {
+        const ob_label = try self.emitExtObligation(b, block, ob, lemma.universe, unfolds, c);
+        const imp = self.pool.get(chain_formula).bin;
+        const mp_label = if (i + 1 == lemma.obligations.len) try self.freshNamed("extensionality-conclusion") else try self.freshNamed("extensionality-step");
+        const mp_refs = try self.ctx.arena.alloc(lexer.Token, 2);
+        mp_refs[0] = b.tok(chain_label);
+        mp_refs[1] = b.tok(ob_label);
+        try block.append(self.ctx.arena, try b.claimStep(mp_label, try b.termExpr(imp.rhs), .by, try self.internStr("modus_ponens"), &.{}, mp_refs));
+        chain_formula = imp.rhs;
+        chain_label = mp_label;
+    }
+}
+
+/// Prove one obligation `forall x: <element>; body` — a `fix x { … }` block closing the pointwise
+/// residue — then `forall_intro` it. Returns the label of the forall_intro step (in `block`).
+fn emitExtObligation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), ob: TermId, universe: SortId, unfolds: []const ExtUnfold, c: ast.Step.Claim) Error!StrId {
+    const q = self.pool.get(ob).quant; // forall x: <element>; body
+    const x: term.Node.Fvar = .{ .name = try self.freshNamed("x"), .sort = universe };
+    const x_id = try self.pool.add(.{ .fvar = x });
+    const body = try self.pool.open(q.body, x_id);
+
+    var fix_steps: std.ArrayList(ast.Step) = .empty;
+    if (self.pool.get(body) == .eq) {
+        try self.emitExtFunctionResidue(b, &fix_steps, body, unfolds, c);
+    } else {
+        try self.emitExtSetResidue(b, &fix_steps, body, x_id, unfolds, c);
+    }
+
+    // wrap the fix block + forall_intro out.
+    const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(universe)));
+    const fix_label = try self.freshNamed("fix");
+    const bname = b.tok(try self.displayName(x.name));
+    const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.tok(sort_name), .steps = fix_steps.items } } };
+    try block.append(self.ctx.arena, fix_step);
+
+    // the ∀-closed obligation.
+    const closed = try self.pool.close(body, x.name);
+    const ob_closed = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = universe, .hint = x.name, .body = closed } });
+    const gen_label = try self.freshNamed("pointwise-holds-for-all");
+    try block.append(self.ctx.arena, try b.claimStep(gen_label, try b.termExpr(ob_closed), .by, try self.internStr("forall_intro"), &.{}, try self.oneRef(b, fix_label)));
+    return gen_label;
+}
+
+/// FUNCTION model residue: close `apply(f, x) = apply(g, x)` by rewriting BOTH sides with the
+/// cited `apply` unfold lemmas to a common normal form and emitting the EqCert join.
+fn emitExtFunctionResidue(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), eq_goal: TermId, unfolds: []const ExtUnfold, c: ast.Step.Claim) Error!void {
+    const eq = self.pool.get(eq_goal).eq;
+    // build rewrite rules from the cited (equation) unfold lemmas, in citation order.
+    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    for (unfolds) |u| {
+        if (!u.is_eq) return self.fail(u.head.start, "extensionality: '{s}' is a membership lemma, but the obligation is an equation (function model)", .{self.text(u.head)});
+        const rule = (try self.orientRule(u.formula)) orelse
+            return self.fail(u.head.start, "extensionality: '{s}' is not a usable apply rewrite rule", .{self.text(u.head)});
+        try rules.append(self.ctx.arena, rule);
+        try cites.append(self.ctx.arena, .{ .global = .{ .head = u.head, .is_axiom = u.is_axiom } });
+    }
+    const rs = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules.items, eq.lhs, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "extensionality: rewrite limit reached (looping rule set?)", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const rt = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules.items, eq.rhs, 1000) catch |e| switch (e) {
+        error.Limit => return self.fail(c.rule.start, "extensionality: rewrite limit reached (looping rule set?)", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (!self.pool.alphaEq(rs.nf, rt.nf)) {
+        return self.fail(c.rule.start, "extensionality: pointwise values differ: '{s}' vs '{s}' (is the identity true?)", .{
+            try self.renderTerm(rs.nf), try self.renderTerm(rt.nf),
+        });
+    }
+    var cert: EqCert = .{ .b = b, .pool = self.pool, .rules = rules.items, .cites = cites.items, .fresh_ctx = self, .freshFn = eqCertFresh };
+    _ = try cert.emitJoin(block, eq.lhs, eq.rhs, rs, rt);
+}
+
+/// SET model residue: for each `member(x, op(...))` subterm of `body`, instantiate the matching
+/// cited membership lemma at (op-args…, x) as a premise step, then close `body` (a `member -> …`
+/// implication) propositionally by REUSING the tautology core with those premises.
+fn emitExtSetResidue(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), body: TermId, x_id: TermId, unfolds: []const ExtUnfold, c: ast.Step.Claim) Error!void {
+    var prems: std.ArrayList(TautAst.Prem) = .empty;
+    try self.emitExtUnfoldMembership(b, block, body, x_id, unfolds, &prems);
+
+    // DECIDE + close propositionally over the emitted unfold-instance premises.
+    const prem_formulae = try self.ctx.arena.alloc(TermId, prems.items.len);
+    for (prems.items, prem_formulae) |p, *out| out.* = p.formula;
+    const verdict = smt.tautology(self.ctx.arena, self.pool, prem_formulae, body) catch return error.OutOfMemory;
+    switch (verdict) {
+        .valid => {},
+        .too_many_atoms => |n| return self.fail(c.rule.start, "extensionality: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
+        .countermodel => return self.fail(c.rule.start, "extensionality: could not close the pointwise obligation propositionally (is the identity true?)", .{}),
+    }
+
+    // GENERATE the cert: collect atoms (over premises + goal), replay the truth search.
+    var atom_list: std.ArrayList(TermId) = .empty;
+    for (prem_formulae) |f| smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, f) catch return error.OutOfMemory;
+    smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, body) catch return error.OutOfMemory;
+
+    const assignment = try self.ctx.arena.alloc(?bool, atom_list.items.len);
+    @memset(assignment, null);
+    const lit_blocks = try self.ctx.arena.alloc(?StrId, atom_list.items.len);
+    @memset(lit_blocks, null);
+    var cert: TautAst = .{
+        .p = self,
+        .b = b,
+        .goal = body,
+        .premises = prems.items,
+        .atoms = atom_list.items,
+        .assignment = assignment,
+        .lit_blocks = lit_blocks,
+    };
+    _ = try cert.deriveGoal(block);
+}
+
+/// Recurse over `body`, and for each `member(x, op(args…))` subterm instantiate the cited
+/// membership lemma whose characterized op matches, at (args…, x). Each instance is emitted as a
+/// step in `block` and recorded as a tautology premise. Dedups by formula.
+fn emitExtUnfoldMembership(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), body: TermId, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem)) Error!void {
+    const node = self.pool.get(body);
+    switch (node) {
+        .pred => |p| {
+            const args = self.pool.args(p);
+            if (args.len == 2) {
+                const set = self.pool.get(args[1]);
+                if (set == .app) {
+                    try self.emitExtUnfoldOp(b, block, set.app, x_id, unfolds, out);
+                }
+            }
+        },
+        .bin => |bn| {
+            try self.emitExtUnfoldMembership(b, block, bn.lhs, x_id, unfolds, out);
+            try self.emitExtUnfoldMembership(b, block, bn.rhs, x_id, unfolds, out);
+        },
+        .not => |inner| try self.emitExtUnfoldMembership(b, block, inner, x_id, unfolds, out),
+        else => {},
+    }
+}
+
+/// Instantiate the membership lemma for `op(args…)` at (args…, x): cite the lemma globally, then
+/// forall_elim once per op-arg + once for x. Append the instance step + record it as a premise.
+/// Recurses into `op`'s set-typed arguments (nested operators unfold too).
+fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), app: term.Node.App, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem)) Error!void {
+    // find the cited lemma characterizing this op head.
+    var lemma: ?ExtUnfold = null;
+    for (unfolds) |u| {
+        if (u.op != null and u.op.? == app.sym) {
+            lemma = u;
+            break;
+        }
+    }
+    // COPY the op-arg ids: pool.args aliases pool.extra, which the emitStep/open calls below grow.
+    const op_args = try self.ctx.arena.dupe(TermId, self.pool.args(app));
+    const u = lemma orelse {
+        // no cited lemma for this op — leave the atom opaque, but recurse into set-typed args.
+        for (op_args) |a| {
+            const an = self.pool.get(a);
+            if (an == .app) try self.emitExtUnfoldOp(b, block, an.app, x_id, unfolds, out);
+        }
+        return;
+    };
+
+    // cite the lemma; forall_elim at each op-arg, then at x.
+    const cite_label = try self.freshNamed("membership-lemma");
+    const word: []const u8 = if (u.is_axiom) "axiom" else "theorem";
+    const cite_refs = try self.ctx.arena.alloc(lexer.Token, 1);
+    cite_refs[0] = u.head;
+    try block.append(self.ctx.arena, try b.claimStep(cite_label, try b.termExpr(u.formula), .by, try self.internStrRt(word), &.{}, cite_refs));
+
+    var cur = u.formula;
+    var cur_label = cite_label;
+    var bindings: std.ArrayList(TermId) = .empty;
+    for (op_args) |a| try bindings.append(self.ctx.arena, a);
+    try bindings.append(self.ctx.arena, x_id);
+    for (bindings.items) |val| {
+        const qn = self.pool.get(cur);
+        if (qn != .quant or qn.quant.q != .forall) {
+            return self.fail(u.head.start, "extensionality: '{s}' is not universal enough to instantiate", .{self.text(u.head)});
+        }
+        cur = try self.pool.open(qn.quant.body, val);
+        const lbl = try self.freshNamed("membership-at-element");
+        const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
+        arg1[0] = try b.termExpr(val);
+        try block.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(cur), .by, try self.internStr("forall_elim"), arg1, try self.oneRef(b, cur_label)));
+        cur_label = lbl;
+    }
+    // dedup by formula, then record as a premise.
+    for (out.items) |pr| if (self.pool.alphaEq(pr.formula, cur)) return;
+    try out.append(self.ctx.arena, .{ .formula = cur, .label = cur_label, .blk_label = cur_label });
+
+    // recurse into the operator's set-typed arguments (nested operators unfold too).
+    for (op_args) |a| {
+        const an = self.pool.get(a);
+        if (an == .app) try self.emitExtUnfoldOp(b, block, an.app, x_id, unfolds, out);
+    }
 }
 
 // -- the AC flatten / build / sort substrate (ported from the eager elaborate.zig) -----
