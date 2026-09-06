@@ -117,6 +117,10 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                             try self.addTok(r, .fact);
                         }
                     }
+                    // `arithmetic … fallback(<thm>)` names a manually-proven theorem the cert
+                    // cites when the certifier chain declines — a GLOBAL fact the producer
+                    // `resolveFactRef`s, so demand it here.
+                    if (c.fallback) |fb| try self.addTok(fb, .fact);
                 },
                 .local => {}, // local-only labels: LocalStepKV at process time, no fetch
             }

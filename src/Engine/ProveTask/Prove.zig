@@ -299,6 +299,16 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         // instance; the shared `demandUsing` builds+registers the schema (idempotent) and
         // racks the instance ProveTask. RE-ENTRANT: first pass racks + suspends.
         if (c.kind == .using and isAccelerant(c.rule.name)) {
+            // `arithmetic` needs its well-known operator symbols RESOLVED (add for the mul/order
+            // certs, etc.) even when the goal itself doesn't mention them (a pure-succ order
+            // goal, ground `mul`). Demand every well-known name DECLARED in this file so the
+            // producer's ident lookups find them done; a name absent from the file is skipped
+            // (no fetch, no error). No-op for the other accelerants.
+            const arith_id = try self.ctx.interner.internString("arithmetic");
+            const arith_q_id = try self.ctx.interner.internString("arithmetic_quantified");
+            if (c.rule.name == arith_id or c.rule.name == arith_q_id) {
+                if (try self.demandArithIdents(c.rule.start)) |blocker| return blocker;
+            }
             var e = self.elab(w);
             const goal_typed = elaborateGoal(&e, c.formula) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
@@ -312,6 +322,22 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         }
     }
     return null;
+}
+
+/// Demand (fetch + suspend) the well-known arithmetic operator idents DECLARED in this file,
+/// so `readArithSymbols`' ident lookups find them `done` in the producer. Only declared names
+/// are demanded (a missing one is skipped — no fetch, no "reference not found"). Returns a
+/// blocker to suspend on, or null when all are resolved.
+fn demandArithIdents(self: *Prove, loc: u32) Allocator.Error!?Engine.TaskIndex {
+    const wk = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub", "less_than", "nonneg" };
+    const fid = self.ctx.pool_file.get(self.file).?;
+    var refs: std.ArrayList(RefScan.Ref) = .empty;
+    for (wk) |name| {
+        const nid = self.ctx.interner.internString(name) catch return error.OutOfMemory;
+        if (self.ctx.declOf(fid, nid) == null) continue; // not declared here → skip
+        try refs.append(self.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = loc });
+    }
+    return resolveRefs(self.ctx, self.h, self.file, self.ns, refs.items);
 }
 
 pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!bool {
@@ -1145,6 +1171,8 @@ fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: as
     if (c.rule.name == try self.internStr("polynomial_quantified")) return try self.producePolynomialQuantified(w, goal, c);
     if (c.rule.name == try self.internStr("extensionality")) return try self.produceExtensionality(w, goal, c);
     if (c.rule.name == try self.internStr("extensionality_quantified")) return try self.produceExtensionalityQuantified(w, goal, c);
+    if (c.rule.name == try self.internStr("arithmetic")) return try self.produceArithmetic(w, goal, c);
+    if (c.rule.name == try self.internStr("arithmetic_quantified")) return try self.produceArithmetic(w, goal, c);
     return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
 }
 
@@ -1165,7 +1193,8 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
         c.rule.name == try self.internStr("assoc") or c.rule.name == try self.internStr("assoc_quantified") or
         c.rule.name == try self.internStr("assoc_commut") or c.rule.name == try self.internStr("assoc_commut_quantified") or
         c.rule.name == try self.internStr("polynomial") or c.rule.name == try self.internStr("polynomial_quantified") or
-        c.rule.name == try self.internStr("extensionality") or c.rule.name == try self.internStr("extensionality_quantified"))
+        c.rule.name == try self.internStr("extensionality") or c.rule.name == try self.internStr("extensionality_quantified") or
+        c.rule.name == try self.internStr("arithmetic") or c.rule.name == try self.internStr("arithmetic_quantified"))
     {
         // polynomial has NO refs (all rules are global well-known lemmas cited inside the cert);
         // localRefsToSteps returns empty for it. The others' LOCAL equation refs are antecedents.
@@ -3440,6 +3469,1283 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
         const an = self.pool.get(a);
         if (an == .app) try self.emitExtUnfoldOp(b, block, an.app, x_id, unfolds, out);
     }
+}
+
+// -- arithmetic / arithmetic_quantified (the linear-arithmetic accelerant) --------------
+//
+// The heaviest accelerant. It DECIDES a linear-integer goal (via the ported presburger /
+// smt / farkas modules) and EMITS a kernel-checked certificate as the synthetic schema's
+// AST proof — the generated ProveTask re-checks every step. STRICT ONLY: no `.accelerated`
+// trusted verdict. Well-known lemmas (addCancelLeft, lessThanElim, lessThanTransitive, the
+// ring folds) are cited BY NAME (qualified by the theory selector `c.schema`), demand-
+// resolved + kernel-checked by the generated ProveTask; the user-cited `c.refs` premises are
+// resolved via the ordinary local-step / global-fact path.
+//
+// Ported from the deleted eager `arithmetic.zig`: `arithmeticJustification` (entry),
+// `arithCertCore` (the equation/order/exists rewrite cert), `premiseCombinationCert`, the
+// Farkas order-composition/infeasibility cert, the Cooper period-1 witness cert + the
+// period-D induction cert, and `arithmeticFallback`. The old `emitStep(low,blk,f,just)` →
+// `ArithCert.claim(block, label, formula, rule, args, refs)`; `newBlock(.fix/.unpack/.assume)`
+// → `ArithCert.{fix,unpack,assume}Step`.
+
+/// A well-known symbol's name text (for the head-name reads that build `Symbols`).
+fn symName(self: *const Prove, sym: term.SymId) []const u8 {
+    return self.ctx.interner.stringBytes(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sym))));
+}
+
+/// Build the arithmetic `Symbols` by reading the goal's (and premises') operator head-NAMES
+/// — like `readPolyOps`. An absent symbol stays null (shrinking the fragment), matching the
+/// old `wellKnownSym` semantics. `c.schema` only qualifies the emitted lemma CITES; symbols
+/// come off the terms.
+fn readArithSymbols(self: *Prove, goal: TermId, premises: []const TermId) Error!presburger_mod.Symbols {
+    var s: presburger_mod.Symbols = .{};
+    try self.collectArithSyms(goal, &s);
+    for (premises) |p| try self.collectArithSyms(p, &s);
+    // Fill any core operator ABSENT from the goal by IDENT lookup (best-effort, no
+    // fetch/suspend) — the old scope-based `wellKnownSym`. A pure-succ order goal like
+    // `less_than(succ(ZERO), succ(succ(ZERO)))` has no `add`, but the order cert needs it for
+    // `lessThanIntro`'s `add(a, succ(d)) = b`. Absent (not a top-level ident) → stays null.
+    if (s.add == null) s.add = self.resolveArithSym("add", .func);
+    if (s.mul == null) s.mul = self.resolveArithSym("mul", .func);
+    if (s.succ == null) s.succ = self.resolveArithSym("succ", .func);
+    if (s.prev == null) s.prev = self.resolveArithSym("prev", .func);
+    if (s.zero == null) s.zero = self.resolveArithSym("ZERO", .constant);
+    if (s.one == null) s.one = self.resolveArithSym("ONE", .constant);
+    if (s.neg == null) s.neg = self.resolveArithSym("neg", .func);
+    if (s.sub == null) s.sub = self.resolveArithSym("sub", .func);
+    if (s.less_than == null) s.less_than = self.resolveArithSym("less_than", .pred);
+
+    const anchor = s.succ orelse s.add orelse s.zero orelse s.one orelse s.mul orelse s.sub orelse s.neg;
+    if (anchor) |sym| s.nat = @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(sym)))));
+    // A well-known `nonneg` predicate: its PRESENCE in scope is the theory's request to
+    // constrain its variables nonneg (ℕ binds it; ℤ/ℚ don't). Read as x ≥ 0 by the engine +
+    // injected per free var below. Resolved by IDENT lookup (best-effort, no fetch/suspend) —
+    // it's a top-level alias, resolved in the read pass; absent → pure ℤ.
+    if (self.resolveArithNonneg()) |nn| s.nonneg = nn;
+    return s;
+}
+
+/// Resolve the well-known `nonneg` predicate symbol in this proof's namespace, or null.
+fn resolveArithNonneg(self: *Prove) ?term.SymId {
+    return self.resolveArithSym("nonneg", .pred);
+}
+
+/// Resolve a well-known arithmetic symbol by NAME in this proof's namespace (a `done` IdentKV
+/// entry of the given kind), or null. No fetch/suspend — a top-level alias/decl is resolved in
+/// the read pass; an absent name reads as unresolved. This is the demand-framework equivalent
+/// of the old scope-based `wellKnownSym`.
+fn resolveArithSym(self: *Prove, name: []const u8, comptime kind: enum { func, pred, constant }) ?term.SymId {
+    const nid = self.ctx.interner.internString(name) catch return null;
+    const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = nid }) orelse return null;
+    const ix = switch (state) {
+        .done => |x| self.ctx.interner.applyModel(self.model, x),
+        .in_flight => return null,
+    };
+    return switch (self.ctx.interner.keyOf(ix)) {
+        .func => if (kind == .func) @enumFromInt(@intFromEnum(ix)) else null,
+        .pred => if (kind == .pred) @enumFromInt(@intFromEnum(ix)) else null,
+        .constant => if (kind == .constant) @enumFromInt(@intFromEnum(ix)) else null,
+        else => null,
+    };
+}
+
+/// Collect a `nonneg(v)` guard for each distinct free var of the arithmetic sort in `id`
+/// (dedup by name) into `out` — the ℕ theory's per-variable x ≥ 0 the pure-ℤ engine needs.
+fn collectArithNonneg(self: *Prove, id: TermId, nat: term.SortId, nn: term.SymId, seen: *std.AutoHashMapUnmanaged(StrId, void), out: *std.ArrayList(TermId)) Error!void {
+    switch (self.pool.get(id)) {
+        .fvar => |v| {
+            if (v.sort != nat) return;
+            const gop = seen.getOrPut(self.ctx.arena, v.name) catch return error.OutOfMemory;
+            if (gop.found_existing) return;
+            try out.append(self.ctx.arena, try self.pool.addApp(.pred, nn, &.{id}));
+        },
+        .bvar => {},
+        .app, .pred => |a| {
+            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
+            for (args) |arg| try self.collectArithNonneg(arg, nat, nn, seen, out);
+        },
+        .eq => |p| {
+            try self.collectArithNonneg(p.lhs, nat, nn, seen, out);
+            try self.collectArithNonneg(p.rhs, nat, nn, seen, out);
+        },
+        .not => |t| try self.collectArithNonneg(t, nat, nn, seen, out),
+        .bin => |bb| {
+            try self.collectArithNonneg(bb.lhs, nat, nn, seen, out);
+            try self.collectArithNonneg(bb.rhs, nat, nn, seen, out);
+        },
+        .quant => |q| try self.collectArithNonneg(q.body, nat, nn, seen, out),
+    }
+}
+
+fn collectArithSyms(self: *Prove, id: TermId, s: *presburger_mod.Symbols) Error!void {
+    switch (self.pool.get(id)) {
+        .app, .pred => |a| {
+            const name = self.symName(a.sym);
+            if (std.mem.eql(u8, name, "ZERO")) s.zero = a.sym //
+            else if (std.mem.eql(u8, name, "ONE")) s.one = a.sym //
+            else if (std.mem.eql(u8, name, "succ")) s.succ = a.sym //
+            else if (std.mem.eql(u8, name, "prev")) s.prev = a.sym //
+            else if (std.mem.eql(u8, name, "add")) s.add = a.sym //
+            else if (std.mem.eql(u8, name, "mul")) s.mul = a.sym //
+            else if (std.mem.eql(u8, name, "neg")) s.neg = a.sym //
+            else if (std.mem.eql(u8, name, "sub")) s.sub = a.sym //
+            else if (std.mem.eql(u8, name, "less_than")) s.less_than = a.sym //
+            else if (std.mem.eql(u8, name, "nonneg")) s.nonneg = a.sym;
+            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
+            for (args) |arg| try self.collectArithSyms(arg, s);
+        },
+        .eq => |p| {
+            try self.collectArithSyms(p.lhs, s);
+            try self.collectArithSyms(p.rhs, s);
+        },
+        .not => |n| try self.collectArithSyms(n, s),
+        .bin => |bb| {
+            try self.collectArithSyms(bb.lhs, s);
+            try self.collectArithSyms(bb.rhs, s);
+        },
+        .quant => |q| try self.collectArithSyms(q.body, s),
+        else => {},
+    }
+}
+
+/// Does `sym` (if present) name the given head?
+fn symIs(self: *const Prove, sym: term.SymId, want: ?term.SymId) bool {
+    _ = self;
+    const w = want orelse return false;
+    return sym == w;
+}
+
+/// Does the term `id` mention the symbol `want` anywhere?
+fn usesSym(self: *Prove, want: term.SymId, id: TermId) bool {
+    switch (self.pool.get(id)) {
+        .bvar, .fvar => return false,
+        .app, .pred => |a| {
+            if (a.sym == want) return true;
+            for (self.pool.args(a)) |arg| if (self.usesSym(want, arg)) return true;
+            return false;
+        },
+        .eq => |p| return self.usesSym(want, p.lhs) or self.usesSym(want, p.rhs),
+        .not => |t| return self.usesSym(want, t),
+        .bin => |bb| return self.usesSym(want, bb.lhs) or self.usesSym(want, bb.rhs),
+        .quant => |q| return self.usesSym(want, q.body),
+    }
+}
+
+/// A cite token for a well-known lemma named `name`, qualified by the theory selector
+/// `c.schema` (bare when absent) — the generated ProveTask resolves + kernel-checks it. No
+/// facts.lookup here.
+fn wkCite(self: *Prove, name: []const u8, c: ast.Step.Claim) Error!lexer.Token {
+    const nid = self.ctx.interner.internString(name) catch return error.OutOfMemory;
+    return .{
+        .tag = .identifier,
+        .start = c.rule.start,
+        .end = c.rule.start,
+        .name = nid,
+        .qualifier = if (c.schema) |sel| sel.name else InternPool.Index.none,
+    };
+}
+
+/// Resolve a cited premise `ref` (an equation or `less_than` atom) to its formula + how the
+/// cert cites it (a LOCAL step restated by hypothesis, or a GLOBAL fact cited by name). Only
+/// LOCAL refs are schema antecedents; a GLOBAL premise is cited inside the cert.
+const ArithPremise = struct {
+    formula: TermId,
+    local: bool,
+    /// LOCAL: the restated-hypothesis label (a schema antecedent). GLOBAL: unused.
+    hyp: StrId,
+    /// GLOBAL: the cite token + kind. LOCAL: unused.
+    head: lexer.Token,
+    is_axiom: bool,
+};
+
+fn resolveArithPremise(self: *Prove, w: *const Walk, ref: lexer.Token) Error!ArithPremise {
+    const is_local = ref.qualifier == InternPool.Index.none and w.findStep(tokName(ref)) != null;
+    if (is_local) {
+        const sref = try self.resolveStepRef(w, ref);
+        return .{
+            .formula = self.low_steps.items[@intFromEnum(sref.id)].formula,
+            .local = true,
+            .hyp = try self.premiseHypLabel(ref),
+            .head = ref,
+            .is_axiom = false,
+        };
+    }
+    const fact = try self.resolveFactRef(ref);
+    const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+    return .{
+        .formula = formula,
+        .local = false,
+        .hyp = undefined,
+        .head = ref,
+        .is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom,
+    };
+}
+
+/// The arithmetic certificate emitter: a growable step list plus the shared builder. Mirrors
+/// the old `emitStep`/`newBlock` API onto `ast.Step`s the kernel re-checks.
+const ArithCert = struct {
+    p: *Prove,
+    b: *Accelerant.Builder,
+    c: ast.Step.Claim,
+
+    /// A claim step `@label | <formula> [by <rule> args refs]`; refs are label StrIds.
+    fn claim(self: *ArithCert, block: *std.ArrayList(ast.Step), formula: TermId, rule: []const u8, args: []const *const ast.Expr, refs: []const StrId) Error!StrId {
+        const toks = try self.p.ctx.arena.alloc(lexer.Token, refs.len);
+        for (refs, toks) |r, *o| o.* = self.b.tok(r);
+        const label = try self.p.freshNamed("arith");
+        try block.append(self.p.ctx.arena, try self.b.claimStep(label, try self.b.termExpr(formula), .by, try self.p.internStrRt(rule), args, toks));
+        return label;
+    }
+
+    /// Cite a well-known lemma by name (qualified by the theory selector); returns the cite
+    /// step's label (its formula = the lemma's `forall …` statement). The word "axiom" is a
+    /// placeholder — the kernel picks the arm by the RESOLVED fact's kind.
+    fn citeLemma(self: *ArithCert, block: *std.ArrayList(ast.Step), name: []const u8, formula: TermId) Error!StrId {
+        const head = try self.p.wkCite(name, self.c);
+        const label = try self.p.freshNamed("arith-lemma");
+        const refs = try self.p.ctx.arena.alloc(lexer.Token, 1);
+        refs[0] = head;
+        try block.append(self.p.ctx.arena, try self.b.claimStep(label, try self.b.termExpr(formula), .by, try self.p.internStr("axiom"), &.{}, refs));
+        return label;
+    }
+
+    /// Cite a GLOBAL user premise (arith premise) by its own head token.
+    fn citeGlobalPremise(self: *ArithCert, block: *std.ArrayList(ast.Step), prem: ArithPremise) Error!StrId {
+        const label = try self.p.freshNamed("arith-prem");
+        const refs = try self.p.ctx.arena.alloc(lexer.Token, 1);
+        refs[0] = prem.head;
+        const word: []const u8 = if (prem.is_axiom) "axiom" else "theorem";
+        try block.append(self.p.ctx.arena, try self.b.claimStep(label, try self.b.termExpr(prem.formula), .by, try self.p.internStrRt(word), &.{}, refs));
+        return label;
+    }
+
+    /// `forall_elim` the fact at `label` (formula `cur`) at each binding, appending steps;
+    /// returns the final label + opened formula.
+    fn elimChain(self: *ArithCert, block: *std.ArrayList(ast.Step), label: StrId, cur: TermId, bindings: []const TermId) Error!struct { label: StrId, formula: TermId } {
+        var cur_label = label;
+        var cur_formula = cur;
+        for (bindings) |val| {
+            const qn = self.p.pool.get(cur_formula);
+            const opened = try self.p.pool.open(qn.quant.body, val);
+            const arg1 = try self.p.ctx.arena.alloc(*const ast.Expr, 1);
+            arg1[0] = try self.b.termExpr(val);
+            cur_label = try self.claim(block, opened, "forall_elim", arg1, &.{cur_label});
+            cur_formula = opened;
+        }
+        return .{ .label = cur_label, .formula = cur_formula };
+    }
+
+    /// A `fix name: sort { steps }` block step (returns the step + label).
+    fn fixStep(self: *ArithCert, label_prefix: []const u8, name: StrId, sort: SortId, steps: []const ast.Step) Error!struct { step: ast.Step, label: StrId } {
+        const sort_name = self.p.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        const fix_label = try self.p.freshNamed(label_prefix);
+        const bname = self.b.tok(try self.p.displayName(name));
+        return .{ .step = .{ .label = self.b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = self.b.tok(sort_name), .steps = steps } } }, .label = fix_label };
+    }
+};
+
+/// `[using arithmetic (theory)? refs… (fallback(thm))?]` — the entry producer for both the
+/// bare `arithmetic` and the `arithmetic_quantified` alias (same body; the goal shape drives
+/// the ∀-peel). See `buildArithmetic`.
+fn produceArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    if (c.args.len != 0) return self.fail(c.rule.start, "arithmetic takes no arguments", .{});
+    return self.buildArithmetic(w, goal, c);
+}
+
+/// The arithmetic core: DECIDE the goal from its cited premises (+ injected nonneg guards),
+/// then walk the certifier chain (equation/order/exists → premise-combination → Farkas →
+/// Cooper), first that certifies wins, emitting its cert as the synthetic schema's proof.
+/// A declined-but-valid goal with `fallback(thm)` emits the fallback path; else a terminal
+/// error. STRICT ONLY — never a trusted verdict.
+fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+
+    // resolve cited premises (local steps / global facts).
+    const prems = try self.ctx.arena.alloc(ArithPremise, c.refs.len);
+    for (c.refs, prems) |r, *out| out.* = try self.resolveArithPremise(w, r);
+    const prem_formulae = try self.ctx.arena.alloc(TermId, prems.len);
+    for (prems, prem_formulae) |p, *out| out.* = p.formula;
+
+    const symbols = try self.readArithSymbols(goal, prem_formulae);
+
+    // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix`) into value params — so
+    // the cert steps, premises and schema body all speak the param names. (The ∀-goal's own
+    // binders are NOT free here; they are peeled into eigenvariables by each cert path.)
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, goal);
+    for (prems) |p| if (p.local) try abs_terms.append(self.ctx.arena, p.formula);
+    const abs = try self.abstractFreeFvars(&b, abs_terms.items, &.{});
+    const goal_p = try self.substFvarsToParams(goal, abs);
+    for (prems, prem_formulae) |*p, *pf| {
+        p.formula = try self.substFvarsToParams(p.formula, abs);
+        pf.* = p.formula;
+    }
+
+    // build the cert into a fresh step list. Try each certifier in order — every path is
+    // kernel-checked, so we CERTIFY FIRST and only run the decision procedure for a good error
+    // when all decline. (The decision gate would otherwise need the theory's per-variable
+    // `nonneg` guard for a ℕ order goal — resolvable only by an ident fetch — while the cert
+    // itself, e.g. an order goal whose difference is a literal `succ`-tower, never needs it.)
+    var cert: ArithCert = .{ .p = self, .b = &b, .c = c };
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    var proved_prop: TermId = goal_p; // the eigen-closed prop the wrapped cert concludes
+    var certified = false;
+    if (try self.arithEquationCert(&cert, &body_steps, goal_p, &proved_prop, prems, symbols)) {
+        certified = true;
+    } else if (try self.arithFarkasCert(&cert, &body_steps, goal_p, &proved_prop, symbols)) {
+        certified = true;
+    } else if (try self.arithCooperCert(&cert, &body_steps, goal_p, &proved_prop, symbols)) {
+        certified = true;
+    }
+
+    if (!certified) {
+        if (c.fallback) |fb| return self.buildArithFallback(w, &b, fb, goal_p, prems, abs, c);
+        // DECIDE to produce a good error: a genuine non-consequence names the countermodel; a
+        // valid-but-uncertifiable goal reports the fragment gap. Strip the ∀-Nat prefix +
+        // inject the theory's per-variable `nonneg` guard (when it binds one) so a ℕ order
+        // goal decides true.
+        const decide_peel = try self.arithPeel(goal_p);
+        var decide_prems: std.ArrayList(TermId) = .empty;
+        try decide_prems.appendSlice(self.ctx.arena, prem_formulae);
+        if (symbols.nonneg) |nn| if (symbols.nat) |nat| {
+            var seen: std.AutoHashMapUnmanaged(StrId, void) = .empty;
+            try self.collectArithNonneg(decide_peel.body, nat, nn, &seen, &decide_prems);
+            for (prem_formulae) |pf| try self.collectArithNonneg(pf, nat, nn, &seen, &decide_prems);
+        };
+        const verdict = smt.decideMixed(self.ctx.arena, self.pool, symbols, decide_prems.items, decide_peel.body) catch return error.OutOfMemory;
+        switch (verdict) {
+            .valid => return self.fail(c.rule.start, "'arithmetic' is valid but no certifier could prove it here (equation/order/exists, farkas, cooper all declined); the goal is outside the certifiable fragment", .{}),
+            .countermodel => return self.fail(c.rule.start, "arithmetic: not a consequence of the cited premises", .{}),
+            .too_many_atoms => |n| return self.fail(c.rule.start, "arithmetic: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
+            .too_large => return self.fail(c.rule.start, "arithmetic: decision exceeded the work limit", .{}),
+            .overflow => return self.fail(c.rule.start, "arithmetic: coefficient overflow", .{}),
+        }
+    }
+    // certified on our own: a `fallback(thm)` is redundant (strict; --draft suppresses).
+    if (c.fallback) |fb| {
+        if (!self.ctx.verify.draft) return self.fail(fb.start, "'arithmetic' certifies this goal on its own — the fallback '{s}' is unnecessary; drop `fallback({s})`", .{ self.text(fb), self.text(fb) });
+    }
+
+    return try self.packageArith(w, &b, "arithmetic", proved_prop, prems, abs, body_steps.items, c);
+}
+
+/// Package the emitted cert `body_steps` (proving the param-substituted `goal_p`) as the
+/// synthetic schema: body = `localPrem0 -> … -> goal_p` wrapped in `assume` blocks for the
+/// LOCAL premises; params from the abstracted caller-locals; deterministic hash name.
+fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime prefix: []const u8, goal_p: TermId, prems: []const ArithPremise, abs: FvarAbstraction, body_steps: []const ast.Step, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    // LOCAL premises become schema antecedents (restated by hypothesis, discharged at the
+    // call site) in ref order; GLOBAL premises are cited inside the cert (not antecedents).
+    var local_cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    var local_formulae: std.ArrayList(TermId) = .empty;
+    for (prems) |p| if (p.local) {
+        try local_cites.append(self.ctx.arena, .{ .local = .{ .hyp = p.hyp } });
+        try local_formulae.append(self.ctx.arena, p.formula);
+    };
+
+    const inner_prop = try self.impliesChain(goal_p, local_formulae.items);
+    const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps);
+
+    const body_expr = try b.termExpr(inner_prop);
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
+    for (abs.names, abs.sorts, params) |name, sort, *pp| {
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
+
+    const hash = Schema.termHash(self.pool, inner_prop);
+    const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, prefix ++ "{{{x}}}", .{hash}));
+    return .{
+        .name = name,
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
+        .args = abs.args,
+        .premises = try self.localRefTokens(w, c.refs),
+    };
+}
+
+/// `fallback(thm)` path: the certifier chain declined (or the goal isn't in the certifiable
+/// fragment) but the goal is an INSTANCE of the manually-proven theorem `fb`. Emit the cert:
+/// cite `fb`, forall_elim at the inferred witnesses, then modus_ponens each `->` antecedent
+/// against the matching cited ref. Every step kernel-checked. Fast-path when `fb`'s statement
+/// α-equals the goal (cite it directly). Packages the synthetic schema.
+fn buildArithFallback(self: *Prove, w: *const Walk, b: *Accelerant.Builder, fb: lexer.Token, goal_p: TermId, prems: []const ArithPremise, abs: FvarAbstraction, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    const fact = try self.resolveFactRef(fb);
+    const key = self.ctx.interner.keyOf(fact).fact;
+    const formula = try self.pool.copyIn(self.ctx.interner, key.formula);
+    const is_axiom = key.kind == .axiom;
+    var cert: ArithCert = .{ .p = self, .b = b, .c = c };
+    var block: std.ArrayList(ast.Step) = .empty;
+
+    // FAST PATH: fb IS the goal (α-equal) — cite it directly.
+    if (self.pool.alphaEq(formula, goal_p)) {
+        const word: []const u8 = if (is_axiom) "axiom" else "theorem";
+        const label = try self.freshNamed("arith-fallback");
+        const refs = try self.ctx.arena.alloc(lexer.Token, 1);
+        refs[0] = fb;
+        try block.append(self.ctx.arena, try b.claimStep(label, try b.termExpr(goal_p), .by, try self.internStrRt(word), &.{}, refs));
+        return try self.packageArith(w, b, "arithmetic", goal_p, prems, abs, block.items, c);
+    }
+
+    // SPECIALIZE PATH: peel fb's ∀ prefix into pattern fvars, split leading `->` antecedents.
+    var pattern: std.ArrayList(term.Node.Fvar) = .empty;
+    var f = formula;
+    while (true) {
+        const node = self.pool.get(f);
+        if (node == .quant and node.quant.q == .forall) {
+            const fv: term.Node.Fvar = .{ .name = try self.freshNamed("fallback-var"), .sort = node.quant.sort };
+            try pattern.append(self.ctx.arena, fv);
+            f = try self.pool.open(node.quant.body, try self.pool.add(.{ .fvar = fv }));
+        } else break;
+    }
+    var antecedents: std.ArrayList(TermId) = .empty;
+    while (true) {
+        const node = self.pool.get(f);
+        if (node == .bin and node.bin.op == .implies) {
+            try antecedents.append(self.ctx.arena, node.bin.lhs);
+            f = node.bin.rhs;
+        } else break;
+    }
+    // infer each pattern var by matching the consequent against the goal.
+    var binds: std.AutoHashMapUnmanaged(StrId, TermId) = .empty;
+    if (!try self.arithMatchPattern(pattern.items, f, goal_p, &binds)) {
+        return self.fail(fb.start, "fallback theorem '{s}' does not prove this goal (its conclusion does not match, even after specialization)", .{self.text(fb)});
+    }
+    const witnesses = try self.ctx.arena.alloc(TermId, pattern.items.len);
+    for (pattern.items, witnesses) |pv, *out| {
+        out.* = binds.get(pv.name) orelse
+            return self.fail(fb.start, "fallback theorem '{s}' does not prove this goal (variable unconstrained by the conclusion)", .{self.text(fb)});
+    }
+
+    // resolve each antecedent (at the witnesses) to a matching cited ref.
+    const ant_labels = try self.ctx.arena.alloc(StrId, antecedents.items.len);
+    for (antecedents.items, ant_labels) |ant_raw, *out_label| {
+        var ant = ant_raw;
+        for (pattern.items, witnesses) |pv, wit| ant = try self.pool.substFvar(ant, pv.name, wit);
+        var matched: ?StrId = null;
+        for (prems) |p| {
+            if (self.pool.alphaEq(p.formula, ant)) {
+                matched = if (p.local) p.hyp else try cert.citeGlobalPremise(&block, p);
+                break;
+            }
+        }
+        out_label.* = matched orelse
+            return self.fail(fb.start, "fallback theorem '{s}' needs a hypothesis '{s}' — supply it as a ref to the arithmetic step", .{ self.text(fb), try self.renderTerm(ant) });
+    }
+
+    // emit: cite fb, forall_elim at each witness, modus_ponens each antecedent.
+    const word: []const u8 = if (is_axiom) "axiom" else "theorem";
+    const cite_label = try self.freshNamed("arith-fallback");
+    const cite_refs = try self.ctx.arena.alloc(lexer.Token, 1);
+    cite_refs[0] = fb;
+    try block.append(self.ctx.arena, try b.claimStep(cite_label, try b.termExpr(formula), .by, try self.internStrRt(word), &.{}, cite_refs));
+    const elim = try cert.elimChain(&block, cite_label, formula, witnesses);
+    var cur_label = elim.label;
+    var cur_formula = elim.formula;
+    for (ant_labels) |al| {
+        const imp = self.pool.get(cur_formula).bin;
+        cur_label = try cert.claim(&block, imp.rhs, "modus_ponens", &.{}, &.{ cur_label, al });
+        cur_formula = imp.rhs;
+    }
+    return try self.packageArith(w, b, "arithmetic", goal_p, prems, abs, block.items, c);
+}
+
+/// First-order match: bind each `pattern` fvar (by name) so substituting yields `target`.
+fn arithMatchPattern(self: *Prove, pattern: []const term.Node.Fvar, pat: TermId, target: TermId, binds: *std.AutoHashMapUnmanaged(StrId, TermId)) Error!bool {
+    const pn = self.pool.get(pat);
+    if (pn == .fvar) {
+        for (pattern) |pv| {
+            if (pv.name == pn.fvar.name) {
+                if (binds.get(pv.name)) |prev| return self.pool.alphaEq(prev, target);
+                binds.put(self.ctx.arena, pv.name, target) catch return error.OutOfMemory;
+                return true;
+            }
+        }
+        const tn = self.pool.get(target);
+        return tn == .fvar and tn.fvar.name == pn.fvar.name and tn.fvar.sort == pn.fvar.sort;
+    }
+    const tn = self.pool.get(target);
+    if (std.meta.activeTag(pn) != std.meta.activeTag(tn)) return false;
+    switch (pn) {
+        .bvar => return pn.bvar == tn.bvar,
+        .fvar => unreachable,
+        .app => |a| {
+            if (a.sym != tn.app.sym or a.args_len != tn.app.args_len) return false;
+            const pa = try self.ctx.arena.dupe(TermId, self.pool.args(a));
+            const ta = try self.ctx.arena.dupe(TermId, self.pool.args(tn.app));
+            for (pa, ta) |x, y| if (!try self.arithMatchPattern(pattern, x, y, binds)) return false;
+            return true;
+        },
+        .pred => |a| {
+            if (a.sym != tn.pred.sym or a.args_len != tn.pred.args_len) return false;
+            const pa = try self.ctx.arena.dupe(TermId, self.pool.args(a));
+            const ta = try self.ctx.arena.dupe(TermId, self.pool.args(tn.pred));
+            for (pa, ta) |x, y| if (!try self.arithMatchPattern(pattern, x, y, binds)) return false;
+            return true;
+        },
+        .eq => |p| return (try self.arithMatchPattern(pattern, p.lhs, tn.eq.lhs, binds)) and (try self.arithMatchPattern(pattern, p.rhs, tn.eq.rhs, binds)),
+        .not => |t| return self.arithMatchPattern(pattern, t, tn.not, binds),
+        .bin => |bb| return bb.op == tn.bin.op and (try self.arithMatchPattern(pattern, bb.lhs, tn.bin.lhs, binds)) and (try self.arithMatchPattern(pattern, bb.rhs, tn.bin.rhs, binds)),
+        .quant => |q| return q.q == tn.quant.q and q.sort == tn.quant.sort and (try self.arithMatchPattern(pattern, q.body, tn.quant.body, binds)),
+    }
+}
+
+/// The Farkas certifier — order-composition / infeasibility over the difference-logic edges.
+/// (Not exercised by the target fixtures; declines for now — a follow-up port.)
+fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
+    _ = self;
+    _ = cert;
+    _ = out;
+    _ = goal_p;
+    _ = proved_prop;
+    _ = symbols;
+    return false;
+}
+
+/// The Cooper certifier (period-1 witness). Peel the goal's ∀ prefix into `fix` blocks; the
+/// body must be `exists y; disj`. Trace the Cooper elimination, reconstruct each boundary
+/// witness as a term, and prove the body at the first witness whose opened disjunction has a
+/// provable arm (equation/order under the fix vars), lifting through the or-intro path with an
+/// `exists_intro`. Wraps in the `fix`/`forall_intro` shell. Declines on period>1 (induction —
+/// not ported) or a nested/multi-var shape.
+fn arithCooperCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
+    if (symbols.nat == null) return false;
+    const peel = try self.arithPeel(goal_p);
+    const bn = self.pool.get(peel.body);
+    if (bn != .quant or bn.quant.q != .exists) return false;
+
+    const traced = presburger_mod.trace(self.ctx.arena, self.pool, symbols, &.{}, peel.body) catch return error.OutOfMemory;
+    if (traced != .replay) return false;
+    const replay = traced.replay;
+    if (replay.period != 1) return false; // induction path not ported
+
+    // reconstruct candidate boundary witnesses as terms.
+    var candidates: std.ArrayList(TermId) = .empty;
+    for (replay.disjuncts) |d| {
+        const bw = switch (d) {
+            .minus_inf => continue,
+            .boundary => |x| x,
+        };
+        if (try self.arithBuildWitness(replay, replay.boundaries[bw.b_index], bw.j, peel.eigen, symbols)) |wtn| {
+            try candidates.append(self.ctx.arena, wtn);
+        }
+    }
+
+    // prove `exists y; disj` at the first candidate that closes an arm.
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    const ok = try self.arithEmitExistsWitness(cert, &body_steps, peel.body, candidates.items, symbols);
+    if (!ok) return false;
+    const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, body_steps.items);
+    try out.appendSlice(self.ctx.arena, wrapped.steps);
+    proved_prop.* = wrapped.prop;
+    return true;
+}
+
+/// Prove `exists y; disj` in `block` at one of `candidates`: open the body at the witness,
+/// prove a provable arm of the (possibly disjunctive) instance, lift through the or-intro
+/// path, and emit `exists_intro`. Returns false if no candidate closes.
+fn arithEmitExistsWitness(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!bool {
+    const en = self.pool.get(exists_body);
+    if (en != .quant or en.quant.q != .exists) return false;
+    for (candidates) |wtn| {
+        const instance = try self.pool.open(en.quant.body, wtn);
+        // try each arm of the right/left or-nest.
+        var arm_steps: std.ArrayList(ast.Step) = .empty;
+        const found = (try self.arithProveDisjArm(cert, &arm_steps, instance, symbols)) orelse continue;
+        try block.appendSlice(self.ctx.arena, arm_steps.items);
+        // lift the arm through the or-intro path (innermost first).
+        var arm_label = found.label;
+        var arm_formula = found.formula;
+        var pi = found.path.len;
+        while (pi > 0) {
+            pi -= 1;
+            const disj = try self.arithDisjAt(instance, found.path[0..pi]);
+            const rule: []const u8 = if (found.path[pi]) "or_intro_right" else "or_intro_left";
+            arm_label = try cert.claim(block, disj, rule, &.{}, &.{arm_label});
+            arm_formula = disj;
+        }
+        // exists_intro at the witness.
+        const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
+        arg1[0] = try cert.b.termExpr(wtn);
+        const label = try self.freshNamed("arith");
+        const refs = try self.ctx.arena.alloc(lexer.Token, 1);
+        refs[0] = cert.b.tok(arm_label);
+        try block.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(exists_body), .by, try self.internStr("exists_intro"), arg1, refs));
+        return true;
+    }
+    return false;
+}
+
+const ArithArm = struct { label: StrId, formula: TermId, path: []const bool };
+
+/// Prove one arm of a right/left `or`-nest `instance` via the equation/order body cert; return
+/// the arm's step label + formula + the or-intro path to it, or null if no arm is provable.
+fn arithProveDisjArm(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), instance: TermId, symbols: presburger_mod.Symbols) Error!?ArithArm {
+    var path: std.ArrayList(bool) = .empty;
+    var cur = instance;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .bin and node.bin.op == .or_op) {
+            var probe: std.ArrayList(ast.Step) = .empty;
+            if (try self.arithBodyEqCert(cert, &probe, node.bin.lhs, &.{}, symbols)) {
+                try block.appendSlice(self.ctx.arena, probe.items);
+                const label = try self.arithLastLabel(probe.items);
+                try path.append(self.ctx.arena, false);
+                return .{ .label = label, .formula = node.bin.lhs, .path = try self.ctx.arena.dupe(bool, path.items) };
+            }
+            try path.append(self.ctx.arena, true);
+            cur = node.bin.rhs;
+            continue;
+        }
+        var probe: std.ArrayList(ast.Step) = .empty;
+        if (try self.arithBodyEqCert(cert, &probe, cur, &.{}, symbols)) {
+            try block.appendSlice(self.ctx.arena, probe.items);
+            const label = try self.arithLastLabel(probe.items);
+            return .{ .label = label, .formula = cur, .path = try self.ctx.arena.dupe(bool, path.items) };
+        }
+        return null;
+    }
+}
+
+/// Descend `instance` (a right/left `or`-nest) along `path` (false=left, true=right).
+fn arithDisjAt(self: *Prove, instance: TermId, path: []const bool) Error!TermId {
+    var cur = instance;
+    for (path) |go_right| {
+        const node = self.pool.get(cur);
+        cur = if (go_right) node.bin.rhs else node.bin.lhs;
+    }
+    return cur;
+}
+
+/// Reconstruct a boundary witness `boundaries[i] + j` (a linear form over the fix vars) as a
+/// term: coeff 0 → a constant tower over ZERO; coeff 1 on the single eigenvariable → a tower
+/// over it. Higher coeff / 2+ vars → null. Port of the old `buildWitness`.
+fn arithBuildWitness(self: *Prove, replay: presburger_mod.Replay, dump: presburger_mod.LinearDump, j: i128, fix_vars: []const term.Node.Fvar, symbols: presburger_mod.Symbols) Error!?TermId {
+    var fix_index: ?usize = null;
+    for (dump.coeffs, 0..) |co, id| {
+        if (co == 0) continue;
+        if (co != 1) return null;
+        const pos = std.mem.indexOfScalar(u32, replay.free_ids, @intCast(id)) orelse return null;
+        if (fix_index != null) return null;
+        fix_index = pos;
+    }
+    const offset = dump.konst + j;
+    const base = if (fix_index) |pos| blk: {
+        if (pos >= fix_vars.len) return null;
+        break :blk try self.pool.add(.{ .fvar = fix_vars[pos] });
+    } else blk: {
+        const zero = symbols.zero orelse return null;
+        break :blk try self.pool.addApp(.app, zero, &.{});
+    };
+    return try self.buildArithTowerSigned(offset, base, symbols);
+}
+
+/// Peel `goal`'s ∀ prefix into fresh eigenvariables (outermost first); return the body + the
+/// eigenvariables (for the `fix`/`forall_intro` re-generalization shell). Used by each
+/// arithmetic certifier so a `forall …; body` goal skeletonizes to `body` at fixed vars.
+const ArithPeel = struct { body: TermId, eigen: []const term.Node.Fvar, opened: []const TermId };
+fn arithPeel(self: *Prove, goal: TermId) Error!ArithPeel {
+    var eigen: std.ArrayList(term.Node.Fvar) = .empty;
+    var opened: std.ArrayList(TermId) = .empty;
+    var body = goal;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .quant or node.quant.q != .forall) break;
+        const hint = self.ctx.interner.stringBytes(node.quant.hint);
+        const fv: term.Node.Fvar = .{ .name = try self.freshNamed(if (hint.len > 0) hint else "q"), .sort = node.quant.sort };
+        body = try self.pool.open(node.quant.body, try self.pool.add(.{ .fvar = fv }));
+        try eigen.append(self.ctx.arena, fv);
+        try opened.append(self.ctx.arena, body);
+    }
+    return .{ .body = body, .eigen = eigen.items, .opened = opened.items };
+}
+
+/// Wrap `inner` steps (proving `body`) in nested `fix` blocks for `eigen` (outermost first),
+/// concluding each level with `forall_intro`. Returns the wrapped steps + the eigen-closed
+/// prop the outermost `forall_intro` proves (the schema body must use THIS prop, so its
+/// binder hints match the fix blocks). (Same shell as `wrapSimplifyForall`.)
+const WrappedArith = struct { steps: []const ast.Step, prop: TermId };
+fn wrapArithForall(self: *Prove, cert: *ArithCert, eigen: []const term.Node.Fvar, body: TermId, inner: []const ast.Step) Error!WrappedArith {
+    if (eigen.len == 0) return .{ .steps = inner, .prop = body };
+    var steps = inner;
+    var prop = body;
+    var i: usize = eigen.len;
+    while (i > 0) {
+        i -= 1;
+        const fv = eigen[i];
+        const fixr = try cert.fixStep("arith-fix", fv.name, fv.sort, steps);
+        const closed = try self.pool.close(prop, fv.name);
+        prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, fixr.step);
+        _ = try cert.claim(&lvl, prop, "forall_intro", &.{}, &.{fixr.label});
+        steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return .{ .steps = steps, .prop = prop };
+}
+
+/// The EQUATION / ORDER cert. Peels the goal's ∀ prefix, then certifies the body:
+///   - an equation `s = t`: canonicalize both sides to a shared normal form (the ring
+///     `Polynomial` path when `mul` is present; else an additive AC + inverse-elimination
+///     path), emit the `EqCert` join;
+///   - an order atom `less_than(s, t)`: find the difference `d` with `add(s, succ(d)) = t`
+///     an additive identity, prove that equation, and cite `lessThanIntro` (`add(a,succ(d))=b
+///     -> less_than(a,b)`).
+/// Wraps the body proof in the `fix`/`forall_intro` shell. Returns false (declines) on any
+/// shape/normal-form mismatch — the caller tries the next certifier.
+fn arithEquationCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    const peel = try self.arithPeel(goal_p);
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    const ok = try self.arithBodyEqCert(cert, &body_steps, peel.body, prems, symbols);
+    if (!ok) return false;
+    const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, body_steps.items);
+    try out.appendSlice(self.ctx.arena, wrapped.steps);
+    proved_prop.* = wrapped.prop;
+    return true;
+}
+
+/// Certify one (∀-free) equation/order body into `block`; returns false if out of scope.
+fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    const node = self.pool.get(body);
+    if (node == .eq) {
+        return self.arithEmitEquation(cert, block, node.eq.lhs, node.eq.rhs, prems, symbols);
+    }
+    if (node == .pred and self.symIs(node.pred.sym, symbols.less_than) and node.pred.args_len == 2) {
+        return self.arithEmitOrder(cert, block, body, prems, symbols);
+    }
+    // EXISTS-witness search: `exists y; inner` — try constant witnesses succ^k(ZERO), k=0..33,
+    // proving `inner[y:=witness]` by the equation/order cert, then `exists_intro` (the old
+    // arithCertCore C2c). Handles e.g. `exists y; add(y,y) = succ(succ(ZERO))` (witness y=1).
+    if (node == .quant and node.quant.q == .exists) {
+        const zero = symbols.zero orelse return false;
+        const zero_t = try self.pool.addApp(.app, zero, &.{});
+        for (0..34) |k| {
+            const witness = (try self.buildArithTowerSigned(@intCast(k), zero_t, symbols)) orelse break;
+            const instance = try self.pool.open(node.quant.body, witness);
+            var probe: std.ArrayList(ast.Step) = .empty;
+            if (try self.arithBodyEqCert(cert, &probe, instance, prems, symbols)) {
+                try block.appendSlice(self.ctx.arena, probe.items);
+                const inst_label = try self.arithLastLabel(probe.items);
+                const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
+                arg1[0] = try cert.b.termExpr(witness);
+                const label = try self.freshNamed("arith");
+                const refs = try self.ctx.arena.alloc(lexer.Token, 1);
+                refs[0] = cert.b.tok(inst_label);
+                try block.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(body), .by, try self.internStr("exists_intro"), arg1, refs));
+                return true;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
+/// Emit a proof of the equation `s = t` into `block`; false if it can't join. Dispatches on
+/// whether the goal has `mul` (ring `Polynomial` canonicalizer) or is additive-only (AC +
+/// inverse elimination), plus a PREMISE-COMBINATION fallback (goal = ±1·premise). The cited
+/// premises join as ground rewrite rules where their sides occur literally.
+fn arithEmitEquation(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    if (self.pool.alphaEq(s, t)) {
+        _ = try cert.claim(block, try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } }), "reflexivity", &.{}, &.{});
+        return true;
+    }
+    const eq_goal = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
+
+    // build the ring/additive rule set (well-known lemmas cited by name) + premise rules.
+    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    const have_mul = symbols.mul != null and (self.usesSym(symbols.mul.?, s) or self.usesSym(symbols.mul.?, t));
+    const qualifier: StrId = if (cert.c.schema) |sel| sel.name else InternPool.Index.none;
+    if (have_mul) {
+        // FIRST try the ring `Polynomial` canonicalizer (distribution/fold + AC) — handles
+        // symbolic ring identities like `mul(2, n) = add(n, n)`. If the NFs disagree it may
+        // still be a GROUND numeric identity (`mul(2, 2) = 4`) the ring form can't evaluate —
+        // fall through to the additive path (which carries the mul RECURSION rules).
+        if (try self.readPolyOps(eq_goal)) |ops| {
+            const pr = try Polynomial.polyRules(self, ops, qualifier, cert.c.rule.start);
+            if (try Polynomial.polyCanon(self, pr, s)) |rs| {
+                if (try Polynomial.polyCanon(self, pr, t)) |rt| {
+                    if (self.pool.alphaEq(rs.nf, rt.nf)) {
+                        var ec: EqCert = .{ .b = cert.b, .pool = self.pool, .rules = pr.rules, .cites = pr.cites, .fresh_ctx = self, .freshFn = eqCertFresh };
+                        _ = try ec.emitJoin(block, s, t, rs, rt);
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    // additive path: elimination + succ/mul RECURSION pre-rules, then AC-sort + inverse-cancel.
+    const add_sym = symbols.add orelse return false;
+    try self.pushAdditiveElim(&rules, &cites, symbols, qualifier, cert.c.rule.start);
+    const pre_count = rules.items.len;
+    const sort: term.SortId = @enumFromInt(@intFromEnum(self.termSort(s)));
+    try self.pushACTriple(&rules, &cites, add_sym, sort, "addIsAssociative", "addIsCommutative", "addLeftSwap", cert.c.rule.start);
+    const assoc_idx = pre_count;
+    const comm_idx = pre_count + 1;
+    const swap_idx = pre_count + 2;
+    const pre_rules = rules.items[0..pre_count];
+
+    const s_pre = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, s, 1000) catch |e| switch (e) {
+        error.Limit => return false,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const t_pre = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, t, 1000) catch |e| switch (e) {
+        error.Limit => return false,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    // pre-normalization alone may already agree (pure numerals / leafless towers where the
+    // AC sort is a no-op) — join directly, skipping acPlan (which declines on leafless sums).
+    if (self.pool.alphaEq(s_pre.nf, t_pre.nf)) {
+        var ec: EqCert = .{ .b = cert.b, .pool = self.pool, .rules = rules.items, .cites = cites.items, .fresh_ctx = self, .freshFn = eqCertFresh };
+        _ = try ec.emitJoin(block, s, t, s_pre, t_pre);
+        return true;
+    }
+    const acsym: presburger_mod.Symbols = .{ .add = add_sym };
+    // canonicalize each side to a fixpoint: normalize (elim + adjacent inverse-cancel) then
+    // AC-sort, repeating so the sort brings an inverse pair `x … neg(x)` adjacent for the next
+    // normalize's addNegRight/Left to cancel it (then addZero drops the ZERO). Bounded loop.
+    const rs = (try self.arithCanon(acsym, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, s_pre)) orelse return false;
+    const rt = (try self.arithCanon(acsym, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, t_pre)) orelse return false;
+    if (self.pool.alphaEq(rs.nf, rt.nf)) {
+        var ec: EqCert = .{ .b = cert.b, .pool = self.pool, .rules = rules.items, .cites = cites.items, .fresh_ctx = self, .freshFn = eqCertFresh };
+        _ = try ec.emitJoin(block, s, t, rs, rt);
+        return true;
+    }
+    // PREMISE COMBINATION: goal = ±1·(an equality premise). Certify via addCancelLeft.
+    return self.arithPremiseCombination(cert, block, s, t, prems, symbols);
+}
+
+/// Canonicalize `start` (with its initial pre-normalize `Result`) to a fixpoint by alternating
+/// AC-sort (`acPlan`) and pre-rule normalize (elim + adjacent inverse-cancel + ZERO-drop),
+/// concatenating every trace. The sort places an inverse pair adjacent so the next normalize's
+/// addNegRight/Left cancels it. Returns the final `Result` (NF + full trace), null on decline.
+fn arithCanon(self: *Prove, acsym: presburger_mod.Symbols, rules: []const simplify_mod.Rule, pre_rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: simplify_mod.Result) Error!?simplify_mod.Result {
+    var nf = pre.nf;
+    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    try trace.appendSlice(self.ctx.arena, pre.trace);
+    var iter: usize = 0;
+    while (iter < 6) : (iter += 1) {
+        const plan = (try self.acPlan(acsym, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
+        try trace.appendSlice(self.ctx.arena, plan.trace);
+        // re-normalize the sorted form (cancel adjacent inverse pairs + drop ZERO).
+        const renorm = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, plan.sorted, 1000) catch |e| switch (e) {
+            error.Limit => return null,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        try trace.appendSlice(self.ctx.arena, renorm.trace);
+        if (self.pool.alphaEq(renorm.nf, plan.sorted)) {
+            // stable: sort produced no cancellation this round.
+            return .{ .nf = renorm.nf, .trace = trace.items };
+        }
+        nf = renorm.nf;
+    }
+    return .{ .nf = nf, .trace = trace.items };
+}
+
+/// Emit a proof of `less_than(s, t)` via `lessThanIntro`: synthesize the difference witness
+/// `d` (from the normalized towers), prove `add(s, succ(d)) = t`, then cite `lessThanIntro`,
+/// forall_elim at (s, d, t), and modus_ponens the equation. Declines (false) when the towers
+/// don't yield a nonneg difference or the equation can't join. (Peano shape; the ℤ nonneg-
+/// antecedent variant is not needed by the fixtures.)
+fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    _ = prems;
+    const succ = symbols.succ orelse return false;
+    const add = symbols.add orelse return false;
+    const pred = self.pool.get(body).pred;
+    const args = self.pool.args(pred);
+    const s = args[0];
+    const t = args[1];
+
+    // find the difference d such that add(s, succ(d)) = t. Try d = ZERO, then peel: since the
+    // engine already decided validity, search a small tower / structural difference. Simple
+    // structural approach: if t = add(s, succ(x)) syntactically, d = x; else if t = succ^k(s)-
+    // shaped, compute via normalized towers. Use the additive normalizer to canonicalize.
+    const d = (try self.arithOrderDiff(s, t, symbols)) orelse return false;
+    const succ_d = try self.pool.addApp(.app, succ, &.{d});
+    const eq_lhs = try self.pool.addApp(.app, add, &.{ s, succ_d });
+
+    // prove add(s, succ(d)) = t via the equation cert.
+    if (!try self.arithEmitEquation(cert, block, eq_lhs, t, &.{}, symbols)) return false;
+    const eq_label = try self.arithLastLabel(block.items);
+
+    // cite lessThanIntro, forall_elim at (s, d, t), modus_ponens the equation → less_than(s,t).
+    const intro_stmt = (try self.arithLemmaFormula("lessThanIntro", symbols)) orelse return false;
+    const intro_label = try cert.citeLemma(block, "lessThanIntro", intro_stmt);
+    const elim = try cert.elimChain(block, intro_label, intro_stmt, &.{ s, d, t });
+    _ = try cert.claim(block, body, "modus_ponens", &.{}, &.{ elim.label, eq_label });
+    return true;
+}
+
+/// Synthesize the difference `d` with `add(s, succ(d)) = t` for a valid `less_than(s, t)`.
+/// Uses the additive-tower parse: t-tower minus s-tower (leaves + offset), minus one for the
+/// `succ`. Returns null if the difference isn't a nonneg tower over the shared leaves.
+fn arithOrderDiff(self: *Prove, s: TermId, t: TermId, symbols: presburger_mod.Symbols) Error!?TermId {
+    // canonicalize both sides additively (fold sub/neg, sort) so the tower parse is clean.
+    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    try self.pushAdditiveElim(&rules, &cites, symbols, .none, 0);
+    const rs = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules.items, s, 1000) catch return null;
+    const rt = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules.items, t, 1000) catch return null;
+    const tower_s = (try self.parseArithTower(rs.nf, symbols)) orelse return null;
+    const tower_t = (try self.parseArithTower(rt.nf, symbols)) orelse return null;
+    if (tower_t.offset < tower_s.offset + 1) return null;
+    // multiset difference t - s
+    var remaining: std.ArrayList(TermId) = .empty;
+    try remaining.appendSlice(self.ctx.arena, tower_t.leaves);
+    for (tower_s.leaves) |sl| {
+        const found = for (remaining.items, 0..) |rl, i| {
+            if (self.pool.termOrder(rl, sl) == .eq) break i;
+        } else return null;
+        _ = remaining.swapRemove(found);
+    }
+    const comb = (try self.buildArithComb(remaining.items, symbols)) orelse return null;
+    return try self.buildArithTowerSigned(tower_t.offset - tower_s.offset - 1, comb, symbols);
+}
+
+const ArithTower = struct { offset: i128, leaves: []const TermId };
+
+/// Parse `succ^j(prev^k(right-nested add of leaves))`, folding numeral summands into a signed
+/// offset. Anything else → null (out of the additive fragment). Port of the old `parseTower`.
+fn parseArithTower(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) Error!?ArithTower {
+    var offset: i128 = 0;
+    var cur = t;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+            offset += 1;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+            offset -= 1;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        break;
+    }
+    var leaves: std.ArrayList(TermId) = .empty;
+    while (true) {
+        if (self.arithNumeral(cur, symbols)) |v| {
+            offset += v;
+            break;
+        }
+        if (self.isArithLeaf(cur, symbols)) {
+            try leaves.append(self.ctx.arena, cur);
+            break;
+        }
+        const node = self.pool.get(cur);
+        if (node != .app) return null;
+        if (self.symIs(node.app.sym, symbols.add) and node.app.args_len == 2) {
+            const a = try self.ctx.arena.dupe(TermId, self.pool.args(node.app));
+            if (self.arithNumeral(a[0], symbols)) |v| {
+                offset += v;
+                cur = a[1];
+                continue;
+            }
+            if (!self.isArithLeaf(a[0], symbols)) return null;
+            try leaves.append(self.ctx.arena, a[0]);
+            cur = a[1];
+            continue;
+        }
+        return null;
+    }
+    return .{ .offset = offset, .leaves = leaves.items };
+}
+
+/// Signed numeral value of `t` (`succ^n(ZERO)`→+n, `prev^n(ZERO)`→−n, `neg` flips), else null.
+fn arithNumeral(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 {
+    var cur = t;
+    var sign: i128 = 1;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .app and self.symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+            sign = -sign;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        break;
+    }
+    var mag: i128 = 0;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+            mag += 1;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+            mag -= 1;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        break;
+    }
+    const node = self.pool.get(cur);
+    if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args_len == 0) return sign * mag;
+    return null;
+}
+
+/// A tower leaf: an fvar, an opaque atom, or `neg` of a leaf (so inverse pairs can cancel).
+fn isArithLeaf(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) bool {
+    const node = self.pool.get(t);
+    if (node == .fvar) return true;
+    if (node == .app and self.symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+        return self.isArithLeaf(self.pool.args(node.app)[0], symbols);
+    }
+    if (node != .app) return false;
+    const sym = node.app.sym;
+    return !(self.symIs(sym, symbols.add) or self.symIs(sym, symbols.succ) or
+        self.symIs(sym, symbols.prev) or self.symIs(sym, symbols.neg) or
+        self.symIs(sym, symbols.sub) or self.symIs(sym, symbols.zero) or self.symIs(sym, symbols.one));
+}
+
+/// Right-nested `add`-comb of `leaves` (ZERO for empty).
+fn buildArithComb(self: *Prove, leaves: []const TermId, symbols: presburger_mod.Symbols) Error!?TermId {
+    if (leaves.len == 0) {
+        const zero = symbols.zero orelse return null;
+        return try self.pool.addApp(.app, zero, &.{});
+    }
+    var cur = leaves[leaves.len - 1];
+    var i = leaves.len - 1;
+    while (i > 0) {
+        i -= 1;
+        const add = symbols.add orelse return null;
+        cur = try self.pool.addApp(.app, add, &.{ leaves[i], cur });
+    }
+    return cur;
+}
+
+/// `succ^n(comb)` for n≥0, `prev^|n|(comb)` for n<0 (needs ℤ `prev`; null for ℕ negatives).
+fn buildArithTowerSigned(self: *Prove, offset: i128, comb: TermId, symbols: presburger_mod.Symbols) Error!?TermId {
+    var cur = comb;
+    if (offset >= 0) {
+        const succ = symbols.succ orelse return if (offset == 0) comb else null;
+        var n = offset;
+        while (n > 0) : (n -= 1) cur = try self.pool.addApp(.app, succ, &.{cur});
+        return cur;
+    }
+    const prev = symbols.prev orelse return null;
+    var n = -offset;
+    while (n > 0) : (n -= 1) cur = try self.pool.addApp(.app, prev, &.{cur});
+    return cur;
+}
+
+/// Append the well-known ℤ elimination rules (sub/neg/prev folding toward an add-of-atoms
+/// form) as hardcoded shapes cited by name, gated on the theory providing each symbol. These
+/// let an additive goal over sub/neg normalize before the AC sort (e.g. `add(a, sub(b,a))`).
+fn pushAdditiveElim(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), symbols: presburger_mod.Symbols, qualifier: StrId, loc: u32) Error!void {
+    const add = symbols.add orelse return;
+    const sort: term.SortId = @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(add)))));
+    // succ FLOAT: addSuccLeft add(succ(a),b)=succ(add(a,b)); addSuccRight add(a,succ(b))=
+    // succ(add(a,b)) — lift succ to the tower prefix so the tower parse is clean.
+    if (symbols.succ) |succ| {
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, succ, &.{a.t}), bb.t });
+            const rhs = try self.pool.addApp(.app, succ, &.{try self.pool.addApp(.app, add, &.{ a.t, bb.t })});
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addSuccLeft", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, succ, &.{bb.t}) });
+            const rhs = try self.pool.addApp(.app, succ, &.{try self.pool.addApp(.app, add, &.{ a.t, bb.t })});
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addSuccRight", qualifier, loc);
+        }
+    }
+    // ZERO drop: addZeroLeft add(ZERO,b)=b; addZeroRight add(n,ZERO)=n.
+    if (symbols.zero) |zero| {
+        const z = try self.pool.addApp(.app, zero, &.{});
+        {
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ z, bb.t });
+            try self.pushQualified(rules, cites, &.{.{ .fvar = bb.name, .sort = sort }}, lhs, bb.t, "addZeroLeft", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ a.t, z });
+            try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "addZeroRight", qualifier, loc);
+        }
+    }
+    // mul RECURSION (ground numeric evaluation): mulZeroLeft mul(ZERO,b)=ZERO; mulSuccLeft
+    // mul(succ(a),b)=add(mul(a,b),b) — expands `mul(n, x)` to a sum for numeral n.
+    if (symbols.mul) |mul| if (symbols.zero) |zero| if (symbols.succ) |succ| {
+        const z = try self.pool.addApp(.app, zero, &.{});
+        {
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, mul, &.{ z, bb.t });
+            try self.pushQualified(rules, cites, &.{.{ .fvar = bb.name, .sort = sort }}, lhs, z, "mulZeroLeft", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, mul, &.{ try self.pool.addApp(.app, succ, &.{a.t}), bb.t });
+            const rhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, mul, &.{ a.t, bb.t }), bb.t });
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "mulSuccLeft", qualifier, loc);
+        }
+    };
+    // definitionOfSubtraction: sub(a,b) = add(a, neg(b))
+    if (symbols.sub != null and symbols.neg != null) {
+        const a = try self.freshACFvar(sort);
+        const bb = try self.freshACFvar(sort);
+        const lhs = try self.pool.addApp(.app, symbols.sub.?, &.{ a.t, bb.t });
+        const rhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, symbols.neg.?, &.{bb.t}) });
+        try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "definitionOfSubtraction", qualifier, loc);
+    }
+    if (symbols.neg) |neg| {
+        // negAdd: neg(add(a,b)) = add(neg(a), neg(b))
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, neg, &.{try self.pool.addApp(.app, add, &.{ a.t, bb.t })});
+            const rhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, neg, &.{a.t}), try self.pool.addApp(.app, neg, &.{bb.t}) });
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "negAdd", qualifier, loc);
+        }
+        // negNeg: neg(neg(a)) = a
+        {
+            const a = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, neg, &.{try self.pool.addApp(.app, neg, &.{a.t})});
+            try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "negNeg", qualifier, loc);
+        }
+        // addNegRight: add(a, neg(a)) = ZERO; addNegLeft: add(neg(a), a) = ZERO — cancel an
+        // inverse pair the AC sort brings adjacent (the addZero rules then drop the ZERO).
+        if (symbols.zero) |zero| {
+            const z = try self.pool.addApp(.app, zero, &.{});
+            {
+                const a = try self.freshACFvar(sort);
+                const lhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, neg, &.{a.t}) });
+                try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "addNegRight", qualifier, loc);
+            }
+            {
+                const a = try self.freshACFvar(sort);
+                const lhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, neg, &.{a.t}), a.t });
+                try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "addNegLeft", qualifier, loc);
+            }
+        }
+    }
+}
+
+/// `pushHardcoded` but with the theory-selector `qualifier` stamped onto the cite (so
+/// `arithmetic(theory)` resolves the lemma in the theory's namespace).
+fn pushQualified(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders_in: []const simplify_mod.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, qualifier: StrId, loc: u32) Error!void {
+    // Skip a rule whose lemma this file does NOT declare (unqualified only): pushing it would
+    // let `normalize` cite an absent lemma, failing the generated proof. A qualified cite
+    // (theory selector) targets another namespace we can't check here, so it's kept.
+    const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
+    if (qualifier == InternPool.Index.none) {
+        const fid = self.ctx.pool_file.get(self.file).?;
+        if (self.ctx.declOf(fid, name) == null) return;
+    }
+    // dupe onto the arena — callers pass inline `&.{…}` literals (stack temporaries).
+    const binders = try self.ctx.arena.dupe(simplify_mod.Binder, binders_in);
+    var formula = try self.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
+    var i = binders.len;
+    while (i > 0) {
+        i -= 1;
+        const closed = try self.pool.close(formula, binders[i].fvar);
+        formula = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = binders[i].sort, .hint = binders[i].fvar, .body = closed } });
+    }
+    try rules.append(self.ctx.arena, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = formula });
+    try cites.append(self.ctx.arena, .{ .global = .{ .head = .{ .tag = .identifier, .start = loc, .end = loc, .name = name, .qualifier = qualifier }, .is_axiom = false } });
+}
+
+/// Certify `s = t` as a linear combination of an equality PREMISE `P_l = P_r`: it holds iff
+/// `add(P_l, s) = add(P_r, t)` is a pure additive identity. Emit that identity, rewrite the
+/// premise (P_l→P_r), then cancel with addCancelLeft. Every step kernel-checked. Only fires
+/// for a LOCAL/GLOBAL premise cited at this scope.
+fn arithPremiseCombination(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    const add = symbols.add orelse return false;
+    for (prems) |p| {
+        const pn = self.pool.get(p.formula);
+        if (pn != .eq) continue;
+        const pl = pn.eq.lhs;
+        const pr = pn.eq.rhs;
+        const comb_lhs = try self.pool.addApp(.app, add, &.{ pl, s });
+        const comb_rhs = try self.pool.addApp(.app, add, &.{ pr, t });
+        // certify the combined identity as an additive identity (no premise rules).
+        var probe_steps: std.ArrayList(ast.Step) = .empty;
+        var probe_cert: ArithCert = .{ .p = self, .b = cert.b, .c = cert.c };
+        if (!try self.arithEmitEquation(&probe_cert, &probe_steps, comb_lhs, comb_rhs, &.{}, symbols)) continue;
+
+        // PLAN OK — emit for real. combined identity add(P_l,s) = add(P_r,t).
+        var join_steps: std.ArrayList(ast.Step) = .empty;
+        _ = try self.arithEmitEquation(cert, &join_steps, comb_lhs, comb_rhs, &.{}, symbols);
+        try block.appendSlice(self.ctx.arena, join_steps.items);
+        const comb_label = try self.arithLastLabel(join_steps.items);
+
+        // the premise, cited at this scope (LOCAL restated hyp / GLOBAL cite).
+        const prem_label = if (p.local) p.hyp else try cert.citeGlobalPremise(block, p);
+        // rewrite P_l→P_r in the combined identity's LHS: add(P_r, s) = add(P_r, t).
+        const rewritten = try self.pool.add(.{ .eq = .{ .lhs = try self.pool.addApp(.app, add, &.{ pr, s }), .rhs = comb_rhs } });
+        const rewritten_label = try cert.claim(block, rewritten, "rewrite", &.{}, &.{ prem_label, comb_label });
+        // addCancelLeft(P_r, s, t): add(P_r,s)=add(P_r,t) -> s=t. cite + elim + mp.
+        const cancel_stmt = (try self.arithLemmaFormula("addCancelLeft", symbols)) orelse return false;
+        const cancel_label = try cert.citeLemma(block, "addCancelLeft", cancel_stmt);
+        const elim = try cert.elimChain(block, cancel_label, cancel_stmt, &.{ pr, s, t });
+        const goal_eq = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
+        _ = try cert.claim(block, goal_eq, "modus_ponens", &.{}, &.{ elim.label, rewritten_label });
+        return true;
+    }
+    return false;
+}
+
+/// The last step's label in an emitted slice (its concluding equation).
+fn arithLastLabel(self: *Prove, steps: []const ast.Step) Error!StrId {
+    _ = self;
+    return tokName(steps[steps.len - 1].label);
+}
+
+/// Build a well-known lemma's exact `forall …` statement from the arithmetic `symbols`. The
+/// cert cites the lemma by name and states THIS formula on the cite step (the kernel re-checks
+/// it against the resolved fact, and forall_elim opens it at the arguments). The shapes match
+/// the std peano/integer statements: a mis-shape simply fails the generated ProveTask's
+/// kernel check. `null` when a needed symbol is absent.
+fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Symbols) Error!?TermId {
+    const sort = symbols.nat orelse return null;
+    const add = symbols.add orelse return null;
+    const mkfv = struct {
+        fn f(p: *Prove, s: term.SortId, hint: []const u8) Error!ArithVar {
+            const nm = try p.freshNamed(hint);
+            return .{ .name = nm, .t = try p.pool.add(.{ .fvar = .{ .name = nm, .sort = s } }) };
+        }
+    }.f;
+    if (std.mem.eql(u8, name, "addCancelLeft")) {
+        // forall c, a, b; add(c, a) = add(c, b) -> a = b
+        const cc = try mkfv(self, sort, "c");
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const lhs = try self.pool.add(.{ .eq = .{ .lhs = try self.pool.addApp(.app, add, &.{ cc.t, a.t }), .rhs = try self.pool.addApp(.app, add, &.{ cc.t, bb.t }) } });
+        const rhs = try self.pool.add(.{ .eq = .{ .lhs = a.t, .rhs = bb.t } });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = lhs, .rhs = rhs } });
+        return try self.closeForallChain(body, &.{ cc, a, bb }, sort);
+    }
+    if (std.mem.eql(u8, name, "lessThanIntro")) {
+        // forall a, d, b; add(a, succ(d)) = b -> less_than(a, b)
+        const less_than = symbols.less_than orelse return null;
+        const succ = symbols.succ orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const d = try mkfv(self, sort, "d");
+        const bb = try mkfv(self, sort, "b");
+        const eq = try self.pool.add(.{ .eq = .{ .lhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, succ, &.{d.t}) }), .rhs = bb.t } });
+        const lt = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = eq, .rhs = lt } });
+        return try self.closeForallChain(body, &.{ a, d, bb }, sort);
+    }
+    return null;
+}
+
+/// A fresh var pair: its interned name + its fvar term (for lemma-shape construction).
+const ArithVar = struct { name: StrId, t: TermId };
+
+/// Close `body` in `forall v0, v1, …;` over the fresh vars (outermost = vars[0]).
+fn closeForallChain(self: *Prove, body: TermId, vars: []const ArithVar, sort: term.SortId) Error!TermId {
+    var f = body;
+    var i = vars.len;
+    while (i > 0) {
+        i -= 1;
+        const closed = try self.pool.close(f, vars[i].name);
+        f = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = vars[i].name, .body = closed } });
+    }
+    return f;
 }
 
 // -- the AC flatten / build / sort substrate (ported from the eager elaborate.zig) -----
