@@ -1,6 +1,6 @@
 // std/complex.bpa — the COMPLEX NUMBERS ℂ as an axiomatic FIELD (NOT ordered — ℂ
 // admits no order compatible with its field structure). ℂ models std/field.bpa
-// (inheriting the field corpus), adjoins the imaginary unit `I` with `I² = −1`, and
+// (inheriting the field corpus), adjoins the imaginary unit `i` with `i² = −1`, and
 // embeds ℝ via `fromReal` / `isReal`, with real and imaginary parts `re`/`im` and
 // conjugation `conj`.
 //
@@ -17,7 +17,7 @@ import real <<< "std/real.bpa"
 sort Complex
 const ZERO: Complex
 const ONE: Complex
-const I: Complex
+const i: Complex
 func add(a: Complex, b: Complex): Complex
 func mul(a: Complex, b: Complex): Complex
 func neg(a: Complex): Complex
@@ -58,12 +58,12 @@ model ComplexField {
 }
 
 // -- the imaginary unit -----------------------------------------------------
-axiom iSquared: mul(I, I) = neg(ONE)
+axiom iSquared: mul(i, i) = neg(ONE)
 
 // -- the real embedding ℝ ↪ ℂ + real/imaginary parts -----------------------
 // fromReal embeds ℝ as a subfield; re/im project to the real and imaginary parts
 // (as reals); conj is complex conjugation. A complex reconstructs from its parts:
-// z = fromReal(re z) + fromReal(im z)·I.
+// z = fromReal(re z) + fromReal(im z)·i.
 func fromReal(r: real.Real): Complex
 func re(z: Complex): real.Real
 func im(z: Complex): real.Real
@@ -79,20 +79,20 @@ axiom fromRealInjective: forall r, s: real.Real; fromReal(r) = fromReal(s) -> r 
 // re/im of an embedded real: re(fromReal r) = r, im(fromReal r) = 0.
 axiom reOfReal: forall r: real.Real; re(fromReal(r)) = r
 axiom imOfReal: forall r: real.Real; im(fromReal(r)) = real.ZERO
-// reconstruction: every z is its real part plus its imaginary part times I.
-axiom complexParts: forall z: Complex; z = add(fromReal(re(z)), mul(fromReal(im(z)), I))
-// conjugation flips the imaginary part: conj(z) = re(z) − im(z)·I.
-axiom conjDef: forall z: Complex; conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))
+// reconstruction: every z is its real part plus its imaginary part times i.
+axiom complexParts: forall z: Complex; z = add(fromReal(re(z)), mul(fromReal(im(z)), i))
+// conjugation flips the imaginary part: conj(z) = re(z) − im(z)·i.
+axiom conjDef: forall z: Complex; conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))
 
 // -- projection algebra (re/im linearity + generator values) ----------------
 // The canonical foundation for ℂ's coordinate structure: re/im are ℝ-linear and
-// take known values on the generators (re(I)=0, im(I)=1). Together with
+// take known values on the generators (re(i)=0, im(i)=1). Together with
 // `complexParts` these pin every complex number to its coordinate pair, and the
 // conjugation/modulus facts below derive from them. (Adjoined as axioms — they
 // hold in the standard model; the product-projection formulas re(zw)/im(zw) are
 // derivable but not needed here, so are left for when a caller wants them.)
-axiom reOfI: re(I) = real.ZERO
-axiom imOfI: im(I) = real.ONE
+axiom reOfI: re(i) = real.ZERO
+axiom imOfI: im(i) = real.ONE
 axiom reAdd: forall z, w: Complex; re(add(z, w)) = real.add(re(z), re(w))
 axiom imAdd: forall z, w: Complex; im(add(z, w)) = real.add(im(z), im(w))
 axiom reNeg: forall z: Complex; re(neg(z)) = real.neg(re(z))
@@ -125,17 +125,17 @@ proof
                     im(a) = im(b)
                     [by hypothesis given-im-equal]
                   @a-parts |
-                    a = add(fromReal(re(a)), mul(fromReal(im(a)), I))
+                    a = add(fromReal(re(a)), mul(fromReal(im(a)), i))
                     [using specialize complexParts(a)]
                   @b-parts |
-                    b = add(fromReal(re(b)), mul(fromReal(im(b)), I))
+                    b = add(fromReal(re(b)), mul(fromReal(im(b)), i))
                     [using specialize complexParts(b)]
                   // rewrite a's coordinates to b's, then fold back to b.
                   @a-with-b-re |
-                    a = add(fromReal(re(b)), mul(fromReal(im(a)), I))
+                    a = add(fromReal(re(b)), mul(fromReal(im(a)), i))
                     [by rewrite re-equal a-parts]
                   @a-with-b-coords |
-                    a = add(fromReal(re(b)), mul(fromReal(im(b)), I))
+                    a = add(fromReal(re(b)), mul(fromReal(im(b)), i))
                     [by rewrite im-equal a-with-b-re]
                   @conclusion-a-equals-b |
                     a = b
@@ -236,18 +236,18 @@ qed
 
 // -- projections of the conjugate (reusable) --------------------------------
 // re(z̄) = re z and im(z̄) = −im z. Computed by pushing re/im through conjDef's
-// coordinate form with the linearity axioms; the imaginary-unit term im z·I
+// coordinate form with the linearity axioms; the imaginary-unit term im z·i
 // contributes 0 to the real part and im z to the imaginary part (reMul/imMul at
-// fromReal(im z) and I, using re(I)=0, im(I)=1). All algebra is in ℝ.
+// fromReal(im z) and i, using re(i)=0, im(i)=1). All algebra is in ℝ.
 
-// re(fromReal(im z)·I) = 0 — the "b·I" term has no real part.
-theorem reOfImagTerm: forall z: Complex; re(mul(fromReal(im(z)), I)) = real.ZERO
+// re(fromReal(im z)·i) = 0 — the "b·i" term has no real part.
+theorem reOfImagTerm: forall z: Complex; re(mul(fromReal(im(z)), i)) = real.ZERO
 proof
   @generalize-z |
     fix z: Complex {
       @re-of-product |
-        re(mul(fromReal(im(z)), I)) = real.add(real.mul(re(fromReal(im(z))), re(I)), real.neg(real.mul(im(fromReal(im(z))), im(I))))
-        [using specialize reMul(fromReal(im(z)), I)]
+        re(mul(fromReal(im(z)), i)) = real.add(real.mul(re(fromReal(im(z))), re(i)), real.neg(real.mul(im(fromReal(im(z))), im(i))))
+        [using specialize reMul(fromReal(im(z)), i)]
       @re-of-fromreal |
         re(fromReal(im(z))) = im(z)
         [using specialize reOfReal(im(z))]
@@ -255,44 +255,44 @@ proof
         im(fromReal(im(z))) = real.ZERO
         [using specialize imOfReal(im(z))]
       @re-of-i |
-        re(I) = real.ZERO
+        re(i) = real.ZERO
         [by axiom reOfI]
       @im-of-i |
-        im(I) = real.ONE
+        im(i) = real.ONE
         [by axiom imOfI]
       // substitute the four projection values, then ℝ-simplify im z·0 − 0·1 = 0.
       @with-fromreal-re |
-        re(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), re(I)), real.neg(real.mul(im(fromReal(im(z))), im(I))))
+        re(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), re(i)), real.neg(real.mul(im(fromReal(im(z))), im(i))))
         [by rewrite re-of-fromreal re-of-product]
       @with-fromreal-im |
-        re(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), re(I)), real.neg(real.mul(real.ZERO, im(I))))
+        re(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), re(i)), real.neg(real.mul(real.ZERO, im(i))))
         [by rewrite im-of-fromreal with-fromreal-re]
       @with-re-i |
-        re(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), real.ZERO), real.neg(real.mul(real.ZERO, im(I))))
+        re(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), real.ZERO), real.neg(real.mul(real.ZERO, im(i))))
         [by rewrite re-of-i with-fromreal-im]
       @with-im-i |
-        re(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), real.ZERO), real.neg(real.mul(real.ZERO, real.ONE)))
+        re(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), real.ZERO), real.neg(real.mul(real.ZERO, real.ONE)))
         [by rewrite im-of-i with-re-i]
       @simplifies-to-zero |
         real.add(real.mul(im(z), real.ZERO), real.neg(real.mul(real.ZERO, real.ONE))) = real.ZERO
         [using polynomial(real)]
       @conclusion-re-imag-term |
-        re(mul(fromReal(im(z)), I)) = real.ZERO
+        re(mul(fromReal(im(z)), i)) = real.ZERO
         [using chain with-im-i simplifies-to-zero]
     }
   @conclusion |
-    forall z: Complex; re(mul(fromReal(im(z)), I)) = real.ZERO
+    forall z: Complex; re(mul(fromReal(im(z)), i)) = real.ZERO
     [by forall_intro generalize-z]
 qed
 
-// im(fromReal(im z)·I) = im z — the "b·I" term's imaginary part is b.
-theorem imOfImagTerm: forall z: Complex; im(mul(fromReal(im(z)), I)) = im(z)
+// im(fromReal(im z)·i) = im z — the "b·i" term's imaginary part is b.
+theorem imOfImagTerm: forall z: Complex; im(mul(fromReal(im(z)), i)) = im(z)
 proof
   @generalize-z |
     fix z: Complex {
       @im-of-product |
-        im(mul(fromReal(im(z)), I)) = real.add(real.mul(re(fromReal(im(z))), im(I)), real.mul(im(fromReal(im(z))), re(I)))
-        [using specialize imMul(fromReal(im(z)), I)]
+        im(mul(fromReal(im(z)), i)) = real.add(real.mul(re(fromReal(im(z))), im(i)), real.mul(im(fromReal(im(z))), re(i)))
+        [using specialize imMul(fromReal(im(z)), i)]
       @re-of-fromreal |
         re(fromReal(im(z))) = im(z)
         [using specialize reOfReal(im(z))]
@@ -300,77 +300,77 @@ proof
         im(fromReal(im(z))) = real.ZERO
         [using specialize imOfReal(im(z))]
       @re-of-i |
-        re(I) = real.ZERO
+        re(i) = real.ZERO
         [by axiom reOfI]
       @im-of-i |
-        im(I) = real.ONE
+        im(i) = real.ONE
         [by axiom imOfI]
       @with-fromreal-re |
-        im(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), im(I)), real.mul(im(fromReal(im(z))), re(I)))
+        im(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), im(i)), real.mul(im(fromReal(im(z))), re(i)))
         [by rewrite re-of-fromreal im-of-product]
       @with-fromreal-im |
-        im(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), im(I)), real.mul(real.ZERO, re(I)))
+        im(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), im(i)), real.mul(real.ZERO, re(i)))
         [by rewrite im-of-fromreal with-fromreal-re]
       @with-im-i |
-        im(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), real.ONE), real.mul(real.ZERO, re(I)))
+        im(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), real.ONE), real.mul(real.ZERO, re(i)))
         [by rewrite im-of-i with-fromreal-im]
       @with-re-i |
-        im(mul(fromReal(im(z)), I)) = real.add(real.mul(im(z), real.ONE), real.mul(real.ZERO, real.ZERO))
+        im(mul(fromReal(im(z)), i)) = real.add(real.mul(im(z), real.ONE), real.mul(real.ZERO, real.ZERO))
         [by rewrite re-of-i with-im-i]
       @simplifies-to-im |
         real.add(real.mul(im(z), real.ONE), real.mul(real.ZERO, real.ZERO)) = im(z)
         [using polynomial(real)]
       @conclusion-im-imag-term |
-        im(mul(fromReal(im(z)), I)) = im(z)
+        im(mul(fromReal(im(z)), i)) = im(z)
         [using chain with-re-i simplifies-to-im]
     }
   @conclusion |
-    forall z: Complex; im(mul(fromReal(im(z)), I)) = im(z)
+    forall z: Complex; im(mul(fromReal(im(z)), i)) = im(z)
     [by forall_intro generalize-z]
 qed
 
-// re(z̄) = re z: conj z = fromReal(re z) + neg(im z·I); real parts add, the neg of
+// re(z̄) = re z: conj z = fromReal(re z) + neg(im z·i); real parts add, the neg of
 // the imag term's real part (which is 0) vanishes.
 theorem reOfConj: forall z: Complex; re(conj(z)) = re(z)
 proof
   @generalize-z |
     fix z: Complex {
       @conj-parts |
-        conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))
+        conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))
         [using specialize conjDef(z)]
       @re-of-conj-reflexive |
         re(conj(z)) = re(conj(z))
         [by reflexivity]
       @re-of-conj-expanded |
-        re(conj(z)) = re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I))))
+        re(conj(z)) = re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i))))
         [by rewrite conj-parts re-of-conj-reflexive]
       @re-splits |
-        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(re(fromReal(re(z))), re(neg(mul(fromReal(im(z)), I))))
-        [using specialize reAdd(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))]
+        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(re(fromReal(re(z))), re(neg(mul(fromReal(im(z)), i))))
+        [using specialize reAdd(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))]
       @re-of-fromreal |
         re(fromReal(re(z))) = re(z)
         [using specialize reOfReal(re(z))]
       @re-of-neg |
-        re(neg(mul(fromReal(im(z)), I))) = real.neg(re(mul(fromReal(im(z)), I)))
-        [using specialize reNeg(mul(fromReal(im(z)), I))]
+        re(neg(mul(fromReal(im(z)), i))) = real.neg(re(mul(fromReal(im(z)), i)))
+        [using specialize reNeg(mul(fromReal(im(z)), i))]
       @re-imag-term-zero |
-        re(mul(fromReal(im(z)), I)) = real.ZERO
+        re(mul(fromReal(im(z)), i)) = real.ZERO
         [using specialize reOfImagTerm(z)]
       // re(conj z) = re z + neg(re of imag term) = re z + neg(0) = re z.
       @re-splits-with-fromreal |
-        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(re(z), re(neg(mul(fromReal(im(z)), I))))
+        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(re(z), re(neg(mul(fromReal(im(z)), i))))
         [by rewrite re-of-fromreal re-splits]
       @re-splits-with-neg |
-        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(re(z), real.neg(re(mul(fromReal(im(z)), I))))
+        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(re(z), real.neg(re(mul(fromReal(im(z)), i))))
         [by rewrite re-of-neg re-splits-with-fromreal]
       @re-splits-with-zero |
-        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(re(z), real.neg(real.ZERO))
+        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(re(z), real.neg(real.ZERO))
         [by rewrite re-imag-term-zero re-splits-with-neg]
       @tail-simplifies |
         real.add(re(z), real.neg(real.ZERO)) = re(z)
         [using polynomial(real)]
       @re-of-split-is-re |
-        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = re(z)
+        re(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = re(z)
         [using chain re-splits-with-zero tail-simplifies]
       @conclusion-re-of-conj |
         re(conj(z)) = re(z)
@@ -387,40 +387,40 @@ proof
   @generalize-z |
     fix z: Complex {
       @conj-parts |
-        conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))
+        conj(z) = add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))
         [using specialize conjDef(z)]
       @im-of-conj-reflexive |
         im(conj(z)) = im(conj(z))
         [by reflexivity]
       @im-of-conj-expanded |
-        im(conj(z)) = im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I))))
+        im(conj(z)) = im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i))))
         [by rewrite conj-parts im-of-conj-reflexive]
       @im-splits |
-        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(im(fromReal(re(z))), im(neg(mul(fromReal(im(z)), I))))
-        [using specialize imAdd(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))]
+        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(im(fromReal(re(z))), im(neg(mul(fromReal(im(z)), i))))
+        [using specialize imAdd(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))]
       @im-of-fromreal |
         im(fromReal(re(z))) = real.ZERO
         [using specialize imOfReal(re(z))]
       @im-of-neg |
-        im(neg(mul(fromReal(im(z)), I))) = real.neg(im(mul(fromReal(im(z)), I)))
-        [using specialize imNeg(mul(fromReal(im(z)), I))]
+        im(neg(mul(fromReal(im(z)), i))) = real.neg(im(mul(fromReal(im(z)), i)))
+        [using specialize imNeg(mul(fromReal(im(z)), i))]
       @im-imag-term |
-        im(mul(fromReal(im(z)), I)) = im(z)
+        im(mul(fromReal(im(z)), i)) = im(z)
         [using specialize imOfImagTerm(z)]
       @im-splits-with-fromreal |
-        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(real.ZERO, im(neg(mul(fromReal(im(z)), I))))
+        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(real.ZERO, im(neg(mul(fromReal(im(z)), i))))
         [by rewrite im-of-fromreal im-splits]
       @im-splits-with-neg |
-        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(real.ZERO, real.neg(im(mul(fromReal(im(z)), I))))
+        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(real.ZERO, real.neg(im(mul(fromReal(im(z)), i))))
         [by rewrite im-of-neg im-splits-with-fromreal]
       @im-splits-with-im |
-        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.add(real.ZERO, real.neg(im(z)))
+        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.add(real.ZERO, real.neg(im(z)))
         [by rewrite im-imag-term im-splits-with-neg]
       @tail-simplifies |
         real.add(real.ZERO, real.neg(im(z))) = real.neg(im(z))
         [using polynomial(real)]
       @im-of-split-is-neg |
-        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), I)))) = real.neg(im(z))
+        im(add(fromReal(re(z)), neg(mul(fromReal(im(z)), i)))) = real.neg(im(z))
         [using chain im-splits-with-im tail-simplifies]
       @conclusion-im-of-conj |
         im(conj(z)) = real.neg(im(z))

@@ -90,7 +90,7 @@ Every category has a distinct look:
 | Category                | Style           | Example                        |
 |-------------------------|-----------------|--------------------------------|
 | Sorts                   | ProudCamelCase  | `Nat`, `Prop`, `Word32`        |
-| Constants               | ALLCAPS         | `ZERO`, `ONE`                  |
+| Constants               | ALLCAPS         | `ZERO`, `ONE`, `E` (identity)  |
 | Functions / predicates  | snake_case word | `succ`, `add`, `even`          |
 | Axioms/theorems         | camelCase       | `addZeroLeft`, `induction`     |
 | Labels                  | kebab-case      | `induction-step`, `given-inductive-hypothesis`   |
@@ -99,6 +99,13 @@ Every category has a distinct look:
 - Functions and predicates should not be **one letter**: `succ` not `S`. The same
   applies to schema parameters (`prop: Nat -> Prop`, not `P`) — they are
   function-shaped.
+- **Named mathematical constants keep their conventional lowercase spelling**:
+  the circle constant `pi`, Euler's number `e`, and the imaginary unit `i` are
+  written **lowercase**, not `PI`/`E`/`I` — their standard notation *is*
+  lowercase, and forcing ALLCAPS reads wrong (`i*i = neg(one)` is `i·i = −1`).
+  This is the same "notation is the point" exception the literate files invoke.
+  (The group-identity `E` is a different constant — an abstract unit, ALLCAPS by
+  the default rule — and stays uppercase; the exception is only for π, e, i.)
 - Statement names are **spelled out**: `addZeroLeft`, not `addZ`; properties in
   full: `addIsCommutative`, not `addComm`.
   - Equation-shaped facts encode which argument position they describe:
