@@ -180,7 +180,7 @@ fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, 
 /// Matched by interned rule name (integer compare, no strcmp past parsing). Mirrors the
 /// parser's `isTheoryRule` (minus `model`, which is dispatched as its own RuleStr domain).
 fn isTheorySelector(self: *Scanner, rule: StrId) bool {
-    inline for (.{ "polynomial", "polynomial_quantified", "ext", "ext_quantified" }) |nm| {
+    inline for (.{ "polynomial", "polynomial_quantified", "extensionality", "extensionality_quantified" }) |nm| {
         const id = self.interner.internString(nm) catch return false;
         if (rule == id) return true;
     }

@@ -342,7 +342,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\step-label.
             \\debug taint flags, per proof, every step whose rule can fall back to
             \\an accelerated verdict (arithmetic/tautology/polynomial/assoc_commut/
-            \\assoc/ext), at its file:line:col — where trust enters the proof; a
+            \\assoc/extensionality), at its file:line:col — where trust enters the proof; a
             \\clean report means every step is kernel-checked.
             \\
             \\query outline prints a proof's structural skeleton: one line per

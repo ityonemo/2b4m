@@ -42,8 +42,8 @@ const accelerated_rules = [_][]const u8{
     "arithmetic",       "tautology",
     "polynomial",       "assoc_commut",
     "assoc",            "assoc_commut_quantified",
-    "assoc_quantified", "ext",
-    "ext_quantified",
+    "assoc_quantified", "extensionality",
+    "extensionality_quantified",
 };
 
 fn isAcceleratedRule(name: []const u8) bool {

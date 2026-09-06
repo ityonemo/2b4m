@@ -69,12 +69,12 @@ pub fn addTests(
     // reduce an equation to its pointwise obligation via the theory's
     // extensionality lemma, unfold the operators, close the residue. SET model
     // (propositional residue → tautology); emits kernel steps.
-    ctx.okSilent(&.{ "check", "tests/cases/ext_set.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/extensionality_set.bpa" });
     // FUNCTION model (equational residue → rewrite join) — same `ext` tactic.
-    ctx.okSilent(&.{ "check", "tests/cases/ext_function.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/extensionality_function.bpa" });
     // a FALSE set identity: the pointwise residue has a countermodel, so ext
     // declines with a located error (exit 1) — never accepts a false equation.
-    ctx.fail(&.{ "check", "tests/cases/ext_bad.bpa" }, "tests/cases/ext_bad.bpa:18:9: error: ext: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/extensionality_bad.bpa" }, "tests/cases/extensionality_bad.bpa:18:9: error: ext: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // `model`: structure reuse. The source theory (a carrier + op + left-unit +
     // one proven theorem) is modeled by a concrete sort, and its theorem
@@ -230,7 +230,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_tautology.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_polynomial.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_arithmetic.bpa" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_ext.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/model_accel_extensionality.bpa" });
 
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
