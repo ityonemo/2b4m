@@ -42,6 +42,7 @@ const Polynomial = @import("Polynomial.zig");
 const simplify_mod = @import("simplify.zig");
 const presburger_mod = @import("presburger.zig");
 const smt = @import("smt.zig");
+const farkas = @import("farkas.zig");
 const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
@@ -4010,14 +4011,355 @@ fn arithMatchPattern(self: *Prove, pattern: []const term.Node.Fvar, pat: TermId,
 
 /// The Farkas certifier — order-composition / infeasibility over the difference-logic edges.
 /// (Not exercised by the target fixtures; declines for now — a follow-up port.)
-fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
-    _ = self;
-    _ = cert;
-    _ = out;
-    _ = goal_p;
-    _ = proved_prop;
-    _ = symbols;
-    return false;
+/// A proved strict-order hypothesis `less_than(lo, hi)`: its endpoints (as terms) and the label
+/// of the step proving it (a restated `->` antecedent, or a derived scaled/summed edge).
+const OrderHyp = struct { lo: TermId, hi: TermId, ref: StrId };
+
+/// The Farkas certifier over the difference-logic fragment. A goal
+/// `forall v..; H1 -> … -> Hn -> C` whose Hi are strict-order atoms `less_than(s, t)` is
+/// certified by composing them with `lessThanTransitive`. Three conclusion shapes:
+///   (a) order composition `less_than(s, t)` (s != t): fold a path s < … < t;
+///   (b) self-loop `less_than(x, x)`: fold a cycle;
+///   (c) INFEASIBILITY of an arbitrary conclusion: fold a cycle to `less_than(x, x)`, contradict
+///       with `lessThanIrreflexive`, then `absurd`.
+/// Stage 1 (scaling) lifts a hypothesis by a literal coefficient via
+/// `multiplicationPreservesOrder`; stage 2 (sum) combines two edges over distinct variables via
+/// `additionPreservesOrder`. Declines (false) on any out-of-fragment shape.
+fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols_in: presburger_mod.Symbols) Error!bool {
+    var symbols = symbols_in;
+    const less_than = symbols.less_than orelse return false;
+
+    // 1. peel the ∀ prefix into eigenvariables; the body is `H1 -> … -> Hn -> C`.
+    const peel = try self.arithPeel(goal_p);
+
+    // A pure-order fixture (only `less_than` + a bare sort in scope, no arithmetic op) leaves
+    // `symbols.nat` unanchored; recover it from the quantified eigenvariables' sort so the order
+    // lemmas (`lessThanTransitive`/`lessThanIrreflexive`) can be built.
+    if (symbols.nat == null and peel.eigen.len != 0) symbols.nat = peel.eigen[0].sort;
+    if (symbols.nat == null) return false;
+    if ((try self.arithLemmaFormula("lessThanTransitive", symbols)) == null) return false;
+
+    // 2. peel the `->` antecedent chain — each must be a strict-order atom — recording each as a
+    //    difference-logic edge (nodes = distinct endpoint terms) with the label that will restate
+    //    it by hypothesis inside its assume block. `residual[k]` = the formula proved inside
+    //    assume[k] (the conclusion of the remaining chain).
+    var edges: std.ArrayList(farkas.Edge) = .empty;
+    var hyps: std.ArrayList(OrderHyp) = .empty;
+    var node_ids: std.ArrayList(TermId) = .empty;
+    var blk_labels: std.ArrayList(StrId) = .empty; // the assume-block label per antecedent
+    var ante_formulae: std.ArrayList(TermId) = .empty;
+    var body = peel.body;
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .bin or node.bin.op != .implies) break;
+        const ante = node.bin.lhs;
+        const an = self.pool.get(ante);
+        if (an != .pred or !self.symIs(an.pred.sym, less_than) or an.pred.args_len != 2) return false;
+        const args = self.pool.args(an.pred);
+        const blk_label = try self.freshNamed("given-order");
+        const restate_label = try self.freshNamed("order-hyp"); // the OrderHyp ref (the fold cites this)
+        try edges.append(self.ctx.arena, .{
+            .lo = try self.farkasNodeId(&node_ids, args[0]),
+            .hi = try self.farkasNodeId(&node_ids, args[1]),
+        });
+        try hyps.append(self.ctx.arena, .{ .lo = args[0], .hi = args[1], .ref = restate_label });
+        try blk_labels.append(self.ctx.arena, blk_label);
+        try ante_formulae.append(self.ctx.arena, ante);
+        body = node.bin.rhs;
+    }
+    if (edges.items.len == 0) return false; // nothing to combine: not Farkas
+    const base_count = edges.items.len;
+
+    // the fold + derived-edge steps live in an INNER block that runs inside the innermost assume
+    // (where every antecedent hypothesis is in scope).
+    var inner: std.ArrayList(ast.Step) = .empty;
+
+    // 2b. COEFFICIENT SCALING: derive `less_than(mul(k,lo), mul(k,hi))` edges for each literal k
+    //     the conclusion / hypotheses mention.
+    var literals: std.ArrayList(usize) = .empty;
+    try self.collectFarkasScaleLiterals(symbols, body, &literals);
+    for (hyps.items[0..base_count]) |h| {
+        try self.collectFarkasScaleLiterals(symbols, h.lo, &literals);
+        try self.collectFarkasScaleLiterals(symbols, h.hi, &literals);
+    }
+    if (literals.items.len != 0) {
+        if (!try self.emitFarkasScaledEdges(cert, &inner, symbols, literals.items, base_count, &edges, &hyps, &node_ids)) return false;
+    }
+
+    // 2c. SUM PATH: if the conclusion is `less_than(add(_,_), add(_,_))` no single edge proves,
+    //     derive a summed edge from a pair of base hypotheses.
+    if (symbols.add != null) {
+        const cn0 = self.pool.get(body);
+        const wants_sum = cn0 == .pred and self.symIs(cn0.pred.sym, less_than) and cn0.pred.args_len == 2 and
+            self.isFarkasAddSum(symbols, self.pool.args(cn0.pred)[0]);
+        if (wants_sum and base_count >= 2) {
+            if (!try self.emitFarkasSumEdge(cert, &inner, symbols, body, base_count, &edges, &hyps, &node_ids)) return false;
+        }
+    }
+
+    // 3. prove the conclusion `body` from the order edges, dispatching on its shape.
+    const concl_label = (try self.emitFarkasConclusion(cert, &inner, symbols, less_than, body, edges.items, hyps.items, &node_ids)) orelse return false;
+
+    // 4. wrap `inner` in nested assume blocks (innermost antecedent first): each block restates
+    //    its hypothesis, runs the (progressively) exported proof, and `implies_intro` exports
+    //    `H_k -> … -> C`. Mirrors `wrapSimplifyPremises`.
+    _ = concl_label;
+    var carry_steps = inner.items;
+    var carry_formula = body; // the conclusion proved inside the current level
+    var k = base_count;
+    while (k > 0) {
+        k -= 1;
+        const blk_label = blk_labels.items[k];
+        const restate_label = hyps.items[k].ref;
+        var blk_body = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, carry_steps.len + 1);
+        // restate the assumption (label = the OrderHyp `ref` the fold cites) via `hypothesis`
+        // citing the enclosing assume block.
+        blk_body.appendAssumeCapacity(try cert.b.claimStep(restate_label, try cert.b.termExpr(ante_formulae.items[k]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, blk_label)));
+        blk_body.appendSliceAssumeCapacity(carry_steps);
+
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try cert.b.assumeStep(blk_label, try cert.b.termExpr(ante_formulae.items[k]), blk_body.items));
+        const exported = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ante_formulae.items[k], .rhs = carry_formula } });
+        _ = try cert.claim(&lvl, exported, "implies_intro", &.{}, &.{blk_label});
+        carry_formula = exported;
+        carry_steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+
+    // 5. wrap in the ∀ fix/forall_intro shell.
+    const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, carry_steps);
+    try out.appendSlice(self.ctx.arena, wrapped.steps);
+    proved_prop.* = wrapped.prop;
+    return true;
+}
+
+/// Intern a term as an abstract Farkas node identity (by structural order).
+fn farkasNodeId(self: *Prove, list: *std.ArrayList(TermId), t: TermId) Error!usize {
+    for (list.items, 0..) |x, i| {
+        if (self.pool.termOrder(x, t) == .eq) return i;
+    }
+    try list.append(self.ctx.arena, t);
+    return list.items.len - 1;
+}
+
+/// Prove the Farkas conclusion `body`, returning the label of a step proving it (or null to
+/// decline). (a)/(b): if `body` is an order atom `less_than(s, t)`, compose a chain s < … < t
+/// (a cycle when s == t). (c): otherwise fold ANY cycle to `less_than(x, x)`, contradict with
+/// `lessThanIrreflexive`, and `absurd` proves the (arbitrary) conclusion.
+fn emitFarkasConclusion(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, less_than: term.SymId, body: TermId, edges: []const farkas.Edge, hyps: []const OrderHyp, node_ids: *std.ArrayList(TermId)) Error!?StrId {
+    const cn = self.pool.get(body);
+    const is_order = cn == .pred and self.symIs(cn.pred.sym, less_than) and cn.pred.args_len == 2;
+
+    if (is_order) {
+        const cargs = self.pool.args(cn.pred);
+        const from = try self.farkasNodeId(node_ids, cargs[0]);
+        const to = try self.farkasNodeId(node_ids, cargs[1]);
+        if (try farkas.compose(self.ctx.arena, edges, from, to)) |path| {
+            return try self.emitFarkasFold(cert, block, symbols, path.chain, hyps);
+        }
+        // no direct chain: fall through to the infeasibility cap.
+    }
+
+    // (c) INFEASIBILITY CAP.
+    if ((try self.arithLemmaFormula("lessThanIrreflexive", symbols)) == null) return null;
+    const refutation = (try farkas.refute(self.ctx.arena, edges, null)) orelse return null;
+    const cycle_label = try self.emitFarkasFold(cert, block, symbols, refutation.chain, hyps);
+    const cnode = node_ids.items[refutation.node];
+
+    // cite lessThanIrreflexive, forall_elim at cnode → `not less_than(cnode, cnode)`; absurd
+    // against the folded `less_than(cnode, cnode)` proves the (arbitrary) `body`.
+    const irr_stmt = (try self.arithLemmaFormula("lessThanIrreflexive", symbols)).?;
+    const irr_label = try cert.citeLemma(block, "lessThanIrreflexive", irr_stmt);
+    const not_lt = try cert.elimChain(block, irr_label, irr_stmt, &.{cnode});
+    return try cert.claim(block, body, "absurd", &.{}, &.{ cycle_label, not_lt.label });
+}
+
+/// Fold an order chain (edge indices, each hi linking to the next lo) into a single proof
+/// `less_than(chain-first-lo, chain-last-hi)` by composing consecutive hypotheses with
+/// `lessThanTransitive`. Returns the label of that proof (the sole hypothesis for a one-edge
+/// chain).
+fn emitFarkasFold(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, chain: []const usize, hyps: []const OrderHyp) Error!StrId {
+    var acc_label = hyps[chain[0]].ref;
+    const acc_lo = hyps[chain[0]].lo;
+    var acc_hi = hyps[chain[0]].hi;
+
+    const tr_stmt = (try self.arithLemmaFormula("lessThanTransitive", symbols)).?;
+    for (chain[1..]) |idx| {
+        const next = hyps[idx];
+        // lessThanTransitive(acc_lo, acc_hi, next.hi):
+        //   less_than(acc_lo,acc_hi) -> less_than(acc_hi,next.hi) -> less_than(acc_lo,next.hi)
+        const tr_label = try cert.citeLemma(block, "lessThanTransitive", tr_stmt);
+        const elim = try cert.elimChain(block, tr_label, tr_stmt, &.{ acc_lo, acc_hi, next.hi });
+        const inner = self.pool.get(elim.formula).bin.rhs; // less_than(acc_hi,next.hi) -> less_than(acc_lo,next.hi)
+        const mp1 = try cert.claim(block, inner, "modus_ponens", &.{}, &.{ elim.label, acc_label });
+        const concl = self.pool.get(inner).bin.rhs; // less_than(acc_lo, next.hi)
+        acc_label = try cert.claim(block, concl, "modus_ponens", &.{}, &.{ mp1, next.ref });
+        acc_hi = next.hi;
+    }
+    return acc_label;
+}
+
+/// If `t` is a ground successor tower `succ^k(ZERO)`, return k, else 0.
+fn farkasLiteral(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) usize {
+    var k: usize = 0;
+    var cur = t;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+            k += 1;
+            cur = self.pool.args(node.app)[0];
+            continue;
+        }
+        if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args_len == 0) return k;
+        return 0;
+    }
+}
+
+/// Scan `t` for `mul(<literal>, x)` subterms, collecting distinct literal coefficients k >= 2.
+fn collectFarkasScaleLiterals(self: *Prove, symbols: presburger_mod.Symbols, t: TermId, out: *std.ArrayList(usize)) Error!void {
+    switch (self.pool.get(t)) {
+        .app, .pred => |a| {
+            if (self.symIs(a.sym, symbols.mul) and a.args_len == 2) {
+                const args = self.pool.args(a);
+                const k = self.farkasLiteral(symbols, args[0]);
+                if (k >= 2) {
+                    for (out.items) |x| {
+                        if (x == k) break;
+                    } else try out.append(self.ctx.arena, k);
+                }
+            }
+            for (self.pool.args(a)) |arg| try self.collectFarkasScaleLiterals(symbols, arg, out);
+        },
+        .eq => |p| {
+            try self.collectFarkasScaleLiterals(symbols, p.lhs, out);
+            try self.collectFarkasScaleLiterals(symbols, p.rhs, out);
+        },
+        .not => |i| try self.collectFarkasScaleLiterals(symbols, i, out),
+        .bin => |bn| {
+            try self.collectFarkasScaleLiterals(symbols, bn.lhs, out);
+            try self.collectFarkasScaleLiterals(symbols, bn.rhs, out);
+        },
+        .quant => |q| try self.collectFarkasScaleLiterals(symbols, q.body, out),
+        else => {},
+    }
+}
+
+/// Is `t` an `add(_, _)` application?
+fn isFarkasAddSum(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool {
+    const node = self.pool.get(t);
+    return node == .app and self.symIs(node.app.sym, symbols.add) and node.app.args_len == 2;
+}
+
+/// For each base hypothesis and literal k, emit a SCALED edge `less_than(mul(k,lo), mul(k,hi))`
+/// via `multiplicationPreservesOrder` (k = succ(c), so forall_elim at c = succ^{k-1}(ZERO)),
+/// appending it to `edges`/`hyps`/`node_ids`. Returns false (declines) if the lemma or the
+/// mul/succ/zero symbols are absent.
+fn emitFarkasScaledEdges(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, literals: []const usize, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
+    const succ = symbols.succ orelse return false;
+    const zero_sym = symbols.zero orelse return false;
+    const mpo_stmt = (try self.arithLemmaFormula("multiplicationPreservesOrder", symbols)) orelse return false;
+    const zero = try self.pool.addApp(.app, zero_sym, &.{});
+
+    for (literals) |k| {
+        // c = succ^{k-1}(ZERO), so succ(c) = k.
+        var c = zero;
+        for (0..k - 1) |_| c = try self.pool.addApp(.app, succ, &.{c});
+        for (0..base_count) |bi| {
+            const h = hyps.items[bi];
+            // multiplicationPreservesOrder(h.lo, h.hi, c):
+            //   less_than(h.lo,h.hi) -> less_than(mul(succ(c),h.lo), mul(succ(c),h.hi))
+            const mpo_label = try cert.citeLemma(block, "multiplicationPreservesOrder", mpo_stmt);
+            const elim = try cert.elimChain(block, mpo_label, mpo_stmt, &.{ h.lo, h.hi, c });
+            const concl = self.pool.get(elim.formula).bin.rhs; // the scaled order atom
+            const scaled_label = try cert.claim(block, concl, "modus_ponens", &.{}, &.{ elim.label, h.ref });
+            const scaled = self.pool.get(concl).pred;
+            const sargs = self.pool.args(scaled);
+            try edges.append(self.ctx.arena, .{
+                .lo = try self.farkasNodeId(node_ids, sargs[0]),
+                .hi = try self.farkasNodeId(node_ids, sargs[1]),
+            });
+            try hyps.append(self.ctx.arena, .{ .lo = sargs[0], .hi = sargs[1], .ref = scaled_label });
+        }
+    }
+    return true;
+}
+
+/// The conclusion is `less_than(add(A,B), add(C,D))`. Find base hypotheses proving A<C and B<D,
+/// derive the summed edge `less_than(add(A,B), add(C,D))`, and append it. Returns false
+/// (declines) when the matching hypotheses or the needed lemmas are absent.
+fn emitFarkasSumEdge(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, body: TermId, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
+    const add = symbols.add orelse return false;
+    const less_than = symbols.less_than orelse return false;
+    const cargs = self.pool.args(self.pool.get(body).pred);
+    const lhs_args = self.pool.args(self.pool.get(cargs[0]).app); // [A, B]
+    const rhs_args = self.pool.args(self.pool.get(cargs[1]).app); // [C, D]
+    const a = lhs_args[0];
+    const bb = lhs_args[1];
+    const cc = rhs_args[0];
+    const dd = rhs_args[1];
+    // find base hyps A<C and B<D.
+    var ha: ?OrderHyp = null;
+    var hb: ?OrderHyp = null;
+    for (hyps.items[0..base_count]) |h| {
+        if (self.pool.termOrder(h.lo, a) == .eq and self.pool.termOrder(h.hi, cc) == .eq) ha = h;
+        if (self.pool.termOrder(h.lo, bb) == .eq and self.pool.termOrder(h.hi, dd) == .eq) hb = h;
+    }
+    const first = ha orelse return false;
+    const second = hb orelse return false;
+
+    const apo_stmt = (try self.arithLemmaFormula("additionPreservesOrder", symbols)) orelse return false;
+    const comm_stmt = (try self.arithLemmaFormula("addIsCommutative", symbols)) orelse return false;
+    const tr_stmt = (try self.arithLemmaFormula("lessThanTransitive", symbols)) orelse return false;
+
+    const p = first.lo;
+    const q = first.hi;
+    const r = second.lo;
+    const s = second.hi;
+
+    // lift p<q by c:=r via additionPreservesOrder → add(r,p) < add(r,q).
+    const apo1_label = try cert.citeLemma(block, "additionPreservesOrder", apo_stmt);
+    const apo1 = try cert.elimChain(block, apo1_label, apo_stmt, &.{ p, q, r });
+    const lifted1 = self.pool.get(apo1.formula).bin.rhs; // less_than(add(r,p), add(r,q))
+    const rp_lt_rq = try cert.claim(block, lifted1, "modus_ponens", &.{}, &.{ apo1.label, first.ref });
+
+    // commute add(r,p)=add(p,r), add(r,q)=add(q,r); rewrite both.
+    const pr = try self.pool.addApp(.app, add, &.{ p, r });
+    const rq = try self.pool.addApp(.app, add, &.{ r, q });
+    const qr = try self.pool.addApp(.app, add, &.{ q, r });
+    const eq_rp = try emitFarkasCommEq(cert, block, comm_stmt, r, p); // add(r,p)=add(p,r)
+    const eq_rq = try emitFarkasCommEq(cert, block, comm_stmt, r, q); // add(r,q)=add(q,r)
+    const pr_lt_rq_f = try self.pool.addApp(.pred, less_than, &.{ pr, rq });
+    const pr_lt_rq = try cert.claim(block, pr_lt_rq_f, "rewrite", &.{}, &.{ eq_rp, rp_lt_rq });
+    const pr_lt_qr_f = try self.pool.addApp(.pred, less_than, &.{ pr, qr });
+    const pr_lt_qr = try cert.claim(block, pr_lt_qr_f, "rewrite", &.{}, &.{ eq_rq, pr_lt_rq });
+
+    // lift r<s by c:=q via additionPreservesOrder → add(q,r) < add(q,s).
+    const apo2_label = try cert.citeLemma(block, "additionPreservesOrder", apo_stmt);
+    const apo2 = try cert.elimChain(block, apo2_label, apo_stmt, &.{ r, s, q });
+    const lifted2 = self.pool.get(apo2.formula).bin.rhs; // less_than(add(q,r), add(q,s))
+    const qr_lt_qs = try cert.claim(block, lifted2, "modus_ponens", &.{}, &.{ apo2.label, second.ref });
+
+    // chain add(p,r) < add(q,r) < add(q,s) via lessThanTransitive.
+    const qs = try self.pool.addApp(.app, add, &.{ q, s });
+    const tr_label = try cert.citeLemma(block, "lessThanTransitive", tr_stmt);
+    const chain = try cert.elimChain(block, tr_label, tr_stmt, &.{ pr, qr, qs });
+    const chain_inner = self.pool.get(chain.formula).bin.rhs;
+    const chain2 = try cert.claim(block, chain_inner, "modus_ponens", &.{}, &.{ chain.label, pr_lt_qr });
+    const summed_f = self.pool.get(chain_inner).bin.rhs; // less_than(add(p,r), add(q,s))
+    const summed_label = try cert.claim(block, summed_f, "modus_ponens", &.{}, &.{ chain2, qr_lt_qs });
+
+    try edges.append(self.ctx.arena, .{
+        .lo = try self.farkasNodeId(node_ids, pr),
+        .hi = try self.farkasNodeId(node_ids, qs),
+    });
+    try hyps.append(self.ctx.arena, .{ .lo = pr, .hi = qs, .ref = summed_label });
+    return true;
+}
+
+/// Emit `add(x,y) = add(y,x)` via addIsCommutative(x, y). Returns the equation step's label.
+fn emitFarkasCommEq(cert: *ArithCert, block: *std.ArrayList(ast.Step), comm_stmt: TermId, x: TermId, y: TermId) Error!StrId {
+    const comm_label = try cert.citeLemma(block, "addIsCommutative", comm_stmt);
+    const elim = try cert.elimChain(block, comm_label, comm_stmt, &.{ x, y });
+    return elim.label;
 }
 
 /// The Cooper certifier (period-1 witness). Peel the goal's ∀ prefix into `fix` blocks; the
@@ -4808,7 +5150,6 @@ fn arithLastLabel(self: *Prove, steps: []const ast.Step) Error!StrId {
 /// kernel check. `null` when a needed symbol is absent.
 fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Symbols) Error!?TermId {
     const sort = symbols.nat orelse return null;
-    const add = symbols.add orelse return null;
     const mkfv = struct {
         fn f(p: *Prove, s: term.SortId, hint: []const u8) Error!ArithVar {
             const nm = try p.freshNamed(hint);
@@ -4817,6 +5158,7 @@ fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Sym
     }.f;
     if (std.mem.eql(u8, name, "addCancelLeft")) {
         // forall c, a, b; add(c, a) = add(c, b) -> a = b
+        const add = symbols.add orelse return null;
         const cc = try mkfv(self, sort, "c");
         const a = try mkfv(self, sort, "a");
         const bb = try mkfv(self, sort, "b");
@@ -4827,6 +5169,7 @@ fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Sym
     }
     if (std.mem.eql(u8, name, "lessThanIntro")) {
         // forall a, d, b; add(a, succ(d)) = b -> less_than(a, b)
+        const add = symbols.add orelse return null;
         const less_than = symbols.less_than orelse return null;
         const succ = symbols.succ orelse return null;
         const a = try mkfv(self, sort, "a");
@@ -4836,6 +5179,66 @@ fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Sym
         const lt = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
         const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = eq, .rhs = lt } });
         return try self.closeForallChain(body, &.{ a, d, bb }, sort);
+    }
+    if (std.mem.eql(u8, name, "lessThanTransitive")) {
+        // forall a, b, c; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+        const less_than = symbols.less_than orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const cc = try mkfv(self, sort, "c");
+        const ab = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
+        const bc = try self.pool.addApp(.pred, less_than, &.{ bb.t, cc.t });
+        const ac = try self.pool.addApp(.pred, less_than, &.{ a.t, cc.t });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ab, .rhs = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = bc, .rhs = ac } }) } });
+        return try self.closeForallChain(body, &.{ a, bb, cc }, sort);
+    }
+    if (std.mem.eql(u8, name, "lessThanIrreflexive")) {
+        // forall n; not less_than(n, n)
+        const less_than = symbols.less_than orelse return null;
+        const n = try mkfv(self, sort, "n");
+        const nn = try self.pool.addApp(.pred, less_than, &.{ n.t, n.t });
+        const body = try self.pool.add(.{ .not = nn });
+        return try self.closeForallChain(body, &.{n}, sort);
+    }
+    if (std.mem.eql(u8, name, "additionPreservesOrder")) {
+        // forall a, b, c; less_than(a, b) -> less_than(add(c, a), add(c, b))
+        const add = symbols.add orelse return null;
+        const less_than = symbols.less_than orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const cc = try mkfv(self, sort, "c");
+        const ab = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
+        const ca = try self.pool.addApp(.app, add, &.{ cc.t, a.t });
+        const cb = try self.pool.addApp(.app, add, &.{ cc.t, bb.t });
+        const lifted = try self.pool.addApp(.pred, less_than, &.{ ca, cb });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ab, .rhs = lifted } });
+        return try self.closeForallChain(body, &.{ a, bb, cc }, sort);
+    }
+    if (std.mem.eql(u8, name, "multiplicationPreservesOrder")) {
+        // forall a, b, c; less_than(a, b) -> less_than(mul(succ(c), a), mul(succ(c), b))
+        const less_than = symbols.less_than orelse return null;
+        const succ = symbols.succ orelse return null;
+        const mul = symbols.mul orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const cc = try mkfv(self, sort, "c");
+        const ab = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
+        const succ_c = try self.pool.addApp(.app, succ, &.{cc.t});
+        const ma = try self.pool.addApp(.app, mul, &.{ succ_c, a.t });
+        const mb = try self.pool.addApp(.app, mul, &.{ succ_c, bb.t });
+        const lifted = try self.pool.addApp(.pred, less_than, &.{ ma, mb });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ab, .rhs = lifted } });
+        return try self.closeForallChain(body, &.{ a, bb, cc }, sort);
+    }
+    if (std.mem.eql(u8, name, "addIsCommutative")) {
+        // forall a, b; add(a, b) = add(b, a)
+        const add = symbols.add orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const ab = try self.pool.addApp(.app, add, &.{ a.t, bb.t });
+        const ba = try self.pool.addApp(.app, add, &.{ bb.t, a.t });
+        const body = try self.pool.add(.{ .eq = .{ .lhs = ab, .rhs = ba } });
+        return try self.closeForallChain(body, &.{ a, bb }, sort);
     }
     return null;
 }
