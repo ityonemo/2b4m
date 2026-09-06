@@ -4620,6 +4620,20 @@ fn pushAdditiveElim(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cite
             const rhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, mul, &.{ a.t, bb.t }), bb.t });
             try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "mulSuccLeft", qualifier, loc);
         }
+        // mulZeroRight mul(n,ZERO)=ZERO; mulSuccRight mul(a,succ(b))=add(mul(a,b),a) — the right
+        // mirrors, so a numeral on EITHER factor expands.
+        {
+            const a = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, mul, &.{ a.t, z });
+            try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "mulZeroRight", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, mul, &.{ a.t, try self.pool.addApp(.app, succ, &.{bb.t}) });
+            const rhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, mul, &.{ a.t, bb.t }), a.t });
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "mulSuccRight", qualifier, loc);
+        }
     };
     // definitionOfSubtraction: sub(a,b) = add(a, neg(b))
     if (symbols.sub != null and symbols.neg != null) {
@@ -4658,8 +4672,58 @@ fn pushAdditiveElim(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cite
                 const lhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, neg, &.{a.t}), a.t });
                 try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "addNegLeft", qualifier, loc);
             }
+            // negZero: neg(ZERO) = ZERO (nullary).
+            {
+                const lhs = try self.pool.addApp(.app, neg, &.{z});
+                try self.pushQualified(rules, cites, &.{}, lhs, z, "negZero", qualifier, loc);
+            }
         }
+        // negSucc: neg(succ(a)) = prev(neg(a)); negPrev: neg(prev(a)) = succ(neg(a)) — push neg
+        // through succ/prev toward the leaves so a `neg`-of-numeral becomes a prev/succ tower.
+        if (symbols.succ) |succ| if (symbols.prev) |prev| {
+            {
+                const a = try self.freshACFvar(sort);
+                const lhs = try self.pool.addApp(.app, neg, &.{try self.pool.addApp(.app, succ, &.{a.t})});
+                const rhs = try self.pool.addApp(.app, prev, &.{try self.pool.addApp(.app, neg, &.{a.t})});
+                try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, rhs, "negSucc", qualifier, loc);
+            }
+            {
+                const a = try self.freshACFvar(sort);
+                const lhs = try self.pool.addApp(.app, neg, &.{try self.pool.addApp(.app, prev, &.{a.t})});
+                const rhs = try self.pool.addApp(.app, succ, &.{try self.pool.addApp(.app, neg, &.{a.t})});
+                try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, rhs, "negPrev", qualifier, loc);
+            }
+        };
     }
+    // succ/prev collapse + prev FLOAT (ℤ): prevSucc prev(succ(a))=a; succPrev succ(prev(a))=a;
+    // addPrevLeft add(prev(a),b)=prev(add(a,b)); addPrevRight add(a,prev(b))=prev(add(a,b)) —
+    // lift prev to the tower prefix (mirror of the succ float) so the tower parse is clean.
+    if (symbols.prev) |prev| if (symbols.succ) |succ| {
+        {
+            const a = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, prev, &.{try self.pool.addApp(.app, succ, &.{a.t})});
+            try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "prevSucc", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, succ, &.{try self.pool.addApp(.app, prev, &.{a.t})});
+            try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "succPrev", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, prev, &.{a.t}), bb.t });
+            const rhs = try self.pool.addApp(.app, prev, &.{try self.pool.addApp(.app, add, &.{ a.t, bb.t })});
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addPrevLeft", qualifier, loc);
+        }
+        {
+            const a = try self.freshACFvar(sort);
+            const bb = try self.freshACFvar(sort);
+            const lhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, prev, &.{bb.t}) });
+            const rhs = try self.pool.addApp(.app, prev, &.{try self.pool.addApp(.app, add, &.{ a.t, bb.t })});
+            try self.pushQualified(rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addPrevRight", qualifier, loc);
+        }
+    };
 }
 
 /// `pushHardcoded` but with the theory-selector `qualifier` stamped onto the cite (so
