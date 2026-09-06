@@ -2011,11 +2011,11 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     // quantified variant's peeled ∀ vars) are EXCLUDED: they stay free here and are re-bound
     // by the `fix` wrapper. A local rule premise's formula may share such an fvar, so include
     // each in the abstraction domain too.
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, eq_goal_raw);
-    for (prepared) |p| if (p.local) try abs_terms.append(self.ctx.arena, p.formula);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
-    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    var local_pf: std.ArrayList(TermId) = .empty;
+    for (prepared) |p| if (p.local) try local_pf.append(self.ctx.arena, p.formula);
+    const ag = try self.abstractGoal(&b, eq_goal_raw, local_pf.items, eigen);
+    const abs = ag.abs;
+    const eq_goal = ag.goal_p;
 
     const gn = self.pool.get(eq_goal).eq;
     const s = gn.lhs;
@@ -2222,6 +2222,21 @@ fn abstractFreeFvars(self: *Prove, b: *Accelerant.Builder, terms: []const TermId
     return .{ .names = names, .sorts = sorts, .origs = origs, .args = args };
 }
 
+/// The shared accelerant preamble: abstract the goal's free caller-local fvars (an enclosing
+/// `fix` at the call site) into value params `p1, p2, …`, INCLUDING those shared with a local
+/// premise's formula (so premise + goal + cert steps all speak the param names), while EXCLUDING
+/// `eigen` (a quantified-variant's peeled ∀ vars, re-bound by the `fix` wrapper). Returns the
+/// abstraction + the param-substituted goal. Every producer opens with this; callers then
+/// `substFvarsToParams` their own (typed) premise formulae with the returned `abs`.
+const AbstractedGoal = struct { abs: FvarAbstraction, goal_p: TermId };
+fn abstractGoal(self: *Prove, b: *Accelerant.Builder, goal: TermId, local_prem_formulae: []const TermId, eigen: []const term.Node.Fvar) Error!AbstractedGoal {
+    var abs_terms: std.ArrayList(TermId) = .empty;
+    try abs_terms.append(self.ctx.arena, goal);
+    try abs_terms.appendSlice(self.ctx.arena, local_prem_formulae);
+    const abs = try self.abstractFreeFvars(b, abs_terms.items, eigen);
+    return .{ .abs = abs, .goal_p = try self.substFvarsToParams(goal, abs) };
+}
+
 /// Collect distinct free fvars (by name) into `out`.
 fn collectFreeFvars(self: *Prove, id: TermId, out: *std.ArrayList(term.Node.Fvar)) Error!void {
     switch (self.pool.get(id)) {
@@ -2333,12 +2348,12 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix`) into value params — the
     // goal plus each LOCAL equation formula (a global's formula is closed) speak the param
     // names `p1, p2, …` after substitution. (chain has no ∀-eigenvariables to exclude.)
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, goal);
-    for (prepared) |p| if (p.local) try abs_terms.append(self.ctx.arena, p.formula);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, &.{});
+    var local_pf: std.ArrayList(TermId) = .empty;
+    for (prepared) |p| if (p.local) try local_pf.append(self.ctx.arena, p.formula);
+    const ag = try self.abstractGoal(&b, goal, local_pf.items, &.{});
+    const abs = ag.abs;
 
-    const gn = self.pool.get(try self.substFvarsToParams(goal, abs)).eq;
+    const gn = self.pool.get(ag.goal_p).eq;
     const start = gn.lhs;
     const target = gn.rhs;
     const eqs = try self.ctx.arena.alloc(ChainEq, prepared.len);
@@ -2552,11 +2567,10 @@ fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Term
     // abstract free caller-local fvars into params UP FRONT (before normalizing) so the goal,
     // the trace, and the schema body all speak `p1, p2, …`. Eigenvariables stay free (re-bound
     // by the `fix` wrapper). A LOCAL lemma's formula may share such an fvar — include it.
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, eq_goal_raw);
-    if (prepared.local) try abs_terms.append(self.ctx.arena, prepared.formula);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
-    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const local_pf: []const TermId = if (prepared.local) &.{prepared.formula} else &.{};
+    const ag = try self.abstractGoal(&b, eq_goal_raw, local_pf, eigen);
+    const abs = ag.abs;
+    const eq_goal = ag.goal_p;
     const gn = self.pool.get(eq_goal).eq;
     const s = gn.lhs;
     const t = gn.rhs;
@@ -2653,10 +2667,9 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     // abstract free caller-local fvars (an enclosing `fix`) into value params, then canonicalize
     // in PARAM space so the trace + schema body speak `p1, p2, …`. Eigenvariables (the peeled ∀
     // vars) stay free and are re-bound by the `fix` wrapper in finishReorder.
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, eq_goal_raw);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
-    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const ag = try self.abstractGoal(&b, eq_goal_raw, &.{}, eigen);
+    const abs = ag.abs;
+    const eq_goal = ag.goal_p;
     const gn = self.pool.get(eq_goal).eq;
     const s0 = gn.lhs;
     const t0 = gn.rhs;
@@ -2875,11 +2888,11 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
 
     // abstract free caller-locals into params (goal + any LOCAL premise formula), then rewrite
     // both sides IN PARAM SPACE so the trace + schema body speak `p1, p2, …`.
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, eq_goal_raw);
-    for (pre_prepared.items) |p| try abs_terms.append(self.ctx.arena, p.formula);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, eigen);
-    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    var local_pf: std.ArrayList(TermId) = .empty;
+    for (pre_prepared.items) |p| try local_pf.append(self.ctx.arena, p.formula);
+    const ag = try self.abstractGoal(&b, eq_goal_raw, local_pf.items, eigen);
+    const abs = ag.abs;
+    const eq_goal = ag.goal_p;
     const gn = self.pool.get(eq_goal).eq;
     const s0 = gn.lhs;
     const t0 = gn.rhs;
@@ -3090,8 +3103,9 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into value
     // params — the fully-quantified fixtures have none (all free vars are peeled eigenvariables),
     // but a bare `[using extensionality(...)]` over fixed locals would surface them.
-    const abs = try self.abstractFreeFvars(&b, &.{eq_goal_raw}, eigen);
-    const eq_goal = try self.substFvarsToParams(eq_goal_raw, abs);
+    const ag = try self.abstractGoal(&b, eq_goal_raw, &.{}, eigen);
+    const abs = ag.abs;
+    const eq_goal = ag.goal_p;
     const eq = self.pool.get(eq_goal).eq;
     const s = eq.lhs;
     const t = eq.rhs;
@@ -3771,11 +3785,11 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix`) into value params — so
     // the cert steps, premises and schema body all speak the param names. (The ∀-goal's own
     // binders are NOT free here; they are peeled into eigenvariables by each cert path.)
-    var abs_terms: std.ArrayList(TermId) = .empty;
-    try abs_terms.append(self.ctx.arena, goal);
-    for (prems) |p| if (p.local) try abs_terms.append(self.ctx.arena, p.formula);
-    const abs = try self.abstractFreeFvars(&b, abs_terms.items, &.{});
-    const goal_p = try self.substFvarsToParams(goal, abs);
+    var local_pf: std.ArrayList(TermId) = .empty;
+    for (prems) |p| if (p.local) try local_pf.append(self.ctx.arena, p.formula);
+    const ag = try self.abstractGoal(&b, goal, local_pf.items, &.{});
+    const abs = ag.abs;
+    const goal_p = ag.goal_p;
     for (prems, prem_formulae) |*p, *pf| {
         p.formula = try self.substFvarsToParams(p.formula, abs);
         pf.* = p.formula;
