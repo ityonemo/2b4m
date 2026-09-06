@@ -308,7 +308,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             const arith_id = try self.ctx.interner.internString("arithmetic");
             const arith_q_id = try self.ctx.interner.internString("arithmetic_quantified");
             if (c.rule.name == arith_id or c.rule.name == arith_q_id) {
-                if (try self.demandArithIdents(c.rule.start)) |blocker| return blocker;
+                if (try self.demandArithIdents(c)) |blocker| return blocker;
             }
             var e = self.elab(w);
             const goal_typed = elaborateGoal(&e, c.formula) catch |err| switch (err) {
@@ -329,7 +329,8 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
 /// so `readArithSymbols`' ident lookups find them `done` in the producer. Only declared names
 /// are demanded (a missing one is skipped — no fetch, no "reference not found"). Returns a
 /// blocker to suspend on, or null when all are resolved.
-fn demandArithIdents(self: *Prove, loc: u32) Allocator.Error!?Engine.TaskIndex {
+fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
+    const loc = c.rule.start;
     const wk = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub", "less_than", "nonneg" };
     const fid = self.ctx.pool_file.get(self.file).?;
     var refs: std.ArrayList(RefScan.Ref) = .empty;
@@ -338,6 +339,16 @@ fn demandArithIdents(self: *Prove, loc: u32) Allocator.Error!?Engine.TaskIndex {
         if (self.ctx.declOf(fid, nid) == null) continue; // not declared here → skip
         try refs.append(self.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = loc });
     }
+    // the Cooper induction path instantiates the `induction` schema — demand its `.schema`
+    // locator so the producer's schema lookup finds it `done`. Only when THIS file declares
+    // `induction` as a schema (a parameterized axiom); a bare re-export or a theory-qualified
+    // name is left to the ordinary resolver (the induction path declines if it can't resolve).
+    const induction_id = self.ctx.interner.internString("induction") catch return error.OutOfMemory;
+    if (c.schema == null) if (self.ctx.declOf(fid, induction_id)) |d| {
+        if (ast.factOf(d)) |f| if (f.params != null) {
+            try refs.append(self.ctx.arena, .{ .ns = null, .name = induction_id, .domain = .schema, .loc = loc });
+        };
+    };
     return resolveRefs(self.ctx, self.h, self.file, self.ns, refs.items);
 }
 
@@ -563,7 +574,7 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     const refined = try e.resolveBinderSort(b); // handles inline `S where inH`
     const sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
     const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
-    const fvar = try self.freshNamed(self.text(b.name));
+    const fvar = try self.freshNamed(self.ctx.interner.stringBytes(name));
     w.pending_binder = .{ .sort = sort, .fvar = fvar };
     // build the guard over the fresh fvar (conjunction if multiple qualifiers).
     var guard: ?TermId = null;
@@ -3843,6 +3854,8 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
         certified = true;
     } else if (try self.arithCooperCert(&cert, &body_steps, goal_p, &proved_prop, symbols)) {
         certified = true;
+    } else if (try self.arithMixedCert(&cert, &body_steps, goal_p, &proved_prop, prems, symbols)) {
+        certified = true;
     }
 
     if (!certified) {
@@ -4394,6 +4407,399 @@ fn emitFarkasCommEq(cert: *ArithCert, block: *std.ArrayList(ast.Step), comm_stmt
     return elim.label;
 }
 
+/// The MIXED-D2 certifier: a goal whose boolean structure mixes propositional atoms with
+/// linear/order (theory) atoms. Peel the ∀ prefix + strip the leading `->` premises (surfaced
+/// as local hypotheses), then prove the residual body by a propositional-skeleton proof
+/// (excluded-middle split + `or_elim` per atom, like the tautology cert) whose leaves are
+/// discharged EITHER propositionally (an assumed literal) OR by the arithmetic equation/order
+/// certs (a theory atom, closed from the branch's assumed theory literals). Every step is
+/// kernel-checked. Declines (false) when `smt.decideMixed` doesn't confirm validity, when the
+/// atom count exceeds the limit, or when a theory leaf can't be discharged.
+fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    const peel = try self.arithPeel(goal_p);
+    // strip the body's leading `->` antecedents into local hypotheses (assume blocks); each
+    // becomes a theory/prop premise available to the skeleton + theory leaves.
+    var body = peel.body;
+    var strip_assumes: std.ArrayList(TermId) = .empty; // the stripped antecedents, in order
+    while (true) {
+        const node = self.pool.get(body);
+        if (node != .bin or node.bin.op != .implies) break;
+        try strip_assumes.append(self.ctx.arena, node.bin.lhs);
+        body = node.bin.rhs;
+    }
+    // the body must be genuinely MIXED — a boolean combination (bin/not) mentioning at least
+    // one propositional (non-theory) atom; a pure equation/order/exists is another cert's job.
+    const bn = self.pool.get(body);
+    if (bn != .bin and bn != .not) return false;
+
+    // collect the atoms (premises + stripped antecedents + body); decide validity.
+    var decide_prems: std.ArrayList(TermId) = .empty;
+    for (prems) |p| try decide_prems.append(self.ctx.arena, p.formula);
+    try decide_prems.appendSlice(self.ctx.arena, strip_assumes.items);
+    if (symbols.nonneg) |nn| if (symbols.nat) |nat| {
+        var seen: std.AutoHashMapUnmanaged(StrId, void) = .empty;
+        try self.collectArithNonneg(body, nat, nn, &seen, &decide_prems);
+        for (decide_prems.items[0 .. prems.len + strip_assumes.items.len]) |pf| try self.collectArithNonneg(pf, nat, nn, &seen, &decide_prems);
+    };
+    const verdict = smt.decideMixed(self.ctx.arena, self.pool, symbols, decide_prems.items, body) catch return error.OutOfMemory;
+    if (verdict != .valid) return false;
+
+    // the skeleton's atoms (premises + stripped + body); over-cap declines.
+    var atoms: std.ArrayList(TermId) = .empty;
+    for (prems) |p| try smt.collectAtoms(self.ctx.arena, self.pool, &atoms, p.formula);
+    for (strip_assumes.items) |a| try smt.collectAtoms(self.ctx.arena, self.pool, &atoms, a);
+    try smt.collectAtoms(self.ctx.arena, self.pool, &atoms, body);
+    if (atoms.items.len > smt.atom_limit) return false;
+
+    const assignment = try self.ctx.arena.alloc(?bool, atoms.items.len);
+    @memset(assignment, null);
+    const lit_blocks = try self.ctx.arena.alloc(?StrId, atoms.items.len);
+    @memset(lit_blocks, null);
+
+    // the stripped antecedents each get an assume-block (restated hypothesis); the cited
+    // premises (LOCAL restated / GLOBAL cited) provide their labels directly.
+    var mixed: MixedAst = .{
+        .p = self,
+        .cert = cert,
+        .body = body,
+        .atoms = atoms.items,
+        .assignment = assignment,
+        .lit_blocks = lit_blocks,
+        .symbols = symbols,
+    };
+
+    // emit the cited-premise + stripped-antecedent hypotheses so their theory atoms are
+    // available to the leaves, then the skeleton proof. We build inside the ∀-`fix` shell
+    // (via wrapArithForall) after assembling the body proof.
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    // GLOBAL cited premises: cite them; LOCAL cited premises: restated hyp label lives in the
+    // schema-antecedent wrapper (packageArith). Register both as leaf-usable premises.
+    for (prems) |p| {
+        const label = if (p.local) p.hyp else try cert.citeGlobalPremise(&body_steps, p);
+        try mixed.premise_labels.append(self.ctx.arena, .{ .formula = p.formula, .label = label });
+    }
+    // stripped antecedents become assume blocks wrapping the rest; emit the skeleton inside the
+    // innermost. Build the skeleton first, then nest the assume blocks outward.
+    var inner: std.ArrayList(ast.Step) = .empty;
+    // restate each stripped antecedent's hypothesis inside its block (labels created here).
+    const strip_labels = try self.ctx.arena.alloc(StrId, strip_assumes.items.len);
+    const strip_blocks = try self.ctx.arena.alloc(StrId, strip_assumes.items.len);
+    for (strip_assumes.items, strip_labels, strip_blocks) |a, *lbl, *blk| {
+        lbl.* = try self.freshNamed("mixed-hyp");
+        blk.* = try self.freshNamed("mixed-assume");
+        try mixed.premise_labels.append(self.ctx.arena, .{ .formula = a, .label = lbl.* });
+    }
+    if (!try mixed.deriveGoal(&inner)) return false;
+
+    // nest the stripped antecedents' assume blocks (innermost = last antecedent), exporting
+    // `a_i -> …` out through each with implies_intro.
+    var wrapped_body = inner.items;
+    var residual = body;
+    var i = strip_assumes.items.len;
+    while (i > 0) {
+        i -= 1;
+        var blk_body: std.ArrayList(ast.Step) = .empty;
+        try blk_body.append(self.ctx.arena, try cert.b.claimStep(strip_labels[i], try cert.b.termExpr(strip_assumes.items[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, strip_blocks[i])));
+        try blk_body.appendSlice(self.ctx.arena, wrapped_body);
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try cert.b.assumeStep(strip_blocks[i], try cert.b.termExpr(strip_assumes.items[i]), blk_body.items));
+        residual = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = strip_assumes.items[i], .rhs = residual } });
+        _ = try cert.claim(&lvl, residual, "implies_intro", &.{}, &.{strip_blocks[i]});
+        wrapped_body = lvl.items;
+    }
+    try body_steps.appendSlice(self.ctx.arena, wrapped_body);
+
+    // re-generalize under the ∀ eigenvariables.
+    const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, body_steps.items);
+    try out.appendSlice(self.ctx.arena, wrapped.steps);
+    proved_prop.* = wrapped.prop;
+    return true;
+}
+
+/// The mixed-skeleton certificate emitter (D2): a propositional excluded-middle/or_elim
+/// skeleton over the goal's atoms whose leaves are discharged EITHER by an assumed literal
+/// (propositional) OR by the arithmetic equation/order certs (a theory atom, closed from the
+/// branch's assumed theory literals). Mirrors `TautAst` but adds theory-leaf discharge.
+const MixedAst = struct {
+    p: *Prove,
+    cert: *ArithCert,
+    body: TermId,
+    atoms: []const TermId,
+    assignment: []?bool,
+    /// per atom: the assume-block LABEL whose hypothesis is the (positive/negative) literal
+    lit_blocks: []?StrId,
+    symbols: presburger_mod.Symbols,
+    /// premises (cited + stripped antecedents) usable as theory-leaf rewrite rules: formula +
+    /// the label of a step/hypothesis proving it.
+    premise_labels: std.ArrayList(struct { formula: TermId, label: StrId }) = .empty,
+
+    fn pool(self: *const MixedAst) *term.Pool {
+        return self.p.pool;
+    }
+
+    fn eval(self: *const MixedAst, f: TermId) ?bool {
+        return smt.eval(self.pool(), self.atoms, self.assignment, f);
+    }
+
+    /// Is `atom` a theory (linear/order) atom the arithmetic certs can discharge?
+    fn isTheory(self: *const MixedAst, atom: TermId) bool {
+        return switch (self.pool().get(atom)) {
+            .eq => true,
+            .pred => |pr| self.p.symIs(pr.sym, self.symbols.less_than),
+            else => false,
+        };
+    }
+
+    /// The assume-block label whose hypothesis is the literal for a propositional atom `f`.
+    fn litBlock(self: *const MixedAst, f: TermId) StrId {
+        for (self.atoms, self.lit_blocks) |a, blk| {
+            if (self.pool().alphaEq(a, f)) return blk.?;
+        }
+        unreachable;
+    }
+
+    /// The theory literals assumed TRUE on the current branch (assigned atoms + always-true
+    /// premises), as `ArithPremise`s the equation/order certs use as rewrite rules. Each needs
+    /// a citable step label: an assigned atom cites its split assume-block hypothesis (restated
+    /// into `block`); a premise cites its own label.
+    fn theoryPremises(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error![]const ArithPremise {
+        var out: std.ArrayList(ArithPremise) = .empty;
+        // premises whose formula is a theory atom (or a conjunction of them — restate atoms).
+        for (self.premise_labels.items) |pl| {
+            if (self.isTheory(pl.formula)) {
+                try out.append(self.p.ctx.arena, .{ .formula = pl.formula, .local = true, .hyp = pl.label, .head = undefined, .is_axiom = false });
+            }
+        }
+        // atoms assigned TRUE that are theory atoms: restate their literal hypothesis.
+        for (self.atoms, self.assignment) |a, v| {
+            if (v != true) continue;
+            if (!self.isTheory(a)) continue;
+            const restated = try self.p.freshNamed("mixed-theory");
+            try block.append(self.p.ctx.arena, try self.cert.b.claimStep(restated, try self.cert.b.termExpr(a), .by, try self.p.internStr("hypothesis"), &.{}, try self.p.oneRef(self.cert.b, self.litBlock(a))));
+            try out.append(self.p.ctx.arena, .{ .formula = a, .local = true, .hyp = restated, .head = undefined, .is_axiom = false });
+        }
+        return out.items;
+    }
+
+    /// Prove `self.body` in `block`. A refuted premise closes by `absurd`; a true goal derives
+    /// structurally (theory leaves via the arith certs); a fully-decided branch that is
+    /// theory-UNSAT derives a theory contradiction; otherwise split on the first unassigned
+    /// atom via excluded-middle + `or_elim`.
+    fn deriveGoal(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error!bool {
+        // a premise assumed false on this branch → absurd (rare; premises are asserted true).
+        for (self.premise_labels.items) |pl| {
+            if (self.eval(pl.formula) == false) {
+                const refuted = (try self.deriveFalse(block, pl.formula)) orelse return false;
+                _ = try self.cert.claim(block, self.body, "absurd", &.{}, &.{ pl.label, refuted });
+                return true;
+            }
+        }
+        if (self.eval(self.body) == true) {
+            return (try self.deriveTrue(block, self.body)) != null;
+        }
+        // find the first unassigned atom.
+        const unassigned = for (self.assignment, 0..) |v, i| {
+            if (v == null) break i;
+        } else null;
+        if (unassigned == null) {
+            // fully decided, body false, no premise refuted: the branch is theory-UNSAT. Derive
+            // a contradiction — prove a theory atom assumed FALSE (from the true theory literals)
+            // and `absurd` against its negation hypothesis.
+            return self.deriveTheoryContradiction(block);
+        }
+        const idx = unassigned.?;
+        const atom = self.atoms[idx];
+        const not_atom = try self.pool().add(.{ .not = atom });
+        const disj = try self.pool().add(.{ .bin = .{ .op = .or_op, .lhs = atom, .rhs = not_atom } });
+        const lem = try self.emitLem(block, atom, not_atom, disj);
+
+        var left = try self.openBlock();
+        self.assignment[idx] = true;
+        self.lit_blocks[idx] = left.label;
+        if (!try self.deriveGoal(&left.body)) return false;
+        try self.finishBlock(block, &left, atom);
+
+        var right = try self.openBlock();
+        self.assignment[idx] = false;
+        self.lit_blocks[idx] = right.label;
+        if (!try self.deriveGoal(&right.body)) return false;
+        try self.finishBlock(block, &right, not_atom);
+
+        self.assignment[idx] = null;
+        self.lit_blocks[idx] = null;
+        _ = try self.cert.claim(block, self.body, "or_elim", &.{}, &.{ lem, left.label, right.label });
+        return true;
+    }
+
+    /// A fully-decided theory-UNSAT branch: for each theory atom assigned FALSE, try to PROVE
+    /// it (positively) from the true theory literals via the equation/order cert; on success,
+    /// `absurd` the proof against the atom's assumed-false hypothesis, closing the branch to any
+    /// goal. Returns false if no such contradiction can be built.
+    fn deriveTheoryContradiction(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error!bool {
+        for (self.atoms, self.assignment) |a, v| {
+            if (v != false) continue;
+            if (!self.isTheory(a)) continue;
+            var probe: std.ArrayList(ast.Step) = .empty;
+            const tp = try self.theoryPremises(&probe);
+            if (!try self.p.arithBodyEqCert(self.cert, &probe, a, tp, self.symbols)) continue;
+            const proof = try self.p.arithLastLabel(probe.items);
+            try block.appendSlice(self.p.ctx.arena, probe.items);
+            // restate the assumed-false literal `not a` as a step (the assume-block hypothesis),
+            // then `absurd` the positive proof against it (absurd wants s1 = P, s2 = not P).
+            const not_a = try self.pool().add(.{ .not = a });
+            const neg_ref = try self.emit(block, not_a, "hypothesis", &.{self.litBlock(a)});
+            _ = try self.cert.claim(block, self.body, "absurd", &.{}, &.{ proof, neg_ref });
+            return true;
+        }
+        return false;
+    }
+
+    const OpenBlock = struct { label: StrId, body: std.ArrayList(ast.Step) = .empty };
+
+    fn openBlock(self: *MixedAst) Error!OpenBlock {
+        return .{ .label = try self.p.freshNamed("mixed") };
+    }
+
+    fn finishBlock(self: *MixedAst, parent: *std.ArrayList(ast.Step), blk: *OpenBlock, formula: TermId) Error!void {
+        try parent.append(self.p.ctx.arena, try self.cert.b.assumeStep(blk.label, try self.cert.b.termExpr(formula), blk.body.items));
+    }
+
+    fn hyp(self: *MixedAst, blk: *OpenBlock, formula: TermId) Error!StrId {
+        const label = try self.p.freshNamed("mixed");
+        try blk.body.append(self.p.ctx.arena, try self.cert.b.claimStep(label, try self.cert.b.termExpr(formula), .by, try self.p.internStr("hypothesis"), &.{}, try self.p.oneRef(self.cert.b, blk.label)));
+        return label;
+    }
+
+    fn emit(self: *MixedAst, block: *std.ArrayList(ast.Step), formula: TermId, rule: []const u8, refs: []const StrId) Error!StrId {
+        const toks = try self.p.ctx.arena.alloc(lexer.Token, refs.len);
+        for (refs, toks) |r, *o| o.* = self.cert.b.tok(r);
+        const label = try self.p.freshNamed("mixed");
+        try block.append(self.p.ctx.arena, try self.cert.b.claimStep(label, try self.cert.b.termExpr(formula), .by, try self.p.internStrRt(rule), &.{}, toks));
+        return label;
+    }
+
+    /// `atom or not atom` classically: not_intro on the negated disjunction, double_negation.
+    fn emitLem(self: *MixedAst, block: *std.ArrayList(ast.Step), atom: TermId, not_atom: TermId, disj: TermId) Error!StrId {
+        const not_disj = try self.pool().add(.{ .not = disj });
+        const not_not = try self.pool().add(.{ .not = not_disj });
+        var outer = try self.openBlock();
+        const hyp_outer = try self.hyp(&outer, not_disj);
+        var innerb = try self.openBlock();
+        const hyp_inner = try self.hyp(&innerb, atom);
+        const or_left = try self.emit(&innerb.body, disj, "or_intro_left", &.{hyp_inner});
+        try self.finishBlock(&outer.body, &innerb, atom);
+        const derived_not = try self.emit(&outer.body, not_atom, "not_intro", &.{ innerb.label, or_left, hyp_outer });
+        const or_right = try self.emit(&outer.body, disj, "or_intro_right", &.{derived_not});
+        try self.finishBlock(block, &outer, not_disj);
+        const nn = try self.emit(block, not_not, "not_intro", &.{ outer.label, or_right, hyp_outer });
+        return self.emit(block, disj, "double_negation", &.{nn});
+    }
+
+    /// Prove `f` (evaluates true) in `block`; return its label, or null on a theory-leaf
+    /// discharge failure.
+    fn deriveTrue(self: *MixedAst, block: *std.ArrayList(ast.Step), f: TermId) Error!?StrId {
+        switch (self.pool().get(f)) {
+            .bin => |bin| switch (bin.op) {
+                .and_op => {
+                    const left = (try self.deriveTrue(block, bin.lhs)) orelse return null;
+                    const right = (try self.deriveTrue(block, bin.rhs)) orelse return null;
+                    const rule: []const u8 = if (self.p.isBiconditionalShape(f)) "iff_intro" else "and_intro";
+                    return try self.emit(block, f, rule, &.{ left, right });
+                },
+                .or_op => {
+                    if (self.eval(bin.lhs) == true) {
+                        const l = (try self.deriveTrue(block, bin.lhs)) orelse return null;
+                        return try self.emit(block, f, "or_intro_left", &.{l});
+                    }
+                    const r = (try self.deriveTrue(block, bin.rhs)) orelse return null;
+                    return try self.emit(block, f, "or_intro_right", &.{r});
+                },
+                .implies => {
+                    var blk = try self.openBlock();
+                    if (self.eval(bin.rhs) == true) {
+                        _ = (try self.deriveTrue(&blk.body, bin.rhs)) orelse return null;
+                    } else {
+                        const h = try self.hyp(&blk, bin.lhs);
+                        const refuted = (try self.deriveFalse(&blk.body, bin.lhs)) orelse return null;
+                        _ = try self.emit(&blk.body, bin.rhs, "absurd", &.{ h, refuted });
+                    }
+                    try self.finishBlock(block, &blk, bin.lhs);
+                    return try self.emit(block, f, "implies_intro", &.{blk.label});
+                },
+            },
+            .not => |inner| return (try self.deriveFalse(block, inner)),
+            else => {
+                // an atom assigned true. A THEORY atom: discharge via the arith cert (from the
+                // branch's true theory literals). A propositional atom: restate its assumption.
+                if (self.isTheory(f)) {
+                    const tp = try self.theoryPremises(block);
+                    if (!try self.p.arithBodyEqCert(self.cert, block, f, tp, self.symbols)) return null;
+                    return try self.p.arithLastLabel(block.items);
+                }
+                return try self.emit(block, f, "hypothesis", &.{self.litBlock(f)});
+            },
+        }
+    }
+
+    /// Prove `not f` (f evaluates false) in `block`; return its label, or null on failure.
+    fn deriveFalse(self: *MixedAst, block: *std.ArrayList(ast.Step), f: TermId) Error!?StrId {
+        const nf = try self.pool().add(.{ .not = f });
+        switch (self.pool().get(f)) {
+            .bin => |bin| switch (bin.op) {
+                .and_op => {
+                    const left_false = self.eval(bin.lhs) == false;
+                    const side = if (left_false) bin.lhs else bin.rhs;
+                    const refuted = (try self.deriveFalse(block, side)) orelse return null;
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    const elim = try self.emit(&blk.body, side, if (left_false) "and_elim_left" else "and_elim_right", &.{h});
+                    try self.finishBlock(block, &blk, f);
+                    return try self.emit(block, nf, "not_intro", &.{ blk.label, elim, refuted });
+                },
+                .or_op => {
+                    const not_left = (try self.deriveFalse(block, bin.lhs)) orelse return null;
+                    const not_right = (try self.deriveFalse(block, bin.rhs)) orelse return null;
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    var left = try self.openBlock();
+                    _ = try self.hyp(&left, bin.lhs);
+                    try self.finishBlock(&blk.body, &left, bin.lhs);
+                    var right = try self.openBlock();
+                    const rh = try self.hyp(&right, bin.rhs);
+                    _ = try self.emit(&right.body, bin.lhs, "absurd", &.{ rh, not_right });
+                    try self.finishBlock(&blk.body, &right, bin.rhs);
+                    const conc = try self.emit(&blk.body, bin.lhs, "or_elim", &.{ h, left.label, right.label });
+                    try self.finishBlock(block, &blk, f);
+                    return try self.emit(block, nf, "not_intro", &.{ blk.label, conc, not_left });
+                },
+                .implies => {
+                    const ante = (try self.deriveTrue(block, bin.lhs)) orelse return null;
+                    const not_conseq = (try self.deriveFalse(block, bin.rhs)) orelse return null;
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, f);
+                    const conseq = try self.emit(&blk.body, bin.rhs, "modus_ponens", &.{ h, ante });
+                    try self.finishBlock(block, &blk, f);
+                    return try self.emit(block, nf, "not_intro", &.{ blk.label, conseq, not_conseq });
+                },
+            },
+            .not => |inner| {
+                const truth = (try self.deriveTrue(block, inner)) orelse return null;
+                var blk = try self.openBlock();
+                const h = try self.hyp(&blk, f);
+                try self.finishBlock(block, &blk, f);
+                return try self.emit(block, nf, "not_intro", &.{ blk.label, truth, h });
+            },
+            else => {
+                // an atom assigned false. A propositional atom: its assumption IS the negation.
+                // A THEORY atom assigned false is handled by the branch-contradiction path (it
+                // is never the STRUCTURE of a false goal we need to refute positively here); if
+                // one reaches here it cites its negative literal hypothesis.
+                return try self.emit(block, nf, "hypothesis", &.{self.litBlock(f)});
+            },
+        }
+    }
+};
+
 /// The Cooper certifier (period-1 witness). Peel the goal's ∀ prefix into `fix` blocks; the
 /// body must be `exists y; disj`. Trace the Cooper elimination, reconstruct each boundary
 /// witness as a term, and prove the body at the first witness whose opened disjunction has a
@@ -4409,7 +4815,7 @@ fn arithCooperCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
     const traced = presburger_mod.trace(self.ctx.arena, self.pool, symbols, &.{}, peel.body) catch return error.OutOfMemory;
     if (traced != .replay) return false;
     const replay = traced.replay;
-    if (replay.period != 1) return false; // induction path not ported
+    if (replay.period != 1) return self.arithCooperInduction(cert, out, peel, goal_p, proved_prop, symbols);
 
     // reconstruct candidate boundary witnesses as terms.
     var candidates: std.ArrayList(TermId) = .empty;
@@ -4425,7 +4831,7 @@ fn arithCooperCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
 
     // prove `exists y; disj` at the first candidate that closes an arm.
     var body_steps: std.ArrayList(ast.Step) = .empty;
-    const ok = try self.arithEmitExistsWitness(cert, &body_steps, peel.body, candidates.items, symbols);
+    const ok = try self.arithEmitExistsWitness(cert, &body_steps, peel.body, candidates.items, &.{}, symbols);
     if (!ok) return false;
     const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, body_steps.items);
     try out.appendSlice(self.ctx.arena, wrapped.steps);
@@ -4433,17 +4839,217 @@ fn arithCooperCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
     return true;
 }
 
+/// Cooper layer 3 (period > 1): synthesize an induction on the single fixed variable to
+/// certify a period-D `forall x; exists y; body`. Predicate P(k) = body[x:=k]; base P(ZERO)
+/// and step `forall k; P(k) -> P(succ(k))` are proved by the witness search (the step unpacks
+/// the IH witness and case-splits its disjunction, shifting the witness per residue arm using
+/// the arm equation as a rewrite premise), then the `induction` schema is instantiated at P.
+/// Declines (returns false) on a multi-fixed-variable goal or a missing symbol/lemma; every
+/// emitted step is kernel-checked (an `instantiation induction(…)` step the generated
+/// ProveTask re-demands + the kernel re-checks). The instance concludes `forall n; P(n)` =
+/// the goal, so no ∀-re-generalization shell is needed.
+fn arithCooperInduction(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), peel: ArithPeel, goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
+    if (peel.eigen.len != 1) return false; // layer 3 = single induction variable
+    const nat = symbols.nat orelse return false;
+    const zero = symbols.zero orelse return false;
+    const succ = symbols.succ orelse return false;
+    // the `induction` schema must be declared in this proof's namespace (a parameterized
+    // axiom) for the instantiation step to resolve.
+    const induction_id = try self.internStrRt("induction");
+    if (self.resolveArithSchema(induction_id) == null) return false;
+
+    // P as a body closed over the induction variable: P(t) = open(p_closed, t).
+    const x = peel.eigen[0];
+    const p_closed = try self.pool.close(peel.body, x.name);
+    const zero_t = try self.pool.addApp(.app, zero, &.{});
+
+    // --- base case: P(ZERO) --------------------------------------------------------------
+    const p_zero = try self.pool.open(p_closed, zero_t);
+    const base_candidates = try self.arithWitnessCandidates(symbols, null);
+    var base_steps: std.ArrayList(ast.Step) = .empty;
+    if (!try self.arithEmitExistsWitness(cert, &base_steps, p_zero, base_candidates, &.{}, symbols)) return false;
+    // the base's exists proof ends in a claim step proving `p_zero`; its label is citable.
+    const base_cite = try self.arithLastLabel(base_steps.items);
+
+    // --- step: forall k; P(k) -> P(succ(k)) ----------------------------------------------
+    const k: term.Node.Fvar = .{ .name = try self.freshNamed("k"), .sort = nat };
+    const k_id = try self.pool.add(.{ .fvar = .{ .name = k.name, .sort = nat } });
+    const p_k = try self.pool.open(p_closed, k_id);
+    const succ_k = try self.pool.addApp(.app, succ, &.{k_id});
+    const p_succ_k = try self.pool.open(p_closed, succ_k);
+    const step_impl = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = p_k, .rhs = p_succ_k } });
+
+    // the IH existential var y0; the IH body (disjunction) opened at y0.
+    const ihn = self.pool.get(p_k);
+    if (ihn != .quant or ihn.quant.q != .exists) return false;
+    const y0: term.Node.Fvar = .{ .name = try self.freshNamed("y"), .sort = ihn.quant.sort };
+    const y0_id = try self.pool.add(.{ .fvar = .{ .name = y0.name, .sort = y0.sort } });
+    const ih_body = try self.pool.open(ihn.quant.body, y0_id);
+
+    // labels for the step's block structure (all `#`-mangled, collision-free).
+    const ih_label = try self.freshNamed("inductive-hypothesis");
+    const step_candidates = try self.arithWitnessCandidates(symbols, y0_id);
+
+    // inside the unpack: restate the IH body (disjunction) by hypothesis, then case-split it,
+    // each arm proving P(succ(k)) via the witness search using the arm equation as a premise.
+    var unpack_body: std.ArrayList(ast.Step) = .empty;
+    const ih_body_label = try self.freshNamed("ih-disjunct");
+    const unpack_block_label = try self.freshNamed("with-witness");
+    try unpack_body.append(self.ctx.arena, try cert.b.claimStep(ih_body_label, try cert.b.termExpr(ih_body), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, unpack_block_label)));
+    if ((try self.arithEmitInductionCases(cert, &unpack_body, ih_body, ih_body_label, p_succ_k, step_candidates, symbols)) == null) return false;
+
+    // the unpack block: `unpack y from <ih>` — draws the existential witness y0 out of the IH.
+    const y0_sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(y0.sort)));
+    const unpack_step: ast.Step = .{ .label = cert.b.tok(unpack_block_label), .body = .{ .unpack = .{
+        .name = cert.b.tok(try self.displayName(y0.name)),
+        .sort = cert.b.tok(y0_sort_name),
+        .from = cert.b.tok(ih_label),
+        .steps = unpack_body.items,
+    } } };
+
+    // the assume P(k) block: restate the IH, then unpack + case-split, exporting P(succ(k)).
+    var assume_body: std.ArrayList(ast.Step) = .empty;
+    const assume_block_label = try self.freshNamed("given-ih");
+    try assume_body.append(self.ctx.arena, try cert.b.claimStep(ih_label, try cert.b.termExpr(p_k), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, assume_block_label)));
+    try assume_body.append(self.ctx.arena, unpack_step);
+    // export P(succ(k)) out of the unpack (exists_elim).
+    _ = try cert.claim(&assume_body, p_succ_k, "exists_elim", &.{}, &.{unpack_block_label});
+    const assume_step = try cert.b.assumeStep(assume_block_label, try cert.b.termExpr(p_k), assume_body.items);
+
+    // the fix k block: assume P(k), conclude P(succ(k)), export the implication.
+    var fix_body: std.ArrayList(ast.Step) = .empty;
+    try fix_body.append(self.ctx.arena, assume_step);
+    _ = try cert.claim(&fix_body, step_impl, "implies_intro", &.{}, &.{assume_block_label});
+    const fixr = try cert.fixStep("cooper-step-fix", k.name, nat, fix_body.items);
+    const step_forall = try self.closeForallVar(step_impl, k.name, nat);
+
+    // assemble `out`: base steps, then the fix block, then the step's forall_intro, then the
+    // induction instantiation. (base + step labels must precede the instantiation cite.)
+    try out.appendSlice(self.ctx.arena, base_steps.items);
+    try out.append(self.ctx.arena, fixr.step);
+    const step_cite = try cert.claim(out, step_forall, "forall_intro", &.{}, &.{fixr.label});
+
+    // --- instantiate the `induction` schema at P -----------------------------------------
+    // build the predicate arg `fun x => P(x)` as a lambda AST expr (binder trims to the
+    // eigenvar's display name, so the delaborated body's refs bind to it — single eigenvar,
+    // no collision). The generated ProveTask re-demands the instance; the kernel re-checks it.
+    const lambda_arg = try self.arithInductionLambda(cert.b, p_closed, x, nat);
+    const args = try self.ctx.arena.alloc(*const ast.Expr, 1);
+    args[0] = lambda_arg;
+    const inst_label = try self.freshNamed("cooper-induction");
+    const refs = try self.ctx.arena.alloc(lexer.Token, 2);
+    refs[0] = cert.b.tok(base_cite);
+    refs[1] = cert.b.tok(step_cite);
+    try out.append(self.ctx.arena, .{ .label = cert.b.tok(inst_label), .body = .{ .claim = .{
+        .formula = try cert.b.termExpr(goal_p),
+        .kind = .using,
+        .rule = cert.b.tok(try self.internStrRt("instantiation")),
+        .schema = try self.wkCite("induction", cert.c),
+        .args = args,
+        .refs = refs,
+    } } });
+    proved_prop.* = goal_p;
+    return true;
+}
+
+/// Candidate existential witnesses for the induction base/step: constant towers around ZERO
+/// (`succ^0..3(ZERO)`, and over ℤ `prev^1..3(ZERO)`) and, in the step, the shifted IH witness
+/// `y0` (`y0`, `succ(y0)`, `succ(succ(y0))`, and over ℤ `prev`-shifts). One of these proves the
+/// residue-class arm at succ(k) (the bounded realization of the arbitrary-period shift table).
+fn arithWitnessCandidates(self: *Prove, symbols: presburger_mod.Symbols, ih_witness: ?TermId) Error![]const TermId {
+    var out: std.ArrayList(TermId) = .empty;
+    const zero = symbols.zero orelse return out.items;
+    const zero_t = try self.pool.addApp(.app, zero, &.{});
+    for ([_]i128{ 0, 1, 2, 3, -1, -2, -3 }) |off| {
+        if (try self.buildArithTowerSigned(off, zero_t, symbols)) |w| try out.append(self.ctx.arena, w);
+    }
+    if (ih_witness) |y0| {
+        for ([_]i128{ 0, 1, 2, -1, -2 }) |off| {
+            if (try self.buildArithTowerSigned(off, y0, symbols)) |w| try out.append(self.ctx.arena, w);
+        }
+    }
+    return out.items;
+}
+
+/// Prove `goal` (= P(succ(k))) by an `or_elim` over `disj` (the IH witness disjunction at
+/// y0). Each arm assumes one disjunct — an equation over k, y0 — restates it by hypothesis,
+/// and proves `goal` by the witness search using that equation as a rewrite premise. Returns
+/// the concluding `or_elim` step's label, or null if any arm fails. Right-nested `or` recurses.
+fn arithEmitInductionCases(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), disj: TermId, disj_label: StrId, goal: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!?StrId {
+    const node = self.pool.get(disj);
+    if (node != .bin or node.bin.op != .or_op) return null;
+
+    // left arm: assume the lhs disjunct, prove goal at some witness using it as a premise.
+    const left_label = try self.freshNamed("arm-left");
+    const left_hyp = try self.freshNamed("arm-hyp");
+    var left_body: std.ArrayList(ast.Step) = .empty;
+    try left_body.append(self.ctx.arena, try cert.b.claimStep(left_hyp, try cert.b.termExpr(node.bin.lhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, left_label)));
+    const lprem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.lhs, .local = true, .hyp = left_hyp, .head = undefined, .is_axiom = false }});
+    if (!try self.arithEmitExistsWitness(cert, &left_body, goal, candidates, lprem, symbols)) return null;
+    try block.append(self.ctx.arena, try cert.b.assumeStep(left_label, try cert.b.termExpr(node.bin.lhs), left_body.items));
+
+    // right arm: the rhs disjunct (possibly itself an `or`, recursed).
+    const right_label = try self.freshNamed("arm-right");
+    const right_hyp = try self.freshNamed("arm-hyp");
+    var right_body: std.ArrayList(ast.Step) = .empty;
+    try right_body.append(self.ctx.arena, try cert.b.claimStep(right_hyp, try cert.b.termExpr(node.bin.rhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, right_label)));
+    const rn = self.pool.get(node.bin.rhs);
+    if (rn == .bin and rn.bin.op == .or_op) {
+        const inner = (try self.arithEmitInductionCases(cert, &right_body, node.bin.rhs, right_hyp, goal, candidates, symbols)) orelse return null;
+        _ = inner;
+    } else {
+        const rprem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.rhs, .local = true, .hyp = right_hyp, .head = undefined, .is_axiom = false }});
+        if (!try self.arithEmitExistsWitness(cert, &right_body, goal, candidates, rprem, symbols)) return null;
+    }
+    try block.append(self.ctx.arena, try cert.b.assumeStep(right_label, try cert.b.termExpr(node.bin.rhs), right_body.items));
+
+    return try cert.claim(block, goal, "or_elim", &.{}, &.{ disj_label, left_label, right_label });
+}
+
+/// Build the induction predicate arg `fun x: Nat => P(x)` as a lambda AST expr. The binder is
+/// named by the eigenvar's display name (trimmed of the `#` mangle); the body delaborates
+/// `p_closed` opened at the eigenvar, whose free-var refs trim to the same name and so re-bind
+/// to the lambda binder (single eigenvar ⇒ no display collision).
+fn arithInductionLambda(self: *Prove, b: *Accelerant.Builder, p_closed: TermId, x: term.Node.Fvar, nat: term.SortId) Error!*const ast.Expr {
+    const x_id = try self.pool.add(.{ .fvar = .{ .name = x.name, .sort = nat } });
+    const p_open = try self.pool.open(p_closed, x_id);
+    const body = try b.termExpr(p_open);
+    const bname = try self.displayName(x.name);
+    const nat_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(nat)));
+    const binders = try self.ctx.arena.alloc(ast.Binder, 1);
+    binders[0] = .{ .name = b.tok(bname), .sort = b.tok(nat_name) };
+    const e = try self.ctx.arena.create(ast.Expr);
+    e.* = .{ .lambda = .{ .tok = b.tok(InternPool.Index.none), .binders = binders, .body = body } };
+    return e;
+}
+
+/// Resolve a schema by NAME in this proof's namespace (a `done` IdentKV `.schema`), or null.
+fn resolveArithSchema(self: *Prove, name: StrId) ?InternPool.Index {
+    const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) orelse return null;
+    const ix = switch (state) {
+        .done => |x| x,
+        .in_flight => return null,
+    };
+    return if (self.ctx.interner.keyOf(ix) == .schema) ix else null;
+}
+
+/// Close `body` (mentioning fvar `name`) into `forall name; …`.
+fn closeForallVar(self: *Prove, body: TermId, name: StrId, sort: term.SortId) Error!TermId {
+    const closed = try self.pool.close(body, name);
+    return self.pool.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = name, .body = closed } });
+}
+
 /// Prove `exists y; disj` in `block` at one of `candidates`: open the body at the witness,
 /// prove a provable arm of the (possibly disjunctive) instance, lift through the or-intro
 /// path, and emit `exists_intro`. Returns false if no candidate closes.
-fn arithEmitExistsWitness(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!bool {
+fn arithEmitExistsWitness(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const en = self.pool.get(exists_body);
     if (en != .quant or en.quant.q != .exists) return false;
     for (candidates) |wtn| {
         const instance = try self.pool.open(en.quant.body, wtn);
         // try each arm of the right/left or-nest.
         var arm_steps: std.ArrayList(ast.Step) = .empty;
-        const found = (try self.arithProveDisjArm(cert, &arm_steps, instance, symbols)) orelse continue;
+        const found = (try self.arithProveDisjArm(cert, &arm_steps, instance, prems, symbols)) orelse continue;
         try block.appendSlice(self.ctx.arena, arm_steps.items);
         // lift the arm through the or-intro path (innermost first).
         var arm_label = found.label;
@@ -4472,14 +5078,14 @@ const ArithArm = struct { label: StrId, formula: TermId, path: []const bool };
 
 /// Prove one arm of a right/left `or`-nest `instance` via the equation/order body cert; return
 /// the arm's step label + formula + the or-intro path to it, or null if no arm is provable.
-fn arithProveDisjArm(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), instance: TermId, symbols: presburger_mod.Symbols) Error!?ArithArm {
+fn arithProveDisjArm(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), instance: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!?ArithArm {
     var path: std.ArrayList(bool) = .empty;
     var cur = instance;
     while (true) {
         const node = self.pool.get(cur);
         if (node == .bin and node.bin.op == .or_op) {
             var probe: std.ArrayList(ast.Step) = .empty;
-            if (try self.arithBodyEqCert(cert, &probe, node.bin.lhs, &.{}, symbols)) {
+            if (try self.arithBodyEqCert(cert, &probe, node.bin.lhs, prems, symbols)) {
                 try block.appendSlice(self.ctx.arena, probe.items);
                 const label = try self.arithLastLabel(probe.items);
                 try path.append(self.ctx.arena, false);
@@ -4490,7 +5096,7 @@ fn arithProveDisjArm(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.S
             continue;
         }
         var probe: std.ArrayList(ast.Step) = .empty;
-        if (try self.arithBodyEqCert(cert, &probe, cur, &.{}, symbols)) {
+        if (try self.arithBodyEqCert(cert, &probe, cur, prems, symbols)) {
             try block.appendSlice(self.ctx.arena, probe.items);
             const label = try self.arithLastLabel(probe.items);
             return .{ .label = label, .formula = cur, .path = try self.ctx.arena.dupe(bool, path.items) };
@@ -4679,6 +5285,11 @@ fn arithEmitEquation(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.S
     // additive path: elimination + succ/mul RECURSION pre-rules, then AC-sort + inverse-cancel.
     const add_sym = symbols.add orelse return false;
     try self.pushAdditiveElim(&rules, &cites, symbols, qualifier, cert.c.rule.start);
+    // PREMISE ground rules: a cited equation premise `P_l = P_r` joins the normalizer as a
+    // ground rewrite `P_l -> P_r`, firing where `P_l` occurs literally (e.g. the Cooper
+    // induction-step arm rewrites the fixed var by its case hypothesis `k = add(y0, y0)`). A
+    // self-embedding rule (`P_l` a subterm of `P_r`) would loop — skip it.
+    try self.pushPremiseRules(&rules, &cites, prems);
     const pre_count = rules.items.len;
     const sort: term.SortId = @enumFromInt(@intFromEnum(self.termSort(s)));
     try self.pushACTriple(&rules, &cites, add_sym, sort, "addIsAssociative", "addIsCommutative", "addLeftSwap", cert.c.rule.start);
@@ -4755,7 +5366,6 @@ fn arithCanon(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simp
 /// don't yield a nonneg difference or the equation can't join. (Peano shape; the ℤ nonneg-
 /// antecedent variant is not needed by the fixtures.)
 fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
-    _ = prems;
     const succ = symbols.succ orelse return false;
     const add = symbols.add orelse return false;
     const pred = self.pool.get(body).pred;
@@ -4767,7 +5377,11 @@ fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step
     // engine already decided validity, search a small tower / structural difference. Simple
     // structural approach: if t = add(s, succ(x)) syntactically, d = x; else if t = succ^k(s)-
     // shaped, compute via normalized towers. Use the additive normalizer to canonicalize.
-    const d = (try self.arithOrderDiff(s, t, symbols)) orelse return false;
+    const d = (try self.arithOrderDiff(s, t, symbols)) orelse
+        // no GROUND difference: try an order PREMISE + transitivity (e.g. prove
+        // `less_than(a, succ(b))` from the premise `less_than(a, b)` by chaining a ground
+        // edge `less_than(b, succ(b))`). Only fires when a premise anchors the difference.
+        return self.arithEmitOrderFromPremise(cert, block, s, t, prems, symbols);
     const succ_d = try self.pool.addApp(.app, succ, &.{d});
     const eq_lhs = try self.pool.addApp(.app, add, &.{ s, succ_d });
 
@@ -4781,6 +5395,79 @@ fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step
     const elim = try cert.elimChain(block, intro_label, intro_stmt, &.{ s, d, t });
     _ = try cert.claim(block, body, "modus_ponens", &.{}, &.{ elim.label, eq_label });
     return true;
+}
+
+/// Prove `less_than(s, t)` from an order PREMISE `less_than(s, m)` (matching the goal's lower
+/// bound) via `lessThanElim` + `lessThanIntro`: unpack the premise's witness `w` (so
+/// `add(s, succ(w)) = m`), then the goal's own difference `d = arithOrderDiff(m, t)` gives
+/// `add(m, succ(d)) = t`; substituting `m` yields `add(s, succ(add(succ(w), d))) = t`, i.e. the
+/// goal's difference is `add(succ(w), d)`. Emit: the elim instance + mp, an `unpack w` block
+/// proving the goal via `lessThanIntro` (the difference equation reduced under the witness
+/// equation), and `exists_elim` exporting `less_than(s, t)`. Declines when no premise anchors
+/// `s`, the goal→premise difference isn't a ground tower, or a lemma is absent.
+fn arithEmitOrderFromPremise(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+    const less_than = symbols.less_than orelse return false;
+    const succ = symbols.succ orelse return false;
+    const add = symbols.add orelse return false;
+    const elim_stmt = (try self.arithLemmaFormula("lessThanElim", symbols)) orelse return false;
+    const intro_stmt = (try self.arithLemmaFormula("lessThanIntro", symbols)) orelse return false;
+    for (prems) |p| {
+        const pn = self.pool.get(p.formula);
+        if (pn != .pred or !self.symIs(pn.pred.sym, less_than) or pn.pred.args_len != 2) continue;
+        const pargs = self.pool.args(pn.pred);
+        const pl = pargs[0];
+        const pr = pargs[1]; // premise: less_than(pl, pr)
+        if (!self.pool.alphaEq(pl, s)) continue; // need the premise's lower bound = goal's
+
+        // the goal's difference over the premise's upper bound `pr`: add(pr, succ(dg)) = t.
+        const dg = (try self.arithOrderDiff(pr, t, symbols)) orelse continue;
+
+        // cite the premise, instantiate lessThanElim at (pl, pr), MP → exists w; add(pl,succ(w))=pr.
+        const prem_label = if (p.local) p.hyp else try cert.citeGlobalPremise(block, p);
+        const elim_label = try cert.citeLemma(block, "lessThanElim", elim_stmt);
+        const elim = try cert.elimChain(block, elim_label, elim_stmt, &.{ pl, pr });
+        const exists_f = self.pool.get(elim.formula).bin.rhs; // exists w; add(pl, succ(w)) = pr
+        const exists_label = try cert.claim(block, exists_f, "modus_ponens", &.{}, &.{ elim.label, prem_label });
+
+        // unpack the witness w; inside prove less_than(s, t) via lessThanIntro at difference
+        // `add(succ(w), dg)` (add(s, succ(add(succ(w), dg))) = t reduces under add(s,succ(w))=pr).
+        const en = self.pool.get(exists_f);
+        const w: term.Node.Fvar = .{ .name = try self.freshNamed("w"), .sort = en.quant.sort };
+        const w_id = try self.pool.add(.{ .fvar = .{ .name = w.name, .sort = w.sort } });
+        const wit_eq = try self.pool.open(en.quant.body, w_id); // add(pl, succ(w)) = pr
+        const unpack_block = try self.freshNamed("order-witness");
+        const wit_hyp = try self.freshNamed("witness-eq");
+        var ub: std.ArrayList(ast.Step) = .empty;
+        try ub.append(self.ctx.arena, try cert.b.claimStep(wit_hyp, try cert.b.termExpr(wit_eq), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, unpack_block)));
+        // FLIP the witness eq to `pr = add(s, succ(w))` (symmetry): the additive normalizer lifts
+        // `add(s, succ(w))` to a `succ`-tower, so a forward rule `add(s,succ(w)) -> pr` would never
+        // fire; the reverse rule `pr -> add(s, succ(w))` rewrites the opaque `pr` into the tower.
+        const wn = self.pool.get(wit_eq).eq;
+        const flipped = try self.pool.add(.{ .eq = .{ .lhs = wn.rhs, .rhs = wn.lhs } });
+        const flip_hyp = try cert.claim(&ub, flipped, "symmetry", &.{}, &.{wit_hyp});
+        // difference d = add(succ(w), dg); prove add(s, succ(d)) = t using the flipped witness eq.
+        const d = try self.pool.addApp(.app, add, &.{ try self.pool.addApp(.app, succ, &.{w_id}), dg });
+        const goal = try self.pool.addApp(.pred, less_than, &.{ s, t });
+        const succ_d = try self.pool.addApp(.app, succ, &.{d});
+        const eq_lhs = try self.pool.addApp(.app, add, &.{ s, succ_d });
+        const wit_prem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = flipped, .local = true, .hyp = flip_hyp, .head = undefined, .is_axiom = false }});
+        if (!try self.arithEmitEquation(cert, &ub, eq_lhs, t, wit_prem, symbols)) continue;
+        const eq_label = try self.arithLastLabel(ub.items);
+        const intro_label = try cert.citeLemma(&ub, "lessThanIntro", intro_stmt);
+        const intro_elim = try cert.elimChain(&ub, intro_label, intro_stmt, &.{ s, d, t });
+        _ = try cert.claim(&ub, goal, "modus_ponens", &.{}, &.{ intro_elim.label, eq_label });
+
+        const unpack_step: ast.Step = .{ .label = cert.b.tok(unpack_block), .body = .{ .unpack = .{
+            .name = cert.b.tok(try self.displayName(w.name)),
+            .sort = cert.b.tok(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(w.sort)))),
+            .from = cert.b.tok(exists_label),
+            .steps = ub.items,
+        } } };
+        try block.append(self.ctx.arena, unpack_step);
+        _ = try cert.claim(block, goal, "exists_elim", &.{}, &.{unpack_block});
+        return true;
+    }
+    return false;
 }
 
 /// Synthesize the difference `d` with `add(s, succ(d)) = t` for a valid `less_than(s, t)`.
@@ -5129,6 +5816,38 @@ fn pushQualified(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: 
     try cites.append(self.ctx.arena, .{ .global = .{ .head = .{ .tag = .identifier, .start = loc, .end = loc, .name = name, .qualifier = qualifier }, .is_axiom = false } });
 }
 
+/// Push each equation premise `P_l = P_r` as a ground rewrite rule (`P_l -> P_r`) with its
+/// citation (LOCAL restated-hypothesis label / GLOBAL fact cite). A self-embedding rule
+/// (`P_l` a subterm of `P_r`) is skipped — it would loop the normalizer.
+fn pushPremiseRules(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), prems: []const ArithPremise) Error!void {
+    for (prems) |p| {
+        const pn = self.pool.get(p.formula);
+        if (pn != .eq) continue;
+        if (self.containsSubterm(pn.eq.rhs, pn.eq.lhs)) continue;
+        try rules.append(self.ctx.arena, .{ .binders = &.{}, .lhs = pn.eq.lhs, .rhs = pn.eq.rhs, .formula = p.formula });
+        try cites.append(self.ctx.arena, if (p.local)
+            .{ .local = .{ .hyp = p.hyp } }
+        else
+            .{ .global = .{ .head = p.head, .is_axiom = p.is_axiom } });
+    }
+}
+
+/// Does `hay` contain `needle` (alpha-equal) as a subterm?
+fn containsSubterm(self: *Prove, hay: TermId, needle: TermId) bool {
+    if (self.pool.alphaEq(hay, needle)) return true;
+    switch (self.pool.get(hay)) {
+        .bvar, .fvar => return false,
+        .app, .pred => |a| {
+            for (self.pool.args(a)) |arg| if (self.containsSubterm(arg, needle)) return true;
+            return false;
+        },
+        .eq => |pp| return self.containsSubterm(pp.lhs, needle) or self.containsSubterm(pp.rhs, needle),
+        .not => |inner| return self.containsSubterm(inner, needle),
+        .bin => |b| return self.containsSubterm(b.lhs, needle) or self.containsSubterm(b.rhs, needle),
+        .quant => |q| return self.containsSubterm(q.body, needle),
+    }
+}
+
 /// Certify `s = t` as a linear combination of an equality PREMISE `P_l = P_r`: it holds iff
 /// `add(P_l, s) = add(P_r, t)` is a pure additive identity. Emit that identity, rewrite the
 /// premise (P_l→P_r), then cancel with addCancelLeft. Every step kernel-checked. Only fires
@@ -5211,6 +5930,21 @@ fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Sym
         const lt = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
         const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = eq, .rhs = lt } });
         return try self.closeForallChain(body, &.{ a, d, bb }, sort);
+    }
+    if (std.mem.eql(u8, name, "lessThanElim")) {
+        // forall a, b; less_than(a, b) -> exists d; add(a, succ(d)) = b
+        const add = symbols.add orelse return null;
+        const less_than = symbols.less_than orelse return null;
+        const succ = symbols.succ orelse return null;
+        const a = try mkfv(self, sort, "a");
+        const bb = try mkfv(self, sort, "b");
+        const d = try mkfv(self, sort, "d");
+        const lt = try self.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
+        const eq = try self.pool.add(.{ .eq = .{ .lhs = try self.pool.addApp(.app, add, &.{ a.t, try self.pool.addApp(.app, succ, &.{d.t}) }), .rhs = bb.t } });
+        const closed_d = try self.pool.close(eq, d.name);
+        const exists_d = try self.pool.add(.{ .quant = .{ .q = .exists, .sort = sort, .hint = d.name, .body = closed_d } });
+        const body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = lt, .rhs = exists_d } });
+        return try self.closeForallChain(body, &.{ a, bb }, sort);
     }
     if (std.mem.eql(u8, name, "lessThanTransitive")) {
         // forall a, b, c; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
