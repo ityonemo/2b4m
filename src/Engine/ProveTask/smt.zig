@@ -25,6 +25,7 @@ const Allocator = std.mem.Allocator;
 const term = @import("../../term.zig");
 const TermId = term.TermId;
 const Pool = term.Pool;
+const presburger = @import("presburger.zig");
 
 pub const atom_limit = 16;
 
@@ -134,6 +135,147 @@ fn search(pool: *const Pool, atoms: []const TermId, premises: []const TermId, go
     return false;
 }
 
+// --- mixed propositional + linear-arithmetic decision (the arithmetic accelerant's SMT core) ---
+
+pub const theory_call_limit = 2000;
+
+pub const MixedVerdict = union(enum) {
+    valid,
+    countermodel: Counter,
+    too_many_atoms: usize,
+    too_large,
+    overflow,
+
+    pub const Counter = struct {
+        /// truth values of the opaque atoms in the falsifying model
+        opaques: []const Lit,
+        /// small values for the arithmetic variables
+        values: []const presburger.Assignment,
+        /// false when the theory side is satisfiable but the bounded search
+        /// found no small values to display
+        values_found: bool,
+    };
+};
+
+/// Decide whether `goal` follows from `premises` in the combination of
+/// propositional logic and linear arithmetic.
+pub fn decideMixed(arena: Allocator, pool: *Pool, symbols: presburger.Symbols, premises: []const TermId, goal: TermId) Allocator.Error!MixedVerdict {
+    var atoms: std.ArrayList(TermId) = .empty;
+    for (premises) |p| try collectAtoms(arena, pool, &atoms, p);
+    try collectAtoms(arena, pool, &atoms, goal);
+    if (atoms.items.len > atom_limit) return .{ .too_many_atoms = atoms.items.len };
+
+    const is_theory = try arena.alloc(bool, atoms.items.len);
+    for (atoms.items, is_theory) |a, *k| k.* = try presburger.inFragment(arena, pool, symbols, a);
+
+    var ctx: Mixed = .{
+        .arena = arena,
+        .pool = pool,
+        .symbols = symbols,
+        .atoms = atoms.items,
+        .is_theory = is_theory,
+        .premises = premises,
+        .goal = goal,
+    };
+    var assignment = [_]?bool{null} ** atom_limit;
+    const found = ctx.search(assignment[0..atoms.items.len]) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Fail => return ctx.err.?,
+    };
+    if (!found) return .valid;
+
+    var opaques: std.ArrayList(Lit) = .empty;
+    for (atoms.items, is_theory, assignment[0..atoms.items.len]) |a, th, v| {
+        if (!th) try opaques.append(arena, .{ .atom = a, .value = v orelse false });
+    }
+    return .{ .countermodel = .{
+        .opaques = opaques.items,
+        .values = ctx.values,
+        .values_found = ctx.values_found,
+    } };
+}
+
+const Mixed = struct {
+    arena: Allocator,
+    pool: *Pool,
+    symbols: presburger.Symbols,
+    atoms: []const TermId,
+    is_theory: []const bool,
+    premises: []const TermId,
+    goal: TermId,
+    theory_calls: usize = 0,
+    values: []const presburger.Assignment = &.{},
+    values_found: bool = true,
+    err: ?MixedVerdict = null,
+
+    const Error = error{ Fail, OutOfMemory };
+
+    /// Like the propositional `search`, but a decided skeleton model must
+    /// also survive the theory check to count.
+    fn search(self: *Mixed, assignment: []?bool) Error!bool {
+        var decided = true;
+        for (self.premises) |p| {
+            if (eval(self.pool, self.atoms, assignment, p)) |v| {
+                if (!v) return false;
+            } else {
+                decided = false;
+            }
+        }
+        if (eval(self.pool, self.atoms, assignment, self.goal)) |g| {
+            if (g) return false;
+        } else {
+            decided = false;
+        }
+        if (decided) return self.theoryCheck(assignment);
+        const i = for (assignment, 0..) |v, i| {
+            if (v == null) break i;
+        } else unreachable;
+        assignment[i] = true;
+        if (try self.search(assignment)) return true;
+        assignment[i] = false;
+        if (try self.search(assignment)) return true;
+        assignment[i] = null;
+        return false;
+    }
+
+    fn theoryCheck(self: *Mixed, assignment: []const ?bool) Error!bool {
+        var literals: std.ArrayList(TermId) = .empty;
+        for (self.atoms, self.is_theory, assignment) |a, th, v| {
+            if (!th) continue;
+            const value = v orelse continue; // undetermined: unconstrained
+            try literals.append(self.arena, if (value) a else try self.pool.add(.{ .not = a }));
+        }
+        if (literals.items.len == 0) return true; // purely boolean model
+        if (self.theory_calls == theory_call_limit) {
+            self.err = .too_large;
+            return error.Fail;
+        }
+        self.theory_calls += 1;
+        const result = presburger.satisfiable(self.arena, self.pool, self.symbols, literals.items) catch return error.OutOfMemory;
+        switch (result) {
+            .unsat => return false, // theory refutes this skeleton model
+            .sat => |values| {
+                self.values = values;
+                return true;
+            },
+            .sat_no_witness => {
+                self.values_found = false;
+                return true;
+            },
+            // atoms were classified with the same compiler that runs here
+            .out_of_fragment => unreachable,
+            .too_large => {
+                self.err = .too_large;
+                return error.Fail;
+            },
+            .overflow => {
+                self.err = .overflow;
+                return error.Fail;
+            },
+        }
+    }
+};
+
 // --- tests ---
 
 const testing = std.testing;
@@ -240,4 +382,31 @@ test "alpha-equivalent quantified subformulas are one atom" {
     const qy = try r.pool.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = hint_y, .body = px } });
     const v = try tautology(arena_state.allocator(), &r.pool, &.{}, try r.implies(qx, qy));
     try testing.expect(v == .valid);
+}
+
+test "mixed skeleton: theory literals decide, opaque atoms report" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var r = Rig.init(arena_state.allocator());
+    const nat: term.SortId = @enumFromInt(1);
+    const sym_succ: term.SymId = @enumFromInt(10);
+    const sym_less: term.SymId = @enumFromInt(11);
+    const symbols: presburger.Symbols = .{ .nat = nat, .succ = sym_succ, .less_than = sym_less };
+    const p = try r.atom(0);
+    const a = try r.pool.add(.{ .fvar = .{ .name = @enumFromInt(1), .sort = nat } });
+    const succ_a = try r.pool.addApp(.app, sym_succ, &.{a});
+
+    // p or a < succ(a): the theory refutes every skeleton model
+    const holds = try r.orOp(p, try r.pool.addApp(.pred, sym_less, &.{ a, succ_a }));
+    const valid = try decideMixed(arena_state.allocator(), &r.pool, symbols, &.{}, holds);
+    try testing.expect(valid == .valid);
+
+    // p or succ(a) < a: countermodel mixes a value and an opaque atom
+    const fails = try r.orOp(p, try r.pool.addApp(.pred, sym_less, &.{ succ_a, a }));
+    const bad = try decideMixed(arena_state.allocator(), &r.pool, symbols, &.{}, fails);
+    try testing.expect(bad == .countermodel);
+    try testing.expectEqual(1, bad.countermodel.opaques.len);
+    try testing.expectEqual(false, bad.countermodel.opaques[0].value);
+    try testing.expectEqual(1, bad.countermodel.values.len);
+    try testing.expectEqual(0, bad.countermodel.values[0].value);
 }
