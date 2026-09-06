@@ -4328,12 +4328,10 @@ fn arithEmitEquation(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.S
         _ = try ec.emitJoin(block, s, t, s_pre, t_pre);
         return true;
     }
-    const acsym: presburger_mod.Symbols = .{ .add = add_sym };
-    // canonicalize each side to a fixpoint: normalize (elim + adjacent inverse-cancel) then
-    // AC-sort, repeating so the sort brings an inverse pair `x … neg(x)` adjacent for the next
-    // normalize's addNegRight/Left to cancel it (then addZero drops the ZERO). Bounded loop.
-    const rs = (try self.arithCanon(acsym, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, s_pre)) orelse return false;
-    const rt = (try self.arithCanon(acsym, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, t_pre)) orelse return false;
+    // canonicalize each side to a fixpoint: AC-sort + bubble-cancel inverse pairs + re-normalize,
+    // repeating until stable (arithCanon carries `symbols` so its cancelInverses has neg/zero).
+    const rs = (try self.arithCanon(symbols, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, s_pre)) orelse return false;
+    const rt = (try self.arithCanon(symbols, rules.items, pre_rules, assoc_idx, comm_idx, swap_idx, t_pre)) orelse return false;
     if (self.pool.alphaEq(rs.nf, rt.nf)) {
         var ec: EqCert = .{ .b = cert.b, .pool = self.pool, .rules = rules.items, .cites = cites.items, .fresh_ctx = self, .freshFn = eqCertFresh };
         _ = try ec.emitJoin(block, s, t, rs, rt);
@@ -4347,7 +4345,10 @@ fn arithEmitEquation(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.S
 /// AC-sort (`acPlan`) and pre-rule normalize (elim + adjacent inverse-cancel + ZERO-drop),
 /// concatenating every trace. The sort places an inverse pair adjacent so the next normalize's
 /// addNegRight/Left cancels it. Returns the final `Result` (NF + full trace), null on decline.
-fn arithCanon(self: *Prove, acsym: presburger_mod.Symbols, rules: []const simplify_mod.Rule, pre_rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: simplify_mod.Result) Error!?simplify_mod.Result {
+fn arithCanon(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, pre_rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: simplify_mod.Result) Error!?simplify_mod.Result {
+    // cancelInverses (below) needs neg/zero/add/succ/prev to bubble + cancel an inverse pair; the
+    // AC sort itself only reorders over `add`, so acPlan gets the add-only view.
+    const acsym: presburger_mod.Symbols = .{ .add = symbols.add };
     var nf = pre.nf;
     var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
     try trace.appendSlice(self.ctx.arena, pre.trace);
@@ -4355,14 +4356,18 @@ fn arithCanon(self: *Prove, acsym: presburger_mod.Symbols, rules: []const simpli
     while (iter < 6) : (iter += 1) {
         const plan = (try self.acPlan(acsym, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
         try trace.appendSlice(self.ctx.arena, plan.trace);
-        // re-normalize the sorted form (cancel adjacent inverse pairs + drop ZERO).
-        const renorm = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, plan.sorted, 1000) catch |e| switch (e) {
+        // BUBBLE-cancel non-adjacent inverse pairs (`x … neg(x)` separated by other summands):
+        // reuse Polynomial's cancelInverses, which moves the pair together before applying
+        // addNegRight/Left — sort adjacency alone (the re-normalize below) misses separated pairs.
+        const cancelled = (try Polynomial.cancelInverses(self, symbols, rules, comm_idx, swap_idx, 0, plan.sorted, &trace)) orelse plan.sorted;
+        // re-normalize the (bubble-cancelled) sorted form (drop any residual ZERO, fold).
+        const renorm = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, cancelled, 1000) catch |e| switch (e) {
             error.Limit => return null,
             error.OutOfMemory => return error.OutOfMemory,
         };
         try trace.appendSlice(self.ctx.arena, renorm.trace);
         if (self.pool.alphaEq(renorm.nf, plan.sorted)) {
-            // stable: sort produced no cancellation this round.
+            // stable: sort + cancel produced no change this round.
             return .{ .nf = renorm.nf, .trace = trace.items };
         }
         nf = renorm.nf;

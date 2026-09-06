@@ -729,7 +729,10 @@ fn emitSwap(
 /// Cancel additive-inverse pairs in a sorted tower. The neg-cancel rule indices are located by
 /// scanning `rules` for the addNegRight/addNegLeft/addZeroLeft/addZeroRight cite heads (a
 /// structural scan over the hardcoded set — the fold rules past fold_end and the fold prefix).
-fn cancelInverses(
+/// `pub` so the arithmetic additive normalizer (arithCanon) reuses the SAME bubble-to-adjacent
+/// cancellation (a non-adjacent inverse pair `x … neg(x)` is bubbled together before cancelling)
+/// rather than relying on sort adjacency, which misses pairs separated by another summand.
+pub fn cancelInverses(
     self: *Prove,
     symbols: presburger_mod.Symbols,
     rules: []const simplify_mod.Rule,
