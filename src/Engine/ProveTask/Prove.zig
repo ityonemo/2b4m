@@ -2616,7 +2616,7 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     const ops = (try self.readPolyOps(eq_goal_raw)) orelse
         return self.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
     const qualifier: StrId = if (c.schema) |s| s.name else .none;
-    const pr = try Polynomial.polyRules(self, ops, qualifier);
+    const pr = try Polynomial.polyRules(self, ops, qualifier, c.rule.start);
 
     // abstract free caller-local fvars (an enclosing `fix`) into value params, then canonicalize
     // in PARAM space so the trace + schema body speak `p1, p2, …`. Eigenvariables (the peeled ∀
@@ -2709,6 +2709,72 @@ fn collectPolyOps(self: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *boo
     }
 }
 
+/// Build the associativity / commutativity / swap triple for `op_sym` as HARDCODED rewrite
+/// shapes (no facts.lookup), appending to `rules`/`cites` in the order assoc, comm, swap. The
+/// cites name the well-known lemmas BARE (resolved in the proof's namespace by the generated
+/// schema's ProveTask + kernel-checked). Shapes:
+///   assoc: f(f(a,b),c) = f(a,f(b,c));  comm: f(a,b) = f(b,a);  swap: f(x,f(y,r)) = f(y,f(x,r))
+fn pushACTriple(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), op_sym: term.SymId, sort: term.SortId, assoc_name: []const u8, comm_name: []const u8, swap_name: []const u8, loc: u32) Error!void {
+    // assoc: f(f(a,b),c) = f(a,f(b,c))
+    {
+        const a = try self.freshACFvar(sort);
+        const b = try self.freshACFvar(sort);
+        const cc = try self.freshACFvar(sort);
+        const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort }, .{ .fvar = cc.name, .sort = sort } });
+        const lhs = try self.pool.addApp(.app, op_sym, &.{ try self.pool.addApp(.app, op_sym, &.{ a.t, b.t }), cc.t });
+        const rhs = try self.pool.addApp(.app, op_sym, &.{ a.t, try self.pool.addApp(.app, op_sym, &.{ b.t, cc.t }) });
+        try self.pushHardcoded(rules, cites, binders, lhs, rhs, assoc_name, loc);
+    }
+    // comm: f(a,b) = f(b,a)
+    {
+        const a = try self.freshACFvar(sort);
+        const b = try self.freshACFvar(sort);
+        const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort } });
+        const lhs = try self.pool.addApp(.app, op_sym, &.{ a.t, b.t });
+        const rhs = try self.pool.addApp(.app, op_sym, &.{ b.t, a.t });
+        try self.pushHardcoded(rules, cites, binders, lhs, rhs, comm_name, loc);
+    }
+    // swap: f(x,f(y,r)) = f(y,f(x,r))
+    {
+        const x = try self.freshACFvar(sort);
+        const y = try self.freshACFvar(sort);
+        const r = try self.freshACFvar(sort);
+        const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = x.name, .sort = sort }, .{ .fvar = y.name, .sort = sort }, .{ .fvar = r.name, .sort = sort } });
+        const lhs = try self.pool.addApp(.app, op_sym, &.{ x.t, try self.pool.addApp(.app, op_sym, &.{ y.t, r.t }) });
+        const rhs = try self.pool.addApp(.app, op_sym, &.{ y.t, try self.pool.addApp(.app, op_sym, &.{ x.t, r.t }) });
+        try self.pushHardcoded(rules, cites, binders, lhs, rhs, swap_name, loc);
+    }
+}
+
+/// A fresh AC pattern fvar of `sort`.
+fn freshACFvar(self: *Prove, sort: term.SortId) Error!struct { name: StrId, t: TermId } {
+    const name = try self.freshNamed("p#");
+    return .{ .name = name, .t = try self.pool.add(.{ .fvar = .{ .name = name, .sort = sort } }) };
+}
+
+/// Append one hardcoded rule (binders + lhs/rhs + its ∀-quantified formula) with a BARE cite
+/// naming `name_text` (resolved by the generated ProveTask; is_axiom = placeholder).
+fn pushHardcoded(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders: []const simplify_mod.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, loc: u32) Error!void {
+    // ∀-quantify eq(lhs,rhs) over binders, outermost = binders[0] (matches emitInstance).
+    var formula = try self.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
+    var i = binders.len;
+    while (i > 0) {
+        i -= 1;
+        const closed = try self.pool.close(formula, binders[i].fvar);
+        formula = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = binders[i].sort, .hint = binders[i].fvar, .body = closed } });
+    }
+    const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
+    try rules.append(self.ctx.arena, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = formula });
+    try cites.append(self.ctx.arena, .{
+        .global = .{
+            // stamp the call-site loc so a "reference not found" on the emitted cite points at the
+            // `assoc_commut` step, not 1:1.
+            .head = .{ .tag = .identifier, .start = loc, .end = loc, .name = name, .qualifier = .none },
+            .is_axiom = false,
+        },
+    });
+}
+
 /// Shared assoc_commut core over the (possibly ∀-peeled) equation body. Prepares the AC rule
 /// set (distribute pre-rules from `c.refs` at the FRONT, then the AC triple), abstracts the
 /// goal, distributes + AC-sorts both sides, and hands the concatenated traces to
@@ -2763,21 +2829,13 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
         const op = self.pickWellKnownOp(s_head) orelse
             return self.fail(c.rule.start, "assoc_commut reorders an add- or mul-sum; the goal's left side is '{s}'", .{try self.renderTerm(gn.lhs)});
         op_sym = op.sym;
-        // resolve the well-known triple via FactKV (proven facts in scope). Absent → the
-        // located "needs <lemma> in scope" error (the strict-cert boundary; the accelerated
-        // --fast verdict that would presume A/C is suspended during the rebuild).
-        const assoc = (try self.wellKnownRule(op.assoc, c.rule.start)) orelse
-            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.assoc});
-        const comm = (try self.wellKnownRule(op.comm, c.rule.start)) orelse
-            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.comm});
-        const swap = (try self.wellKnownRule(op.swap, c.rule.start)) orelse
-            return self.fail(c.rule.start, "assoc_commut: needs {s} in scope", .{op.swap});
-        try rules.append(self.ctx.arena, assoc.rule);
-        try cites.append(self.ctx.arena, assoc.cite);
-        try rules.append(self.ctx.arena, comm.rule);
-        try cites.append(self.ctx.arena, comm.cite);
-        try rules.append(self.ctx.arena, swap.rule);
-        try cites.append(self.ctx.arena, swap.cite);
+        // BUILD the AC triple as HARDCODED shapes (no facts.lookup, no existence check) — like
+        // polynomial. Each rule's LHS/RHS is constructed from the goal's own operator sym; the
+        // well-known lemma NAMES are emitted as bare cites, resolved + kernel-checked by the
+        // generated schema's ProveTask (a missing lemma fails THERE). The operand sort is the
+        // goal LHS's sort (the reordered operator's carrier).
+        const sort: term.SortId = @enumFromInt(@intFromEnum(self.termSort(gn.lhs)));
+        try self.pushACTriple(&rules, &cites, op_sym, sort, op.assoc, op.comm, op.swap, c.rule.start);
     }
     const assoc_idx = pre_count;
     const comm_idx = pre_count + 1;
@@ -2839,26 +2897,6 @@ fn pickWellKnownOp(self: *Prove, head: ?term.SymId) ?WellKnownOp {
         return .{ .sym = h, .assoc = "mulIsAssociative", .comm = "mulIsCommutative", .swap = "mulLeftSwap" };
     }
     return null;
-}
-
-/// Resolve a well-known lemma by name in this proof's namespace via FactKV (a proven fact),
-/// preparing it as an L→R rewrite rule cited GLOBALLY inside the cert. Null when the fact is
-/// absent/unproven (the bare-form "needs X in scope" boundary). NOT demanded in the read pass
-/// — a bare AC form on a theory whose lemmas are proven earlier resolves; a thin theory
-/// (`assoc_commut_oracle`) cleanly fails here.
-fn wellKnownRule(self: *Prove, name_text: []const u8, loc: u32) Error!?PreparedRule {
-    const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
-    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) orelse return null;
-    const fact = switch (state) {
-        .proven => |ix| self.ctx.interner.applyModel(self.model, ix),
-        .in_flight => return null,
-    };
-    const key = self.ctx.interner.keyOf(fact).fact;
-    const formula = try self.pool.copyIn(self.ctx.interner, key.formula);
-    // a synthesized head token stamped with the fact's name so the cert's `[by …]` resolves.
-    const head: lexer.Token = .{ .tag = .identifier, .start = loc, .end = loc, .name = name };
-    const rule = try self.orientRule(formula) orelse return null;
-    return .{ .rule = rule, .cite = .{ .global = .{ .head = head, .is_axiom = key.kind == .axiom } }, .local = false, .formula = formula };
 }
 
 /// Orient a (possibly ∀-prefixed) equation `formula` into an L→R rewrite rule, opening each

@@ -257,10 +257,10 @@ pub fn addTests(
         \\
     );
 
-    // the polynomial ACCELERATED TACTIC: a thin theory (no ring lemmas) DECLINES under
-    // the default (needs a lemma), but --fast decides it structurally and
-    // is accelerated (accelerated: polynomial).
-    ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.bpa" }, "tests/cases/polynomial_oracle.bpa:22:9: error: polynomial: needs mulAddDistribLeft in scope\n");
+    // the polynomial tactic on a thin theory (no ring lemmas): it EMITS the certificate citing
+    // the well-known lemmas by name (no produce-time lookup); the generated schema's ProveTask
+    // then can't resolve them, failing "reference not found" at the `polynomial` step.
+    ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.bpa" }, "tests/cases/polynomial_oracle.bpa:22:12: error: reference not found: 'mulAddDistribRight'\n");
 
     ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oracle.bpa" },
         \\OK: 6 declarations, 1 theorems proven (1 accelerated: polynomial)
@@ -289,11 +289,12 @@ pub fn addTests(
     // rule word sits after `[using `.)
     ctx.fail(&.{ "check", "tests/cases/assoc_commut_bad_arity.bpa" }, "tests/cases/assoc_commut_bad_arity.bpa:12:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
 
-    // the bare assoc_commut form on a thin theory (no AC lemmas) DECLINES with a located
-    // "needs <lemma> in scope" error. (The accelerated --fast verdict that would decide it
-    // structurally is SUSPENDED during the demand rebuild — strict-only, so --fast errors too.)
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: assoc_commut: needs addIsAssociative in scope\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: assoc_commut: needs addIsAssociative in scope\n");
+    // the bare assoc_commut form on a thin theory (no AC lemmas): it EMITS the certificate
+    // citing the well-known AC triple by name (no produce-time lookup); the generated schema's
+    // ProveTask can't resolve them, failing "reference not found" at the `assoc_commut` step.
+    // (--fast is SUSPENDED during the demand rebuild — strict-only, so it errors identically.)
+    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: reference not found: 'addIsAssociative'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: reference not found: 'addIsAssociative'\n");
 
     // `assoc(assocLemma)`: associativity-only reorder on a CUSTOM operator
     // (no add/mul assumption). Emits kernel steps.

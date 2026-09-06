@@ -95,11 +95,14 @@ fn app(self: *Prove, sym: term.SymId, args: []const TermId) Error!TermId {
 const RuleAcc = struct {
     rules: std.ArrayList(simplify_mod.Rule) = .empty,
     cites: std.ArrayList(EqCert.RuleCite) = .empty,
+    /// the call-site loc stamped into every cite head, so a "reference not found" on a generated
+    /// lemma cite points at the `polynomial` step (not 1:1).
+    loc: u32 = 0,
 
     fn push(acc: *RuleAcc, self: *Prove, rule: simplify_mod.Rule, name: StrId, qualifier: StrId) Error!void {
         try acc.rules.append(self.ctx.arena, rule);
         try acc.cites.append(self.ctx.arena, .{ .global = .{
-            .head = .{ .tag = .identifier, .start = 0, .end = 0, .name = name, .qualifier = qualifier },
+            .head = .{ .tag = .identifier, .start = acc.loc, .end = acc.loc, .name = name, .qualifier = qualifier },
             .is_axiom = false,
         } });
     }
@@ -112,8 +115,8 @@ fn binder(name: StrId, ops: Ops) simplify_mod.Binder {
 /// Build the hardcoded ring rule set (patterns constructed from `ops`, fresh pattern fvars via
 /// `Prove.freshNamed`) + the parallel cites, all cited in the theory namespace `qualifier`.
 /// The index layout (fold_end + the two operator triples) matches the deleted `polyRules`.
-pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId) Error!PolyRules {
-    var acc: RuleAcc = .{};
+pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyRules {
+    var acc: RuleAcc = .{ .loc = loc };
     const nm = struct {
         fn f(p: *Prove, comptime s: []const u8) Error!StrId {
             return p.ctx.interner.internString(s) catch error.OutOfMemory;
