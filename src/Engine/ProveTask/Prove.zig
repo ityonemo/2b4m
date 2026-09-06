@@ -2018,6 +2018,15 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     const abs = ag.abs;
     const eq_goal = ag.goal_p;
 
+    // A LOCAL rule's lhs/rhs are in the CALLER's eigenvar space (`k,b,c`); the goal was just
+    // abstracted into param space (`p1,p2,…`). Re-substitute each local rule through `abs` so it
+    // matches the param-space goal subterms — else a local IH rewrite never fires (its pattern
+    // names `k` while the goal names `p1`). Global rules are closed, unaffected.
+    for (prepared, rules) |p, *ru| if (p.local) {
+        ru.lhs = try self.substFvarsToParams(ru.lhs, abs);
+        ru.rhs = try self.substFvarsToParams(ru.rhs, abs);
+    };
+
     const gn = self.pool.get(eq_goal).eq;
     const s = gn.lhs;
     const t = gn.rhs;
