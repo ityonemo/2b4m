@@ -4595,6 +4595,14 @@ fn pushAdditiveElim(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cite
             const lhs = try self.pool.addApp(.app, add, &.{ a.t, z });
             try self.pushQualified(rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "addZeroRight", qualifier, loc);
         }
+        // ONE unfold: oneIsSuccZero ONE = succ(ZERO) — dissolve a bare `ONE` constant into the
+        // succ-tower so numeral goals (`add(ONE, ONE) = succ(succ(ZERO))`) reduce to a common
+        // form. Nullary rule; gated on the theory declaring `oneIsSuccZero` (+ ONE/succ present).
+        if (symbols.one) |one| if (symbols.succ) |succ| {
+            const one_t = try self.pool.addApp(.app, one, &.{});
+            const succ_z = try self.pool.addApp(.app, succ, &.{z});
+            try self.pushQualified(rules, cites, &.{}, one_t, succ_z, "oneIsSuccZero", qualifier, loc);
+        };
     }
     // mul RECURSION (ground numeric evaluation): mulZeroLeft mul(ZERO,b)=ZERO; mulSuccLeft
     // mul(succ(a),b)=add(mul(a,b),b) — expands `mul(n, x)` to a sum for numeral n.
