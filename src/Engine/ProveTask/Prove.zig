@@ -1263,9 +1263,28 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     // a head `∀k; guard(k) -> ∀s; …` opens `k`, then must descend past `guard(k) ->` to
     // reach `∀s`. `openNextForall` walks the leading `->` chain (preserving it) to the next
     // forall, opens it at the param, and rebuilds the `->` prefix around the opened body.
+    // ABSTRACT the head formula's FREE caller-local eigenvars (an enclosing `fix k`) into value
+    // params UP FRONT — a LOCAL head like `forall a,b; add(k,a)=add(k,b) -> a=b` carries the free
+    // `k`, which must become a schema param (else the generated schema references `k`, absent from
+    // its scope: "reference not found: 'k'"). Named `f1,f2,…` (distinct from the ∀-arg params
+    // `p1..pN` below); substituted through head_formula before the ∀ peel. A GLOBAL head is closed
+    // (no free eigenvars) so this is a no-op there.
+    var free_fvars: std.ArrayList(term.Node.Fvar) = .empty;
+    try self.collectFreeFvars(head_formula, &free_fvars);
+    const fparams = try self.ctx.arena.alloc(ast.SchemaParam, free_fvars.items.len);
+    const fargs = try self.ctx.arena.alloc(*const ast.Expr, free_fvars.items.len);
+    for (free_fvars.items, 0..) |fv, i| {
+        const fname = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "f{d}", .{i + 1}));
+        const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
+        head_formula = try self.pool.substFvar(head_formula, fv.name, pf);
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
+        fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        fargs[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // caller binder name at the call site
+    }
+
     const nargs = c.args.len;
     const pnames = try self.ctx.arena.alloc(StrId, nargs);
-    const params = try self.ctx.arena.alloc(ast.SchemaParam, nargs);
+    const arg_params = try self.ctx.arena.alloc(ast.SchemaParam, nargs);
     var tail = head_formula;
     for (0..nargs) |i| {
         pnames[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "p{d}", .{i + 1}));
@@ -1274,8 +1293,10 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         };
         tail = opened.body;
         const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(opened.sort)));
-        params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        arg_params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.tok(sort_name) };
     }
+    // schema params = the free-eigenvar params FIRST, then the ∀-arg params.
+    const params = try std.mem.concat(self.ctx.arena, ast.SchemaParam, &.{ fparams, arg_params });
 
     // WALK the head formula (as `tail` was built) collecting, IN ORDER, the ∀-binders'
     // params and the kept `->` ANTECEDENTS — the schema body is `ant0 -> ant1 -> … -> C`
@@ -1319,10 +1340,12 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     const hash = Schema.termHash(self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "specialize{{{x}}}", .{hash}));
 
+    // call-site args mirror the params: the free-eigenvar args FIRST, then the user's ∀-args.
+    const args = try std.mem.concat(self.ctx.arena, *const ast.Expr, &.{ fargs, c.args });
     return .{
         .name = name,
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
-        .args = c.args,
+        .args = args,
         .premises = c.refs,
     };
 }
