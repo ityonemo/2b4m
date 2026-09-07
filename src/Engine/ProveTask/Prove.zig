@@ -6387,43 +6387,67 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         },
         .forall_elim => {
             try self.wantRefs(c, 1);
-            var cur = try self.resolveStepRef(w, c.refs[0]);
-            var cur_formula = self.low_steps.items[@intFromEnum(cur.id)].formula;
-            for (c.args[0 .. c.args.len - 1]) |arg_expr| {
-                const node = self.pool.get(cur_formula);
-                if (node != .quant or node.quant.q != .forall) {
-                    return self.fail(Elab.exprLoc(arg_expr), "forall_elim: '{s}' is not universally quantified here", .{try self.renderTerm(cur_formula)});
-                }
-                const arg = try e.elaborateExpr(arg_expr);
-                const opened = try self.pool.open(node.quant.body, arg.id);
-                cur = try self.emitSynthetic(kb, Elab.exprLoc(arg_expr), opened, .{
-                    .forall_elim = .{ .step = cur, .with = arg.id, .with_loc = Elab.exprLoc(arg_expr) },
-                });
-                cur_formula = opened;
-            }
-            const last = c.args[c.args.len - 1];
-            const arg = try e.elaborateExpr(last);
-            const last_loc = Elab.exprLoc(last);
-            // REFINED-SORT elim: `∀h:H; P` is stored `∀h; good(h) -> P`, so opening at t
-            // yields `good(t) -> P(t)` while the step claims bare `P(t)` (the "for h IN H"
-            // abstraction). If the opened form peels its leading antecedent to the claim,
-            // auto-DISCHARGE that guard: emit the elim, prove the guard, modus_ponens.
-            const qn = self.pool.get(cur_formula);
-            if (qn == .quant and qn.quant.q == .forall) {
-                const opened = try self.pool.open(qn.quant.body, arg.id);
-                const on = self.pool.get(opened);
-                if (!self.pool.alphaEq(opened, goal) and on == .bin and on.bin.op == .implies and self.pool.alphaEq(on.bin.rhs, goal)) {
-                    if (try self.emitDischargeStep(kb, last_loc, on.bin.lhs)) |g_step| {
-                        const elim = try self.emitSynthetic(kb, last_loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg.id, .with_loc = last_loc } });
-                        return .{ .modus_ponens = .{ .implication = elim, .antecedent = g_step } };
+            const start = try self.resolveStepRef(w, c.refs[0]);
+            var cur_formula = self.low_steps.items[@intFromEnum(start.id)].formula;
+            // Build the elim+discharge chain as a list of ops, each producing a formula from the
+            // PREVIOUS step: an `elim` opens a `∀` at an arg; a `discharge` strips a leaked
+            // refined-sort guard (`guard(t) -> …`, from a `∀x:H` stored `∀x; guard(x) -> …`) via
+            // modus_ponens against a proof of the guard. A multi-guard / nested-binder sort leaks a
+            // CHAIN of guards interleaved with binders — strip each before opening the next binder,
+            // and any trailing guards after the last. FLUSH emits all but the last op as synthetics
+            // and returns the last as the claim's justification (no reiterate rule exists).
+            const Op = union(enum) {
+                elim: struct { arg: TermId, loc: u32 },
+                discharge: struct { guard: kernel.SRef, result: TermId, loc: u32 },
+            };
+            var ops: std.ArrayList(Op) = .empty;
+
+            // strip leading guards off cur_formula, appending discharge ops; stops at a non-`->`
+            // head, at the goal, or at a leading `->` whose antecedent isn't a dischargeable guard.
+            const stripGuards = struct {
+                fn run(s: *Prove, b: kernel.BlockId, g: TermId, cf: *TermId, list: *std.ArrayList(Op), loc: u32) Error!void {
+                    while (true) {
+                        const n = s.pool.get(cf.*);
+                        if (s.pool.alphaEq(cf.*, g)) return;
+                        if (n != .bin or n.bin.op != .implies) return;
+                        const gstep = (try s.emitDischargeStep(b, loc, n.bin.lhs)) orelse return;
+                        try list.append(s.ctx.arena, .{ .discharge = .{ .guard = gstep, .result = n.bin.rhs, .loc = loc } });
+                        cf.* = n.bin.rhs;
                     }
                 }
+            }.run;
+
+            for (c.args) |arg_expr| {
+                const aloc = Elab.exprLoc(arg_expr);
+                try stripGuards(self, kb, goal, &cur_formula, &ops, aloc);
+                const node = self.pool.get(cur_formula);
+                if (node != .quant or node.quant.q != .forall) {
+                    return self.fail(aloc, "forall_elim: '{s}' is not universally quantified here", .{try self.renderTerm(cur_formula)});
+                }
+                const arg = (try e.elaborateExpr(arg_expr)).id;
+                try ops.append(self.ctx.arena, .{ .elim = .{ .arg = arg, .loc = aloc } });
+                cur_formula = try self.pool.open(node.quant.body, arg);
             }
-            return .{ .forall_elim = .{
-                .step = cur,
-                .with = arg.id,
-                .with_loc = last_loc,
-            } };
+            const last_loc = Elab.exprLoc(c.args[c.args.len - 1]);
+            try stripGuards(self, kb, goal, &cur_formula, &ops, last_loc);
+
+            // FLUSH: emit ops[0..n-1] as synthetics; the last op's justification is the claim's.
+            std.debug.assert(ops.items.len > 0);
+            var cur = start;
+            var cur_f = self.low_steps.items[@intFromEnum(start.id)].formula;
+            for (ops.items, 0..) |op, i| {
+                const result: TermId, const just: kernel.Justification = switch (op) {
+                    .elim => |el| .{ try self.pool.open(self.pool.get(cur_f).quant.body, el.arg), .{ .forall_elim = .{ .step = cur, .with = el.arg, .with_loc = el.loc } } },
+                    .discharge => |d| .{ d.result, .{ .modus_ponens = .{ .implication = cur, .antecedent = d.guard } } },
+                };
+                if (i == ops.items.len - 1) return just;
+                cur = try self.emitSynthetic(kb, switch (op) {
+                    .elim => |el| el.loc,
+                    .discharge => |d| d.loc,
+                }, result, just);
+                cur_f = result;
+            }
+            unreachable; // ops is non-empty; the last iteration returns
         },
         .exists_intro => {
             try self.wantRefs(c, 1);
