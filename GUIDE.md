@@ -694,7 +694,7 @@ below it (see the Index for the full anchor list).
   `and_intro`, `and_elim_left`, `and_elim_right`, `iff_intro`, `iff_elim_forward`,
   `iff_elim_backward`, `or_intro_left`, `or_intro_right`, `or_elim`, `not_intro`,
   `absurd`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `iff_rewrite`.
-- **`using`** (engine proof-generation): `instantiation`, `model`, and the
+- **`using`** (engine proof-generation): `instantiation`, `model`, `import`, and the
   accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
   `assoc_commut_quantified`, `assoc`, `assoc_quantified`, `polynomial`,
   `polynomial_quantified`, `tautology`, `arithmetic`, `arithmetic_quantified`,
@@ -736,6 +736,7 @@ below it (see the Index for the full anchor list).
 | `tautology refs...` | tactic: propositional consequence (see Automation) |
 | `arithmetic refs...` | tactic: linear arithmetic over Nat (see Automation) |
 | `model(INSTANCE) source.theorem` | transfer an abstract theory's theorem to a sort that models it, remapped through the named model (see `KEYWORD: model` and `RULE: model`) |
+| `import(I) thm` | cite a theorem from import `I`'s file across the file boundary (see `RULE: import`) |
 
 The leaves below cover each rule that has a gotcha or a non-obvious ref count;
 the simple rules get a one-line leaf too, so every rule name is greppable.
@@ -1051,6 +1052,28 @@ nothing untrusted enters — but under `--fast` the transfer is trusted wholesal
 marks the theorem accelerated. A model that leaves some source axioms unmapped is
 **rejected** in strict mode when a cited transferred theorem depends on a missing
 obligation (named in the error); `--fast` passes it provisionally.
+
+### RULE: import
+
+`[using import(I) thm]` — cite a theorem `thm` from import `I`'s file across the file
+boundary. `I` names an `import` in scope; `thm` is a theorem (or axiom) that file
+proves; the goal must equal its formula (up to α-equivalence).
+
+```bpa
+import lib <<< "std/lib.bpa"
+// ...
+@conclusion |
+  forall n: Nat; succ(n) = succ(n)
+  [using import(lib) congThm]
+```
+
+This is the explicit cross-file-citation **accelerant** — the file-boundary trust
+seam, mirroring `model`, and the PREFERRED way to cite an imported theorem: a
+cross-file citation is an accelerated step a future `--fast` can trust as a unit.
+(A qualified `[by cite lib.thm]` also works and is mechanically identical today —
+both resolve the imported fact and the kernel re-matches its formula — but it is a
+re-checked obligation with no accelerant seam; use `using import(I) thm` for cross-
+file citation, and `by cite` for a SAME-file fact.)
 
 ## The kernel
 

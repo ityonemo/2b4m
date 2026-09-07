@@ -148,6 +148,10 @@ pub const RuleStr = enum(u32) {
     /// `axiom`/`theorem` are being DEPRECATED in favor of `cite` (corpus migration TBD);
     /// they remain as equals meanwhile.
     cite,
+    /// IMPORTED-THEOREM citation accelerant (`[using import(I) thm]`): cite a theorem from
+    /// import `I`'s file as a cross-file transfer — the explicit accelerant seam at the file
+    /// boundary (a `--fast`/strict trust boundary later), mirroring `model(M)`. `using`-side.
+    import,
 
     pub fn id(self: RuleStr) StrId {
         return @enumFromInt(@intFromEnum(self));
@@ -156,7 +160,7 @@ pub const RuleStr = enum(u32) {
     /// The rule a stamped name-id denotes, or null if it is not a rule word.
     pub fn of(sid: StrId) ?RuleStr {
         const v = @intFromEnum(sid);
-        if (v < @intFromEnum(RuleStr.axiom) or v > @intFromEnum(RuleStr.cite)) return null;
+        if (v < @intFromEnum(RuleStr.axiom) or v > @intFromEnum(RuleStr.import)) return null;
         return @enumFromInt(v);
     }
 
@@ -169,7 +173,7 @@ pub const RuleStr = enum(u32) {
     /// InternPool free of an AST import — the parser maps it to `ast.Step.Claim.Kind`.)
     pub fn keyword(self: RuleStr) enum { by, using } {
         return switch (self) {
-            .instantiation, .model => .using,
+            .instantiation, .model, .import => .using,
             else => .by,
         };
     }
@@ -1159,9 +1163,9 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expect(add != zero);
     try std.testing.expectEqualStrings("add", pool.stringBytes(add));
     try std.testing.expectEqualStrings("zero", pool.stringBytes(zero));
-    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 29
-    // rule-word strings (3..31); then two more strings ("add", "zero").
-    try std.testing.expectEqual(@as(usize, 34), pool.count());
+    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 30
+    // rule-word strings (3..32); then two more strings ("add", "zero").
+    try std.testing.expectEqual(@as(usize, 35), pool.count());
 }
 
 test "universe model is seeded at Index 0 as its own parent" {
@@ -1169,9 +1173,9 @@ test "universe model is seeded at Index 0 as its own parent" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 29
-    // rule-word strings (3..31)
-    try std.testing.expectEqual(@as(usize, 32), pool.count());
+    // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 30
+    // rule-word strings (3..32)
+    try std.testing.expectEqual(@as(usize, 33), pool.count());
     try std.testing.expect(pool.keyOf(.prop).sort.refinement == null); // Prop is a root sort
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);

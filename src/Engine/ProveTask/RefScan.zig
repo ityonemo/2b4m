@@ -97,6 +97,15 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                 .model => if (c.schema) |s| try self.addTok(s, .model), // the model NAME (the
                 // `(M)` selector lands in c.schema); the transferred fact ref is demanded by
                 // the cite handler once M resolves.
+                .import => {
+                    // `using import(I) thm`: `I` (in c.schema) is an IMPORT ident; the cited
+                    // theorem `thm` (c.refs[0]) resolves in I's namespace — emit it as a fact
+                    // qualified by I (resolveRefs' `.fact` path follows the import → its file).
+                    if (c.schema) |s| try self.add(.{ .ns = null, .name = s.name, .domain = .ident, .loc = s.start });
+                    if (c.schema) |s| for (c.refs) |r| {
+                        try self.add(.{ .ns = s.name, .name = r.name, .domain = .fact, .loc = r.start });
+                    };
+                },
                 .accelerant => {
                     // an accelerant HEAD (specialize's `c.schema`): a GLOBAL theorem/axiom
                     // citation UNLESS it's a live local step (then resolved locally at process
@@ -166,11 +175,12 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// steps/blocks (including accelerant names, which hard-error as unsupported at process
 /// time — their refs never fetch). Dispatch is on the RESERVED rule-word StrId the parser
 /// stamped — integer comparison, no strcmp past parsing.
-fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, accelerant, local } {
+fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, import, accelerant, local } {
     if (InternPool.RuleStr.of(rule)) |word| return switch (word) {
         .axiom, .theorem, .cite => .fact,
         .instantiation => .instantiate,
         .model => .model,
+        .import => .import,
         else => .local,
     };
     // a non-reserved word under `using` is an accelerant (its HEAD may be a global fact).

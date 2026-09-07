@@ -1461,6 +1461,39 @@ fn lowerModel(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error!kernel.Just
     return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
 }
 
+/// The `[using import(I) thm]` justification: cite theorem `thm` from import `I`'s file across
+/// the file boundary — the explicit accelerant seam (vs. a bare `[by cite I.thm]` qualified
+/// citation, which is identical mechanically today; the accelerant is the trust boundary a
+/// future `--fast` scopes to). The read pass resolved `I` (ident) + demanded `thm` in I's
+/// namespace, so both are ready; look up the fact and cite it. Acceptance is SHAPE-only — the
+/// kernel re-matches `thm`'s formula against the claim (as every `theorem_ref` does).
+fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
+    const itok = c.schema orelse return self.fail(c.rule.start, "import citation requires an import name: `[using import(I) thm]`", .{});
+    if (c.refs.len != 1) return self.fail(c.rule.start, "`[using import(I) …]` cites exactly one imported theorem", .{});
+    const rtok = c.refs[0];
+    // resolve import I (a local ident that must be an `.import`) → the imported namespace.
+    const istate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(itok) }) orelse
+        return self.fail(itok.start, "unknown import '{s}'", .{self.text(itok)});
+    const imp_ix = switch (istate) {
+        .done => |ix| ix,
+        .in_flight => return self.fail(itok.start, "unknown import '{s}'", .{self.text(itok)}),
+    };
+    const imp_ns = switch (self.ctx.interner.keyOf(imp_ix)) {
+        .import => |m| m.namespace,
+        else => return self.fail(itok.start, "'{s}' is not an import", .{self.text(itok)}),
+    };
+    // the cited theorem, proven in I's namespace (the read pass demanded it there).
+    const fstate = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = imp_ns, .name = tokName(rtok) }) orelse
+        return self.fail(rtok.start, "'{s}' is not a theorem in '{s}'", .{ self.text(rtok), self.text(itok) });
+    const fact = switch (fstate) {
+        .proven => |ix| ix,
+        .in_flight => return self.fail(rtok.start, "cites '{s}', whose proof has not completed", .{self.text(rtok)}),
+    };
+    if (self.ctx.interner.keyOf(fact) == .schema)
+        return self.fail(rtok.start, "'{s}' is a schema; use `[using instantiation …]`, not an import citation", .{self.text(rtok)});
+    return .{ .theorem_ref = .{ .stmt = fact, .loc = rtok.start } };
+}
+
 // -- the `using` accelerant framework --------------------------------------------------
 // An accelerant (`using specialize …`, later `using tautology …`, …) is sugar for a
 // GENERATED synthetic schema that the ordinary demand pipeline proves + the kernel
@@ -6731,6 +6764,9 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         // `using model(M) src.thm` transfers a source theorem: the transferred fact was
         // demanded (proved in namespace (M, src_file)) in the read pass; cite it.
         .model => return self.lowerModel(w, c),
+        // `using import(I) thm` cites an imported theorem across the file boundary — the
+        // explicit accelerant seam (the read pass demanded `thm` in I's namespace); cite it.
+        .import => return self.lowerImport(c),
         else => {},
     }
     const wants_args: usize = switch (kind) {
@@ -6744,7 +6780,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         });
     }
     switch (kind) {
-        .instantiation, .model => unreachable, // dispatched above
+        .instantiation, .model, .import => unreachable, // dispatched above
         .axiom, .theorem, .cite => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);

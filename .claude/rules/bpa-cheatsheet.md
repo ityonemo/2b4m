@@ -109,7 +109,10 @@ qed
 
 All of these take the `using` keyword: `[using simplify …]`, `[using specialize HEAD(args) …]`,
 `[using instantiation NAME(args) refs…]` (monomorphize a schema; refs discharge its leading
-antecedents), `[using model(M) src.thm]` (transfer a source theorem through model M).
+antecedents), `[using model(M) src.thm]` (transfer a source theorem through model M),
+`[using import(I) thm]` (cite a theorem from import I's file — the PREFERRED cross-file
+citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation. Use
+`import(I)` across a file boundary, `by cite` for a same-file fact).
 
 - `simplify` — equational rewriting to a shared normal form (always emits kernel steps).
 - `assoc_commut` / `assoc_commut_quantified` — reorder an A/C sum; bare = add/mul, `(assoc,comm,swap)` for a custom op; `_quantified` peels a `forall` prefix.

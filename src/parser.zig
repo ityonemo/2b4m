@@ -45,7 +45,8 @@ fn isTheoryRule(name: []const u8) bool {
         std.mem.eql(u8, name, "polynomial_quantified") or
         std.mem.eql(u8, name, "extensionality") or
         std.mem.eql(u8, name, "extensionality_quantified") or
-        std.mem.eql(u8, name, "model");
+        std.mem.eql(u8, name, "model") or
+        std.mem.eql(u8, name, "import");
 }
 
 pub const Parser = struct {
@@ -129,6 +130,7 @@ pub const Parser = struct {
             // so stamping is a constant, no interning. (`axiom`/`theorem` are NO LONGER rule
             // words — fact citation is `cite` — so their keyword tokens aren't stamped.)
             .keyword_model => tok.name = InternPool.RuleStr.model.id(),
+            .keyword_import => tok.name = InternPool.RuleStr.import.id(),
             else => {},
         }
         return tok;
@@ -562,7 +564,7 @@ pub const Parser = struct {
                 // words — fact citations use `cite` (kind-agnostic); the keyword tokens here
                 // surface the actionable diagnostic below.
                 const rule = switch (self.tok.tag) {
-                    .identifier, .keyword_model => self.advance(),
+                    .identifier, .keyword_model, .keyword_import => self.advance(),
                     .keyword_axiom, .keyword_theorem => return self.fail("'{s}' is no longer a citation rule; cite a fact with `by cite <name>`", .{self.describe()}),
                     else => return self.fail("expected a rule name, got '{s}'", .{self.describe()}),
                 };

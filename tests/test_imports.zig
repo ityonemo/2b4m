@@ -76,6 +76,10 @@ pub fn addTests(
 
     ctx.okSilent(&.{ "check", "tests/cases/imports/uses.bpa" });
 
+    // `using import(I) thm` — cite an imported theorem across the file boundary via the
+    // import accelerant (the explicit cross-file citation seam, mirroring `using model(M)`).
+    ctx.okSilent(&.{ "check", "tests/cases/imports/import_accel.bpa" });
+
     // CYCLIC FILE IMPORTS are now allowed (architecture refactor: file graph may
     // cycle; proof-graph acyclicity is the separate, proof-time concern). cycle_a and
     // cycle_b mutually import each other and declare sorts A/B — no proof cycle, so it
