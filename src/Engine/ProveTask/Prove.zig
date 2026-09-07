@@ -101,6 +101,10 @@ schema_params: []const StrId = &.{},
 /// via resolveFactRef) is filtered `applyModel(model, source)`, so source names remap to
 /// their targets. `.universe` = an ordinary (identity) proof.
 model: InternPool.Index = .universe,
+/// SYNTHETIC (accelerant-generated) schema instance (13e): its formulas were DELABORATED
+/// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
+/// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
+pre_relativized: bool = false,
 
 const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 
@@ -125,6 +129,7 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
+    e.no_relativize = self.pre_relativized; // synthetic instance: skip guard re-injection
     e.tccs = &self.pending_tccs; // refined-sort obligation sink (Step 3c)
     e.result_facts = &self.result_facts;
     e.define_stack = &self.define_stack; // define-expansion cycle guard
@@ -217,6 +222,23 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                 },
             }
         }
+        // MODEL-HOME fallback (13e): relativization introduces TARGET-file symbols (the guard
+        // pred `inH`, its closure facts) into a transferred proof's re-elaborated synthetics;
+        // those names have no decl in the SOURCE file. If the name is undeclared in the target
+        // file but declared in the model's HOME file (where the model — and its guard
+        // vocabulary — was written), retarget the demand there.
+        if (r.ns == null and model != InternPool.Index.none and model != .universe) {
+            const home = ctx.interner.keyOf(model).model.home;
+            if (home != InternPool.Index.none and home != target_file) miss: {
+                if (ctx.pool_file.get(target_file)) |tfid| {
+                    if (ctx.declOf(tfid, r.name) != null) break :miss; // declared at source — no fallback
+                }
+                const hfid = ctx.pool_file.get(home) orelse break :miss;
+                if (ctx.declOf(hfid, r.name) == null) break :miss; // not in home either
+                target_file = home;
+                target_ns = try ctx.interner.namespace(.universe, home);
+            }
+        }
         switch (r.domain) {
             .ident => {
                 const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
@@ -298,7 +320,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         const c = step.body.claim;
         if (c.rule.name == InternPool.RuleStr.instantiation.id()) {
             var e = self.elab(w);
-            switch (try self.demandInstance(&e, c)) {
+            switch (try self.demandInstance(&e, c, false)) {
                 .proven => return null, // ready — process can run lowerInstantiate
                 .blocked => |t| return t,
                 .failed => return null, // diagnosed; process will re-hit .failed and reject
@@ -684,6 +706,13 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
                 return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
             }
         };
+        // (2c) an enclosing ASSUME block whose assumption is g — a GUARD PREMISE of a
+        // synthetic schema (13e): restate it on demand via [by hypothesis].
+        if (b.kind == .assume) {
+            if (self.pool.alphaEq(b.kind.assume, g)) {
+                return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
+            }
+        }
         // (2b) an enclosing UNPACK block whose witness carries the guard: the sound
         // relativization of `∃x; P` under a refined sort is `∃x; good(x) and P(x)`, so the
         // unpacked hypothesis is `good(w) and P(w)`. If `good(w) == g`, restate the hypothesis
@@ -1106,12 +1135,21 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim)
                     self.ctx.interner.sortName(@enumFromInt(@intFromEnum(want))), self.sortName(typed.sort),
                 });
             }
-            try args.put(self.ctx.arena, pname, .{ .value = .{ .id = typed.id, .sort = want } });
+            // store the CARRIER: terms are carrier-level (fvars mint at carriers; sigs check
+            // carriers), so a refined `want` (a param sort remapped to `H` under a model) must
+            // not leak into the instance's expressions — refinement rides as guards, not sorts.
+            const want_stored: SortId = if (typed.sort == Elab.prop_sort) want else @enumFromInt(@intFromEnum(want_carrier));
+            try args.put(self.ctx.arena, pname, .{ .value = .{ .id = typed.id, .sort = want_stored } });
         } else {
-            // N-ary GENERATOR param: a lambda arg (or a bare symbol → eta-expand).
+            // N-ary GENERATOR param: a lambda arg (or a bare symbol → eta-expand). Sorts are
+            // stored at their CARRIERS (a refined resolution leaks guards-as-sorts otherwise).
             const arg_sorts = try self.ctx.arena.alloc(SortId, p.arg_sorts.len);
-            for (p.arg_sorts, arg_sorts) |st, *out| out.* = try se.resolveSortTok(st);
-            const result_sort = try se.resolveSortTok(p.result);
+            for (p.arg_sorts, arg_sorts) |st, *out| {
+                const rs_sort = try se.resolveSortTok(st);
+                out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rs_sort)))));
+            }
+            const rr = try se.resolveSortTok(p.result);
+            const result_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rr)))));
             const lam = try self.bindLambdaArg(e, arg_expr, arg_sorts, result_sort);
             try args.put(self.ctx.arena, pname, lam);
         }
@@ -1185,7 +1223,7 @@ fn etaApply(self: *Prove, e: *Elab, tok: lexer.Token, fvars: []const TermId, res
 /// Builds the payload idempotently (re-run on each wake); the hash keys FactKV dedup.
 const InstanceOutcome = union(enum) { proven: InternPool.Index, blocked: Engine.TaskIndex, failed };
 
-fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
+fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim, synthetic: bool) Allocator.Error!InstanceOutcome {
     const rs = self.resolveSchemaRef(c.schema.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -1236,7 +1274,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
         .loc = c.schema.?.start,
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
-        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable },
+        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .synthetic = synthetic },
     }));
     return .{ .blocked = blocker };
 }
@@ -1247,7 +1285,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim) Allocator.Error!Ins
 /// premises and requires the final consequent == the citing claim.
 fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) Error!kernel.Justification {
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
-    const outcome = try self.demandInstance(e, c);
+    const outcome = try self.demandInstance(e, c, false);
     const fact = switch (outcome) {
         .proven => |ix| ix,
         .failed => return error.Recover,
@@ -1386,16 +1424,27 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     } orelse return .failed; // producer diagnosed
-    // register the synthetic decl + publish its `.schema` locator into the FACT table ONCE
-    // (both idempotent). A schema is a fact-with-params, so it lives in FactKV like any fact.
+    // MODEL-MANGLE the synthetic's name (13e): the same source step produces DIFFERENT
+    // synthetics standalone vs under a transfer (the transfer's terms are remapped +
+    // relativized). The registry/FactKV keys carry no model, so an unmangled name would
+    // collide keep-first with the standalone synthetic — the transferred instance would
+    // resolve the UNRELATIVIZED schema. `{m<N>}` uses non-lexable braces (collision-free).
+    var syn_name = syn.name;
     const fid = self.ctx.pool_file.get(self.file).?;
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
     decl_ptr.* = syn.decl;
+    if (self.model != InternPool.Index.none and self.model != .universe) {
+        const bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{m{d}}}", .{ self.ctx.interner.stringBytes(syn.name), @intFromEnum(self.model) }) catch return error.OutOfMemory;
+        syn_name = self.ctx.interner.internString(bytes) catch return error.OutOfMemory;
+        setSyntheticName(decl_ptr, syn_name);
+    }
+    // register the synthetic decl + publish its `.schema` locator into the FACT table ONCE
+    // (both idempotent). A schema is a fact-with-params, so it lives in FactKV like any fact.
     self.ctx.registerDecl(fid, decl_ptr) catch return error.OutOfMemory; // keep-first
-    const schema_key = FactKV.Key{ .namespace = self.ns, .name = syn.name };
+    const schema_key = FactKV.Key{ .namespace = self.ns, .name = syn_name };
     if (self.ctx.facts.lookup(self.ctx.io, schema_key) == null) {
         _ = self.ctx.facts.publishSchema(self.ctx.io, schema_key, .{
-            .name = syn.name,
+            .name = syn_name,
             .file = self.file,
             .loc = c.rule.start,
         }) catch return error.OutOfMemory;
@@ -1407,17 +1456,33 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
         .formula = c.formula,
         .kind = .using,
         .rule = c.rule,
-        .schema = b.tok(syn.name),
+        .schema = b.tok(syn_name),
         .args = syn.args,
         .refs = syn.premises,
     };
-    return self.demandInstance(e, inst_c);
+    return self.demandInstance(e, inst_c, true);
+}
+
+/// Rewrite a synthetic fact decl's NAME token identity (the `{m<N>}` model-mangle). Only the
+/// token's interned `name` changes; its start/end (display span) stay.
+fn setSyntheticName(decl: *ast.Decl, name: StrId) void {
+    switch (decl.*) {
+        .axiom, .hole => |*a| switch (a.*) {
+            .local => |*f| f.name.name = name,
+            .alias => {},
+        },
+        .theorem => |*t| switch (t.*) {
+            .local => |*l| l.fact.name.name = name,
+            .alias => {},
+        },
+        else => {},
+    }
 }
 
 /// The `using <accelerant>` justification (process): the instance fact is proven (read pass);
 /// emit `schema_instance` citing the accelerant's premise refs — the kernel peels the
 /// instance's `->` antecedents against them and requires the final consequent == the claim.
-fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
+fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     const outcome = try self.demandUsing(w, e, goal, c);
     const fact = switch (outcome) {
         .proven => |ix| ix,
@@ -1429,6 +1494,32 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.
     // premises = the accelerant's own refs (the producer's premise order): the head-cite (if
     // the head is local) then the hyps, matching the synthetic body's antecedent order.
     const prems = try self.accelerantPremises(w, c);
+    // GUARD PREMISES (13e): under a transfer the synthetic's body leads with the abstracted
+    // caller-locals' guards (`inH(a) -> …`) — antecedents with no caller ref token. Count them
+    // (peel the instance's `->` chain until the remainder α-matches the goal; guards = total −
+    // the ref premises) and SYNTHESIZE a discharge step for each in the CALLER's context (the
+    // fix-block guard, source (2); or closure recursion for a composite).
+    var total: usize = 0;
+    var walk_f = instance;
+    while (!self.pool.alphaEq(walk_f, goal)) {
+        const n = self.pool.get(walk_f);
+        if (n != .bin or n.bin.op != .implies) break;
+        total += 1;
+        walk_f = n.bin.rhs;
+    }
+    if (total > prems.len) {
+        const k = total - prems.len;
+        const all = try self.ctx.arena.alloc(kernel.SRef, total);
+        var gf = instance;
+        for (0..k) |i| {
+            const n = self.pool.get(gf);
+            all[i] = (try self.emitDischargeStep(kb, c.rule.start, n.bin.lhs)) orelse
+                return self.fail(c.rule.start, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(n.bin.lhs)});
+            gf = n.bin.rhs;
+        }
+        @memcpy(all[k..], prems);
+        return .{ .schema_instance = .{ .instance = instance, .premises = all } };
+    }
     return .{ .schema_instance = .{ .instance = instance, .premises = prems } };
 }
 
@@ -2385,13 +2476,15 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
         try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
     };
 
+    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
+    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     // the inner proposition the cert proves under its assumptions: `prem0 -> … -> (s = t)`.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
     const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
 
     // wrap the cert in nested `assume <local-prem>` blocks (the `->` antecedents), then in
     // `fix` blocks for the ∀ eigenvariables (the quantified variant's re-generalization).
-    steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps);
+    steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps, n_guards);
     steps = try self.wrapSimplifyForall(&b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop` (params already in place).
@@ -2446,20 +2539,55 @@ fn impliesChain(self: *Prove, consequent: TermId, ants: []const TermId) Error!Te
     return acc;
 }
 
+/// GUARD PREMISES for the abstracted caller-locals (13e): under a model TRANSFER, an
+/// abstracted `fix`-eigenvar carries a refined-sort guard (`inH(a)`) in the CALLER's block.
+/// The synthetic's discharge (a closure recursion bottoming out at the param fvar) needs that
+/// guard available INSIDE the instance — so surface it as a leading LOCAL premise: the schema
+/// body gains `inH(p) -> …`, the proof an enclosing `assume` block (no eager restate — the
+/// discharge's assume-source (2c) emits the hypothesis step on demand, so an unused guard
+/// leaves no dead step), and the CALL SITE discharges it from the fix guard (lowerUsing).
+/// PREPENDS to `formulae`/`cites` (guards outermost); returns how many were added.
+fn guardPremises(self: *Prove, abs: FvarAbstraction, formulae: *std.ArrayList(TermId), cites: *std.ArrayList(EqCert.RuleCite)) Error!usize {
+    if (self.model == InternPool.Index.none or self.model == .universe) return 0;
+    var add_f: std.ArrayList(TermId) = .empty;
+    var add_c: std.ArrayList(EqCert.RuleCite) = .empty;
+    for (abs.origs) |orig| {
+        const g = self.callerGuard(orig) orelse continue;
+        try add_f.append(self.ctx.arena, try self.substFvarsToParams(g, abs));
+        try add_c.append(self.ctx.arena, .{ .local = .{ .hyp = try self.freshNamed("guard-prem") } });
+    }
+    if (add_f.items.len == 0) return 0;
+    try formulae.insertSlice(self.ctx.arena, 0, add_f.items);
+    try cites.insertSlice(self.ctx.arena, 0, add_c.items);
+    return add_f.items.len;
+}
+
+/// The caller-block guard of a fix-eigenvar (by fvar identity), or null (unguarded/not a fix).
+fn callerGuard(self: *Prove, fvar_name: StrId) ?TermId {
+    for (self.low_blocks.items) |blk| if (blk.kind == .fix) {
+        if (blk.kind.fix.v.name == fvar_name) return blk.kind.fix.guard;
+    };
+    return null;
+}
+
 /// Wrap the cert `inner` (proving the equation `eq_prop`) in nested `assume <local-prem>`
 /// blocks — one per LOCAL rule premise, restating its hypothesis (under the deterministic
 /// `prem-…` label the cert cites) and exporting `prem_i -> …` with `implies_intro` out
 /// through each level. With no local premises the cert steps pass through verbatim. (Same
-/// shape as tautology's `wrapTautologyPremises`.)
-fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step) Error![]const ast.Step {
+/// shape as tautology's `wrapTautologyPremises`.) The FIRST `n_guards` premises are GUARD
+/// premises (13e): assume-wrapped but NOT eagerly restated — the discharge machinery emits
+/// the hypothesis step on demand (an unused restate would be a dead step).
+fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step, n_guards: usize) Error![]const ast.Step {
     var body_steps = inner;
     var i: usize = formulae.len;
     while (i > 0) {
         i -= 1;
-        const hyp_label = cites[i].local.hyp;
         const blk_label = try self.freshNamed("assume-prem");
         var blk_body = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, body_steps.len + 1);
-        blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, blk_label)));
+        if (i >= n_guards) {
+            const hyp_label = cites[i].local.hyp;
+            blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, blk_label)));
+        }
         blk_body.appendSliceAssumeCapacity(body_steps);
         var lvl: std.ArrayList(ast.Step) = .empty;
         try lvl.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(formulae[i]), blk_body.items));
@@ -2792,10 +2920,12 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         try local_formulae.append(self.ctx.arena, e.formula);
     };
 
+    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
+    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     // wrap the cert in nested `assume <local-eq>` blocks (the `->` antecedents), each restating
     // its hypothesis under `body_label` and exporting `prem_i -> … -> (start = target)` out.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = target } });
-    const steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, body_steps.items);
+    const steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, body_steps.items, n_guards);
 
     // schema body proposition = `local-prem0 -> … -> (start = target)`; params already in place.
     const full_prop = try self.impliesChain(eq_prop, local_formulae.items);
@@ -3351,9 +3481,11 @@ fn finishReorder(
         try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
     }
 
+    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
+    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
     const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
-    steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
+    steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps, n_guards);
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop`.
@@ -4188,8 +4320,10 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         try local_formulae.append(self.ctx.arena, p.formula);
     };
 
+    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
+    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     const inner_prop = try self.impliesChain(goal_p, local_formulae.items);
-    const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps);
+    const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps, n_guards);
 
     const body_expr = try b.termExpr(inner_prop);
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
@@ -6454,7 +6588,7 @@ fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     // An ACCELERANT (`using <accel> …`) lowers to a schema_instance over its generated
     // synthetic schema (the instance was demanded + proven in the read pass).
-    if (c.kind == .using and isAccelerant(c.rule.name)) return self.lowerUsing(w, e, goal, c);
+    if (c.kind == .using and isAccelerant(c.rule.name)) return self.lowerUsing(w, e, kb, goal, c);
     // Otherwise the rule word dispatches by its RESERVED StrId (integer comparison — no
     // strcmp past parsing); a non-rule word here is a typo.
     const kind = InternPool.RuleStr.of(c.rule.name) orelse {

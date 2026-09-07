@@ -137,7 +137,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 
     // everything resolved — build the model (deduped via get, under the write lock) and
     // publish its Index into IdentKV under M's name.
-    _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay, .dischargers = try dischargers.toOwnedSlice(self.arena) } });
+    _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay, .dischargers = try dischargers.toOwnedSlice(self.arena), .home = task.file } });
 }
 
 /// Which demand table a mapping token resolves against.

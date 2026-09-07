@@ -87,6 +87,11 @@ define_stack: ?*std.ArrayList(InternPool.Index) = null,
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
 /// site) in an ordinary proof = identity. Set by the model ProveTask on its Elab.
 model: InternPool.Index = .universe,
+/// NO_RELATIVIZE (13e): set when elaborating a SYNTHETIC (accelerant-generated) schema's
+/// formulas — they were DELABORATED from already-elaborated terms, so refined-sort guard
+/// injection at binders must be SKIPPED (it would double the guards). Parsed schemas keep
+/// injection (their AST is source text, not a round-trip).
+no_relativize: bool = false,
 /// REFINED-SORT obligation sinks (Step 3c), owned by the driving Prove (so they persist
 /// across the several Elabs a proof builds). A guarded-function application over a refined
 /// param sort `H` appends the obligation `inH(arg)` to `tccs`; a refined-RESULT func/const
@@ -193,7 +198,10 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
             // exists) — the intrinsic relativization of a predicated sort.
             const refined = try self.resolveBinderSort(q.binders[0]);
             const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
-            const quals = self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
+            // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
+            // already-elaborated (already-relativized) terms — re-injecting guards here would
+            // DOUBLE them (`inH(x) -> inH(x) -> …`). The faithful round-trip skips injection.
+            const quals: []const InternPool.Index = if (self.no_relativize) &.{} else self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
             const fresh = try self.arena.alloc(StrId, q.binders.len);
             const mark = self.scope.items.len;
             for (q.binders, fresh) |b, *fr| {
@@ -598,11 +606,25 @@ fn resolveQualified(self: *Elab, tok: lexer.Token) Error!Qualified {
 /// The resolved source Index is filtered through `self.model` (identity for `.universe`),
 /// so a model proof remaps source symbols to their targets (Step 13).
 fn lookupIdent(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index {
-    const state = self.idents.lookup(self.io, .{ .namespace = ns, .name = name }) orelse return null;
-    return switch (state) {
-        .done => |ix| self.interner.applyModel(self.model, ix),
-        .in_flight => null,
+    if (self.idents.lookup(self.io, .{ .namespace = ns, .name = name })) |state| switch (state) {
+        .done => |ix| return self.interner.applyModel(self.model, ix),
+        .in_flight => return null,
     };
+    // MODEL-HOME fallback (13e): a transferred proof's re-elaborated synthetics mention
+    // TARGET-file symbols (guard preds like `inH`) absent from the source file; they resolve
+    // in the model's HOME file (where the model was declared). Mirrors resolveRefs' fallback.
+    if (self.model != InternPool.Index.none and self.model != .universe) {
+        const home = self.interner.keyOf(self.model).model.home;
+        if (home != InternPool.Index.none) {
+            const hns = self.interner.namespace(.universe, home) catch return null;
+            if (hns != ns) if (self.idents.lookup(self.io, .{ .namespace = hns, .name = name })) |state| switch (state) {
+                // a home-file symbol is already in TARGET terms — no applyModel remap.
+                .done => |ix| return ix,
+                .in_flight => return null,
+            };
+        }
+    }
+    return null;
 }
 
 /// A quantifier binder may not shadow an expression-local, a proof-local, or an

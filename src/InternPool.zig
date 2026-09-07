@@ -320,7 +320,12 @@ pub const Key = union(enum) {
     /// func. Keyed by the TARGET symbol (`src` slot holds it), so the transfer's discharge walk,
     /// working in target space, finds a symbol's dischargers by scanning for matching `src`.
     /// Multiple entries with the same `src` = multiple facts (multi-guard const / >1 closure).
-    pub const Model = struct { parent: Index, overlay: []const Mapping = &.{}, dischargers: []const Mapping = &.{} };
+    /// `home` is the `.file` Index of the file the model is DECLARED in — where its guard
+    /// predicates / closure facts live. A transferred proof's re-elaboration falls back to
+    /// `(universe, home)` for names absent from the SOURCE file (relativization introduces
+    /// target-file symbols like `inH` into the transferred formulas; the model's home file is
+    /// exactly where they resolve). `.none` for universe (no fallback).
+    pub const Model = struct { parent: Index, overlay: []const Mapping = &.{}, dischargers: []const Mapping = &.{}, home: Index = .none };
 
     /// One `src -> tgt` overlay entry (both pool `Index`es). Also reused for a discharger entry
     /// (`src` = the target symbol, `tgt` = the establishing fact).
@@ -408,6 +413,7 @@ fn hashKey(key: Key) u64 {
         .file => |f| std.hash.autoHash(&h, f.path),
         .model => |m| {
             std.hash.autoHash(&h, m.parent);
+            std.hash.autoHash(&h, m.home);
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
             for (m.dischargers) |d| std.hash.autoHash(&h, d);
         },
@@ -430,7 +436,7 @@ fn sigEql(a: Key.Sig, b: Key.Sig) bool {
 }
 
 fn modelEql(a: Key.Model, b: Key.Model) bool {
-    if (a.parent != b.parent or a.overlay.len != b.overlay.len or a.dischargers.len != b.dischargers.len) return false;
+    if (a.parent != b.parent or a.home != b.home or a.overlay.len != b.overlay.len or a.dischargers.len != b.dischargers.len) return false;
     for (a.overlay, b.overlay) |x, y| if (x.src != y.src or x.tgt != y.tgt) return false;
     for (a.dischargers, b.dischargers) |x, y| if (x.src != y.src or x.tgt != y.tgt) return false;
     return true;
@@ -833,8 +839,9 @@ pub fn modelDischargers(self: *const InternPool, model: Index, symbol: Index, ou
 /// Append `[parent, overlay_count, src0, tgt0, …]` to `extra`; return the start offset.
 fn addModel(self: *InternPool, m: Key.Model) std.mem.Allocator.Error!u32 {
     const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 3 + (m.overlay.len + m.dischargers.len) * 2);
+    try self.extra.ensureUnusedCapacity(self.arena, 4 + (m.overlay.len + m.dischargers.len) * 2);
     self.extra.appendAssumeCapacity(@intFromEnum(m.parent));
+    self.extra.appendAssumeCapacity(@intFromEnum(m.home));
     self.extra.appendAssumeCapacity(@intCast(m.overlay.len));
     for (m.overlay) |mapping| {
         self.extra.appendAssumeCapacity(@intFromEnum(mapping.src));
@@ -849,16 +856,17 @@ fn addModel(self: *InternPool, m: Key.Model) std.mem.Allocator.Error!u32 {
 }
 
 /// Read the model payload at `off` back — the inverse of `addModel`. Each pair-run
-/// reinterprets the `u32` run in `extra` as `Mapping` (two `Index`es), zero-copy.
-/// Layout: `[parent, overlay_count, ...overlay pairs, discharger_count, ...discharger pairs]`.
+/// reinterprets the `u32` run in `extra` as `Mapping` (two `Index`es), zero-copy. Layout:
+/// `[parent, home, overlay_count, ...overlay pairs, discharger_count, ...discharger pairs]`.
 fn modelData(self: *const InternPool, off: u32) Key.Model {
     const parent: Index = @enumFromInt(self.extra.items[off]);
-    const on = self.extra.items[off + 1];
-    const overlay_raw = self.extra.items[off + 2 .. off + 2 + on * 2];
-    const dcount_at = off + 2 + on * 2;
+    const home: Index = @enumFromInt(self.extra.items[off + 1]);
+    const on = self.extra.items[off + 2];
+    const overlay_raw = self.extra.items[off + 3 .. off + 3 + on * 2];
+    const dcount_at = off + 3 + on * 2;
     const dn = self.extra.items[dcount_at];
     const disch_raw = self.extra.items[dcount_at + 1 .. dcount_at + 1 + dn * 2];
-    return .{ .parent = parent, .overlay = @ptrCast(overlay_raw), .dischargers = @ptrCast(disch_raw) };
+    return .{ .parent = parent, .home = home, .overlay = @ptrCast(overlay_raw), .dischargers = @ptrCast(disch_raw) };
 }
 
 // -- signature encoding (`[result, result_refined, argc, a0, …]`) ----------------------

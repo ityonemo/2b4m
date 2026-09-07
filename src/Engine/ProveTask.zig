@@ -76,6 +76,9 @@ pub const Instance = struct {
     schema_name: StrId, // the schema decl's name — resolved via the by-name AST registry
     params: []const StrId, // param names, in order (for schema_args keys + read-pass skip)
     args: []const DurableArg, // one per param, in order
+    /// SYNTHETIC (accelerant-generated) schema: its formulas are delaborated from already-
+    /// elaborated terms — re-elaboration must not re-inject refined-sort guards (13e).
+    synthetic: bool = false,
 };
 
 /// A schema argument as durable pool data (mirrors `Schema.SchemaArg` with TermOffs).
@@ -203,6 +206,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
         e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
         e.model = st.prove.model; // remap source globals for a model transfer (identity else)
+        e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
         e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
         const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -443,6 +447,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     const resolve_ns = try self.interner.namespace(.universe, task.file);
     const prove = try Prove.init(self, h, source, task.file, resolve_ns);
     prove.model = task.model;
+    prove.pre_relativized = inst.synthetic; // delaborated formulas: no guard re-injection
 
     // rebuild the live SchemaArgs by copying each durable arg into the task's scratchpad.
     const args = try self.arena.create(Schema.SchemaArgs);
