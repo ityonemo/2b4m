@@ -105,6 +105,11 @@ model: InternPool.Index = .universe,
 /// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
 /// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
 pre_relativized: bool = false,
+/// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
+/// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
+/// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
+/// forall_intro derivation. Empty outside a transfer / for unguarded goals.
+quant_guards: []const ?TermId = &.{},
 
 const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 
@@ -2488,13 +2493,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     steps = try self.wrapSimplifyForall(&b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop` (params already in place).
-    var full_prop = inner_prop;
-    var ei: usize = eigen.len;
-    while (ei > 0) {
-        ei -= 1;
-        const closed = try self.pool.close(full_prop, eigen[ei].name);
-        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
-    }
+    const full_prop = try self.closeOverEigen(inner_prop, eigen);
     const body_expr = try b.termExpr(full_prop);
 
     // params from the abstracted free fvars (value params of the fvars' sorts).
@@ -2619,10 +2618,23 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
     while (i > 0) {
         i -= 1;
         const fv = eigen[i];
+        // GUARD level (13e, a transferred `_quantified` goal): wrap the current steps in
+        // `assume guard(v) { … }` + an implies_intro export INSIDE this fix — forall_intro
+        // then derives the guarded `∀v; guard(v) -> …` (matching the relativized body), and
+        // the discharge machinery finds `guard(v)` via the assume-source (2c).
+        if (i < self.quant_guards.len) if (self.quant_guards[i]) |g| {
+            const blk_label = try self.freshNamed("assume-guard");
+            var gsteps: std.ArrayList(ast.Step) = .empty;
+            try gsteps.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(g), steps));
+            prop = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = g, .rhs = prop } });
+            try gsteps.append(self.ctx.arena, try b.claimStep(try self.freshNamed("export-guard"), try b.termExpr(prop), .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(b, blk_label)));
+            steps = try gsteps.toOwnedSlice(self.ctx.arena);
+        };
         const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
         const fix_label = try self.freshNamed("fix");
         const bname = b.tok(try self.displayName(fv.name));
         const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.tok(sort_name), .steps = steps } } };
+        // plain ∀-close: the guard (if any) is already folded into `prop` above.
         const closed = try self.pool.close(prop, fv.name);
         prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
         var lvl: std.ArrayList(ast.Step) = .empty;
@@ -2638,6 +2650,30 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
         steps = try lvl.toOwnedSlice(self.ctx.arena);
     }
     return steps;
+}
+
+/// Re-close `prop` over the peeled ∀ eigenvariables (outermost = eigen[0]), re-adding each
+/// level's peeled relativization guard (`∀v; inH(v) -> …`) — the schema-body counterpart of
+/// the kernel's guarded forall_intro (the fix binder re-resolves to the refined sort under the
+/// model, so its forall_intro derives the guarded form; the stated body must match).
+fn closeOverEigen(self: *Prove, prop_in: TermId, eigen: []const term.Node.Fvar) Error!TermId {
+    var prop = prop_in;
+    var ei: usize = eigen.len;
+    while (ei > 0) {
+        ei -= 1;
+        prop = try self.guardedQuant(prop, eigen[ei], ei);
+    }
+    return prop;
+}
+
+/// One level of `closeOverEigen`: `∀v; [guard(v) ->] prop`.
+fn guardedQuant(self: *Prove, prop_in: TermId, fv: term.Node.Fvar, level: usize) Error!TermId {
+    var prop = prop_in;
+    if (level < self.quant_guards.len) if (self.quant_guards[level]) |g| {
+        prop = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = g, .rhs = prop } });
+    };
+    const closed = try self.pool.close(prop, fv.name);
+    return self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
 }
 
 /// Abstract each distinct FREE fvar in `id` into a synthetic value param — the goal's
@@ -3165,12 +3201,29 @@ fn readPolyOps(self: *Prove, eq_goal: TermId) Error!?Polynomial.Ops {
     return found;
 }
 
+/// A symbol's WELL-KNOWN name for vocabulary matching: under a TRANSFER the goal's syms are
+/// TARGET images (`tadd`), but the well-known vocabulary (add/mul/…) is the SOURCE theory's —
+/// reverse-map through the overlay to the source symbol's name.
+fn vocabName(self: *Prove, ix: InternPool.Index) []const u8 {
+    if (self.model != InternPool.Index.none and self.model != .universe) {
+        var cur = self.model;
+        while (true) {
+            const m = self.ctx.interner.keyOf(cur).model;
+            for (m.overlay) |mp| if (mp.tgt == ix and mp.src != ix)
+                return self.ctx.interner.stringBytes(self.ctx.interner.nameOf(mp.src));
+            if (cur == m.parent) break;
+            cur = m.parent;
+        }
+    }
+    return self.ctx.interner.stringBytes(self.ctx.interner.nameOf(ix));
+}
+
 /// Recursively match each app head's well-known NAME, filling `ops`. Pure goal inspection.
 fn collectPolyOps(self: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *bool, have_mul: *bool) Error!void {
     const node = self.pool.get(id);
     switch (node) {
         .app => |a| {
-            const name = self.ctx.interner.stringBytes(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(a.sym))));
+            const name = self.vocabName(@enumFromInt(@intFromEnum(a.sym)));
             if (std.mem.eql(u8, name, "add")) {
                 ops.add = a.sym;
                 have_add.* = true;
@@ -3425,15 +3478,36 @@ fn orientRule(self: *Prove, formula: TermId) Error!?simplify_mod.Rule {
 const PeeledEq = struct { body: TermId, eigen: []const term.Node.Fvar };
 fn peelForallEq(self: *Prove, goal: TermId, c: ast.Step.Claim, comptime who: []const u8) Error!?PeeledEq {
     var eigen: std.ArrayList(term.Node.Fvar) = .empty;
+    var guards: std.ArrayList(?TermId) = .empty;
+    self.quant_guards = &.{};
     var body = goal;
     while (true) {
         const node = self.pool.get(body);
         if (node != .quant or node.quant.q != .forall) break;
         const hint = self.ctx.interner.stringBytes(node.quant.hint);
         const fv: term.Node.Fvar = .{ .name = try self.freshNamed(if (hint.len > 0) hint else "q"), .sort = node.quant.sort };
-        body = try self.pool.open(node.quant.body, try self.pool.add(.{ .fvar = fv }));
+        const fvt = try self.pool.add(.{ .fvar = fv });
+        body = try self.pool.open(node.quant.body, fvt);
         try eigen.append(self.ctx.arena, fv);
+        // TRANSFER: the goal is RELATIVIZED — peel this binder's injected guard (`inH(v) ->`,
+        // a unary pred over exactly the just-opened fvar), recording it for the re-closers.
+        var guard: ?TermId = null;
+        if (self.model != InternPool.Index.none and self.model != .universe) {
+            const bn = self.pool.get(body);
+            if (bn == .bin and bn.bin.op == .implies) {
+                const gn = self.pool.get(bn.bin.lhs);
+                if (gn == .pred and self.pool.args(gn.pred).len == 1) {
+                    const garg = self.pool.get(self.pool.args(gn.pred)[0]);
+                    if (garg == .fvar and garg.fvar.name == fv.name) {
+                        guard = bn.bin.lhs;
+                        body = bn.bin.rhs;
+                    }
+                }
+            }
+        }
+        try guards.append(self.ctx.arena, guard);
     }
+    self.quant_guards = guards.items;
     if (eigen.items.len == 0) {
         return self.fail(c.rule.start, who ++ " expects a quantified goal; drop the '_quantified' suffix for a bare equation", .{});
     }
@@ -3489,13 +3563,7 @@ fn finishReorder(
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop`.
-    var full_prop = inner_prop;
-    var ei: usize = eigen.len;
-    while (ei > 0) {
-        ei -= 1;
-        const closed = try self.pool.close(full_prop, eigen[ei].name);
-        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
-    }
+    const full_prop = try self.closeOverEigen(inner_prop, eigen);
     const body_expr = try b.termExpr(full_prop);
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
@@ -3588,13 +3656,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     steps = try self.wrapSimplifyForall(&b, eigen, eq_prop, steps);
 
     // schema body = the ∀-generalized equation.
-    var full_prop = eq_prop;
-    var ei: usize = eigen.len;
-    while (ei > 0) {
-        ei -= 1;
-        const closed = try self.pool.close(full_prop, eigen[ei].name);
-        full_prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = eigen[ei].sort, .hint = eigen[ei].name, .body = closed } });
-    }
+    const full_prop = try self.closeOverEigen(eq_prop, eigen);
     const body_expr = try b.termExpr(full_prop);
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
