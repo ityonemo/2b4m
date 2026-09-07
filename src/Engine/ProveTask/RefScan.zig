@@ -168,7 +168,7 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// stamped — integer comparison, no strcmp past parsing.
 fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, accelerant, local } {
     if (InternPool.RuleStr.of(rule)) |word| return switch (word) {
-        .axiom, .theorem => .fact,
+        .axiom, .theorem, .cite => .fact,
         .instantiation => .instantiate,
         .model => .model,
         else => .local,

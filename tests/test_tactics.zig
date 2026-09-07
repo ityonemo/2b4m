@@ -12,6 +12,10 @@ pub fn addTests(
     test_step: *std.Build.Step,
 ) void {
     const ctx = Ctx.init(b, exe, test_step);
+    // `by cite`: the KIND-AGNOSTIC fact citation (cites an axiom OR a theorem; the kernel
+    // picks its arm by the resolved kind). The word generated accelerant certs emit.
+    ctx.okSilent(&.{ "check", "tests/cases/cite.bpa" });
+
     // Milestone A: simplify — certificate-producing rewrite tactic
     ctx.okSilent(&.{ "check", "tests/cases/simplify.bpa" });
 

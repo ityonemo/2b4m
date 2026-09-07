@@ -1677,16 +1677,15 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     // resolve HEAD → its formula term + how the schema proof cites it.
     const head_local = w.findStep(tokName(head)) != null;
     var head_formula: TermId = undefined;
-    var head_kind_axiom = false; // global: is it an axiom (else theorem)?
     if (head_local) {
         const sref = try self.resolveStepRef(w, head);
         head_formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
     } else {
         // resolveFactRef rejects a schema head (no ground formula) — a clean diagnostic, not a
-        // crash — so `.fact` is safe here.
+        // crash — so `.fact` is safe here. (The generated cert cites it kind-agnostically with
+        // `cite`, so the head's axiom-vs-theorem kind is never needed.)
         const fact = try self.resolveFactRef(head);
         head_formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-        head_kind_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
     }
 
     // Instantiate one ∀ per arg at a fresh param fvar, INTERLEAVED with `->` antecedents:
@@ -1764,7 +1763,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     var body_expr = try b.termExpr(tail);
     if (head_local) body_expr = try b.implies(try b.termExpr(head_formula), body_expr);
 
-    const steps = try self.buildSpecializeProof(&b, head, head_local, head_kind_axiom, head_formula, pnames, ants.items, consequent);
+    const steps = try self.buildSpecializeProof(&b, head, head_local, head_formula, pnames, ants.items, consequent);
 
     // deterministic hash-name from the head formula + arg count (re-entry stable).
     const hash = Schema.termHash(self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
@@ -1786,7 +1785,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 /// assumed antecedent) to reach `consequent`; then implies_intro back out through each block.
 /// A GLOBAL head is cited (axiom/theorem); a LOCAL head is antecedent #0 (assumed, restated
 /// by hypothesis). Handles the contiguous case (no interior `->`) as the ants-empty subset.
-fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token, head_local: bool, head_axiom: bool, head_formula: TermId, pnames: []const StrId, ants: []const TermId, consequent: TermId) Error![]const ast.Step {
+fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token, head_local: bool, head_formula: TermId, pnames: []const StrId, ants: []const TermId, consequent: TermId) Error![]const ast.Step {
     // labels for each assumed antecedent's block + its hypothesis restatement.
     const ablk = try self.ctx.arena.alloc(StrId, ants.len);
     const ahyp = try self.ctx.arena.alloc(StrId, ants.len);
@@ -1802,8 +1801,7 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
         // head is antecedent #0 — restate it by hypothesis on its block.
         try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, ablk[0])));
     } else {
-        const rule: []const u8 = if (head_axiom) "axiom" else "theorem";
-        try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStrRt(rule), &.{}, try self.headRef(head)));
+        try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStrRt("cite"), &.{}, try self.headRef(head)));
     }
     // walk the head, emitting a forall_elim step per binder and a modus_ponens step per `->`
     // (discharged by the matching assumed antecedent). `cur`/`cur_label` track the running
@@ -2976,8 +2974,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // ones are the wrapper's restated hypotheses (their `body_label` = the `prem-…` step).
     var body_steps: std.ArrayList(ast.Step) = .empty;
     for (prepared) |p| if (!p.local) {
-        const word = if (p.is_axiom) try self.internStr("axiom") else try self.internStr("theorem");
-        try body_steps.append(self.ctx.arena, try b.claimStep(p.body_label, try b.termExpr(p.formula), .by, word, &.{}, try self.headRef(p.head)));
+        try body_steps.append(self.ctx.arena, try b.claimStep(p.body_label, try b.termExpr(p.formula), .by, try self.internStr("cite"), &.{}, try self.headRef(p.head)));
     };
     // reflexivity `start = start`, then one rewrite per path edge (symmetry-flip a backward edge).
     const refl = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = start } });
@@ -3854,7 +3851,7 @@ fn findMemberOp(self: *Prove, id: TermId) ?term.SymId {
 fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), lemma: ExtLemma, unfolds: []const ExtUnfold, s: TermId, t: TermId, c: ast.Step.Claim) Error!void {
     // step 0: cite the ext lemma.
     const law = try self.freshNamed("extensionality");
-    const word: []const u8 = if (lemma.is_axiom) "axiom" else "theorem";
+    const word: []const u8 = "cite";
     const law_refs = try self.ctx.arena.alloc(lexer.Token, 1);
     law_refs[0] = lemma.head;
     try block.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(lemma.formula), .by, try self.internStrRt(word), &.{}, law_refs));
@@ -4033,7 +4030,7 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
 
     // cite the lemma; forall_elim at each op-arg, then at x.
     const cite_label = try self.freshNamed("membership-lemma");
-    const word: []const u8 = if (u.is_axiom) "axiom" else "theorem";
+    const word: []const u8 = "cite";
     const cite_refs = try self.ctx.arena.alloc(lexer.Token, 1);
     cite_refs[0] = u.head;
     try block.append(self.ctx.arena, try b.claimStep(cite_label, try b.termExpr(u.formula), .by, try self.internStrRt(word), &.{}, cite_refs));
@@ -6741,7 +6738,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
     }
     switch (kind) {
         .instantiation, .model => unreachable, // dispatched above
-        .axiom, .theorem => {
+        .axiom, .theorem, .cite => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);
             const loc = c.refs[0].start;

@@ -74,8 +74,9 @@ fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindi
     switch (self.cites[ri]) {
         .global => |g| {
             cur_label = try self.fresh("simplify");
-            const word: []const u8 = if (g.is_axiom) "axiom" else "theorem";
-            const wid = self.b.interner.internString(word) catch return error.OutOfMemory;
+            // KIND-AGNOSTIC cite: the generated ProveTask resolves the fact + the kernel
+            // picks its arm by the resolved kind — the cert never guesses axiom-vs-theorem.
+            const wid = self.b.interner.internString("cite") catch return error.OutOfMemory;
             const refs = try self.b.arena.alloc(Token, 1);
             refs[0] = g.head; // the head token carries the stamped fact name
             try block.append(self.b.arena, try self.b.claimStep(cur_label, try self.b.termExpr(rule.formula), .by, wid, &.{}, refs));
