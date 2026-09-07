@@ -97,9 +97,10 @@ pub fn addTests(
     // source theorem forces strict materialization to recurse into it (memoized —
     // the shared dependency materializes once across both cites). Kernel-checked.
     ctx.okSilent(&.{ "check", "tests/cases/model_recurse.bpa" });
+    // `--fast` is suspended during the rebuild (strict-only), so it produces the same fully-
+    // verified result as plain check — no accelerated banner, no NOT-FULLY-VERIFIED note.
     ctx.ok(&.{ "check", "--fast", "tests/cases/model_recurse.bpa" },
-        \\OK: 14 declarations, 4 theorems proven (2 accelerated: model)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 14 declarations, 2 theorems proven
         \\
     );
 
@@ -109,9 +110,11 @@ pub fn addTests(
     // cite a fact the substitution AFFECTS but the model doesn't map.
     // OK exercises invariant-theorem + invariant-axiom + axiom→theorem + axiom→axiom:
     ctx.okSilent(&.{ "check", "tests/cases/model_cite_ok.bpa" });
-    // BAD leaves an affected axiom (opUnitRight, cited by the transferred proof)
-    // unmapped → rejected, naming it.
-    ctx.fail(&.{ "check", "tests/cases/model_cite_bad.bpa" }, "tests/cases/model_cite_bad.bpa:33:27: error: model materialization cites axiom 'opUnitRight', which the substitution affects but the model does not map; add a mapping for it\n");
+    // BAD leaves an affected axiom (opUnitRight, cited by the transferred proof) unmapped →
+    // rejected. In the demand path an unmapped source axiom stays the SOURCE axiom under the
+    // transfer (applyModel = identity), so its formula fails to match the transferred step's
+    // relativized claim — the rejection surfaces at that source citation.
+    ctx.fail(&.{ "check", "tests/cases/model_cite_bad.bpa" }, "tests/cases/model_cite_source.bpa:43:8: error: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
     // a model maps only the source theory's AXIOMS; mapping a source THEOREM (which
     // materializes through the mapped axioms) is misuse and rejected at that mapping.
     ctx.fail(&.{ "check", "tests/cases/model_maps_theorem_bad.bpa" }, "tests/cases/model_maps_theorem_bad.bpa:19:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");

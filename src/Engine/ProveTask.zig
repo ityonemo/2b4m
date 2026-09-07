@@ -194,7 +194,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         const refs = try scanner.scanFormula(formula);
         // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
         // ns — a model transfer's source names resolve there + get overlay-redirected.
-        if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, refs)) |blocker| {
+        if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, refs)) |blocker| {
             h.suspendOn(blocker);
             return;
         }

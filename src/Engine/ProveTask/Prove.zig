@@ -190,7 +190,7 @@ fn sortName(self: *const Prove, sort: SortId) []const u8 {
 /// for absent names. Returns a blocker to suspend on, or null when the whole closure is
 /// resolved "enough" to process (proven/done, or in_flight-SELF — the latter is left for
 /// process to diagnose as a self-citation). IDEMPOTENT — re-runs on every resume.
-pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns: InternPool.Index, refs: []const RefScan.Ref) Allocator.Error!?Engine.TaskIndex {
+pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns: InternPool.Index, model: InternPool.Index, refs: []const RefScan.Ref) Allocator.Error!?Engine.TaskIndex {
     var blocker: ?Engine.TaskIndex = null;
     for (refs) |r| {
         // a QUALIFIED candidate resolves its import first; until the import is done we
@@ -257,7 +257,24 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                     .in_flight => |owner| {
                         if (owner != h.self_index) blocker = owner;
                     },
-                    .proven => {},
+                    .proven => |src| {
+                        // In a model TRANSFER, a cited SOURCE THEOREM needs its TRANSFERRED version
+                        // `(model, target_file).name` (re-proved under the model). ONLY a theorem —
+                        // an AXIOM must go through the obligation overlay (mapped → local fact, or
+                        // FAIL if the substitution affects it and the model leaves it unmapped);
+                        // giving an axiom a free transferred leaf would let an unmapped axiom
+                        // through (unsound). `resolveFactRef` prefers the transferred fact when
+                        // present. (A schema isn't transferred this way — its instance carries the
+                        // model — so `.fact` domain only.)
+                        if (r.domain == .fact and model != InternPool.Index.none and model != .universe and
+                            ctx.interner.keyOf(src) == .fact and ctx.interner.keyOf(src).fact.kind == .theorem)
+                        {
+                            const tns = try ctx.interner.namespace(model, target_file);
+                            if (ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name }) == null) {
+                                blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model }));
+                            }
+                        }
+                    },
                 }
             },
         }
@@ -272,7 +289,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
     const refs = try scanner.scanStep(step);
-    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, refs)) |blocker| return blocker;
+    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, refs)) |blocker| return blocker;
 
     // an `instantiate` step additionally DEMANDS the monomorphized instance FACT (its own
     // ProveTask) — the schema name + args are now resolved, so build the instance and
@@ -349,7 +366,7 @@ fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.Ta
             try refs.append(self.ctx.arena, .{ .ns = null, .name = induction_id, .domain = .schema, .loc = loc });
         };
     };
-    return resolveRefs(self.ctx, self.h, self.file, self.ns, refs.items);
+    return resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, refs.items);
 }
 
 pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!bool {
@@ -842,11 +859,29 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
         return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
     };
+    const src = switch (state) {
+        .proven => |x| x,
+        .in_flight => return self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
+    };
+    // In a TRANSFER, a cited SOURCE THEOREM resolves to its TRANSFERRED version (re-proved under
+    // the model), keyed `(model, ns.file).name` — the read pass demanded it. ONLY a theorem: an
+    // AXIOM stays on the `applyModel` overlay path (mapped → local discharging fact), never a free
+    // transferred leaf (see the read-pass note).
+    if (self.model != InternPool.Index.none and self.model != .universe and
+        self.ctx.interner.keyOf(src) == .fact and self.ctx.interner.keyOf(src).fact.kind == .theorem)
+    {
+        const nsfile = self.ctx.interner.keyOf(ns).namespace.file;
+        const tns = try self.ctx.interner.namespace(self.model, nsfile);
+        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = tokName(tok) })) |st| switch (st) {
+            .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) return x,
+            .in_flight => {},
+        };
+    }
     const ix = switch (state) {
         // in a model transfer, a source-axiom citation remaps (via the overlay) to its
         // discharging LOCAL fact — an obligation. `.universe` = identity (ordinary proof).
         .proven => |x| self.ctx.interner.applyModel(self.model, x),
-        .in_flight => return self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
+        .in_flight => unreachable, // handled above
     };
     // a SCHEMA lives in the fact table too (a fact-with-params), but it is NOT a citable ground
     // fact — it has no closed formula. It must be MONOMORPHIZED via `[using instantiation …]`.
