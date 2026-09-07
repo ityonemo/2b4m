@@ -148,18 +148,20 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     _ = try self.idents.publish(self.io, key, .{ .existing = target });
                     return;
                 },
-                // `sort H = G where inH` → a REFINED sort {parent: G, qualifiers: [inH]}.
+                // `sort H = G where inH [and inK …]` → a REFINED sort
+                // {parent: G, qualifiers: [inH, inK, …]} (one per `and`-chained predicate).
                 .guarded => |g| {
                     const parent = resolveSortDemand(self, h, task.file, source, g.parent) catch |e| switch (e) {
                         error.OutOfMemory => return error.OutOfMemory,
                         error.Unresolved => return,
                     };
-                    const gpred = resolveGuardPred(self, h, task.file, source, g.guard, parent) catch |e| switch (e) {
-                        error.OutOfMemory => return error.OutOfMemory,
-                        error.Unresolved => return,
-                    };
-                    const quals = try self.arena.alloc(InternPool.Index, 1);
-                    quals[0] = gpred;
+                    const quals = try self.arena.alloc(InternPool.Index, g.guards.len);
+                    for (g.guards, quals) |gt, *q| {
+                        q.* = resolveGuardPred(self, h, task.file, source, gt, parent) catch |e| switch (e) {
+                            error.OutOfMemory => return error.OutOfMemory,
+                            error.Unresolved => return,
+                        };
+                    }
                     _ = try self.idents.publish(self.io, key, .{ .sort = .{
                         .name = task.name,
                         .loc = name_tok.start,

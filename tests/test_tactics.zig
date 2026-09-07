@@ -248,9 +248,14 @@ pub fn addTests(
     // explicit closure axiom. Kernel-checked.
     ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_closure.bpa" });
     // PREDICATED SORT chain: C = B where inC over B = A where inB — carrierOf walks
-    // to the root A, qualifiers accumulate, so ∀c: C desugars to
-    // ∀c: A; inB(c) -> inC(c) -> …. (Also a Zig unit test in env.zig.)
+    // to the root A, qualifiers accumulate into the CANONICAL conjoined guard, so
+    // ∀c: C desugars to ∀c: A; (inC(c) and inB(c)) -> ….
     ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_chain.bpa" });
+    // H ∩ K ≤ G (the 13e acceptance stress test): a MULTI-GUARD model — the intersection
+    // as `Grp where inH and inK`, base facts via the parens list, per-predicate closures
+    // via the `-|` comma list, auto-weakening over the conjoined guard, and composite-
+    // witness discharge recursing through BOTH closures to the fix guard's conjuncts.
+    ctx.okSilent(&.{ "check", "tests/cases/model_intersection.bpa" });
 
     // SOUNDNESS: even under --fast, the remapped source theorem must α-match the
     // goal — a flipped-equation goal is rejected (you can't prove what the source

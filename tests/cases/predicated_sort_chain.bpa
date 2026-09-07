@@ -1,7 +1,9 @@
 // PREDICATED SORT chain: C = B where inC, where B = A where inB. A refined sort may
-// refine another refined sort. The base-sort resolver walks the refinement chain to the root A; the
-// qualifiers accumulate — so `forall c: C; P(c)` desugars to
-// `forall c: A; inB(c) -> inC(c) -> P(c)` (the guards compose, declaration order).
+// refine another refined sort. The base-sort resolver walks the refinement chain to the root
+// A; the qualifiers accumulate into ONE CONJOINED guard — so `forall c: C; P(c)` desugars to
+// `forall c: A; (inC(c) and inB(c)) -> P(c)` (child qualifier first, the accumulation order).
+// The conjunction is the CANONICAL relativization shape: it is exactly what the kernel's
+// guarded-fix `forall_intro` derives, so statements, fix blocks, and transfers all agree.
 sort A
 pred inB(a: A)
 sort B = A where inB
@@ -10,7 +12,7 @@ sort C = B where inC
 
 pred P(a: A)
 
-axiom pForC: forall c: A; inB(c) -> inC(c) -> P(c)
+axiom pForC: forall c: A; (inC(c) and inB(c)) -> P(c)
 
 theorem chainDesugars: forall c: C; P(c)
 proof

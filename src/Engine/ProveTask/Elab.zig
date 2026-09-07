@@ -218,10 +218,10 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
             var i = q.binders.len;
             while (i > 0) {
                 i -= 1;
-                // inject each qualifier guard over this binder's fresh fvar, innermost-first.
-                for (quals) |qpred| {
-                    const bfv = try self.scratch.add(.{ .fvar = .{ .name = fresh[i], .sort = sort } });
-                    const guard = try self.qualifierApp(qpred, bfv);
+                // inject the binder's guard: the CONJUNCTION of its qualifiers (canonical —
+                // matches the kernel's guarded-fix forall_intro derivation and bindProofVar),
+                // as a single `guard -> body` (∀) / `guard and body` (∃).
+                if (try self.conjoinQuals(quals, fresh[i], sort)) |guard| {
                     const connective: term.BinOp = if (q.q == .forall) .implies else .and_op;
                     id = try self.scratch.add(.{ .bin = .{ .op = connective, .lhs = guard, .rhs = id } });
                 }
@@ -559,13 +559,25 @@ fn qualifierApp(self: *Elab, qpred: InternPool.Index, arg: TermId) Error!TermId 
 /// identically, so they match on discharge (Step 3c).
 fn relativizeUnderBinder(self: *Elab, f0: TermId, quals: []const InternPool.Index, fvar: StrId, sort: SortId, hint: lexer.Token) Error!TermId {
     var f = f0;
-    for (quals) |qpred| {
-        const bound = try self.scratch.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
-        const guard = try self.qualifierApp(qpred, bound);
+    if (try self.conjoinQuals(quals, fvar, sort)) |guard| {
         f = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = guard, .rhs = f } });
     }
     const closed = try self.scratch.close(f, fvar);
     return self.scratch.add(.{ .quant = .{ .q = .forall, .sort = sort, .hint = tokName(hint), .body = closed } });
+}
+
+/// The CONJUNCTION of a refined sort's qualifier guards over `fvar` — the CANONICAL
+/// relativization guard shape (`inH(v) and inK(v)`, left-fold in declaration order; a single
+/// qualifier is just its atom). Matches bindProofVar and the kernel's guarded forall_intro.
+/// Null for an unrefined sort.
+fn conjoinQuals(self: *Elab, quals: []const InternPool.Index, fvar: StrId, sort: SortId) Error!?TermId {
+    var guard: ?TermId = null;
+    for (quals) |qpred| {
+        const bound = try self.scratch.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
+        const app = try self.qualifierApp(qpred, bound);
+        guard = if (guard) |prev| try self.scratch.add(.{ .bin = .{ .op = .and_op, .lhs = prev, .rhs = app } }) else app;
+    }
+    return guard;
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {

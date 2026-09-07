@@ -113,7 +113,7 @@ pub const Sort = union(enum) {
     /// `sort H = G where inH` — a PREDICATED SORT: carrier `parent` narrowed by `guard`
     /// (a unary pred name). Every use injects the guard (hypothesis at binders, obligation
     /// at applications).
-    guarded: struct { name: Token, parent: Token, guard: Token },
+    guarded: struct { name: Token, parent: Token, guards: []const Token },
 };
 
 pub const Constant = union(enum) {
@@ -186,8 +186,8 @@ pub const IdentMapping = union(enum) {
     },
     closed_operation: struct {
         mapping: Mapping,
-        closure_fact: Token
-    }
+        closure_facts: []const Token,
+    },
 };
 
 /// One line in a `model` block. Two forms, distinguished by operator:

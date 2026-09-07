@@ -249,8 +249,17 @@ pub const Parser = struct {
                 const target = try self.expect(.identifier);
                 if (self.tok.tag == .keyword_where) {
                     _ = self.advance();
-                    const guard = try self.expect(.identifier);
-                    return .{ .sort = .{ .guarded = .{ .name = name, .parent = target, .guard = guard } } };
+                    // one or more qualifier predicates: `where p` | `where p and q and …`.
+                    var guards: std.ArrayList(Token) = .empty;
+                    while (true) {
+                        try guards.append(self.arena, try self.expect(.identifier));
+                        if (self.tok.tag == .keyword_and) {
+                            _ = self.advance();
+                            continue;
+                        }
+                        break;
+                    }
+                    return .{ .sort = .{ .guarded = .{ .name = name, .parent = target, .guards = try guards.toOwnedSlice(self.arena) } } };
                 }
                 return .{ .sort = .{ .alias = .{ .name = name, .target = target } } };
             },
@@ -399,10 +408,20 @@ pub const Parser = struct {
                     _ = try self.expect(.r_paren);
                     break :blk .{ .refined_sort = .{ .mapping = mapping, .dischargers = try dischargers.toOwnedSlice(self.arena) } };
                 },
-                // FUNC → refined result: `target -| closureFact` (single fact for now).
+                // FUNC → refined result: `target -| closure1, closure2, …` (one closure fact
+                // per guard predicate of the result's refined sort; comma list).
                 .closure_turnstile => blk: {
                     _ = self.advance();
-                    break :blk .{ .closed_operation = .{ .mapping = mapping, .closure_fact = try self.expect(.identifier) } };
+                    var closures: std.ArrayList(Token) = .empty;
+                    while (true) {
+                        try closures.append(self.arena, try self.expect(.identifier));
+                        if (self.tok.tag == .comma) {
+                            _ = self.advance();
+                            continue;
+                        }
+                        break;
+                    }
+                    break :blk .{ .closed_operation = .{ .mapping = mapping, .closure_facts = try closures.toOwnedSlice(self.arena) } };
                 },
                 // `@`-projection is an obligation-only form; reject on a symbol map.
                 .at_label => return self.fail("a '@'-projection value is only valid on a '<-' obligation discharge, not a ':' symbol map", .{}),

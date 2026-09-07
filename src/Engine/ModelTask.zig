@@ -185,8 +185,10 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
                 try demandDiag(self, task, "the `-|` closure-witness form is only valid mapping to a FUNC; '{s}' is not a function", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
                 return true;
             }
-            if (try resolveEntity(self, h, task.file, source, c.closure_fact, .fact, blocker)) |fact|
-                try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
+            for (c.closure_facts) |cf| {
+                if (try resolveEntity(self, h, task.file, source, cf, .fact, blocker)) |fact|
+                    try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
+            }
             return false;
         },
     }

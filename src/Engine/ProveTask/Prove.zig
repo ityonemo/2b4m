@@ -710,13 +710,18 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
             if (self.pool.alphaEq(bg, g)) {
                 return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
             }
+            // a MULTI-QUALIFIER fix's guard is a CONJUNCTION (`inH(v) and inK(v)`); if g is
+            // one of its conjuncts, restate the whole then and_elim down to it.
+            if (try self.emitConjunctExtract(kb, loc, bg, g, c)) |sref| return sref;
         };
         // (2c) an enclosing ASSUME block whose assumption is g — a GUARD PREMISE of a
-        // synthetic schema (13e): restate it on demand via [by hypothesis].
+        // synthetic schema (13e): restate it on demand via [by hypothesis]. A conjunction
+        // guard premise extracts its conjunct the same way.
         if (b.kind == .assume) {
             if (self.pool.alphaEq(b.kind.assume, g)) {
                 return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
             }
+            if (try self.emitConjunctExtract(kb, loc, b.kind.assume, g, c)) |sref| return sref;
         }
         // (2b) an enclosing UNPACK block whose witness carries the guard: the sound
         // relativization of `∃x; P` under a refined sort is `∃x; good(x) and P(x)`, so the
@@ -742,25 +747,64 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
     if (self.model != InternPool.Index.none and self.model != .universe) {
         if (try self.emitModelDischarge(kb, loc, g)) |sref| return sref;
     }
+    // (4) a CONJUNCTION obligation (the canonical multi-qualifier guard, `inH(t) and inK(t)`)
+    // with no direct source: discharge each conjunct and and_intro them back together.
+    {
+        const n = self.pool.get(g);
+        if (n == .bin and n.bin.op == .and_op) {
+            if (try self.emitConjDischarge(kb, loc, g)) |sref| return sref;
+        }
+    }
     return null;
 }
 
-/// AUTO-WEAKENING: prove a RELATIVIZED `goal = ∀v1; g1(v1) -> ∀v2; g2(v2) -> … -> Core` from a
-/// cited fact whose formula `fact_f = ∀v1; ∀v2; … -> Core` holds UNCONDITIONALLY (mapped to
-/// itself under a guarded model). Since `∀v;P ⊢ ∀v; guard(v)->P`, synthesize: nested guarded
-/// `fix vi` blocks (each carrying `gi`), innermost cite the fact + multi-arg forall_elim at the
-/// eigenvars to reach Core, then close each block with forall_intro (which re-adds `∀vi; gi ->`).
-/// Returns the OUTERMOST forall_intro justification (for the claim), or null if `goal` isn't a
-/// guarded relativization of `fact_f` (fall through to the plain cite).
+/// If `g` is a CONJUNCT of the and-tree `whole` (a multi-qualifier block guard/assumption),
+/// restate `whole` (`[by hypothesis]` on block `blk`) and and_elim down to `g`; else null.
+fn emitConjunctExtract(self: *Prove, kb: kernel.BlockId, loc: u32, whole: TermId, g: TermId, blk: kernel.BlockId) Error!?kernel.SRef {
+    var path: std.ArrayList(bool) = .empty;
+    if (!try self.conjunctPath(whole, g, &path)) return null;
+    if (path.items.len == 0) return null; // whole == g — the caller's direct case
+    var step = try self.emitSynthetic(kb, loc, whole, .{ .hypothesis = .{ .id = blk, .loc = loc } });
+    var cur_t = whole;
+    for (path.items) |left| {
+        const n = self.pool.get(cur_t);
+        cur_t = if (left) n.bin.lhs else n.bin.rhs;
+        step = try self.emitSynthetic(kb, loc, cur_t, if (left) .{ .and_elim_left = step } else .{ .and_elim_right = step });
+    }
+    return step;
+}
+
+/// The left/right path from and-tree `tree` down to conjunct `g` (true = left), or false.
+fn conjunctPath(self: *Prove, tree: TermId, g: TermId, path: *std.ArrayList(bool)) Error!bool {
+    if (self.pool.alphaEq(tree, g)) return true;
+    const n = self.pool.get(tree);
+    if (n != .bin or n.bin.op != .and_op) return false;
+    try path.append(self.ctx.arena, true);
+    if (try self.conjunctPath(n.bin.lhs, g, path)) return true;
+    _ = path.pop();
+    try path.append(self.ctx.arena, false);
+    if (try self.conjunctPath(n.bin.rhs, g, path)) return true;
+    _ = path.pop();
+    return false;
+}
+
+/// AUTO-WEAKENING: prove a RELATIVIZED `goal = ∀v1; g11(v1) -> g12(v1) -> ∀v2; g21(v2) -> …
+/// -> Core` from a cited fact whose formula `fact_f = ∀v1; ∀v2; … -> Core` holds
+/// UNCONDITIONALLY (mapped to itself under a guarded model). Since `∀v;P ⊢ ∀v; guard(v)->P`,
+/// synthesize: per binder an UNGUARDED `fix` with one nested `assume` PER GUARD (a
+/// multi-qualifier sort injects several, in claim order); innermost cite the fact +
+/// multi-arg forall_elim to Core; unwind with implies_intro per assume + forall_intro per
+/// fix — deriving exactly the claim's guard CHAIN. Returns the OUTERMOST forall_intro
+/// justification, or null if `goal` isn't a guarded relativization of `fact_f`.
 fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.Index, fact_f: TermId, goal: TermId) Error!?kernel.Justification {
     // Walk goal + fact in PARALLEL, classifying each leading `->` on the goal by DIFF against the
     // source: an injected relativization GUARD appears on the goal but NOT at the corresponding
-    // position of the source (source has a `∀` or the core there) → strip it (it becomes a block
-    // guard). A GENUINE antecedent appears in BOTH (matching) → it is part of the Core, left in
-    // place. Binders (`∀vi`) peel in lockstep. Stop when the goal reaches a non-`∀`/`->` head OR a
-    // genuine antecedent (both have `->` with matching lhs) — the rest is the shared Core.
+    // position of the source (source has a `∀` or the core there) → strip it, associating it with
+    // the MOST RECENTLY peeled binder (guards are injected right after their binder opens; a
+    // multi-qualifier sort injects several). A GENUINE antecedent appears in BOTH (matching) →
+    // part of the Core, left in place. Stop at a non-`∀`/`->` head or a genuine antecedent.
     var eigen: std.ArrayList(term.Node.Fvar) = .empty;
-    var guards: std.ArrayList(TermId) = .empty;
+    var guards_per: std.ArrayList(std.ArrayList(TermId)) = .empty;
     var g = goal;
     var f = fact_f;
     while (true) {
@@ -773,6 +817,7 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
             const fvar: term.Node.Fvar = .{ .name = fv, .sort = sort };
             const fvt = try self.pool.add(.{ .fvar = fvar });
             try eigen.append(self.ctx.arena, fvar);
+            try guards_per.append(self.ctx.arena, .empty);
             g = try self.pool.open(gn.quant.body, fvt);
             f = try self.pool.open(fn_.quant.body, fvt);
             continue;
@@ -782,31 +827,36 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
             // GENUINE antecedent: the source ALSO has a leading `->` with the SAME antecedent →
             // it's part of the Core, not a guard. Stop peeling (the rest, incl. this `->`, is Core).
             if (fn_ == .bin and fn_.bin.op == .implies and self.pool.alphaEq(gn.bin.lhs, fn_.bin.lhs)) break;
-            // else INJECTED guard (absent from the source here) → strip it.
-            try guards.append(self.ctx.arena, gn.bin.lhs);
+            // else INJECTED guard (absent from the source here) → strip, associate with the binder.
+            if (eigen.items.len == 0) return null; // a guard before any binder — not relativization
+            try guards_per.items[guards_per.items.len - 1].append(self.ctx.arena, gn.bin.lhs);
             g = gn.bin.rhs;
             continue;
         }
         break;
     }
-    if (eigen.items.len == 0 and guards.items.len == 0) return null; // nothing to weaken
+    if (eigen.items.len == 0) return null; // nothing to weaken
     if (!self.pool.alphaEq(g, f)) return null; // cores differ — not a plain weakening
 
-    // Associate each guard to its eigenvar by the fvar it mentions (guards are `gi(vi)`).
-    // Build nested `fix` blocks outer→inner; guard[k] belongs to the block whose fvar it uses.
+    // Build the block spine outer→inner: per binder an UNGUARDED fix, then one assume per
+    // guard (claim order = nesting order).
     const nblocks = eigen.items.len;
-    const blk = try self.ctx.arena.alloc(kernel.BlockId, nblocks);
+    const fix_blk = try self.ctx.arena.alloc(kernel.BlockId, nblocks);
+    const asm_blk = try self.ctx.arena.alloc([]kernel.BlockId, nblocks);
     var parent = kb;
     for (eigen.items, 0..) |ev, i| {
-        var guard: ?TermId = null;
-        for (guards.items) |gg| if (self.pool.occursFree(gg, ev.name)) {
-            guard = gg;
-        };
-        blk[i] = try self.newSyntheticBlock(try self.freshNamed("weaken"), parent, .{ .fix = .{ .v = ev, .guard = guard } });
-        parent = blk[i];
+        fix_blk[i] = try self.newSyntheticBlock(try self.freshNamed("weaken"), parent, .{ .fix = .{ .v = ev, .guard = null } });
+        parent = fix_blk[i];
+        const gs = guards_per.items[i].items;
+        const abs_ = try self.ctx.arena.alloc(kernel.BlockId, gs.len);
+        for (gs, abs_) |gg, *ab| {
+            ab.* = try self.newSyntheticBlock(try self.freshNamed("weaken-assume"), parent, .{ .assume = gg });
+            parent = ab.*;
+        }
+        asm_blk[i] = abs_;
     }
     // innermost: cite the fact, then multi-arg forall_elim at all eigenvars → Core.
-    const inner = blk[nblocks - 1];
+    const inner = parent;
     const kind = self.ctx.interner.keyOf(stmt).fact.kind;
     var cur = try self.emitSynthetic(inner, loc, fact_f, switch (kind) {
         .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
@@ -819,28 +869,33 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
         cur = try self.emitSynthetic(inner, loc, opened, .{ .forall_elim = .{ .step = cur, .with = fvt, .with_loc = loc } });
         cur_f = opened;
     }
-    // unwind: close each block inner→outer with forall_intro. The i-th block's forall_intro
-    // produces `∀vi; gi -> conc` (the kernel builds the `gi ->` from the block's guard). Track
-    // `conc` bottom-up: start at Core, wrap `∀vi; gi -> …` per level. The OUTERMOST is the claim.
+    // unwind inner→outer: implies_intro per assume (rebuilding the guard chain), forall_intro
+    // per fix. Every export but the OUTERMOST is an emitted synthetic in its enclosing block;
+    // the outermost is returned as the claim's justification.
     var conc = g; // Core (== fact core)
     var just: kernel.Justification = undefined;
     var i: usize = nblocks;
     while (i > 0) {
         i -= 1;
-        self.closeSyntheticBlock(blk[i]);
-        just = .{ .forall_intro = .{ .id = blk[i], .loc = loc } };
-        // this level's result: close over eigen[i] with its guard as antecedent.
+        const gs = guards_per.items[i].items;
+        var j: usize = gs.len;
+        while (j > 0) {
+            j -= 1;
+            self.closeSyntheticBlock(asm_blk[i][j]);
+            just = .{ .implies_intro = .{ .id = asm_blk[i][j], .loc = loc } };
+            conc = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = gs[j], .rhs = conc } });
+            const encl = if (j > 0) asm_blk[i][j - 1] else fix_blk[i];
+            _ = try self.emitSynthetic(encl, loc, conc, just);
+        }
+        self.closeSyntheticBlock(fix_blk[i]);
+        just = .{ .forall_intro = .{ .id = fix_blk[i], .loc = loc } };
         const ev = eigen.items[i];
-        var guard: ?TermId = null;
-        for (guards.items) |gg| if (self.pool.occursFree(gg, ev.name)) {
-            guard = gg;
-        };
-        const guarded = if (guard) |gd| try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = gd, .rhs = conc } }) else conc;
-        const closed = try self.pool.close(guarded, ev.name);
+        const closed = try self.pool.close(conc, ev.name);
         conc = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = ev.sort, .hint = ev.name, .body = closed } });
-        // an inner level's forall_intro result is a STEP in its parent block; the outermost is
-        // returned as the claim's justification (not emitted).
-        if (i > 0) _ = try self.emitSynthetic(blk[i - 1], loc, conc, just);
+        if (i > 0) {
+            const encl = if (asm_blk[i - 1].len > 0) asm_blk[i - 1][asm_blk[i - 1].len - 1] else fix_blk[i - 1];
+            _ = try self.emitSynthetic(encl, loc, conc, just);
+        }
     }
     _ = &cur;
     return just;
@@ -3475,6 +3530,20 @@ fn orientRule(self: *Prove, formula: TermId) Error!?simplify_mod.Rule {
 
 /// Peel a `forall …; s = t` goal's ∀ prefix into fresh eigenvariables (returned outermost
 /// first) and return the body equation. Diagnoses a non-∀ / non-equation goal per `who`.
+/// Is `f` a relativization guard over `fv` — a unary pred applied to exactly that fvar, or
+/// an and-tree of such (the canonical multi-qualifier conjunction)?
+fn isGuardOver(self: *Prove, f: TermId, fv: StrId) bool {
+    const n = self.pool.get(f);
+    if (n == .bin and n.bin.op == .and_op) {
+        return self.isGuardOver(n.bin.lhs, fv) and self.isGuardOver(n.bin.rhs, fv);
+    }
+    if (n != .pred) return false;
+    const args = self.pool.args(n.pred);
+    if (args.len != 1) return false;
+    const a = self.pool.get(args[0]);
+    return a == .fvar and a.fvar.name == fv;
+}
+
 const PeeledEq = struct { body: TermId, eigen: []const term.Node.Fvar };
 fn peelForallEq(self: *Prove, goal: TermId, c: ast.Step.Claim, comptime who: []const u8) Error!?PeeledEq {
     var eigen: std.ArrayList(term.Node.Fvar) = .empty;
@@ -3494,15 +3563,9 @@ fn peelForallEq(self: *Prove, goal: TermId, c: ast.Step.Claim, comptime who: []c
         var guard: ?TermId = null;
         if (self.model != InternPool.Index.none and self.model != .universe) {
             const bn = self.pool.get(body);
-            if (bn == .bin and bn.bin.op == .implies) {
-                const gn = self.pool.get(bn.bin.lhs);
-                if (gn == .pred and self.pool.args(gn.pred).len == 1) {
-                    const garg = self.pool.get(self.pool.args(gn.pred)[0]);
-                    if (garg == .fvar and garg.fvar.name == fv.name) {
-                        guard = bn.bin.lhs;
-                        body = bn.bin.rhs;
-                    }
-                }
+            if (bn == .bin and bn.bin.op == .implies and self.isGuardOver(bn.bin.lhs, fv.name)) {
+                guard = bn.bin.lhs;
+                body = bn.bin.rhs;
             }
         }
         try guards.append(self.ctx.arena, guard);
