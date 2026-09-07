@@ -685,8 +685,20 @@ keywords** — the parser enforces the split:
 Writing `using` on a kernel primitive, or `by` on an accelerant, is a hard parse
 error (with an actionable message). This table is the at-a-glance index; the
 gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>` leaf
-below it (see the Index for the full anchor list). The rows below that are `using`-
-side say so (`using instantiation`, the tactics); the rest are `by`.
+below it (see the Index for the full anchor list).
+
+**The complete partition** (every rule word is on exactly one side):
+
+- **`by`** (kernel primitives): `cite`, `hypothesis`, `predicate`, `modus_ponens`,
+  `implies_intro`, `forall_intro`, `forall_elim`, `exists_intro`, `exists_elim`,
+  `and_intro`, `and_elim_left`, `and_elim_right`, `iff_intro`, `iff_elim_forward`,
+  `iff_elim_backward`, `or_intro_left`, `or_intro_right`, `or_elim`, `not_intro`,
+  `absurd`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `iff_rewrite`.
+- **`using`** (engine proof-generation): `instantiation`, `model`, and the
+  accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
+  `assoc_commut_quantified`, `assoc`, `assoc_quantified`, `polynomial`,
+  `polynomial_quantified`, `tautology`, `arithmetic`, `arithmetic_quantified`,
+  `specialize`, `chain`, `extensionality`, `extensionality_quantified`.
 
 | Rule | Meaning |
 |---|---|
