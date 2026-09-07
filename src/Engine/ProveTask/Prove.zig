@@ -1040,27 +1040,29 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         self.ctx.sink.add(mtok.start, "'{s}' is not a model", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     }
-    // the qualifier of `src.thm` names the source file's import; the base is the theorem.
+    // the source theorem: QUALIFIED `src.thm` names the source file via its import; an
+    // UNQUALIFIED `thm` is a SAME-FILE source theorem (the source theory + model + citation
+    // all live in one file — the natural shape for e.g. a subgroup on its group's sort), so
+    // the source file IS the citing file. The transferred fact's identity ns is (M, src_file),
+    // DISTINCT from the citing proof's own (universe, self.file) fact, so no collision.
     const rtok = c.refs[0];
-    if (rtok.qualifier == InternPool.Index.none) {
-        self.ctx.sink.add(rtok.start, "`[by model(M) src.thm]` needs a qualified source theorem (e.g. `group.cancelLeft`)", .{}) catch return error.OutOfMemory;
-        return .failed;
-    }
     const base = tokName(rtok);
-    const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
-    const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse {
-        self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
-        return .failed;
-    };
-    const src_file = switch (imp_state) {
-        .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
-            .import => |imp| self.ctx.interner.keyOf(imp.namespace).namespace.file,
-            else => {
-                self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{qtext}) catch return error.OutOfMemory;
-                return .failed;
+    const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else blk: {
+        const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
+        const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse {
+            self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
+            return .failed;
+        };
+        break :blk switch (imp_state) {
+            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+                .import => |imp| self.ctx.interner.keyOf(imp.namespace).namespace.file,
+                else => {
+                    self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{qtext}) catch return error.OutOfMemory;
+                    return .failed;
+                },
             },
-        },
-        .in_flight => |owner| return .{ .blocked = owner },
+            .in_flight => |owner| return .{ .blocked = owner },
+        };
     };
     // demand the transferred fact in namespace (M, src_file).
     const tns = self.ctx.interner.namespace(model_ix, src_file) catch return error.OutOfMemory;
