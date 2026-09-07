@@ -711,6 +711,99 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
     return null;
 }
 
+/// AUTO-WEAKENING: prove a RELATIVIZED `goal = ∀v1; g1(v1) -> ∀v2; g2(v2) -> … -> Core` from a
+/// cited fact whose formula `fact_f = ∀v1; ∀v2; … -> Core` holds UNCONDITIONALLY (mapped to
+/// itself under a guarded model). Since `∀v;P ⊢ ∀v; guard(v)->P`, synthesize: nested guarded
+/// `fix vi` blocks (each carrying `gi`), innermost cite the fact + multi-arg forall_elim at the
+/// eigenvars to reach Core, then close each block with forall_intro (which re-adds `∀vi; gi ->`).
+/// Returns the OUTERMOST forall_intro justification (for the claim), or null if `goal` isn't a
+/// guarded relativization of `fact_f` (fall through to the plain cite).
+fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.Index, fact_f: TermId, goal: TermId) Error!?kernel.Justification {
+    // Walk goal + fact in parallel, peeling `∀vi` (both) and `gi ->` (goal only), collecting the
+    // eigenvar fvars and guards. Stop when goal reaches a non-`∀`/`->` core.
+    var eigen: std.ArrayList(term.Node.Fvar) = .empty;
+    var guards: std.ArrayList(TermId) = .empty;
+    var g = goal;
+    var f = fact_f;
+    while (true) {
+        const gn = self.pool.get(g);
+        if (gn == .quant and gn.quant.q == .forall) {
+            const fn_ = self.pool.get(f);
+            if (fn_ != .quant or fn_.quant.q != .forall) return null; // fact has fewer binders
+            const fv = try self.freshNamed("w");
+            const sort: SortId = @enumFromInt(@intFromEnum(gn.quant.sort));
+            const fvar: term.Node.Fvar = .{ .name = fv, .sort = sort };
+            const fvt = try self.pool.add(.{ .fvar = fvar });
+            try eigen.append(self.ctx.arena, fvar);
+            g = try self.pool.open(gn.quant.body, fvt);
+            f = try self.pool.open(fn_.quant.body, fvt);
+            continue;
+        }
+        if (gn == .bin and gn.bin.op == .implies) {
+            // a leaked guard on goal (not on fact) — the relativization antecedent.
+            try guards.append(self.ctx.arena, gn.bin.lhs);
+            g = gn.bin.rhs;
+            continue;
+        }
+        break;
+    }
+    if (eigen.items.len == 0) return null; // nothing to weaken
+    if (!self.pool.alphaEq(g, f)) return null; // cores differ — not a plain weakening
+
+    // Associate each guard to its eigenvar by the fvar it mentions (guards are `gi(vi)`).
+    // Build nested `fix` blocks outer→inner; guard[k] belongs to the block whose fvar it uses.
+    const nblocks = eigen.items.len;
+    const blk = try self.ctx.arena.alloc(kernel.BlockId, nblocks);
+    var parent = kb;
+    for (eigen.items, 0..) |ev, i| {
+        var guard: ?TermId = null;
+        for (guards.items) |gg| if (self.pool.occursFree(gg, ev.name)) {
+            guard = gg;
+        };
+        blk[i] = try self.newSyntheticBlock(try self.freshNamed("weaken"), parent, .{ .fix = .{ .v = ev, .guard = guard } });
+        parent = blk[i];
+    }
+    // innermost: cite the fact, then multi-arg forall_elim at all eigenvars → Core.
+    const inner = blk[nblocks - 1];
+    const kind = self.ctx.interner.keyOf(stmt).fact.kind;
+    var cur = try self.emitSynthetic(inner, loc, fact_f, switch (kind) {
+        .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
+        .theorem => .{ .theorem_ref = .{ .stmt = stmt, .loc = loc } },
+    });
+    var cur_f = fact_f;
+    for (eigen.items) |ev| {
+        const fvt = try self.pool.add(.{ .fvar = ev });
+        const opened = try self.pool.open(self.pool.get(cur_f).quant.body, fvt);
+        cur = try self.emitSynthetic(inner, loc, opened, .{ .forall_elim = .{ .step = cur, .with = fvt, .with_loc = loc } });
+        cur_f = opened;
+    }
+    // unwind: close each block inner→outer with forall_intro. The i-th block's forall_intro
+    // produces `∀vi; gi -> conc` (the kernel builds the `gi ->` from the block's guard). Track
+    // `conc` bottom-up: start at Core, wrap `∀vi; gi -> …` per level. The OUTERMOST is the claim.
+    var conc = g; // Core (== fact core)
+    var just: kernel.Justification = undefined;
+    var i: usize = nblocks;
+    while (i > 0) {
+        i -= 1;
+        self.closeSyntheticBlock(blk[i]);
+        just = .{ .forall_intro = .{ .id = blk[i], .loc = loc } };
+        // this level's result: close over eigen[i] with its guard as antecedent.
+        const ev = eigen.items[i];
+        var guard: ?TermId = null;
+        for (guards.items) |gg| if (self.pool.occursFree(gg, ev.name)) {
+            guard = gg;
+        };
+        const guarded = if (guard) |gd| try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = gd, .rhs = conc } }) else conc;
+        const closed = try self.pool.close(guarded, ev.name);
+        conc = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = ev.sort, .hint = ev.name, .body = closed } });
+        // an inner level's forall_intro result is a STEP in its parent block; the outermost is
+        // returned as the claim's justification (not emitted).
+        if (i > 0) _ = try self.emitSynthetic(blk[i - 1], loc, conc, just);
+    }
+    _ = &cur;
+    return just;
+}
+
 /// Source (3): discharge `g = pred(t)` via a model-nominated fact for `t`'s HEAD symbol.
 /// `t` must be an application/const (a fix-eigenvar was handled by source (2)). Gathers the
 /// nominated facts for that symbol and tries each: a fact whose formula α-equals `g` is a BASE
@@ -6372,13 +6465,23 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         .axiom, .theorem => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);
+            const loc = c.refs[0].start;
+            // AUTO-WEAKENING (model transfer): a source axiom holding UNCONDITIONALLY on the
+            // carrier, mapped to itself, has a RELATIVIZED step claim `∀v; guard(v) -> …` while
+            // the fact derives the bare `∀v; …`. Since `∀v; P ⊢ ∀v; guard(v) -> P`, synthesize the
+            // weakening (nested guarded `fix` + cite + multi-arg forall_elim + forall_intro).
+            if (self.model != InternPool.Index.none and self.model != .universe) {
+                const fact_f = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(stmt).fact.formula);
+                if (!self.pool.alphaEq(fact_f, goal)) {
+                    if (try self.emitWeakening(kb, loc, stmt, fact_f, goal)) |just| return just;
+                }
+            }
             // Emit the justification matching the RESOLVED fact's kind, not the rule word.
             // Identity in an ordinary proof (a `by axiom` cites an axiom). In a MODEL
             // transfer a source-axiom citation may remap (via the obligation overlay) to a
             // discharging THEOREM — so `by axiom srcAx` legitimately lands on a theorem;
             // pick the kernel arm by the fact's actual kind (the kernel re-matches the
             // formula regardless — the kind gate is the only thing that'd wrongly reject).
-            const loc = c.refs[0].start;
             return switch (self.ctx.interner.keyOf(stmt).fact.kind) {
                 .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
                 .theorem => .{ .theorem_ref = .{ .stmt = stmt, .loc = loc } },

@@ -140,7 +140,9 @@ pub fn addTests(
     // clean-error boundary: a guarded transfer whose proof instantiates at a term
     // with no closure fact in scope fails with an actionable message (the graceful
     // fallback point for future author-supplied obligations).
-    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.bpa" }, "tests/cases/model_guarded_noclose.bpa:31:27: error: guarded model 'ThingModel' cannot discharge the closure obligation 'good(ZED)' — supply an axiom or theorem establishing it, in scope where model 'ThingModel' is declared\n");
+    // (demand path: no discharger nominated for good(ZED), so the transferred proof's
+    // forall_elim(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
+    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.bpa" }, "tests/cases/model_guarded_source.bpa:20:4: error: step claims 'combine(ZED, ZED) = ZED' but forall_elim derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
     // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `exists_intro`);
