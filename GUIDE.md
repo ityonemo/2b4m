@@ -124,7 +124,12 @@ kernel-checked.
 ```bpa
 pred inH(g: G)
 sort H = G where inH          // H is "G where inH holds"
+sort HK = G where inH and inK // several qualifiers: the guard is their CONJUNCTION
 ```
+
+Chained `and` qualifiers (or a refined sort refining another refined sort) accumulate
+into one CONJOINED guard `(inH(x) and inK(x)) ->` — the canonical shape the kernel's
+guarded `forall_intro` derives, so statements, `fix` blocks, and model transfers all agree.
 
 The guard appears at each position `H` is used:
 
@@ -380,18 +385,57 @@ mean. A source *theorem* is not mappable at all (it materializes through the
 mapped axioms). The `@`-projection value (`src.ax <- OtherModel@src.thm`,
 discharging via a theorem transferred through another model) is a `<-` form only.
 
+**Guarded models — mapping onto a refined (subset) sort.**
 A model is **GUARDED** (relativized to a subset) exactly when a sort-mapping's
 target is a **predicated sort** — e.g. `group.Grp: GrpH` where
-`sort GrpH = Grp where inH`. That mapping supplies the guard: the transferred
-theorems gain an `inH(x) ->` at each binder over the mapped sort, and each closure
-obligation is discharged from the mapped facts.
+`sort GrpH = Grp where inH`. Each transferred theorem is then RELATIVIZED — a
+`inH(x) ->` guard is injected at every binder over the mapped sort (a
+multi-qualifier sort `Grp where inH and inK` injects the **conjunction**
+`(inH(x) and inK(x)) ->`). Re-running the source proof, an instantiation at a
+witness `t` owes `inH(t)`; the model must supply the fact that establishes it. It
+does so by NOMINATING dischargers, right on the `:` symbol-map that introduces the
+obligation — with a spelling that differs by symbol kind:
 
-A model **may leave some axioms unmapped** — at the prover's risk. In default
-(strict) mode, citing a transferred theorem whose proof depends on an unmapped
-axiom is **rejected**, naming the missing obligation. Under `--fast` the same cite
-**passes** (the transfer is trusted without checking which axioms it needed) —
-disclosed as accelerated, but a loaded gun: treat a `--fast` pass over a partial
-model as provisional until it also passes strict mode.
+- **`src.C: TGT(fact, …)`** — a CONST mapped to `TGT` nominates the GROUND base
+  fact(s) proving `TGT`'s membership, one per guard predicate of the target sort
+  (parens form). E.g. `group.E: ZERO(zeroInH)` where `axiom zeroInH: inH(ZERO)`.
+- **`src.op: F -| closure, …`** — a FUNC mapped to `F` nominates the CLOSURE
+  fact(s): `F` preserves membership. E.g. `group.op: add -| addClosed` where
+  `axiom addClosed: forall a, b; inH(a) -> inH(b) -> inH(add(a, b))`. The `-|`
+  reverse-turnstile reads like `<-`: the obligation-bearer on the left, the
+  discharging fact on the right. A comma list gives one closure per guard predicate.
+
+Using the parens form on a func (or `-|` on a const) is a hard error. At each
+membership obligation the transfer walks the witness term: a const cites its base
+fact, a `fix`-bound variable uses its block guard, a composite `op(a, b)` applies
+`op`'s nominated closure and RECURSES on the guarded arguments. An UNCONDITIONAL
+source axiom mapped to itself is auto-WEAKENED (`∀a; P ⊢ ∀a; inH(a) -> P`), no
+hand-written relativized copy needed.
+
+```bpa
+// the subgroup H ⊆ G is a group: map group's sort onto `Grp where inH`, nominate
+// the membership facts, and the whole group corpus transfers relativized to H.
+sort GrpH = Grp where inH
+axiom identityInH: inH(E)
+axiom invClosed:   forall a: Grp; inH(a) -> inH(inverse(a))
+
+model SubgroupIsGroup {
+  group.Grp:     GrpH
+  group.E:       E(identityInH)          // const → base fact
+  group.op:      op -| opClosed           // func → closure fact
+  group.inverse: inverse -| invClosed
+  group.opAssoc  <- group.opAssoc         // unconditional axiom, auto-weakened
+}
+```
+
+A `<- OtherModel@src.thm` projection discharges an obligation by transferring a
+theorem THROUGH another model — the composition that layers `subgroup`-is-a-group
+onto `group`-is-a-group (see `tests/cases/model_subgroup_transfer.bpa`).
+
+A model **may leave some axioms unmapped**. Citing a transferred theorem whose
+proof depends on an unmapped axiom is **rejected**: under the transfer the unmapped
+source axiom stays the source axiom, so its formula fails to match the transferred
+step's (relativized) claim, and the step doesn't check.
 
 The head is just `model NAME {` — there is NO `=` header or `where` on the head.
 No mapping is distinguished: the sort a source theory reasons over is mapped by an
