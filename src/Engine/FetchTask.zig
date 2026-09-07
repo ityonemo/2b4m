@@ -240,19 +240,11 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 },
                 .alias => |a| return publishAlias(self, h, task, key, a, .pred),
             },
-            // a FACT decl. A SCHEMA (a fact WITH params) resolves as an IdentKV identifier —
-            // mint a thin LOCATOR (instantiation re-reads params/body/steps from the by-name
-            // AST registry via (file, name)). A plain fact is not an identifier.
+            // a FACT decl (axiom/theorem/hole, schema or ground). FetchTask produces only
+            // IDENTIFIERS — facts (including schemas) resolve through the FACT table via a
+            // ProveTask. A fact reaching here means the demand was routed to the wrong table;
+            // diagnose it (the citer used a name in an identifier position).
             .axiom, .hole, .theorem => {
-                const fact = ast.factOf(decl);
-                if (fact != null and fact.?.params != null) {
-                    _ = try self.idents.publish(self.io, key, .{ .schema = .{
-                        .name = task.name,
-                        .file = task.file,
-                        .loc = name_tok.start,
-                    } });
-                    return;
-                }
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
@@ -886,14 +878,15 @@ test "fetch: a fact name demanded as an identifier is a kind mismatch" {
     try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "names a fact") != null);
 }
 
-test "fetch: a schema decl produces its locator (file + name) into IdentKV" {
+test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via the fact table" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    // the schema's locator records its file + name (resolved via the by-name registry).
+    // FetchTask produces only IDENTIFIERS; a schema is a fact-with-params → it belongs to the
+    // FACT table (a ProveTask publishes its `.schema` locator). Reaching FetchTask is misuse.
     const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
         \\sort T
         \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
@@ -908,14 +901,7 @@ test "fetch: a schema decl produces its locator (file + name) into IdentKV" {
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = name, .loc = 0 }));
     try eng.run();
-    try testing.expectEqual(eng.racked, eng.completed);
-    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
 
-    const ns = try ctx.interner.namespace(.universe, f);
-    const outcome = try ctx.idents.claimOrLookup(io, .{ .namespace = ns, .name = name }, @enumFromInt(99));
-    try testing.expect(outcome == .done);
-    const key = ctx.interner.keyOf(outcome.done);
-    try testing.expect(key == .schema);
-    try testing.expectEqual(f, key.schema.file);
-    try testing.expectEqual(name, key.schema.name);
+    try testing.expectEqual(@as(usize, 1), ctx.sink.list.items.len);
+    try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "names a fact") != null);
 }

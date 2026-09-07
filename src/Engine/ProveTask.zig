@@ -163,6 +163,13 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             .handled => return,
             .not_alias => {},
         }
+        // A SCHEMA (a params-carrying axiom/theorem/hole) is a fact with no ground formula:
+        // publish its LOCATOR into FactKV and stop (no goal/steps to walk). The instantiation
+        // path reads it back + re-reads params/body from the AST. State-less, like factAlias.
+        switch (try schemaLocator(self, task, h, key)) {
+            .handled => return,
+            .not_alias => {},
+        }
     }
 
     const st = task.st orelse blk: {
@@ -281,6 +288,22 @@ fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Ke
     };
     const origin = (try demandFactTarget(self, task, h, alias.target)) orelse return .handled; // suspended/diagnosed
     try self.facts.publishExisting(self.io, key, origin);
+    return .handled;
+}
+
+/// SCHEMA LOCATOR: a params-carrying axiom/theorem/hole is a fact whose "content at rest" is
+/// a LOCATOR back to its AST decl (name/file/loc) — not a ground formula. Publish that locator
+/// into FactKV (State-less, like a fact alias) so the name resolves through the fact table; the
+/// instantiation path reads the locator + re-reads params/body/steps from the by-name registry.
+/// `not_alias` = the decl is not a schema (fall through to the normal locate/prove path).
+fn schemaLocator(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Key) std.mem.Allocator.Error!AliasOutcome {
+    _ = h;
+    const fid = self.pool_file.get(task.file) orelse return .not_alias; // locate reports it
+    const decl = self.declOf(fid, task.name) orelse return .not_alias; // locate reports "not found"
+    const fact = ast.factOf(decl) orelse return .not_alias; // an alias / non-fact → not us
+    if (fact.params == null) return .not_alias; // a plain (ground) fact → normal prove path
+    const name_tok = ast.declName(decl);
+    _ = try self.facts.publishSchema(self.io, key, .{ .name = task.name, .file = task.file, .loc = name_tok.start });
     return .handled;
 }
 

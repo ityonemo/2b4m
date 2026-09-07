@@ -100,6 +100,25 @@ pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, f
     return index;
 }
 
+/// A SCHEMA (a fact WITH params) resolves through the fact table like any axiom/theorem, but
+/// carries no ground formula — its content is a LOCATOR back to its AST decl. Mint the
+/// `.schema` locator (under the nested InternPool write-mutex, order FactKV -> InternPool)
+/// and flip in_flight -> proven. The instantiation path reads it back, expects `.schema`, and
+/// re-reads params/body/steps from the by-name AST registry. (Its producer is a ProveTask —
+/// FetchTask never touches facts.)
+pub fn publishSchema(self: *FactKV, io: std.Io, key: Key, s: InternPool.Key.Schema) std.mem.Allocator.Error!InternPool.Index {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    self.pool.lockWrite(io);
+    const index = self.pool.mintSchema(s) catch |e| {
+        self.pool.unlockWrite(io);
+        return e;
+    };
+    self.pool.unlockWrite(io);
+    try self.map.put(self.pool.arena, key, .{ .proven = index });
+    return index;
+}
+
 /// ALIAS-COLLAPSE (Foundation C): bind `key` to an ALREADY-PROVEN fact `Index` — mint
 /// nothing. `theorem foo = bar.baz` / `axiom foo = bar.baz` maps `foo` to the origin fact's
 /// Index, so a citation of `foo` resolves to the same proven fact (identity by origin). The

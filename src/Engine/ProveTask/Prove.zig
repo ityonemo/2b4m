@@ -43,7 +43,6 @@ const simplify_mod = @import("simplify.zig");
 const presburger_mod = @import("presburger.zig");
 const smt = @import("smt.zig");
 const farkas = @import("farkas.zig");
-const IdentKV = @import("../../IdentKV.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
 const ModelTask = @import("../../Engine/ModelTask.zig");
@@ -219,9 +218,7 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
             }
         }
         switch (r.domain) {
-            // a schema resolves via IdentKV like an identifier (a FetchTask mints its
-            // locator); the instantiate handler then demands the instance FACT separately.
-            .ident, .schema => {
+            .ident => {
                 const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
                     // loc is in the DEMANDING file (`file`); the fetch targets `target_file`.
                     blocker = try h.rackIndexed(try FetchTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
@@ -248,7 +245,10 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                     .done => {},
                 }
             },
-            .fact => {
+            // a SCHEMA is a fact-with-params — it resolves through the FACT table (its
+            // ProveTask publishes a `.schema` locator instead of a ground fact); the
+            // instantiate handler then demands the monomorphized instance FACT separately.
+            .fact, .schema => {
                 const state = ctx.facts.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
                     blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
                     continue;
@@ -740,12 +740,18 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
         return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
     };
-    return switch (state) {
+    const ix = switch (state) {
         // in a model transfer, a source-axiom citation remaps (via the overlay) to its
         // discharging LOCAL fact — an obligation. `.universe` = identity (ordinary proof).
-        .proven => |ix| self.ctx.interner.applyModel(self.model, ix),
-        .in_flight => self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
+        .proven => |x| self.ctx.interner.applyModel(self.model, x),
+        .in_flight => return self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
     };
+    // a SCHEMA lives in the fact table too (a fact-with-params), but it is NOT a citable ground
+    // fact — it has no closed formula. It must be MONOMORPHIZED via `[using instantiation …]`.
+    // Reject here so every fact-formula reader below can assume a real `.fact` Index.
+    if (self.ctx.interner.keyOf(ix) == .schema)
+        return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
+    return ix;
 }
 
 /// The namespace a (possibly `ns.`-qualified) stamped token resolves in: unqualified =
@@ -781,14 +787,15 @@ const ResolvedSchema = struct {
 };
 
 /// Resolve a schema name token (optionally `ns.`-qualified) to its file/ns + AST decl.
-/// The `.schema` locator must be `done` in IdentKV (the read pass guarantees it); the decl
-/// itself comes from the by-name AST registry (so a synthetic schema resolves too).
+/// A schema resolves through the FACT table — its ProveTask published a `.schema` locator
+/// (the read pass guarantees it `proven`); the decl itself comes from the by-name AST
+/// registry (so a synthetic schema, and a fact-alias-to-a-schema, resolve too).
 fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
     const ns = try self.resolveQualifier(tok);
-    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse
+    const st = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse
         return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
     const ix = switch (st) {
-        .done => |x| x,
+        .proven => |x| x,
         .in_flight => return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)}),
     };
     const loc = switch (self.ctx.interner.keyOf(ix)) {
@@ -1121,18 +1128,19 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     } orelse return .failed; // producer diagnosed
-    // register the synthetic decl + mint its `.schema` locator ONCE (both idempotent).
+    // register the synthetic decl + publish its `.schema` locator into the FACT table ONCE
+    // (both idempotent). A schema is a fact-with-params, so it lives in FactKV like any fact.
     const fid = self.ctx.pool_file.get(self.file).?;
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
     decl_ptr.* = syn.decl;
     self.ctx.registerDecl(fid, decl_ptr) catch return error.OutOfMemory; // keep-first
-    const schema_key = IdentKV.Key{ .namespace = self.ns, .name = syn.name };
-    if (self.ctx.idents.lookup(self.ctx.io, schema_key) == null) {
-        _ = self.ctx.idents.publish(self.ctx.io, schema_key, .{ .schema = .{
+    const schema_key = FactKV.Key{ .namespace = self.ns, .name = syn.name };
+    if (self.ctx.facts.lookup(self.ctx.io, schema_key) == null) {
+        _ = self.ctx.facts.publishSchema(self.ctx.io, schema_key, .{
             .name = syn.name,
             .file = self.file,
             .loc = c.rule.start,
-        } }) catch return error.OutOfMemory;
+        }) catch return error.OutOfMemory;
     }
     // demand the instance via the ordinary schema path, using a synthesized claim that names
     // the synthetic schema + carries the accelerant's args (premises ride c.refs separately).
@@ -1265,6 +1273,8 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const sref = try self.resolveStepRef(w, head);
         head_formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
     } else {
+        // resolveFactRef rejects a schema head (no ground formula) — a clean diagnostic, not a
+        // crash — so `.fact` is safe here.
         const fact = try self.resolveFactRef(head);
         head_formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
         head_kind_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
@@ -5023,11 +5033,12 @@ fn arithInductionLambda(self: *Prove, b: *Accelerant.Builder, p_closed: TermId, 
     return e;
 }
 
-/// Resolve a schema by NAME in this proof's namespace (a `done` IdentKV `.schema`), or null.
+/// Resolve a schema by NAME in this proof's namespace (a `proven` FactKV `.schema` locator),
+/// or null. A schema is a fact-with-params, so it lives in the FACT table.
 fn resolveArithSchema(self: *Prove, name: StrId) ?InternPool.Index {
-    const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) orelse return null;
+    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) orelse return null;
     const ix = switch (state) {
-        .done => |x| x,
+        .proven => |x| x,
         .in_flight => return null,
     };
     return if (self.ctx.interner.keyOf(ix) == .schema) ix else null;

@@ -83,7 +83,6 @@ pub const Mint = union(enum) {
     pred: InternPool.Key.Callable,
     define: InternPool.Key.Define,
     import: InternPool.Key.Import,
-    schema: InternPool.Key.Schema,
     /// a MODEL (interpretation). Unlike the others, a model is DEDUPED by content
     /// (parent+overlay), so it goes through `get`, not a `mint*`; a model name in IdentKV
     /// maps to that (possibly shared) `.model` Index.
@@ -123,7 +122,6 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .pred => |c| self.pool.mintPred(c),
         .define => |d| self.pool.mintDefine(d),
         .import => |m| self.pool.mintImport(m),
-        .schema => |s| self.pool.mintSchema(s),
         .model => |m| self.pool.get(.{ .model = m }), // deduped by content (parent+overlay)
         .existing => |ix| ix, // alias-collapse: bind to the target's origin Index, mint nothing
     };

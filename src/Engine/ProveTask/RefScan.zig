@@ -48,8 +48,9 @@ pub const Ref = struct {
         fact,
         /// a sort/const/func/pred/import — resolved via IdentKV (a FetchTask produces it)
         ident,
-        /// a schema name in a `using instantiation` step — resolved via IdentKV (a FetchTask
-        /// mints the .schema locator); the instantiate handler then demands the instance FACT.
+        /// a schema name in a `using instantiation` step — a fact-with-params, so resolved via
+        /// FactKV (a ProveTask publishes the .schema locator, like any fact); the instantiate
+        /// handler then demands the monomorphized instance FACT separately.
         schema,
         /// a model name in a `using model(M) …` step — resolved via IdentKV (a ModelTask
         /// builds M's overlay); the model-cite handler then demands the TRANSFERRED FACT.
