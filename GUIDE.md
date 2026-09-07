@@ -669,11 +669,24 @@ Nothing inside a closed subproof leaks out except through its discharge rule.
 
 ### Justification rules (overview table)
 
-`[by <rule> <refs>]`, where refs are step or block labels (and statement
-names for citations). Rules taking a term argument write it in parens:
-`[by forall_elim(succ(b)) some-step]`. This table is the at-a-glance index; the
-gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>`
-leaf below it (see the Index for the full anchor list).
+Every step ends with a bracketed justification whose FIRST word is one of **two
+keywords** — the parser enforces the split:
+
+- **`[by <rule> <refs>]`** — a KERNEL PRIMITIVE: pure inference the kernel checks
+  directly (everything in this table down to `iff_rewrite`, plus `cite`). Refs are
+  step or block labels (and fact names for `cite`). Term arguments go in parens:
+  `[by forall_elim(succ(b)) some-step]`.
+- **`[using <name> <refs>]`** — ENGINE PROOF-GENERATION: an ACCELERANT (the tactics
+  below — `simplify`, `assoc_commut`, `polynomial`, `tautology`, `arithmetic`,
+  `specialize`, …) or `instantiation` / `model`. These generate a kernel-checked
+  certificate; `using` marks exactly the steps a future `--fast` could trust, so a
+  `by`-only proof means the same under every mode.
+
+Writing `using` on a kernel primitive, or `by` on an accelerant, is a hard parse
+error (with an actionable message). This table is the at-a-glance index; the
+gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>` leaf
+below it (see the Index for the full anchor list). The rows below that are `using`-
+side say so (`using instantiation`, the tactics); the rest are `by`.
 
 | Rule | Meaning |
 |---|---|
