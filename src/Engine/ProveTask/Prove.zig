@@ -719,8 +719,12 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
 /// Returns the OUTERMOST forall_intro justification (for the claim), or null if `goal` isn't a
 /// guarded relativization of `fact_f` (fall through to the plain cite).
 fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.Index, fact_f: TermId, goal: TermId) Error!?kernel.Justification {
-    // Walk goal + fact in parallel, peeling `∀vi` (both) and `gi ->` (goal only), collecting the
-    // eigenvar fvars and guards. Stop when goal reaches a non-`∀`/`->` core.
+    // Walk goal + fact in PARALLEL, classifying each leading `->` on the goal by DIFF against the
+    // source: an injected relativization GUARD appears on the goal but NOT at the corresponding
+    // position of the source (source has a `∀` or the core there) → strip it (it becomes a block
+    // guard). A GENUINE antecedent appears in BOTH (matching) → it is part of the Core, left in
+    // place. Binders (`∀vi`) peel in lockstep. Stop when the goal reaches a non-`∀`/`->` head OR a
+    // genuine antecedent (both have `->` with matching lhs) — the rest is the shared Core.
     var eigen: std.ArrayList(term.Node.Fvar) = .empty;
     var guards: std.ArrayList(TermId) = .empty;
     var g = goal;
@@ -740,14 +744,18 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
             continue;
         }
         if (gn == .bin and gn.bin.op == .implies) {
-            // a leaked guard on goal (not on fact) — the relativization antecedent.
+            const fn_ = self.pool.get(f);
+            // GENUINE antecedent: the source ALSO has a leading `->` with the SAME antecedent →
+            // it's part of the Core, not a guard. Stop peeling (the rest, incl. this `->`, is Core).
+            if (fn_ == .bin and fn_.bin.op == .implies and self.pool.alphaEq(gn.bin.lhs, fn_.bin.lhs)) break;
+            // else INJECTED guard (absent from the source here) → strip it.
             try guards.append(self.ctx.arena, gn.bin.lhs);
             g = gn.bin.rhs;
             continue;
         }
         break;
     }
-    if (eigen.items.len == 0) return null; // nothing to weaken
+    if (eigen.items.len == 0 and guards.items.len == 0) return null; // nothing to weaken
     if (!self.pool.alphaEq(g, f)) return null; // cores differ — not a plain weakening
 
     // Associate each guard to its eigenvar by the fvar it mentions (guards are `gi(vi)`).
