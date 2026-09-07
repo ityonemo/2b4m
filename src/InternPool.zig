@@ -313,11 +313,17 @@ pub const Key = union(enum) {
     pub const Fact = struct { kind: Kind, formula: TermOff, name: StrId, loc: u32 };
 
     /// A model's payload: its parent model `Index` (universe = itself) + its sparse
-    /// overlay (`src -> tgt` mappings; empty for now). The ancestor chain is the parent
-    /// walk to the universe fixpoint.
-    pub const Model = struct { parent: Index, overlay: []const Mapping = &.{} };
+    /// overlay (`src -> tgt` mappings). The ancestor chain is the parent walk to the universe
+    /// fixpoint. `dischargers` is a SEPARATE parallel table for guard-discharge (13e): each
+    /// entry `(src=target-symbol, tgt=establishing-fact)` names a fact that proves the TARGET
+    /// symbol's refined-sort guard — a base fact for a mapped const, a closure fact for a mapped
+    /// func. Keyed by the TARGET symbol (`src` slot holds it), so the transfer's discharge walk,
+    /// working in target space, finds a symbol's dischargers by scanning for matching `src`.
+    /// Multiple entries with the same `src` = multiple facts (multi-guard const / >1 closure).
+    pub const Model = struct { parent: Index, overlay: []const Mapping = &.{}, dischargers: []const Mapping = &.{} };
 
-    /// One `src -> tgt` overlay entry (both pool `Index`es).
+    /// One `src -> tgt` overlay entry (both pool `Index`es). Also reused for a discharger entry
+    /// (`src` = the target symbol, `tgt` = the establishing fact).
     pub const Mapping = struct { src: Index, tgt: Index };
 
     /// A namespace's payload: the model it is viewed through + the file it scopes. Both
@@ -403,6 +409,7 @@ fn hashKey(key: Key) u64 {
         .model => |m| {
             std.hash.autoHash(&h, m.parent);
             for (m.overlay) |mapping| std.hash.autoHash(&h, mapping);
+            for (m.dischargers) |d| std.hash.autoHash(&h, d);
         },
         .namespace => |ns| std.hash.autoHash(&h, ns),
         .sig => |s| {
@@ -423,8 +430,9 @@ fn sigEql(a: Key.Sig, b: Key.Sig) bool {
 }
 
 fn modelEql(a: Key.Model, b: Key.Model) bool {
-    if (a.parent != b.parent or a.overlay.len != b.overlay.len) return false;
+    if (a.parent != b.parent or a.overlay.len != b.overlay.len or a.dischargers.len != b.dischargers.len) return false;
     for (a.overlay, b.overlay) |x, y| if (x.src != y.src or x.tgt != y.tgt) return false;
+    for (a.dischargers, b.dischargers) |x, y| if (x.src != y.src or x.tgt != y.tgt) return false;
     return true;
 }
 
@@ -803,6 +811,21 @@ pub fn applyModel(self: *const InternPool, model: Index, source: Index) Index {
     }
 }
 
+/// Collect the model-nominated GUARD-DISCHARGER facts for a TARGET `symbol` (a const or func
+/// in target space) into `out` — the facts the model named to establish that symbol's
+/// refined-sort guard (13e: a const's base facts, a func's closure facts). Walks the model's
+/// discharger table (and its parents'). `out` accumulates; may append 0+ facts (multi-guard /
+/// >1 closure). Lock-free (models are immutable once interned).
+pub fn modelDischargers(self: *const InternPool, model: Index, symbol: Index, out: *std.ArrayList(Index), gpa: std.mem.Allocator) std.mem.Allocator.Error!void {
+    var cur = model;
+    while (true) {
+        const m = self.keyOf(cur).model;
+        for (m.dischargers) |d| if (d.src == symbol) try out.append(gpa, d.tgt);
+        if (cur == m.parent) return;
+        cur = m.parent;
+    }
+}
+
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
 // A model's parent + sparse overlay; variable-length, so the fixed-struct reflection
 // encoder can't express it. The overlay is empty for now (mappings deferred).
@@ -810,23 +833,32 @@ pub fn applyModel(self: *const InternPool, model: Index, source: Index) Index {
 /// Append `[parent, overlay_count, src0, tgt0, …]` to `extra`; return the start offset.
 fn addModel(self: *InternPool, m: Key.Model) std.mem.Allocator.Error!u32 {
     const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 2 + m.overlay.len * 2);
+    try self.extra.ensureUnusedCapacity(self.arena, 3 + (m.overlay.len + m.dischargers.len) * 2);
     self.extra.appendAssumeCapacity(@intFromEnum(m.parent));
     self.extra.appendAssumeCapacity(@intCast(m.overlay.len));
     for (m.overlay) |mapping| {
         self.extra.appendAssumeCapacity(@intFromEnum(mapping.src));
         self.extra.appendAssumeCapacity(@intFromEnum(mapping.tgt));
     }
+    self.extra.appendAssumeCapacity(@intCast(m.dischargers.len));
+    for (m.dischargers) |d| {
+        self.extra.appendAssumeCapacity(@intFromEnum(d.src));
+        self.extra.appendAssumeCapacity(@intFromEnum(d.tgt));
+    }
     return off;
 }
 
-/// Read the model payload at `off` back — the inverse of `addModel`. The overlay slice
-/// reinterprets the `u32` pair-run in `extra` as `Mapping` (same layout: two `Index`es).
+/// Read the model payload at `off` back — the inverse of `addModel`. Each pair-run
+/// reinterprets the `u32` run in `extra` as `Mapping` (two `Index`es), zero-copy.
+/// Layout: `[parent, overlay_count, ...overlay pairs, discharger_count, ...discharger pairs]`.
 fn modelData(self: *const InternPool, off: u32) Key.Model {
     const parent: Index = @enumFromInt(self.extra.items[off]);
-    const n = self.extra.items[off + 1];
-    const raw = self.extra.items[off + 2 .. off + 2 + n * 2];
-    return .{ .parent = parent, .overlay = @ptrCast(raw) };
+    const on = self.extra.items[off + 1];
+    const overlay_raw = self.extra.items[off + 2 .. off + 2 + on * 2];
+    const dcount_at = off + 2 + on * 2;
+    const dn = self.extra.items[dcount_at];
+    const disch_raw = self.extra.items[dcount_at + 1 .. dcount_at + 1 + dn * 2];
+    return .{ .parent = parent, .overlay = @ptrCast(overlay_raw), .dischargers = @ptrCast(disch_raw) };
 }
 
 // -- signature encoding (`[result, result_refined, argc, a0, …]`) ----------------------

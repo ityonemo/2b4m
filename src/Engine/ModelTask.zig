@@ -98,6 +98,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     // (`tgt(f…)` for a const→refined sort, `tgt -| f` for a func→refined result) — validated
     // here (const-vs-func kind check) since the target's KIND is resolved at this point.
     const overlay = try self.arena.alloc(InternPool.Key.Mapping, m.identifiers.len + m.obligations.len);
+    var dischargers: std.ArrayList(InternPool.Key.Mapping) = .empty; // (target-symbol, establishing-fact)
     var blocker: ?Engine.TaskIndex = null;
     var oi: usize = 0;
     for (m.identifiers) |im| {
@@ -107,10 +108,10 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .ident, &blocker);
         if (src) |s| if (tgt) |t| {
             overlay[oi] = .{ .src = s, .tgt = t };
-            // witness clauses: kind-check against the resolved TARGET + resolve the discharger
-            // fact(s) (so a wrong-kind or unresolvable discharger errors now). Storing them in
-            // the overlay for the transfer's use is Step 13e's overlay extension — not yet.
-            if (try checkWitnesses(self, h, task, source, im, t, &blocker)) return; // diagnosed
+            // witness clauses: kind-check against the resolved TARGET, resolve each discharger
+            // fact, and record `(target-symbol, fact)` into the model's discharger table (keyed
+            // by the target symbol so the transfer's discharge walk finds it in target space).
+            if (try checkWitnesses(self, h, task, source, im, t, &dischargers, &blocker)) return; // diagnosed
         };
     }
     for (m.obligations) |mapping| {
@@ -131,7 +132,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 
     // everything resolved — build the model (deduped via get, under the write lock) and
     // publish its Index into IdentKV under M's name.
-    _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay } });
+    _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay, .dischargers = try dischargers.toOwnedSlice(self.arena) } });
 }
 
 /// Which demand table a mapping token resolves against.
@@ -147,41 +148,40 @@ fn identMapping(im: ast.IdentMapping) ast.Mapping {
 }
 
 /// Validate + resolve a `:` symbol map's guard-discharger witness clause. Returns `true` if a
-/// diagnostic was recorded (the caller aborts). The KIND rule (this session): the PARENS form
-/// `tgt(f…)` is legal ONLY for a CONST target whose sort is refined; the `-|` form `tgt -| f`
-/// ONLY for a FUNC target whose result is refined. Wrong pairing = a hard error. Resolves the
-/// discharger fact(s) so an unresolvable one is caught here (storing them for the transfer's
-/// use is 13e's overlay extension — not yet).
-fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []const u8, im: ast.IdentMapping, tgt: InternPool.Index, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!bool {
+/// diagnostic was recorded (the caller aborts). The KIND rule: the PARENS form `tgt(f…)` is
+/// legal ONLY for a CONST target whose sort is refined; the `-|` form `tgt -| f` ONLY for a
+/// FUNC target whose result is refined. Wrong pairing = a hard error. Each resolved discharger
+/// fact is appended to `dischargers` as `(tgt-symbol, fact)` (only once fully resolved; a
+/// not-yet-resolved fact racks a blocker and is picked up on the resume re-run, which rebuilds
+/// the list from scratch — no cross-resume duplication).
+fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []const u8, im: ast.IdentMapping, tgt: InternPool.Index, dischargers: *std.ArrayList(InternPool.Key.Mapping), blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!bool {
     const tgt_key = self.interner.keyOf(tgt);
     switch (im) {
         .basic => return false, // no witness clause
         .refined_sort => |r| {
-            // PARENS: const → refined sort. Reject on a non-const, or a const of an unrefined sort.
+            // PARENS: base facts for a CONST witness. The refinement is contributed by the MODEL
+            // (the const's SOURCE sort maps to a refined target); the const's OWN declared sort is
+            // typically the unrefined carrier — so we only check it is a const, not that its sort
+            // is refined. Whether the facts are NEEDED is decided at discharge time.
             if (tgt_key != .constant) {
                 try demandDiag(self, task, "the `(…)` guard-witness form is only valid mapping to a CONST; '{s}' is not a constant", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
                 return true;
             }
-            const sort_ix = tgt_key.constant.sort;
-            if (self.interner.keyOf(sort_ix).sort.refinement == null) {
-                try demandDiag(self, task, "'{s}' maps to an UNREFINED sort, so it takes no `(…)` guard witnesses", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
-                return true;
+            for (r.dischargers) |d| {
+                if (try resolveEntity(self, h, task.file, source, d, .fact, blocker)) |fact|
+                    try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
             }
-            for (r.dischargers) |d| _ = try resolveEntity(self, h, task.file, source, d, .fact, blocker);
             return false;
         },
         .closed_operation => |c| {
-            // `-|`: func → refined result. Reject on a non-func, or a func of an unrefined result.
+            // `-|`: a closure fact for a FUNC witness. (As above, refinement is model-contributed,
+            // so only the func-kind is checked here.)
             if (tgt_key != .func) {
                 try demandDiag(self, task, "the `-|` closure-witness form is only valid mapping to a FUNC; '{s}' is not a function", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
                 return true;
             }
-            const sig = self.interner.keyOf(tgt_key.func.sig).sig;
-            if (sig.result_refined == InternPool.Index.none) {
-                try demandDiag(self, task, "'{s}' has an UNREFINED result sort, so it takes no `-|` closure witness", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
-                return true;
-            }
-            _ = try resolveEntity(self, h, task.file, source, c.closure_fact, .fact, blocker);
+            if (try resolveEntity(self, h, task.file, source, c.closure_fact, .fact, blocker)) |fact|
+                try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
             return false;
         },
     }

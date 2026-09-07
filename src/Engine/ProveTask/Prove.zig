@@ -639,14 +639,19 @@ fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *s
     }
 }
 
-/// Produce a PROVEN step whose formula is the guard `g`, and return its SRef — for
-/// auto-discharging a refined-sort `forall_elim`'s guard (`good(t)`). Sources, in order:
+/// Produce a PROVEN step whose formula is the guard `g` (`good(t)`), and return its SRef —
+/// for auto-discharging a refined-sort `forall_elim`'s leaked guard. Sources, in order:
 ///   (1) a prior in-scope step already asserting `g` → cite it directly (no new step);
-///   (2) an enclosing fix-block whose guard is `g` → emit a `[by predicate]` (hypothesis)
-///       step over that block;
-/// Returns null if `g` isn't dischargeable this way (the caller falls back to the plain,
-/// guard-leaking elim). (Composite-closure discharge — applying a closure axiom, recursing
-/// — is a later extension.)
+///   (2) an enclosing fix-block whose guard is `g` → emit a `[by predicate]` (hypothesis);
+///   (3) a MODEL-NOMINATED discharger (13e): the model named a fact establishing the guard of
+///       `t`'s head symbol. BASE (`t` a const): the fact's formula IS `g` → cite it directly
+///       (the kernel re-checks fact.formula == g, so the nomination is verified, not trusted).
+///       COMPOSITE (`t = op(a…)`): the fact is a CLOSURE `∀…; (⋀ guard(argᵢ)) -> guard(op(…))`;
+///       forall_elim it at the args, RECURSIVELY discharge each guarded-arg premise, and_intro
+///       the results, modus_ponens. (Recursion re-enters `emitDischargeStep` per premise.)
+/// Returns null if `g` isn't dischargeable any of these ways (the caller falls back to the
+/// plain, guard-leaking elim). Emits ordinary kernel steps into `low_steps`; the final proof is
+/// kernel-checked once at the end (no mid-synthesis kernel call).
 fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
     // (1) an accessible prior step already proves g.
     for (self.low_steps.items, 0..) |s, i| {
@@ -664,7 +669,104 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
         };
         cur = b.parent;
     }
+    // (3) a model-nominated discharger for `t`'s head symbol.
+    if (self.model != InternPool.Index.none and self.model != .universe) {
+        if (try self.emitModelDischarge(kb, loc, g)) |sref| return sref;
+    }
     return null;
+}
+
+/// Source (3): discharge `g = pred(t)` via a model-nominated fact for `t`'s HEAD symbol.
+/// `t` must be an application/const (a fix-eigenvar was handled by source (2)). Gathers the
+/// nominated facts for that symbol and tries each: a fact whose formula α-equals `g` is a BASE
+/// discharge (cite directly); otherwise it is treated as a CLOSURE and applied recursively.
+fn emitModelDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
+    const gnode = self.pool.get(g);
+    if (gnode != .pred) return null; // a guard is a predicate application
+    const gargs = self.pool.args(gnode.pred);
+    if (gargs.len != 1) return null; // a sort guard is unary `pred(t)`
+    const t = gargs[0];
+    const tnode = self.pool.get(t);
+    const head: InternPool.Index = switch (tnode) {
+        .app => |a| @enumFromInt(@intFromEnum(a.sym)),
+        else => return null, // fvar/bvar/etc — not a model symbol
+    };
+    var facts: std.ArrayList(InternPool.Index) = .empty;
+    try self.ctx.interner.modelDischargers(self.model, head, &facts, self.ctx.arena);
+    for (facts.items) |fact| {
+        const kind = self.ctx.interner.keyOf(fact).fact.kind;
+        const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+        // BASE: the nominated fact IS the guard (a ground `good(c)`). Cite it; the kernel
+        // re-checks fact.formula == g (so a wrong nomination is rejected, not trusted).
+        if (self.pool.alphaEq(formula, g)) {
+            const just: kernel.Justification = switch (kind) {
+                .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
+                .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
+            };
+            return try self.emitSynthetic(kb, loc, g, just);
+        }
+        // COMPOSITE: try the fact as a closure over `t = op(args)`.
+        if (try self.emitClosureDischarge(kb, loc, g, t, fact, formula, kind)) |sref| return sref;
+    }
+    return null;
+}
+
+/// Apply a CLOSURE fact to discharge `g = guard(op(a1..an))`. The closure `formula` is
+/// `∀v1..vk; P1 -> … -> Pm -> guard(op(v1..vk))` (binders positionally match `op`'s args;
+/// only GUARDED args carry a premise). Steps emitted:
+///   1. cite the closure fact;
+///   2. multi-arg forall_elim at (a1..an) → `P1' -> … -> Pm' -> g` (P' = P at the args);
+///   3. for each premise Pi', RECURSIVELY `emitDischargeStep` (a guarded arg — recurse into
+///      base/fix/closure as its structure demands);
+///   4. and_intro-fold the premise proofs (matching the `->` chain's nesting), modus_ponens
+///      down the chain to reach `g`.
+/// Returns null (declines) if the fact doesn't have this shape or a premise can't be discharged.
+fn emitClosureDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, t: TermId, fact: InternPool.Index, formula: TermId, kind: InternPool.Key.Kind) Error!?kernel.SRef {
+    const tnode = self.pool.get(t);
+    if (tnode != .app) return null;
+    const args = self.pool.args(tnode.app);
+
+    // 1 + 2: cite the closure, then forall_elim at each of `t`'s args in order.
+    const cite_just: kernel.Justification = switch (kind) {
+        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
+        .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
+    };
+    var cur = try self.emitSynthetic(kb, loc, formula, cite_just);
+    var cur_formula = formula;
+    for (args) |arg| {
+        const node = self.pool.get(cur_formula);
+        if (node != .quant or node.quant.q != .forall) return null; // fewer binders than args
+        const opened = try self.pool.open(node.quant.body, arg);
+        cur = try self.emitSynthetic(kb, loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg, .with_loc = loc } });
+        cur_formula = opened;
+    }
+
+    // 3 + 4: walk the leading `->` premise chain, discharge each, modus_ponens it off. A premise
+    // may itself be a conjunction (`good(a) and good(b)`) — prove it via `emitConjDischarge`.
+    while (true) {
+        const node = self.pool.get(cur_formula);
+        if (self.pool.alphaEq(cur_formula, g)) return cur; // reached the conclusion == g
+        if (node != .bin or node.bin.op != .implies) return null; // shape mismatch
+        const premise = node.bin.lhs;
+        const rest = node.bin.rhs;
+        const p_step = (try self.emitConjDischarge(kb, loc, premise)) orelse return null; // recurse
+        cur = try self.emitSynthetic(kb, loc, rest, .{ .modus_ponens = .{ .implication = cur, .antecedent = p_step } });
+        cur_formula = rest;
+    }
+}
+
+/// Discharge a premise that may be a single guard `pred(t)` OR a CONJUNCTION of guards
+/// (`good(a) and good(b)` — a multi-guarded arg, or several args folded into one `->` premise).
+/// Recursively discharges each conjunct via `emitDischargeStep` and `and_intro`-folds them,
+/// matching the conjunction's own nesting (left-assoc: `(x and y) and z`).
+fn emitConjDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, f: TermId) Error!?kernel.SRef {
+    const node = self.pool.get(f);
+    if (node == .bin and node.bin.op == .and_op) {
+        const l = (try self.emitConjDischarge(kb, loc, node.bin.lhs)) orelse return null;
+        const r = (try self.emitConjDischarge(kb, loc, node.bin.rhs)) orelse return null;
+        return try self.emitSynthetic(kb, loc, f, .{ .and_intro = .{ .left = l, .right = r } });
+    }
+    return self.emitDischargeStep(kb, loc, f); // a leaf guard (or a nested composite)
 }
 
 fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
