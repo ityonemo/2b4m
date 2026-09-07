@@ -608,7 +608,14 @@ fn lookupIdent(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index
 /// A quantifier binder may not shadow an expression-local, a proof-local, or an
 /// ALREADY-FETCHED global. (An unfetched global can slip — nonexistence is unknowable
 /// without fetching; a known gap vs the eager checker, acceptable in the red phase.)
+///
+/// EXCEPTION — DEFINE EXPANSION (`define_args != null`): a define is an eager macro whose
+/// body's own binders (`define divides(d,n) = exists k: Nat; …`) are freshened to hygienic
+/// `#N` fvars on expansion, so they CANNOT capture; a collision with a caller's same-spelled
+/// variable (`k`) is not a user error — the define author can't know the caller's scope. Skip
+/// the stylistic shadow check for macro-internal binders (capture is already impossible).
 fn checkNoShadow(self: *Elab, name: StrId, tok: lexer.Token) Error!void {
+    if (self.define_args != null) return;
     for (self.scope.items) |entry| {
         if (entry.name == name) {
             return self.fail(tok.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(tok)});
