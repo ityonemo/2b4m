@@ -44,7 +44,7 @@ theorem foo: forall a: Nat; P(a)
 proof
   @generalize-a |
     fix a: Nat {
-      @some-fact | <formula> [by axiom someAxiom]
+      @some-fact | <formula> [by cite someAxiom]
       @conclusion-inner | P(a) [by ...]
     }
   @conclusion | forall a: Nat; P(a) [by forall_intro generalize-a]
@@ -62,7 +62,7 @@ qed
 
 | rule | refs | notes |
 |---|---|---|
-| `axiom NAME` / `theorem NAME` | 0 (names a stmt) | must introduce a cited axiom/theorem AS A STEP before a later `forall_elim` references it — `@a \| forall …; … [by axiom foo]` then `forall_elim(t) a` |
+| `cite NAME` | 0 (names a stmt) | kind-agnostic fact citation (cites an axiom OR a theorem; the kernel picks the arm by resolved kind). Must introduce a cited fact AS A STEP before a later `forall_elim` references it — `@a \| forall …; … [by cite foo]` then `forall_elim(t) a`. (`axiom`/`theorem` are no longer rule words.) |
 | `hypothesis BLOCK` | 1 block | restate an enclosing assume/unpack assumption |
 | `predicate FIXBLOCK` | 1 block | guard `inH(h)` of a refined `fix h: H` |
 | `modus_ponens IMP ANT` | 2 | order: implication FIRST, antecedent second |
@@ -141,7 +141,7 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
 - `[by hole]` is INVALID — `hole` is a top-level declaration, not a justification. Every obligation must really be proved (or the theorem itself is a `hole`).
 - **When `hole` is OK**: for RESEARCH / EXPLORATION (spiking a new construction, sketching a skeleton before filling details) `hole` is a legitimate "assume for now, come back" placeholder. For WELL-KNOWN proofs — the AATA transliterations, std lemmas, anything where the proof is known and the job is to transcribe it — do NOT use `hole`: a hole there is unfinished work dressed up as done. Finish the proof.
 - `or_elim` is BINARY. 3-way → `case`.
-- Cite a theorem/axiom as a `[by theorem X]` / `[by axiom X]` STEP before a later `forall_elim` refs that step.
+- Cite a theorem/axiom as a `[by cite X]` STEP before a later `forall_elim` refs that step.
 - No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `iff_intro`/`iff_elim_forward`/`iff_elim_backward`.
 - A `func` cannot return `Prop` and cannot take a `-> Prop` parameter; predicates are opaque (no body).
 - No variable shadowing (checker-enforced). When generalizing a statement binder, reuse the statement's binder name.

@@ -223,7 +223,7 @@ An **aspirational placeholder** — a claim stated up front, accepted mechanical
 like an `axiom`, but tracked as a hole. Use it to **scaffold** (state a lemma,
 build the proof that needs it, fill it in later) or to **reason conditionally**
 ("suppose an odd perfect number exists; here is what follows"). Cited exactly
-like an axiom: `[by axiom myHole]`.
+like an axiom: `[by cite myHole]`.
 
 ```bpa
 hole zeroIsEven: even(ZERO)
@@ -522,7 +522,7 @@ justification:
 ```bpa
 @have-imp |
   p -> q
-  [by axiom pImpliesQ]
+  [by cite pImpliesQ]
 @conclusion |
   q
   [by modus_ponens have-imp have-p]
@@ -633,8 +633,7 @@ leaf below it (see the Index for the full anchor list).
 
 | Rule | Meaning |
 |---|---|
-| `axiom NAME` | cite an axiom verbatim |
-| `theorem NAME` | cite a proven theorem verbatim |
+| `cite NAME` | cite a fact (axiom OR theorem) verbatim — kind-agnostic; the kernel picks its arm by the resolved fact's kind |
 | `hypothesis BLOCK` | restate an enclosing block's assumption (or unpacked witness fact) |
 | `predicate FIXBLOCK` | surface the guard of a predicated `fix h: H` binder — the fact `inH(h)` its refined sort provides |
 | `modus_ponens IMP ANT` | from `P -> Q` and `P`, conclude `Q` |
@@ -672,15 +671,13 @@ leaf below it (see the Index for the full anchor list).
 The leaves below cover each rule that has a gotcha or a non-obvious ref count;
 the simple rules get a one-line leaf too, so every rule name is greppable.
 
-### RULE: axiom
+### RULE: cite
 
-`[by axiom NAME]` — cite an axiom (or a `hole`) verbatim; no refs. The goal must be
-the axiom's formula exactly.
-
-### RULE: theorem
-
-`[by theorem NAME]` — cite an already-proven theorem verbatim; no refs. The goal
-must be the theorem's formula exactly (up to α-equivalence).
+`[by cite NAME]` — cite a fact (an `axiom`, a proven `theorem`, or a `hole`)
+verbatim; no refs. The goal must be the cited fact's formula exactly (up to
+α-equivalence). KIND-AGNOSTIC: you don't name axiom-vs-theorem — the kernel picks
+its arm by the resolved fact's kind. (`by axiom NAME` / `by theorem NAME` were the
+old forms; they are no longer rule words — use `cite`.)
 
 ### RULE: hypothesis
 
@@ -911,7 +908,7 @@ one-liner as a named lemma (no need to hand-roll `forall_elim` + `modus_ponens`)
 This is pure sugar over `forall_elim` + `modus_ponens` — it EMITS those kernel
 steps as a certificate the kernel re-checks, so it is fully verified and carries no
 `--fast` taint. It exists to collapse the ubiquitous three-step "apply a lemma"
-ritual (`@rule | ∀…; P->Q [by theorem L]` / `@at-a | P(a)->Q(a) [by forall_elim(a)
+ritual (`@rule | ∀…; P->Q [by cite L]` / `@at-a | P(a)->Q(a) [by forall_elim(a)
 rule]` / `@got | Q(a) [by modus_ponens at-a hyp]`) into a single step with no
 throwaway `-rule`/`-at-args` labels.
 

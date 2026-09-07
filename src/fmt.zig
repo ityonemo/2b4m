@@ -297,7 +297,7 @@ test "case: arms nest one level under `case`, closing brace aligns with it" {
         \\pred q
         \\theorem t: q
         \\proof
-        \\  d| p or q [by axiom e]
+        \\  d| p or q [by cite e]
         \\  r| q
         \\  case d {
         \\  a| assume p { c| q [by hypothesis a] }
@@ -312,7 +312,7 @@ test "case: arms nest one level under `case`, closing brace aligns with it" {
         \\proof
         \\  @d |
         \\    p or q
-        \\    [by axiom e]
+        \\    [by cite e]
         \\  @r |
         \\    q
         \\    case d {
@@ -342,7 +342,7 @@ test "comments: standalone keeps its line at indent, trailing stays attached" {
         \\proof
         \\// why
         \\  conclusion| p // trailing
-        \\  [by axiom missing]
+        \\  [by cite missing]
         \\qed
         \\
     ,
@@ -353,7 +353,7 @@ test "comments: standalone keeps its line at indent, trailing stays attached" {
         \\  // why
         \\  @conclusion |
         \\    p // trailing
-        \\    [by axiom missing]
+        \\    [by cite missing]
         \\qed
         \\
     );
@@ -375,7 +375,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\proof
         \\  g| fix a: Nat {
         \\  // why this step
-        \\  s| p(a) [by axiom e]
+        \\  s| p(a) [by cite e]
         \\  }
         \\  conclusion| forall a: Nat; p(a) [by forall_intro g]
         \\qed
@@ -389,7 +389,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\      // why this step
         \\      @s |
         \\        p(a)
-        \\        [by axiom e]
+        \\        [by cite e]
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a)
@@ -410,7 +410,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\  g| fix a: Nat {
         \\  s| forall b: Nat;
         \\  p(a, b)
-        \\  [by axiom e]
+        \\  [by cite e]
         \\  }
         \\  conclusion| forall a: Nat; p(a, a) [by forall_intro g]
         \\qed
@@ -424,7 +424,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\      @s |
         \\        forall b: Nat;
         \\          p(a, b)
-        \\        [by axiom e]
+        \\        [by cite e]
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a, a)

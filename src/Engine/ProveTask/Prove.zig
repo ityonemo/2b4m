@@ -1035,10 +1035,17 @@ fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.
 fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.SRef {
     const name = try self.localName(tok);
     const target = w.resolveStep(name) orelse {
-        // nicety: a global fact cited where a step label belongs
-        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null) {
-            return self.fail(tok.start, "'{s}' is a fact, not a proof step; introduce it as a step first with `[by axiom {s}]` or `[by theorem {s}]`, then reference that step", .{
-                self.text(tok), self.text(tok), self.text(tok),
+        // nicety: a global fact cited where a step label belongs — name the fix. Check both the
+        // FactKV (already-demanded) and the file's AST (a same-file fact decl that nothing
+        // demanded, e.g. the cited axiom in `forall_elim(t) myAxiom`), so it fires regardless.
+        const is_fact = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null or
+            (tok.qualifier == InternPool.Index.none and if (self.ctx.pool_file.get(self.file)) |fid|
+                if (self.ctx.declOf(fid, name)) |d| ast.factOf(d) != null else false
+            else
+                false);
+        if (is_fact) {
+            return self.fail(tok.start, "'{s}' is a fact, not a proof step; introduce it as a step first with `[by cite {s}]`, then reference that step", .{
+                self.text(tok), self.text(tok),
             });
         }
         return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)});

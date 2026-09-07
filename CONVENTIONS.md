@@ -201,7 +201,7 @@ skeleton.
   `@remainder-is-unique-nine-six`. Long names are fine — noise is
   meaninglessness, not length.
 - **Provenance is not content.** The justification line already says
-  `[by theorem modIntro]`; the label says what the step *asserts*
+  `[by cite modIntro]`; the label says what the step *asserts*
   (`@remainder-is-unique`), not what was cited. Exception that proves the
   rule: when a lemma's own name is already an assertion
   (`addIsCommutative`), its kebab form is a fine content name
@@ -250,7 +250,7 @@ steps, no filler:
   ```
   @remainder-is-unique |
     forall a, b, q, r: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
-    [by theorem modIntro]
+    [by cite modIntro]
   @remainder-is-determined-nine-six |
     SIX != ZERO -> less_than(THREE, SIX) -> add(mul(SIX, ONE), THREE) = NINE -> mod(NINE, SIX) = THREE
     [by forall_elim(NINE, SIX, ONE, THREE) remainder-is-unique]
@@ -285,7 +285,7 @@ steps, no filler:
 - `import peano <<< "peano.bpa"` binds a namespace to a file (path relative to
   the importing file). Imports come first in the file.
 - Everything imported is referenced **qualified** (`peano.Nat`,
-  `[by theorem peano.addIsCommutative]`) or via an **explicit alias**:
+  `[by cite peano.addIsCommutative]`) or via an **explicit alias**:
   `sort Nat = peano.Nat`, `const ZERO = peano.ZERO`, `func succ = peano.succ`.
   Aliases are kind-checked views of the same entity — both spellings denote
   the same thing, and there is no wildcard `open`.

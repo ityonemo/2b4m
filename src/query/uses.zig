@@ -5,8 +5,8 @@
 //!   - **rules** — the distinct justification rules/tactics its steps invoke
 //!     (`modus_ponens`, `arithmetic`, `rewrite`, `forall_elim`, …), each with a
 //!     count;
-//!   - **cites** — the distinct names it pulls in by `[by axiom X]`,
-//!     `[by theorem Y]`, or `[by instantiate S(…)]` — i.e. the OTHER
+//!   - **cites** — the distinct names it pulls in by `[by cite X]`,
+//!     `[by cite Y]`, or `[by instantiate S(…)]` — i.e. the OTHER
 //!     declarations this proof depends on, as opposed to its own step labels.
 //!
 //! This is the semantic answer to "which proofs use `assoc`?", "who cites this

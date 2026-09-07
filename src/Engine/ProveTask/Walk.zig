@@ -508,10 +508,10 @@ test "walk: linear steps process in topo order (a forward citation walks first)"
         \\proof
         \\  @first |
         \\    P
-        \\    [by theorem second]
+        \\    [by cite second]
         \\  @second |
         \\    P
-        \\    [by axiom axP]
+        \\    [by cite axP]
         \\qed
     );
     var w = rig.walk();
@@ -536,11 +536,11 @@ test "walk: nested fix block — binder in scope inside, descoped after; block l
         \\    fix n: Nat {
         \\      @inner |
         \\        P(n)
-        \\        [by axiom axP]
+        \\        [by cite axP]
         \\    }
         \\  @concl |
         \\    Q
-        \\    [by theorem outer]
+        \\    [by cite outer]
         \\qed
     );
     var w = rig.walk();
@@ -573,10 +573,10 @@ test "walk: suspends AT the step and resumes there (peek-then-pop)" {
         \\proof
         \\  @a |
         \\    P
-        \\    [by axiom axP]
+        \\    [by cite axP]
         \\  @b |
         \\    P
-        \\    [by theorem a]
+        \\    [by cite a]
         \\qed
     );
     var w = rig.walk();
@@ -610,10 +610,10 @@ test "walk: duplicate sibling label rejected" {
         \\proof
         \\  @a |
         \\    P
-        \\    [by axiom axP]
+        \\    [by cite axP]
         \\  @a |
         \\    P
-        \\    [by axiom axP]
+        \\    [by cite axP]
         \\qed
     );
     var w = rig.walk();
@@ -632,10 +632,10 @@ test "walk: cyclic sibling citations rejected with the cycle path" {
         \\proof
         \\  @a |
         \\    P
-        \\    [by theorem b]
+        \\    [by cite b]
         \\  @b |
         \\    P
-        \\    [by theorem a]
+        \\    [by cite a]
         \\qed
     );
     var w = rig.walk();

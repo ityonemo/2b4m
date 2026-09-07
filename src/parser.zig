@@ -125,10 +125,9 @@ pub const Parser = struct {
                 self.intern_oom = true;
                 return tok;
             },
-            // keywords that double as RULE words (`[by axiom foo]`) — their StrIds are
-            // reserved, so stamping is a constant, no interning.
-            .keyword_axiom => tok.name = InternPool.RuleStr.axiom.id(),
-            .keyword_theorem => tok.name = InternPool.RuleStr.theorem.id(),
+            // `model` doubles as a RULE word (`using model(M) …`) — its StrId is reserved,
+            // so stamping is a constant, no interning. (`axiom`/`theorem` are NO LONGER rule
+            // words — fact citation is `cite` — so their keyword tokens aren't stamped.)
             .keyword_model => tok.name = InternPool.RuleStr.model.id(),
             else => {},
         }
@@ -558,10 +557,13 @@ pub const Parser = struct {
                     else => return self.fail("expected 'by' or 'using', got '{s}'", .{self.describe()}),
                 };
                 _ = self.advance();
-                // rule position admits `axiom`, `theorem`, and `model` (citation
-                // rules) even though they are declaration keywords
+                // rule position admits `model` (the `using model(M)` citation rule) even
+                // though it is a declaration keyword. `axiom`/`theorem` are NO LONGER rule
+                // words — fact citations use `cite` (kind-agnostic); the keyword tokens here
+                // surface the actionable diagnostic below.
                 const rule = switch (self.tok.tag) {
-                    .identifier, .keyword_axiom, .keyword_theorem, .keyword_model => self.advance(),
+                    .identifier, .keyword_model => self.advance(),
+                    .keyword_axiom, .keyword_theorem => return self.fail("'{s}' is no longer a citation rule; cite a fact with `by cite <name>`", .{self.describe()}),
                     else => return self.fail("expected a rule name, got '{s}'", .{self.describe()}),
                 };
                 try self.checkKeyword(kw, rule);
@@ -1059,7 +1061,7 @@ test "hole declaration parses as ast.Decl.hole; carrying a proof is an error" {
     }
     {
         // a hole with a proof body is rejected (once proved, it's a theorem)
-        const source = "pred p\nhole bad: p\nproof\n  @c | p [by axiom pa]\nqed\n";
+        const source = "pred p\nhole bad: p\nproof\n  @c | p [by cite pa]\nqed\n";
         var sink: Diagnostics.Sink = .init(arena);
         var p: Parser = .init(arena, source, &sink);
         _ = p.parseFile() catch {};
@@ -1072,7 +1074,7 @@ test "@label step definitions; the label name interns without the sigil; refs st
         \\pred p
         \\theorem t: p
         \\proof
-        \\  @base | p [by axiom pAx]
+        \\  @base | p [by cite pAx]
         \\  @conc | p [by symmetry base]
         \\qed
     ;
@@ -1092,17 +1094,17 @@ test "@label step definitions; the label name interns without the sigil; refs st
     try testing.expectEqualStrings("base", source[conc.refs[0].start..conc.refs[0].end]);
 }
 
-test "axiom and theorem citations are valid rule positions despite being keywords" {
+test "fact citations use the kind-agnostic `cite` rule word" {
     const source =
         \\pred p
         \\axiom pAx: p
         \\theorem t1: p
         \\proof
-        \\  @conc | p [by axiom pAx]
+        \\  @conc | p [by cite pAx]
         \\qed
         \\theorem t2: p
         \\proof
-        \\  @conc | p [by theorem t1]
+        \\  @conc | p [by cite t1]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1113,11 +1115,32 @@ test "axiom and theorem citations are valid rule positions despite being keyword
     var p: Parser = .init(arena, source, &sink);
     const file = try p.parseFile();
     try testing.expectEqual(0, sink.list.items.len);
+    // `cite` cites both an axiom and a theorem — the kernel picks the arm by resolved kind.
     const c1 = file.decls[2].theorem.local.steps[0].body.claim;
-    try testing.expectEqualStrings("axiom", source[c1.rule.start..c1.rule.end]);
+    try testing.expectEqualStrings("cite", source[c1.rule.start..c1.rule.end]);
     try testing.expectEqual(1, c1.refs.len);
     const c2 = file.decls[3].theorem.local.steps[0].body.claim;
-    try testing.expectEqualStrings("theorem", source[c2.rule.start..c2.rule.end]);
+    try testing.expectEqualStrings("cite", source[c2.rule.start..c2.rule.end]);
+}
+
+test "`axiom`/`theorem` are NO LONGER citation rule words" {
+    const source =
+        \\pred p
+        \\axiom pAx: p
+        \\theorem t: p
+        \\proof
+        \\  @c | p [by axiom pAx]
+        \\qed
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .init(arena, source, &sink);
+    _ = try p.parseFile();
+    try testing.expect(sink.list.items.len > 0);
+    try testing.expect(std.mem.indexOf(u8, sink.list.items[0].message, "no longer a citation rule") != null);
 }
 
 test "consecutive claim steps: a following label is not swallowed as a ref" {
@@ -1125,7 +1148,7 @@ test "consecutive claim steps: a following label is not swallowed as a ref" {
         \\pred p
         \\theorem t: p
         \\proof
-        \\  @a | p [by axiom x]
+        \\  @a | p [by cite x]
         \\  @b | p [by modus_ponens a a]
         \\  @c | p [by hypothesis b]
         \\qed
@@ -1158,7 +1181,7 @@ test "by/using keyword: records the kind + enforces the vocabulary partition" {
             \\pred p
             \\theorem t: p
             \\proof
-            \\  @a | p [by axiom x]
+            \\  @a | p [by cite x]
             \\  @b | p [using specialize head]
             \\qed
         , &sink);

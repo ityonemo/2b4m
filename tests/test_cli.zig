@@ -96,7 +96,7 @@ pub fn addTests(
     // citing an axiom where a proof STEP is required: the diagnostic must
     // point at the fix (materialize it as a step first), not report a bare
     // "unknown reference".
-    ctx.fail(&.{ "check", "tests/cases/axiom_as_step_bad.bpa" }, "tests/cases/axiom_as_step_bad.bpa:14:24: error: 'pall' is an axiom, not a proof step; introduce it as a step first with `[by axiom pall]`, then reference that step\n");
+    ctx.fail(&.{ "check", "tests/cases/axiom_as_step_bad.bpa" }, "tests/cases/axiom_as_step_bad.bpa:14:24: error: 'pall' is a fact, not a proof step; introduce it as a step first with `[by cite pall]`, then reference that step\n");
 
     ctx.fail(&.{ "check", "tests/cases/fix_shadow_bad.bpa" }, "tests/cases/fix_shadow_bad.bpa:10:13: error: 'a' shadows an enclosing variable; choose a fresh name\n");
 

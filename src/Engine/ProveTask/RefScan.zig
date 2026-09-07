@@ -366,11 +366,11 @@ test "scan: globals enumerated; proof-local and expr-local binders skipped; dedu
         \\    fix n: Nat {
         \\      @inner |
         \\        forall k: Nat; le(add(k, n), n)
-        \\        [by axiom axLe]
+        \\        [by cite axLe]
         \\    }
         \\  @concl |
         \\    Q
-        \\    [by theorem outer]
+        \\    [by cite outer]
         \\qed
     );
     // @outer (the fix step): its sort is a global candidate.
@@ -393,10 +393,10 @@ test "scan: kernel-rule refs are local-only (not enumerated); qualified names sp
         \\proof
         \\  @imp |
         \\    peano.impPQ
-        \\    [by axiom peano.axImp]
+        \\    [by cite peano.axImp]
         \\  @p |
         \\    P
-        \\    [by axiom axP]
+        \\    [by cite axP]
         \\  @q |
         \\    Q
         \\    [by modus_ponens imp p]

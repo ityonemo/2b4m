@@ -225,7 +225,7 @@ test "formatLiterate reflows bpa blocks and leaves prose verbatim" {
         \\```bpa
         \\theorem t: a
         \\proof
-        \\@conclusion | a [by axiom h]
+        \\@conclusion | a [by cite h]
         \\qed
         \\```
         \\
@@ -245,7 +245,7 @@ test "formatLiterate reflows bpa blocks and leaves prose verbatim" {
         \\proof
         \\  @conclusion |
         \\    a
-        \\    [by axiom h]
+        \\    [by cite h]
         \\qed
         \\```
         \\

@@ -893,7 +893,7 @@ test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via
         \\sort T
         \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
         \\proof
-        \\  @c | forall x: T; goal(x) [by axiom ax]
+        \\  @c | forall x: T; goal(x) [by cite ax]
         \\qed
     );
     const f = try ctx.fileIndex("/t/a.bpa");
