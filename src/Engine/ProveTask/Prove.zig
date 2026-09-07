@@ -684,6 +684,24 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
                 return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
             }
         };
+        // (2b) an enclosing UNPACK block whose witness carries the guard: the sound
+        // relativization of `∃x; P` under a refined sort is `∃x; good(x) and P(x)`, so the
+        // unpacked hypothesis is `good(w) and P(w)`. If `good(w) == g`, restate the hypothesis
+        // (`[by hypothesis]`) then `and_elim_left` off the guard conjunct.
+        if (b.kind == .unpack) {
+            const uv = b.kind.unpack;
+            const src_f = self.low_steps.items[@intFromEnum(uv.source.id)].formula;
+            const sn = self.pool.get(src_f);
+            if (sn == .quant and sn.quant.q == .exists) {
+                const wfv = try self.pool.add(.{ .fvar = uv.v });
+                const hyp = try self.pool.open(sn.quant.body, wfv);
+                const hn = self.pool.get(hyp);
+                if (hn == .bin and hn.bin.op == .and_op and self.pool.alphaEq(hn.bin.lhs, g)) {
+                    const hyp_step = try self.emitSynthetic(kb, loc, hyp, .{ .hypothesis = .{ .id = c, .loc = loc } });
+                    return try self.emitSynthetic(kb, loc, g, .{ .and_elim_left = hyp_step });
+                }
+            }
+        }
         cur = b.parent;
     }
     // (3) a model-nominated discharger for `t`'s head symbol.
@@ -6452,10 +6470,27 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         .exists_intro => {
             try self.wantRefs(c, 1);
             const arg = try e.elaborateExpr(c.args[0]);
+            const aloc = Elab.exprLoc(c.args[0]);
+            var step = try self.resolveStepRef(w, c.refs[0]);
+            // RELATIVIZED ∃ (model transfer): the goal `∃x; good(x) and P(x)` opens at the witness
+            // to `good(w) and P(w)`, but the cited step provides only `P(w)`. Re-conjoin the guard:
+            // discharge `good(w)` (source 2b — the witness's own unpack carries it) and and_intro it
+            // onto the step, so exists_intro witnesses the full relativized body.
+            const gnode = self.pool.get(goal);
+            if (gnode == .quant and gnode.quant.q == .exists) {
+                const body = try self.pool.open(gnode.quant.body, arg.id);
+                const bn = self.pool.get(body);
+                const step_f = self.low_steps.items[@intFromEnum(step.id)].formula;
+                if (bn == .bin and bn.bin.op == .and_op and !self.pool.alphaEq(step_f, body) and self.pool.alphaEq(bn.bin.rhs, step_f)) {
+                    if (try self.emitDischargeStep(kb, aloc, bn.bin.lhs)) |g_step| {
+                        step = try self.emitSynthetic(kb, aloc, body, .{ .and_intro = .{ .left = g_step, .right = step } });
+                    }
+                }
+            }
             return .{ .exists_intro = .{
-                .step = try self.resolveStepRef(w, c.refs[0]),
+                .step = step,
                 .witness = arg.id,
-                .witness_loc = Elab.exprLoc(c.args[0]),
+                .witness_loc = aloc,
             } };
         },
         .exists_elim => {
