@@ -173,9 +173,21 @@ pub const Decl = union(enum) {
     /// predicated sort. See MODEL-DESIGN.md.
     model: struct {
         name: Token,
-        identifiers: []const Mapping,
+        identifiers: []const IdentMapping,
         obligations: []const Mapping,
     },
+};
+
+pub const IdentMapping = union(enum) {
+    basic: Mapping,
+    refined_sort: struct {
+        mapping: Mapping,
+        dischargers: []const Token,
+    },
+    closed_operation: struct {
+        mapping: Mapping,
+        closure_fact: Token
+    }
 };
 
 /// One line in a `model` block. Two forms, distinguished by operator:
@@ -189,12 +201,9 @@ pub const Decl = union(enum) {
 /// qualified projected name (the `@`-tail, sans `@`); null for a plain target.
 /// Projection is only meaningful on an `.obligation` line.
 pub const Mapping = struct {
-    kind: Kind,
     source: Token,
     target: Token,
     projection: ?Token = null,
-
-    pub const Kind = enum { symbol, obligation };
 };
 
 pub const File = struct { decls: []const Decl };

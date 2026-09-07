@@ -93,26 +93,39 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 
     // resolve all mapping src+tgt; collect overlay entries. Rack + suspend on the FIRST
     // unresolved (re-run resolves one more each wake; the ones already done are cheap). The
-    // `:` identifier maps and the `<-` obligation discharges are two lists now, but the
-    // overlay is uniform (src Index → tgt Index) — process both.
+    // `:` identifier maps and the `<-` obligation discharges are two lists; the overlay is
+    // uniform (src Index → tgt Index). A `:` map may also carry GUARD-DISCHARGER witnesses
+    // (`tgt(f…)` for a const→refined sort, `tgt -| f` for a func→refined result) — validated
+    // here (const-vs-func kind check) since the target's KIND is resolved at this point.
     const overlay = try self.arena.alloc(InternPool.Key.Mapping, m.identifiers.len + m.obligations.len);
     var blocker: ?Engine.TaskIndex = null;
     var oi: usize = 0;
-    for ([_][]const ast.Mapping{ m.identifiers, m.obligations }) |list| {
-        for (list) |mapping| {
-            defer oi += 1;
-            if (mapping.projection != null) {
-                // `<tgt>@<projected>` model-projection (discharge through another model) —
-                // deferred (13e). Diagnose so the corpus signal is honest, not silent.
-                try demandDiag(self, task, "model projection (`@`) is not yet supported by the demand prover", .{});
-                return;
-            }
-            const src = try resolveEntity(self, h, task.file, source, mapping.source, mapping.kind, &blocker);
-            const tgt = try resolveEntity(self, h, task.file, source, mapping.target, mapping.kind, &blocker);
-            if (src) |s| if (tgt) |t| {
-                overlay[oi] = .{ .src = s, .tgt = t };
-            };
+    for (m.identifiers) |im| {
+        defer oi += 1;
+        const mapping = identMapping(im);
+        const src = try resolveEntity(self, h, task.file, source, mapping.source, .ident, &blocker);
+        const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .ident, &blocker);
+        if (src) |s| if (tgt) |t| {
+            overlay[oi] = .{ .src = s, .tgt = t };
+            // witness clauses: kind-check against the resolved TARGET + resolve the discharger
+            // fact(s) (so a wrong-kind or unresolvable discharger errors now). Storing them in
+            // the overlay for the transfer's use is Step 13e's overlay extension — not yet.
+            if (try checkWitnesses(self, h, task, source, im, t, &blocker)) return; // diagnosed
+        };
+    }
+    for (m.obligations) |mapping| {
+        defer oi += 1;
+        if (mapping.projection != null) {
+            // `<tgt>@<projected>` model-projection (discharge through another model) —
+            // deferred (13e). Diagnose so the corpus signal is honest, not silent.
+            try demandDiag(self, task, "model projection (`@`) is not yet supported by the demand prover", .{});
+            return;
         }
+        const src = try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
+        const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
+        if (src) |s| if (tgt) |t| {
+            overlay[oi] = .{ .src = s, .tgt = t };
+        };
     }
     if (blocker) |b| return h.suspendOn(b);
 
@@ -121,11 +134,64 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay } });
 }
 
-/// Resolve one mapping token to its entity Index. `.symbol` → IdentKV (a FetchTask);
-/// `.obligation` → FactKV (a ProveTask). Handles a `cite.`-qualified SOURCE (import-walk),
+/// Which demand table a mapping token resolves against.
+const Table = enum { ident, fact };
+
+/// The `Mapping` inside an `IdentMapping`, regardless of variant.
+fn identMapping(im: ast.IdentMapping) ast.Mapping {
+    return switch (im) {
+        .basic => |b| b,
+        .refined_sort => |r| r.mapping,
+        .closed_operation => |c| c.mapping,
+    };
+}
+
+/// Validate + resolve a `:` symbol map's guard-discharger witness clause. Returns `true` if a
+/// diagnostic was recorded (the caller aborts). The KIND rule (this session): the PARENS form
+/// `tgt(f…)` is legal ONLY for a CONST target whose sort is refined; the `-|` form `tgt -| f`
+/// ONLY for a FUNC target whose result is refined. Wrong pairing = a hard error. Resolves the
+/// discharger fact(s) so an unresolvable one is caught here (storing them for the transfer's
+/// use is 13e's overlay extension — not yet).
+fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []const u8, im: ast.IdentMapping, tgt: InternPool.Index, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!bool {
+    const tgt_key = self.interner.keyOf(tgt);
+    switch (im) {
+        .basic => return false, // no witness clause
+        .refined_sort => |r| {
+            // PARENS: const → refined sort. Reject on a non-const, or a const of an unrefined sort.
+            if (tgt_key != .constant) {
+                try demandDiag(self, task, "the `(…)` guard-witness form is only valid mapping to a CONST; '{s}' is not a constant", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
+                return true;
+            }
+            const sort_ix = tgt_key.constant.sort;
+            if (self.interner.keyOf(sort_ix).sort.refinement == null) {
+                try demandDiag(self, task, "'{s}' maps to an UNREFINED sort, so it takes no `(…)` guard witnesses", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
+                return true;
+            }
+            for (r.dischargers) |d| _ = try resolveEntity(self, h, task.file, source, d, .fact, blocker);
+            return false;
+        },
+        .closed_operation => |c| {
+            // `-|`: func → refined result. Reject on a non-func, or a func of an unrefined result.
+            if (tgt_key != .func) {
+                try demandDiag(self, task, "the `-|` closure-witness form is only valid mapping to a FUNC; '{s}' is not a function", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
+                return true;
+            }
+            const sig = self.interner.keyOf(tgt_key.func.sig).sig;
+            if (sig.result_refined == InternPool.Index.none) {
+                try demandDiag(self, task, "'{s}' has an UNREFINED result sort, so it takes no `-|` closure witness", .{self.interner.stringBytes(self.interner.nameOf(tgt))});
+                return true;
+            }
+            _ = try resolveEntity(self, h, task.file, source, c.closure_fact, .fact, blocker);
+            return false;
+        },
+    }
+}
+
+/// Resolve one mapping token to its entity Index. `.ident` → IdentKV (a FetchTask);
+/// `.fact` → FactKV (a ProveTask). Handles a `cite.`-qualified SOURCE (import-walk),
 /// or a bare LOCAL target. Returns the Index if `done`/`proven`; else racks the producer,
 /// sets `blocker`, returns null (the caller suspends after the whole pass).
-fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: @import("../lexer.zig").Token, kind: ast.Mapping.Kind, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?InternPool.Index {
+fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: @import("../lexer.zig").Token, kind: Table, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?InternPool.Index {
     _ = source;
     var target_file = file;
     var target_ns = try self.interner.namespace(.universe, file);
@@ -150,7 +216,7 @@ fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, sour
     }
     const name = tok.name;
     switch (kind) {
-        .symbol => {
+        .ident => {
             const st = self.idents.lookup(self.io, .{ .namespace = target_ns, .name = name }) orelse {
                 blocker.* = try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = target_file, .name = name, .loc = tok.start, .loc_file = file }));
                 return null;
@@ -163,7 +229,7 @@ fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, sour
                 },
             };
         },
-        .obligation => {
+        .fact => {
             const st = self.facts.lookup(self.io, .{ .namespace = target_ns, .name = name }) orelse {
                 blocker.* = try h.rackIndexed(try ProveTask.new(self.arena, .{ .file = target_file, .name = name, .loc = tok.start, .loc_file = file }));
                 return null;

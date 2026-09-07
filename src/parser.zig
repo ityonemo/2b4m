@@ -342,41 +342,73 @@ pub const Parser = struct {
         }
     }
 
-    /// The mapping lines of a `model` block. Two forms:
-    ///   `<source> : <target>`       — a symbol/sort interpretation (`.symbol`)
-    ///   `<source> <- <target>`      — an axiom-obligation discharge (`.obligation`)
-    /// A `<target>@<projected>` model-projection value is only valid on the `<-`
-    /// form (it names a theorem transferred through another model to discharge the
-    /// obligation).
-    fn parseModelMappings(self: *Parser) ParseError!struct { identifiers: []const ast.Mapping, obligations: []const ast.Mapping } {
+    /// The mapping lines of a `model` block. Forms:
+    ///   `<source> : <target>`                — a symbol/sort interpretation (→ `identifiers`)
+    ///   `<source> : <target>(f1, f2, …)`     — CONST→refined-sort: PARENS base-fact witnesses
+    ///                                           (`refined_sort`; one fact per target-sort guard)
+    ///   `<source> : <target> -| <closure>`   — FUNC→refined-result: closure discharger
+    ///                                           (`closed_operation`; single fact for now)
+    ///   `<source> <- <localThm>`             — an axiom-obligation discharge (→ `obligations`)
+    /// A `<target>@<projected>` model-projection value is only valid on the `<-` form. The
+    /// PARENS/`- |` witness clauses are only valid on the `:` form (a symbol map); which of
+    /// them is legal for a given symbol (const vs func) is checked later, in ModelTask, where
+    /// the symbol's KIND is resolved.
+    fn parseModelMappings(self: *Parser) ParseError!struct { identifiers: []const ast.IdentMapping, obligations: []const ast.Mapping } {
         _ = try self.expect(.l_brace);
         // the `:` symbol/sort interpretations and the `<-` obligation discharges go to
         // SEPARATE lists — they resolve against different tables (idents vs facts).
-        var identifiers: std.ArrayList(ast.Mapping) = .empty;
+        var identifiers: std.ArrayList(ast.IdentMapping) = .empty;
         var obligations: std.ArrayList(ast.Mapping) = .empty;
         while (self.tok.tag != .r_brace) {
             const source = try self.expect(.identifier);
-            const kind: ast.Mapping.Kind = switch (self.tok.tag) {
-                .colon => .symbol,
-                .obligation_arrow => .obligation,
+            const is_symbol = switch (self.tok.tag) {
+                .colon => true,
+                .obligation_arrow => false,
                 else => return self.fail("expected ':' (symbol/sort map) or '<-' (axiom-obligation discharge)", .{}),
             };
             _ = self.advance();
             const target = try self.expect(.identifier);
-            // `<target>@<projected>` — a model-projection value (`<-` form only).
-            // The lexer emits the `@projected` tail as one `at_label` token; strip `@`.
-            var projection: ?Token = null;
-            if (self.tok.tag == .at_label) {
-                if (kind != .obligation) return self.fail("a '@'-projection value is only valid on a '<-' obligation discharge, not a ':' symbol map", .{});
-                const at = self.advance();
-                // stamped ids already exclude the `@` (and split a `ns.` qualifier).
-                projection = .{ .tag = .identifier, .start = at.start + 1, .end = at.end, .name = at.name, .qualifier = at.qualifier };
+
+            if (!is_symbol) {
+                // OBLIGATION: `src <- localThm` (+ optional `@projection`).
+                var projection: ?Token = null;
+                if (self.tok.tag == .at_label) {
+                    const at = self.advance();
+                    // stamped ids already exclude the `@` (and split a `ns.` qualifier).
+                    projection = .{ .tag = .identifier, .start = at.start + 1, .end = at.end, .name = at.name, .qualifier = at.qualifier };
+                }
+                try obligations.append(self.arena, .{ .source = source, .target = target, .projection = projection });
+                continue;
             }
-            const mapping: ast.Mapping = .{ .kind = kind, .source = source, .target = target, .projection = projection };
-            switch (kind) {
-                .symbol => try identifiers.append(self.arena, mapping),
-                .obligation => try obligations.append(self.arena, mapping),
-            }
+
+            // SYMBOL map: `src : target` optionally with a guard-discharger witness clause.
+            const mapping: ast.Mapping = .{ .source = source, .target = target, .projection = null };
+            const im: ast.IdentMapping = switch (self.tok.tag) {
+                // CONST → refined sort: `target(f1, f2, …)` — one base fact per target-sort guard.
+                .l_paren => blk: {
+                    _ = self.advance();
+                    var dischargers: std.ArrayList(Token) = .empty;
+                    while (true) {
+                        try dischargers.append(self.arena, try self.expect(.identifier));
+                        if (self.tok.tag == .comma) {
+                            _ = self.advance();
+                            continue;
+                        }
+                        break;
+                    }
+                    _ = try self.expect(.r_paren);
+                    break :blk .{ .refined_sort = .{ .mapping = mapping, .dischargers = try dischargers.toOwnedSlice(self.arena) } };
+                },
+                // FUNC → refined result: `target -| closureFact` (single fact for now).
+                .closure_turnstile => blk: {
+                    _ = self.advance();
+                    break :blk .{ .closed_operation = .{ .mapping = mapping, .closure_fact = try self.expect(.identifier) } };
+                },
+                // `@`-projection is an obligation-only form; reject on a symbol map.
+                .at_label => return self.fail("a '@'-projection value is only valid on a '<-' obligation discharge, not a ':' symbol map", .{}),
+                else => .{ .basic = mapping },
+            };
+            try identifiers.append(self.arena, im);
         }
         _ = try self.expect(.r_brace);
         return .{ .identifiers = try identifiers.toOwnedSlice(self.arena), .obligations = try obligations.toOwnedSlice(self.arena) };

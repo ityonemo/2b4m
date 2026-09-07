@@ -83,6 +83,7 @@ pub const Token = struct {
         string,
         import_arrow, // <<<
         obligation_arrow, // <- (model axiom-obligation discharge)
+        closure_turnstile, // -| (model func closure-discharge: `op -| closureFact`)
         /// only emitted when `keep_comments` is set (used by `bpa fmt`)
         comment,
         invalid,
@@ -141,6 +142,7 @@ pub const Token = struct {
                 .string => "string",
                 .import_arrow => "<<<",
                 .obligation_arrow => "<-",
+                .closure_turnstile => "-|",
                 .comment => "comment",
                 .invalid => "invalid token",
                 .eof => "end of file",
@@ -285,7 +287,18 @@ pub const Lexer = struct {
             ')' => .r_paren,
             '{' => .l_brace,
             '}' => .r_brace,
-            '-' => self.ifNext('>', .arrow, .invalid),
+            '-' => blk: {
+                // `->` arrow, `-|` reverse turnstile (model closure-discharge), else invalid.
+                if (self.index < src.len and src[self.index] == '>') {
+                    self.index += 1;
+                    break :blk .arrow;
+                }
+                if (self.index < src.len and src[self.index] == '|') {
+                    self.index += 1;
+                    break :blk .closure_turnstile;
+                }
+                break :blk .invalid;
+            },
             '=' => self.ifNext('>', .fat_arrow, .equal),
             '!' => self.ifNext('=', .bang_equal, .invalid),
             '<' => blk: {
