@@ -116,13 +116,18 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     }
     for (m.obligations) |mapping| {
         defer oi += 1;
-        if (mapping.projection != null) {
-            // `<tgt>@<projected>` model-projection (discharge through another model) —
-            // deferred (13e). Diagnose so the corpus signal is honest, not silent.
-            try demandDiag(self, task, "model projection (`@`) is not yet supported by the demand prover", .{});
-            return;
-        }
         const src = try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
+        if (mapping.projection) |proj| {
+            // `srcAxiom <- NamedModel@proj.thm` — discharge srcAxiom by transferring the theorem
+            // `proj.thm` THROUGH the model `NamedModel` (the inverted-dependency composition, e.g.
+            // group axioms on a subgroup routed through the subgroup model). The discharging fact
+            // is the TRANSFERRED `(NamedModel, proj-file).thm`.
+            const tgt = try resolveProjection(self, h, task.file, source, mapping.target, proj, &blocker);
+            if (src) |s| if (tgt) |t| {
+                overlay[oi] = .{ .src = s, .tgt = t };
+            };
+            continue;
+        }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
         if (src) |s| if (tgt) |t| {
             overlay[oi] = .{ .src = s, .tgt = t };
@@ -243,6 +248,62 @@ fn resolveEntity(self: *Context, h: *Engine.Handle, file: InternPool.Index, sour
             };
         },
     }
+}
+
+/// Resolve a `<- NamedModel@proj` projected obligation to its discharging fact Index: the
+/// theorem `proj` TRANSFERRED through the model `mtok` names. Resolves `mtok` (must be a
+/// `.model`), finds `proj`'s source file (its qualifier's import, or this file if unqualified),
+/// and demands the transferred fact `proj.name` in namespace `(model, proj_file)` — racking a
+/// transferred ProveTask (`.model = model`) on a miss, exactly as an inline `[using model] cite`
+/// does. Returns the fact Index if proven, else sets `blocker` and returns null.
+fn resolveProjection(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, mtok: @import("../lexer.zig").Token, proj: @import("../lexer.zig").Token, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?InternPool.Index {
+    _ = source;
+    // the model the projection routes through. A model name lives in IdentKV but is PRODUCED by
+    // a ModelTask (not a FetchTask), so demand it that way — rack a ModelTask on a miss.
+    const self_ns = try self.interner.namespace(.universe, file);
+    const mstate = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = mtok.name }) orelse {
+        blocker.* = try h.rackIndexed(try ModelTask.new(self.arena, .{ .file = file, .name = mtok.name, .loc = mtok.start, .loc_file = file }));
+        return null;
+    };
+    const model_ix = switch (mstate) {
+        .done => |ix| ix,
+        .in_flight => |owner| {
+            if (owner != h.self_index) blocker.* = owner;
+            return null;
+        },
+    };
+    if (self.interner.keyOf(model_ix) != .model) return null; // diagnosed by the transferred fact's absence
+
+    // the projected theorem's file: its qualifier's import (or this file if unqualified).
+    var proj_file = file;
+    if (proj.qualifier != InternPool.Index.none) {
+        const st = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = proj.qualifier }) orelse {
+            blocker.* = try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = file, .name = proj.qualifier, .loc = proj.start, .loc_file = file }));
+            return null;
+        };
+        switch (st) {
+            .in_flight => |owner| {
+                if (owner != h.self_index) blocker.* = owner;
+                return null;
+            },
+            .done => |ix| switch (self.interner.keyOf(ix)) {
+                .import => |imp| proj_file = self.interner.keyOf(imp.namespace).namespace.file,
+                else => return null,
+            },
+        }
+    }
+
+    // demand the TRANSFERRED fact `(model, proj_file).name`.
+    const tns = try self.interner.namespace(model_ix, proj_file);
+    if (self.facts.lookup(self.io, .{ .namespace = tns, .name = proj.name })) |st| switch (st) {
+        .proven => |ix| return ix,
+        .in_flight => |owner| {
+            if (owner != h.self_index) blocker.* = owner;
+            return null;
+        },
+    };
+    blocker.* = try h.rackIndexed(try ProveTask.new(self.arena, .{ .file = proj_file, .name = proj.name, .loc = proj.start, .loc_file = file, .model = model_ix }));
+    return null;
 }
 
 fn demandDiag(self: *Context, task: ModelTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
