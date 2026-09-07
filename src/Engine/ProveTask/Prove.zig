@@ -2212,16 +2212,28 @@ fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRul
         formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
         cite = .{ .global = .{ .head = ref, .is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom } };
     }
-    // orient: peel `forall` binders as fresh pattern fvars, require an equation body.
+    // orient: peel `forall` binders as fresh pattern fvars, require an equation body. Under a
+    // model TRANSFER the cited lemma is RELATIVIZED — `∀a; inH(a) -> ∀b; … -> lhs=rhs` — with
+    // guard `->`s interleaved with the binders; SKIP them here to reach the equation (they are
+    // discharged where the lemma is applied: emitInstance cites + forall_elims the lemma, and the
+    // instance ProveTask runs under the model so the forall_elim discharge machinery strips them).
     var binders: std.ArrayList(simplify_mod.Binder) = .empty;
     var body = formula;
     while (true) {
         const node = self.pool.get(body);
-        if (node != .quant or node.quant.q != .forall) break;
-        const fresh = try self.freshNamed("p#");
-        const fv = try self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } });
-        body = try self.pool.open(node.quant.body, fv);
-        try binders.append(self.ctx.arena, .{ .fvar = fresh, .sort = node.quant.sort });
+        if (node == .quant and node.quant.q == .forall) {
+            const fresh = try self.freshNamed("p#");
+            const fv = try self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } });
+            body = try self.pool.open(node.quant.body, fv);
+            try binders.append(self.ctx.arena, .{ .fvar = fresh, .sort = node.quant.sort });
+            continue;
+        }
+        // a relativization guard `inH(v) -> …` (transfer only): skip to the consequent.
+        if (node == .bin and node.bin.op == .implies and self.model != InternPool.Index.none and self.model != .universe) {
+            body = node.bin.rhs;
+            continue;
+        }
+        break;
     }
     const bn = self.pool.get(body);
     if (bn != .eq) return self.fail(ref.start, "'{s}' is not an equation", .{self.text(ref)});

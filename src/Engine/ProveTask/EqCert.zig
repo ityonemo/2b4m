@@ -82,12 +82,33 @@ fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindi
         },
         .local => |l| cur_label = l.hyp, // already a proven step (restated hypothesis)
     }
-    // one forall_elim per binder, opening the formula at the matched binding.
+    // one forall_elim per binder, opening the formula at the matched binding. Under a model
+    // TRANSFER the cited lemma is RELATIVIZED — `∀a; inH(a) -> ∀b; …` — so a guard `->` sits
+    // between binders; SKIP it (advance past the antecedent) so the next `∀` is found. The
+    // forall_elim step is emitted claiming the guard-STRIPPED opened form; the instance ProveTask
+    // (which runs under the model) discharges the leaked guard via its forall_elim machinery.
     var cur_formula = rule.formula;
     const forall_elim = self.b.interner.internString("forall_elim") catch return error.OutOfMemory;
     for (rule.binders, bindings) |_, val| {
+        while (true) {
+            const n = self.pool.get(cur_formula);
+            if (n == .bin and n.bin.op == .implies) {
+                cur_formula = n.bin.rhs;
+                continue;
+            }
+            break;
+        }
         const q = self.pool.get(cur_formula).quant;
-        const opened = try self.pool.open(q.body, val);
+        var opened = try self.pool.open(q.body, val);
+        // strip any guard(s) leaked immediately after opening (before the equation / next binder).
+        while (true) {
+            const n = self.pool.get(opened);
+            if (n == .bin and n.bin.op == .implies) {
+                opened = n.bin.rhs;
+                continue;
+            }
+            break;
+        }
         const lbl = try self.fresh("simplify");
         const arg1 = try self.b.arena.alloc(*const ast.Expr, 1);
         arg1[0] = try self.b.termExpr(val);
