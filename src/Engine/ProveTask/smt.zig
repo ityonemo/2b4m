@@ -128,13 +128,15 @@ pub fn eval(pool: *const Pool, atoms: []const TermId, assignment: []const ?bool,
             .bin => |b| {
                 if (!frame.expanded) {
                     work.append(a, .{ .f = frame.f, .expanded = true }) catch return null;
-                    // push rhs then lhs; a Kleene and/or/implies is symmetric in the
-                    // partial values, so the pop order does not change the result.
+                    // push rhs then lhs so lhs is processed first → its result lands
+                    // deeper on `vals` (rebuild pops rhs, then lhs).
                     work.append(a, .{ .f = b.rhs, .expanded = false }) catch return null;
                     work.append(a, .{ .f = b.lhs, .expanded = false }) catch return null;
                 } else {
-                    const l = vals.pop().?;
+                    // lhs was computed first, so it sits DEEPER on `vals`: pop rhs
+                    // first, then lhs. (implies is NOT symmetric — order matters.)
                     const r = vals.pop().?;
+                    const l = vals.pop().?;
                     vals.append(a, switch (b.op) {
                         .and_op => if (l == false or r == false) false else if (l == true and r == true) true else null,
                         .or_op => if (l == true or r == true) true else if (l == false and r == false) false else null,
@@ -150,30 +152,85 @@ pub fn eval(pool: *const Pool, atoms: []const TermId, assignment: []const ?bool,
 
 /// Is there an assignment making every premise true and the goal false?
 /// On success the (possibly partial) model is left in `assignment`.
+///
+/// Iterative DPLL (was native recursion; depth is bounded by the atom count, but
+/// the search is a solver spine so it is made explicitly stack-free). A `trail`
+/// of choice points reproduces the exact recursion: at each undetermined node the
+/// first null atom is tried TRUE, then FALSE on backtrack; a node whose premises
+/// are refuted or whose goal already holds is a dead branch; a fully decided node
+/// is a model.
 fn search(pool: *const Pool, atoms: []const TermId, premises: []const TermId, goal: TermId, assignment: []?bool) bool {
+    var trail: [atom_limit]Choice = undefined;
+    var depth: usize = 0;
+
+    while (true) {
+        switch (classify(pool, atoms, premises, goal, assignment)) {
+            .model => return true,
+            .live => |i| {
+                // descend: try the first undetermined atom TRUE
+                assignment[i] = true;
+                trail[depth] = .{ .atom = i, .tried_false = false };
+                depth += 1;
+            },
+            .dead => {
+                // backtrack to the most recent choice still on its TRUE phase
+                if (!backtrack(assignment, trail[0..], &depth)) return false;
+            },
+        }
+    }
+}
+
+/// A DPLL choice point: which atom was split, and whether its FALSE phase (the
+/// second, backtrack half) has been entered.
+const Choice = struct { atom: usize, tried_false: bool };
+
+const Classification = union(enum) {
+    /// a full, satisfying model (all determined; no premise refuted, goal false)
+    model,
+    /// undetermined; `.live` is the first null atom to split on
+    live: usize,
+    /// dead branch: a premise is refuted or the goal holds
+    dead,
+};
+
+/// The per-node decision shared by the propositional search: evaluate premises
+/// and goal under the partial `assignment`. (Same logic the recursion inlined.)
+fn classify(pool: *const Pool, atoms: []const TermId, premises: []const TermId, goal: TermId, assignment: []const ?bool) Classification {
     var decided = true;
     for (premises) |p| {
         if (eval(pool, atoms, assignment, p)) |v| {
-            if (!v) return false; // a premise is refuted: dead branch
+            if (!v) return .dead; // a premise is refuted: dead branch
         } else {
             decided = false;
         }
     }
     if (eval(pool, atoms, assignment, goal)) |g| {
-        if (g) return false; // the goal holds: this branch cannot falsify it
+        if (g) return .dead; // the goal holds: this branch cannot falsify it
     } else {
         decided = false;
     }
-    if (decided) return true;
-    // split on the first undetermined atom (one exists: something was null)
+    if (decided) return .model;
     const i = for (assignment, 0..) |v, i| {
         if (v == null) break i;
-    } else unreachable;
-    assignment[i] = true;
-    if (search(pool, atoms, premises, goal, assignment)) return true;
-    assignment[i] = false;
-    if (search(pool, atoms, premises, goal, assignment)) return true;
-    assignment[i] = null;
+    } else unreachable; // something was null (not decided)
+    return .{ .live = i };
+}
+
+/// Pop choice points until one can flip from TRUE to FALSE (its second phase);
+/// unassign every fully-explored atom on the way. Returns false when the trail
+/// empties — the whole search space is exhausted.
+fn backtrack(assignment: []?bool, trail: []Choice, depth: *usize) bool {
+    while (depth.* > 0) {
+        const top = &trail[depth.* - 1];
+        if (!top.tried_false) {
+            assignment[top.atom] = false;
+            top.tried_false = true;
+            return true;
+        }
+        // this atom exhausted both phases: unassign and keep unwinding
+        assignment[top.atom] = null;
+        depth.* -= 1;
+    }
     return false;
 }
 
@@ -252,32 +309,34 @@ const Mixed = struct {
 
     const Error = error{ Fail, OutOfMemory };
 
-    /// Like the propositional `search`, but a decided skeleton model must
-    /// also survive the theory check to count.
+    /// Like the propositional `search`, but a decided skeleton model must also
+    /// survive the theory check to count. Iterative DPLL over the same `classify`/
+    /// `backtrack` machinery (was native recursion); a `.model` skeleton that the
+    /// theory REFUTES becomes a dead branch and backtracks, exactly as the
+    /// recursion's `if (decided) return theoryCheck(...)` did when it returned
+    /// false. The propositional search order is preserved.
     fn search(self: *Mixed, assignment: []?bool) Error!bool {
-        var decided = true;
-        for (self.premises) |p| {
-            if (eval(self.pool, self.atoms, assignment, p)) |v| {
-                if (!v) return false;
-            } else {
-                decided = false;
+        var trail: [atom_limit]Choice = undefined;
+        var depth: usize = 0;
+
+        while (true) {
+            switch (classify(self.pool, self.atoms, self.premises, self.goal, assignment)) {
+                .model => {
+                    // a fully decided skeleton: it counts only if the theory agrees
+                    if (try self.theoryCheck(assignment)) return true;
+                    // theory refutes this skeleton model: treat as a dead branch
+                    if (!backtrack(assignment, trail[0..], &depth)) return false;
+                },
+                .live => |i| {
+                    assignment[i] = true;
+                    trail[depth] = .{ .atom = i, .tried_false = false };
+                    depth += 1;
+                },
+                .dead => {
+                    if (!backtrack(assignment, trail[0..], &depth)) return false;
+                },
             }
         }
-        if (eval(self.pool, self.atoms, assignment, self.goal)) |g| {
-            if (g) return false;
-        } else {
-            decided = false;
-        }
-        if (decided) return self.theoryCheck(assignment);
-        const i = for (assignment, 0..) |v, i| {
-            if (v == null) break i;
-        } else unreachable;
-        assignment[i] = true;
-        if (try self.search(assignment)) return true;
-        assignment[i] = false;
-        if (try self.search(assignment)) return true;
-        assignment[i] = null;
-        return false;
     }
 
     fn theoryCheck(self: *Mixed, assignment: []const ?bool) Error!bool {
