@@ -213,15 +213,19 @@ pub fn addTests(
     // from the synthetic theorem's citation. These pin the current failure; each
     // flips to a passing check once accelerants emit model-mangled synthetics.
     // (Counters #NN/$NN are stable per-file elaboration-order IDs.)
-    // SCHEMA WELL-FORMEDNESS: a schema theorem's proof body is verified at
-    // DECLARATION in strict mode (instantiated at opaque parameters), so a
-    // malformed step (here a 4-ref or_elim — the kernel's or_elim is binary) is
-    // rejected up front. In --fast the body stays lazy (checked only at real
-    // instantiations), so the same file is accepted. See agents/GUIDE.md.
-    ctx.fail(&.{ "check", "tests/cases/schema_wellformed_bad.bpa" }, "tests/cases/schema_wellformed_bad.bpa:81:13: error: 'or_elim' expects 3 reference(s), got 4\n");
+    // UNINSTANTIATED SCHEMA IS UNCHECKED (#93): this schema's body has a malformed step (a 4-ref
+    // or_elim — the kernel's or_elim is binary), but the schema is NEVER instantiated. There is no
+    // decl-time check anymore (a schema needn't be a universal; the per-instance proof is the only
+    // gate), so the demand engine never checks this dead schema — the file passes. Consistent with
+    // "uncited code isn't checked"; a future --library mode would catch it. Both modes pass (no
+    // step is admitted → --fast adds only the "no trusted word used" note).
+    ctx.ok(&.{ "check", "tests/cases/schema_wellformed_bad.bpa" },
+        \\OK: 11 declarations, 1 theorems proven
+        \\
+    );
     ctx.ok(&.{ "check", "--fast", "tests/cases/schema_wellformed_bad.bpa" },
         \\OK: 11 declarations, 1 theorems proven
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
     // the positive counterpart: a WELL-FORMED schema (proper `case` split)

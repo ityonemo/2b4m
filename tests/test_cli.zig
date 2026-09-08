@@ -110,24 +110,18 @@ pub fn addTests(
     // M4: ill-sorted schema argument dies at the use site
     ctx.fail(&.{ "check", "tests/cases/induction_bad_sort.bpa" }, "tests/cases/induction_bad_sort.bpa:14:46: error: expected a proposition, got sort 'Nat'\n");
 
-    // proof-carrying schema `zeroLike(t): t = ZERO` whose body only survives the
-    // t := ZERO instance. STRICT rejects it at DECLARATION (opaque-parameter check:
-    // the body must hold generically, and `opaque = ZERO` is not reflexivity). A
-    // theorem-SCHEMA must be a TRUE UNIVERSAL over its params — a precondition belongs IN the
-    // statement (`myPred(t) -> t = ZERO`), never as an implicit "only pass good args" contract.
-    // The opaque self-instantiation enforces that at the DECL, and it is UNGATED (runs in every
-    // mode) — it is exactly what makes trusting `instantiation` under `--fast` sound.
+    // proof-carrying schema `zeroLike(t): t = ZERO` whose body only survives the t := ZERO
+    // instance. A schema NEED NOT be a true universal (a narrow one is bad form, not wrong, #93);
+    // there is NO decl-time check. Soundness is the PER-INSTANCE proof: the bad instantiation
+    // `zeroLike(succ ZERO)` is proved and FAILS at the body's reflexivity step (`succ(ZERO)=ZERO`).
+    // `instantiation` is NOT admit-trustable, so `--fast` behaves IDENTICALLY to strict here (the
+    // bad instance is always proved — admitting it shape-only would be unsound).
     ctx.fail(&.{ "check", "tests/cases/schema_per_instance.bpa" },
         \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
-        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'opaque-schema-param = ZERO'
         \\
     );
-    // --fast trusts `instantiation` (instances are admitted, not proved) — so the bad instance
-    // `zeroLike(succ ZERO)` is NOT re-checked. But the DECL well-formedness check is UNGATED, so
-    // the malformed schema is still caught (the opaque self-instantiation fails). Only the
-    // concrete-instance error line is gone (the instance is never proved under --fast).
     ctx.fail(&.{ "check", "--fast", "tests/cases/schema_per_instance.bpa" },
-        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'opaque-schema-param = ZERO'
+        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
         \\
     );
 

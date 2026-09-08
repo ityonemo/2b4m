@@ -52,7 +52,7 @@ qed
 ```
 
 - Every step is `@label | <formula> [<keyword> <rule> <refs>]` (label, formula, justification — the formula and `[…]` indented two spaces under the label). Blocks nest two spaces.
-- **TWO justification keywords**: `[by <rule> …]` for KERNEL PRIMITIVES (pure inference, always kernel-checked — the whole proof-rule table below); `[using <name> …]` for ACCELERANTS + `instantiation` + `model` (engine proof-generation). The parser ENFORCES the split: `by` on an accelerant, or `using` on a primitive, is a hard parse error. Mnemonic: `using` marks every step a future `--fast` could trust; a `by`-only proof means the same under every mode.
+- **TWO justification keywords**: `[by <rule> …]` for KERNEL PRIMITIVES (pure inference, always kernel-checked — the whole proof-rule table below); `[using <name> …]` for ACCELERANTS + `instantiation` + `model`/`import` (engine proof-generation). The parser ENFORCES the split: `by` on an accelerant, or `using` on a primitive, is a hard parse error. `--fast` can trust MOST `using` words (accelerants + `model`/`import`), but NOT `instantiation`: an instantiation's content is the schema body's proof at the args — the per-instance proof is the only soundness gate, so it is ALWAYS kernel-checked even under `--fast` (#93).
 - A `fix x: S { … }` block generalizes; a SEPARATE `forall_intro <block-label>` step discharges it (the block is not itself the universal). Same for `assume F { … }` + `implies_intro`.
 - Inside an `assume F { … }` block, restate the assumption with `[by hypothesis <block-label>]`. Inside a `fix h: H` (refined sort), get its guard `inH(h)` with `[by predicate <block-label>]`.
 - Refs are SPACE-separated: `[by and_intro a b]` NOT `a, b`.

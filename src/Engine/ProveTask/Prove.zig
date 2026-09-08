@@ -536,12 +536,6 @@ fn trustSourceFile(self: *Prove, c: ast.Step.Claim) Error!?InternPool.Index {
             const itok = c.schema orelse break :blk null;
             break :blk try self.importFile(itok);
         },
-        // instantiation: the schema's file, via its `.schema` locator (resolved through FactKV,
-        // but that is a LOCATOR lookup — no proof; the schema decl AST is what we read).
-        .instantiation => blk: {
-            const stok = c.schema orelse break :blk null;
-            break :blk try self.schemaFileOf(stok);
-        },
         else => null, // an accelerant — no remote decl to parse
     };
 }
@@ -563,14 +557,6 @@ fn importFile(self: *Prove, itok: lexer.Token) Error!?InternPool.Index {
         .import => |m| self.ctx.interner.keyOf(m.namespace).namespace.file,
         else => null,
     };
-}
-
-/// The file a schema name is declared in — its qualifier's namespace file (unqualified = this
-/// file). Read from the NAMESPACE (no FactKV `.schema` locator needed — we only want the file so
-/// `demandParse` makes its decl AST readable; `process`'s `resolveSchemaRef` validates the kind).
-fn schemaFileOf(self: *Prove, stok: lexer.Token) Error!?InternPool.Index {
-    const ns = try self.resolveQualifier(stok);
-    return self.ctx.interner.keyOf(ns).namespace.file;
 }
 
 /// Demand (fetch + suspend) the well-known arithmetic operator idents DECLARED in this file,
@@ -1736,10 +1722,11 @@ fn isAccelerant(rule: StrId) bool {
 fn trustWord(self: *Prove, c: ast.Step.Claim) ?Verify.Word {
     if (c.kind != .using) return null;
     if (InternPool.RuleStr.of(c.rule.name)) |kind| return switch (kind) {
-        .instantiation => .instantiation,
+        // `instantiation` is NOT trustable — `admit` is shape-only, but an instantiation's content
+        // is the body's proof at the args (the only soundness gate). It always strict-proves (#93).
         .model => .model,
         .import => .import,
-        else => null, // a `using` step should not name any other RuleStr; not trustable
+        else => null, // `instantiation` + any other RuleStr in a `using` step → not trustable
     };
     inline for (@typeInfo(Verify.Word).@"enum".fields) |f| {
         const engine_word = comptime (std.mem.eql(u8, f.name, "instantiation") or
@@ -7093,8 +7080,6 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
         .model => try self.admitModel(goal, c),
         // import: the imported statement, elaborated in I's namespace (no model). α-match.
         .import => try self.admitImport(goal, c),
-        // instantiation: the schema body at the bound args. α-match after peeling premises.
-        .instantiation => try self.admitInstance(e, goal, c),
     }
 }
 
@@ -7137,59 +7122,6 @@ fn admitImport(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
         .suspended => return self.fail(c.rule.start, "internal: import admission not resolved before process (read-pass bug)", .{}),
         .failed => return error.Recover,
     }
-}
-
-/// Resolve a schema reference to its AST decl WITHOUT the FactKV `.schema` locator (which a
-/// trusted read pass never demands). The file comes from the qualifier's namespace + the decl
-/// from the by-name AST registry (both available after `demandParse`). Mirrors `resolveSchemaRef`
-/// minus the fact lookup — for the admit path only.
-fn resolveSchemaDecl(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
-    const ns = try self.resolveQualifier(tok);
-    const file = self.ctx.interner.keyOf(ns).namespace.file;
-    const fid = self.ctx.pool_file.get(file) orelse
-        return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
-    const decl = self.ctx.declOf(fid, tokName(tok)) orelse
-        return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
-    const fact = ast.factOf(decl) orelse
-        return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
-    if (fact.params == null)
-        return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
-    return .{
-        .file = file,
-        .ns = ns,
-        .name = tokName(tok),
-        .fact = fact,
-        .source = self.ctx.files.items[@intFromEnum(fid)].source,
-    };
-}
-
-/// Admit `[using instantiation S(args)]`: elaborate S's body at the bound args (the monomorphized
-/// instance formula), peel the cited premises off its `->` prefix, and α-match the remaining
-/// consequent chain against `goal`. Reads the schema decl straight from AST (`resolveSchemaDecl`,
-/// no proof/locator demand) + `bindSchemaArgs`.
-fn admitInstance(self: *Prove, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
-    if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
-    const rs = try self.resolveSchemaDecl(c.schema.?);
-    const args = try self.bindSchemaArgs(e, rs, c);
-    // elaborate the schema body under a schema-scoped Elab (params resolve via schema_args),
-    // model-aware (a transfer monomorphizes under M). This is the instance formula.
-    var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, e.walk, rs.ns, &self.fresh_counter);
-    se.schema_args = args;
-    se.model = self.model;
-    se.no_relativize = true; // a schema body's guards are explicit in its statement, not injected
-    const inst = try se.requireProp(try se.elaborateExpr(rs.fact.formula), rs.fact.formula);
-    // peel `c.refs.len` cited premises off the instance's leading `->` chain; the remainder must
-    // α-match the claim (the kernel's schema_instance does exactly this premise-peel).
-    var rem = inst.id;
-    var i: usize = 0;
-    while (i < c.refs.len) : (i += 1) {
-        const n = self.pool.get(rem);
-        if (n != .bin or n.bin.op != .implies)
-            return self.fail(c.rule.start, "schema instance has fewer premises than cited references", .{});
-        rem = n.bin.rhs;
-    }
-    if (!self.pool.alphaEq(rem, goal))
-        return self.fail(c.rule.start, "the claim does not match the instantiation of '{s}':\n  claim:    {s}\n  instance: {s}", .{ self.text(c.schema.?), try self.renderTerm(goal), try self.renderTerm(rem) });
 }
 
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
