@@ -4,9 +4,9 @@
 //! POST-FLIP (Step 8 W5): checking runs on the DEMAND ENGINE — parse tasks discover the
 //! file set, the root scan racks a ProveTask per theorem, and Fetch/Prove tasks pull
 //! everything cited on demand (see Engine.zig / Context.zig). The eager Elaborator and
-//! `env` are gone. RED-PHASE degradations (until the Phase-5 rebuilds): schemas, models,
-//! accelerants, defines, aliases, guarded funcs and holes are unsupported (their files
-//! diagnose); the summary no longer reports accelerated/trusted/hole buckets.
+//! `env` are gone. The Phase-5 rebuilds have landed: schemas, models, accelerants, defines,
+//! holes, guarded funcs, `--fast` admit-trust and `--draft` all work on the demand path;
+//! the summary reports accelerated/hole buckets again.
 
 const std = @import("std");
 
@@ -41,6 +41,18 @@ pub const debug = @import("debug.zig");
 
 pub const ReadFileFn = Context.ReadFileFn;
 
+const builtin = @import("builtin");
+/// Program-wide THREAD-SAFE general-purpose allocator — the backing for TRANSIENT scratch arenas
+/// (recursion work-stacks, throwaway pools) that must be RECLAIMED, distinct from the durable main
+/// arena (which is never reset). `smp_allocator` in release (a process-global thread-safe singleton
+/// GPA — one per process); `DebugAllocator` in debug (leak/UAF detection; its `thread_safe`
+/// defaults to `!single_threaded`). The engine is single-threaded today; the thread-safe choice is
+/// forward-looking (the parked-queue/lock scaffolding anticipates multithreading) but free.
+var debug_gpa: std.heap.DebugAllocator(.{}) = .init;
+pub fn gpa() std.mem.Allocator {
+    return if (builtin.mode == .Debug) debug_gpa.allocator() else std.heap.smp_allocator;
+}
+
 /// Build a fresh demand-checking Context (interner + KV tables + shared scratchpad).
 fn newContext(
     io: std.Io,
@@ -57,6 +69,7 @@ fn newContext(
     const context = try arena.create(Context);
     context.* = .{
         .arena = arena,
+        .gpa = gpa(), // program-wide thread-safe GPA for transient scratch (see `gpa`)
         .io = io,
         .sink = sink,
         .interner = interner,

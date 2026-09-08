@@ -43,7 +43,13 @@ const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, FileId);
 /// Key into the by-name AST registry: a decl is addressed by its file + stamped name.
 pub const DeclKey = struct { file: FileId, name: InternPool.StrId };
 
+/// DURABLE allocator — the process-lifetime main arena (never reset). Holds the AST, InternPool,
+/// facts, task payloads, per-Pool nodes — everything read by pointer/Index after a task returns.
 arena: std.mem.Allocator,
+/// THREAD-SAFE program-wide GPA (see `root.gpa`) for TRANSIENT scratch that must be RECLAIMED:
+/// recursion work-stacks + throwaway pools spin up `ArenaAllocator.init(ctx.gpa)` + `defer deinit`
+/// rather than leaking into the never-reset main arena. Distinct from `arena` by lifetime.
+gpa: std.mem.Allocator,
 /// The Io handle (from Zig 0.16 "juicy main" `init.io`), threaded through the entry
 /// points. Writers use it to take the InternPool write-mutex / KV RwLocks. Reads are
 /// lock-free and never need it. Single-threaded today, so locks are uncontended.

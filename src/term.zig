@@ -61,12 +61,19 @@ const Transform = union(enum) {
 };
 
 pub const Pool = struct {
+    /// DURABLE term storage for this pool's lifetime (nodes/extra grow here). For a per-ProveTask
+    /// pool this is `ctx.arena`; for a scratch pool, whatever the caller passed.
     arena: Allocator,
+    /// THREAD-SAFE program-wide GPA for TRANSIENT scratch (recursion work-stacks) that must be
+    /// RECLAIMED, not leaked into the never-reset main arena. A recursion spins up
+    /// `ArenaAllocator.init(pool.gpa)` + `defer deinit`. Set at `init`; for scratch/test pools that
+    /// never recurse deeply, passing the same `arena` is acceptable (small, short-lived).
+    gpa: Allocator,
     nodes: std.ArrayList(Node) = .empty,
     extra: std.ArrayList(TermId) = .empty,
 
-    pub fn init(arena: Allocator) Pool {
-        return .{ .arena = arena };
+    pub fn init(arena: Allocator, gpa: Allocator) Pool {
+        return .{ .arena = arena, .gpa = gpa };
     }
 
     pub fn get(self: *const Pool, id: TermId) Node {
@@ -665,7 +672,8 @@ fn tsym(n: u32) SymId {
 test "close/open round-trip" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // x = x  with x free
@@ -691,7 +699,8 @@ test "close/open round-trip" {
 test "classic capture case: substituting y for x under a binder named y cannot capture" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // forall y: nat. x = y   (x free, y bound — hint says "y")
@@ -714,7 +723,8 @@ test "classic capture case: substituting y for x under a binder named y cannot c
 test "alphaEq ignores binder hints, distinguishes structure" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // forall n: nat. n = n   vs   forall m: nat. m = m   (different hints)
@@ -737,7 +747,8 @@ test "alphaEq ignores binder hints, distinguishes structure" {
 test "occursFree sees through binders; open substitutes at correct depth" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // body of `forall a. exists b. f(a, x)`: bvar1 under two binders + free x
@@ -764,7 +775,8 @@ test "occursFree sees through binders; open substitutes at correct depth" {
 test "unchanged subtrees share ids (no pool bloat)" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
@@ -780,7 +792,8 @@ test "unchanged subtrees share ids (no pool bloat)" {
 test "termOrder: total, consistent with alphaEq, transitive" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
@@ -821,7 +834,8 @@ fn ssort(n: u32) SortId {
 test "remapFormula: unguarded sort+sym substitution over a quantified formula" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // source theory: sort Grp = 1, op = sym 1.
@@ -857,7 +871,8 @@ test "remapFormula: unguarded sort+sym substitution over a quantified formula" {
 test "remapFormula: guarded model injects guard(x) -> at the carrier binder" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // source: forall a: Grp; op(a, a) = a   remapped Grp->Rat, op->mul,
@@ -901,7 +916,8 @@ test "remapFormula: guarded model uses `and` (not `->`) for an EXISTENTIAL binde
     // near-vacuous, unsound relativization; regression-pin the `and`.)
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     const grp = ssort(1);
@@ -945,7 +961,8 @@ test "remapFormula: guarded model uses `and` (not `->`) for an EXISTENTIAL binde
 test "remapFormula: sorts/syms absent from the map pass through unchanged" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    var pool: Pool = .init(arena_state.allocator());
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
     const p = &pool;
 
     // formula mentions Prop-level pred `related` (sym 5) over sort 1, plus a
@@ -990,7 +1007,7 @@ test "reify/copyIn: every node kind round-trips through extra" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var pool: Pool = .init(arena);
+    var pool: Pool = .init(arena, arena);
     const p = &pool;
     var ip: InternPool = try .init(arena);
     var threaded: std.Io.Threaded = .init(arena, .{});
@@ -1029,7 +1046,7 @@ test "reify/copyIn: shared subterm emitted once, rebuilt consistently" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var pool: Pool = .init(arena);
+    var pool: Pool = .init(arena, arena);
     const p = &pool;
     var ip: InternPool = try .init(arena);
     var threaded: std.Io.Threaded = .init(arena, .{});

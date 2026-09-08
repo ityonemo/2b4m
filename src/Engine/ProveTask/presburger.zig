@@ -953,7 +953,7 @@ const Rig = struct {
 
     fn init(arena: Allocator) Rig {
         return .{
-            .pool = .init(arena),
+            .pool = .init(arena, arena),
             .symbols = .{
                 .nat = nat,
                 .zero = sym_zero,

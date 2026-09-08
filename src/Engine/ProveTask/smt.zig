@@ -284,7 +284,7 @@ const Rig = struct {
     pool: Pool,
 
     fn init(arena: Allocator) Rig {
-        return .{ .pool = .init(arena) };
+        return .{ .pool = .init(arena, arena) };
     }
 
     /// nth 0-ary predicate atom

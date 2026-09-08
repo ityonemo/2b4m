@@ -198,7 +198,7 @@ const Fixture = struct {
         const interner = try arena.create(InternPool);
         interner.* = try .init(arena);
         const pool = try arena.create(term.Pool);
-        pool.* = .init(arena);
+        pool.* = .init(arena, arena);
         const nat_ix = try interner.mintSort(.{ .name = try interner.internString("Nat"), .loc = 0, .refinement = null });
         const nat2 = [_]InternPool.Index{ nat_ix, nat_ix };
         const add_sig = try interner.get(.{ .sig = .{ .result = nat_ix, .result_refined = .none, .args = &nat2 } });

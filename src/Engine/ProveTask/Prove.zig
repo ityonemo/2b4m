@@ -131,7 +131,7 @@ const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
 pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPool.Index, ns: InternPool.Index) Allocator.Error!*Prove {
     const p = try ctx.arena.create(Prove);
     const pool = try ctx.arena.create(term.Pool);
-    pool.* = .init(ctx.arena);
+    pool.* = .init(ctx.arena, ctx.gpa); // durable nodes on the main arena; work-stacks on the GPA
     p.* = .{ .ctx = ctx, .h = h, .pool = pool, .source = source, .file = file, .ns = ns };
     // kernel block 0 = the root proof body; sealed in finish().
     try p.low_blocks.append(ctx.arena, .{

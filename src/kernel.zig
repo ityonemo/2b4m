@@ -751,7 +751,7 @@ fn buildRig(arena: Allocator) !Rig {
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
     const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
+    pool.* = .init(arena, arena);
     const sink = try arena.create(Diagnostics.Sink);
     sink.* = .init(arena);
 

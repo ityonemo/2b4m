@@ -136,7 +136,7 @@ test "instanceHash: value args — equal terms hash equal, distinct terms differ
     const arena = arena_state.allocator();
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    var pool = term.Pool.init(arena);
+    var pool = term.Pool.init(arena, arena);
 
     const nat: SortId = @enumFromInt(10);
     const zero_sym: term.SymId = @enumFromInt(20);
@@ -171,7 +171,7 @@ test "instanceHash: lambda args — fresh param fvars canonicalize by position" 
     const arena = arena_state.allocator();
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    var pool = term.Pool.init(arena);
+    var pool = term.Pool.init(arena, arena);
 
     const t: SortId = @enumFromInt(10);
     const goal: term.SymId = @enumFromInt(30);
@@ -204,7 +204,7 @@ test "instanceHash: the schema name is folded in (rename escape hatch)" {
     const arena = arena_state.allocator();
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
-    var pool = term.Pool.init(arena);
+    var pool = term.Pool.init(arena, arena);
 
     const nat: SortId = @enumFromInt(10);
     const zero = try pool.addApp(.app, @enumFromInt(20), &.{});

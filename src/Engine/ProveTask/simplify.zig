@@ -275,7 +275,7 @@ fn buildRig(arena: Allocator) !Rig {
     const interner = try arena.create(InternPool);
     interner.* = try .init(arena);
     const pool = try arena.create(term.Pool);
-    pool.* = .init(arena);
+    pool.* = .init(arena, arena);
 
     const nat_ix = try interner.mintSort(.{ .name = try interner.internString("Nat"), .loc = 0, .refinement = null });
     const nat: SortId = @enumFromInt(@intFromEnum(nat_ix));

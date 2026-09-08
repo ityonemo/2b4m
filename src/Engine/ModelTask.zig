@@ -332,6 +332,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
     const ctx = try arena.create(Context);
     ctx.* = .{
         .arena = arena,
+        .gpa = arena, // test fixture: arena doubles as the scratch GPA
         .io = io,
         .sink = sink,
         .interner = interner,
