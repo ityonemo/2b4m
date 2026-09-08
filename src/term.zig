@@ -130,31 +130,38 @@ pub const Pool = struct {
     /// justified by rewriting toward this result kernel-checks. Used by the
     /// `chain` accelerant to construct each rewrite target.
     pub fn rewriteAll(self: *Pool, id: TermId, from: TermId, to: TermId) Allocator.Error!TermId {
-        if (self.alphaEq(id, from)) return to;
-        switch (self.get(id)) {
-            .bvar, .fvar => return id,
-            .app => |a| {
-                // Snapshot the arg ids FIRST: each recursive rewriteAll appends to
-                // `self.extra` (via addApp) and may reallocate it, invalidating the
-                // `self.args(a)` slice mid-iteration. Copy into the arena-stable
-                // `new_args`, then rewrite in place.
-                const new_args = try self.arena.alloc(TermId, a.args_len);
-                @memcpy(new_args, self.args(a));
-                for (new_args) |*na| na.* = try self.rewriteAll(na.*, from, to);
-                return self.addApp(.app, a.sym, new_args);
-            },
-            .pred => |a| {
-                const new_args = try self.arena.alloc(TermId, a.args_len);
-                @memcpy(new_args, self.args(a));
-                for (new_args) |*na| na.* = try self.rewriteAll(na.*, from, to);
-                return self.addApp(.pred, a.sym, new_args);
-            },
-            .eq => |p| return self.add(.{ .eq = .{ .lhs = try self.rewriteAll(p.lhs, from, to), .rhs = try self.rewriteAll(p.rhs, from, to) } }),
-            .not => |t| return self.add(.{ .not = try self.rewriteAll(t, from, to) }),
-            .bin => |b| return self.add(.{ .bin = .{ .op = b.op, .lhs = try self.rewriteAll(b.lhs, from, to), .rhs = try self.rewriteAll(b.rhs, from, to) } }),
-            .quant => |q| return self.add(.{ .quant = .{ .q = q.q, .sort = q.sort, .hint = q.hint, .body = try self.rewriteAll(q.body, from, to) } }),
-        }
+        return self.rebuildWalk(id, RewriteVisitor{ .from = from, .to = to });
     }
+
+    /// `rewriteAll` as a `rebuildWalk` visitor: at EVERY node, an `alphaEq(id, from)` match
+    /// short-circuits to `to` (that is why it's in `leaf`, which fires per-node pre-descent); a
+    /// leaf that doesn't match is the identity; interior nodes rebuild from children. `from`/`to`
+    /// are locally closed (equation sides), so no depth shifting — depth is ignored.
+    const RewriteVisitor = struct {
+        from: TermId,
+        to: TermId,
+
+        fn leaf(v: RewriteVisitor, pool: *Pool, id: TermId, node: Node, _: u16) Allocator.Error!?TermId {
+            if (pool.alphaEq(id, v.from)) return v.to;
+            return switch (node) {
+                .bvar, .fvar => id, // a non-matching leaf is unchanged
+                else => null, // interior: descend + rebuild
+            };
+        }
+
+        fn rebuild(_: RewriteVisitor, pool: *Pool, _: TermId, node: Node, _: u16, kids: []const TermId) Allocator.Error!TermId {
+            // matches the original: interior nodes always build fresh (no sharing check).
+            return switch (node) {
+                .app => try pool.addApp(.app, node.app.sym, kids),
+                .pred => try pool.addApp(.pred, node.pred.sym, kids),
+                .eq => try pool.add(.{ .eq = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .not => try pool.add(.{ .not = kids[0] }),
+                .bin => try pool.add(.{ .bin = .{ .op = node.bin.op, .lhs = kids[0], .rhs = kids[1] } }),
+                .quant => |q| try pool.add(.{ .quant = .{ .q = q.q, .sort = q.sort, .hint = q.hint, .body = kids[0] } }),
+                .bvar, .fvar => unreachable,
+            };
+        }
+    };
 
     /// The number of stack frames an INLINE (`stackFallback`) work-stack holds before spilling to
     /// the GPA. A term this deep is already pathological; the common case never spills.
@@ -592,67 +599,59 @@ pub const Pool = struct {
     /// variable; because we inject INSIDE the quantifier body the de Bruijn
     /// index 0 is correct (innermost binder).
     pub fn remapFormula(self: *Pool, id: TermId, remap: Remap) Allocator.Error!TermId {
-        switch (self.get(id)) {
-            .bvar => return id,
-            .fvar => |v| {
-                const s = remap.sort(v.sort);
-                if (s == v.sort) return id;
-                return self.add(.{ .fvar = .{ .name = v.name, .sort = s } });
-            },
-            .app => |a| return self.remapApp(.app, a, remap),
-            .pred => |a| return self.remapApp(.pred, a, remap),
-            .eq => |p| {
-                const lhs = try self.remapFormula(p.lhs, remap);
-                const rhs = try self.remapFormula(p.rhs, remap);
-                return self.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
-            },
-            .not => |inner| return self.add(.{ .not = try self.remapFormula(inner, remap) }),
-            .bin => |b| {
-                const lhs = try self.remapFormula(b.lhs, remap);
-                const rhs = try self.remapFormula(b.rhs, remap);
-                return self.add(.{ .bin = .{ .op = b.op, .lhs = lhs, .rhs = rhs } });
-            },
-            .quant => |q| {
-                var body = try self.remapFormula(q.body, remap);
-                // guard relativization: a binder over the (source) carrier is
-                // restricted to the guarded subset. The connective differs by
-                // quantifier: `∀x; P` → `∀x; guard(x) -> P` (implication), but
-                // `∃x; P` → `∃x; guard(x) and P` (conjunction) — an existential
-                // asserts a witness that is BOTH in the subset AND satisfies P.
-                if (remap.guard) |g| {
-                    if (q.sort == g.carrier) {
-                        const bound = try self.add(.{ .bvar = 0 });
-                        const guard_app = try self.addApp(.pred, g.pred, &.{bound});
+        return self.rebuildWalk(id, RemapVisitor{ .remap = remap });
+    }
+
+    /// `remapFormula` as a `rebuildWalk` visitor. `leaf`: bvar identity; fvar → sort-remapped;
+    /// an app/pred whose sym has a define TARGET short-circuits to the expanded body (NO descent —
+    /// current defines are nullary). `rebuild`: sym-remap app/pred, rebuild the fixed forms, and at
+    /// a quant over the (source) carrier inject the guard `guard(bvar 0) -> body` (`∀`, implication)
+    /// / `guard(bvar 0) and body` (`∃`, conjunction) INSIDE the binder — de Bruijn 0 is the just-
+    /// bound var. Does NOT preserve sharing (matches the original: always builds fresh).
+    const RemapVisitor = struct {
+        remap: Remap,
+
+        fn leaf(v: RemapVisitor, pool: *Pool, id: TermId, node: Node, _: u16) Allocator.Error!?TermId {
+            switch (node) {
+                .bvar => return id,
+                .fvar => |fv| {
+                    const s = v.remap.sort(fv.sort);
+                    return if (s == fv.sort) id else try pool.add(.{ .fvar = .{ .name = fv.name, .sort = s } });
+                },
+                .app, .pred => |ap| {
+                    // a source sym whose target is a transparent define expands to its body
+                    // (nullary → no arg substitution); replaces the app WITHOUT descending.
+                    if (v.remap.expansionOf(ap.sym)) |body| return body;
+                    return null; // ordinary app: descend + rebuild (sym-remapped there)
+                },
+                else => return null,
+            }
+        }
+
+        fn rebuild(v: RemapVisitor, pool: *Pool, _: TermId, node: Node, _: u16, kids: []const TermId) Allocator.Error!TermId {
+            switch (node) {
+                .app => return pool.addApp(.app, v.remap.sym(node.app.sym), kids),
+                .pred => return pool.addApp(.pred, v.remap.sym(node.pred.sym), kids),
+                .eq => return pool.add(.{ .eq = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .not => return pool.add(.{ .not = kids[0] }),
+                .bin => |b| return pool.add(.{ .bin = .{ .op = b.op, .lhs = kids[0], .rhs = kids[1] } }),
+                .quant => |q| {
+                    var body = kids[0];
+                    if (v.remap.guard) |g| if (q.sort == g.carrier) {
+                        const bound = try pool.add(.{ .bvar = 0 });
+                        const guard_app = try pool.addApp(.pred, g.pred, &.{bound});
                         const connective: BinOp = switch (q.q) {
                             .forall => .implies,
                             .exists => .and_op,
                         };
-                        body = try self.add(.{ .bin = .{ .op = connective, .lhs = guard_app, .rhs = body } });
-                    }
-                }
-                return self.add(.{ .quant = .{
-                    .q = q.q,
-                    .sort = remap.sort(q.sort),
-                    .hint = q.hint,
-                    .body = body,
-                } });
-            },
+                        body = try pool.add(.{ .bin = .{ .op = connective, .lhs = guard_app, .rhs = body } });
+                    };
+                    return pool.add(.{ .quant = .{ .q = q.q, .sort = v.remap.sort(q.sort), .hint = q.hint, .body = body } });
+                },
+                .bvar, .fvar => unreachable,
+            }
         }
-    }
-
-    fn remapApp(self: *Pool, kind: AppKind, a: Node.App, remap: Remap) Allocator.Error!TermId {
-        // a source symbol whose TARGET is a transparent define expands to the
-        // target's body — otherwise the remap would leave a dangling `DEFINED`
-        // name where the goal has the expanded form. (Current defines are nullary,
-        // so there are no args to substitute into the body.)
-        if (remap.expansionOf(a.sym)) |body| return body;
-        // args() aliases extra.items; recursion may grow it (stale-slice trap,
-        // see walkApp) — copy argument ids out before recursing.
-        const old_args = try self.arena.dupe(TermId, self.args(a));
-        const new_args = try self.arena.alloc(TermId, old_args.len);
-        for (old_args, new_args) |arg, *out| out.* = try self.remapFormula(arg, remap);
-        return self.addApp(kind, remap.sym(a.sym), new_args);
-    }
+    };
 
     // === DURABLE serialization: scratchpad <-> InternPool `extra` ===================
     //
