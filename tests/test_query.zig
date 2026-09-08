@@ -92,7 +92,7 @@ pub fn addTests(
     // axioms/theorems it pulls in are listed.
     ctx.ok(&.{ "query", "uses", "tests/cases/outline.bpa" },
         \\theorem everyoneIsQ
-        \\  rules: axiom×2 forall_elim×2 hypothesis×2 modus_ponens forall_intro
+        \\  rules: cite×2 forall_elim×2 hypothesis×2 modus_ponens forall_intro
         \\  cites: either pImpliesQ
         \\
     );
