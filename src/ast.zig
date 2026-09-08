@@ -299,49 +299,78 @@ pub fn declName(decl: *const Decl) Token {
     };
 }
 
+/// One deferred dump action: emit a literal slice, or expand an Expr node.
+const DumpAct = union(enum) { text: []const u8, node: *const Expr };
+
 /// Debug/test dump of an Expr as an s-expression. Identifier text comes from source.
-pub fn dumpExpr(w: *std.Io.Writer, source: []const u8, e: *const Expr) std.Io.Writer.Error!void {
-    switch (e.*) {
-        .name => |t| try w.writeAll(source[t.start..t.end]),
-        .call => |c| {
-            try w.print("({s}", .{source[c.callee.start..c.callee.end]});
-            for (c.args) |a| {
-                try w.writeAll(" ");
-                try dumpExpr(w, source, a);
-            }
-            try w.writeAll(")");
+/// Iterative (explicit action-stack, no recursion): expanding a node pushes its
+/// sub-actions REVERSED so they pop in emission order — output is byte-identical.
+pub fn dumpExpr(arena: std.mem.Allocator, w: *std.Io.Writer, source: []const u8, e: *const Expr) std.Io.Writer.Error!void {
+    var stack: std.ArrayList(DumpAct) = .empty;
+    stack.append(arena, .{ .node = e }) catch return error.WriteFailed;
+    while (stack.pop()) |act| switch (act) {
+        .text => |s| try w.writeAll(s),
+        .node => |node| switch (node.*) {
+            .name => |t| try w.writeAll(source[t.start..t.end]),
+            .call => |c| {
+                // emit: "(callee" arg0-preceded-by-space … ")"
+                var acts: std.ArrayList(DumpAct) = .empty;
+                const open = std.fmt.allocPrint(arena, "({s}", .{source[c.callee.start..c.callee.end]}) catch return error.WriteFailed;
+                acts.append(arena, .{ .text = open }) catch return error.WriteFailed;
+                for (c.args) |a| {
+                    acts.append(arena, .{ .text = " " }) catch return error.WriteFailed;
+                    acts.append(arena, .{ .node = a }) catch return error.WriteFailed;
+                }
+                acts.append(arena, .{ .text = ")" }) catch return error.WriteFailed;
+                pushReversed(arena, &stack, acts.items) catch return error.WriteFailed;
+            },
+            .binary => |b| {
+                const open = std.fmt.allocPrint(arena, "({t} ", .{b.op}) catch return error.WriteFailed;
+                pushReversed(arena, &stack, &.{
+                    .{ .text = open }, .{ .node = b.lhs }, .{ .text = " " }, .{ .node = b.rhs }, .{ .text = ")" },
+                }) catch return error.WriteFailed;
+            },
+            .not => |n| pushReversed(arena, &stack, &.{
+                .{ .text = "(not " }, .{ .node = n.operand }, .{ .text = ")" },
+            }) catch return error.WriteFailed,
+            .quant => |q| {
+                var acts: std.ArrayList(DumpAct) = .empty;
+                const open = std.fmt.allocPrint(arena, "({t}", .{q.q}) catch return error.WriteFailed;
+                acts.append(arena, .{ .text = open }) catch return error.WriteFailed;
+                for (q.binders) |b| {
+                    const bt = std.fmt.allocPrint(arena, " {s}:{s}", .{
+                        source[b.name.start..b.name.end], source[b.sort.start..b.sort.end],
+                    }) catch return error.WriteFailed;
+                    acts.append(arena, .{ .text = bt }) catch return error.WriteFailed;
+                }
+                acts.append(arena, .{ .text = " " }) catch return error.WriteFailed;
+                acts.append(arena, .{ .node = q.body }) catch return error.WriteFailed;
+                acts.append(arena, .{ .text = ")" }) catch return error.WriteFailed;
+                pushReversed(arena, &stack, acts.items) catch return error.WriteFailed;
+            },
+            .lambda => |l| {
+                var acts: std.ArrayList(DumpAct) = .empty;
+                acts.append(arena, .{ .text = "(fun" }) catch return error.WriteFailed;
+                for (l.binders) |b| {
+                    const bt = std.fmt.allocPrint(arena, " {s}:{s}", .{
+                        source[b.name.start..b.name.end], source[b.sort.start..b.sort.end],
+                    }) catch return error.WriteFailed;
+                    acts.append(arena, .{ .text = bt }) catch return error.WriteFailed;
+                }
+                acts.append(arena, .{ .text = " " }) catch return error.WriteFailed;
+                acts.append(arena, .{ .node = l.body }) catch return error.WriteFailed;
+                acts.append(arena, .{ .text = ")" }) catch return error.WriteFailed;
+                pushReversed(arena, &stack, acts.items) catch return error.WriteFailed;
+            },
         },
-        .binary => |b| {
-            try w.print("({t} ", .{b.op});
-            try dumpExpr(w, source, b.lhs);
-            try w.writeAll(" ");
-            try dumpExpr(w, source, b.rhs);
-            try w.writeAll(")");
-        },
-        .not => |n| {
-            try w.writeAll("(not ");
-            try dumpExpr(w, source, n.operand);
-            try w.writeAll(")");
-        },
-        .quant => |q| {
-            try w.print("({t}", .{q.q});
-            for (q.binders) |b| try w.print(" {s}:{s}", .{
-                source[b.name.start..b.name.end],
-                source[b.sort.start..b.sort.end],
-            });
-            try w.writeAll(" ");
-            try dumpExpr(w, source, q.body);
-            try w.writeAll(")");
-        },
-        .lambda => |l| {
-            try w.writeAll("(fun");
-            for (l.binders) |b| try w.print(" {s}:{s}", .{
-                source[b.name.start..b.name.end],
-                source[b.sort.start..b.sort.end],
-            });
-            try w.writeAll(" ");
-            try dumpExpr(w, source, l.body);
-            try w.writeAll(")");
-        },
+    };
+}
+
+/// Push `acts` onto the action-stack in reverse, so they pop front-to-back.
+fn pushReversed(arena: std.mem.Allocator, stack: *std.ArrayList(DumpAct), acts: []const DumpAct) !void {
+    var i: usize = acts.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(arena, acts[i]);
     }
 }

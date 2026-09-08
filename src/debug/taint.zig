@@ -137,7 +137,12 @@ fn renderProof(w: *std.Io.Writer, path: []const u8, source: []const u8, proof: P
 }
 
 fn collect(arena: Allocator, source: []const u8, steps: []const ast.Step, hits: *std.ArrayList(Hit)) !void {
-    for (steps) |step| {
+    // Explicit DFS pre-order (hits are rendered in first-encountered order): a
+    // LIFO of single steps; a block's children pushed REVERSED so they pop
+    // front-to-back, right after their parent.
+    var stack: std.ArrayList(ast.Step) = .empty;
+    try pushReversed(arena, &stack, steps);
+    while (stack.pop()) |step| {
         switch (step.body) {
             .claim => |c| {
                 const rule = tokenText(source, c.rule);
@@ -146,11 +151,26 @@ fn collect(arena: Allocator, source: []const u8, steps: []const ast.Step, hits: 
                     try hits.append(arena, .{ .rule = rule, .line = lc.line, .col = lc.col });
                 }
             },
-            .assume => |b| try collect(arena, source, b.steps, hits),
-            .fix => |b| try collect(arena, source, b.steps, hits),
-            .unpack => |b| try collect(arena, source, b.steps, hits),
-            .case => |b| for (b.arms) |arm| try collect(arena, source, arm.steps, hits),
+            .assume => |b| try pushReversed(arena, &stack, b.steps),
+            .fix => |b| try pushReversed(arena, &stack, b.steps),
+            .unpack => |b| try pushReversed(arena, &stack, b.steps),
+            .case => |b| {
+                var i: usize = b.arms.len;
+                while (i > 0) {
+                    i -= 1;
+                    try pushReversed(arena, &stack, b.arms[i].steps);
+                }
+            },
         }
+    }
+}
+
+/// Push `steps` onto the DFS stack in reverse, so they pop front-to-back.
+fn pushReversed(arena: Allocator, stack: *std.ArrayList(ast.Step), steps: []const ast.Step) !void {
+    var i: usize = steps.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(arena, steps[i]);
     }
 }
 

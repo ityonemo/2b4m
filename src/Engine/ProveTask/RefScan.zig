@@ -213,34 +213,56 @@ fn lemmaArgAccelerant(self: *Scanner, c: ast.Step.Claim) bool {
     return false;
 }
 
-fn scanExpr(self: *Scanner, e: *const ast.Expr) Allocator.Error!void {
-    switch (e.*) {
-        .name => |tok| try self.addNameTok(tok),
-        .call => |c| {
-            try self.addNameTok(c.callee);
-            for (c.args) |a| try self.scanExpr(a);
+/// One item on the scan work-stack: an expr to visit, or a scope-restore sentinel
+/// that truncates `expr_locals` back to `mark` once a quant/lambda body is done.
+const ScanItem = union(enum) { expr: *const ast.Expr, pop_scope: usize };
+
+/// Iterative expr walk (explicit work-stack, no recursion). Pre-order — children
+/// pushed REVERSED so they pop in first-appearance order, so the deduped `out`
+/// list is byte-identical to the recursive form. Quantifier/lambda binder scoping
+/// is handled via a `pop_scope` sentinel pushed UNDER the body so `expr_locals`
+/// truncates only after the body is fully scanned.
+fn scanExpr(self: *Scanner, root: *const ast.Expr) Allocator.Error!void {
+    var stack: std.ArrayList(ScanItem) = .empty;
+    try stack.append(self.arena, .{ .expr = root });
+    while (stack.pop()) |item| switch (item) {
+        .pop_scope => |mark| self.expr_locals.shrinkRetainingCapacity(mark),
+        .expr => |e| switch (e.*) {
+            .name => |tok| try self.addNameTok(tok),
+            .call => |c| {
+                try self.addNameTok(c.callee);
+                var i: usize = c.args.len;
+                while (i > 0) {
+                    i -= 1;
+                    try stack.append(self.arena, .{ .expr = c.args[i] });
+                }
+            },
+            .binary => |b| {
+                try stack.append(self.arena, .{ .expr = b.rhs });
+                try stack.append(self.arena, .{ .expr = b.lhs });
+            },
+            .not => |n| try stack.append(self.arena, .{ .expr = n.operand }),
+            // Quantifier/lambda: binder sorts + guards are global candidates; binder
+            // NAMES become expression-local for the body (shadowing proof-locals and
+            // globals alike). The sort/guard tokens are emitted NOW (in binder order),
+            // matching the recursive scanBinderBody's ordering; the body is deferred
+            // above a pop_scope sentinel that restores `expr_locals` afterward.
+            .quant => |q| try self.pushBinderBody(&stack, q.binders, q.body),
+            .lambda => |l| try self.pushBinderBody(&stack, l.binders, l.body),
         },
-        .binary => |b| {
-            try self.scanExpr(b.lhs);
-            try self.scanExpr(b.rhs);
-        },
-        .not => |n| try self.scanExpr(n.operand),
-        .quant => |q| try self.scanBinderBody(q.binders, q.body),
-        .lambda => |l| try self.scanBinderBody(l.binders, l.body),
-    }
+    };
 }
 
-/// Quantifier/lambda: binder sorts + guards are global candidates; binder NAMES become
-/// expression-local for the body (shadowing proof-locals and globals alike).
-fn scanBinderBody(self: *Scanner, binders: []const ast.Binder, body: *const ast.Expr) Allocator.Error!void {
+fn pushBinderBody(self: *Scanner, stack: *std.ArrayList(ScanItem), binders: []const ast.Binder, body: *const ast.Expr) Allocator.Error!void {
     const mark = self.expr_locals.items.len;
     for (binders) |b| {
         try self.addTok(b.sort, .ident);
         if (b.guard) |g| try self.addTok(g, .ident);
         try self.expr_locals.append(self.arena, b.name.name);
     }
-    try self.scanExpr(body);
-    self.expr_locals.shrinkRetainingCapacity(mark);
+    // pop_scope goes on FIRST (deepest) so it runs after the body is scanned.
+    try stack.append(self.arena, .{ .pop_scope = mark });
+    try stack.append(self.arena, .{ .expr = body });
 }
 
 /// An expression NAME position: skip expression-local and proof-local binders (only a

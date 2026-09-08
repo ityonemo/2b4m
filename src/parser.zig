@@ -874,7 +874,7 @@ fn expectExprDump(source: []const u8, expected: []const u8) !void {
     try testing.expectEqual(0, sink.list.items.len);
 
     var out: std.Io.Writer.Allocating = .init(arena);
-    try ast.dumpExpr(&out.writer, source, e);
+    try ast.dumpExpr(arena, &out.writer, source, e);
     try testing.expectEqualStrings(expected, out.written());
 }
 

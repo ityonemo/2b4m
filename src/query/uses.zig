@@ -151,17 +151,23 @@ fn collectLabels(
     steps: []const ast.Step,
     labels: *std.StringHashMapUnmanaged(void),
 ) !void {
-    for (steps) |step| {
-        try labels.put(arena, tokenText(source, step.label), {});
-        switch (step.body) {
-            .claim => {},
-            .assume => |b| try collectLabels(arena, source, b.steps, labels),
-            .fix => |b| try collectLabels(arena, source, b.steps, labels),
-            .unpack => |b| try collectLabels(arena, source, b.steps, labels),
-            .case => |b| for (b.arms) |arm| {
-                try labels.put(arena, tokenText(source, arm.label), {});
-                try collectLabels(arena, source, arm.steps, labels);
-            },
+    // A work-stack of step slices to process; label collection is a SET fill, so
+    // traversal order is immaterial.
+    var stack: std.ArrayList([]const ast.Step) = .empty;
+    try stack.append(arena, steps);
+    while (stack.pop()) |batch| {
+        for (batch) |step| {
+            try labels.put(arena, tokenText(source, step.label), {});
+            switch (step.body) {
+                .claim => {},
+                .assume => |b| try stack.append(arena, b.steps),
+                .fix => |b| try stack.append(arena, b.steps),
+                .unpack => |b| try stack.append(arena, b.steps),
+                .case => |b| for (b.arms) |arm| {
+                    try labels.put(arena, tokenText(source, arm.label), {});
+                    try stack.append(arena, arm.steps);
+                },
+            }
         }
     }
 }
@@ -174,7 +180,12 @@ fn walk(
     cites: *Tally,
     labels: *const std.StringHashMapUnmanaged(void),
 ) !void {
-    for (steps) |step| {
+    // Explicit DFS pre-order (tally first-appearance order must match the
+    // recursive walk exactly): a LIFO of single steps; children pushed REVERSED
+    // so a block's own steps pop front-to-back, immediately after their parent.
+    var stack: std.ArrayList(ast.Step) = .empty;
+    try pushReversed(arena, &stack, steps);
+    while (stack.pop()) |step| {
         switch (step.body) {
             .claim => |c| {
                 try rules.bump(arena, tokenText(source, c.rule));
@@ -187,21 +198,36 @@ fn walk(
                     if (!labels.contains(name)) try cites.bump(arena, name);
                 }
             },
-            .assume => |b| try walk(arena, source, b.steps, rules, cites, labels),
-            .fix => |b| try walk(arena, source, b.steps, rules, cites, labels),
+            .assume => |b| try pushReversed(arena, &stack, b.steps),
+            .fix => |b| try pushReversed(arena, &stack, b.steps),
             .unpack => |b| {
                 // `unpack u from <src>`: the source is a cite unless local.
                 const name = tokenText(source, b.from);
                 if (!labels.contains(name)) try cites.bump(arena, name);
-                try walk(arena, source, b.steps, rules, cites, labels);
+                try pushReversed(arena, &stack, b.steps);
             },
             .case => |b| {
                 // `case <disj>`: the disjunction step is a cite unless local.
                 const name = tokenText(source, b.disj);
                 if (!labels.contains(name)) try cites.bump(arena, name);
-                for (b.arms) |arm| try walk(arena, source, arm.steps, rules, cites, labels);
+                // arms walked in order: push arms' steps reversed (last arm's
+                // steps deepest) so arm 0 pops first.
+                var i: usize = b.arms.len;
+                while (i > 0) {
+                    i -= 1;
+                    try pushReversed(arena, &stack, b.arms[i].steps);
+                }
             },
         }
+    }
+}
+
+/// Push `steps` onto the DFS stack in reverse, so they pop front-to-back.
+fn pushReversed(arena: Allocator, stack: *std.ArrayList(ast.Step), steps: []const ast.Step) !void {
+    var i: usize = steps.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(arena, steps[i]);
     }
 }
 

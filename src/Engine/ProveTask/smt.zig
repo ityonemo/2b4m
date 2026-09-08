@@ -62,18 +62,29 @@ pub fn tautology(arena: Allocator, pool: *const Pool, premises: []const TermId, 
 }
 
 pub fn collectAtoms(arena: Allocator, pool: *const Pool, atoms: *std.ArrayList(TermId), f: TermId) Allocator.Error!void {
-    switch (pool.get(f)) {
-        .bin => |b| {
-            try collectAtoms(arena, pool, atoms, b.lhs);
-            try collectAtoms(arena, pool, atoms, b.rhs);
-        },
-        .not => |inner| try collectAtoms(arena, pool, atoms, inner),
-        else => {
-            for (atoms.items) |a| {
-                if (pool.alphaEq(a, f)) return;
-            }
-            try atoms.append(arena, f);
-        },
+    // Iterative work-stack over the propositional skeleton (was native
+    // recursion). Atom DISCOVERY ORDER is load-bearing (it fixes the
+    // countermodel's literal order), so the traversal reproduces the original
+    // left-to-right depth-first visit: push the right child BEFORE the left so the
+    // left is popped (and its atoms appended) first.
+    var fb = std.heap.stackFallback(64 * @sizeOf(TermId), arena);
+    const sa = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(sa);
+    try stack.append(sa, f);
+    while (stack.pop()) |cur| {
+        switch (pool.get(cur)) {
+            .bin => |b| {
+                try stack.append(sa, b.rhs);
+                try stack.append(sa, b.lhs);
+            },
+            .not => |inner| try stack.append(sa, inner),
+            else => {
+                for (atoms.items) |a| {
+                    if (pool.alphaEq(a, cur)) break;
+                } else try atoms.append(arena, cur);
+            },
+        }
     }
 }
 
@@ -88,22 +99,53 @@ fn atomIndex(pool: *const Pool, atoms: []const TermId, f: TermId) usize {
 /// assignment. A non-null result holds under EVERY completion. (Public for
 /// the certificate emitter, which replays this evaluation as kernel steps.)
 pub fn eval(pool: *const Pool, atoms: []const TermId, assignment: []const ?bool, f: TermId) ?bool {
-    switch (pool.get(f)) {
-        .not => |inner| {
-            const v = eval(pool, atoms, assignment, inner) orelse return null;
-            return !v;
-        },
-        .bin => |b| {
-            const l = eval(pool, atoms, assignment, b.lhs);
-            const r = eval(pool, atoms, assignment, b.rhs);
-            return switch (b.op) {
-                .and_op => if (l == false or r == false) false else if (l == true and r == true) true else null,
-                .or_op => if (l == true or r == true) true else if (l == false and r == false) false else null,
-                .implies => if (l == false or r == true) true else if (l == true and r == false) false else null,
-            };
-        },
-        else => return assignment[atomIndex(pool, atoms, f)],
+    // Iterative two-color post-order (was native recursion): a node is first
+    // EXPANDED (children pushed deeper) then, on its second pop, COMBINED from the
+    // child truth values already on `vals`. Kleene semantics are unchanged. The
+    // work-stack is INLINE up to a few frames, spilling to `pool.gpa` only for a
+    // pathologically nested skeleton; OOM there returns `null` (undetermined) —
+    // the sound conservative answer, which never closes a search branch.
+    const Frame = struct { f: TermId, expanded: bool };
+    var fb = std.heap.stackFallback(64 * @sizeOf(Frame), pool.gpa);
+    const a = fb.get();
+    var work: std.ArrayList(Frame) = .empty;
+    defer work.deinit(a);
+    var vals: std.ArrayList(?bool) = .empty;
+    defer vals.deinit(a);
+
+    work.append(a, .{ .f = f, .expanded = false }) catch return null;
+    while (work.pop()) |frame| {
+        switch (pool.get(frame.f)) {
+            .not => |inner| {
+                if (!frame.expanded) {
+                    work.append(a, .{ .f = frame.f, .expanded = true }) catch return null;
+                    work.append(a, .{ .f = inner, .expanded = false }) catch return null;
+                } else {
+                    const v = vals.pop().?;
+                    vals.append(a, if (v) |b| !b else null) catch return null;
+                }
+            },
+            .bin => |b| {
+                if (!frame.expanded) {
+                    work.append(a, .{ .f = frame.f, .expanded = true }) catch return null;
+                    // push rhs then lhs; a Kleene and/or/implies is symmetric in the
+                    // partial values, so the pop order does not change the result.
+                    work.append(a, .{ .f = b.rhs, .expanded = false }) catch return null;
+                    work.append(a, .{ .f = b.lhs, .expanded = false }) catch return null;
+                } else {
+                    const l = vals.pop().?;
+                    const r = vals.pop().?;
+                    vals.append(a, switch (b.op) {
+                        .and_op => if (l == false or r == false) false else if (l == true and r == true) true else null,
+                        .or_op => if (l == true or r == true) true else if (l == false and r == false) false else null,
+                        .implies => if (l == false or r == true) true else if (l == true and r == false) false else null,
+                    }) catch return null;
+                }
+            },
+            else => vals.append(a, assignment[atomIndex(pool, atoms, frame.f)]) catch return null,
+        }
     }
+    return vals.items[0];
 }
 
 /// Is there an assignment making every premise true and the goal false?
