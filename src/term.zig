@@ -206,48 +206,79 @@ pub const Pool = struct {
     /// `EnvT` is duck-typed to avoid a term->env import cycle: it needs
     /// `sym(SymId) -> struct { name: StrId, ... }`.
     pub fn usesSymNamed(self: *const Pool, env: anytype, name: StrId, id: TermId) bool {
-        switch (self.get(id)) {
-            .bvar, .fvar => return false,
-            .app, .pred => |a| {
-                if (env.sym(a.sym).name == name) return true;
-                for (self.args(a)) |arg| {
-                    if (self.usesSymNamed(env, name, arg)) return true;
-                }
-                return false;
-            },
-            .eq => |p| return self.usesSymNamed(env, name, p.lhs) or self.usesSymNamed(env, name, p.rhs),
-            .not => |t| return self.usesSymNamed(env, name, t),
-            .bin => |b| return self.usesSymNamed(env, name, b.lhs) or self.usesSymNamed(env, name, b.rhs),
-            .quant => |q| return self.usesSymNamed(env, name, q.body),
+        var fb = std.heap.stackFallback(inline_stack * @sizeOf(TermId), self.gpa);
+        const a = fb.get();
+        var stack: std.ArrayList(TermId) = .empty;
+        defer stack.deinit(a);
+        stack.append(a, id) catch return true; // OOM: conservatively "uses" (the named-theory
+        // contract only DIAGNOSES a used-but-unprovided symbol; over-reporting can't accept a bad proof)
+        while (stack.pop()) |cur| {
+            const node = self.get(cur);
+            switch (node) {
+                .app, .pred => |ap| if (env.sym(ap.sym).name == name) return true,
+                else => {},
+            }
+            self.pushChildren(&stack, a, node) catch return true;
         }
+        return false;
     }
 
     /// Alpha-equivalence: structural equality ignoring quantifier name hints
     /// (bound variables are indices, so hints carry no meaning).
     pub fn alphaEq(self: *const Pool, a: TermId, b: TermId) bool {
-        if (a == b) return true;
-        const na = self.get(a);
-        const nb = self.get(b);
-        if (std.meta.activeTag(na) != std.meta.activeTag(nb)) return false;
-        switch (na) {
-            .bvar => |i| return i == nb.bvar,
-            .fvar => |v| return v.name == nb.fvar.name and v.sort == nb.fvar.sort,
-            .app => |x| return self.appEq(x, nb.app),
-            .pred => |x| return self.appEq(x, nb.pred),
-            .eq => |p| return self.alphaEq(p.lhs, nb.eq.lhs) and self.alphaEq(p.rhs, nb.eq.rhs),
-            .not => |t| return self.alphaEq(t, nb.not),
-            .bin => |x| return x.op == nb.bin.op and
-                self.alphaEq(x.lhs, nb.bin.lhs) and self.alphaEq(x.rhs, nb.bin.rhs),
-            .quant => |q| return q.q == nb.quant.q and q.sort == nb.quant.sort and
-                self.alphaEq(q.body, nb.quant.body), // hint deliberately ignored
+        // iterative parallel two-tree walk (was native recursion): a work-stack of `(x, y)` pairs
+        // that must ALL match (a conjunction — stack order is irrelevant). At each pair: same tag,
+        // matching node scalars, then push the child pairs. A mismatch short-circuits false. INLINE
+        // up to `inline_stack` pairs, spilling to `self.gpa` only for a deeper term.
+        var fb = std.heap.stackFallback(inline_stack * @sizeOf([2]TermId), self.gpa);
+        const al = fb.get();
+        var stack: std.ArrayList([2]TermId) = .empty;
+        defer stack.deinit(al);
+        stack.append(al, .{ a, b }) catch return false; // OOM: conservatively "not equal" (a
+        // failed alphaEq only ever REJECTS a claim — sound to under-report equality)
+        while (stack.pop()) |pair| {
+            const x = pair[0];
+            const y = pair[1];
+            if (x == y) continue;
+            const nx = self.get(x);
+            const ny = self.get(y);
+            if (std.meta.activeTag(nx) != std.meta.activeTag(ny)) return false;
+            const ok = switch (nx) {
+                .bvar => |i| i == ny.bvar,
+                .fvar => |v| v.name == ny.fvar.name and v.sort == ny.fvar.sort,
+                .app => |p| self.pushAppPairs(&stack, al, p, ny.app) catch return false,
+                .pred => |p| self.pushAppPairs(&stack, al, p, ny.pred) catch return false,
+                .eq => |p| blk: {
+                    stack.append(al, .{ p.lhs, ny.eq.lhs }) catch return false;
+                    stack.append(al, .{ p.rhs, ny.eq.rhs }) catch return false;
+                    break :blk true;
+                },
+                .not => |t| blk: {
+                    stack.append(al, .{ t, ny.not }) catch return false;
+                    break :blk true;
+                },
+                .bin => |p| blk: {
+                    if (p.op != ny.bin.op) break :blk false;
+                    stack.append(al, .{ p.lhs, ny.bin.lhs }) catch return false;
+                    stack.append(al, .{ p.rhs, ny.bin.rhs }) catch return false;
+                    break :blk true;
+                },
+                .quant => |q| blk: {
+                    if (q.q != ny.quant.q or q.sort != ny.quant.sort) break :blk false; // hint ignored
+                    stack.append(al, .{ q.body, ny.quant.body }) catch return false;
+                    break :blk true;
+                },
+            };
+            if (!ok) return false;
         }
+        return true;
     }
 
-    fn appEq(self: *const Pool, x: Node.App, y: Node.App) bool {
+    /// alphaEq helper: two apps match iff same sym + arity; push their arg pairs onto the frontier.
+    /// Returns false (no push) on a sym/arity mismatch. May allocate (`stack` spill).
+    fn pushAppPairs(self: *const Pool, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: Node.App, y: Node.App) Allocator.Error!bool {
         if (x.sym != y.sym or x.args_len != y.args_len) return false;
-        for (self.args(x), self.args(y)) |ax, ay| {
-            if (!self.alphaEq(ax, ay)) return false;
-        }
+        for (self.args(x), self.args(y)) |ax, ay| try stack.append(al, .{ ax, ay });
         return true;
     }
 
@@ -258,50 +289,80 @@ pub const Pool = struct {
     /// matter for soundness — the certificate is kernel-checked, so a
     /// mis-order can only fail to join, never prove a falsehood.
     pub fn termOrder(self: *const Pool, a: TermId, b: TermId) std.math.Order {
-        if (a == b) return .eq;
-        const na = self.get(a);
-        const nb = self.get(b);
-        const ta = @intFromEnum(std.meta.activeTag(na));
-        const tb = @intFromEnum(std.meta.activeTag(nb));
-        if (ta != tb) return std.math.order(ta, tb);
-        switch (na) {
-            .bvar => |i| return std.math.order(i, nb.bvar),
-            .fvar => |v| {
-                const by_name = std.math.order(@intFromEnum(v.name), @intFromEnum(nb.fvar.name));
-                if (by_name != .eq) return by_name;
-                return std.math.order(@intFromEnum(v.sort), @intFromEnum(nb.fvar.sort));
-            },
-            .app => |x| return self.appOrder(x, nb.app),
-            .pred => |x| return self.appOrder(x, nb.pred),
-            .eq => |p| {
-                const l = self.termOrder(p.lhs, nb.eq.lhs);
-                return if (l != .eq) l else self.termOrder(p.rhs, nb.eq.rhs);
-            },
-            .not => |t| return self.termOrder(t, nb.not),
-            .bin => |x| {
-                const op = std.math.order(@intFromEnum(x.op), @intFromEnum(nb.bin.op));
-                if (op != .eq) return op;
-                const l = self.termOrder(x.lhs, nb.bin.lhs);
-                return if (l != .eq) l else self.termOrder(x.rhs, nb.bin.rhs);
-            },
-            .quant => |q| {
-                const qk = std.math.order(@intFromEnum(q.q), @intFromEnum(nb.quant.q));
-                if (qk != .eq) return qk;
-                const srt = std.math.order(@intFromEnum(q.sort), @intFromEnum(nb.quant.sort));
-                if (srt != .eq) return srt;
-                return self.termOrder(q.body, nb.quant.body); // hint ignored
-            },
+        // iterative lexicographic compare (was native recursion). The result is the FIRST non-`.eq`
+        // comparison in a fixed order (a scalar-then-children-left-to-right walk), so ORDER MATTERS:
+        // sub-comparisons are pushed onto a LIFO stack in REVERSE so they pop in the intended order.
+        // Each pair, when reached, first compares its node's scalars (tag/op/sort/…); a difference
+        // returns immediately; else its child pairs are pushed (reversed). INLINE up to
+        // `inline_stack` pairs, spilling to `self.gpa` only for a deeper term.
+        var fb = std.heap.stackFallback(inline_stack * @sizeOf([2]TermId), self.gpa);
+        const al = fb.get();
+        var stack: std.ArrayList([2]TermId) = .empty;
+        defer stack.deinit(al);
+        // OOM anywhere → conservatively `.eq` (soundness-neutral: termOrder only canonicalizes
+        // AC-rearranged sums; a mis-order can fail to join, never prove a falsehood — see doc above).
+        stack.append(al, .{ a, b }) catch return .eq;
+        while (stack.pop()) |pair| {
+            const x = pair[0];
+            const y = pair[1];
+            if (x == y) continue;
+            const nx = self.get(x);
+            const ny = self.get(y);
+            const tx = @intFromEnum(std.meta.activeTag(nx));
+            const ty = @intFromEnum(std.meta.activeTag(ny));
+            if (tx != ty) return std.math.order(tx, ty);
+            const leaf: ?std.math.Order = switch (nx) {
+                .bvar => |i| nonEq(std.math.order(i, ny.bvar)),
+                .fvar => |v| nonEq(std.math.order(@intFromEnum(v.name), @intFromEnum(ny.fvar.name))) orelse
+                    nonEq(std.math.order(@intFromEnum(v.sort), @intFromEnum(ny.fvar.sort))),
+                .app => |p| nonEq(self.pushOrderApp(&stack, al, p, ny.app) catch return .eq),
+                .pred => |p| nonEq(self.pushOrderApp(&stack, al, p, ny.pred) catch return .eq),
+                .not => |t| blk: {
+                    stack.append(al, .{ t, ny.not }) catch return .eq;
+                    break :blk null;
+                },
+                .eq => |p| blk: {
+                    // rhs pushed first so lhs (deeper on stack top) pops + compares FIRST.
+                    stack.append(al, .{ p.rhs, ny.eq.rhs }) catch return .eq;
+                    stack.append(al, .{ p.lhs, ny.eq.lhs }) catch return .eq;
+                    break :blk null;
+                },
+                .bin => |p| blk: {
+                    if (nonEq(std.math.order(@intFromEnum(p.op), @intFromEnum(ny.bin.op)))) |o| break :blk o;
+                    stack.append(al, .{ p.rhs, ny.bin.rhs }) catch return .eq;
+                    stack.append(al, .{ p.lhs, ny.bin.lhs }) catch return .eq;
+                    break :blk null;
+                },
+                .quant => |q| blk: {
+                    if (nonEq(std.math.order(@intFromEnum(q.q), @intFromEnum(ny.quant.q)))) |o| break :blk o;
+                    if (nonEq(std.math.order(@intFromEnum(q.sort), @intFromEnum(ny.quant.sort)))) |o| break :blk o;
+                    stack.append(al, .{ q.body, ny.quant.body }) catch return .eq; // hint ignored
+                    break :blk null;
+                },
+            };
+            if (leaf) |o| return o; // first difference wins
         }
+        return .eq;
     }
 
-    fn appOrder(self: *const Pool, x: Node.App, y: Node.App) std.math.Order {
+    /// `null` iff the order is `.eq`; used to "keep looking" on a tie.
+    fn nonEq(o: std.math.Order) ?std.math.Order {
+        return if (o == .eq) null else o;
+    }
+
+    /// termOrder helper: compare two apps' sym then arity; on a tie push their arg pairs (reversed,
+    /// so arg 0 compares first) and return `.eq` (keep looking). Returns the sym/arity difference else.
+    fn pushOrderApp(self: *const Pool, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: Node.App, y: Node.App) Allocator.Error!std.math.Order {
         const sym = std.math.order(@intFromEnum(x.sym), @intFromEnum(y.sym));
         if (sym != .eq) return sym;
         const len = std.math.order(x.args_len, y.args_len);
         if (len != .eq) return len;
-        for (self.args(x), self.args(y)) |ax, ay| {
-            const o = self.termOrder(ax, ay);
-            if (o != .eq) return o;
+        const xs = self.args(x);
+        const ys = self.args(y);
+        var i: usize = xs.len;
+        while (i > 0) { // push reversed: arg 0 ends on top, compares first
+            i -= 1;
+            try stack.append(al, .{ xs[i], ys[i] });
         }
         return .eq;
     }
@@ -870,6 +931,39 @@ test "occursFree: deep term does not overflow the C stack (iterative work-stack)
     // x occurs (recursion into the whole chain never overflows); a different name does not.
     try testing.expect(p.occursFree(cur, sid(1)));
     try testing.expect(!p.occursFree(cur, sid(2)));
+
+    // alphaEq + termOrder over the same deep chain: a copy compares equal, a chain differing only
+    // at the DEEPEST leaf still resolves (first-difference-wins survives the reverse-push).
+    var cur2 = x;
+    i = 0;
+    while (i < 200_000) : (i += 1) cur2 = try p.add(.{ .not = cur2 });
+    try testing.expect(p.alphaEq(cur, cur2));
+    try testing.expectEqual(std.math.Order.eq, p.termOrder(cur, cur2));
+    const y = try p.add(.{ .fvar = .{ .name = sid(2), .sort = nat } }); // x < y by name
+    var deepy = y;
+    i = 0;
+    while (i < 200_000) : (i += 1) deepy = try p.add(.{ .not = deepy });
+    try testing.expect(!p.alphaEq(cur, deepy));
+    try testing.expectEqual(std.math.Order.lt, p.termOrder(cur, deepy)); // difference at the leaf
+    try testing.expectEqual(std.math.Order.gt, p.termOrder(deepy, cur));
+}
+
+test "termOrder: first-difference-wins across args (reverse-push order)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const y = try p.add(.{ .fvar = .{ .name = sid(2), .sort = nat } });
+    // f(x, y) vs f(y, x): they differ at arg 0 (x<y) — arg 0 must decide, not arg 1.
+    const fxy = try p.addApp(.app, tsym(7), &.{ x, y });
+    const fyx = try p.addApp(.app, tsym(7), &.{ y, x });
+    try testing.expectEqual(std.math.Order.lt, p.termOrder(fxy, fyx));
+    try testing.expectEqual(std.math.Order.gt, p.termOrder(fyx, fxy));
+    // f(x, x) vs f(x, y): agree at arg 0, differ at arg 1 (x<y).
+    const fxx = try p.addApp(.app, tsym(7), &.{ x, x });
+    try testing.expectEqual(std.math.Order.lt, p.termOrder(fxx, fxy));
 }
 
 fn ssort(n: u32) SortId {
