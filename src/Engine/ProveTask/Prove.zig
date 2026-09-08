@@ -4968,44 +4968,64 @@ fn buildArithFallback(self: *Prove, w: *const Walk, b: *Accelerant.Builder, fb: 
     return try self.packageArith(w, b, "arithmetic", goal_p, prems, abs, block.items, c);
 }
 
-/// First-order match: bind each `pattern` fvar (by name) so substituting yields `target`.
+/// First-order match: bind each `pattern` fvar (by name) so substituting yields `target`. Iterative
+/// parallel two-tree walk (was native recursion) over a work-stack of `(pat, target)` pairs that
+/// must ALL match (a conjunction — stack order irrelevant; the `binds` re-encounter check is
+/// order-independent). Scratch on ctx.gpa; OOM → no match.
 fn arithMatchPattern(self: *Prove, pattern: []const term.Node.Fvar, pat: TermId, target: TermId, binds: *std.AutoHashMapUnmanaged(StrId, TermId)) Error!bool {
-    const pn = self.pool.get(pat);
-    if (pn == .fvar) {
-        for (pattern) |pv| {
-            if (pv.name == pn.fvar.name) {
-                if (binds.get(pv.name)) |prev| return self.pool.alphaEq(prev, target);
-                binds.put(self.ctx.arena, pv.name, target) catch return error.OutOfMemory;
-                return true;
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList([2]TermId) = .empty;
+    try stack.append(wa, .{ pat, target });
+    while (stack.pop()) |pair| {
+        const p = pair[0];
+        const t = pair[1];
+        const pn = self.pool.get(p);
+        if (pn == .fvar) {
+            const bound = for (pattern) |pv| {
+                if (pv.name == pn.fvar.name) break true;
+            } else false;
+            if (bound) {
+                if (binds.get(pn.fvar.name)) |prev| {
+                    if (!self.pool.alphaEq(prev, t)) return false;
+                } else binds.put(self.ctx.arena, pn.fvar.name, t) catch return error.OutOfMemory;
+                continue;
             }
+            const tn = self.pool.get(t);
+            if (!(tn == .fvar and tn.fvar.name == pn.fvar.name and tn.fvar.sort == pn.fvar.sort)) return false;
+            continue;
         }
-        const tn = self.pool.get(target);
-        return tn == .fvar and tn.fvar.name == pn.fvar.name and tn.fvar.sort == pn.fvar.sort;
+        const tn = self.pool.get(t);
+        if (std.meta.activeTag(pn) != std.meta.activeTag(tn)) return false;
+        switch (pn) {
+            .bvar => if (pn.bvar != tn.bvar) return false,
+            .fvar => unreachable,
+            .app => |a| {
+                if (a.sym != tn.app.sym or a.args_len != tn.app.args_len) return false;
+                for (self.pool.args(a), self.pool.args(tn.app)) |x, y| try stack.append(wa, .{ x, y });
+            },
+            .pred => |a| {
+                if (a.sym != tn.pred.sym or a.args_len != tn.pred.args_len) return false;
+                for (self.pool.args(a), self.pool.args(tn.pred)) |x, y| try stack.append(wa, .{ x, y });
+            },
+            .eq => |pp| {
+                try stack.append(wa, .{ pp.lhs, tn.eq.lhs });
+                try stack.append(wa, .{ pp.rhs, tn.eq.rhs });
+            },
+            .not => |tt| try stack.append(wa, .{ tt, tn.not }),
+            .bin => |bb| {
+                if (bb.op != tn.bin.op) return false;
+                try stack.append(wa, .{ bb.lhs, tn.bin.lhs });
+                try stack.append(wa, .{ bb.rhs, tn.bin.rhs });
+            },
+            .quant => |q| {
+                if (!(q.q == tn.quant.q and q.sort == tn.quant.sort)) return false;
+                try stack.append(wa, .{ q.body, tn.quant.body });
+            },
+        }
     }
-    const tn = self.pool.get(target);
-    if (std.meta.activeTag(pn) != std.meta.activeTag(tn)) return false;
-    switch (pn) {
-        .bvar => return pn.bvar == tn.bvar,
-        .fvar => unreachable,
-        .app => |a| {
-            if (a.sym != tn.app.sym or a.args_len != tn.app.args_len) return false;
-            const pa = try self.ctx.arena.dupe(TermId, self.pool.args(a));
-            const ta = try self.ctx.arena.dupe(TermId, self.pool.args(tn.app));
-            for (pa, ta) |x, y| if (!try self.arithMatchPattern(pattern, x, y, binds)) return false;
-            return true;
-        },
-        .pred => |a| {
-            if (a.sym != tn.pred.sym or a.args_len != tn.pred.args_len) return false;
-            const pa = try self.ctx.arena.dupe(TermId, self.pool.args(a));
-            const ta = try self.ctx.arena.dupe(TermId, self.pool.args(tn.pred));
-            for (pa, ta) |x, y| if (!try self.arithMatchPattern(pattern, x, y, binds)) return false;
-            return true;
-        },
-        .eq => |p| return (try self.arithMatchPattern(pattern, p.lhs, tn.eq.lhs, binds)) and (try self.arithMatchPattern(pattern, p.rhs, tn.eq.rhs, binds)),
-        .not => |t| return self.arithMatchPattern(pattern, t, tn.not, binds),
-        .bin => |bb| return bb.op == tn.bin.op and (try self.arithMatchPattern(pattern, bb.lhs, tn.bin.lhs, binds)) and (try self.arithMatchPattern(pattern, bb.rhs, tn.bin.rhs, binds)),
-        .quant => |q| return q.q == tn.quant.q and q.sort == tn.quant.sort and (try self.arithMatchPattern(pattern, q.body, tn.quant.body, binds)),
-    }
+    return true;
 }
 
 /// The Farkas certifier — order-composition / infeasibility over the difference-logic edges.

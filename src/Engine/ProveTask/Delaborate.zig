@@ -85,53 +85,130 @@ fn displayId(self: *Delaborate, name: StrId) Allocator.Error!StrId {
     return name;
 }
 
-fn go(self: *Delaborate, id: TermId) Allocator.Error!*const ast.Expr {
-    switch (self.pool.get(id)) {
-        .bvar => |i| return self.box(.{ .name = self.tok(self.boundName(i)) }),
-        .fvar => |v| return self.box(.{ .name = self.tok(try self.displayId(v.name)) }),
-        .app, .pred => |a| {
-            const callee = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(a.sym))));
-            if (a.args_len == 0) return self.box(.{ .name = callee });
-            const src = self.pool.args(a);
-            const args = try self.arena.alloc(*const ast.Expr, src.len);
-            for (src, args) |arg, *out| out.* = try self.go(arg);
-            return self.box(.{ .call = .{ .callee = callee, .args = args } });
-        },
-        .eq => |p| return self.binary(.equal, p.lhs, p.rhs),
-        .not => |t| {
-            // sugar mirror: not(eq) delaborates to a `!=` comparison (matches print.zig).
-            if (self.pool.get(t) == .eq) {
-                const p = self.pool.get(t).eq;
-                return self.binary(.not_equal, p.lhs, p.rhs);
+/// Delaborate a term to an `ast.Expr`. ITERATIVE two-color post-order (was native recursion) —
+/// a deep term can't overflow. A node is EXPANDED (children pushed reversed) then REBUILT from its
+/// children's ast results (on a results stack). A `.quant` also pushes an `enter` (fresh binder
+/// name onto `self.bound`, so the body's bvars resolve) and, after its body, a `pop_bound`. Scratch
+/// stacks on the pool's GPA, freed on return; the built AST is on `self.arena` (durable).
+fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
+    var scratch: std.heap.ArenaAllocator = .init(self.pool.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    const Frame = union(enum) {
+        expand: TermId,
+        rebuild: TermId, // its children's ast results are the top of `results`
+        pop_bound,
+    };
+    var work: std.ArrayList(Frame) = .empty;
+    var results: std.ArrayList(*const ast.Expr) = .empty;
+    try work.append(a, .{ .expand = root });
+    while (work.pop()) |frame| switch (frame) {
+        .pop_bound => _ = self.bound.pop(),
+        .expand => |id| {
+            switch (self.pool.get(id)) {
+                // leaves build directly onto `results`.
+                .bvar => |i| try results.append(a, try self.box(.{ .name = self.tok(self.boundName(i)) })),
+                .fvar => |v| try results.append(a, try self.box(.{ .name = self.tok(try self.displayId(v.name)) })),
+                .app, .pred => |ap| {
+                    if (ap.args_len == 0) {
+                        const callee = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(ap.sym))));
+                        try results.append(a, try self.box(.{ .name = callee }));
+                    } else {
+                        try work.append(a, .{ .rebuild = id });
+                        const src = self.pool.args(ap);
+                        var i: usize = src.len;
+                        while (i > 0) {
+                            i -= 1;
+                            try work.append(a, .{ .expand = src[i] }); // reversed → arg 0 first
+                        }
+                    }
+                },
+                .eq, .not, .bin => {
+                    try work.append(a, .{ .rebuild = id });
+                    // push children reversed (rhs then lhs) so lhs result lands first.
+                    switch (self.pool.get(id)) {
+                        .eq => |p| {
+                            try work.append(a, .{ .expand = p.rhs });
+                            try work.append(a, .{ .expand = p.lhs });
+                        },
+                        .not => |t| try work.append(a, .{ .expand = t }),
+                        .bin => |b| {
+                            try work.append(a, .{ .expand = b.rhs });
+                            try work.append(a, .{ .expand = b.lhs });
+                        },
+                        else => unreachable,
+                    }
+                },
+                .quant => |q| {
+                    // ENTER: fresh binder name in scope for the body; rebuild after; pop after that.
+                    const bname = try self.freshBinder();
+                    try self.bound.append(self.arena, bname);
+                    try work.append(a, .pop_bound);
+                    try work.append(a, .{ .rebuild = id });
+                    try work.append(a, .{ .expand = q.body });
+                },
             }
-            return self.box(.{ .not = .{ .tok = self.tok(.none), .operand = try self.go(t) } });
         },
-        .bin => |b| {
-            const op: ast.Expr.BinOp = switch (b.op) {
-                .implies => .implies,
-                .and_op => .and_op,
-                .or_op => .or_op,
-            };
-            return self.binary(op, b.lhs, b.rhs);
+        .rebuild => |id| switch (self.pool.get(id)) {
+            .app, .pred => |ap| {
+                const callee = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(ap.sym))));
+                const n = ap.args_len;
+                const kids = results.items[results.items.len - n ..];
+                const args = try self.arena.dupe(*const ast.Expr, kids);
+                results.items.len -= n;
+                try results.append(a, try self.box(.{ .call = .{ .callee = callee, .args = args } }));
+            },
+            .eq => {
+                const rhs = results.pop().?;
+                const lhs = results.pop().?;
+                try results.append(a, try self.boxBinary(.equal, lhs, rhs));
+            },
+            .not => |t| {
+                const inner = results.pop().?;
+                // sugar mirror: not(eq) delaborates to `!=` (matches print.zig). The eq's operands
+                // are `inner`'s children — but `inner` is already the `=` ast; re-wrap as `!=`.
+                if (self.pool.get(t) == .eq) {
+                    try results.append(a, self.rewrapNotEq(inner));
+                } else {
+                    try results.append(a, try self.box(.{ .not = .{ .tok = self.tok(.none), .operand = inner } }));
+                }
+            },
+            .bin => |b| {
+                const rhs = results.pop().?;
+                const lhs = results.pop().?;
+                const op: ast.Expr.BinOp = switch (b.op) {
+                    .implies => .implies,
+                    .and_op => .and_op,
+                    .or_op => .or_op,
+                };
+                try results.append(a, try self.boxBinary(op, lhs, rhs));
+            },
+            .quant => |q| {
+                const body = results.pop().?;
+                const sort_tok = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(q.sort))));
+                const binders = try self.arena.alloc(ast.Binder, 1);
+                binders[0] = .{ .name = self.tok(self.bound.items[self.bound.items.len - 1]), .sort = sort_tok };
+                try results.append(a, try self.box(.{ .quant = .{
+                    .q = if (q.q == .forall) .forall else .exists,
+                    .tok = self.tok(.none),
+                    .binders = binders,
+                    .body = body,
+                } }));
+            },
+            .bvar, .fvar => unreachable, // leaves never rebuild
         },
-        .quant => |q| {
-            const bname = try self.freshBinder();
-            const sort_tok = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(q.sort))));
-            const binders = try self.arena.alloc(ast.Binder, 1);
-            binders[0] = .{ .name = self.tok(bname), .sort = sort_tok };
-            try self.bound.append(self.arena, bname);
-            const body = try self.go(q.body);
-            _ = self.bound.pop();
-            return self.box(.{ .quant = .{
-                .q = if (q.q == .forall) .forall else .exists,
-                .tok = self.tok(.none),
-                .binders = binders,
-                .body = body,
-            } });
-        },
-    }
+    };
+    return results.items[0];
 }
 
-fn binary(self: *Delaborate, op: ast.Expr.BinOp, lhs: TermId, rhs: TermId) Allocator.Error!*const ast.Expr {
-    return self.box(.{ .binary = .{ .op = op, .tok = self.tok(.none), .lhs = try self.go(lhs), .rhs = try self.go(rhs) } });
+/// Build a binary ast node from already-built operand ASTs.
+fn boxBinary(self: *Delaborate, op: ast.Expr.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Allocator.Error!*const ast.Expr {
+    return self.box(.{ .binary = .{ .op = op, .tok = self.tok(.none), .lhs = lhs, .rhs = rhs } });
+}
+
+/// Given an already-built `=` binary ast, re-wrap it as `!=` (the not(eq) sugar). The `=` node's
+/// operands are reused verbatim.
+fn rewrapNotEq(self: *Delaborate, eq_ast: *const ast.Expr) *const ast.Expr {
+    const e = eq_ast.binary;
+    return self.box(.{ .binary = .{ .op = .not_equal, .tok = self.tok(.none), .lhs = e.lhs, .rhs = e.rhs } }) catch eq_ast;
 }
