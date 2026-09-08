@@ -2366,18 +2366,17 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
 /// could not re-resolve in its empty scope. The tautology producer rejects such a goal/premise
 /// gracefully (the abstraction of free locals into params is deferred; see `produceTautology`).
 fn hasFreeFvar(self: *Prove, id: TermId) bool {
-    return switch (self.pool.get(id)) {
-        .fvar => true,
-        .bvar => false,
-        .app, .pred => |a| {
-            for (self.pool.args(a)) |arg| if (self.hasFreeFvar(arg)) return true;
-            return false;
-        },
-        .eq => |p| self.hasFreeFvar(p.lhs) or self.hasFreeFvar(p.rhs),
-        .not => |t| self.hasFreeFvar(t),
-        .bin => |bn| self.hasFreeFvar(bn.lhs) or self.hasFreeFvar(bn.rhs),
-        .quant => |q| self.hasFreeFvar(q.body),
-    };
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, id) catch return true; // OOM conservative
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        if (node == .fvar) return true;
+        self.pool.pushChildren(&stack, a, node) catch return true;
+    }
+    return false;
 }
 
 /// Wrap the innermost cert `inner` (which concludes `goal`) in nested `assume prem_i { … }`
@@ -3635,9 +3634,17 @@ fn vocabName(self: *Prove, ix: InternPool.Index) []const u8 {
 
 /// Recursively match each app head's well-known NAME, filling `ops`. Pure goal inspection.
 fn collectPolyOps(self: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *bool, have_mul: *bool) Error!void {
-    const node = self.pool.get(id);
-    switch (node) {
-        .app => |a| {
+    // iterative single-tree collector (was native recursion). Records the polynomial vocabulary
+    // ops by well-known name; field-setting is order-independent so a plain work-stack suffices.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, id);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        if (node == .app) {
+            const a = node.app;
             const name = self.vocabName(@enumFromInt(@intFromEnum(a.sym)));
             if (std.mem.eql(u8, name, "add")) {
                 ops.add = a.sym;
@@ -3658,21 +3665,12 @@ fn collectPolyOps(self: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *boo
             } else if (std.mem.eql(u8, name, "prev")) {
                 ops.prev = a.sym;
             }
-            // copy arg ids before recursing (pool.args aliases pool.extra).
-            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
-            for (args) |arg| try self.collectPolyOps(arg, ops, have_add, have_mul);
-        },
-        .eq => |p| {
-            try self.collectPolyOps(p.lhs, ops, have_add, have_mul);
-            try self.collectPolyOps(p.rhs, ops, have_add, have_mul);
-        },
-        .bin => |bb| {
-            try self.collectPolyOps(bb.lhs, ops, have_add, have_mul);
-            try self.collectPolyOps(bb.rhs, ops, have_add, have_mul);
-        },
-        .not => |n| try self.collectPolyOps(n, ops, have_add, have_mul),
-        .quant => |q| try self.collectPolyOps(q.body, ops, have_add, have_mul),
-        else => {},
+        }
+        // `.pred` is NOT descended (the original had no `.pred` arm — only app/eq/bin/not/quant).
+        switch (node) {
+            .app, .eq, .bin, .not, .quant => try self.pool.pushChildren(&stack, wa, node),
+            else => {},
+        }
     }
 }
 
@@ -3900,15 +3898,26 @@ fn orientRule(self: *Prove, formula: TermId) Error!?simplify_mod.Rule {
 /// Is `f` a relativization guard over `fv` — a unary pred applied to exactly that fvar, or
 /// an and-tree of such (the canonical multi-qualifier conjunction)?
 fn isGuardOver(self: *Prove, f: TermId, fv: StrId) bool {
-    const n = self.pool.get(f);
-    if (n == .bin and n.bin.op == .and_op) {
-        return self.isGuardOver(n.bin.lhs, fv) and self.isGuardOver(n.bin.rhs, fv);
+    // a conjunction of `pred(fv)` guards, ALL over the same fvar — iterative AND-walk.
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
+    const al = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(al);
+    stack.append(al, f) catch return false;
+    while (stack.pop()) |cur| {
+        const n = self.pool.get(cur);
+        if (n == .bin and n.bin.op == .and_op) {
+            stack.append(al, n.bin.lhs) catch return false;
+            stack.append(al, n.bin.rhs) catch return false;
+            continue;
+        }
+        if (n != .pred) return false;
+        const args = self.pool.args(n.pred);
+        if (args.len != 1) return false;
+        const a = self.pool.get(args[0]);
+        if (!(a == .fvar and a.fvar.name == fv)) return false;
     }
-    if (n != .pred) return false;
-    const args = self.pool.args(n.pred);
-    if (args.len != 1) return false;
-    const a = self.pool.get(args[0]);
-    return a == .fvar and a.fvar.name == fv;
+    return true;
 }
 
 const PeeledEq = struct { body: TermId, eigen: []const term.Node.Fvar };
@@ -4207,19 +4216,31 @@ fn setUnfoldOp(self: *Prove, body: TermId) ?term.SymId {
 }
 
 fn findMemberOp(self: *Prove, id: TermId) ?term.SymId {
-    switch (self.pool.get(id)) {
-        .pred => |p| {
-            const args = self.pool.args(p);
-            if (args.len == 2) {
-                const set = self.pool.get(args[1]);
-                if (set == .app) return set.app.sym;
-            }
-            return null;
-        },
-        .bin => |bn| return self.findMemberOp(bn.lhs) orelse self.findMemberOp(bn.rhs),
-        .not => |inner| return self.findMemberOp(inner),
-        else => return null,
+    // walk only through bin/not into pred nodes (the original's restricted recursion), returning
+    // the FIRST pred's set-arg head sym (leftmost — bin pushes rhs then lhs so lhs pops first).
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, id) catch return null;
+    while (stack.pop()) |cur| {
+        switch (self.pool.get(cur)) {
+            .pred => |p| {
+                const args = self.pool.args(p);
+                if (args.len == 2) {
+                    const set = self.pool.get(args[1]);
+                    if (set == .app) return set.app.sym;
+                }
+            },
+            .bin => |bn| {
+                stack.append(a, bn.rhs) catch return null;
+                stack.append(a, bn.lhs) catch return null;
+            },
+            .not => |inner| stack.append(a, inner) catch return null,
+            else => {},
+        }
     }
+    return null;
 }
 
 /// Emit the extensionality certificate proving `s = t` into `block`: cite the ext lemma,
@@ -4521,59 +4542,56 @@ fn resolveArithSym(self: *Prove, name: []const u8, comptime kind: enum { func, p
 /// Collect a `nonneg(v)` guard for each distinct free var of the arithmetic sort in `id`
 /// (dedup by name) into `out` — the ℕ theory's per-variable x ≥ 0 the pure-ℤ engine needs.
 fn collectArithNonneg(self: *Prove, id: TermId, nat: term.SortId, nn: term.SymId, seen: *std.AutoHashMapUnmanaged(StrId, void), out: *std.ArrayList(TermId)) Error!void {
-    switch (self.pool.get(id)) {
-        .fvar => |v| {
-            if (v.sort != nat) return;
-            const gop = seen.getOrPut(self.ctx.arena, v.name) catch return error.OutOfMemory;
-            if (gop.found_existing) return;
-            try out.append(self.ctx.arena, try self.pool.addApp(.pred, nn, &.{id}));
-        },
-        .bvar => {},
-        .app, .pred => |a| {
-            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
-            for (args) |arg| try self.collectArithNonneg(arg, nat, nn, seen, out);
-        },
-        .eq => |p| {
-            try self.collectArithNonneg(p.lhs, nat, nn, seen, out);
-            try self.collectArithNonneg(p.rhs, nat, nn, seen, out);
-        },
-        .not => |t| try self.collectArithNonneg(t, nat, nn, seen, out),
-        .bin => |bb| {
-            try self.collectArithNonneg(bb.lhs, nat, nn, seen, out);
-            try self.collectArithNonneg(bb.rhs, nat, nn, seen, out);
-        },
-        .quant => |q| try self.collectArithNonneg(q.body, nat, nn, seen, out),
+    // collect one `nonneg(x)` per distinct nat-sorted fvar. Iterative work-stack; the `seen` dedup
+    // makes emission order-independent. NOTE the original emits the fvar's `nonneg` on FIRST sight
+    // in traversal order — dedup by name means the SET is identical regardless of stack order.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, id);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .fvar => |v| {
+                if (v.sort != nat) continue;
+                const gop = seen.getOrPut(self.ctx.arena, v.name) catch return error.OutOfMemory;
+                if (gop.found_existing) continue;
+                try out.append(self.ctx.arena, try self.pool.addApp(.pred, nn, &.{cur}));
+            },
+            else => try self.pool.pushChildren(&stack, wa, node),
+        }
     }
 }
 
 fn collectArithSyms(self: *Prove, id: TermId, s: *presburger_mod.Symbols) Error!void {
-    switch (self.pool.get(id)) {
-        .app, .pred => |a| {
-            const name = self.symName(a.sym);
-            if (std.mem.eql(u8, name, "ZERO")) s.zero = a.sym //
-            else if (std.mem.eql(u8, name, "ONE")) s.one = a.sym //
-            else if (std.mem.eql(u8, name, "succ")) s.succ = a.sym //
-            else if (std.mem.eql(u8, name, "prev")) s.prev = a.sym //
-            else if (std.mem.eql(u8, name, "add")) s.add = a.sym //
-            else if (std.mem.eql(u8, name, "mul")) s.mul = a.sym //
-            else if (std.mem.eql(u8, name, "neg")) s.neg = a.sym //
-            else if (std.mem.eql(u8, name, "sub")) s.sub = a.sym //
-            else if (std.mem.eql(u8, name, "less_than")) s.less_than = a.sym //
-            else if (std.mem.eql(u8, name, "nonneg")) s.nonneg = a.sym;
-            const args = try self.ctx.arena.dupe(TermId, self.pool.args(a));
-            for (args) |arg| try self.collectArithSyms(arg, s);
-        },
-        .eq => |p| {
-            try self.collectArithSyms(p.lhs, s);
-            try self.collectArithSyms(p.rhs, s);
-        },
-        .not => |n| try self.collectArithSyms(n, s),
-        .bin => |bb| {
-            try self.collectArithSyms(bb.lhs, s);
-            try self.collectArithSyms(bb.rhs, s);
-        },
-        .quant => |q| try self.collectArithSyms(q.body, s),
-        else => {},
+    // resolve the arithmetic vocabulary by well-known name over the whole term. Iterative work-
+    // stack; field-setting is order-independent (a name maps to one sym).
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, id);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .app, .pred => |a| {
+                const name = self.symName(a.sym);
+                if (std.mem.eql(u8, name, "ZERO")) s.zero = a.sym //
+                else if (std.mem.eql(u8, name, "ONE")) s.one = a.sym //
+                else if (std.mem.eql(u8, name, "succ")) s.succ = a.sym //
+                else if (std.mem.eql(u8, name, "prev")) s.prev = a.sym //
+                else if (std.mem.eql(u8, name, "add")) s.add = a.sym //
+                else if (std.mem.eql(u8, name, "mul")) s.mul = a.sym //
+                else if (std.mem.eql(u8, name, "neg")) s.neg = a.sym //
+                else if (std.mem.eql(u8, name, "sub")) s.sub = a.sym //
+                else if (std.mem.eql(u8, name, "less_than")) s.less_than = a.sym //
+                else if (std.mem.eql(u8, name, "nonneg")) s.nonneg = a.sym;
+                try self.pool.pushChildren(&stack, wa, node);
+            },
+            .eq, .not, .bin, .quant => try self.pool.pushChildren(&stack, wa, node),
+            else => {},
+        }
     }
 }
 
@@ -4586,18 +4604,20 @@ fn symIs(self: *const Prove, sym: term.SymId, want: ?term.SymId) bool {
 
 /// Does the term `id` mention the symbol `want` anywhere?
 fn usesSym(self: *Prove, want: term.SymId, id: TermId) bool {
-    switch (self.pool.get(id)) {
-        .bvar, .fvar => return false,
-        .app, .pred => |a| {
-            if (a.sym == want) return true;
-            for (self.pool.args(a)) |arg| if (self.usesSym(want, arg)) return true;
-            return false;
-        },
-        .eq => |p| return self.usesSym(want, p.lhs) or self.usesSym(want, p.rhs),
-        .not => |t| return self.usesSym(want, t),
-        .bin => |bb| return self.usesSym(want, bb.lhs) or self.usesSym(want, bb.rhs),
-        .quant => |q| return self.usesSym(want, q.body),
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, id) catch return true; // OOM conservative
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .app, .pred => |ap| if (ap.sym == want) return true,
+            else => {},
+        }
+        self.pool.pushChildren(&stack, a, node) catch return true;
     }
+    return false;
 }
 
 /// A cite token for a well-known lemma named `name`, qualified by the theory selector
@@ -5181,30 +5201,31 @@ fn farkasLiteral(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) usize
 
 /// Scan `t` for `mul(<literal>, x)` subterms, collecting distinct literal coefficients k >= 2.
 fn collectFarkasScaleLiterals(self: *Prove, symbols: presburger_mod.Symbols, t: TermId, out: *std.ArrayList(usize)) Error!void {
-    switch (self.pool.get(t)) {
-        .app, .pred => |a| {
-            if (self.symIs(a.sym, symbols.mul) and a.args_len == 2) {
-                const args = self.pool.args(a);
-                const k = self.farkasLiteral(symbols, args[0]);
-                if (k >= 2) {
-                    for (out.items) |x| {
-                        if (x == k) break;
-                    } else try out.append(self.ctx.arena, k);
+    // collect the distinct scale literals k>=2 from `mul(k, _)` subterms. Iterative work-stack; the
+    // `out` dedup makes order-independent.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, t);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .app, .pred => |a| {
+                if (self.symIs(a.sym, symbols.mul) and a.args_len == 2) {
+                    const args = self.pool.args(a);
+                    const k = self.farkasLiteral(symbols, args[0]);
+                    if (k >= 2) {
+                        for (out.items) |x| {
+                            if (x == k) break;
+                        } else try out.append(self.ctx.arena, k);
+                    }
                 }
-            }
-            for (self.pool.args(a)) |arg| try self.collectFarkasScaleLiterals(symbols, arg, out);
-        },
-        .eq => |p| {
-            try self.collectFarkasScaleLiterals(symbols, p.lhs, out);
-            try self.collectFarkasScaleLiterals(symbols, p.rhs, out);
-        },
-        .not => |i| try self.collectFarkasScaleLiterals(symbols, i, out),
-        .bin => |bn| {
-            try self.collectFarkasScaleLiterals(symbols, bn.lhs, out);
-            try self.collectFarkasScaleLiterals(symbols, bn.rhs, out);
-        },
-        .quant => |q| try self.collectFarkasScaleLiterals(symbols, q.body, out),
-        else => {},
+                try self.pool.pushChildren(&stack, wa, node);
+            },
+            .eq, .not, .bin, .quant => try self.pool.pushChildren(&stack, wa, node),
+            else => {},
+        }
     }
 }
 
@@ -6501,12 +6522,18 @@ fn arithNumeral(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 
 }
 
 /// A tower leaf: an fvar, an opaque atom, or `neg` of a leaf (so inverse pairs can cancel).
-fn isArithLeaf(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) bool {
-    const node = self.pool.get(t);
+fn isArithLeaf(self: *Prove, t0: TermId, symbols: presburger_mod.Symbols) bool {
+    // linear neg-peel recursion → loop.
+    var t = t0;
+    const node = while (true) {
+        const n = self.pool.get(t);
+        if (n == .app and self.symIs(n.app.sym, symbols.neg) and n.app.args_len == 1) {
+            t = self.pool.args(n.app)[0];
+            continue;
+        }
+        break n;
+    };
     if (node == .fvar) return true;
-    if (node == .app and self.symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
-        return self.isArithLeaf(self.pool.args(node.app)[0], symbols);
-    }
     if (node != .app) return false;
     const sym = node.app.sym;
     return !(self.symIs(sym, symbols.add) or self.symIs(sym, symbols.succ) or
@@ -6755,18 +6782,16 @@ fn pushPremiseRules(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cite
 
 /// Does `hay` contain `needle` (alpha-equal) as a subterm?
 fn containsSubterm(self: *Prove, hay: TermId, needle: TermId) bool {
-    if (self.pool.alphaEq(hay, needle)) return true;
-    switch (self.pool.get(hay)) {
-        .bvar, .fvar => return false,
-        .app, .pred => |a| {
-            for (self.pool.args(a)) |arg| if (self.containsSubterm(arg, needle)) return true;
-            return false;
-        },
-        .eq => |pp| return self.containsSubterm(pp.lhs, needle) or self.containsSubterm(pp.rhs, needle),
-        .not => |inner| return self.containsSubterm(inner, needle),
-        .bin => |b| return self.containsSubterm(b.lhs, needle) or self.containsSubterm(b.rhs, needle),
-        .quant => |q| return self.containsSubterm(q.body, needle),
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, hay) catch return true; // OOM conservative
+    while (stack.pop()) |cur| {
+        if (self.pool.alphaEq(cur, needle)) return true;
+        self.pool.pushChildren(&stack, a, self.pool.get(cur)) catch return true;
     }
+    return false;
 }
 
 /// Certify `s = t` as a linear combination of an equality PREMISE `P_l = P_r`: it holds iff
@@ -6950,18 +6975,24 @@ fn closeForallChain(self: *Prove, body: TermId, vars: []const ArithVar, sort: te
 /// Flatten an `op`-tree into its atom summands (any maximal subterm that is not itself an
 /// `op(_, _)`), left-to-right.
 pub fn flattenSum(self: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
-    const node = self.pool.get(id);
-    if (node == .app and node.app.sym == op_sym and node.app.args_len == 2) {
-        // copy arg ids before recursing: pool.args aliases pool.extra, which a walk that grows
-        // the pool would dangle.
-        const args = self.pool.args(node.app);
-        const a0 = args[0];
-        const a1 = args[1];
-        try self.flattenSum(op_sym, a0, out);
-        try self.flattenSum(op_sym, a1, out);
-        return;
+    // flatten a nested `op(op(a,b),c)` sum into `out` in LEFT-TO-RIGHT leaf order. Iterative work-
+    // stack (was native recursion); order-sensitive → push the two args REVERSED (a1 then a0) so a0
+    // pops + is emitted first, matching the recursion's lhs-before-rhs.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, id);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        if (node == .app and node.app.sym == op_sym and node.app.args_len == 2) {
+            const args = self.pool.args(node.app);
+            try stack.append(wa, args[1]); // rhs pushed first → pops second
+            try stack.append(wa, args[0]); // lhs pushed second → pops first
+        } else {
+            try out.append(self.ctx.arena, cur); // a leaf summand
+        }
     }
-    try out.append(self.ctx.arena, id);
 }
 
 /// Build a right-nested `op(l0, op(l1, … ln))` comb from the leaves (non-empty).
