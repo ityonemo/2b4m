@@ -102,6 +102,19 @@ schema_checked: std.AutoHashMapUnmanaged(InternPool.StrId, void) = .empty,
 /// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
 /// read by the summary to disclose which theorems accelerated + under which words.
 accelerated: std.AutoHashMapUnmanaged(InternPool.Index, Verify.Word.Set) = .empty,
+/// HOLES REACHED during the run: a `hole` decl is treated as an AXIOM everywhere except that
+/// ProveTask records it here when it publishes (i.e. when something DEMANDED it). The summary
+/// reports these (default mode rejects a hole-reaching result; --draft allows). See
+/// [[hole-mechanism]].
+holes_reached: std.ArrayList(HoleDecl) = .empty,
+/// HOLE TAINT (for the summary's blast-radius): a published fact Index -> the hole NAMES it
+/// transitively rests on. A `hole` maps to `&.{its own name}`; a theorem citing a hole-tainted
+/// fact INHERITS that list (via `resolveFactRef`, accumulated in `Prove.holes_used`). Read to
+/// report, per hole, which theorems rest on it ("rested on by: …"). Hole = axiom everywhere
+/// else; this is a pure reporting side-channel, never consulted for the proof verdict.
+hole_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.StrId) = .empty,
+
+pub const HoleDecl = struct { name: InternPool.StrId, file: InternPool.Index, loc: u32 };
 
 pub const ParseState = union(enum) {
     unparsed,

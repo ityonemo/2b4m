@@ -89,6 +89,10 @@ admit_ok: bool = false,
 /// the `using` WORDS this proof ADMITTED (`--fast`): each trusted step's word is inserted here.
 /// The ProveTask records this against the published fact for the summary's disclosure.
 admitted: Verify.Word.Set = Verify.Word.Set.initEmpty(),
+/// HOLE NAMES this proof transitively rests on — a cited hole, or a cited fact that itself rests
+/// on holes (inherited in `resolveFactRef` from `ctx.hole_taint`). Deduped. Recorded against the
+/// published fact for the summary's blast-radius report ONLY (never a proof verdict). [[hole-mechanism]]
+holes_used: std.ArrayList(InternPool.StrId) = .empty,
 /// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
 extra_reachable_steps: std.ArrayList(u32) = .empty,
 /// REFINED-SORT proof obligations (Step 3c): a guarded-function application over a refined
@@ -1288,7 +1292,10 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
         const nsfile = self.ctx.interner.keyOf(ns).namespace.file;
         const tns = try self.ctx.interner.namespace(self.model, nsfile);
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = tokName(tok) })) |st| switch (st) {
-            .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) return x,
+            .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) {
+                self.inheritHoles(x);
+                return x;
+            },
             .in_flight => {},
         };
     }
@@ -1303,7 +1310,20 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     // Reject here so every fact-formula reader below can assume a real `.fact` Index.
     if (self.ctx.interner.keyOf(ix) == .schema)
         return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
+    self.inheritHoles(ix);
     return ix;
+}
+
+/// HOLE TAINT inheritance (summary blast-radius only): if the cited fact `ix` rests on holes,
+/// add each hole name to THIS proof's `holes_used` (deduped). Citing a hole — or a fact that
+/// rests on one — makes the current proof rest on it. NEVER affects the proof verdict; a hole is
+/// an axiom everywhere the KERNEL is concerned. See [[hole-mechanism]].
+fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
+    const names = self.ctx.hole_taint.get(ix) orelse return;
+    outer: for (names) |h| {
+        for (self.holes_used.items) |seen| if (seen == h) continue :outer; // already tracked
+        self.holes_used.append(self.ctx.arena, h) catch return; // OOM: best-effort taint
+    }
 }
 
 /// The namespace a (possibly `ns.`-qualified) stamped token resolves in: unqualified =

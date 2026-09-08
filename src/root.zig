@@ -162,8 +162,9 @@ pub const ProjectResult = struct {
     /// that declared theorems but proved none (a real footgun). See the
     /// `theorems_proven == 0` branch in main.zig.
     target_theorem_decls: usize,
-    /// RED-PHASE: trusted/accelerated/hole tracking is not yet rebuilt on the demand
-    /// path — these report empty until Phase 5.
+    /// theorems whose imported proofs were trusted (not re-checked). Currently always 0 —
+    /// import-proof re-checking is not a distinct trust axis on the demand path (an imported
+    /// theorem is proved by its own ProveTask; `--fast import` only admits the CITATION).
     theorems_trusted: usize,
     theorems_accelerated: usize,
     accelerated_names: []const []const u8,
@@ -230,6 +231,49 @@ pub fn checkProject(
 ) !ProjectResult {
     const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root);
     const counts = try countRoot(loaded.context);
+    // resolve every REACHED hole (a `hole` decl whose ProveTask published) to a reportable
+    // {name, path, line, dependents}. The summary discloses all sites (default rejects; --draft
+    // allows). DEPENDENTS (blast-radius) = the ROOT theorems whose proof transitively rests on
+    // the hole (from `hole_taint`); built by scanning the root theorems once.
+    const ctx = loaded.context;
+    // hole-name StrId -> the root theorem names that rest on it.
+    var deps: std.AutoHashMapUnmanaged(InternPool.StrId, std.ArrayList([]const u8)) = .empty;
+    {
+        const root_idx = @intFromEnum(ctx.root_file);
+        const rsrc = ctx.files.items[root_idx].source;
+        const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
+        const rns = try ctx.interner.namespace(.universe, root_pf);
+        // scan EVERY root theorem — LOCAL (proved here) AND ALIAS (a re-export of a fact proved
+        // elsewhere). An alias resolves in the root ns to its ORIGIN fact Index, which carries
+        // the origin's taint, so a re-exported hole-resting theorem shows in the blast-radius.
+        for (ctx.parsed.items[root_idx].decls) |decl| {
+            if (decl != .theorem) continue;
+            const nt = ast.theoremName(decl.theorem);
+            const tname_str = rsrc[nt.start..nt.end];
+            const tname = try ctx.interner.internString(tname_str);
+            const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tname }) orelse continue;
+            if (state != .proven) continue;
+            const taint = ctx.hole_taint.get(state.proven) orelse continue;
+            for (taint) |hole_name| {
+                const gop = try deps.getOrPut(arena, hole_name);
+                if (!gop.found_existing) gop.value_ptr.* = .empty;
+                try gop.value_ptr.append(arena, tname_str);
+            }
+        }
+    }
+    var holes: std.ArrayList(ProjectResult.Hole) = .empty;
+    for (ctx.holes_reached.items) |h| {
+        const fid = ctx.pool_file.get(h.file) orelse continue;
+        const f = ctx.files.items[@intFromEnum(fid)];
+        const lc = std.zig.findLineColumn(f.source, h.loc);
+        const dep_list: []const []const u8 = if (deps.get(h.name)) |d| d.items else &.{};
+        try holes.append(arena, .{
+            .name = ctx.interner.stringBytes(h.name),
+            .path = f.path,
+            .line = lc.line + 1,
+            .dependents = dep_list,
+        });
+    }
     return .{
         .files = loaded.files,
         .sink = loaded.sink,
@@ -239,7 +283,7 @@ pub fn checkProject(
         .theorems_trusted = 0,
         .theorems_accelerated = counts.accelerated,
         .accelerated_names = counts.accelerated_names,
-        .holes = &.{},
+        .holes = holes.items,
     };
 }
 

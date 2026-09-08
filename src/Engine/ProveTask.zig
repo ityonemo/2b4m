@@ -110,6 +110,11 @@ const State = struct {
         /// a schema INSTANCE: the schema's body is the goal, its steps are the proof, both
         /// elaborated with `prove.schema_args` (already installed) resolving the params.
         instance: struct { formula: *const ast.Expr, steps: ?[]const ast.Step },
+        /// a `hole`: axiom-shaped (its assertion IS the fact, a leaf), but tracked as a hole —
+        /// published like an axiom AND registered in `ctx.hole_taint` under its own name, so
+        /// dependents inherit the taint. Default mode rejects a hole-resting result; --draft
+        /// allows. `name` is the hole's own StrId (its taint seed).
+        hole: struct { formula: *const ast.Expr, name: InternPool.StrId },
     };
 };
 
@@ -213,6 +218,20 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
         },
+        .hole => |hh| {
+            // a hole is treated as an AXIOM everywhere except HERE: publish the leaf (its
+            // assertion IS the fact) so its dependents can proceed AND record the reached hole
+            // (name + location) so the summary can DISCLOSE EVERY hole site. The default-mode
+            // REJECT (a hole-reaching result isn't complete) and the --draft ALLOW happen at the
+            // summary — publishing here lets us reach + report all hole sites, not just the
+            // first. See [[hole-mechanism]].
+            const off = try st.prove.pool.reify(st.goal.?, self.interner);
+            const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
+            try self.holes_reached.append(self.arena, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
+            // the hole rests on ITSELF (the taint seed) — so any dependent inheriting this fact's
+            // taint records this hole in its blast-radius.
+            try self.hole_taint.put(self.arena, fact, try self.arena.dupe(InternPool.StrId, &.{hh.name}));
+        },
     }
 }
 
@@ -269,6 +288,9 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
             // record any `using` words this proof ADMITTED (`--fast`) against the fact, for the
             // summary's trust disclosure. Empty in strict mode (nothing admitted).
             if (st.prove.admitted.count() > 0) try self.accelerated.put(self.arena, fact, st.prove.admitted);
+            // record the HOLES this proof transitively rests on (blast-radius report only).
+            if (st.prove.holes_used.items.len > 0)
+                try self.hole_taint.put(self.arena, fact, st.prove.holes_used.items);
         },
     }
 }
@@ -412,9 +434,20 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
                 return null;
             },
         },
-        .hole => {
-            self.sink.add(name_tok.start, "holes are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
-            return null;
+        .hole => |a| switch (a) {
+            .local => |f| blk: {
+                // a hole is axiom-shaped — a LEAF whose assertion IS the fact (its own name is
+                // the taint seed). A params-carrying hole (a hole-SCHEMA) is misuse here.
+                if (f.params != null) {
+                    try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
+                    return null;
+                }
+                break :blk .{ .hole = .{ .formula = f.formula, .name = task.name } };
+            },
+            .alias => {
+                try demandDiag(self, task, "fact aliases are not yet supported by the demand prover", .{});
+                return null;
+            },
         },
         else => {
             try demandDiag(self, task, "'{s}' names an identifier, not an axiom/theorem", .{self.interner.stringBytes(task.name)});
