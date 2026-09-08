@@ -106,7 +106,7 @@ pub fn addTests(
     // banner lists just that word.
     ctx.ok(&.{ "check", "--fast", "model", "tests/cases/model_recurse.bpa" },
         \\OK: 14 declarations, 2 theorems proven
-        \\  — NOT FULLY VERIFIED: trusted (admitted, not proved): model
+        \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): model
     );
 
     // MATERIALIZATION CITATION RULE: a materialized model proof may cite another
@@ -315,7 +315,7 @@ pub fn addTests(
     // in a strict run. Disclosed via the banner.
     ctx.ok(&.{ "check", "--fast", "assoc_commut_all", "tests/cases/assoc_commut_oracle.bpa" },
         \\OK: 4 declarations, 1 theorems proven
-        \\  — NOT FULLY VERIFIED: trusted (admitted, not proved): assoc_commut, assoc_commut_quantified
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): assoc_commut_quantified
     );
 
     // `assoc(assocLemma)`: associativity-only reorder on a CUSTOM operator

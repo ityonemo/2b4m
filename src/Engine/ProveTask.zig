@@ -265,7 +265,10 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
         .done => {
             if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
-            _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            // record any `using` words this proof ADMITTED (`--fast`) against the fact, for the
+            // summary's trust disclosure. Empty in strict mode (nothing admitted).
+            if (st.prove.admitted.count() > 0) try self.accelerated.put(self.arena, fact, st.prove.admitted);
         },
     }
 }

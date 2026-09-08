@@ -72,7 +72,14 @@ fn newContext(
 
 /// Count the root file's checking outcome: how many theorem DECLARATIONS it has, and how
 /// many of them are `proven` facts in FactKV (published by their ProveTasks).
-const Counts = struct { theorem_decls: usize, proven: usize };
+const Counts = struct {
+    theorem_decls: usize,
+    proven: usize,
+    /// root theorems whose proof ADMITTED at least one `using` word (`--fast`).
+    accelerated: usize,
+    /// the distinct `using` word names admitted across all root theorems (for disclosure).
+    accelerated_names: []const []const u8,
+};
 
 fn countRoot(context: *Context) !Counts {
     const root_idx = @intFromEnum(context.root_file);
@@ -82,6 +89,9 @@ fn countRoot(context: *Context) !Counts {
     const ns = try context.interner.namespace(.universe, root_pool_file);
     var decls: usize = 0;
     var proven: usize = 0;
+    var accelerated: usize = 0;
+    // union of all admitted words across root theorems — the disclosure lists these names.
+    var word_set = Verify.Word.Set.initEmpty();
     for (root_parsed.decls) |decl| {
         if (decl != .theorem) continue;
         // count only LOCAL theorems (things this file sets out to PROVE); a theorem ALIAS is
@@ -91,10 +101,20 @@ fn countRoot(context: *Context) !Counts {
         const name_tok = ast.theoremName(decl.theorem);
         const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
         if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
-            if (state == .proven) proven += 1;
+            if (state == .proven) {
+                proven += 1;
+                if (context.accelerated.get(state.proven)) |words| {
+                    accelerated += 1;
+                    word_set = word_set.unionWith(words);
+                }
+            }
         }
     }
-    return .{ .theorem_decls = decls, .proven = proven };
+    // render the union of admitted words as name strings (enum-declaration order).
+    var names: std.ArrayList([]const u8) = .empty;
+    var it = word_set.iterator();
+    while (it.next()) |wd| try names.append(context.arena, @tagName(wd));
+    return .{ .theorem_decls = decls, .proven = proven, .accelerated = accelerated, .accelerated_names = names.items };
 }
 
 pub const CheckResult = struct {
@@ -217,8 +237,8 @@ pub fn checkProject(
         .theorems_proven = counts.proven,
         .target_theorem_decls = counts.theorem_decls,
         .theorems_trusted = 0,
-        .theorems_accelerated = 0,
-        .accelerated_names = &.{},
+        .theorems_accelerated = counts.accelerated,
+        .accelerated_names = counts.accelerated_names,
         .holes = &.{},
     };
 }

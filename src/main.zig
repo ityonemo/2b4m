@@ -480,34 +480,23 @@ pub fn main(init: std.process.Init) !u8 {
     try out.print("OK: {d} declarations, {d} theorems proven", .{
         result.declarations, result.theorems_proven,
     });
-    // Disclose only the theorems that ACCELERATED (leaned on a trusted
-    // procedure). A theorem proved with no accelerated tactic is just proven —
-    // it belongs to no bucket, so it is not reported. (In default mode nothing
-    // can accelerate, so this parenthetical never appears there.)
+    // --fast trust disclosure. When at least one step was ACTUALLY ADMITTED (a trusted `using`
+    // word accepted it without a kernel-checked proof), the result is NOT fully verified — say so
+    // loudly, listing HOW MANY theorems accelerated and under WHICH words (the words actually
+    // admitted, not the whole trusted set). If a `--fast` set was given but NOTHING used it, the
+    // run is fully verified in practice; note that so the trust flag isn't silently ignored.
+    // Strict runs (no trusted set) say nothing.
     if (result.theorems_accelerated > 0) {
-        try out.print(" ({d} accelerated: ", .{result.theorems_accelerated});
+        try out.print("\n  \u{2014} NOT FULLY VERIFIED: {d} theorem(s) accelerated (admitted, not proved): ", .{result.theorems_accelerated});
         for (result.accelerated_names, 0..) |name, i| {
             if (i > 0) try out.writeAll(", ");
             try out.writeAll(name);
         }
-        try out.writeAll(")");
+    } else if (verify.trusted.count() > 0) {
+        try out.print("\n  \u{2014} (--fast set given, but no step used a trusted word — fully verified)", .{});
     }
     if (result.theorems_trusted > 0) {
         try out.print(" ({d} via trusted imports)", .{result.theorems_trusted});
-    }
-    // --fast trust disclosure: when ANY `using` word is trusted, the result is NOT fully
-    // verified — the trusted words' steps were ADMITTED (accepted by the word's own fast check),
-    // not kernel-checked. Disclose it loudly (the trust boundary must never be silent). Strict
-    // runs (empty set) say nothing.
-    if (verify.trusted.count() > 0) {
-        try out.print("\n  \u{2014} NOT FULLY VERIFIED: trusted (admitted, not proved): ", .{});
-        var it = verify.trusted.iterator();
-        var first = true;
-        while (it.next()) |wd| {
-            if (!first) try out.writeAll(", ");
-            try out.writeAll(@tagName(wd));
-            first = false;
-        }
     }
     // --draft with holes: loud disclosure that the result rests on aspirational
     // placeholders, listing them (like the --fast banner). Exit stays 0.

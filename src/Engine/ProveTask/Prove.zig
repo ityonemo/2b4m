@@ -86,6 +86,9 @@ fresh_counter: u32 = 0,
 /// REJECTS fails (→ error.Recover) as usual. `admit` distinguishes admit-null from reject.
 admit_mode: bool = false,
 admit_ok: bool = false,
+/// the `using` WORDS this proof ADMITTED (`--fast`): each trusted step's word is inserted here.
+/// The ProveTask records this against the published fact for the summary's disclosure.
+admitted: Verify.Word.Set = Verify.Word.Set.initEmpty(),
 /// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
 extra_reachable_steps: std.ArrayList(u32) = .empty,
 /// REFINED-SORT proof obligations (Step 3c): a guarded-function application over a refined
@@ -7171,11 +7174,13 @@ fn admitInstance(self: *Prove, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!
 
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     // TRUSTED (`--fast <word>`): the step is accelerated — its proof is NOT generated/checked.
-    // SHAPE-CHECK ONLY (the claim's α-match against what the citation would produce), then emit
-    // `.accelerated` (the kernel checks nothing for it). `by` primitives never reach here trusted
-    // (trustWord returns null for them). Publishes nothing; a later strict demand redoes the work.
+    // The word ADMITS the step (its own fast check / an α-match), then we emit `.accelerated`
+    // (the kernel checks nothing for it) and RECORD the word (for the summary disclosure). `by`
+    // primitives never reach here trusted (trustWord returns null). Publishes nothing; a later
+    // strict demand redoes the work.
     if (self.trusted(c)) {
         try self.admit(w, e, goal, c);
+        if (self.trustWord(c)) |word| self.admitted.insert(word);
         return .{ .accelerated = c.rule.name };
     }
     // An ACCELERANT (`using <accel> …`) lowers to a schema_instance over its generated

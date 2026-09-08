@@ -98,6 +98,10 @@ root_file: FileId = undefined,
 /// schema names already well-formedness-checked (strict mode), for SchemaCheckTask dedup
 /// (a check is racked once per proof-carrying schema; a re-entry is a no-op).
 schema_checked: std.AutoHashMapUnmanaged(InternPool.StrId, void) = .empty,
+/// ACCELERATED facts (`--fast`): a published fact Index -> the set of `using` words its proof
+/// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
+/// read by the summary to disclose which theorems accelerated + under which words.
+accelerated: std.AutoHashMapUnmanaged(InternPool.Index, Verify.Word.Set) = .empty,
 
 pub const ParseState = union(enum) {
     unparsed,
