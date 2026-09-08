@@ -2212,22 +2212,36 @@ fn impliesFrom(b: *Accelerant.Builder, ants: []const TermId, consequent: TermId)
 /// binder's sort, or null if no forall is reachable (only `->`s / a non-quant leaf).
 const OpenedForall = struct { body: TermId, sort: SortId };
 fn openNextForall(self: *Prove, id: TermId, pname: StrId) Error!?OpenedForall {
-    const node = self.pool.get(id);
-    switch (node) {
-        .quant => |q| {
-            if (q.q != .forall) return null;
-            const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = q.sort } });
-            return .{ .body = try self.pool.open(q.body, pf), .sort = q.sort };
-        },
-        .bin => |bn| {
-            if (bn.op != .implies) return null;
-            const rhs = (try self.openNextForall(bn.rhs, pname)) orelse return null;
-            // rebuild `lhs -> rhs'` with the opened rhs.
-            const rebuilt = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = bn.lhs, .rhs = rhs.body } });
-            return .{ .body = rebuilt, .sort = rhs.sort };
-        },
-        else => return null,
+    // Descend the leading `->` chain to the first `forall`, opening it, then rewrap the `->`
+    // prefix around the opened body. Iterative (was linear recursion + rebuild-unwind): collect
+    // the implication LHSs on the way down, then fold them back over the opened body innermost-out.
+    var prefix: std.ArrayList(TermId) = .empty; // implication LHSs, outer→inner
+    defer prefix.deinit(self.ctx.gpa);
+    var cur = id;
+    const opened: OpenedForall = while (true) {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .quant => |q| {
+                if (q.q != .forall) return null;
+                const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = q.sort } });
+                break .{ .body = try self.pool.open(q.body, pf), .sort = q.sort };
+            },
+            .bin => |bn| {
+                if (bn.op != .implies) return null;
+                try prefix.append(self.ctx.gpa, bn.lhs);
+                cur = bn.rhs;
+            },
+            else => return null,
+        }
+    };
+    // rewrap: `lhs_outer -> ( … -> ( lhs_inner -> opened.body ) )` — fold prefix inner-to-outer.
+    var body = opened.body;
+    var i = prefix.items.len;
+    while (i > 0) {
+        i -= 1;
+        body = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = prefix.items[i], .rhs = body } });
     }
+    return .{ .body = body, .sort = opened.sort };
 }
 
 /// A single-token ref slice (arena) for a synthetic step's `refs`.
