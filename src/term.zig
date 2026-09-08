@@ -156,22 +156,48 @@ pub const Pool = struct {
         }
     }
 
-    /// Does fvar `name` occur (free) anywhere in `id`? (eigenvariable check)
-    pub fn occursFree(self: *const Pool, id: TermId, name: StrId) bool {
-        switch (self.get(id)) {
-            .bvar => return false,
-            .fvar => |v| return v.name == name,
-            .app, .pred => |a| {
-                for (self.args(a)) |arg| {
-                    if (self.occursFree(arg, name)) return true;
-                }
-                return false;
+    /// The number of stack frames an INLINE (`stackFallback`) work-stack holds before spilling to
+    /// the GPA. A term this deep is already pathological; the common case never spills.
+    const inline_stack = 256;
+
+    /// Push a node's direct child TermIds onto `stack` (the single-tree traversal frontier). Leaf
+    /// nodes (`bvar`/`fvar`) push nothing. Shared by the iterative single-tree predicates.
+    fn pushChildren(self: *const Pool, stack: *std.ArrayList(TermId), a: std.mem.Allocator, node: Node) Allocator.Error!void {
+        switch (node) {
+            .bvar, .fvar => {},
+            .app, .pred => |ap| try stack.appendSlice(a, self.args(ap)),
+            .eq => |p| {
+                try stack.append(a, p.lhs);
+                try stack.append(a, p.rhs);
             },
-            .eq => |p| return self.occursFree(p.lhs, name) or self.occursFree(p.rhs, name),
-            .not => |t| return self.occursFree(t, name),
-            .bin => |b| return self.occursFree(b.lhs, name) or self.occursFree(b.rhs, name),
-            .quant => |q| return self.occursFree(q.body, name),
+            .not => |t| try stack.append(a, t),
+            .bin => |b| {
+                try stack.append(a, b.lhs);
+                try stack.append(a, b.rhs);
+            },
+            .quant => |q| try stack.append(a, q.body),
         }
+    }
+
+    /// Does fvar `name` occur (free) anywhere in `id`? (eigenvariable check.) Iterative work-stack
+    /// (was native recursion) — a pathologically deep term can no longer overflow the C stack. The
+    /// stack is INLINE up to `inline_stack` frames, spilling to `self.gpa` (reclaimed on return)
+    /// only for a deeper term. A bvar never matches (a free var is an fvar); alloc-free otherwise.
+    pub fn occursFree(self: *const Pool, id: TermId, name: StrId) bool {
+        var fb = std.heap.stackFallback(inline_stack * @sizeOf(TermId), self.gpa);
+        const a = fb.get();
+        var stack: std.ArrayList(TermId) = .empty;
+        defer stack.deinit(a);
+        stack.append(a, id) catch return true; // OOM: conservatively assume it occurs (sound: an
+        // eigenvar check that over-reports "occurs" only ever REJECTS a step, never accepts one)
+        while (stack.pop()) |cur| {
+            const node = self.get(cur);
+            switch (node) {
+                .fvar => |v| if (v.name == name) return true,
+                else => self.pushChildren(&stack, a, node) catch return true,
+            }
+        }
+        return false;
     }
 
     /// Does any function/predicate application in `id` use a symbol whose
@@ -825,6 +851,25 @@ fn invert(o: std.math.Order) std.math.Order {
         .gt => .lt,
         .eq => .eq,
     };
+}
+
+test "occursFree: deep term does not overflow the C stack (iterative work-stack)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    // a nesting FAR past the old native-recursion C-stack limit AND past `inline_stack` (so the
+    // work-stack spills to the GPA): not(not(…not(fvar x)…)), 200k deep.
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    var cur = x;
+    var i: usize = 0;
+    while (i < 200_000) : (i += 1) cur = try p.add(.{ .not = cur });
+
+    // x occurs (recursion into the whole chain never overflows); a different name does not.
+    try testing.expect(p.occursFree(cur, sid(1)));
+    try testing.expect(!p.occursFree(cur, sid(2)));
 }
 
 fn ssort(n: u32) SortId {
