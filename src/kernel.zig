@@ -313,16 +313,34 @@ pub const Kernel = struct {
     /// Sort of a term (not a formula). Rejects props and loose bound
     /// variables at ANY depth (the substitution calculus requires
     /// instantiation terms to be locally closed).
+    /// The sort of term `id`, VALIDATING every sub-term is well-formed (an app's args are terms, no
+    /// loose bvar, no proposition-in-term-position). Iterative work-stack (was native recursion) —
+    /// a deeply-nested `f(f(…))` term can't overflow the kernel's C stack. Every node is checked;
+    /// the RESULT sort is the ROOT node's (computed first, before descending). Scratch on the
+    /// kernel arena (this is a validation pass; a term this deep is already pathological).
     fn sortOfTerm(self: *Kernel, id: TermId, loc: u32) Fail!SortId {
-        switch (self.pool.get(id)) {
-            .fvar => |v| return v.sort,
-            .app => |a| {
-                for (self.pool.args(a)) |arg| _ = try self.sortOfTerm(arg, loc);
-                return @enumFromInt(@intFromEnum(self.interner.symResult(@enumFromInt(@intFromEnum(a.sym)))));
-            },
+        var scratch: std.heap.ArenaAllocator = .init(self.arena);
+        defer scratch.deinit();
+        const a = scratch.allocator();
+        var stack: std.ArrayList(TermId) = .empty;
+        // compute the root's sort up front (also validates the root node kind); then validate the
+        // whole subtree via the stack.
+        const root_sort: SortId = switch (self.pool.get(id)) {
+            .fvar => |v| v.sort,
+            .app => |ap| @enumFromInt(@intFromEnum(self.interner.symResult(@enumFromInt(@intFromEnum(ap.sym))))),
             .bvar => return self.fail(loc, "internal: term argument has a loose bound variable", .{}),
             else => return self.fail(loc, "expected a term, got the proposition '{s}'", .{try self.render(id)}),
+        };
+        try stack.append(a, id);
+        while (stack.pop()) |cur| {
+            switch (self.pool.get(cur)) {
+                .fvar => {}, // a valid leaf term
+                .app => |ap| for (self.pool.args(ap)) |arg| try stack.append(a, arg),
+                .bvar => return self.fail(loc, "internal: term argument has a loose bound variable", .{}),
+                else => return self.fail(loc, "expected a term, got the proposition '{s}'", .{try self.render(cur)}),
+            }
         }
+        return root_sort;
     }
 
     fn claimMismatch(self: *Kernel, step: *const Step, comptime rule: []const u8, derived: TermId) Fail {
@@ -688,32 +706,55 @@ pub const Kernel = struct {
     /// `claimed` differs from `target` only by replacing occurrences of `a`
     /// with `b` at some positions. `a`/`b` are locally closed, so matching
     /// under binders needs no shifting.
+    /// Does `claimed` result from rewriting SOME occurrences of `a`→`b` inside `target` (a
+    /// congruence walk)? Iterative parallel two-tree walk (was native recursion) over a work-stack
+    /// of `(target, claimed)` pairs that must ALL match (a conjunction — stack order irrelevant).
+    /// At each pair: accept if identical, or if it's the rewrite site (`target≡a ∧ claimed≡b`);
+    /// else require same node kind + push congruent children. A mismatch short-circuits false.
+    /// Soundness core — this gates every `[by rewrite]`. Scratch on the kernel arena; OOM →
+    /// conservatively `false` (a failed rewrite-match only ever REJECTS a step).
     fn rewriteMatches(self: *Kernel, target: TermId, claimed: TermId, a: TermId, b: TermId) bool {
-        if (self.pool.alphaEq(target, claimed)) return true;
-        if (self.pool.alphaEq(target, a) and self.pool.alphaEq(claimed, b)) return true;
-        const tn = self.pool.get(target);
-        const cn = self.pool.get(claimed);
-        if (std.meta.activeTag(tn) != std.meta.activeTag(cn)) return false;
-        switch (tn) {
-            .bvar, .fvar => return false, // alphaEq already covered equality
-            .app => |x| return self.rewriteApp(x, cn.app, a, b),
-            .pred => |x| return self.rewriteApp(x, cn.pred, a, b),
-            .eq => |p| return self.rewriteMatches(p.lhs, cn.eq.lhs, a, b) and
-                self.rewriteMatches(p.rhs, cn.eq.rhs, a, b),
-            .not => |t| return self.rewriteMatches(t, cn.not, a, b),
-            .bin => |x| return x.op == cn.bin.op and
-                self.rewriteMatches(x.lhs, cn.bin.lhs, a, b) and
-                self.rewriteMatches(x.rhs, cn.bin.rhs, a, b),
-            .quant => |q| return q.q == cn.quant.q and q.sort == cn.quant.sort and
-                self.rewriteMatches(q.body, cn.quant.body, a, b),
+        var scratch: std.heap.ArenaAllocator = .init(self.arena);
+        defer scratch.deinit();
+        const al = scratch.allocator();
+        var stack: std.ArrayList([2]TermId) = .empty;
+        stack.append(al, .{ target, claimed }) catch return false;
+        while (stack.pop()) |pair| {
+            const t = pair[0];
+            const c = pair[1];
+            if (self.pool.alphaEq(t, c)) continue; // this position unchanged by the rewrite
+            if (self.pool.alphaEq(t, a) and self.pool.alphaEq(c, b)) continue; // the rewrite site
+            const tn = self.pool.get(t);
+            const cn = self.pool.get(c);
+            if (std.meta.activeTag(tn) != std.meta.activeTag(cn)) return false;
+            switch (tn) {
+                .bvar, .fvar => return false, // alphaEq already covered equality
+                .app => if (!self.pushRewriteApp(&stack, al, tn.app, cn.app)) return false,
+                .pred => if (!self.pushRewriteApp(&stack, al, tn.pred, cn.pred)) return false,
+                .eq => |p| {
+                    stack.append(al, .{ p.lhs, cn.eq.lhs }) catch return false;
+                    stack.append(al, .{ p.rhs, cn.eq.rhs }) catch return false;
+                },
+                .not => |tt| stack.append(al, .{ tt, cn.not }) catch return false,
+                .bin => |x| {
+                    if (x.op != cn.bin.op) return false;
+                    stack.append(al, .{ x.lhs, cn.bin.lhs }) catch return false;
+                    stack.append(al, .{ x.rhs, cn.bin.rhs }) catch return false;
+                },
+                .quant => |q| {
+                    if (q.q != cn.quant.q or q.sort != cn.quant.sort) return false;
+                    stack.append(al, .{ q.body, cn.quant.body }) catch return false;
+                },
+            }
         }
+        return true;
     }
 
-    fn rewriteApp(self: *Kernel, x: term.Node.App, y: term.Node.App, a: TermId, b: TermId) bool {
+    /// Two apps are congruent for rewriting iff same sym + arity; push their arg pairs. Returns
+    /// false (no push) on a sym/arity mismatch.
+    fn pushRewriteApp(self: *Kernel, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: term.Node.App, y: term.Node.App) bool {
         if (x.sym != y.sym or x.args_len != y.args_len) return false;
-        for (self.pool.args(x), self.pool.args(y)) |ax, ay| {
-            if (!self.rewriteMatches(ax, ay, a, b)) return false;
-        }
+        for (self.pool.args(x), self.pool.args(y)) |ax, ay| stack.append(al, .{ ax, ay }) catch return false;
         return true;
     }
 };

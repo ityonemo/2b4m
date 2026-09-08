@@ -570,19 +570,24 @@ pub const Pool = struct {
         /// accounted for by the mapping, or citing it is the forbidden case.
         /// See MODEL-DESIGN.md (materialization citation rule).
         pub fn affects(self: Remap, pool: *const Pool, formula: TermId) bool {
-            switch (pool.get(formula)) {
-                .bvar => return false,
-                .fvar => |v| return self.hasSortFrom(v.sort),
-                .app, .pred => |a| {
-                    if (self.hasSymFrom(a.sym)) return true;
-                    for (pool.args(a)) |arg| if (self.affects(pool, arg)) return true;
-                    return false;
-                },
-                .eq => |p| return self.affects(pool, p.lhs) or self.affects(pool, p.rhs),
-                .not => |t| return self.affects(pool, t),
-                .bin => |b| return self.affects(pool, b.lhs) or self.affects(pool, b.rhs),
-                .quant => |q| return self.hasSortFrom(q.sort) or self.affects(pool, q.body),
+            // iterative single-tree predicate (was native recursion) — depth-safe. A node "affects"
+            // if it mentions a mapped sort (fvar sort, quant sort) or a mapped sym (app/pred head).
+            var fb = std.heap.stackFallback(inline_stack * @sizeOf(TermId), pool.gpa);
+            const a = fb.get();
+            var stack: std.ArrayList(TermId) = .empty;
+            defer stack.deinit(a);
+            stack.append(a, formula) catch return true; // OOM: conservatively "affected"
+            while (stack.pop()) |cur| {
+                const node = pool.get(cur);
+                switch (node) {
+                    .fvar => |v| if (self.hasSortFrom(v.sort)) return true,
+                    .app, .pred => |ap| if (self.hasSymFrom(ap.sym)) return true,
+                    .quant => |q| if (self.hasSortFrom(q.sort)) return true,
+                    else => {},
+                }
+                pool.pushChildren(&stack, a, node) catch return true;
             }
+            return false;
         }
     };
 
