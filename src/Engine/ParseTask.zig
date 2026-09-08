@@ -81,6 +81,15 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         }
     }
 
+    // resolved import-path strings are TRANSIENT — used only to look the child file up / discover
+    // it, then dropped (the common re-reference / std-hit case retains nothing). Resolve them into
+    // a GPA-backed scratch arena (reclaimed at the end of the loop) instead of leaking every path
+    // into the never-reset main arena. TRAP: `discover` RETAINS the path (stores it in
+    // `files[].path`, read later by diagnostics), so on the discover branch we DUPE it onto the
+    // main arena; the scratch string stays purely transient otherwise.
+    var path_scratch: std.heap.ArenaAllocator = .init(self.gpa);
+    defer path_scratch.deinit();
+    const scratch = path_scratch.allocator();
     for (parsed.decls) |decl| {
         if (decl != .import) continue;
         const d = decl.import;
@@ -88,9 +97,9 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         // works on its bytes — that's I/O, not name comparison.
         const raw = self.interner.stringBytes(d.path.name);
         const resolved = if (std.mem.startsWith(u8, raw, "std/"))
-            try std.fs.path.resolve(self.arena, &.{ self.std_root, raw["std/".len..] })
+            try std.fs.path.resolve(scratch, &.{ self.std_root, raw["std/".len..] })
         else
-            try std.fs.path.resolve(self.arena, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
+            try std.fs.path.resolve(scratch, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
 
         const child: Context.FileId = if (try self.lookupFile(resolved)) |existing|
             existing // already discovered (incl. a cyclic re-reference) — reuse id
@@ -103,7 +112,8 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                 try self.sink.add(d.path.start, "cannot open '{s}': file not found", .{resolved});
                 continue;
             };
-            break :child try self.discover(resolved, src);
+            // discover RETAINS the path → dupe it durably (the scratch copy is freed below).
+            break :child try self.discover(try self.arena.dupe(u8, resolved), src);
         };
         try self.import_maps.items[idx].put(self.arena, d.path.name, child);
     }

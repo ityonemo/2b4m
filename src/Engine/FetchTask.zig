@@ -409,9 +409,16 @@ fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, s
 /// the FIRST unresolved name (idempotent: each resume re-walks and gets one further).
 /// `visited` cycle-guards `define TWO = TWO` / mutual define cycles.
 fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index, d: anytype, name: InternPool.StrId) ResolveError!void {
+    // `visited` (cycle-guard) + the per-binder-scope `extended` arrays are pure scratch, consumed
+    // within this walk. On a suspend the whole FetchTask re-runs and this closure restarts, so the
+    // scratch lifetime is exactly one attempt = this scope. Use a GPA-backed arena (reclaimed on
+    // return) instead of leaking into the never-reset main arena.
+    var closure_scratch: std.heap.ArenaAllocator = .init(self.gpa);
+    defer closure_scratch.deinit();
+    const scratch = closure_scratch.allocator();
     var visited: std.ArrayList(DefineSite) = .empty;
-    try visited.append(self.arena, .{ .file = file, .name = name });
-    try demandDefineBody(self, h, file, d.value, d.params, &visited);
+    try visited.append(scratch, .{ .file = file, .name = name });
+    try demandDefineBody(self, h, file, d.value, d.params, &visited, scratch);
 }
 
 const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
@@ -419,24 +426,24 @@ const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
 /// Walk one define body Expr, demanding its free global references. `params` (the define's
 /// parameters) and quantifier/lambda binders are LOCALS — skipped. `visited` = the define
 /// call-stack (cycle guard). All resolution is under `file`'s namespace.
-fn demandDefineBody(self: *Context, h: *Engine.Handle, file: InternPool.Index, e: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+fn demandDefineBody(self: *Context, h: *Engine.Handle, file: InternPool.Index, e: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
     switch (e.*) {
-        .name => |tok| try demandDefineRef(self, h, file, tok, params, visited),
+        .name => |tok| try demandDefineRef(self, h, file, tok, params, visited, scratch),
         .call => |c| {
-            try demandDefineRef(self, h, file, c.callee, params, visited);
-            for (c.args) |a| try demandDefineBody(self, h, file, a, params, visited);
+            try demandDefineRef(self, h, file, c.callee, params, visited, scratch);
+            for (c.args) |a| try demandDefineBody(self, h, file, a, params, visited, scratch);
         },
         .binary => |b| {
-            try demandDefineBody(self, h, file, b.lhs, params, visited);
-            try demandDefineBody(self, h, file, b.rhs, params, visited);
+            try demandDefineBody(self, h, file, b.lhs, params, visited, scratch);
+            try demandDefineBody(self, h, file, b.rhs, params, visited, scratch);
         },
-        .not => |n| try demandDefineBody(self, h, file, n.operand, params, visited),
-        .quant => |q| try demandDefineBinders(self, h, file, q.binders, q.body, params, visited),
-        .lambda => |l| try demandDefineBinders(self, h, file, l.binders, l.body, params, visited),
+        .not => |n| try demandDefineBody(self, h, file, n.operand, params, visited, scratch),
+        .quant => |q| try demandDefineBinders(self, h, file, q.binders, q.body, params, visited, scratch),
+        .lambda => |l| try demandDefineBinders(self, h, file, l.binders, l.body, params, visited, scratch),
     }
 }
 
-fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
     // binder SORTS/GUARDS are global references; the binder NAMES shadow for the body. Rather
     // than track a second local set, append the binders to `params` for the body walk (both
     // are just "names that are not global here").
@@ -444,15 +451,15 @@ fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index
         _ = try demandTok(self, h, file, b.sort);
         if (b.guard) |g| _ = try demandTok(self, h, file, g);
     }
-    const extended = try self.arena.alloc(ast.Binder, params.len + binders.len);
+    const extended = try scratch.alloc(ast.Binder, params.len + binders.len);
     @memcpy(extended[0..params.len], params);
     @memcpy(extended[params.len..], binders);
-    try demandDefineBody(self, h, file, body, extended, visited);
+    try demandDefineBody(self, h, file, body, extended, visited, scratch);
 }
 
 /// One reference token in a define body. A param/binder-local bare name is skipped. Else
 /// resolve its target file (qualifier → import) + demand it; if it names a define, recurse.
-fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite)) ResolveError!void {
+fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
     if (tok.qualifier == InternPool.Index.none) {
         for (params) |p| if (p.name.name == tok.name) return; // a define param / binder local
     }
@@ -463,8 +470,8 @@ fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, to
         // the target define's home file is parsed (demandTok resolved it there); recurse.
         const dfid = self.pool_file.get(dfile).?;
         const ddecl = self.declOf(dfid, tok.name).?;
-        try visited.append(self.arena, .{ .file = dfile, .name = tok.name });
-        try demandDefineBody(self, h, dfile, ddecl.define.value, ddecl.define.params, visited);
+        try visited.append(scratch, .{ .file = dfile, .name = tok.name });
+        try demandDefineBody(self, h, dfile, ddecl.define.value, ddecl.define.params, visited, scratch);
     }
 }
 
