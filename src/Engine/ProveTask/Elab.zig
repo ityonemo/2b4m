@@ -135,85 +135,178 @@ pub fn init(
 }
 
 /// Elaborate to any sort. Callers wanting a proposition wrap with `requireProp`.
-pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
-    switch (e.*) {
-        .name => |tok| return self.elaborateName(tok),
-        .call => |c| return self.elaborateCall(c),
-        .binary => |b| switch (b.op) {
-            .implies, .and_op, .or_op => {
-                const lhs = try self.requireProp(try self.elaborateExpr(b.lhs), b.lhs);
-                // obligations arising in the RHS may depend on the LHS (an antecedent /
-                // conjunct in scope for the rest), so relativize them: an obligation `O`
-                // from the rhs becomes `lhs -> O` under `->`/`and`. (Step 3c.)
+///
+/// DE-RECURSIFIED (task #92): the surface-expression spine (`.binary`, `.not`, `.quant`) is
+/// walked by an EXPLICIT heap work-stack so a pathologically deep nesting (e.g. `not not …`,
+/// long `and`-chains, deep quantifier prefixes) cannot overflow the C stack. Each `Frame` is a
+/// "what to do next" continuation; a parallel `results` stack holds finished `Typed` values in
+/// post-order. Leaf forms (`.name`/`.call`/`.lambda`) dispatch directly.
+///
+/// NOTE ON `.call` ARGS: `elaborateCall` still elaborates each argument by a RECURSIVE call
+/// into this function (each spins up its own bounded work-stack). Argument nesting therefore
+/// still consumes one Zig frame per call-nesting level (`f(f(f(…)))`); the connective/quantifier
+/// spine — the dominant deep-nesting driver in practice — is fully iterative. Converting call
+/// args too would drag the whole intricate name/define/schema resolution into the stack; the
+/// task explicitly permits leaving `elaborateCall` recursive on args.
+pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+
+    var frames: std.ArrayList(Frame) = .empty;
+    var results: std.ArrayList(Typed) = .empty;
+    try frames.append(wa, .{ .elaborate = root });
+
+    while (frames.pop()) |frame| switch (frame) {
+        .elaborate => |e| switch (e.*) {
+            // leaf forms — resolve directly onto the results stack.
+            .name => |tok| try results.append(wa, try self.elaborateName(tok)),
+            .call => |c| try results.append(wa, try self.elaborateCall(c)),
+            .lambda => |l| return self.fail(l.tok.start, "lambdas (schema arguments) are not supported by the demand prover", .{}),
+
+            .not => |n| {
+                // finish AFTER the operand, then push the operand.
+                try frames.append(wa, .{ .finish_not = n });
+                try frames.append(wa, .{ .elaborate = n.operand });
+            },
+
+            .binary => |b| switch (b.op) {
+                .equal, .not_equal => {
+                    // `=`/`!=`: elaborate lhs THEN rhs (no obligation window), then compare.
+                    try frames.append(wa, .{ .finish_eq = b });
+                    try frames.append(wa, .{ .elaborate = b.rhs });
+                    try frames.append(wa, .{ .elaborate = b.lhs });
+                },
+                .iff => {
+                    // SURFACE SUGAR `P iff Q` → `(P -> Q) and (Q -> P)`. No TCC window (matches
+                    // the original: iff snapshots nothing).
+                    try frames.append(wa, .{ .finish_iff = b });
+                    try frames.append(wa, .{ .elaborate = b.rhs });
+                    try frames.append(wa, .{ .elaborate = b.lhs });
+                },
+                .implies, .and_op, .or_op => {
+                    // LHS must FULLY elaborate before the TCC window opens for the RHS. So:
+                    // push a mid-frame that (after LHS is on the results stack) opens the
+                    // window and pushes the RHS + the finisher. Order on the stack (LIFO):
+                    // elaborate(lhs) runs first, then open_binary_rhs.
+                    try frames.append(wa, .{ .open_binary_rhs = b });
+                    try frames.append(wa, .{ .elaborate = b.lhs });
+                },
+            },
+
+            .quant => |q| {
+                // ENTER: resolve the shared binder sort, compute quals, push scope entries,
+                // snapshot the TCC/result-fact windows — then elaborate the body, then LEAVE.
+                const refined = try self.resolveBinderSort(q.binders[0]);
+                const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
+                // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
+                // already-elaborated (already-relativized) terms — re-injecting guards here would
+                // DOUBLE them (`inH(x) -> inH(x) -> …`). The faithful round-trip skips injection.
+                const quals: []const InternPool.Index = if (self.no_relativize) &.{} else self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
+                const fresh = try self.arena.alloc(StrId, q.binders.len);
+                const mark = self.scope.items.len;
+                for (q.binders, fresh) |b, *fr| {
+                    const bname = try self.localName(b.name);
+                    try self.checkNoShadow(bname, b.name);
+                    fr.* = try self.freshName();
+                    try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
+                }
                 const tcc_start = if (self.tccs) |t| t.items.len else 0;
-                const rhs = try self.requireProp(try self.elaborateExpr(b.rhs), b.rhs);
-                if ((b.op == .implies or b.op == .and_op)) if (self.tccs) |t| {
-                    for (t.items[tcc_start..]) |*obl| {
-                        obl.formula = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = lhs.id, .rhs = obl.formula } });
-                    }
-                };
-                const op: term.BinOp = switch (b.op) {
-                    .implies => .implies,
-                    .and_op => .and_op,
-                    .or_op => .or_op,
-                    else => unreachable,
-                };
-                const id = try self.scratch.add(.{ .bin = .{ .op = op, .lhs = lhs.id, .rhs = rhs.id } });
-                return .{ .id = id, .sort = prop_sort };
-            },
-            .iff => {
-                // SURFACE SUGAR: `P iff Q` desugars to `(P -> Q) and (Q -> P)`.
-                const lhs = try self.requireProp(try self.elaborateExpr(b.lhs), b.lhs);
-                const rhs = try self.requireProp(try self.elaborateExpr(b.rhs), b.rhs);
-                const fwd = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = lhs.id, .rhs = rhs.id } });
-                const bwd = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = rhs.id, .rhs = lhs.id } });
-                const id = try self.scratch.add(.{ .bin = .{ .op = .and_op, .lhs = fwd, .rhs = bwd } });
-                return .{ .id = id, .sort = prop_sort };
-            },
-            .equal, .not_equal => {
-                const lhs = try self.elaborateExpr(b.lhs);
-                const rhs = try self.elaborateExpr(b.rhs);
-                if (lhs.sort == prop_sort) {
-                    return self.fail(exprLoc(b.lhs), "'=' compares terms, not propositions", .{});
-                }
-                if (rhs.sort != lhs.sort) {
-                    return self.fail(exprLoc(b.rhs), "expected sort '{s}', got '{s}'", .{
-                        self.sortName(lhs.sort), self.sortName(rhs.sort),
-                    });
-                }
-                const eq = try self.scratch.add(.{ .eq = .{ .lhs = lhs.id, .rhs = rhs.id } });
-                const id = if (b.op == .not_equal) try self.scratch.add(.{ .not = eq }) else eq;
-                return .{ .id = id, .sort = prop_sort };
+                const rf_start = if (self.result_facts) |r| r.items.len else 0;
+                try frames.append(wa, .{ .finish_quant = .{
+                    .q = q,
+                    .sort = sort,
+                    .quals = quals,
+                    .fresh = fresh,
+                    .mark = mark,
+                    .tcc_start = tcc_start,
+                    .rf_start = rf_start,
+                } });
+                try frames.append(wa, .{ .require_prop_body = q.body });
+                try frames.append(wa, .{ .elaborate = q.body });
             },
         },
-        .not => |n| {
-            const inner = try self.requireProp(try self.elaborateExpr(n.operand), n.operand);
-            const id = try self.scratch.add(.{ .not = inner.id });
-            return .{ .id = id, .sort = prop_sort };
-        },
-        .quant => |q| {
-            // one shared sort for all binders of this quantifier (surface rule). A REFINED
-            // sort lowers to its CARRIER for the kernel term; its qualifiers are injected as
-            // guards around the body (`inH(x) -> body` for forall, `inH(x) and body` for
-            // exists) — the intrinsic relativization of a predicated sort.
-            const refined = try self.resolveBinderSort(q.binders[0]);
-            const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
-            // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
-            // already-elaborated (already-relativized) terms — re-injecting guards here would
-            // DOUBLE them (`inH(x) -> inH(x) -> …`). The faithful round-trip skips injection.
-            const quals: []const InternPool.Index = if (self.no_relativize) &.{} else self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
-            const fresh = try self.arena.alloc(StrId, q.binders.len);
-            const mark = self.scope.items.len;
-            for (q.binders, fresh) |b, *fr| {
-                const bname = try self.localName(b.name);
-                try self.checkNoShadow(bname, b.name);
-                fr.* = try self.freshName();
-                try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
-            }
+
+        .open_binary_rhs => |b| {
+            // LHS is now the TOP of the results stack (fully elaborated). Require prop, open the
+            // TCC window, then elaborate the RHS and finish.
+            const lhs = try self.requireProp(results.items[results.items.len - 1], b.lhs);
+            results.items[results.items.len - 1] = lhs;
             const tcc_start = if (self.tccs) |t| t.items.len else 0;
-            const rf_start = if (self.result_facts) |r| r.items.len else 0;
-            const body = try self.requireProp(try self.elaborateExpr(q.body), q.body);
-            self.scope.shrinkRetainingCapacity(mark);
+            try frames.append(wa, .{ .finish_binary = .{ .b = b, .tcc_start = tcc_start } });
+            try frames.append(wa, .{ .require_prop_rhs = b.rhs });
+            try frames.append(wa, .{ .elaborate = b.rhs });
+        },
+
+        .require_prop_rhs => |e| {
+            const rhs = try self.requireProp(results.items[results.items.len - 1], e);
+            results.items[results.items.len - 1] = rhs;
+        },
+
+        .require_prop_body => |e| {
+            const body = try self.requireProp(results.items[results.items.len - 1], e);
+            results.items[results.items.len - 1] = body;
+        },
+
+        .finish_binary => |f| {
+            const b = f.b;
+            const rhs = results.pop().?;
+            const lhs = results.pop().?;
+            // obligations arising in the RHS may depend on the LHS (an antecedent / conjunct in
+            // scope for the rest), so relativize them: an obligation `O` from the rhs becomes
+            // `lhs -> O` under `->`/`and`. (Step 3c.)
+            if ((b.op == .implies or b.op == .and_op)) if (self.tccs) |t| {
+                for (t.items[f.tcc_start..]) |*obl| {
+                    obl.formula = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = lhs.id, .rhs = obl.formula } });
+                }
+            };
+            const op: term.BinOp = switch (b.op) {
+                .implies => .implies,
+                .and_op => .and_op,
+                .or_op => .or_op,
+                else => unreachable,
+            };
+            const id = try self.scratch.add(.{ .bin = .{ .op = op, .lhs = lhs.id, .rhs = rhs.id } });
+            try results.append(wa, .{ .id = id, .sort = prop_sort });
+        },
+
+        .finish_iff => |b| {
+            const rhs = try self.requireProp(results.pop().?, b.rhs);
+            const lhs = try self.requireProp(results.pop().?, b.lhs);
+            const fwd = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = lhs.id, .rhs = rhs.id } });
+            const bwd = try self.scratch.add(.{ .bin = .{ .op = .implies, .lhs = rhs.id, .rhs = lhs.id } });
+            const id = try self.scratch.add(.{ .bin = .{ .op = .and_op, .lhs = fwd, .rhs = bwd } });
+            try results.append(wa, .{ .id = id, .sort = prop_sort });
+        },
+
+        .finish_eq => |b| {
+            const rhs = results.pop().?;
+            const lhs = results.pop().?;
+            if (lhs.sort == prop_sort) {
+                return self.fail(exprLoc(b.lhs), "'=' compares terms, not propositions", .{});
+            }
+            if (rhs.sort != lhs.sort) {
+                return self.fail(exprLoc(b.rhs), "expected sort '{s}', got '{s}'", .{
+                    self.sortName(lhs.sort), self.sortName(rhs.sort),
+                });
+            }
+            const eq = try self.scratch.add(.{ .eq = .{ .lhs = lhs.id, .rhs = rhs.id } });
+            const id = if (b.op == .not_equal) try self.scratch.add(.{ .not = eq }) else eq;
+            try results.append(wa, .{ .id = id, .sort = prop_sort });
+        },
+
+        .finish_not => |n| {
+            const inner = try self.requireProp(results.pop().?, n.operand);
+            const id = try self.scratch.add(.{ .not = inner.id });
+            try results.append(wa, .{ .id = id, .sort = prop_sort });
+        },
+
+        .finish_quant => |f| {
+            // LEAVE: the body is on the results stack (already require-prop'd). Pop scope, then
+            // build the quantifier prefix + relativize the windows exactly as the recursion did.
+            const q = f.q;
+            const body = results.pop().?;
+            self.scope.shrinkRetainingCapacity(f.mark);
             var id = body.id;
             var i = q.binders.len;
             while (i > 0) {
@@ -221,14 +314,14 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 // inject the binder's guard: the CONJUNCTION of its qualifiers (canonical —
                 // matches the kernel's guarded-fix forall_intro derivation and bindProofVar),
                 // as a single `guard -> body` (∀) / `guard and body` (∃).
-                if (try self.conjoinQuals(quals, fresh[i], sort)) |guard| {
+                if (try self.conjoinQuals(f.quals, f.fresh[i], f.sort)) |guard| {
                     const connective: term.BinOp = if (q.q == .forall) .implies else .and_op;
                     id = try self.scratch.add(.{ .bin = .{ .op = connective, .lhs = guard, .rhs = id } });
                 }
-                id = try self.scratch.close(id, fresh[i]);
+                id = try self.scratch.close(id, f.fresh[i]);
                 id = try self.scratch.add(.{ .quant = .{
                     .q = if (q.q == .forall) .forall else .exists,
-                    .sort = sort,
+                    .sort = f.sort,
                     .hint = tokName(q.binders[i].name),
                     .body = id,
                 } });
@@ -236,23 +329,55 @@ pub fn elaborateExpr(self: *Elab, e: *const ast.Expr) Error!Typed {
                 // values of it: close it under a `forall` with the binder's guard as
                 // antecedent — `∀x; inH(x) -> O` — so the discharge sees the same shape as
                 // the relativized goal. (Step 3c; mirrors the body relativization above.)
-                if (self.tccs) |t| for (t.items[tcc_start..]) |*obl| {
-                    obl.formula = try self.relativizeUnderBinder(obl.formula, quals, fresh[i], sort, q.binders[i].name);
+                if (self.tccs) |t| for (t.items[f.tcc_start..]) |*obl| {
+                    obl.formula = try self.relativizeUnderBinder(obl.formula, f.quals, f.fresh[i], f.sort, q.binders[i].name);
                 };
                 // SURFACED result-facts (closure facts like `inH(op2(h,h))`) over binder `i`
                 // relativize the SAME way (`∀x; inH(x) -> inH(op2(x,x))`) — so a discharge of
                 // the equally-relativized obligation matches them whole (Step 3c closure gap).
-                if (self.result_facts) |r| for (r.items[rf_start..]) |*rf| {
-                    rf.* = try self.relativizeUnderBinder(rf.*, quals, fresh[i], sort, q.binders[i].name);
+                if (self.result_facts) |r| for (r.items[f.rf_start..]) |*rf| {
+                    rf.* = try self.relativizeUnderBinder(rf.*, f.quals, f.fresh[i], f.sort, q.binders[i].name);
                 };
             }
-            return .{ .id = id, .sort = prop_sort };
+            try results.append(wa, .{ .id = id, .sort = prop_sort });
         },
-        .lambda => |l| {
-            return self.fail(l.tok.start, "lambdas (schema arguments) are not supported by the demand prover", .{});
-        },
-    }
+    };
+
+    std.debug.assert(results.items.len == 1);
+    return results.items[0];
 }
+
+/// A work-stack continuation for `elaborateExpr` (de-recursified spine, task #92). Popped LIFO:
+/// an `.elaborate` frame decomposes an expr, pushing its finisher THEN its children so children
+/// are processed first and their `Typed` results sit on the results stack when the finisher runs.
+const Frame = union(enum) {
+    /// decompose an expression (leaf → result; compound → push finisher + children).
+    elaborate: *const ast.Expr,
+    /// LHS of a prop binary is done (top of results); require-prop it, open the RHS TCC window.
+    open_binary_rhs: ast.Expr.Binary,
+    /// require the top-of-results value to be a proposition (RHS of a binary).
+    require_prop_rhs: *const ast.Expr,
+    /// require the top-of-results value to be a proposition (quantifier body).
+    require_prop_body: *const ast.Expr,
+    /// build the prop binary node + relativize its RHS obligations against `lhs`.
+    finish_binary: struct { b: ast.Expr.Binary, tcc_start: usize },
+    /// desugar `iff` into `(P->Q) and (Q->P)`.
+    finish_iff: ast.Expr.Binary,
+    /// build the `eq`/`not eq` node with sort-checks.
+    finish_eq: ast.Expr.Binary,
+    /// build the `not` node.
+    finish_not: @FieldType(ast.Expr, "not"),
+    /// LEAVE a quantifier: pop scope, build the binder prefix, relativize the windows.
+    finish_quant: struct {
+        q: @FieldType(ast.Expr, "quant"),
+        sort: SortId,
+        quals: []const InternPool.Index,
+        fresh: []StrId,
+        mark: usize,
+        tcc_start: usize,
+        rf_start: usize,
+    },
+};
 
 pub fn requireProp(self: *Elab, typed: Typed, e: *const ast.Expr) Error!Typed {
     if (typed.sort != prop_sort) {
@@ -953,6 +1078,44 @@ test "elab: guarded funcs, defines-absent, and lambdas are cleanly unsupported/u
     const rig = try w.elabOf("forall k: Nat; le(div(k, k), k)");
     try testing.expectError(error.Recover, rig.elab.elaborateExpr(rig.expr));
     try testing.expect(std.mem.indexOf(u8, w.sink.list.items[0].message, "guarded functions are not yet supported") != null);
+}
+
+test "elab: pathologically deep spine does not overflow the C stack (task #92)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const w = try World.init(arena);
+
+    // Build a ~50k-deep `not not not … le(a,a)` chain of ast.Expr nodes DIRECTLY (bypassing the
+    // parser, whose own recursion would overflow first) and elaborate it. Native recursion over
+    // this spine would blow the C stack; the work-stack drives it iteratively.
+    const depth = 50_000;
+
+    // innermost: `le(a, a)` — a prop leaf.
+    const a_tok = lexer.Token{ .tag = .identifier, .start = 0, .end = 0, .name = try w.interner.internString("a") };
+    const le_tok = lexer.Token{ .tag = .identifier, .start = 0, .end = 0, .name = try w.interner.internString("le") };
+    const a_expr = try arena.create(ast.Expr);
+    a_expr.* = .{ .name = a_tok };
+    const args = try arena.alloc(*const ast.Expr, 2);
+    args[0] = a_expr;
+    args[1] = a_expr;
+    const leaf = try arena.create(ast.Expr);
+    leaf.* = .{ .call = .{ .callee = le_tok, .args = args } };
+
+    const not_tok = lexer.Token{ .tag = .keyword_not, .start = 0, .end = 0 };
+    var cur: *const ast.Expr = leaf;
+    var d: usize = 0;
+    while (d < depth) : (d += 1) {
+        const nxt = try arena.create(ast.Expr);
+        nxt.* = .{ .not = .{ .tok = not_tok, .operand = cur } };
+        cur = nxt;
+    }
+
+    var fresh_counter: u32 = 0;
+    var e = Elab.init(w.arena, w.io, w.ctx, w.interner, w.idents, w.scratch, w.sink, "", w.walk, w.ns, &fresh_counter);
+    const typed = try e.elaborateExpr(cur);
+    try testing.expectEqual(Elab.prop_sort, typed.sort);
+    try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
 }
 
 // -- delaborate (term -> ast.Expr) round-trips through elaboration -----------------------
