@@ -815,12 +815,18 @@ pub const Parser = struct {
     }
 
     fn parseUnary(self: *Parser) ParseError!*const ast.Expr {
-        if (self.tok.tag == .keyword_not) {
-            const tok = self.advance();
-            const operand = try self.parseUnary();
-            return self.newExpr(.{ .not = .{ .tok = tok, .operand = operand } });
+        // `not not … X` — iterative (was self-recursion) so a deep `not` chain can't overflow the C
+        // stack: collect the `not` tokens, parse the primary, then wrap inner-to-outer.
+        var nots: std.ArrayList(lexer.Token) = .empty;
+        defer nots.deinit(self.arena);
+        while (self.tok.tag == .keyword_not) try nots.append(self.arena, self.advance());
+        var e = try self.parsePrimary();
+        var i: usize = nots.items.len;
+        while (i > 0) {
+            i -= 1;
+            e = try self.newExpr(.{ .not = .{ .tok = nots.items[i], .operand = e } });
         }
-        return self.parsePrimary();
+        return e;
     }
 
     fn parsePrimary(self: *Parser) ParseError!*const ast.Expr {
