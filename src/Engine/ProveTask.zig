@@ -185,38 +185,15 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     };
     st.prove.h = h; // each (re)entry gets a fresh handle; racking goes through it
 
-    // GOAL PHASE: the stated formula's own read pass + elaboration ("step -1"). For a
-    // schema instance the formula is the schema BODY (elaborated with schema_args resolving
-    // the params); the read pass skips param names via prove.schema_params.
-    if (st.goal == null) {
-        const formula = switch (st.decl) {
-            inline else => |d| d.formula,
-        };
-        var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
-        scanner.schema_params = st.prove.schema_params;
-        const refs = try scanner.scanFormula(formula);
-        // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
-        // ns — a model transfer's source names resolve there + get overlay-redirected.
-        if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, refs)) |blocker| {
-            h.suspendOn(blocker);
-            return;
-        }
-        // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
-        // its steps and the kernel check use, and that it reifies back from at publish.
-        var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
-        e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
-        e.model = st.prove.model; // remap source globals for a model transfer (identity else)
-        e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
-        e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
-        const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Recover => return, // diagnosed; no publish
-        }, formula) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Recover => return,
-        };
-        st.goal = typed.id;
-    }
+    // GOAL PHASE: the stated formula's own read pass + elaboration ("step -1"). Extracted
+    // into `elaborateGoalInto` so the trusted `--fast` shape-check reuses the SAME
+    // relativization logic (see `Prove.elaborateFactStatement`). A `.suspended` blocked on a
+    // missing ref (already `suspendOn`'d); a `.done` with `st.goal` still null = a diagnosed
+    // Recover (no publish) — return exactly as the inline code did.
+    if (st.goal == null) switch (try elaborateGoalInto(self, task, h, st)) {
+        .suspended => return,
+        .done => if (st.goal == null) return, // diagnosed Recover — no publish
+    };
 
     switch (st.decl) {
         .axiom => {
@@ -228,15 +205,51 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         .instance => |i| {
             // a schema instance: re-check the schema's proof at this instance (comptime
             // semantics — the proof may hold for some args and fail for others). A
-            // non-proof-carrying schema (or !recheck_schemas) trusts the monomorphization
-            // and publishes a leaf fact.
-            if (i.steps) |steps| {
-                if (self.verify.recheck_schemas) return proveSteps(self, task, h, st, key, steps);
-            }
+            // non-proof-carrying schema (an axiom-schema, no steps) → trust the
+            // monomorphization and publish a leaf fact. (Trust of the CITING accelerant/
+            // instantiation word is applied at the CITING STEP — a trusted citation never
+            // racks this task at all — so there is no per-instance trust bit here.)
+            if (i.steps) |steps| return proveSteps(self, task, h, st, key, steps);
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
         },
     }
+}
+
+/// The stated formula's read pass + elaboration into `st.prove.pool` (the goal phase).
+/// Returns `.suspended` (a ref wasn't ready — `h.suspendOn` was called; `run` returns) or
+/// `.done`. On a diagnosed Recover it leaves `st.goal` null and returns `.done` (the caller
+/// treats null-goal as a no-publish return). Behaviour is IDENTICAL to the former inline
+/// block; it is a function so `Prove.elaborateFactStatement` shares the relativization.
+fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State) std.mem.Allocator.Error!enum { done, suspended } {
+    const formula = switch (st.decl) {
+        inline else => |d| d.formula,
+    };
+    var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
+    scanner.schema_params = st.prove.schema_params;
+    const refs = try scanner.scanFormula(formula);
+    // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
+    // ns — a model transfer's source names resolve there + get overlay-redirected.
+    if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, refs)) |blocker| {
+        h.suspendOn(blocker);
+        return .suspended;
+    }
+    // the goal elaborates into the PROOF's scratchpad (st.prove.pool) — the same pool
+    // its steps and the kernel check use, and that it reifies back from at publish.
+    var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
+    e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
+    e.model = st.prove.model; // remap source globals for a model transfer (identity else)
+    e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
+    e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
+    const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .done, // diagnosed; no publish (st.goal stays null)
+    }, formula) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .done,
+    };
+    st.goal = typed.id;
+    return .done;
 }
 
 /// Drive the Walk over `steps` proving `st.goal`; on success reify + publish the fact.

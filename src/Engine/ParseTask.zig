@@ -121,13 +121,19 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                 // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a
                 // theorem-SCHEMA (params != null) is a template, NOT proved as a root (it is
                 // instantiated on demand). A schema is instead well-formedness-checked at its
-                // decl (opaque self-instantiation), gated on the strict bit. An alias theorem
+                // decl (opaque self-instantiation). This check is UNGATED — it runs in EVERY
+                // mode, including `--fast`. A theorem-schema must be a TRUE UNIVERSAL over its
+                // params (a precondition belongs IN the statement as `myPred(a) -> …`, never as
+                // an implicit "only instantiate me with good args" contract). The opaque
+                // self-instantiation enforces that invariant cheaply, once, at the decl. It is
+                // exactly what makes trusting `instantiation` (skip per-instance re-proof) SOUND:
+                // a well-formed schema holds at every instance by construction. An alias theorem
                 // proves nothing new.
                 .theorem => |t| switch (t) {
                     .local => |l| {
                         if (l.fact.params == null) {
                             try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = l.fact.name.name }));
-                        } else if (self.verify.certify_arithmetic) {
+                        } else {
                             try h.rack(try Engine.SchemaCheckTask.new(self.arena, .{ .file = file_index, .name = l.fact.name.name, .loc = l.fact.name.start }));
                         }
                     },

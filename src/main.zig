@@ -376,31 +376,64 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --faster | --reckless] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast [W…] | --fast --slow W…] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
-    // SUSPENDED (demand-rebuild): the --fast/--faster/--reckless SPEED PRESETS are
-    // disabled — nothing is trusted-without-verification during the rebuild; everything
-    // is checked STRICT (the default). The flags are still ACCEPTED (so scripts/gates
-    // don't break on an unknown arg) but are NO-OPS. `--draft` stays (it allows holes /
-    // relaxes author-hygiene; it is not a trust bypass). When the accelerant/import-trust
-    // layers are rebuilt, re-enable the presets by restoring the `verify` mutation here.
+    // --fast TRUST FLAGS: a `using` step whose WORD is trusted is accelerated (its proof is not
+    // generated/checked — the word ADMITS it via its own fast check). `by` primitives are ALWAYS
+    // kernel-checked. Grammar:
+    //   --fast                 trust ALL `using` words
+    //   --fast W…              trust ONLY the listed words (allowlist)
+    //   --fast --slow W…       trust all words EXCEPT the listed (denylist)
+    // Words are the 17 individual `using` words plus group words `engine` and `<tactic>_all`
+    // (the six tactics that have a `_quantified` variant). See src/Verify.zig `Word.parse`.
+    // `--draft` (allows holes / relaxes author-hygiene; NOT a trust bypass) is orthogonal.
     var verify: bpa.Verify = .{};
     var draft = false;
-    var path: ?[]const u8 = null;
+    var fast = false; // saw --fast
+    var slow = false; // saw --slow (denylist mode; requires --fast)
+    var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
+    var any_word = false; // saw at least one trust word after --fast
+    // Non-flag positionals: the trust WORDS (only valid after --fast) followed by the PATH.
+    // The path is the LAST positional; every earlier positional is a trust word. Collect them
+    // in order, then split.
+    var positionals: std.ArrayList([]const u8) = .empty;
     for (args[2..]) |arg| {
-        if (std.mem.eql(u8, arg, "--fast") or std.mem.eql(u8, arg, "--faster") or std.mem.eql(u8, arg, "--reckless")) {
-            // accepted but ignored — strict-only during the rebuild.
+        if (std.mem.eql(u8, arg, "--fast")) {
+            fast = true;
+        } else if (std.mem.eql(u8, arg, "--slow")) {
+            if (!fast) return fail("error: --slow requires --fast (--fast --slow W… trusts all but W…)\n", .{});
+            slow = true;
         } else if (std.mem.eql(u8, arg, "--draft")) {
             draft = true;
-        } else if (path == null) {
-            path = arg;
+        } else if (std.mem.startsWith(u8, arg, "--")) {
+            return fail("error: unknown flag '{s}'\n{s}", .{ arg, usage });
         } else {
-            return fail(usage, .{});
+            try positionals.append(arena, arg);
         }
     }
-    const root_path = path orelse return fail(usage, .{});
+    if (positionals.items.len == 0) return fail(usage, .{});
+    const root_path = positionals.items[positionals.items.len - 1];
+    const words = positionals.items[0 .. positionals.items.len - 1];
+    if (words.len > 0 and !fast) return fail(usage, .{}); // trust words without --fast = misuse
+    if (words.len > 0 and !slow) any_word = true;
+    for (words) |wtext| {
+        const set = bpa.Verify.Word.parse(wtext) orelse
+            return fail("error: unknown trust word '{s}' (see `bpa check` help)\n", .{wtext});
+        listed = listed.unionWith(set);
+    }
+    if (slow) any_word = true; // even an empty --slow list is a (no-op) denylist
+    // resolve the trusted set from the flags.
+    if (fast) {
+        if (slow) {
+            verify.trusted = bpa.Verify.Word.all().differenceWith(listed); // denylist
+        } else if (any_word) {
+            verify.trusted = listed; // allowlist
+        } else {
+            verify.trusted = bpa.Verify.Word.all(); // bare --fast: all
+        }
+    }
     // --draft is for WIP proofs: allow holes AND relax author-hygiene checks
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
     verify.draft = draft;
@@ -462,9 +495,20 @@ pub fn main(init: std.process.Init) !u8 {
     if (result.theorems_trusted > 0) {
         try out.print(" ({d} via trusted imports)", .{result.theorems_trusted});
     }
-    // (The "NOT FULLY VERIFIED" speed-flag banner is gone — the --fast/--faster/--reckless
-    // presets are suspended during the rebuild; everything is checked strict, so there is
-    // never a trust disclosure to make. Restore it when the presets are re-enabled.)
+    // --fast trust disclosure: when ANY `using` word is trusted, the result is NOT fully
+    // verified — the trusted words' steps were ADMITTED (accepted by the word's own fast check),
+    // not kernel-checked. Disclose it loudly (the trust boundary must never be silent). Strict
+    // runs (empty set) say nothing.
+    if (verify.trusted.count() > 0) {
+        try out.print("\n  \u{2014} NOT FULLY VERIFIED: trusted (admitted, not proved): ", .{});
+        var it = verify.trusted.iterator();
+        var first = true;
+        while (it.next()) |wd| {
+            if (!first) try out.writeAll(", ");
+            try out.writeAll(@tagName(wd));
+            first = false;
+        }
+    }
     // --draft with holes: loud disclosure that the result rests on aspirational
     // placeholders, listing them (like the --fast banner). Exit stays 0.
     if (draft and result.holes.len > 0) {

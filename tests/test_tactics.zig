@@ -101,11 +101,12 @@ pub fn addTests(
     // source theorem forces strict materialization to recurse into it (memoized —
     // the shared dependency materializes once across both cites). Kernel-checked.
     ctx.okSilent(&.{ "check", "tests/cases/model_recurse.bpa" });
-    // `--fast` is suspended during the rebuild (strict-only), so it produces the same fully-
-    // verified result as plain check — no accelerated banner, no NOT-FULLY-VERIFIED note.
-    ctx.ok(&.{ "check", "--fast", "tests/cases/model_recurse.bpa" },
+    // `--fast model` ADMITS the transfer (its statement α-matches the claim; the source proof is
+    // NOT re-materialized), disclosed via the NOT-FULLY-VERIFIED banner. Scoped to `model` so the
+    // banner lists just that word.
+    ctx.ok(&.{ "check", "--fast", "model", "tests/cases/model_recurse.bpa" },
         \\OK: 14 declarations, 2 theorems proven
-        \\
+        \\  — NOT FULLY VERIFIED: trusted (admitted, not proved): model
     );
 
     // MATERIALIZATION CITATION RULE: a materialized model proof may cite another
@@ -308,7 +309,14 @@ pub fn addTests(
     // ProveTask can't resolve them, failing "reference not found" at the `assoc_commut` step.
     // (--fast is SUSPENDED during the demand rebuild — strict-only, so it errors identically.)
     ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: reference not found: 'addIsAssociative'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: reference not found: 'addIsAssociative'\n");
+    // `--fast assoc_commut_all` ADMITS the step: `assoc_commut` accepts it on its own fast check
+    // and never RESOLVES the cited lemma, so the strict-only "reference not found" is not raised.
+    // Trusting the accelerant means accepting its steps unproved — the missing lemma surfaces only
+    // in a strict run. Disclosed via the banner.
+    ctx.ok(&.{ "check", "--fast", "assoc_commut_all", "tests/cases/assoc_commut_oracle.bpa" },
+        \\OK: 4 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: trusted (admitted, not proved): assoc_commut, assoc_commut_quantified
+    );
 
     // `assoc(assocLemma)`: associativity-only reorder on a CUSTOM operator
     // (no add/mul assumption). Emits kernel steps.

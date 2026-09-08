@@ -37,6 +37,7 @@ const RefScan = @import("RefScan.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
+const Verify = @import("../../Verify.zig");
 const EqCert = @import("EqCert.zig");
 const Polynomial = @import("Polynomial.zig");
 const simplify_mod = @import("simplify.zig");
@@ -78,6 +79,13 @@ ordinal_block: std.ArrayList(kernel.BlockId) = .empty,
 case_stack: std.ArrayList(CaseCtx) = .empty,
 /// hygienic fresh-name counter (shared with Elab via pointer)
 fresh_counter: u32 = 0,
+/// ADMIT MODE (`--fast <accelerant>`): when set, a producer does ITS OWN cheap acceptance
+/// check for the trusted step and returns WITHOUT building a certificate (the step is
+/// accelerated — accepted, not proved). Set only for the duration of a trusted `admit` call.
+/// A producer that ADMITS sets `admit_ok = true` and returns null (no cert); a producer that
+/// REJECTS fails (→ error.Recover) as usual. `admit` distinguishes admit-null from reject.
+admit_mode: bool = false,
+admit_ok: bool = false,
 /// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
 extra_reachable_steps: std.ArrayList(u32) = .empty,
 /// REFINED-SORT proof obligations (Step 3c): a guarded-function application over a refined
@@ -309,10 +317,105 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
     return blocker;
 }
 
+/// Elaborate a target fact's STATEMENT (its stated formula, relativized under `model`) into a
+/// caller-provided scratch `pool`, PUBLISHING NOTHING and CLAIMING NO FactKV key. This is the
+/// pure "statement elaborator" the trusted `--fast` admission uses to obtain the citation's
+/// stated proposition WITHOUT proving it — reusing the SAME relativization logic the strict
+/// goal phase runs (`ProveTask.elaborateGoalInto`): RefScan → resolveRefs → Elab with `model`.
+///
+/// Suspendable via the CALLER's handle `h`: `.suspended` = a demand raced ahead (parse in
+/// flight, or an ident FetchTask racked — `h.suspendOn` was already called; the caller returns).
+/// `.ready` = the elaborated statement TermId (into `pool`). `.failed` = a diagnosed error (a
+/// schema / hole / missing decl / non-fact / Recover during elaboration).
+///
+/// It only ever demands PARSE (ParseTask) + resolveRefs (which may rack FetchTasks for IDENT-
+/// domain symbol refs — fine). A statement carries no fact CITATIONS, so no ProveTask is racked.
+pub fn elaborateFactStatement(
+    self: *Context,
+    h: *Engine.Handle,
+    file: InternPool.Index,
+    name: StrId,
+    model: InternPool.Index,
+    pool: *term.Pool,
+) Allocator.Error!union(enum) { ready: term.TermId, suspended: void, failed: void } {
+    // the fact's file must be PARSED before its decl AST is readable.
+    switch (try self.demandParse(h, file)) {
+        .parsed => {},
+        .parsing => |t| {
+            h.suspendOn(t);
+            return .suspended;
+        },
+        .unparsed => {}, // undiscovered — declOf below reports it cleanly
+    }
+    const fid = self.pool_file.get(file) orelse {
+        self.sink.add(0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    // point diagnostics at the STATEMENT's own file (offsets below index its source).
+    self.sink.current_file = @intFromEnum(fid);
+    const source = self.files.items[@intFromEnum(fid)].source;
+
+    // resolve the decl by name; a STATEMENT lives on a local axiom/theorem (an alias has no
+    // formula of its own, a schema / hole is not a ground statement).
+    const decl = self.declOf(fid, name) orelse {
+        self.sink.add(0, "reference not found: '{s}'", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const fact = ast.factOf(decl) orelse {
+        self.sink.add(ast.declName(decl).start, "'{s}' has no stated formula (an alias or a non-fact)", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    if (fact.params != null) {
+        self.sink.add(fact.name.start, "'{s}' is a schema; its statement is not a ground formula", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        return .failed;
+    }
+    const formula = fact.formula;
+
+    // RESOLUTION ns = the file's UNIVERSE ns (source names resolve there, then applyModel
+    // redirects for a transfer). A fresh Walk (no proof-local binders) + fresh counter +
+    // empty define stack own the standalone-call scratch state.
+    const resolve_ns = try self.interner.namespace(.universe, file);
+    const walk = try self.arena.create(Walk);
+    walk.* = Walk.init(self.arena, self.interner, source, self.sink);
+
+    var scanner = RefScan.init(self.arena, self.interner, source, walk);
+    const refs = try scanner.scanFormula(formula);
+    if (try resolveRefs(self, h, file, resolve_ns, model, refs)) |blocker| {
+        h.suspendOn(blocker);
+        return .suspended;
+    }
+
+    const fresh_counter = try self.arena.create(u32);
+    fresh_counter.* = 0;
+    const define_stack = try self.arena.create(std.ArrayList(InternPool.Index));
+    define_stack.* = .empty;
+
+    var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, pool, self.sink, source, walk, resolve_ns, fresh_counter);
+    e.model = model; // remap source globals for a model transfer (identity for .universe)
+    e.define_stack = define_stack;
+    const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    }, formula) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    };
+    return .{ .ready = typed.id };
+}
+
 // -- the Walk driver seam --------------------------------------------------------------
 
 pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!?Engine.TaskIndex {
     _ = block;
+    // A TRUSTED `using` step (`--fast <word>`) is NOT proved: no synthetic schema, no transfer/
+    // instance ProveTask, no cited-fact proof demands — racking any of those would pay for the
+    // whole transitive proof subtree that `--fast` exists to skip. Its read pass only makes the
+    // AST it must SHAPE-CHECK available (parse the source file; resolve a model's overlay), then
+    // `process` α-matches the statement + emits `.accelerated`. Nothing is published, so a later
+    // EXPLICIT (strict) demand of the same fact still does the full check (redone work is fine).
+    if (step.body == .claim and self.trusted(step.body.claim)) {
+        return self.trustedReadPass(w, step);
+    }
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
     const refs = try scanner.scanStep(step);
@@ -367,6 +470,100 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         }
     }
     return null;
+}
+
+/// The read pass for a TRUSTED `using` step: make the AST that `process` will SHAPE-CHECK
+/// available WITHOUT demanding any fact's PROOF. It resolves only IDENT-domain refs (sorts,
+/// funcs, preds, and the model/import NAME — cheap FetchTask/ModelTask, no proof cascade) and
+/// `demandParse`s the source file(s) whose decl AST the α-match reads. It NEVER racks a
+/// ProveTask, registers a synthetic schema, or touches FactKV. Returns a blocker to suspend on.
+fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Error!?Engine.TaskIndex {
+    const c = step.body.claim;
+    // resolve the IDENT-domain refs only (skip fact/schema — those are the proof demands we
+    // are here to AVOID). Model/import NAMES are ident-domain, so they resolve here.
+    var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
+    scanner.schema_params = self.schema_params;
+    const refs = try scanner.scanStep(step);
+    const idents = try self.ctx.arena.alloc(RefScan.Ref, refs.len);
+    var n: usize = 0;
+    for (refs) |r| switch (r.domain) {
+        .ident, .model => { // an import NAME scans as `.ident` (resolved via IdentKV)
+            idents[n] = r;
+            n += 1;
+        },
+        .fact, .schema => {}, // a PROOF demand — skipped under trust
+    };
+    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, idents[0..n])) |blocker| return blocker;
+
+    // parse the source file whose decl AST the α-match reads (model: src.thm's file; import:
+    // I's file; instantiation: the schema's file). An accelerant admits from the local goal,
+    // decl — its producer matches THIS proof's goal AST — so it parses nothing here.
+    const src_file = self.trustSourceFile(c) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return null, // diagnosed; process re-hits + rejects
+    };
+    if (src_file) |sf| switch (try self.ctx.demandParse(self.h, sf)) {
+        .parsed => {},
+        .parsing => |t| return t,
+        .unparsed => {}, // undiscovered — process's resolve diagnoses cleanly
+    };
+    return null;
+}
+
+/// The source FILE whose decl AST a trusted engine-word citation is admitted against, or null
+/// for an accelerant (which admits from the local goal alone). Resolves the model/import/
+/// schema NAME (already ident-resolved in `trustedReadPass`) to its defining file.
+fn trustSourceFile(self: *Prove, c: ast.Step.Claim) Error!?InternPool.Index {
+    const word = self.trustWord(c) orelse return null;
+    return switch (word) {
+        // model: `src.thm` — qualified names the source file via its import; unqualified is
+        // same-file (the citing file).
+        .model => blk: {
+            if (c.refs.len != 1) break :blk null;
+            const rtok = c.refs[0];
+            if (rtok.qualifier == InternPool.Index.none) break :blk self.file;
+            break :blk try self.qualifierFile(rtok);
+        },
+        // import: `I.thm` lives in I's file.
+        .import => blk: {
+            const itok = c.schema orelse break :blk null;
+            break :blk try self.importFile(itok);
+        },
+        // instantiation: the schema's file, via its `.schema` locator (resolved through FactKV,
+        // but that is a LOCATOR lookup — no proof; the schema decl AST is what we read).
+        .instantiation => blk: {
+            const stok = c.schema orelse break :blk null;
+            break :blk try self.schemaFileOf(stok);
+        },
+        else => null, // an accelerant — no remote decl to parse
+    };
+}
+
+/// The file a qualified token `ns.name`'s `ns` import points at (its imported namespace's file).
+fn qualifierFile(self: *Prove, tok: lexer.Token) Error!?InternPool.Index {
+    const ns = try self.resolveQualifier(tok);
+    return self.ctx.interner.keyOf(ns).namespace.file;
+}
+
+/// The file the import `I` (a local `.import` ident) points at.
+fn importFile(self: *Prove, itok: lexer.Token) Error!?InternPool.Index {
+    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(itok) }) orelse return null;
+    const ix = switch (st) {
+        .done => |x| x,
+        .in_flight => return null,
+    };
+    return switch (self.ctx.interner.keyOf(ix)) {
+        .import => |m| self.ctx.interner.keyOf(m.namespace).namespace.file,
+        else => null,
+    };
+}
+
+/// The file a schema name is declared in — its qualifier's namespace file (unqualified = this
+/// file). Read from the NAMESPACE (no FactKV `.schema` locator needed — we only want the file so
+/// `demandParse` makes its decl AST readable; `process`'s `resolveSchemaRef` validates the kind).
+fn schemaFileOf(self: *Prove, stok: lexer.Token) Error!?InternPool.Index {
+    const ns = try self.resolveQualifier(stok);
+    return self.ctx.interner.keyOf(ns).namespace.file;
 }
 
 /// Demand (fetch + suspend) the well-known arithmetic operator idents DECLARED in this file,
@@ -1508,6 +1705,36 @@ fn isAccelerant(rule: StrId) bool {
     return InternPool.RuleStr.of(rule) == null;
 }
 
+/// The `Verify.Word` a `using` claim's rule names — its `--fast` trust unit — or null if the
+/// claim is not a `using` step (a `by` primitive is never trustable). The three ENGINE words
+/// (`instantiation`/`model`/`import`) are RuleStr; an ACCELERANT is any other `using` word,
+/// matched by interned name (no strcmp past this seam: the rule id is already an interned StrId;
+/// this interns each candidate word once for the comparison).
+fn trustWord(self: *Prove, c: ast.Step.Claim) ?Verify.Word {
+    if (c.kind != .using) return null;
+    if (InternPool.RuleStr.of(c.rule.name)) |kind| return switch (kind) {
+        .instantiation => .instantiation,
+        .model => .model,
+        .import => .import,
+        else => null, // a `using` step should not name any other RuleStr; not trustable
+    };
+    inline for (@typeInfo(Verify.Word).@"enum".fields) |f| {
+        const engine_word = comptime (std.mem.eql(u8, f.name, "instantiation") or
+            std.mem.eql(u8, f.name, "model") or
+            std.mem.eql(u8, f.name, "import"));
+        if (!engine_word) {
+            if (c.rule.name == (self.internStr(f.name) catch return null)) return @field(Verify.Word, f.name);
+        }
+    }
+    return null;
+}
+
+/// Is this `using` step TRUSTED under the current `--fast` set? (Its word is in `verify.trusted`.)
+fn trusted(self: *Prove, c: ast.Step.Claim) bool {
+    const word = self.trustWord(c) orelse return false;
+    return self.ctx.verify.trusts(word);
+}
+
 /// Elaborate an accelerant step's claim to its prop TermId (read-pass goal for the producer).
 fn elaborateGoal(e: *Elab, formula: *const ast.Expr) Error!TermId {
     const f = try e.requireProp(try e.elaborateExpr(formula), formula);
@@ -1712,6 +1939,12 @@ fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
 fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = goal;
     const head = c.schema orelse return self.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
+    // ADMIT: the only pre-cert validation is the presence of a head; everything below RESOLVES
+    // the head fact/step and builds the synthetic schema. Skip all of it under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // resolve HEAD → its formula term + how the schema proof cites it.
@@ -1982,6 +2215,12 @@ fn internStrRt(self: *Prove, s: []const u8) Error!StrId {
 /// left for a follow-up; a goal/premise carrying a free fvar is rejected gracefully below.
 fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     if (c.args.len != 0) return self.fail(c.rule.start, "tautology takes no arguments", .{});
+    // ADMIT: the only pre-cert validation is the arg-count; the DECISION (smt.tautology) and the
+    // cert build are the expensive path. Skip both under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // premises = the cited LOCAL steps' formulae (in ref order — the body's antecedent order).
@@ -2497,6 +2736,12 @@ fn produceSimplifyQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.
 /// quantified variant re-generalizes over via `fix` blocks (they are NOT abstracted into
 /// params — the schema proof re-binds them; only genuinely-free caller-locals become params).
 fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    // ADMIT: the goal-shape validation ran in the produce* caller; everything below RESOLVES the
+    // cited rules (prepareRule → resolveFactRef) and runs the normalize decision. Skip under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // prepare the rewrite rules (in citation order) + how the cert cites each.
@@ -2900,6 +3145,13 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     const gn0 = self.pool.get(goal);
     if (gn0 != .eq) return self.fail(c.rule.start, "chain proves an equation 'A = Z'; the goal is not an equation", .{});
     if (c.refs.len == 0) return self.fail(c.rule.start, "chain needs at least one cited equation", .{});
+    // ADMIT: the pre-cert validation (goal is an equation, >=1 ref) is done; everything below
+    // RESOLVES the cited equations (resolveFactRef) and runs the BFS connection search. Skip
+    // under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // RESOLVE each cited equation to its formula + how the synthetic proof cites it (LOCAL =
@@ -3131,6 +3383,13 @@ fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Term
     if (c.args.len != 1) {
         return self.fail(c.rule.start, "assoc requires an associativity lemma: assoc(<assocLemma>); got {d} argument(s)", .{c.args.len});
     }
+    // ADMIT: goal-shape (equation) validated in the caller + arg-count here. The next step
+    // (`argRule` → resolveFactRef) RESOLVES the associativity lemma — which is exactly what an
+    // admitted step must NOT require proved (e.g. assoc_oracle's `opAssoc` is unresolvable). Skip.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     const prepared = try self.argRule(w, c.args[0]);
@@ -3243,6 +3502,13 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     // has them). The theory selector's qualifier is stamped into every emitted cite.
     const ops = (try self.readPolyOps(eq_goal_raw)) orelse
         return self.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
+    // ADMIT: the goal well-formedness check for polynomial is that it has add/mul structure
+    // (readPolyOps, a pure structural read). Below builds the hardcoded rule set + canonicalizes
+    // both sides (the decision). Skip that expensive path under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     const qualifier: StrId = if (c.schema) |s| s.name else .none;
     const pr = try Polynomial.polyRules(self, ops, qualifier, c.rule.start);
 
@@ -3427,6 +3693,13 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     // exactly two forms: bare (well-known add/mul) or three explicit lemmas. No partials.
     if (c.args.len != 0 and c.args.len != 3) {
         return self.fail(c.rule.start, "assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got {d}", .{c.args.len});
+    }
+    // ADMIT: goal-shape (equation) validated in the caller + arg-count here. Everything below
+    // RESOLVES the (distribute pre-rules and, for the explicit form, the AC triple) lemmas and
+    // runs the AC re-association search. Skip the resolution + decision under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
     }
     const explicit = c.args.len == 3;
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
@@ -3722,6 +3995,13 @@ const ExtLemma = struct {
 /// pointwise obligation (`fix x` → unfold → close residue → forall_intro), then modus_ponens the
 /// chain to `s = t`; wrap in the ∀-eigenvariable `fix` shell and package the synthetic schema.
 fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
+    // ADMIT: the goal-shape + ext-lemma-present validation ran in the produce* caller. Everything
+    // below RESOLVES the ext lemma + each unfold lemma (resolveFactRef) and builds the cert. Skip
+    // under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into value
@@ -4390,6 +4670,13 @@ fn produceArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 /// A declined-but-valid goal with `fallback(thm)` emits the fallback path; else a terminal
 /// error. STRICT ONLY — never a trusted verdict.
 fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
+    // ADMIT: the arg-count validation ran in produceArithmetic. Everything below RESOLVES the
+    // cited premises (resolveFactRef) and runs the certifier/decision-procedure chain. Skip that
+    // expensive path under `--fast`.
+    if (self.admit_mode) {
+        self.admit_ok = true;
+        return null;
+    }
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // resolve cited premises (local steps / global facts).
@@ -6747,7 +7034,150 @@ fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
     }
 }
 
+/// ADMIT a trusted `using` step: accept it WITHOUT generating/checking its proof. What
+/// "admit" MEANS is the word's own business — it is NOT necessarily a shape check:
+///   - accelerant: run the PRODUCER in ADMIT MODE (`self.admit_mode`), so each accelerant does
+///     ITS OWN cheap acceptance (usually but not always a goal-shape match) and returns before
+///     building any certificate. The accelerant owns what it trusts.
+///   - model / import: elaborate the transferred / imported STATEMENT and α-match the claim.
+///   - instantiation: elaborate the schema BODY at the bound args and α-match the claim (after
+///     peeling the cited premises off the instance's `->` prefix).
+/// Diagnoses + `error.Recover` on rejection (never silently accepts). The AST it reads was made
+/// available by `trustedReadPass` (parse + ident resolution); this pass performs NO proof demand.
+fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
+    const word = self.trustWord(c) orelse
+        return self.fail(c.rule.start, "internal: admit on a non-using step", .{});
+    switch (word) {
+        // an accelerant admits the claim on ITS OWN terms — run the producer in admit mode
+        // (it returns a sentinel after its own acceptance check, building no cert).
+        .simplify, .simplify_quantified, .assoc, .assoc_quantified, .assoc_commut, .assoc_commut_quantified, .polynomial, .polynomial_quantified, .arithmetic, .arithmetic_quantified, .tautology, .specialize, .chain, .extensionality, .extensionality_quantified => {
+            const prev_mode = self.admit_mode;
+            const prev_ok = self.admit_ok;
+            self.admit_mode = true;
+            self.admit_ok = false;
+            defer {
+                self.admit_mode = prev_mode;
+                self.admit_ok = prev_ok;
+            }
+            // the producer either ADMITS (sets admit_ok, returns null — no cert) or REJECTS
+            // (fails → error.Recover). A null return without admit_ok = the producer didn't
+            // reach an admit decision (a producer not yet admit-aware) — treat as a reject.
+            _ = try self.produceAccelerant(w, e, goal, c);
+            if (!self.admit_ok) return self.fail(c.rule.start, "'{s}' cannot admit this step under `--fast` (no fast acceptance)", .{self.text(c.rule)});
+        },
+        // model: the transferred statement = the source theorem elaborated under M's overlay
+        // (relativization included). α-match the claim.
+        .model => try self.admitModel(goal, c),
+        // import: the imported statement, elaborated in I's namespace (no model). α-match.
+        .import => try self.admitImport(goal, c),
+        // instantiation: the schema body at the bound args. α-match after peeling premises.
+        .instantiation => try self.admitInstance(e, goal, c),
+    }
+}
+
+/// Admit `[using model(M) src.thm]`: elaborate `src.thm`'s statement under M's overlay and
+/// α-match `goal` (the claim). Uses the shared `elaborateFactStatement` — the SAME relativization
+/// the strict transfer applies to the statement — so no divergence.
+fn admitModel(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
+    if (c.schema == null) return self.fail(c.rule.start, "model citation requires a model name: `[using model(M) src.thm]`", .{});
+    if (c.refs.len != 1) return self.fail(c.rule.start, "`[using model(M) …]` cites exactly one transferred theorem", .{});
+    const mtok = c.schema.?;
+    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(mtok) }) orelse
+        return self.fail(mtok.start, "unknown model '{s}'", .{self.text(mtok)});
+    const model_ix = switch (mstate) {
+        .done => |ix| ix,
+        .in_flight => return self.fail(mtok.start, "unknown model '{s}'", .{self.text(mtok)}),
+    };
+    if (self.ctx.interner.keyOf(model_ix) != .model)
+        return self.fail(mtok.start, "'{s}' is not a model", .{self.text(mtok)});
+    const rtok = c.refs[0];
+    const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else (try self.qualifierFile(rtok)) orelse
+        return self.fail(rtok.start, "unknown namespace '{s}'", .{self.ctx.interner.stringBytes(rtok.qualifier)});
+    switch (try elaborateFactStatement(self.ctx, self.h, src_file, tokName(rtok), model_ix, self.pool)) {
+        .ready => |stmt| if (!self.pool.alphaEq(stmt, goal))
+            return self.fail(c.rule.start, "the claim does not match the model transfer of '{s}':\n  claim:      {s}\n  transfer:   {s}", .{ self.text(rtok), try self.renderTerm(goal), try self.renderTerm(stmt) }),
+        .suspended => return self.fail(c.rule.start, "internal: model admission not resolved before process (read-pass bug)", .{}),
+        .failed => return error.Recover,
+    }
+}
+
+/// Shape-check `[using import(I) thm]`: elaborate `thm`'s statement in I's file (no model) and
+/// α-match `goal`.
+fn admitImport(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
+    const itok = c.schema orelse return self.fail(c.rule.start, "import citation requires an import name: `[using import(I) thm]`", .{});
+    if (c.refs.len != 1) return self.fail(c.rule.start, "`[using import(I) …]` cites exactly one imported theorem", .{});
+    const rtok = c.refs[0];
+    const ifile = (try self.importFile(itok)) orelse return self.fail(itok.start, "unknown import '{s}'", .{self.text(itok)});
+    switch (try elaborateFactStatement(self.ctx, self.h, ifile, tokName(rtok), .universe, self.pool)) {
+        .ready => |stmt| if (!self.pool.alphaEq(stmt, goal))
+            return self.fail(c.rule.start, "the claim does not match imported '{s}.{s}':\n  claim:    {s}\n  imported: {s}", .{ self.text(itok), self.text(rtok), try self.renderTerm(goal), try self.renderTerm(stmt) }),
+        .suspended => return self.fail(c.rule.start, "internal: import admission not resolved before process (read-pass bug)", .{}),
+        .failed => return error.Recover,
+    }
+}
+
+/// Resolve a schema reference to its AST decl WITHOUT the FactKV `.schema` locator (which a
+/// trusted read pass never demands). The file comes from the qualifier's namespace + the decl
+/// from the by-name AST registry (both available after `demandParse`). Mirrors `resolveSchemaRef`
+/// minus the fact lookup — for the admit path only.
+fn resolveSchemaDecl(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
+    const ns = try self.resolveQualifier(tok);
+    const file = self.ctx.interner.keyOf(ns).namespace.file;
+    const fid = self.ctx.pool_file.get(file) orelse
+        return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
+    const decl = self.ctx.declOf(fid, tokName(tok)) orelse
+        return self.fail(tok.start, "unknown schema '{s}'", .{self.text(tok)});
+    const fact = ast.factOf(decl) orelse
+        return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
+    if (fact.params == null)
+        return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
+    return .{
+        .file = file,
+        .ns = ns,
+        .name = tokName(tok),
+        .fact = fact,
+        .source = self.ctx.files.items[@intFromEnum(fid)].source,
+    };
+}
+
+/// Admit `[using instantiation S(args)]`: elaborate S's body at the bound args (the monomorphized
+/// instance formula), peel the cited premises off its `->` prefix, and α-match the remaining
+/// consequent chain against `goal`. Reads the schema decl straight from AST (`resolveSchemaDecl`,
+/// no proof/locator demand) + `bindSchemaArgs`.
+fn admitInstance(self: *Prove, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
+    if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
+    const rs = try self.resolveSchemaDecl(c.schema.?);
+    const args = try self.bindSchemaArgs(e, rs, c);
+    // elaborate the schema body under a schema-scoped Elab (params resolve via schema_args),
+    // model-aware (a transfer monomorphizes under M). This is the instance formula.
+    var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, e.walk, rs.ns, &self.fresh_counter);
+    se.schema_args = args;
+    se.model = self.model;
+    se.no_relativize = true; // a schema body's guards are explicit in its statement, not injected
+    const inst = try se.requireProp(try se.elaborateExpr(rs.fact.formula), rs.fact.formula);
+    // peel `c.refs.len` cited premises off the instance's leading `->` chain; the remainder must
+    // α-match the claim (the kernel's schema_instance does exactly this premise-peel).
+    var rem = inst.id;
+    var i: usize = 0;
+    while (i < c.refs.len) : (i += 1) {
+        const n = self.pool.get(rem);
+        if (n != .bin or n.bin.op != .implies)
+            return self.fail(c.rule.start, "schema instance has fewer premises than cited references", .{});
+        rem = n.bin.rhs;
+    }
+    if (!self.pool.alphaEq(rem, goal))
+        return self.fail(c.rule.start, "the claim does not match the instantiation of '{s}':\n  claim:    {s}\n  instance: {s}", .{ self.text(c.schema.?), try self.renderTerm(goal), try self.renderTerm(rem) });
+}
+
 fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
+    // TRUSTED (`--fast <word>`): the step is accelerated — its proof is NOT generated/checked.
+    // SHAPE-CHECK ONLY (the claim's α-match against what the citation would produce), then emit
+    // `.accelerated` (the kernel checks nothing for it). `by` primitives never reach here trusted
+    // (trustWord returns null for them). Publishes nothing; a later strict demand redoes the work.
+    if (self.trusted(c)) {
+        try self.admit(w, e, goal, c);
+        return .{ .accelerated = c.rule.name };
+    }
     // An ACCELERANT (`using <accel> …`) lowers to a schema_instance over its generated
     // synthetic schema (the instance was demanded + proven in the read pass).
     if (c.kind == .using and isAccelerant(c.rule.name)) return self.lowerUsing(w, e, kb, goal, c);

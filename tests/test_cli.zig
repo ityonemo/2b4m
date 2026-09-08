@@ -17,7 +17,7 @@ pub fn addTests(
     const no_args = b.addRunArtifact(exe);
     no_args.has_side_effects = true;
     no_args.expectStdErrEqual(
-        "usage: bpa check [--fast | --faster | --reckless] [--draft] <file.bpa>\n" ++
+        "usage: bpa check [--fast [W…] | --fast --slow W…] [--draft] <file.bpa>\n" ++
             "       bpa fmt [--check] <file.bpa|.md>\n" ++
             "       bpa lint <file.bpa|.md>\n" ++
             "       bpa debug accelerant <file> <line | theorem step-label>\n" ++
@@ -112,20 +112,22 @@ pub fn addTests(
 
     // proof-carrying schema `zeroLike(t): t = ZERO` whose body only survives the
     // t := ZERO instance. STRICT rejects it at DECLARATION (opaque-parameter check:
-    // the body must hold generically, and `opaque = ZERO` is not reflexivity) AND
-    // at the failing instantiation. An over-general schema is unsound as written;
-    // proving one true specialization does not rescue it.
+    // the body must hold generically, and `opaque = ZERO` is not reflexivity). A
+    // theorem-SCHEMA must be a TRUE UNIVERSAL over its params — a precondition belongs IN the
+    // statement (`myPred(t) -> t = ZERO`), never as an implicit "only pass good args" contract.
+    // The opaque self-instantiation enforces that at the DECL, and it is UNGATED (runs in every
+    // mode) — it is exactly what makes trusting `instantiation` under `--fast` sound.
     ctx.fail(&.{ "check", "tests/cases/schema_per_instance.bpa" },
         \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
-        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'opaque-schema-param#t#1 = ZERO'
-        \\tests/cases/schema_per_instance.bpa:29:21: error: instantiation of schema 'zeroLike' failed here
+        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'opaque-schema-param = ZERO'
         \\
     );
-    // --fast keeps the lazy per-instance behavior: the schema declares fine (body
-    // unchecked), and only the bad instantiation `zeroLike(succ ZERO)` fails.
+    // --fast trusts `instantiation` (instances are admitted, not proved) — so the bad instance
+    // `zeroLike(succ ZERO)` is NOT re-checked. But the DECL well-formedness check is UNGATED, so
+    // the malformed schema is still caught (the opaque self-instantiation fails). Only the
+    // concrete-instance error line is gone (the instance is never proved under --fast).
     ctx.fail(&.{ "check", "--fast", "tests/cases/schema_per_instance.bpa" },
-        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
-        \\tests/cases/schema_per_instance.bpa:29:21: error: instantiation of schema 'zeroLike' failed here
+        \\tests/cases/schema_per_instance.bpa:10:4: error: reflexivity requires a claim of the form 't = t', got 'opaque-schema-param = ZERO'
         \\
     );
 
