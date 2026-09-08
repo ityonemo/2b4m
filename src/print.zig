@@ -54,21 +54,21 @@ const Printer = struct {
         return self.interner.stringBytes(self.interner.nameOf(@enumFromInt(@intFromEnum(sym))));
     }
 
+    /// Collect the display names of every free var in `id` into `fvar_names`. Iterative work-stack
+    /// (was native recursion) — depth-safe. Frontier stack on the pool's GPA (reclaimed here);
+    /// `fvar_names` stays on the printer arena. Uses the pool's shared `pushChildren`.
     fn collectFvars(self: *Printer, id: TermId) Allocator.Error!void {
-        switch (self.pool.get(id)) {
-            .bvar => {},
-            .fvar => |v| try self.fvar_names.put(self.arena, self.displayName(v.name), {}),
-            .app, .pred => |a| for (self.pool.args(a)) |arg| try self.collectFvars(arg),
-            .eq => |p| {
-                try self.collectFvars(p.lhs);
-                try self.collectFvars(p.rhs);
-            },
-            .not => |t| try self.collectFvars(t),
-            .bin => |b| {
-                try self.collectFvars(b.lhs);
-                try self.collectFvars(b.rhs);
-            },
-            .quant => |q| try self.collectFvars(q.body),
+        var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.pool.gpa);
+        const a = fb.get();
+        var stack: std.ArrayList(TermId) = .empty;
+        defer stack.deinit(a);
+        try stack.append(a, id);
+        while (stack.pop()) |cur| {
+            const node = self.pool.get(cur);
+            switch (node) {
+                .fvar => |v| try self.fvar_names.put(self.arena, self.displayName(v.name), {}),
+                else => try self.pool.pushChildren(&stack, a, node),
+            }
         }
     }
 
@@ -82,40 +82,67 @@ const Printer = struct {
 
     const Error = std.Io.Writer.Error || Allocator.Error;
 
-    fn print(self: *Printer, w: *std.Io.Writer, id: TermId, min_prec: u8) Error!void {
+    /// A pending print action, processed LIFO so output emits left-to-right (children/literals are
+    /// pushed in REVERSE). Replaces the native print recursion — a deep term can't overflow the C
+    /// stack. `.lit` writes a fixed string; `.term` expands a subterm at a min-precedence;
+    /// `.pop_bound` pops a quantifier's bound name after its body prints.
+    const Act = union(enum) {
+        lit: []const u8,
+        term: struct { id: TermId, min_prec: u8 },
+        pop_bound,
+    };
+
+    fn print(self: *Printer, w: *std.Io.Writer, root: TermId, root_min_prec: u8) Error!void {
+        var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(Act), self.pool.gpa);
+        const a = fb.get();
+        var stack: std.ArrayList(Act) = .empty;
+        defer stack.deinit(a);
+        try stack.append(a, .{ .term = .{ .id = root, .min_prec = root_min_prec } });
+        while (stack.pop()) |act| switch (act) {
+            .lit => |s| try w.writeAll(s),
+            .pop_bound => _ = self.bound.pop(),
+            .term => |ti| try self.expandTerm(w, &stack, a, ti.id, ti.min_prec),
+        };
+    }
+
+    /// Expand one subterm into `stack` actions (pushed REVERSED so they emit in order). Leaf nodes
+    /// (bvar/fvar/nullary app) write directly. `min_prec` drives parenthesization exactly as the
+    /// former recursion. Boolean operands fold in the old `printBoolOperand` force-paren rule.
+    fn expandTerm(self: *Printer, w: *std.Io.Writer, stack: *std.ArrayList(Act), a: std.mem.Allocator, id: TermId, min_prec: u8) Error!void {
         switch (self.pool.get(id)) {
-            .bvar => |i| {
-                const name = self.bound.items[self.bound.items.len - 1 - i];
-                try w.writeAll(name);
-            },
+            .bvar => |i| try w.writeAll(self.bound.items[self.bound.items.len - 1 - i]),
             .fvar => |v| try w.writeAll(self.displayName(v.name)),
-            .app, .pred => |a| {
-                try w.writeAll(self.symName(a.sym));
-                if (a.args_len > 0) {
-                    try w.writeAll("(");
-                    for (self.pool.args(a), 0..) |arg, i| {
-                        if (i > 0) try w.writeAll(", ");
-                        try self.print(w, arg, 0);
+            .app, .pred => |ap| {
+                try w.writeAll(self.symName(ap.sym));
+                if (ap.args_len > 0) {
+                    // sym( arg0, arg1, … ) — push ")" then, for each arg from last to first,
+                    // the arg then a ", " separator (except before arg0).
+                    try stack.append(a, .{ .lit = ")" });
+                    const args = self.pool.args(ap);
+                    var i: usize = args.len;
+                    while (i > 0) {
+                        i -= 1;
+                        try stack.append(a, .{ .term = .{ .id = args[i], .min_prec = 0 } });
+                        if (i > 0) try stack.append(a, .{ .lit = ", " });
                     }
-                    try w.writeAll(")");
+                    try w.writeAll("(");
                 }
             },
             .eq => |p| {
-                try self.print(w, p.lhs, 5);
-                try w.writeAll(" = ");
-                try self.print(w, p.rhs, 5);
+                try stack.append(a, .{ .term = .{ .id = p.rhs, .min_prec = 5 } });
+                try stack.append(a, .{ .lit = " = " });
+                try stack.append(a, .{ .term = .{ .id = p.lhs, .min_prec = 5 } });
             },
             .not => |t| {
-                // sugar: not(eq) renders as !=
-                if (self.pool.get(t) == .eq) {
+                if (self.pool.get(t) == .eq) { // sugar: not(eq) → !=
                     const p = self.pool.get(t).eq;
-                    try self.print(w, p.lhs, 5);
-                    try w.writeAll(" != ");
-                    try self.print(w, p.rhs, 5);
-                    return;
+                    try stack.append(a, .{ .term = .{ .id = p.rhs, .min_prec = 5 } });
+                    try stack.append(a, .{ .lit = " != " });
+                    try stack.append(a, .{ .term = .{ .id = p.lhs, .min_prec = 5 } });
+                } else {
+                    try stack.append(a, .{ .term = .{ .id = t, .min_prec = 5 } });
+                    try w.writeAll("not ");
                 }
-                try w.writeAll("not ");
-                try self.print(w, t, 5);
             },
             .bin => |b| {
                 const prec: u8, const op: []const u8 = switch (b.op) {
@@ -124,18 +151,16 @@ const Printer = struct {
                     .and_op => .{ 3, " and " },
                 };
                 const need_parens = min_prec > prec;
-                if (need_parens) try w.writeAll("(");
-                // implies is right-assoc; or/and are left-assoc
+                // implies is right-assoc; or/and left-assoc.
                 const lhs_prec: u8 = if (b.op == .implies) prec + 1 else prec;
                 const rhs_prec: u8 = if (b.op == .implies) prec else prec + 1;
-                try self.printBoolOperand(w, b.lhs, b.op, lhs_prec);
-                try w.writeAll(op);
-                try self.printBoolOperand(w, b.rhs, b.op, rhs_prec);
-                if (need_parens) try w.writeAll(")");
+                if (need_parens) try w.writeAll("(");
+                if (need_parens) try stack.append(a, .{ .lit = ")" });
+                self.pushBoolOperand(stack, a, b.rhs, b.op, rhs_prec);
+                try stack.append(a, .{ .lit = op });
+                self.pushBoolOperand(stack, a, b.lhs, b.op, lhs_prec);
             },
             .quant => |q| {
-                // binds to the end of the formula: parenthesize unless we are
-                // already in lowest-precedence (rightmost) position
                 const need_parens = min_prec > 1;
                 if (need_parens) try w.writeAll("(");
                 const hint = self.displayName(q.hint);
@@ -149,33 +174,30 @@ const Printer = struct {
                     name,
                     self.interner.sortName(@enumFromInt(@intFromEnum(q.sort))),
                 });
-                try self.bound.append(self.arena, name);
-                try self.print(w, q.body, 0);
-                _ = self.bound.pop();
-                if (need_parens) try w.writeAll(")");
+                try self.bound.append(self.arena, name); // in scope for the body
+                if (need_parens) try stack.append(a, .{ .lit = ")" });
+                try stack.append(a, .pop_bound); // after the body prints
+                try stack.append(a, .{ .term = .{ .id = q.body, .min_prec = 0 } });
             },
         }
     }
 
-    /// Print an operand of the boolean operator `parent_op`, forcing parens
-    /// when the operand is a *different* boolean operator (or a `not`). This
-    /// keeps output legal under the parser's mixed-boolean-operator paren rule:
-    /// same-op chains (`a or b or c`) print bare; any mix is parenthesized.
-    fn printBoolOperand(self: *Printer, w: *std.Io.Writer, id: TermId, parent_op: anytype, min_prec: u8) Error!void {
+    /// Push a boolean operand, forcing parens when it is a DIFFERENT boolean op (or a real `not`) —
+    /// the parser's mixed-boolean paren rule (same-op chains bare; any mix parenthesized). The
+    /// forced-paren case wraps in literal "(" … ")" around a fresh min_prec-0 term expansion.
+    fn pushBoolOperand(self: *Printer, stack: *std.ArrayList(Act), a: std.mem.Allocator, id: TermId, parent_op: anytype, min_prec: u8) void {
         const node = self.pool.get(id);
         const force = switch (node) {
-            .bin => |b| b.op != parent_op, // different and/or/-> => parens
-            // a real `not` needs parens; but `not(eq)` prints as `!=`, a
-            // comparison, which the parser does not treat as a boolean op
-            .not => |t| self.pool.get(t) != .eq,
+            .bin => |b| b.op != parent_op,
+            .not => |t| self.pool.get(t) != .eq, // a real not; not(eq) prints as `!=` (a comparison)
             else => false,
         };
         if (force) {
-            try w.writeAll("(");
-            try self.print(w, id, 0);
-            try w.writeAll(")");
+            stack.append(a, .{ .lit = ")" }) catch @panic("print: OOM");
+            stack.append(a, .{ .term = .{ .id = id, .min_prec = 0 } }) catch @panic("print: OOM");
+            stack.append(a, .{ .lit = "(" }) catch @panic("print: OOM");
         } else {
-            try self.print(w, id, min_prec);
+            stack.append(a, .{ .term = .{ .id = id, .min_prec = min_prec } }) catch @panic("print: OOM");
         }
     }
 };
