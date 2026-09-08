@@ -409,44 +409,46 @@ fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, s
 /// the FIRST unresolved name (idempotent: each resume re-walks and gets one further).
 /// `visited` cycle-guards `define TWO = TWO` / mutual define cycles.
 fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index, d: anytype, name: InternPool.StrId) ResolveError!void {
-    // `visited` (cycle-guard) + the per-binder-scope `extended` arrays are pure scratch, consumed
-    // within this walk. On a suspend the whole FetchTask re-runs and this closure restarts, so the
-    // scratch lifetime is exactly one attempt = this scope. Use a GPA-backed arena (reclaimed on
-    // return) instead of leaking into the never-reset main arena.
+    // ITERATIVE define-closure walk (was mutual recursion demandDefineBody↔Ref↔Binders) — a deeply
+    // nested define body can no longer overflow the C stack. A work-stack of `(expr, file, params)`
+    // frames: each expr either demands a leaf ref or pushes its sub-exprs; a binder extends `params`
+    // (the locals to skip); following a cited define pushes ITS body under its OWN file+params.
+    // `visited` cycle-guards define→define chains. All scratch (stack, `visited`, per-binder
+    // `extended`) is a GPA-backed arena, reclaimed on return. A `demandTok` miss returns
+    // `error.Unresolved` (propagated): the FetchTask suspends + re-runs, restarting this walk.
     var closure_scratch: std.heap.ArenaAllocator = .init(self.gpa);
     defer closure_scratch.deinit();
     const scratch = closure_scratch.allocator();
+
+    const Frame = struct { e: *const ast.Expr, file: InternPool.Index, params: []const ast.Binder };
     var visited: std.ArrayList(DefineSite) = .empty;
     try visited.append(scratch, .{ .file = file, .name = name });
-    try demandDefineBody(self, h, file, d.value, d.params, &visited, scratch);
+    var stack: std.ArrayList(Frame) = .empty;
+    try stack.append(scratch, .{ .e = d.value, .file = file, .params = d.params });
+
+    while (stack.pop()) |f| {
+        switch (f.e.*) {
+            .name => |tok| try demandDefineRef(self, h, f.file, tok, f.params, &visited, &stack, scratch),
+            .call => |c| {
+                try demandDefineRef(self, h, f.file, c.callee, f.params, &visited, &stack, scratch);
+                for (c.args) |arg| try stack.append(scratch, .{ .e = arg, .file = f.file, .params = f.params });
+            },
+            .binary => |b| {
+                try stack.append(scratch, .{ .e = b.lhs, .file = f.file, .params = f.params });
+                try stack.append(scratch, .{ .e = b.rhs, .file = f.file, .params = f.params });
+            },
+            .not => |n| try stack.append(scratch, .{ .e = n.operand, .file = f.file, .params = f.params }),
+            .quant => |q| try demandDefineBinders(self, h, f.file, q.binders, q.body, f.params, &stack, scratch),
+            .lambda => |l| try demandDefineBinders(self, h, f.file, l.binders, l.body, f.params, &stack, scratch),
+        }
+    }
 }
 
 const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
 
-/// Walk one define body Expr, demanding its free global references. `params` (the define's
-/// parameters) and quantifier/lambda binders are LOCALS — skipped. `visited` = the define
-/// call-stack (cycle guard). All resolution is under `file`'s namespace.
-fn demandDefineBody(self: *Context, h: *Engine.Handle, file: InternPool.Index, e: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
-    switch (e.*) {
-        .name => |tok| try demandDefineRef(self, h, file, tok, params, visited, scratch),
-        .call => |c| {
-            try demandDefineRef(self, h, file, c.callee, params, visited, scratch);
-            for (c.args) |a| try demandDefineBody(self, h, file, a, params, visited, scratch);
-        },
-        .binary => |b| {
-            try demandDefineBody(self, h, file, b.lhs, params, visited, scratch);
-            try demandDefineBody(self, h, file, b.rhs, params, visited, scratch);
-        },
-        .not => |n| try demandDefineBody(self, h, file, n.operand, params, visited, scratch),
-        .quant => |q| try demandDefineBinders(self, h, file, q.binders, q.body, params, visited, scratch),
-        .lambda => |l| try demandDefineBinders(self, h, file, l.binders, l.body, params, visited, scratch),
-    }
-}
-
-fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
-    // binder SORTS/GUARDS are global references; the binder NAMES shadow for the body. Rather
-    // than track a second local set, append the binders to `params` for the body walk (both
-    // are just "names that are not global here").
+/// A binder scope: demand each binder's SORT/GUARD (global refs), then push the body frame with an
+/// EXTENDED `params` (binder names shadow → skipped as locals in the body). Helper for the walk.
+fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
     for (binders) |b| {
         _ = try demandTok(self, h, file, b.sort);
         if (b.guard) |g| _ = try demandTok(self, h, file, g);
@@ -454,12 +456,13 @@ fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index
     const extended = try scratch.alloc(ast.Binder, params.len + binders.len);
     @memcpy(extended[0..params.len], params);
     @memcpy(extended[params.len..], binders);
-    try demandDefineBody(self, h, file, body, extended, visited, scratch);
+    try stack.append(scratch, .{ .e = body, .file = file, .params = extended });
 }
 
-/// One reference token in a define body. A param/binder-local bare name is skipped. Else
-/// resolve its target file (qualifier → import) + demand it; if it names a define, recurse.
-fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), scratch: std.mem.Allocator) ResolveError!void {
+/// One reference token in a define body. A param/binder-local bare name is skipped. Else resolve
+/// its target (qualifier → import) + demand it; if it names a define, PUSH its body onto `stack`
+/// (under the target's file + params) to continue the walk. Cycle-guarded via `visited`.
+fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
     if (tok.qualifier == InternPool.Index.none) {
         for (params) |p| if (p.name.name == tok.name) return; // a define param / binder local
     }
@@ -467,11 +470,10 @@ fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, to
     if (self.interner.keyOf(target) == .define) {
         const dfile = self.interner.keyOf(target).define.file;
         for (visited.items) |v| if (v.file == dfile and v.name == tok.name) return; // cycle
-        // the target define's home file is parsed (demandTok resolved it there); recurse.
         const dfid = self.pool_file.get(dfile).?;
         const ddecl = self.declOf(dfid, tok.name).?;
         try visited.append(scratch, .{ .file = dfile, .name = tok.name });
-        try demandDefineBody(self, h, dfile, ddecl.define.value, ddecl.define.params, visited, scratch);
+        try stack.append(scratch, .{ .e = ddecl.define.value, .file = dfile, .params = ddecl.define.params });
     }
 }
 
