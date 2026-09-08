@@ -164,12 +164,14 @@ pub const Pool = struct {
     };
 
     /// The number of stack frames an INLINE (`stackFallback`) work-stack holds before spilling to
-    /// the GPA. A term this deep is already pathological; the common case never spills.
-    const inline_stack = 256;
+    /// the GPA. A term this deep is already pathological; the common case never spills. `pub` so
+    /// callers outside term.zig (Prove/simplify/Schema single-tree walks) size their inline buffer.
+    pub const inline_stack = 256;
 
     /// Push a node's direct child TermIds onto `stack` (the single-tree traversal frontier). Leaf
-    /// nodes (`bvar`/`fvar`) push nothing. Shared by the iterative single-tree predicates.
-    fn pushChildren(self: *const Pool, stack: *std.ArrayList(TermId), a: std.mem.Allocator, node: Node) Allocator.Error!void {
+    /// nodes (`bvar`/`fvar`) push nothing. `pub` — shared by iterative single-tree walks in Prove/
+    /// simplify/Schema too, not just the term.zig predicates.
+    pub fn pushChildren(self: *const Pool, stack: *std.ArrayList(TermId), a: std.mem.Allocator, node: Node) Allocator.Error!void {
         switch (node) {
             .bvar, .fvar => {},
             .app, .pred => |ap| try stack.appendSlice(a, self.args(ap)),

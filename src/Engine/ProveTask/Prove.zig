@@ -3074,24 +3074,29 @@ fn abstractGoal(self: *Prove, b: *Accelerant.Builder, goal: TermId, local_prem_f
 }
 
 /// Collect distinct free fvars (by name) into `out`.
+/// Collect the DISTINCT free vars of `id` into `out` (on the caller's arena). Iterative work-stack
+/// (was native recursion) — depth-safe. The frontier stack is GPA-backed scratch (reclaimed here);
+/// `out` stays durable. (Note: this collects fvars regardless of binder depth — a "free var" here
+/// is any `.fvar` node, matching the original; bound vars are `.bvar` and contribute nothing.)
 fn collectFreeFvars(self: *Prove, id: TermId, out: *std.ArrayList(term.Node.Fvar)) Error!void {
-    switch (self.pool.get(id)) {
-        .fvar => |v| {
-            for (out.items) |e| if (e.name == v.name) return;
-            try out.append(self.ctx.arena, v);
-        },
-        .bvar => {},
-        .app, .pred => |a| for (self.pool.args(a)) |arg| try self.collectFreeFvars(arg, out),
-        .eq => |p| {
-            try self.collectFreeFvars(p.lhs, out);
-            try self.collectFreeFvars(p.rhs, out);
-        },
-        .not => |t| try self.collectFreeFvars(t, out),
-        .bin => |bn| {
-            try self.collectFreeFvars(bn.lhs, out);
-            try self.collectFreeFvars(bn.rhs, out);
-        },
-        .quant => |q| try self.collectFreeFvars(q.body, out),
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(a, id);
+    while (stack.pop()) |cur| {
+        const node = self.pool.get(cur);
+        switch (node) {
+            .fvar => |v| {
+                var seen = false;
+                for (out.items) |e| if (e.name == v.name) {
+                    seen = true;
+                    break;
+                };
+                if (!seen) try out.append(self.ctx.arena, v);
+            },
+            else => try self.pool.pushChildren(&stack, a, node),
+        }
     }
 }
 
