@@ -850,27 +850,44 @@ fn tccDischarged(self: *Prove, kb: kernel.BlockId, formula: TermId) bool {
 }
 
 fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *std.ArrayList(TermId)) bool {
-    var f = formula;
-    while (true) {
-        for (hyps.items) |h| if (self.pool.alphaEq(h, f)) return true;
-        if (self.tccMatches(kb, f)) return true;
-        const node = self.pool.get(f);
-        if (node == .bin and node.bin.op == .implies) {
-            hyps.append(self.ctx.arena, node.bin.lhs) catch return false;
-            f = node.bin.rhs;
-            continue;
+    // Iterative (was a `while` loop with one `.and_op` self-recursion): a work-stack of formulas
+    // that must ALL discharge (an AND). Each is peeled (implies pushes its antecedent onto the
+    // SHARED `hyps`; a forall opens under a fresh eigenvar) until it matches a hyp/TCC or splits on
+    // `and`. Preserves the original's shared-`hyps` semantics (an implies antecedent from one
+    // conjunct stays visible to later conjuncts — same pointer, sequential processing).
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    stack.append(wa, formula) catch return false;
+    outer: while (stack.pop()) |start| {
+        var f = start;
+        while (true) {
+            for (hyps.items) |h| if (self.pool.alphaEq(h, f)) continue :outer; // this conjunct discharged
+            if (self.tccMatches(kb, f)) continue :outer;
+            const node = self.pool.get(f);
+            if (node == .bin and node.bin.op == .implies) {
+                hyps.append(self.ctx.arena, node.bin.lhs) catch return false;
+                f = node.bin.rhs;
+                continue;
+            }
+            if (node == .bin and node.bin.op == .and_op) {
+                // push rhs then lhs so LHS pops first — matches the original `lhs and rhs` order,
+                // so an antecedent LHS pushes onto the shared `hyps` is visible to RHS.
+                stack.append(wa, node.bin.rhs) catch return false;
+                stack.append(wa, node.bin.lhs) catch return false;
+                continue :outer;
+            }
+            if (node == .quant and node.quant.q == .forall) {
+                const fresh = self.freshNamed("obl") catch return false;
+                const fv = self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } }) catch return false;
+                f = self.pool.open(node.quant.body, fv) catch return false;
+                continue;
+            }
+            return false; // this conjunct couldn't discharge → whole thing fails
         }
-        if (node == .bin and node.bin.op == .and_op) {
-            return self.tccDischargedHyps(kb, node.bin.lhs, hyps) and self.tccDischargedHyps(kb, node.bin.rhs, hyps);
-        }
-        if (node == .quant and node.quant.q == .forall) {
-            const fresh = self.freshNamed("obl") catch return false;
-            const fv = self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } }) catch return false;
-            f = self.pool.open(node.quant.body, fv) catch return false;
-            continue;
-        }
-        return false;
     }
+    return true; // every conjunct discharged
 }
 
 /// Produce a PROVEN step whose formula is the guard `g` (`good(t)`), and return its SRef —
