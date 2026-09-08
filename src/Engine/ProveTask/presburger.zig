@@ -294,7 +294,7 @@ const Ctx = struct {
             } });
         }
         const ground = try self.eliminate(closed);
-        if (!evalGround(ground)) return .unsat;
+        if (!try self.evalGround(ground)) return .unsat;
 
         // Not valid. On the DECIDE path (a goal is present): if any opaque
         // subterm was abstracted, the goal genuinely needs reasoning beyond
@@ -315,7 +315,7 @@ const Ctx = struct {
         const qf = try self.eliminate(f);
         const values = try self.arena.alloc(i128, self.width);
         @memset(values, 0);
-        if (self.witness(qf, 0, values)) {
+        if (try self.witness(qf, values)) {
             const out = try self.arena.alloc(Assignment, self.free_vars.items.len);
             for (self.free_vars.items, out) |fv, *a| {
                 a.* = .{ .name = fv.name, .value = values[fv.id], .term = fv.term };
@@ -373,33 +373,48 @@ const Ctx = struct {
 
     // --- compilation: kernel term -> formula over linear atoms ---
 
-    /// Over-count quantifier binders and leaves for the vector width.
+    /// Over-count quantifier binders and leaves for the vector width. Iterative
+    /// work-stack over the term tree (was native recursion): traversal order does
+    /// not matter — every leaf/binder contributes the same increment. On the
+    /// (arena-backed, practically-unreachable) OOM path it over-estimates the
+    /// width, which is always safe: width is an upper bound on the variable count.
     fn countVars(self: *Ctx, t: TermId, bound: *usize) void {
-        switch (self.pool.get(t)) {
-            .bvar => {},
-            .fvar => bound.* += 1,
-            // +1 per app over-provisions width for a possible opaque-atom
-            // abstraction (an upper bound is all that is needed); recurse for any
-            // vars/atoms in the arguments too.
-            .app => |a| {
-                bound.* += 1;
-                for (self.pool.args(a)) |arg| self.countVars(arg, bound);
-            },
-            .pred => |a| for (self.pool.args(a)) |arg| self.countVars(arg, bound),
-            .eq => |p| {
-                self.countVars(p.lhs, bound);
-                self.countVars(p.rhs, bound);
-            },
-            .not => |inner| self.countVars(inner, bound),
-            .bin => |b| {
-                self.countVars(b.lhs, bound);
-                self.countVars(b.rhs, bound);
-            },
-            .quant => |q| {
-                bound.* += 1;
-                self.countVars(q.body, bound);
-            },
+        var fb = std.heap.stackFallback(64 * @sizeOf(TermId), self.arena);
+        const a = fb.get();
+        var stack: std.ArrayList(TermId) = .empty;
+        defer stack.deinit(a);
+        stack.append(a, t) catch return overCount(bound);
+        while (stack.pop()) |cur| {
+            switch (self.pool.get(cur)) {
+                .bvar => {},
+                .fvar => bound.* += 1,
+                // +1 per app over-provisions width for a possible opaque-atom
+                // abstraction (an upper bound is all that is needed); recurse for
+                // any vars/atoms in the arguments too.
+                .app => |ap| {
+                    bound.* += 1;
+                    for (self.pool.args(ap)) |arg| stack.append(a, arg) catch return overCount(bound);
+                },
+                .pred => |ap| for (self.pool.args(ap)) |arg| stack.append(a, arg) catch return overCount(bound),
+                .eq => |p| {
+                    stack.append(a, p.lhs) catch return overCount(bound);
+                    stack.append(a, p.rhs) catch return overCount(bound);
+                },
+                .not => |inner| stack.append(a, inner) catch return overCount(bound),
+                .bin => |b| {
+                    stack.append(a, b.lhs) catch return overCount(bound);
+                    stack.append(a, b.rhs) catch return overCount(bound);
+                },
+                .quant => |q| {
+                    bound.* += 1;
+                    stack.append(a, q.body) catch return overCount(bound);
+                },
+            }
         }
+    }
+
+    fn overCount(bound: *usize) void {
+        bound.* += 1_000_000;
     }
 
     fn node(self: *Ctx, f: Formula) Error!*const Formula {
@@ -476,24 +491,62 @@ const Ctx = struct {
     }
 
     /// Does `t` mention a currently-open quantifier binder (an elimination
-    /// target)? Such a subterm cannot be soundly abstracted as an atom.
+    /// target)? Such a subterm cannot be soundly abstracted as an atom. Iterative
+    /// work-stack (was native recursion): a disjunction over leaves, so stack
+    /// order is irrelevant. OOM conservatively reports "mentions" — that only ever
+    /// REFUSES an abstraction (declines a step), never admits a bad one.
     fn mentionsElim(self: *Ctx, t: TermId) bool {
+        var fb = std.heap.stackFallback(64 * @sizeOf(TermId), self.arena);
+        const a = fb.get();
+        var stack: std.ArrayList(TermId) = .empty;
+        defer stack.deinit(a);
+        stack.append(a, t) catch return true;
+        while (stack.pop()) |cur| {
+            switch (self.pool.get(cur)) {
+                .bvar => {},
+                .fvar => |v| if (self.elim_names.contains(v.name)) return true,
+                .app, .pred => |ap| for (self.pool.args(ap)) |arg| stack.append(a, arg) catch return true,
+                .eq => |p| {
+                    stack.append(a, p.lhs) catch return true;
+                    stack.append(a, p.rhs) catch return true;
+                },
+                .not => |inner| stack.append(a, inner) catch return true,
+                .bin => |b| {
+                    stack.append(a, b.lhs) catch return true;
+                    stack.append(a, b.rhs) catch return true;
+                },
+                .quant => |q| stack.append(a, q.body) catch return true,
+            }
+        }
+        return false;
+    }
+
+    /// The arithmetic operator a linear app node combines its children with. A
+    /// `.leaf` node has no linear children (constant / fvar / opaque atom) and is
+    /// resolved directly; the others recurse on 1 or 2 term children.
+    const LinOp = enum { leaf, succ, prev, neg, sub, add, mul };
+
+    /// Classify an app/leaf term for `linearOf` (does NOT register fvars or
+    /// abstract atoms — that happens when the node is resolved as a leaf or
+    /// rebuilt).
+    fn linOp(self: *Ctx, t: TermId) LinOp {
         switch (self.pool.get(t)) {
-            .bvar => return false,
-            .fvar => |v| return self.elim_names.contains(v.name),
-            .app, .pred => |a| {
-                for (self.pool.args(a)) |arg| if (self.mentionsElim(arg)) return true;
-                return false;
+            .app => |a| {
+                const args = self.pool.args(a);
+                if (matches(a.sym, self.symbols.succ) and args.len == 1) return .succ;
+                if (matches(a.sym, self.symbols.prev) and args.len == 1) return .prev;
+                if (matches(a.sym, self.symbols.neg) and args.len == 1) return .neg;
+                if (matches(a.sym, self.symbols.sub) and args.len == 2) return .sub;
+                if (matches(a.sym, self.symbols.add) and args.len == 2) return .add;
+                if (matches(a.sym, self.symbols.mul) and args.len == 2) return .mul;
+                return .leaf; // zero/one/foreign app
             },
-            .eq => |p| return self.mentionsElim(p.lhs) or self.mentionsElim(p.rhs),
-            .not => |inner| return self.mentionsElim(inner),
-            .bin => |b| return self.mentionsElim(b.lhs) or self.mentionsElim(b.rhs),
-            .quant => |q| return self.mentionsElim(q.body),
+            else => return .leaf,
         }
     }
 
-    /// Compile a Nat-sorted term to a linear form.
-    fn linearOf(self: *Ctx, t: TermId) Error!Linear {
+    /// Resolve a `.leaf` term (fvar, zero, one, or an opaque app) to a Linear.
+    fn linearLeaf(self: *Ctx, t: TermId) Error!Linear {
         switch (self.pool.get(t)) {
             .fvar => |v| {
                 // Sort-blind: any free variable is a linear unknown over ℤ. (The
@@ -518,32 +571,6 @@ const Ctx = struct {
                     l.konst = 1;
                     return l;
                 }
-                if (matches(a.sym, self.symbols.succ) and args.len == 1) {
-                    return self.shifted(try self.linearOf(args[0]), 1);
-                }
-                if (matches(a.sym, self.symbols.prev) and args.len == 1) {
-                    return self.shifted(try self.linearOf(args[0]), -1);
-                }
-                if (matches(a.sym, self.symbols.neg) and args.len == 1) {
-                    return self.negated(try self.linearOf(args[0]));
-                }
-                if (matches(a.sym, self.symbols.sub) and args.len == 2) {
-                    const l = try self.linearOf(args[0]);
-                    return self.combine(l, -1, try self.linearOf(args[1]));
-                }
-                if (matches(a.sym, self.symbols.add) and args.len == 2) {
-                    const l = try self.linearOf(args[0]);
-                    return self.combine(l, 1, try self.linearOf(args[1]));
-                }
-                if (matches(a.sym, self.symbols.mul) and args.len == 2) {
-                    const l = try self.linearOf(args[0]);
-                    const r = try self.linearOf(args[1]);
-                    if (isConstant(l)) return self.combine(try self.blank(), l.konst, r);
-                    if (isConstant(r)) return self.combine(try self.blank(), r.konst, l);
-                    // a genuine nonlinear product (both sides variable): abstract
-                    // the whole product as one opaque atom.
-                    return self.abstractAtom(t);
-                }
                 // any other app (a foreign function like mod(a,b) or f(x)) is an
                 // opaque atom.
                 return self.abstractAtom(t);
@@ -554,124 +581,386 @@ const Ctx = struct {
         }
     }
 
+    const LinFrame = struct { t: TermId, op: LinOp, expanded: bool };
+
+    /// Compile a Nat-sorted term to a linear form. Iterative two-color post-order
+    /// (was native recursion — a `succ` tower or a deep sum could otherwise
+    /// overflow the C stack): a node is first EXPANDED (its term children pushed
+    /// deeper, LEFT child on top so it resolves first — free-variable discovery
+    /// order is left-to-right, as before), then on its second pop COMBINED from the
+    /// child Linears already on `results`. Leaf nodes (constant / fvar / opaque
+    /// atom) resolve directly, in the same order the recursion visited them, so
+    /// fvar registration and atom abstraction are byte-for-byte identical.
+    fn linearOf(self: *Ctx, root: TermId) Error!Linear {
+        var fb = std.heap.stackFallback(64 * @sizeOf(LinFrame), self.arena);
+        const a = fb.get();
+        var work: std.ArrayList(LinFrame) = .empty;
+        defer work.deinit(a);
+        var results: std.ArrayList(Linear) = .empty;
+        defer results.deinit(a);
+
+        try work.append(a, .{ .t = root, .op = self.linOp(root), .expanded = false });
+        while (work.pop()) |frame| {
+            const args = switch (self.pool.get(frame.t)) {
+                .app => |ap| self.pool.args(ap),
+                else => &[_]TermId{},
+            };
+            if (frame.op == .leaf) {
+                try results.append(a, try self.linearLeaf(frame.t));
+                continue;
+            }
+            if (!frame.expanded) {
+                try work.append(a, .{ .t = frame.t, .op = frame.op, .expanded = true });
+                // push children so the LEFTMOST resolves first (pop order): for a
+                // binary op push rhs then lhs; for unary just the one child.
+                switch (frame.op) {
+                    .succ, .prev, .neg => try work.append(a, .{ .t = args[0], .op = self.linOp(args[0]), .expanded = false }),
+                    .sub, .add, .mul => {
+                        try work.append(a, .{ .t = args[1], .op = self.linOp(args[1]), .expanded = false });
+                        try work.append(a, .{ .t = args[0], .op = self.linOp(args[0]), .expanded = false });
+                    },
+                    .leaf => unreachable,
+                }
+                continue;
+            }
+            // rebuild: children Linears are the top of `results`, in original order
+            switch (frame.op) {
+                .succ => {
+                    const l = results.pop().?;
+                    try results.append(a, try self.shifted(l, 1));
+                },
+                .prev => {
+                    const l = results.pop().?;
+                    try results.append(a, try self.shifted(l, -1));
+                },
+                .neg => {
+                    const l = results.pop().?;
+                    try results.append(a, try self.negated(l));
+                },
+                .sub => {
+                    const r = results.pop().?;
+                    const l = results.pop().?;
+                    try results.append(a, try self.combine(l, -1, r));
+                },
+                .add => {
+                    const r = results.pop().?;
+                    const l = results.pop().?;
+                    try results.append(a, try self.combine(l, 1, r));
+                },
+                .mul => {
+                    const r = results.pop().?;
+                    const l = results.pop().?;
+                    if (isConstant(l)) {
+                        try results.append(a, try self.combine(try self.blank(), l.konst, r));
+                    } else if (isConstant(r)) {
+                        try results.append(a, try self.combine(try self.blank(), r.konst, l));
+                    } else {
+                        // a genuine nonlinear product (both sides variable): abstract
+                        // the whole product as one opaque atom. (Its children's
+                        // fvars stayed registered, exactly as in the recursion.)
+                        try results.append(a, try self.abstractAtom(frame.t));
+                    }
+                },
+                .leaf => unreachable,
+            }
+        }
+        return results.items[0];
+    }
+
     /// negation of l: -l
     fn negated(self: *Ctx, l: Linear) Error!Linear {
         return self.combine(try self.blank(), -1, l);
     }
 
-    /// Compile formula `t`; `neg` pushes the pending negation down (the
-    /// result is negation-free: not(L >= 0) is -L - 1 >= 0 and so on).
-    fn formula(self: *Ctx, t: TermId, neg: bool) Error!*const Formula {
-        switch (self.pool.get(t)) {
-            .not => |inner| return self.formula(inner, !neg),
-            .bin => |b| switch (b.op) {
-                .and_op => return self.node(if (neg)
-                    .{ .disj = .{ .lhs = try self.formula(b.lhs, true), .rhs = try self.formula(b.rhs, true) } }
-                else
-                    .{ .conj = .{ .lhs = try self.formula(b.lhs, false), .rhs = try self.formula(b.rhs, false) } }),
-                .or_op => return self.node(if (neg)
-                    .{ .conj = .{ .lhs = try self.formula(b.lhs, true), .rhs = try self.formula(b.rhs, true) } }
-                else
-                    .{ .disj = .{ .lhs = try self.formula(b.lhs, false), .rhs = try self.formula(b.rhs, false) } }),
-                .implies => return self.node(if (neg)
-                    .{ .conj = .{ .lhs = try self.formula(b.lhs, false), .rhs = try self.formula(b.rhs, true) } }
-                else
-                    .{ .disj = .{ .lhs = try self.formula(b.lhs, true), .rhs = try self.formula(b.rhs, false) } }),
-            },
-            .eq => |p| {
-                const l = try self.linearOf(p.lhs);
-                const diff = try self.combine(l, -1, try self.linearOf(p.rhs));
-                if (neg) {
-                    // diff != 0: diff >= 1 or diff <= -1
-                    return self.node(.{ .disj = .{
-                        .lhs = try self.node(.{ .ge = try self.shifted(diff, -1) }),
-                        .rhs = try self.node(.{ .ge = try self.shifted(try self.negated(diff), -1) }),
+    /// A frame in the iterative `formula` compiler. `kind` says what to do when
+    /// this frame is popped in the REBUILD phase (its children already on the
+    /// results stack). `neg` is the pending-negation flag carried per node.
+    const FormulaFrame = struct {
+        t: TermId,
+        neg: bool,
+        expanded: bool,
+        kind: Kind,
+        /// quant-only rebuild state, captured in the expand phase (before the body
+        /// is processed) and consumed in the rebuild phase (after).
+        quant: QuantState = undefined,
+
+        const Kind = enum { dispatch, bin_and, bin_or, bin_implies, quant };
+    };
+
+    const QuantState = struct { v: u32, saved: ?u32, has_saved: bool, was_elim: bool, hint: StrId, effective: term.Quantifier };
+
+    /// Compile formula `t`; `neg` pushes the pending negation down (the result is
+    /// negation-free: not(L >= 0) is -L - 1 >= 0 and so on). Iterative two-color
+    /// stack (was native recursion): interior nodes (not/bin/quant) push their
+    /// children and are re-popped to assemble the result; atom nodes (eq/pred)
+    /// compile in place. The quant arm captures its `vars`/`elim_names` save state
+    /// on the way DOWN and restores it on the way UP, exactly bracketing the body —
+    /// same as the recursion's save/child/restore. Traversal is left-to-right so
+    /// free-variable discovery order is preserved.
+    fn formula(self: *Ctx, root: TermId, root_neg: bool) Error!*const Formula {
+        var fb = std.heap.stackFallback(128 * @sizeOf(FormulaFrame), self.arena);
+        const a = fb.get();
+        var work: std.ArrayList(FormulaFrame) = .empty;
+        defer work.deinit(a);
+        var results: std.ArrayList(*const Formula) = .empty;
+        defer results.deinit(a);
+
+        try work.append(a, .{ .t = root, .neg = root_neg, .expanded = false, .kind = .dispatch });
+        while (work.pop()) |frame| {
+            if (frame.expanded) {
+                // REBUILD phase: children are on top of `results` in original order.
+                switch (frame.kind) {
+                    .dispatch => unreachable, // dispatch frames never re-push as expanded
+                    .bin_and => {
+                        const rhs = results.pop().?;
+                        const lhs = results.pop().?;
+                        try results.append(a, try self.node(if (frame.neg)
+                            .{ .disj = .{ .lhs = lhs, .rhs = rhs } }
+                        else
+                            .{ .conj = .{ .lhs = lhs, .rhs = rhs } }));
+                    },
+                    .bin_or => {
+                        const rhs = results.pop().?;
+                        const lhs = results.pop().?;
+                        try results.append(a, try self.node(if (frame.neg)
+                            .{ .conj = .{ .lhs = lhs, .rhs = rhs } }
+                        else
+                            .{ .disj = .{ .lhs = lhs, .rhs = rhs } }));
+                    },
+                    .bin_implies => {
+                        const rhs = results.pop().?;
+                        const lhs = results.pop().?;
+                        try results.append(a, try self.node(if (frame.neg)
+                            .{ .conj = .{ .lhs = lhs, .rhs = rhs } }
+                        else
+                            .{ .disj = .{ .lhs = lhs, .rhs = rhs } }));
+                    },
+                    .quant => {
+                        const body = results.pop().?;
+                        const qs = frame.quant;
+                        // restore vars/elim_names to their pre-body state (mirrors
+                        // the recursion's post-child cleanup).
+                        if (!qs.was_elim) _ = self.elim_names.remove(qs.hint);
+                        if (qs.has_saved) {
+                            self.vars.put(self.arena, qs.hint, qs.saved.?) catch return error.OutOfMemory;
+                        } else {
+                            _ = self.vars.remove(qs.hint);
+                        }
+                        try results.append(a, try self.node(.{ .quant = .{ .q = qs.effective, .v = qs.v, .body = body } }));
+                    },
+                }
+                continue;
+            }
+
+            // EXPAND / dispatch phase.
+            const t = frame.t;
+            const neg = frame.neg;
+            switch (self.pool.get(t)) {
+                .not => |inner| {
+                    // linear: flip neg and re-dispatch the same slot (no result yet)
+                    try work.append(a, .{ .t = inner, .neg = !neg, .expanded = false, .kind = .dispatch });
+                },
+                .bin => |b| {
+                    const kind: FormulaFrame.Kind = switch (b.op) {
+                        .and_op => .bin_and,
+                        .or_op => .bin_or,
+                        .implies => .bin_implies,
+                    };
+                    // child neg values, matching the original per-arm threading.
+                    const lhs_neg, const rhs_neg = switch (b.op) {
+                        .and_op, .or_op => .{ neg, neg },
+                        // implies: non-neg => (NOT lhs) disj rhs; neg => lhs conj (NOT rhs)
+                        .implies => if (neg) .{ false, true } else .{ true, false },
+                    };
+                    try work.append(a, .{ .t = t, .neg = neg, .expanded = true, .kind = kind });
+                    // push rhs then lhs so lhs is processed first (result order lhs,rhs)
+                    try work.append(a, .{ .t = b.rhs, .neg = rhs_neg, .expanded = false, .kind = .dispatch });
+                    try work.append(a, .{ .t = b.lhs, .neg = lhs_neg, .expanded = false, .kind = .dispatch });
+                },
+                .eq => |p| {
+                    const l = try self.linearOf(p.lhs);
+                    const diff = try self.combine(l, -1, try self.linearOf(p.rhs));
+                    if (neg) {
+                        // diff != 0: diff >= 1 or diff <= -1
+                        try results.append(a, try self.node(.{ .disj = .{
+                            .lhs = try self.node(.{ .ge = try self.shifted(diff, -1) }),
+                            .rhs = try self.node(.{ .ge = try self.shifted(try self.negated(diff), -1) }),
+                        } }));
+                    } else {
+                        try results.append(a, try self.node(.{ .conj = .{
+                            .lhs = try self.node(.{ .ge = diff }),
+                            .rhs = try self.node(.{ .ge = try self.negated(diff) }),
+                        } }));
+                    }
+                },
+                .pred => |ap| {
+                    const args = self.pool.args(ap);
+                    if (matches(ap.sym, self.symbols.less_than) and args.len == 2) {
+                        // a < b: b - a - 1 >= 0 (compile in source order so free
+                        // variables are discovered left to right)
+                        const lo = try self.linearOf(args[0]);
+                        const hi = try self.linearOf(args[1]);
+                        const diff = try self.shifted(try self.combine(hi, -1, lo), -1);
+                        try results.append(a, try self.node(.{ .ge = if (neg) try self.shifted(try self.negated(diff), -1) else diff }));
+                    } else if (matches(ap.sym, self.symbols.nonneg) and args.len == 1) {
+                        // nonneg(x): x >= 0. Negated: x <= -1, i.e. -x - 1 >= 0.
+                        const x = try self.linearOf(args[0]);
+                        try results.append(a, try self.node(.{ .ge = if (neg) try self.shifted(try self.negated(x), -1) else x }));
+                    } else {
+                        return self.fail(.{ .out_of_fragment = t });
+                    }
+                },
+                .quant => |q| {
+                    // Sort-blind: a binder over ANY sort opens as a ℤ-ranging
+                    // variable. Nonnegativity, if the theory wants it, arrives as an
+                    // injected nonneg(x) conjunct in the body (elaborator's job), NOT
+                    // as an engine-supplied guard.
+                    const v = self.next_var;
+                    self.next_var += 1;
+                    const fv = try self.pool.add(.{ .fvar = .{ .name = q.hint, .sort = q.sort } });
+                    const opened = try self.pool.open(q.body, fv);
+                    const saved = self.vars.get(q.hint);
+                    self.vars.put(self.arena, q.hint, v) catch return error.OutOfMemory;
+                    // this binder is an elimination target: a subterm mentioning it
+                    // must not be abstracted as an independent atom.
+                    const was_elim = self.elim_names.contains(q.hint);
+                    self.elim_names.put(self.arena, q.hint, {}) catch return error.OutOfMemory;
+                    const effective: term.Quantifier = if (neg) switch (q.q) {
+                        .forall => .exists,
+                        .exists => .forall,
+                    } else q.q;
+                    try work.append(a, .{ .t = t, .neg = neg, .expanded = true, .kind = .quant, .quant = .{
+                        .v = v,
+                        .saved = saved,
+                        .has_saved = saved != null,
+                        .was_elim = was_elim,
+                        .hint = q.hint,
+                        .effective = effective,
                     } });
-                }
-                return self.node(.{ .conj = .{
-                    .lhs = try self.node(.{ .ge = diff }),
-                    .rhs = try self.node(.{ .ge = try self.negated(diff) }),
-                } });
-            },
-            .pred => |a| {
-                const args = self.pool.args(a);
-                if (matches(a.sym, self.symbols.less_than) and args.len == 2) {
-                    // a < b: b - a - 1 >= 0 (compile in source order so free
-                    // variables are discovered left to right)
-                    const lo = try self.linearOf(args[0]);
-                    const hi = try self.linearOf(args[1]);
-                    const diff = try self.shifted(try self.combine(hi, -1, lo), -1);
-                    return self.node(.{ .ge = if (neg) try self.shifted(try self.negated(diff), -1) else diff });
-                }
-                if (matches(a.sym, self.symbols.nonneg) and args.len == 1) {
-                    // nonneg(x): x >= 0. Negated: x <= -1, i.e. -x - 1 >= 0.
-                    const x = try self.linearOf(args[0]);
-                    return self.node(.{ .ge = if (neg) try self.shifted(try self.negated(x), -1) else x });
-                }
-                return self.fail(.{ .out_of_fragment = t });
-            },
-            .quant => |q| {
-                // Sort-blind: a binder over ANY sort opens as a ℤ-ranging
-                // variable. Nonnegativity, if the theory wants it, arrives as an
-                // injected nonneg(x) conjunct in the body (elaborator's job), NOT
-                // as an engine-supplied guard.
-                const v = self.next_var;
-                self.next_var += 1;
-                const fv = try self.pool.add(.{ .fvar = .{ .name = q.hint, .sort = q.sort } });
-                const opened = try self.pool.open(q.body, fv);
-                const saved = self.vars.get(q.hint);
-                self.vars.put(self.arena, q.hint, v) catch return error.OutOfMemory;
-                // this binder is an elimination target: a subterm mentioning it
-                // must not be abstracted as an independent atom.
-                const was_elim = self.elim_names.contains(q.hint);
-                self.elim_names.put(self.arena, q.hint, {}) catch return error.OutOfMemory;
-                const body = try self.formula(opened, neg);
-                if (!was_elim) _ = self.elim_names.remove(q.hint);
-                if (saved) |s| {
-                    self.vars.put(self.arena, q.hint, s) catch return error.OutOfMemory;
-                } else {
-                    _ = self.vars.remove(q.hint);
-                }
-                const effective: term.Quantifier = if (neg) switch (q.q) {
-                    .forall => .exists,
-                    .exists => .forall,
-                } else q.q;
-                return self.node(.{ .quant = .{ .q = effective, .v = v, .body = body } });
-            },
-            // a formula leaf that is not an atom of the fragment
-            else => return self.fail(.{ .out_of_fragment = t }),
+                    try work.append(a, .{ .t = opened, .neg = neg, .expanded = false, .kind = .dispatch });
+                },
+                // a formula leaf that is not an atom of the fragment
+                else => return self.fail(.{ .out_of_fragment = t }),
+            }
         }
+        return results.items[0];
     }
+
+    // --- generic iterative post-order rebuild over the Formula tree ---
+    //
+    // The value-building formula transforms below (negate/normalized/subst/
+    // substInf/eliminate) were native tree recursion. This shared driver replaces
+    // that recursion with an explicit two-color stack (mirrors term.zig's
+    // `rebuildWalk`): a node is first EXPANDED (its Formula children pushed
+    // deeper), then on its second pop REBUILT from the child results already on a
+    // results stack. Only conj/disj/quant have Formula children; every other kind
+    // is a leaf as far as the tree walk is concerned (its Linear payload is not a
+    // Formula). The comptime `Visitor` supplies:
+    //   - `leaf(v, self, f) !?*const Formula` — a result WITHOUT descending (for
+    //     tru/fls/ge/div/ndiv, and any interior node it wants to short-circuit);
+    //     null = descend and rebuild.
+    //   - `rebuild(v, self, f, kids) !*const Formula` — reassemble conj/disj (2
+    //     kids) or quant (1 kid) from its rebuilt children, in original order.
+
+    fn formulaChildren(f: *const Formula) usize {
+        return switch (f.*) {
+            .tru, .fls, .ge, .div, .ndiv => 0,
+            .conj, .disj => 2,
+            .quant => 1,
+        };
+    }
+
+    fn rebuildFormula(self: *Ctx, root: *const Formula, visitor: anytype) Error!*const Formula {
+        var fb = std.heap.stackFallback(128 * @sizeOf(RebuildFrame), self.arena);
+        const a = fb.get();
+        var work: std.ArrayList(RebuildFrame) = .empty;
+        defer work.deinit(a);
+        var results: std.ArrayList(*const Formula) = .empty;
+        defer results.deinit(a);
+
+        try work.append(a, .{ .f = root, .expanded = false });
+        while (work.pop()) |frame| {
+            if (!frame.expanded) {
+                if (try visitor.leaf(self, frame.f)) |r| {
+                    try results.append(a, r);
+                    continue;
+                }
+                try work.append(a, .{ .f = frame.f, .expanded = true });
+                // push children in REVERSE so child 0 is processed first and its
+                // result lands first on `results` (rebuild reads original order).
+                switch (frame.f.*) {
+                    .conj, .disj => |p| {
+                        try work.append(a, .{ .f = p.rhs, .expanded = false });
+                        try work.append(a, .{ .f = p.lhs, .expanded = false });
+                    },
+                    .quant => |q| try work.append(a, .{ .f = q.body, .expanded = false }),
+                    else => unreachable, // leaf returned null only for interior nodes
+                }
+            } else {
+                const n = formulaChildren(frame.f);
+                const kids = results.items[results.items.len - n ..];
+                const rebuilt = try visitor.rebuild(self, frame.f, kids);
+                results.items.len -= n;
+                try results.append(a, rebuilt);
+            }
+        }
+        return results.items[0];
+    }
+
+    const RebuildFrame = struct { f: *const Formula, expanded: bool };
 
     // --- quantifier elimination (Cooper's algorithm) ---
 
-    fn eliminate(self: *Ctx, f: *const Formula) Error!*const Formula {
-        switch (f.*) {
-            .tru, .fls, .ge, .div, .ndiv => return f,
-            .conj => |p| return self.node(.{ .conj = .{ .lhs = try self.eliminate(p.lhs), .rhs = try self.eliminate(p.rhs) } }),
-            .disj => |p| return self.node(.{ .disj = .{ .lhs = try self.eliminate(p.lhs), .rhs = try self.eliminate(p.rhs) } }),
-            .quant => |q| {
-                const body = try self.eliminate(q.body);
-                return switch (q.q) {
-                    .exists => self.cooper(q.v, body),
-                    .forall => self.negate(try self.cooper(q.v, try self.negate(body))),
-                };
-            },
+    const EliminateVisitor = struct {
+        fn leaf(_: EliminateVisitor, _: *Ctx, f: *const Formula) Error!?*const Formula {
+            return switch (f.*) {
+                .tru, .fls, .ge, .div, .ndiv => f,
+                .conj, .disj, .quant => null,
+            };
         }
+        fn rebuild(_: EliminateVisitor, self: *Ctx, f: *const Formula, kids: []const *const Formula) Error!*const Formula {
+            return switch (f.*) {
+                .conj => self.node(.{ .conj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .disj => self.node(.{ .disj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .quant => |q| switch (q.q) {
+                    // kids[0] is the already-eliminated body (post-order guarantees it)
+                    .exists => self.cooper(q.v, kids[0]),
+                    .forall => self.negate(try self.cooper(q.v, try self.negate(kids[0]))),
+                },
+                else => unreachable,
+            };
+        }
+    };
+
+    fn eliminate(self: *Ctx, f: *const Formula) Error!*const Formula {
+        return self.rebuildFormula(f, EliminateVisitor{});
     }
 
+    const NegateVisitor = struct {
+        fn leaf(_: NegateVisitor, self: *Ctx, f: *const Formula) Error!?*const Formula {
+            return switch (f.*) {
+                .tru => try self.node(.fls),
+                .fls => try self.node(.tru),
+                // not(L >= 0) is -L - 1 >= 0
+                .ge => |l| try self.node(.{ .ge = try self.shifted(try self.negated(l), -1) }),
+                .div => |d| try self.node(.{ .ndiv = d }),
+                .ndiv => |d| try self.node(.{ .div = d }),
+                .conj, .disj => null,
+                .quant => unreachable, // negate only runs on eliminated bodies
+            };
+        }
+        fn rebuild(_: NegateVisitor, self: *Ctx, f: *const Formula, kids: []const *const Formula) Error!*const Formula {
+            // conj negates to disj and vice versa
+            return switch (f.*) {
+                .conj => self.node(.{ .disj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .disj => self.node(.{ .conj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                else => unreachable,
+            };
+        }
+    };
+
     fn negate(self: *Ctx, f: *const Formula) Error!*const Formula {
-        return self.node(switch (f.*) {
-            .tru => .fls,
-            .fls => .tru,
-            // not(L >= 0) is -L - 1 >= 0
-            .ge => |l| .{ .ge = try self.shifted(try self.negated(l), -1) },
-            .div => |d| .{ .ndiv = d },
-            .ndiv => |d| .{ .div = d },
-            .conj => |p| .{ .disj = .{ .lhs = try self.negate(p.lhs), .rhs = try self.negate(p.rhs) } },
-            .disj => |p| .{ .conj = .{ .lhs = try self.negate(p.lhs), .rhs = try self.negate(p.rhs) } },
-            .quant => unreachable, // negate only runs on eliminated bodies
-        });
+        return self.rebuildFormula(f, NegateVisitor{});
     }
 
     fn lcmC(self: *Ctx, a: i128, b: i128) Error!i128 {
@@ -683,20 +972,29 @@ const Ctx = struct {
         return self.mulC(left, right);
     }
 
+    /// Iterative work-stack over the (negation-free) formula tree (was native
+    /// recursion): the accumulator is an LCM fold, so visit order is irrelevant.
     fn coefficientLcm(self: *Ctx, f: *const Formula, v: u32, delta: *i128) Error!void {
-        switch (f.*) {
-            .tru, .fls => {},
-            .ge => |l| if (l.coeffs[v] != 0) {
-                delta.* = try self.lcmC(delta.*, l.coeffs[v]);
-            },
-            .div, .ndiv => |d| if (d.linear.coeffs[v] != 0) {
-                delta.* = try self.lcmC(delta.*, d.linear.coeffs[v]);
-            },
-            .conj, .disj => |p| {
-                try self.coefficientLcm(p.lhs, v, delta);
-                try self.coefficientLcm(p.rhs, v, delta);
-            },
-            .quant => unreachable, // innermost-first elimination
+        var fb = std.heap.stackFallback(64 * @sizeOf(*const Formula), self.arena);
+        const a = fb.get();
+        var stack: std.ArrayList(*const Formula) = .empty;
+        defer stack.deinit(a);
+        try stack.append(a, f);
+        while (stack.pop()) |cur| {
+            switch (cur.*) {
+                .tru, .fls => {},
+                .ge => |l| if (l.coeffs[v] != 0) {
+                    delta.* = try self.lcmC(delta.*, l.coeffs[v]);
+                },
+                .div, .ndiv => |d| if (d.linear.coeffs[v] != 0) {
+                    delta.* = try self.lcmC(delta.*, d.linear.coeffs[v]);
+                },
+                .conj, .disj => |p| {
+                    try stack.append(a, p.lhs);
+                    try stack.append(a, p.rhs);
+                },
+                .quant => unreachable, // innermost-first elimination
+            }
         }
     }
 
@@ -729,36 +1027,56 @@ const Ctx = struct {
         }
     }
 
+    /// Iterative work-stack over the formula tree (was native recursion): an LCM
+    /// fold over the divisibility atoms, so visit order is irrelevant.
     fn modulusLcm(self: *Ctx, f: *const Formula, v: u32, d: *i128) Error!void {
-        switch (f.*) {
-            .tru, .fls, .ge => {},
-            .div, .ndiv => |x| if (x.linear.coeffs[v] != 0) {
-                d.* = try self.lcmC(d.*, x.modulus);
-            },
-            .conj, .disj => |p| {
-                try self.modulusLcm(p.lhs, v, d);
-                try self.modulusLcm(p.rhs, v, d);
-            },
-            .quant => unreachable,
+        var fb = std.heap.stackFallback(64 * @sizeOf(*const Formula), self.arena);
+        const a = fb.get();
+        var stack: std.ArrayList(*const Formula) = .empty;
+        defer stack.deinit(a);
+        try stack.append(a, f);
+        while (stack.pop()) |cur| {
+            switch (cur.*) {
+                .tru, .fls, .ge => {},
+                .div, .ndiv => |x| if (x.linear.coeffs[v] != 0) {
+                    d.* = try self.lcmC(d.*, x.modulus);
+                },
+                .conj, .disj => |p| {
+                    try stack.append(a, p.lhs);
+                    try stack.append(a, p.rhs);
+                },
+                .quant => unreachable,
+            }
         }
     }
 
     /// Boundary terms: each lower bound y + t >= 0 confines a satisfying y
     /// to start at b = -t - 1 (exclusive); Cooper's disjunction probes b + j.
+    /// Iterative work-stack over the formula tree (was native recursion). Boundary
+    /// APPEND ORDER is load-bearing (a boundary's index feeds the certificate
+    /// replay), so it must match the original left-to-right, depth-first visit:
+    /// push the right child BEFORE the left so the left pops (and appends) first.
     fn boundaries(self: *Ctx, f: *const Formula, v: u32, out: *std.ArrayList(Linear)) Error!void {
-        switch (f.*) {
-            .tru, .fls, .div, .ndiv => {},
-            .ge => |l| if (l.coeffs[v] == 1) {
-                var b = try self.negated(l);
-                b.coeffs[v] = 0;
-                b.konst = try self.addC(b.konst, -1);
-                try out.append(self.arena, b);
-            },
-            .conj, .disj => |p| {
-                try self.boundaries(p.lhs, v, out);
-                try self.boundaries(p.rhs, v, out);
-            },
-            .quant => unreachable,
+        var fb = std.heap.stackFallback(64 * @sizeOf(*const Formula), self.arena);
+        const a = fb.get();
+        var stack: std.ArrayList(*const Formula) = .empty;
+        defer stack.deinit(a);
+        try stack.append(a, f);
+        while (stack.pop()) |cur| {
+            switch (cur.*) {
+                .tru, .fls, .div, .ndiv => {},
+                .ge => |l| if (l.coeffs[v] == 1) {
+                    var b = try self.negated(l);
+                    b.coeffs[v] = 0;
+                    b.konst = try self.addC(b.konst, -1);
+                    try out.append(self.arena, b);
+                },
+                .conj, .disj => |p| {
+                    try stack.append(a, p.rhs);
+                    try stack.append(a, p.lhs);
+                },
+                .quant => unreachable,
+            }
         }
     }
 
@@ -885,17 +1203,64 @@ const Ctx = struct {
 
     // --- ground evaluation and countermodel search ---
 
-    fn evalGround(f: *const Formula) bool {
-        return switch (f.*) {
-            .tru => true,
-            .fls => false,
-            .ge => |l| l.konst >= 0, // coefficients are all eliminated
-            .div => |d| @mod(d.linear.konst, d.modulus) == 0,
-            .ndiv => |d| @mod(d.linear.konst, d.modulus) != 0,
-            .conj => |p| evalGround(p.lhs) and evalGround(p.rhs),
-            .disj => |p| evalGround(p.lhs) or evalGround(p.rhs),
-            .quant => unreachable,
-        };
+    /// Evaluate a ground (variable-free) formula. Iterative two-color post-order
+    /// (was native recursion): a node is first EXPANDED (children pushed), then on
+    /// its second pop COMBINED from the two child booleans already on `vals`.
+    /// and/or are computed strictly (both children evaluated) — over
+    /// side-effect-free evaluation this is identical to the original short-circuit
+    /// `and`/`or` over recursive calls. OOM now propagates (was infallible), which
+    /// only the unreachable true-OOM path can trigger; callers already handle it.
+    fn evalGround(self: *Ctx, root: *const Formula) Error!bool {
+        return self.evalFormula(root, &.{});
+    }
+
+    fn evalAt(self: *Ctx, root: *const Formula, values: []const i128) Error!bool {
+        return self.evalFormula(root, values);
+    }
+
+    const EvalFrame = struct { f: *const Formula, expanded: bool };
+
+    /// Shared iterative evaluator for `evalGround` (values = &.{}) and `evalAt`.
+    /// A leaf's truth is computed directly; conj/disj pop their two child results.
+    fn evalFormula(self: *Ctx, root: *const Formula, values: []const i128) Error!bool {
+        var fb = std.heap.stackFallback(128 * @sizeOf(EvalFrame), self.arena);
+        const a = fb.get();
+        var work: std.ArrayList(EvalFrame) = .empty;
+        defer work.deinit(a);
+        var vals: std.ArrayList(bool) = .empty;
+        defer vals.deinit(a);
+        try work.append(a, .{ .f = root, .expanded = false });
+        while (work.pop()) |frame| {
+            switch (frame.f.*) {
+                .tru => try vals.append(a, true),
+                .fls => try vals.append(a, false),
+                .ge => |l| try vals.append(a, atValue(l, values) >= 0),
+                .div => |d| try vals.append(a, @mod(atValue(d.linear, values), @as(i256, d.modulus)) == 0),
+                .ndiv => |d| try vals.append(a, @mod(atValue(d.linear, values), @as(i256, d.modulus)) != 0),
+                .conj, .disj => |p| {
+                    if (!frame.expanded) {
+                        try work.append(a, .{ .f = frame.f, .expanded = true });
+                        try work.append(a, .{ .f = p.lhs, .expanded = false });
+                        try work.append(a, .{ .f = p.rhs, .expanded = false });
+                    } else {
+                        // both children are on `vals`; a strict and/or is
+                        // order-insensitive, so which was popped first is immaterial.
+                        const b = vals.pop().?;
+                        const c = vals.pop().?;
+                        try vals.append(a, if (frame.f.* == .conj) (b and c) else (b or c));
+                    }
+                },
+                .quant => unreachable,
+            }
+        }
+        return vals.items[0];
+    }
+
+    /// Value of a linear form under `values` (empty = ground: only the constant,
+    /// since a ground formula's coefficients are all eliminated).
+    fn atValue(l: Linear, values: []const i128) i256 {
+        if (values.len == 0) return l.konst;
+        return valueOf(l, values);
     }
 
     fn valueOf(l: Linear, values: []const i128) i256 {
@@ -904,31 +1269,46 @@ const Ctx = struct {
         return acc;
     }
 
-    fn evalAt(f: *const Formula, values: []const i128) bool {
-        return switch (f.*) {
-            .tru => true,
-            .fls => false,
-            .ge => |l| valueOf(l, values) >= 0,
-            .div => |d| @mod(valueOf(d.linear, values), @as(i256, d.modulus)) == 0,
-            .ndiv => |d| @mod(valueOf(d.linear, values), @as(i256, d.modulus)) != 0,
-            .conj => |p| evalAt(p.lhs, values) and evalAt(p.rhs, values),
-            .disj => |p| evalAt(p.lhs, values) or evalAt(p.rhs, values),
-            .quant => unreachable,
-        };
-    }
-
-    /// Depth-first search of small nonnegative values for the free
-    /// variables, smallest sums first per variable.
-    fn witness(self: *Ctx, f: *const Formula, index: usize, values: []i128) bool {
-        if (index == self.free_vars.items.len) return evalAt(f, values);
-        const total = std.math.powi(usize, witness_bound + 1, self.free_vars.items.len) catch witness_combinations + 1;
+    /// Depth-first search of small nonnegative values for the free variables,
+    /// smallest per variable first. Was native recursion nesting one loop per free
+    /// variable (depth = number of free vars); rewritten as an explicit odometer
+    /// over the levels. `cap` is constant across the whole search (it depends only
+    /// on the free-var count), so it is computed once. Enumeration order is
+    /// preserved: level 0 is the outermost loop, incremented last.
+    fn witness(self: *Ctx, f: *const Formula, values: []i128) Error!bool {
+        const n = self.free_vars.items.len;
+        if (n == 0) return self.evalAt(f, values);
+        const total = std.math.powi(usize, witness_bound + 1, n) catch witness_combinations + 1;
         const cap: i128 = if (total > witness_combinations) 8 else witness_bound;
-        var x: i128 = 0;
-        while (x <= cap) : (x += 1) {
-            values[self.free_vars.items[index].id] = x;
-            if (self.witness(f, index + 1, values)) return true;
+
+        // xs[level] is the current trial value at that level; start the whole
+        // vector at 0 (matches the recursion's first descent to all-zero).
+        var fb = std.heap.stackFallback(64 * @sizeOf(i128), self.arena);
+        const a = fb.get();
+        const xs = try a.alloc(i128, n);
+        defer a.free(xs);
+        @memset(xs, 0);
+        for (0..n) |level| values[self.free_vars.items[level].id] = 0;
+
+        while (true) {
+            if (try self.evalAt(f, values)) return true;
+            // advance the odometer: increment the DEEPEST level first (level n-1),
+            // carrying to shallower levels — this reproduces the nested-loop order
+            // where the innermost variable varies fastest.
+            var level: usize = n;
+            while (level > 0) {
+                level -= 1;
+                if (xs[level] < cap) {
+                    xs[level] += 1;
+                    values[self.free_vars.items[level].id] = xs[level];
+                    break;
+                }
+                // this level rolled over: reset it and carry to the next-shallower
+                xs[level] = 0;
+                values[self.free_vars.items[level].id] = 0;
+                if (level == 0) return false; // all levels exhausted
+            }
         }
-        return false;
     }
 };
 
