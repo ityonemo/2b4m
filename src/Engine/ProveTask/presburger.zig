@@ -999,33 +999,48 @@ const Ctx = struct {
     }
 
     /// Scale every atom so v's coefficient becomes +-1 in y-space (y = delta
-    /// * v, recorded by conjoining delta | y at the call site).
+    /// * v, recorded by conjoining delta | y at the call site). Iterative
+    /// two-color rebuild (was native recursion) — see `rebuildFormula`.
     fn normalized(self: *Ctx, f: *const Formula, v: u32, delta: i128) Error!*const Formula {
-        switch (f.*) {
-            .tru, .fls => return f,
-            .ge => |l| {
-                const a = l.coeffs[v];
-                if (a == 0) return f;
-                const m = @divExact(delta, @as(i128, @intCast(@abs(a))));
-                var out = try self.combine(try self.blank(), m, l);
-                out.coeffs[v] = if (a > 0) 1 else -1;
-                return self.node(.{ .ge = out });
-            },
-            .div, .ndiv => |d| {
-                const a = d.linear.coeffs[v];
-                if (a == 0) return f;
-                const m = @divExact(delta, @as(i128, @intCast(@abs(a))));
-                // divisibility is sign-blind: normalize the coefficient to +1
-                var out = try self.combine(try self.blank(), if (a > 0) m else -m, d.linear);
-                out.coeffs[v] = 1;
-                const scaled: Formula.Div = .{ .modulus = try self.mulC(d.modulus, m), .linear = out };
-                return self.node(if (f.* == .div) .{ .div = scaled } else .{ .ndiv = scaled });
-            },
-            .conj => |p| return self.node(.{ .conj = .{ .lhs = try self.normalized(p.lhs, v, delta), .rhs = try self.normalized(p.rhs, v, delta) } }),
-            .disj => |p| return self.node(.{ .disj = .{ .lhs = try self.normalized(p.lhs, v, delta), .rhs = try self.normalized(p.rhs, v, delta) } }),
-            .quant => unreachable,
-        }
+        return self.rebuildFormula(f, NormalizedVisitor{ .v = v, .delta = delta });
     }
+
+    const NormalizedVisitor = struct {
+        v: u32,
+        delta: i128,
+        fn leaf(vis: NormalizedVisitor, self: *Ctx, f: *const Formula) Error!?*const Formula {
+            switch (f.*) {
+                .tru, .fls => return f,
+                .ge => |l| {
+                    const a = l.coeffs[vis.v];
+                    if (a == 0) return f;
+                    const m = @divExact(vis.delta, @as(i128, @intCast(@abs(a))));
+                    var out = try self.combine(try self.blank(), m, l);
+                    out.coeffs[vis.v] = if (a > 0) 1 else -1;
+                    return try self.node(.{ .ge = out });
+                },
+                .div, .ndiv => |d| {
+                    const a = d.linear.coeffs[vis.v];
+                    if (a == 0) return f;
+                    const m = @divExact(vis.delta, @as(i128, @intCast(@abs(a))));
+                    // divisibility is sign-blind: normalize the coefficient to +1
+                    var out = try self.combine(try self.blank(), if (a > 0) m else -m, d.linear);
+                    out.coeffs[vis.v] = 1;
+                    const scaled: Formula.Div = .{ .modulus = try self.mulC(d.modulus, m), .linear = out };
+                    return try self.node(if (f.* == .div) .{ .div = scaled } else .{ .ndiv = scaled });
+                },
+                .conj, .disj => return null,
+                .quant => unreachable,
+            }
+        }
+        fn rebuild(_: NormalizedVisitor, self: *Ctx, f: *const Formula, kids: []const *const Formula) Error!*const Formula {
+            return switch (f.*) {
+                .conj => self.node(.{ .conj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .disj => self.node(.{ .disj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                else => unreachable,
+            };
+        }
+    };
 
     /// Iterative work-stack over the formula tree (was native recursion): an LCM
     /// fold over the divisibility atoms, so visit order is irrelevant.
@@ -1085,55 +1100,87 @@ const Ctx = struct {
         self.budget -= 1;
     }
 
-    /// Substitute y := s (s has no y component) through the formula.
+    /// Substitute y := s (s has no y component) through the formula. Iterative
+    /// two-color rebuild (was native recursion). `spend()` fires once per affected
+    /// atom exactly as before; the total is order-independent (it only decrements a
+    /// shared budget), so the too_large verdict is unchanged.
     fn subst(self: *Ctx, f: *const Formula, v: u32, s: Linear) Error!*const Formula {
-        switch (f.*) {
-            .tru, .fls => return f,
-            .ge => |l| {
-                const c = l.coeffs[v];
-                if (c == 0) return f;
-                try self.spend();
-                var out = try self.combine(l, c, s);
-                out.coeffs[v] = 0;
-                return self.node(.{ .ge = out });
-            },
-            .div, .ndiv => |d| {
-                if (d.linear.coeffs[v] == 0) return f;
-                try self.spend();
-                var out = try self.combine(d.linear, 1, s);
-                out.coeffs[v] = 0;
-                const sub: Formula.Div = .{ .modulus = d.modulus, .linear = out };
-                return self.node(if (f.* == .div) .{ .div = sub } else .{ .ndiv = sub });
-            },
-            .conj => |p| return self.node(.{ .conj = .{ .lhs = try self.subst(p.lhs, v, s), .rhs = try self.subst(p.rhs, v, s) } }),
-            .disj => |p| return self.node(.{ .disj = .{ .lhs = try self.subst(p.lhs, v, s), .rhs = try self.subst(p.rhs, v, s) } }),
-            .quant => unreachable,
-        }
+        return self.rebuildFormula(f, SubstVisitor{ .v = v, .s = s });
     }
 
-    /// The minus-infinity residue: lower bounds fail, upper bounds hold, and
-    /// only the periodic (divisibility) atoms see y := j.
-    fn substInf(self: *Ctx, f: *const Formula, v: u32, j: i128) Error!*const Formula {
-        switch (f.*) {
-            .tru, .fls => return f,
-            .ge => |l| return switch (l.coeffs[v]) {
-                0 => f,
-                1 => self.node(.fls),
-                else => self.node(.tru), // -1: upper bound
-            },
-            .div, .ndiv => |d| {
-                if (d.linear.coeffs[v] == 0) return f;
-                try self.spend();
-                var out: Linear = .{ .coeffs = try self.arena.dupe(i128, d.linear.coeffs), .konst = try self.addC(d.linear.konst, j) };
-                out.coeffs[v] = 0;
-                const sub: Formula.Div = .{ .modulus = d.modulus, .linear = out };
-                return self.node(if (f.* == .div) .{ .div = sub } else .{ .ndiv = sub });
-            },
-            .conj => |p| return self.node(.{ .conj = .{ .lhs = try self.substInf(p.lhs, v, j), .rhs = try self.substInf(p.rhs, v, j) } }),
-            .disj => |p| return self.node(.{ .disj = .{ .lhs = try self.substInf(p.lhs, v, j), .rhs = try self.substInf(p.rhs, v, j) } }),
-            .quant => unreachable,
+    const SubstVisitor = struct {
+        v: u32,
+        s: Linear,
+        fn leaf(vis: SubstVisitor, self: *Ctx, f: *const Formula) Error!?*const Formula {
+            switch (f.*) {
+                .tru, .fls => return f,
+                .ge => |l| {
+                    const c = l.coeffs[vis.v];
+                    if (c == 0) return f;
+                    try self.spend();
+                    var out = try self.combine(l, c, vis.s);
+                    out.coeffs[vis.v] = 0;
+                    return try self.node(.{ .ge = out });
+                },
+                .div, .ndiv => |d| {
+                    if (d.linear.coeffs[vis.v] == 0) return f;
+                    try self.spend();
+                    var out = try self.combine(d.linear, 1, vis.s);
+                    out.coeffs[vis.v] = 0;
+                    const sub: Formula.Div = .{ .modulus = d.modulus, .linear = out };
+                    return try self.node(if (f.* == .div) .{ .div = sub } else .{ .ndiv = sub });
+                },
+                .conj, .disj => return null,
+                .quant => unreachable,
+            }
         }
+        fn rebuild(_: SubstVisitor, self: *Ctx, f: *const Formula, kids: []const *const Formula) Error!*const Formula {
+            return switch (f.*) {
+                .conj => self.node(.{ .conj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .disj => self.node(.{ .disj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                else => unreachable,
+            };
+        }
+    };
+
+    /// The minus-infinity residue: lower bounds fail, upper bounds hold, and
+    /// only the periodic (divisibility) atoms see y := j. Iterative two-color
+    /// rebuild (was native recursion). `spend()` is order-independent (see subst).
+    fn substInf(self: *Ctx, f: *const Formula, v: u32, j: i128) Error!*const Formula {
+        return self.rebuildFormula(f, SubstInfVisitor{ .v = v, .j = j });
     }
+
+    const SubstInfVisitor = struct {
+        v: u32,
+        j: i128,
+        fn leaf(vis: SubstInfVisitor, self: *Ctx, f: *const Formula) Error!?*const Formula {
+            switch (f.*) {
+                .tru, .fls => return f,
+                .ge => |l| return switch (l.coeffs[vis.v]) {
+                    0 => f,
+                    1 => try self.node(.fls),
+                    else => try self.node(.tru), // -1: upper bound
+                },
+                .div, .ndiv => |d| {
+                    if (d.linear.coeffs[vis.v] == 0) return f;
+                    try self.spend();
+                    var out: Linear = .{ .coeffs = try self.arena.dupe(i128, d.linear.coeffs), .konst = try self.addC(d.linear.konst, vis.j) };
+                    out.coeffs[vis.v] = 0;
+                    const sub: Formula.Div = .{ .modulus = d.modulus, .linear = out };
+                    return try self.node(if (f.* == .div) .{ .div = sub } else .{ .ndiv = sub });
+                },
+                .conj, .disj => return null,
+                .quant => unreachable,
+            }
+        }
+        fn rebuild(_: SubstInfVisitor, self: *Ctx, f: *const Formula, kids: []const *const Formula) Error!*const Formula {
+            return switch (f.*) {
+                .conj => self.node(.{ .conj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                .disj => self.node(.{ .disj = .{ .lhs = kids[0], .rhs = kids[1] } }),
+                else => unreachable,
+            };
+        }
+    };
 
     /// The numeric prelude shared by `cooper` (decision) and `cooperTraced`
     /// (certificate): scale v's coefficient to +-1, conjoin the stride
