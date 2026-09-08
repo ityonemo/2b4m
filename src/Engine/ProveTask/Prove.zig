@@ -964,17 +964,32 @@ fn emitConjunctExtract(self: *Prove, kb: kernel.BlockId, loc: u32, whole: TermId
     return step;
 }
 
-/// The left/right path from and-tree `tree` down to conjunct `g` (true = left), or false.
+/// The left/right path from and-tree `tree` down to the LEFTMOST conjunct α-equal to `g` (true =
+/// left turn), appended to `path`; returns whether found. Iterative DFS (was native recursion) —
+/// depth-safe over a deep conjunction. Each frame carries `(node, path-to-it)`; children pushed
+/// RIGHT-then-LEFT so the LEFT subtree is explored first (matches the recursion's leftmost find).
+/// The path snapshots live in a GPA-backed arena, freed on return; the found path is copied into
+/// `path` (on the caller's arena).
 fn conjunctPath(self: *Prove, tree: TermId, g: TermId, path: *std.ArrayList(bool)) Error!bool {
-    if (self.pool.alphaEq(tree, g)) return true;
-    const n = self.pool.get(tree);
-    if (n != .bin or n.bin.op != .and_op) return false;
-    try path.append(self.ctx.arena, true);
-    if (try self.conjunctPath(n.bin.lhs, g, path)) return true;
-    _ = path.pop();
-    try path.append(self.ctx.arena, false);
-    if (try self.conjunctPath(n.bin.rhs, g, path)) return true;
-    _ = path.pop();
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    const Frame = struct { node: TermId, prefix: []const bool };
+    var stack: std.ArrayList(Frame) = .empty;
+    try stack.append(a, .{ .node = tree, .prefix = &.{} });
+    while (stack.pop()) |f| {
+        if (self.pool.alphaEq(f.node, g)) {
+            try path.appendSlice(self.ctx.arena, f.prefix);
+            return true;
+        }
+        const n = self.pool.get(f.node);
+        if (n != .bin or n.bin.op != .and_op) continue; // dead end
+        // push RIGHT first so LEFT pops first (leftmost-match order).
+        const right = try std.mem.concat(a, bool, &.{ f.prefix, &.{false} });
+        const left = try std.mem.concat(a, bool, &.{ f.prefix, &.{true} });
+        try stack.append(a, .{ .node = n.bin.rhs, .prefix = right });
+        try stack.append(a, .{ .node = n.bin.lhs, .prefix = left });
+    }
     return false;
 }
 
@@ -1174,14 +1189,41 @@ fn emitClosureDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, t
 /// (`good(a) and good(b)` — a multi-guarded arg, or several args folded into one `->` premise).
 /// Recursively discharges each conjunct via `emitDischargeStep` and `and_intro`-folds them,
 /// matching the conjunction's own nesting (left-assoc: `(x and y) and z`).
+/// Discharge a premise that may be a single guard OR a CONJUNCTION of guards, and_intro-folding
+/// the conjunct discharges to match the conjunction's own (left-assoc) nesting. ITERATIVE two-color
+/// post-order fold (was native recursion) — depth-safe over a deep conjunction premise. A `.and_op`
+/// node is EXPANDED (children pushed) then FOLDED from its two child SRefs; a leaf discharges via
+/// `emitDischargeStep`. Any null (undischargeable conjunct) aborts the whole fold → null.
 fn emitConjDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, f: TermId) Error!?kernel.SRef {
-    const node = self.pool.get(f);
-    if (node == .bin and node.bin.op == .and_op) {
-        const l = (try self.emitConjDischarge(kb, loc, node.bin.lhs)) orelse return null;
-        const r = (try self.emitConjDischarge(kb, loc, node.bin.rhs)) orelse return null;
-        return try self.emitSynthetic(kb, loc, f, .{ .and_intro = .{ .left = l, .right = r } });
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    const Frame = struct { f: TermId, expanded: bool };
+    var work: std.ArrayList(Frame) = .empty;
+    var results: std.ArrayList(kernel.SRef) = .empty;
+    try work.append(a, .{ .f = f, .expanded = false });
+    while (work.pop()) |fr| {
+        const node = self.pool.get(fr.f);
+        const is_conj = node == .bin and node.bin.op == .and_op;
+        if (!is_conj) {
+            // a leaf guard (or a nested COMPOSITE — emitDischargeStep may re-enter the closure
+            // path, whose depth is composite-witness nesting, handled there).
+            const s = (try self.emitDischargeStep(kb, loc, fr.f)) orelse return null;
+            try results.append(a, s);
+        } else if (!fr.expanded) {
+            // EXPAND: re-push FOLDED, then children (right then left → left folds first, matching
+            // the recursion's `left = lhs; right = rhs` order on the results stack).
+            try work.append(a, .{ .f = fr.f, .expanded = true });
+            try work.append(a, .{ .f = node.bin.rhs, .expanded = false });
+            try work.append(a, .{ .f = node.bin.lhs, .expanded = false });
+        } else {
+            // FOLD: left + right results are the top two (left pushed first → deeper).
+            const r = results.pop().?;
+            const l = results.pop().?;
+            try results.append(a, try self.emitSynthetic(kb, loc, fr.f, .{ .and_intro = .{ .left = l, .right = r } }));
+        }
     }
-    return self.emitDischargeStep(kb, loc, f); // a leaf guard (or a nested composite)
+    return results.items[0];
 }
 
 fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
