@@ -367,69 +367,144 @@ pub const Pool = struct {
         return .eq;
     }
 
-    /// Shared recursion for close/open/substFvar. Returns the original id when
-    /// nothing changed underneath (keeps the pool small via sharing).
-    fn walk(self: *Pool, id: TermId, t: Transform, depth: u16) Allocator.Error!TermId {
-        switch (self.get(id)) {
-            .bvar => |i| switch (t) {
-                // replacement is locally closed => no shifting needed
-                .open => |u| return if (i == depth) u else id,
-                else => return id,
-            },
-            .fvar => |v| switch (t) {
-                .close => |name| return if (v.name == name) self.add(.{ .bvar = depth }) else id,
-                .subst_fvar => |s| return if (v.name == s.name) s.term else id,
-                .open => return id,
-            },
-            .app => |a| return self.walkApp(id, .app, a, t, depth),
-            .pred => |a| return self.walkApp(id, .pred, a, t, depth),
-            .eq => |p| {
-                const lhs = try self.walk(p.lhs, t, depth);
-                const rhs = try self.walk(p.rhs, t, depth);
-                if (lhs == p.lhs and rhs == p.rhs) return id;
-                return self.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
-            },
-            .not => |inner| {
-                const w = try self.walk(inner, t, depth);
-                if (w == inner) return id;
-                return self.add(.{ .not = w });
-            },
-            .bin => |b| {
-                const lhs = try self.walk(b.lhs, t, depth);
-                const rhs = try self.walk(b.rhs, t, depth);
-                if (lhs == b.lhs and rhs == b.rhs) return id;
-                return self.add(.{ .bin = .{ .op = b.op, .lhs = lhs, .rhs = rhs } });
-            },
-            .quant => |q| {
-                const body = try self.walk(q.body, t, depth + 1);
-                if (body == q.body) return id;
-                return self.add(.{ .quant = .{ .q = q.q, .sort = q.sort, .hint = q.hint, .body = body } });
-            },
+    /// The direct children of a node as TermIds, into `buf` (an app/pred can have many; the
+    /// fixed forms fit in 2). Snapshots app args (they alias `extra`, which a rebuild grows —
+    /// the stale-slice trap). Returns the child slice. Leaves return an empty slice.
+    fn childrenOf(self: *const Pool, node: Node, buf: *std.ArrayList(TermId), a: std.mem.Allocator) Allocator.Error![]const TermId {
+        const base = buf.items.len;
+        switch (node) {
+            .bvar, .fvar => {},
+            .app, .pred => |ap| try buf.appendSlice(a, self.args(ap)),
+            .eq => |p| try buf.appendSlice(a, &.{ p.lhs, p.rhs }),
+            .not => |t| try buf.append(a, t),
+            .bin => |b| try buf.appendSlice(a, &.{ b.lhs, b.rhs }),
+            .quant => |q| try buf.append(a, q.body),
         }
+        return buf.items[base..];
     }
 
-    fn walkApp(
-        self: *Pool,
-        id: TermId,
-        kind: AppKind,
-        a: Node.App,
-        t: Transform,
-        depth: u16,
-    ) Allocator.Error!TermId {
-        // args() aliases extra.items; the recursive walks below may grow
-        // extra, and ArrayList growth poisons the abandoned buffer — copy
-        // the argument ids out before recursing
-        const old_args = try self.arena.dupe(TermId, self.args(a));
-        const new_args = try self.arena.alloc(TermId, old_args.len);
-        var changed = false;
-        for (old_args, new_args) |arg, *out| {
-            const w = try self.walk(arg, t, depth);
-            if (w != arg) changed = true;
-            out.* = w;
+    /// ITERATIVE POST-ORDER REBUILD engine (replaces the native recursion in walk/rewriteAll/
+    /// remapFormula — a pathologically deep term can no longer overflow the C stack). Drives a
+    /// two-color explicit stack: a node is first EXPANDED (its children pushed, deeper), then on
+    /// its second pop REBUILT from the children results already on a result stack. `depth` = de
+    /// Bruijn binders passed (incremented into a quant body). The comptime `Visitor` supplies the
+    /// transform via two methods (duck-typed):
+    ///   - `leaf(pool, id, node, depth) !?TermId` — a result for a bvar/fvar (or any node it wants
+    ///     to short-circuit WITHOUT descending, e.g. rewriteAll's whole-node match / remap's fvar);
+    ///     null = descend + rebuild normally.
+    ///   - `rebuild(pool, id, node, depth, kids) !TermId` — reassemble an interior node from its
+    ///     rebuilt children `kids` (same order as `childrenOf`); owns sharing / symbol-remap /
+    ///     guard-injection. Only called for nodes `leaf` returned null on.
+    /// Scratch (the two stacks + child snapshots) lives in a GPA-backed arena, reclaimed on return.
+    fn rebuildWalk(self: *Pool, root: TermId, visitor: anytype) Allocator.Error!TermId {
+        var scratch: std.heap.ArenaAllocator = .init(self.gpa);
+        defer scratch.deinit();
+        const a = scratch.allocator();
+
+        const Frame = struct { id: TermId, depth: u16, expanded: bool };
+        var work: std.ArrayList(Frame) = .empty;
+        var results: std.ArrayList(TermId) = .empty; // rebuilt ids, consumed by parents
+        var kidbuf: std.ArrayList(TermId) = .empty; // child-id snapshots (reused per expand)
+
+        try work.append(a, .{ .id = root, .depth = 0, .expanded = false });
+        while (work.pop()) |f| {
+            const node = self.get(f.id);
+            if (!f.expanded) {
+                if (try visitor.leaf(self, f.id, node, f.depth)) |r| {
+                    try results.append(a, r);
+                    continue;
+                }
+                // re-push EXPANDED (rebuilt after its children), then push children deeper.
+                try work.append(a, .{ .id = f.id, .depth = f.depth, .expanded = true });
+                const child_depth = f.depth + @as(u16, if (node == .quant) 1 else 0);
+                kidbuf.clearRetainingCapacity();
+                const kids = try self.childrenOf(node, &kidbuf, a);
+                // push in REVERSE so child 0 is processed first → its result lands first on
+                // `results` (parents read kids in original order).
+                var i: usize = kids.len;
+                while (i > 0) {
+                    i -= 1;
+                    try work.append(a, .{ .id = kids[i], .depth = child_depth, .expanded = false });
+                }
+            } else {
+                // children results are the top `n` of `results` (in order). Rebuild, replace them.
+                const n = childArity(node);
+                const kids = results.items[results.items.len - n ..];
+                const rebuilt = try visitor.rebuild(self, f.id, node, f.depth, kids);
+                results.items.len -= n;
+                try results.append(a, rebuilt);
+            }
         }
-        if (!changed) return id;
-        return self.addApp(kind, a.sym, new_args);
+        return results.items[0];
     }
+
+    /// How many direct children a node has (matches `childrenOf`).
+    fn childArity(node: Node) usize {
+        return switch (node) {
+            .bvar, .fvar => 0,
+            .app, .pred => |ap| ap.args_len,
+            .not, .quant => 1,
+            .eq, .bin => 2,
+        };
+    }
+
+    /// Shared traversal for close/open/substFvar. Returns the original id when nothing changed
+    /// underneath (keeps the pool small via sharing). Iterative (see `rebuildWalk`).
+    fn walk(self: *Pool, id: TermId, t: Transform, depth: u16) Allocator.Error!TermId {
+        std.debug.assert(depth == 0); // public entry points always start at binder depth 0
+        return self.rebuildWalk(id, WalkVisitor{ .t = t });
+    }
+
+    /// `walk`'s transform as a `rebuildWalk` visitor: leaf handling for bvar/fvar per the
+    /// Transform; interior nodes rebuilt with structure-sharing (unchanged children → original id).
+    const WalkVisitor = struct {
+        t: Transform,
+
+        fn leaf(v: WalkVisitor, pool: *Pool, id: TermId, node: Node, depth: u16) Allocator.Error!?TermId {
+            switch (node) {
+                .bvar => |i| return switch (v.t) {
+                    .open => |u| if (i == depth) u else id, // replacement locally closed → no shift
+                    else => id,
+                },
+                .fvar => |fv| return switch (v.t) {
+                    .close => |name| if (fv.name == name) try pool.add(.{ .bvar = depth }) else id,
+                    .subst_fvar => |s| if (fv.name == s.name) s.term else id,
+                    .open => id,
+                },
+                else => return null, // interior: descend + rebuild
+            }
+        }
+
+        fn rebuild(_: WalkVisitor, pool: *Pool, id: TermId, node: Node, _: u16, kids: []const TermId) Allocator.Error!TermId {
+            switch (node) {
+                .app, .pred => |ap| {
+                    var changed = false;
+                    for (kids, pool.args(ap)) |k, old| {
+                        if (k != old) changed = true;
+                    }
+                    if (!changed) return id;
+                    return pool.addApp(if (node == .app) .app else .pred, ap.sym, kids);
+                },
+                .eq => |p| {
+                    if (kids[0] == p.lhs and kids[1] == p.rhs) return id;
+                    return pool.add(.{ .eq = .{ .lhs = kids[0], .rhs = kids[1] } });
+                },
+                .not => |inner| {
+                    if (kids[0] == inner) return id;
+                    return pool.add(.{ .not = kids[0] });
+                },
+                .bin => |b| {
+                    if (kids[0] == b.lhs and kids[1] == b.rhs) return id;
+                    return pool.add(.{ .bin = .{ .op = b.op, .lhs = kids[0], .rhs = kids[1] } });
+                },
+                .quant => |q| {
+                    if (kids[0] == q.body) return id;
+                    return pool.add(.{ .quant = .{ .q = q.q, .sort = q.sort, .hint = q.hint, .body = kids[0] } });
+                },
+                .bvar, .fvar => unreachable, // handled by leaf
+            }
+        }
+    };
 
     /// A structure-interpretation mapping for `remapFormula`: rewrite each
     /// SortId and SymId of a source theory to its image in the target. The maps
@@ -946,6 +1021,30 @@ test "occursFree: deep term does not overflow the C stack (iterative work-stack)
     try testing.expect(!p.alphaEq(cur, deepy));
     try testing.expectEqual(std.math.Order.lt, p.termOrder(cur, deepy)); // difference at the leaf
     try testing.expectEqual(std.math.Order.gt, p.termOrder(deepy, cur));
+}
+
+test "walk (substFvar): deep term rebuilds without overflow (iterative rebuildWalk)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    // not(not(…not(x)…)) 200k deep; substitute x := y throughout, then confirm the result is
+    // not(not(…y…)) at the same depth and the ORIGINAL is unchanged (sharing on the untouched path
+    // is moot here — every node contains x, so all rebuild — but depth-safety is the point).
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const y = try p.add(.{ .fvar = .{ .name = sid(2), .sort = nat } });
+    var cur = x;
+    var i: usize = 0;
+    while (i < 200_000) : (i += 1) cur = try p.add(.{ .not = cur });
+
+    const subst = try p.substFvar(cur, sid(1), y);
+    try testing.expect(!p.occursFree(subst, sid(1))); // x gone
+    try testing.expect(p.occursFree(subst, sid(2))); // y present
+    try testing.expect(p.occursFree(cur, sid(1))); // original untouched (immutable pool)
+    // substituting a name that doesn't occur SHARES the original (no rebuild).
+    try testing.expectEqual(cur, try p.substFvar(cur, sid(3), y));
 }
 
 test "termOrder: first-difference-wins across args (reverse-push order)" {
