@@ -74,42 +74,59 @@ pub fn instanceHash(pool: *const term.Pool, schema_name: StrId, params: []const 
 /// Alpha-consistent structural hash of a term. `canon` is the lambda-param fvar list whose
 /// members hash by their POSITION in `canon` (not their StrId); any other fvar hashes by
 /// its actual name. Quantifier hints are ignored (mirrors `alphaEq`).
+/// Hash a term into `h`, alpha-invariantly (bound vars by de-Bruijn index, hint ignored) with
+/// lambda-params canonicalized by position (`canon`). ITERATIVE PRE-ORDER (was native recursion)
+/// — depth-safe. The hash SEQUENCE must match the old recursion EXACTLY (it addresses a schema
+/// instance), so: pop a node, hash its scalars (tag first, as before), then push its children
+/// REVERSED so child 0 hashes next — reproducing pre-order. Scratch stack on the pool's GPA.
 fn hashTerm(pool: *const term.Pool, h: *std.hash.Wyhash, id: TermId, canon: []const StrId) void {
-    const node = pool.get(id);
-    std.hash.autoHash(h, @intFromEnum(std.meta.activeTag(node)));
-    switch (node) {
-        .bvar => |i| std.hash.autoHash(h, i),
-        .fvar => |v| {
-            std.hash.autoHash(h, @intFromEnum(v.sort));
-            if (indexOfName(canon, v.name)) |pos| {
-                h.update("#"); // a canonicalized lambda-param fvar
-                std.hash.autoHash(h, pos);
-            } else {
-                h.update("@"); // an ordinary fvar (caller eigenvar / ground): hash its name
-                std.hash.autoHash(h, @intFromEnum(v.name));
-            }
-        },
-        .app, .pred => |a| {
-            std.hash.autoHash(h, @intFromEnum(a.sym));
-            std.hash.autoHash(h, a.args_len);
-            for (pool.args(a)) |arg| hashTerm(pool, h, arg, canon);
-        },
-        .eq => |p| {
-            hashTerm(pool, h, p.lhs, canon);
-            hashTerm(pool, h, p.rhs, canon);
-        },
-        .not => |t| hashTerm(pool, h, t, canon),
-        .bin => |b| {
-            std.hash.autoHash(h, @intFromEnum(b.op));
-            hashTerm(pool, h, b.lhs, canon);
-            hashTerm(pool, h, b.rhs, canon);
-        },
-        .quant => |q| {
-            std.hash.autoHash(h, @intFromEnum(q.q));
-            std.hash.autoHash(h, @intFromEnum(q.sort));
-            // hint deliberately ignored (alpha-equal terms hash equal)
-            hashTerm(pool, h, q.body, canon);
-        },
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), pool.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, id) catch @panic("hashTerm: OOM"); // pure hashing; no sound fallback
+    while (stack.pop()) |cur| {
+        const node = pool.get(cur);
+        std.hash.autoHash(h, @intFromEnum(std.meta.activeTag(node)));
+        switch (node) {
+            .bvar => |i| std.hash.autoHash(h, i),
+            .fvar => |v| {
+                std.hash.autoHash(h, @intFromEnum(v.sort));
+                if (indexOfName(canon, v.name)) |pos| {
+                    h.update("#"); // a canonicalized lambda-param fvar
+                    std.hash.autoHash(h, pos);
+                } else {
+                    h.update("@"); // an ordinary fvar (caller eigenvar / ground): hash its name
+                    std.hash.autoHash(h, @intFromEnum(v.name));
+                }
+            },
+            .app, .pred => |ap| {
+                std.hash.autoHash(h, @intFromEnum(ap.sym));
+                std.hash.autoHash(h, ap.args_len);
+                pushRev(&stack, a, pool.args(ap));
+            },
+            .eq => |p| pushRev(&stack, a, &.{ p.lhs, p.rhs }),
+            .not => |t| stack.append(a, t) catch @panic("hashTerm: OOM"),
+            .bin => |b| {
+                std.hash.autoHash(h, @intFromEnum(b.op));
+                pushRev(&stack, a, &.{ b.lhs, b.rhs });
+            },
+            .quant => |q| {
+                std.hash.autoHash(h, @intFromEnum(q.q));
+                std.hash.autoHash(h, @intFromEnum(q.sort));
+                // hint deliberately ignored (alpha-equal terms hash equal)
+                stack.append(a, q.body) catch @panic("hashTerm: OOM");
+            },
+        }
+    }
+}
+
+/// Push children REVERSED so child 0 pops next (pre-order preservation).
+fn pushRev(stack: *std.ArrayList(TermId), a: std.mem.Allocator, kids: []const TermId) void {
+    var i: usize = kids.len;
+    while (i > 0) {
+        i -= 1;
+        stack.append(a, kids[i]) catch @panic("hashTerm: OOM");
     }
 }
 

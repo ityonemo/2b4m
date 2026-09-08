@@ -131,6 +131,10 @@ fn findRewrite(
 /// One-way syntactic match of `pattern` (rule binders = wildcards) against `t`, with
 /// consistent bindings and sort checks. Handles formula structure too (emitters match whole
 /// rule bodies), but not binders: quantified patterns never match.
+/// Match `pattern` (with `rule`'s binders as wildcards) against `t`, filling `bound`. Iterative
+/// parallel two-tree walk (was native recursion) over a work-stack of `(pattern, term)` pairs that
+/// must ALL match (a conjunction — stack order irrelevant; the `bound` re-encounter check is
+/// order-independent). Scratch on the pool's GPA. OOM → no match (simplify just declines a rule).
 fn matchPattern(
     pool: *term.Pool,
     interner: *const InternPool,
@@ -139,63 +143,70 @@ fn matchPattern(
     t: TermId,
     bound: []?TermId,
 ) bool {
-    switch (pool.get(pattern)) {
-        .fvar => |v| {
-            if (binderIndex(rule, v.name)) |i| {
-                if (bound[i]) |prev| return pool.alphaEq(prev, t);
-                if (termSort(pool, interner, t) != v.sort) return false;
-                // a binding must be locally closed: a loose bound variable would escape its
-                // binder through the instantiation.
-                if (looseBvar(pool, t, 0)) return false;
-                bound[i] = t;
-                return true;
-            }
-            // a constant fvar from the enclosing scope: exact occurrence only.
-            const tn = pool.get(t);
-            return tn == .fvar and tn.fvar.name == v.name;
-        },
-        .bvar => |i| {
-            const tn = pool.get(t);
-            return tn == .bvar and tn.bvar == i;
-        },
-        .quant => |q| {
-            const tn = pool.get(t);
-            return tn == .quant and tn.quant.q == q.q and tn.quant.sort == q.sort and
-                matchPattern(pool, interner, rule, q.body, tn.quant.body, bound);
-        },
-        .app => |a| {
-            const tn = pool.get(t);
-            if (tn != .app or tn.app.sym != a.sym or tn.app.args_len != a.args_len) return false;
-            for (pool.args(a), pool.args(tn.app)) |pa, ta| {
-                if (!matchPattern(pool, interner, rule, pa, ta, bound)) return false;
-            }
-            return true;
-        },
-        .pred => |a| {
-            const tn = pool.get(t);
-            if (tn != .pred or tn.pred.sym != a.sym or tn.pred.args_len != a.args_len) return false;
-            for (pool.args(a), pool.args(tn.pred)) |pa, ta| {
-                if (!matchPattern(pool, interner, rule, pa, ta, bound)) return false;
-            }
-            return true;
-        },
-        .eq => |p| {
-            const tn = pool.get(t);
-            return tn == .eq and
-                matchPattern(pool, interner, rule, p.lhs, tn.eq.lhs, bound) and
-                matchPattern(pool, interner, rule, p.rhs, tn.eq.rhs, bound);
-        },
-        .not => |inner| {
-            const tn = pool.get(t);
-            return tn == .not and matchPattern(pool, interner, rule, inner, tn.not, bound);
-        },
-        .bin => |b| {
-            const tn = pool.get(t);
-            return tn == .bin and tn.bin.op == b.op and
-                matchPattern(pool, interner, rule, b.lhs, tn.bin.lhs, bound) and
-                matchPattern(pool, interner, rule, b.rhs, tn.bin.rhs, bound);
-        },
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf([2]TermId), pool.gpa);
+    const al = fb.get();
+    var stack: std.ArrayList([2]TermId) = .empty;
+    defer stack.deinit(al);
+    stack.append(al, .{ pattern, t }) catch return false;
+    while (stack.pop()) |pair| {
+        const pat = pair[0];
+        const term_id = pair[1];
+        switch (pool.get(pat)) {
+            .fvar => |v| {
+                if (binderIndex(rule, v.name)) |i| {
+                    if (bound[i]) |prev| {
+                        if (!pool.alphaEq(prev, term_id)) return false;
+                        continue;
+                    }
+                    if (termSort(pool, interner, term_id) != v.sort) return false;
+                    // a binding must be locally closed: a loose bound var would escape its binder.
+                    if (looseBvar(pool, term_id, 0)) return false;
+                    bound[i] = term_id;
+                    continue;
+                }
+                // a constant fvar from the enclosing scope: exact occurrence only.
+                const tn = pool.get(term_id);
+                if (!(tn == .fvar and tn.fvar.name == v.name)) return false;
+            },
+            .bvar => |i| {
+                const tn = pool.get(term_id);
+                if (!(tn == .bvar and tn.bvar == i)) return false;
+            },
+            .quant => |q| {
+                const tn = pool.get(term_id);
+                if (!(tn == .quant and tn.quant.q == q.q and tn.quant.sort == q.sort)) return false;
+                stack.append(al, .{ q.body, tn.quant.body }) catch return false;
+            },
+            .app => |a| {
+                const tn = pool.get(term_id);
+                if (tn != .app or tn.app.sym != a.sym or tn.app.args_len != a.args_len) return false;
+                for (pool.args(a), pool.args(tn.app)) |pa, ta| stack.append(al, .{ pa, ta }) catch return false;
+            },
+            .pred => |a| {
+                const tn = pool.get(term_id);
+                if (tn != .pred or tn.pred.sym != a.sym or tn.pred.args_len != a.args_len) return false;
+                for (pool.args(a), pool.args(tn.pred)) |pa, ta| stack.append(al, .{ pa, ta }) catch return false;
+            },
+            .eq => |p| {
+                const tn = pool.get(term_id);
+                if (tn != .eq) return false;
+                stack.append(al, .{ p.lhs, tn.eq.lhs }) catch return false;
+                stack.append(al, .{ p.rhs, tn.eq.rhs }) catch return false;
+            },
+            .not => |inner| {
+                const tn = pool.get(term_id);
+                if (tn != .not) return false;
+                stack.append(al, .{ inner, tn.not }) catch return false;
+            },
+            .bin => |b| {
+                const tn = pool.get(term_id);
+                if (!(tn == .bin and tn.bin.op == b.op)) return false;
+                stack.append(al, .{ b.lhs, tn.bin.lhs }) catch return false;
+                stack.append(al, .{ b.rhs, tn.bin.rhs }) catch return false;
+            },
+        }
     }
+    return true;
 }
 
 /// Match a rule's full lhs (or any pattern with the rule's binders as wildcards) against
@@ -210,21 +221,38 @@ pub fn matchRule(arena: Allocator, pool: *term.Pool, interner: *const InternPool
     return out;
 }
 
+/// Does `t` have a loose (dangling) bvar at index >= `depth`? Iterative work-stack of
+/// `(term, depth)` pairs (was native recursion) — depth-safe; `depth` increments into a quant
+/// body. Scratch stack on the pool's GPA. OOM → conservatively "loose" (a false "loose" only ever
+/// makes simplify DECLINE to apply a rule, never misapplies one).
 fn looseBvar(pool: *const term.Pool, t: TermId, depth: u16) bool {
-    switch (pool.get(t)) {
-        .bvar => |i| return i >= depth,
-        .fvar => return false,
-        .app, .pred => |a| {
-            for (pool.args(a)) |arg| {
-                if (looseBvar(pool, arg, depth)) return true;
-            }
-            return false;
-        },
-        .eq => |p| return looseBvar(pool, p.lhs, depth) or looseBvar(pool, p.rhs, depth),
-        .not => |inner| return looseBvar(pool, inner, depth),
-        .bin => |b| return looseBvar(pool, b.lhs, depth) or looseBvar(pool, b.rhs, depth),
-        .quant => |q| return looseBvar(pool, q.body, depth + 1),
+    const Frame = struct { id: TermId, depth: u16 };
+    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(Frame), pool.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(Frame) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, .{ .id = t, .depth = depth }) catch return true;
+    while (stack.pop()) |f| {
+        const node = pool.get(f.id);
+        switch (node) {
+            .bvar => |i| if (i >= f.depth) return true,
+            .fvar => {},
+            .quant => |q| stack.append(a, .{ .id = q.body, .depth = f.depth + 1 }) catch return true,
+            .app, .pred => |ap| for (pool.args(ap)) |arg| {
+                stack.append(a, .{ .id = arg, .depth = f.depth }) catch return true;
+            },
+            .eq => |p| {
+                stack.append(a, .{ .id = p.lhs, .depth = f.depth }) catch return true;
+                stack.append(a, .{ .id = p.rhs, .depth = f.depth }) catch return true;
+            },
+            .not => |inner| stack.append(a, .{ .id = inner, .depth = f.depth }) catch return true,
+            .bin => |b| {
+                stack.append(a, .{ .id = b.lhs, .depth = f.depth }) catch return true;
+                stack.append(a, .{ .id = b.rhs, .depth = f.depth }) catch return true;
+            },
+        }
     }
+    return false;
 }
 
 fn binderIndex(rule: Rule, name: StrId) ?usize {

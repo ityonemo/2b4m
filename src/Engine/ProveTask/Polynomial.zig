@@ -595,12 +595,17 @@ fn parseTower(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) Error!?T
 
 /// A tower summand leaf: an fvar, an opaque atom, or `neg(<leaf>)`.
 fn isTowerLeaf(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool {
-    const node = self.pool.get(t);
-    if (node == .fvar) return true;
-    if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
-        return isTowerLeaf(self, symbols, self.pool.args(node.app)[0]);
+    // LINEAR recursion (only ever descends into neg's single arg) — a plain loop, depth-safe.
+    var cur = t;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node == .fvar) return true;
+        if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+            cur = self.pool.args(node.app)[0]; // peel neg, keep going
+            continue;
+        }
+        return isOpaqueAtom(self, symbols, cur);
     }
-    return isOpaqueAtom(self, symbols, t);
 }
 
 /// An opaque atom: an application whose head is NOT part of the sum structure.
