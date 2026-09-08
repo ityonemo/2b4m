@@ -688,56 +688,70 @@ pub const Pool = struct {
         next_ordinal: u32 = 0, // next node's LOCAL index (0-based by appearance)
         seen: std.AutoHashMapUnmanaged(TermId, u32) = .empty, // TermId -> its local ordinal
 
-        /// Emit `id`'s subtree post-order; return `id`'s LOCAL node ordinal. A repeated
-        /// scratchpad TermId is emitted once (shared within this run).
-        fn go(r: *Reifier, id: TermId) Allocator.Error!u32 {
-            if (r.seen.get(id)) |ord| return ord;
-            const node = r.pool.get(id);
-            switch (node) {
-                .bvar => |b| try r.emit(&.{ @intFromEnum(TermTag.bvar), b }),
-                .fvar => |v| try r.emit(&.{ @intFromEnum(TermTag.fvar), @intFromEnum(v.name), @intFromEnum(v.sort) }),
-                .not => |t| {
-                    const c = try r.go(t);
-                    try r.emit(&.{ @intFromEnum(TermTag.not), c });
-                },
-                .eq => |p| {
-                    const l = try r.go(p.lhs);
-                    const rr = try r.go(p.rhs);
-                    try r.emit(&.{ @intFromEnum(TermTag.eq), l, rr });
-                },
-                .bin => |b| {
-                    const l = try r.go(b.lhs);
-                    const rr = try r.go(b.rhs);
-                    try r.emit(&.{ @intFromEnum(TermTag.bin), @intFromEnum(b.op), l, rr });
-                },
-                .quant => |q| {
-                    const body = try r.go(q.body);
-                    try r.emit(&.{ @intFromEnum(TermTag.quant), @intFromEnum(q.q), @intFromEnum(q.sort), @intFromEnum(q.hint), body });
-                },
-                .app, .pred => |a| {
-                    const tag: TermTag = if (node == .app) .app else .pred;
-                    // args must precede this node — reify them first, capturing ordinals.
-                    // (self.args aliases pool.extra, but reify never writes pool.extra, so
-                    // the slice is stable across the loop.)
-                    const arg_ids = r.pool.args(a);
-                    const arg_ords = try r.arena.alloc(u32, arg_ids.len);
-                    for (arg_ids, arg_ords) |arg, *out| out.* = try r.go(arg);
-                    var group: std.ArrayList(u32) = .empty;
-                    try group.append(r.arena, @intFromEnum(tag));
-                    try group.append(r.arena, @intFromEnum(a.sym));
-                    try group.append(r.arena, @intCast(arg_ids.len));
-                    try group.appendSlice(r.arena, arg_ords);
-                    try r.emit(group.items);
-                },
+        /// Emit `id`'s subtree post-order (children before parents); return `id`'s LOCAL node
+        /// ordinal. A repeated scratchpad TermId is emitted once (shared within this run, via
+        /// `seen`). ITERATIVE (was native recursion): a two-color explicit stack — a node is first
+        /// EXPANDED (children pushed, deeper) then on its second pop EMITTED (children already
+        /// emitted → their ordinals are in `seen`). Depth-safe for a pathologically deep term.
+        fn go(r: *Reifier, root: TermId) Allocator.Error!u32 {
+            const Frame = struct { id: TermId, expanded: bool };
+            var work: std.ArrayList(Frame) = .empty;
+            try work.append(r.arena, .{ .id = root, .expanded = false });
+            while (work.pop()) |f| {
+                if (r.seen.contains(f.id)) continue; // already emitted (shared subterm)
+                const node = r.pool.get(f.id);
+                if (!f.expanded) {
+                    // leaves emit immediately (no children); interior nodes re-push EXPANDED then
+                    // push their children (reversed → child 0 emitted first, matching the recursion).
+                    switch (node) {
+                        .bvar => |b| {
+                            try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.bvar), b });
+                            continue;
+                        },
+                        .fvar => |v| {
+                            try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.fvar), @intFromEnum(v.name), @intFromEnum(v.sort) });
+                            continue;
+                        },
+                        else => {},
+                    }
+                    try work.append(r.arena, .{ .id = f.id, .expanded = true });
+                    var kidbuf: std.ArrayList(TermId) = .empty;
+                    const kids = try r.pool.childrenOf(node, &kidbuf, r.arena);
+                    var i: usize = kids.len;
+                    while (i > 0) {
+                        i -= 1;
+                        try work.append(r.arena, .{ .id = kids[i], .expanded = false });
+                    }
+                } else {
+                    // children are emitted; read their ordinals from `seen` (present by construction).
+                    switch (node) {
+                        .not => |t| try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.not), r.seen.get(t).? }),
+                        .eq => |p| try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.eq), r.seen.get(p.lhs).?, r.seen.get(p.rhs).? }),
+                        .bin => |b| try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.bin), @intFromEnum(b.op), r.seen.get(b.lhs).?, r.seen.get(b.rhs).? }),
+                        .quant => |q| try r.emitSeen(f.id, &.{ @intFromEnum(TermTag.quant), @intFromEnum(q.q), @intFromEnum(q.sort), @intFromEnum(q.hint), r.seen.get(q.body).? }),
+                        .app, .pred => |a| {
+                            const tag: TermTag = if (node == .app) .app else .pred;
+                            const arg_ids = r.pool.args(a);
+                            var group: std.ArrayList(u32) = .empty;
+                            try group.append(r.arena, @intFromEnum(tag));
+                            try group.append(r.arena, @intFromEnum(a.sym));
+                            try group.append(r.arena, @intCast(arg_ids.len));
+                            for (arg_ids) |arg| try group.append(r.arena, r.seen.get(arg).?);
+                            try r.emitSeen(f.id, group.items);
+                        },
+                        .bvar, .fvar => unreachable, // emitted on the unexpanded pop
+                    }
+                }
             }
-            const ord = r.next_ordinal - 1; // emit() bumped it
-            try r.seen.put(r.arena, id, ord);
-            return ord;
+            return r.seen.get(root).?;
         }
 
-        fn emit(r: *Reifier, group: []const u32) Allocator.Error!void {
+        /// Emit a node group + record `id`'s local ordinal in `seen` (its position in the run).
+        fn emitSeen(r: *Reifier, id: TermId, group: []const u32) Allocator.Error!void {
+            const ord = r.next_ordinal;
             try r.words.appendSlice(r.arena, group);
             r.next_ordinal += 1;
+            try r.seen.put(r.arena, id, ord);
         }
     };
 
@@ -1294,4 +1308,22 @@ test "reify/copyIn: shared subterm emitted once, rebuilt consistently" {
     const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
     const fxx = try p.addApp(.app, tsym(1), &.{ x, x });
     try expectReifyRoundTrip(io, &ip, p, fxx);
+}
+
+test "reify/copyIn: deep term round-trips without overflow (iterative reify+copyIn)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: Pool = .init(arena, arena);
+    const p = &pool;
+    var ip: InternPool = try .init(arena);
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    // 200k-deep not-chain: reify's post-order emit (iterative) + copyIn's linear rebuild both
+    // handle it without a C-stack overflow, and the round-trip is structure-preserving.
+    var cur = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    var i: usize = 0;
+    while (i < 200_000) : (i += 1) cur = try p.add(.{ .not = cur });
+    try expectReifyRoundTrip(io, &ip, p, cur);
 }
