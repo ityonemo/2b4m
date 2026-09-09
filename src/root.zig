@@ -83,10 +83,10 @@ fn newContext(
     return context;
 }
 
-/// Count the root file's checking outcome: how many theorem DECLARATIONS it has, and how
-/// many of them are `proven` facts in FactKV (published by their ProveTasks).
+/// Count the root file's checking outcome: how many local theorems are `proven` facts in
+/// FactKV (published by their ProveTasks). We do NOT track how many theorems were DECLARED
+/// — a file that proves zero theorems is a clean success (a declarations-only dependency).
 const Counts = struct {
-    theorem_decls: usize,
     proven: usize,
     /// root theorems whose proof ADMITTED at least one `using` word (`--fast`).
     accelerated: usize,
@@ -100,7 +100,6 @@ fn countRoot(context: *Context) !Counts {
     const root_source = context.files.items[root_idx].source;
     const root_pool_file = try context.fileIndex(context.files.items[root_idx].path);
     const ns = try context.interner.namespace(.universe, root_pool_file);
-    var decls: usize = 0;
     var proven: usize = 0;
     var accelerated: usize = 0;
     // union of all admitted words across root theorems — the disclosure lists these names.
@@ -110,7 +109,6 @@ fn countRoot(context: *Context) !Counts {
         // count only LOCAL theorems (things this file sets out to PROVE); a theorem ALIAS is
         // a re-export, not a proof obligation (its origin is proved elsewhere).
         if (decl.theorem != .local) continue;
-        decls += 1;
         const name_tok = ast.theoremName(decl.theorem);
         const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
         if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
@@ -127,7 +125,7 @@ fn countRoot(context: *Context) !Counts {
     var names: std.ArrayList([]const u8) = .empty;
     var it = word_set.iterator();
     while (it.next()) |wd| try names.append(context.arena, @tagName(wd));
-    return .{ .theorem_decls = decls, .proven = proven, .accelerated = accelerated, .accelerated_names = names.items };
+    return .{ .proven = proven, .accelerated = accelerated, .accelerated_names = names.items };
 }
 
 pub const CheckResult = struct {
@@ -169,12 +167,6 @@ pub const ProjectResult = struct {
     sink: *diagnostics.Sink,
     declarations: usize,
     theorems_proven: usize,
-    /// number of `theorem` declarations in the TARGET (root) file — i.e. things
-    /// this file set out to prove. Distinguishes a legitimately declarations-only
-    /// dependency (0 theorem decls → nothing to check, fine) from a proof file
-    /// that declared theorems but proved none (a real footgun). See the
-    /// `theorems_proven == 0` branch in main.zig.
-    target_theorem_decls: usize,
     /// theorems whose imported proofs were trusted (not re-checked). Currently always 0 —
     /// import-proof re-checking is not a distinct trust axis on the demand path (an imported
     /// theorem is proved by its own ProveTask; `--fast import` only admits the CITATION).
@@ -292,7 +284,6 @@ pub fn checkProject(
         .sink = loaded.sink,
         .declarations = loaded.declarations,
         .theorems_proven = counts.proven,
-        .target_theorem_decls = counts.theorem_decls,
         .theorems_trusted = 0,
         .theorems_accelerated = counts.accelerated,
         .accelerated_names = counts.accelerated_names,

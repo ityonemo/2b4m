@@ -56,9 +56,8 @@ pub fn addTests(
     ctx.fail(&.{ "check", "nosuchfile.bpa" }, "error: cannot open 'nosuchfile.bpa': file not found\n");
 
     // Existing, valid file -> parses and checks with no diagnostics. It is
-    // comments-only (no theorem declarations), so it has nothing to prove — an
-    // informational note, exit 0 (a declarations-only file is a legitimate
-    // dependency, not a failure).
+    // comments-only (no theorem declarations), so it has nothing to prove —
+    // exit 0 (a file that proves zero theorems is a clean success).
     const ok = b.addRunArtifact(exe);
     ok.has_side_effects = true;
     ok.addArg("check");
@@ -72,8 +71,8 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/syntax_err.bpa" }, "tests/cases/syntax_err.bpa:4:11: error: expected ':', got 'forall'\n");
 
     // M2: full declaration surface elaborates cleanly. A decls-only file has no
-    // theorem declarations, so it has nothing to prove — an informational note,
-    // exit 0 (a declarations-only file is a legitimate dependency).
+    // theorem declarations, so it has nothing to prove — exit 0 (a file that
+    // proves zero theorems is a clean success).
     const decls = b.addRunArtifact(exe);
     decls.has_side_effects = true;
     decls.setCwd(b.path("."));

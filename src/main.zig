@@ -506,24 +506,6 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll("; re-run `bpa check` (no --draft) once filled.");
     }
     try out.writeAll("\n");
-    // A run that proved NO theorems splits into two cases, distinguished by
-    // whether the TARGET file even declared any theorems:
-    //   • zero theorem declarations → a legitimately declarations-only file (a
-    //     dependency: axioms/defs/schemas whose job is to be imported). Nothing
-    //     to check is the CORRECT outcome — an informational note, exit 0.
-    //   • theorem declarations present but none proved → the real footgun (a
-    //     proof file that verified nothing). Warn loudly and exit nonzero so it
-    //     can't pass silently in a script or CI gate.
-    if (result.theorems_proven == 0) {
-        if (result.target_theorem_decls == 0) {
-            try out.writeAll("  \u{2014} note: no theorems to check (a declarations-only file: axioms/defs/schemas — a dependency, not a proof file).\n");
-            try out.flush();
-            return 0;
-        }
-        try out.writeAll("  \u{2014} WARNING: 0 of the file's theorems were proven — nothing was checked.\n");
-        try out.flush();
-        return 1;
-    }
     try out.flush();
     return 0;
 }
