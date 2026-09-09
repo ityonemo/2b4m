@@ -224,9 +224,9 @@ fn needSpace(prev: Tag, cur: Tag) bool {
         .r_paren, .r_bracket, .comma, .dot, .colon, .semicolon => return false,
         // a step label reads `label |` — a space separates the tag from its pipe
         .pipe => return true,
-        // `model(Instance)` cites with no space, like `arithmetic(peano)` —
-        // `model` is a keyword here, not an identifier, so admit it explicitly.
-        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model,
+        // `model(Instance)` / `import(NS)` cite with no space, like `arithmetic(peano)`
+        // — `model`/`import` are keywords here, not identifiers, so admit them explicitly.
+        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model and prev != .keyword_import,
         else => {},
     }
     switch (prev) {
