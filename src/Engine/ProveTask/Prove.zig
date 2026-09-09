@@ -4465,30 +4465,44 @@ fn emitExtSetResidue(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList
 /// membership lemma whose characterized op matches, at (args…, x). Each instance is emitted as a
 /// step in `block` and recorded as a tautology premise. Dedups by formula.
 fn emitExtUnfoldMembership(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), body: TermId, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem)) Error!void {
-    const node = self.pool.get(body);
-    switch (node) {
-        .pred => |p| {
-            const args = self.pool.args(p);
-            if (args.len == 2) {
-                const set = self.pool.get(args[1]);
-                if (set == .app) {
-                    try self.emitExtUnfoldOp(b, block, set.app, x_id, unfolds, out);
-                }
+    // ITERATIVE (was mutual recursion emitExtUnfoldMembership↔emitExtUnfoldOp). A worklist of
+    // `Work` items: a `.membership` walks the body's bin/not/pred skeleton; a `.op` instantiates
+    // the membership lemma for one `op(args)` and queues its set-typed args. Items are pushed
+    // REVERSED so the leftmost/outermost is processed first — preserving the pre-order,
+    // left-to-right premise-collection (+ dedup) order of the recursion. Scratch on ctx.gpa.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    const Work = union(enum) { membership: TermId, op: term.Node.App };
+    var stack: std.ArrayList(Work) = .empty;
+    try stack.append(wa, .{ .membership = body });
+    while (stack.pop()) |item| switch (item) {
+        .membership => |m| {
+            switch (self.pool.get(m)) {
+                .pred => |p| {
+                    const args = self.pool.args(p);
+                    if (args.len == 2) {
+                        const set = self.pool.get(args[1]);
+                        if (set == .app) try stack.append(wa, .{ .op = set.app });
+                    }
+                },
+                .bin => |bn| {
+                    try stack.append(wa, .{ .membership = bn.rhs }); // rhs pushed first → lhs first
+                    try stack.append(wa, .{ .membership = bn.lhs });
+                },
+                .not => |inner| try stack.append(wa, .{ .membership = inner }),
+                else => {},
             }
         },
-        .bin => |bn| {
-            try self.emitExtUnfoldMembership(b, block, bn.lhs, x_id, unfolds, out);
-            try self.emitExtUnfoldMembership(b, block, bn.rhs, x_id, unfolds, out);
-        },
-        .not => |inner| try self.emitExtUnfoldMembership(b, block, inner, x_id, unfolds, out),
-        else => {},
-    }
+        .op => |app| try self.emitExtUnfoldOp(b, block, app, x_id, unfolds, out, wa, &stack),
+    };
 }
 
-/// Instantiate the membership lemma for `op(args…)` at (args…, x): cite the lemma globally, then
-/// forall_elim once per op-arg + once for x. Append the instance step + record it as a premise.
-/// Recurses into `op`'s set-typed arguments (nested operators unfold too).
-fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), app: term.Node.App, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem)) Error!void {
+/// Process ONE `op(args…)` for extensionality unfolding: instantiate the matching cited membership
+/// lemma at (args…, x) — cite + forall_elim per op-arg then x, dedup + record the premise — and
+/// QUEUE the op's set-typed args onto `stack` (nested operators unfold too). Was self-recursive;
+/// now pushes follow-up `.op` work instead. `Work`/`stack` are the driver's (comptime-typed).
+fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), app: term.Node.App, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem), wa: std.mem.Allocator, stack: anytype) Error!void {
     // find the cited lemma characterizing this op head.
     var lemma: ?ExtUnfold = null;
     for (unfolds) |u| {
@@ -4499,12 +4513,20 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
     }
     // COPY the op-arg ids: pool.args aliases pool.extra, which the emitStep/open calls below grow.
     const op_args = try self.ctx.arena.dupe(TermId, self.pool.args(app));
-    const u = lemma orelse {
-        // no cited lemma for this op — leave the atom opaque, but recurse into set-typed args.
-        for (op_args) |a| {
-            const an = self.pool.get(a);
-            if (an == .app) try self.emitExtUnfoldOp(b, block, an.app, x_id, unfolds, out);
+    // helper: queue the op's set-typed (app) args, REVERSED so arg 0 processes first.
+    const queueArgs = struct {
+        fn f(p: *Prove, oa: []const TermId, wal: std.mem.Allocator, st: anytype) Error!void {
+            var i: usize = oa.len;
+            while (i > 0) {
+                i -= 1;
+                const an = p.pool.get(oa[i]);
+                if (an == .app) try st.append(wal, .{ .op = an.app });
+            }
         }
+    }.f;
+    const u = lemma orelse {
+        // no cited lemma for this op — leave the atom opaque, but unfold set-typed args.
+        try queueArgs(self, op_args, wa, stack);
         return;
     };
 
@@ -4536,11 +4558,8 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
     for (out.items) |pr| if (self.pool.alphaEq(pr.formula, cur)) return;
     try out.append(self.ctx.arena, .{ .formula = cur, .label = cur_label, .blk_label = cur_label });
 
-    // recurse into the operator's set-typed arguments (nested operators unfold too).
-    for (op_args) |a| {
-        const an = self.pool.get(a);
-        if (an == .app) try self.emitExtUnfoldOp(b, block, an.app, x_id, unfolds, out);
-    }
+    // queue the operator's set-typed arguments (nested operators unfold too).
+    try queueArgs(self, op_args, wa, stack);
 }
 
 // -- arithmetic / arithmetic_quantified (the linear-arithmetic accelerant) --------------
