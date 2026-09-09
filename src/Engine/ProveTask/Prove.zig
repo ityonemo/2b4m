@@ -685,28 +685,50 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
 ///     top or_elim uses that synthetic block as its left, `arms[N-1]` as its right.
 /// (Ported from the eager Prover's emitCaseTree, retargeted to synthetic blocks.)
 fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel.SRef, disj_formula: TermId, arms: []const kernel.BRef, goal: TermId) Error!kernel.Justification {
-    const node = self.pool.get(disj_formula);
-    if (node != .bin or node.bin.op != .or_op) {
-        return self.fail(loc, "case: 'on' step is '{s}', not a disjunction", .{try self.renderTerm(disj_formula)});
+    {
+        const node = self.pool.get(disj_formula);
+        if (node != .bin or node.bin.op != .or_op) {
+            return self.fail(loc, "case: 'on' step is '{s}', not a disjunction", .{try self.renderTerm(disj_formula)});
+        }
     }
     std.debug.assert(arms.len >= 2);
-    if (arms.len == 2) {
-        return .{ .or_elim = .{ .disj = disj_ref, .left = arms[0], .right = arms[1] } };
+    // ITERATIVE (was linear recursion peeling one arm off the right per level, nesting a synthetic
+    // block each time). DESCEND: at each level >2 create the block + emit its hypothesis, recording
+    // the level; the disjunction's LHS (the first N-1 arms) is the next level. Stop at the 2-arm
+    // base. UNWIND: build the innermost or_elim, then for each recorded level emit `goal` via the
+    // inner justification, close the block, and wrap in the outer or_elim. Depth = arm count.
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    const Level = struct { block: kernel.BlockId, disj_ref: kernel.SRef, right_arm: kernel.BRef };
+    var levels: std.ArrayList(Level) = .empty;
+
+    var cur_disj_ref = disj_ref;
+    var cur_disj_formula = disj_formula;
+    var cur_arms = arms;
+    while (cur_arms.len > 2) {
+        const node = self.pool.get(cur_disj_formula); // an or-tree by construction
+        const lhs = node.bin.lhs; // the (N-1)-way disjunction
+        const lb = try self.newSyntheticBlock(try self.freshNamed("case"), parent, .{ .assume = lhs });
+        const hyp = try self.emitSynthetic(lb, loc, lhs, .{ .hypothesis = .{ .id = lb, .loc = loc } });
+        try levels.append(wa, .{ .block = lb, .disj_ref = cur_disj_ref, .right_arm = cur_arms[cur_arms.len - 1] });
+        // descend into the block: the LHS disjunction over the first N-1 arms.
+        cur_disj_ref = hyp;
+        cur_disj_formula = lhs;
+        cur_arms = cur_arms[0 .. cur_arms.len - 1];
     }
-    // N>2: left = a synthetic block over the nested LHS disjunction.
-    const lhs = node.bin.lhs; // the (N-1)-way disjunction
-    const lb = try self.newSyntheticBlock(try self.freshNamed("case"), parent, .{ .assume = lhs });
-    // step 1: the assumed LHS disjunction, as this block's hypothesis.
-    const hyp = try self.emitSynthetic(lb, loc, lhs, .{ .hypothesis = .{ .id = lb, .loc = loc } });
-    // step 2: recurse — an or_elim over `hyp` splitting the first N-1 arms into the goal.
-    const inner = try self.emitCaseTree(lb, loc, hyp, lhs, arms[0 .. arms.len - 1], goal);
-    _ = try self.emitSynthetic(lb, loc, goal, inner);
-    self.closeSyntheticBlock(lb);
-    return .{ .or_elim = .{
-        .disj = disj_ref,
-        .left = .{ .id = lb, .loc = loc },
-        .right = arms[arms.len - 1],
-    } };
+    // base: a 2-arm or_elim over the current (possibly innermost-block) disjunction.
+    var just: kernel.Justification = .{ .or_elim = .{ .disj = cur_disj_ref, .left = cur_arms[0], .right = cur_arms[1] } };
+    // unwind: innermost level last-recorded → pop; emit `goal` in its block via `just`, close, wrap.
+    var i = levels.items.len;
+    while (i > 0) {
+        i -= 1;
+        const lv = levels.items[i];
+        _ = try self.emitSynthetic(lv.block, loc, goal, just);
+        self.closeSyntheticBlock(lv.block);
+        just = .{ .or_elim = .{ .disj = lv.disj_ref, .left = .{ .id = lv.block, .loc = loc }, .right = lv.right_arm } };
+    }
+    return just;
 }
 
 /// A block descoped: seal its kernel step range (same closing the eager path did).
