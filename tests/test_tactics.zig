@@ -47,7 +47,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/polynomial.bpa" });
 
     // sides with different expansions → located error, exit 1 (not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/polynomial_bad.bpa" }, "tests/cases/polynomial_bad.bpa:18:9: error: polynomial: sides expand differently: 'add(mul(b, b), add(mul(b, a), add(mul(b, a), mul(a, a))))' vs 'add(mul(b, b), mul(a, a))'\n");
+    ctx.fail(&.{ "check", "tests/cases/polynomial_bad.bpa" }, "tests/cases/polynomial_bad.bpa:18:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
 
     // `polynomial` expands sub/neg (definitionOfSubtraction + neg-folds push neg
     // to the leaves), cancels additive inverses (t + neg(t) → 0), and folds
@@ -67,7 +67,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_field.bpa" });
     // a wrong coefficient (q+q claimed = 3·q) is still rejected: q+q expands to
     // add(q, q), 3·q to add(q, add(q, q)) — real repeated-addition arithmetic.
-    ctx.fail(&.{ "check", "tests/cases/polynomial_coeff_bad.bpa" }, "tests/cases/polynomial_coeff_bad.bpa:15:9: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
+    ctx.fail(&.{ "check", "tests/cases/polynomial_coeff_bad.bpa" }, "tests/cases/polynomial_coeff_bad.bpa:15:12: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
 
     // `ext(theory)`: the extensionality tactic, one tactic over two models —
     // reduce an equation to its pointwise obligation via the theory's
@@ -298,7 +298,7 @@ pub fn addTests(
     );
 
     // ac on different multisets reports the mismatch (emits kernel steps, not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/ac_bad.bpa" }, "tests/cases/ac_bad.bpa:18:17: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/ac_bad.bpa" }, "tests/cases/ac_bad.bpa:18:20: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
 
     // assoc_commut(assoc, comm, swap): the explicit-triple form on a CUSTOM
     // operator (emits kernel steps — the triple is kernel-checked).
@@ -537,7 +537,7 @@ pub fn addTests(
     // Case D: a `fallback(<thm>)` on a goal the arithmetic CERTIFIER CHAIN can
     // discharge itself is REDUNDANT — strict `check` rejects it. (Distinct from
     // cooper_gap, where the certifier DECLINES so the fallback is legitimate.)
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_fallback_redundant_bad.bpa" }, "tests/cases/arithmetic_fallback_redundant_bad.bpa:31:29: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
+    ctx.fail(&.{ "check", "tests/cases/arithmetic_fallback_redundant_bad.bpa" }, "tests/cases/arithmetic_fallback_redundant_bad.bpa:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
     // `--fast` suppresses it structurally (the certifier chain never runs).
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/arithmetic_fallback_redundant_bad.bpa" });
     // `--draft` suppresses it (WIP: don't nag about redundant fallbacks yet).

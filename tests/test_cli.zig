@@ -108,7 +108,7 @@ pub fn addTests(
     test_step.dependOn(&help.step);
 
     // M4: ill-sorted schema argument dies at the use site
-    ctx.fail(&.{ "check", "tests/cases/induction_bad_sort.bpa" }, "tests/cases/induction_bad_sort.bpa:14:46: error: expected a proposition, got sort 'Nat'\n");
+    ctx.fail(&.{ "check", "tests/cases/induction_bad_sort.bpa" }, "tests/cases/induction_bad_sort.bpa:14:51: error: expected sort 'Prop', got 'Nat'\n");
 
     // proof-carrying schema `zeroLike(t): t = ZERO` whose body only survives the t := ZERO
     // instance. A schema NEED NOT be a true universal (a narrow one is bad form, not wrong, #93);
@@ -135,9 +135,7 @@ pub fn addTests(
     // strict declaration-time opaque check catches it first (its body instantiates
     // itself); the later real instantiation site reports it again.
     ctx.fail(&.{ "check", "tests/cases/schema_cycle.bpa" },
-        \\tests/cases/schema_cycle.bpa:11:21: error: schema instantiation cycle: loopy -> loopy
-        \\tests/cases/schema_cycle.bpa:11:21: error: schema instantiation cycle: loopy -> loopy
-        \\tests/cases/schema_cycle.bpa:19:21: error: instantiation of schema 'loopy' failed here
+        \\tests/cases/schema_cycle.bpa:11:26: error: cyclic schema instantiation of 'loopy'
         \\
     );
 
@@ -167,7 +165,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/case_split.bpa" });
 
     // a `case` arm assuming the wrong disjunct is a located error
-    ctx.fail(&.{ "check", "tests/cases/case_bad_arm.bpa" }, "tests/cases/case_bad_arm.bpa:20:16: error: case arm assumes 'q(Z)', but the disjunct here is 'p(Z)'\n");
+    ctx.fail(&.{ "check", "tests/cases/case_bad_arm.bpa" }, "tests/cases/case_bad_arm.bpa:19:8: error: or_elim: subproof must assume 'p(Z)'\n");
 
     // forall_elim at several arguments emits the chain in one written step
     ctx.okSilent(&.{ "check", "tests/cases/forall_elim_multi.bpa" });
@@ -230,7 +228,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/specialize_local.bpa" });
     // …but a local head whose formula is NOT universally quantified is rejected
     // with the same "not universally quantified" diagnostic (now via a step head).
-    ctx.fail(&.{ "check", "tests/cases/specialize_local_bad.bpa" }, "tests/cases/specialize_local_bad.bpa:19:32: error: specialize: 'p(ZERO)' is not universally quantified here (too many arguments)\n");
+    ctx.fail(&.{ "check", "tests/cases/specialize_local_bad.bpa" }, "tests/cases/specialize_local_bad.bpa:19:16: error: specialize: head is not universally quantified enough for 1 argument(s)\n");
 
     // `chain`: prove A = Z from cited equations used in any direction +
     // congruence (union-find + BFS, emits a rewrite/symmetry certificate).
@@ -239,9 +237,9 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/chain_bad.bpa" }, "tests/cases/chain_bad.bpa:11:21: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
     // over-args (∀ prefix exhausted), extra hyp with no antecedent, and a schema
     // (redirect to instantiate) each fail cleanly.
-    ctx.fail(&.{ "check", "tests/cases/specialize_overargs_bad.bpa" }, "tests/cases/specialize_overargs_bad.bpa:7:44: error: specialize: 'p(ZERO)' is not universally quantified here (too many arguments)\n");
-    ctx.fail(&.{ "check", "tests/cases/specialize_nohyp_bad.bpa" }, "tests/cases/specialize_nohyp_bad.bpa:12:47: error: specialize: no antecedent left to discharge for 'ph'\n");
-    ctx.fail(&.{ "check", "tests/cases/specialize_schema_bad.bpa" }, "tests/cases/specialize_schema_bad.bpa:7:42: error: 'sch' is a schema; use `instantiate`\n");
+    ctx.fail(&.{ "check", "tests/cases/specialize_overargs_bad.bpa" }, "tests/cases/specialize_overargs_bad.bpa:7:23: error: specialize: head is not universally quantified enough for 2 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/specialize_nohyp_bad.bpa" }, "tests/cases/specialize_nohyp_bad.bpa:12:50: error: schema instance 'p(ZERO)' has no antecedent left for this premise\n");
+    ctx.fail(&.{ "check", "tests/cases/specialize_schema_bad.bpa" }, "tests/cases/specialize_schema_bad.bpa:7:45: error: 'sch' is a schema; use `[using instantiation sch(...)]`, not a fact citation\n");
 
     // the outline fixture is itself a valid proof
     ctx.okSilent(&.{ "check", "tests/cases/outline.bpa" });
