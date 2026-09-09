@@ -904,21 +904,7 @@ fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *s
 /// plain, guard-leaking elim). Emits ordinary kernel steps into `low_steps`; the final proof is
 /// kernel-checked once at the end (no mid-synthesis kernel call).
 fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
-    // NON-RECURSIVE local sources (1/2/2b/2c) first.
-    if (try self.dischargeLocal(kb, loc, g)) |sref| return sref;
-    // (3) a model-nominated discharger for `t`'s head symbol.
-    if (self.model != InternPool.Index.none and self.model != .universe) {
-        if (try self.emitModelDischarge(kb, loc, g)) |sref| return sref;
-    }
-    // (4) a CONJUNCTION obligation (the canonical multi-qualifier guard, `inH(t) and inK(t)`)
-    // with no direct source: discharge each conjunct and and_intro them back together.
-    {
-        const n = self.pool.get(g);
-        if (n == .bin and n.bin.op == .and_op) {
-            if (try self.emitConjDischarge(kb, loc, g)) |sref| return sref;
-        }
-    }
-    return null;
+    return self.dischargeGoal(kb, loc, g);
 }
 
 /// The NON-RECURSIVE guard-discharge sources (no re-entry into the discharge cycle): (1) a prior
@@ -1135,124 +1121,177 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
     return just;
 }
 
-/// Source (3): discharge `g = pred(t)` via a model-nominated fact for `t`'s HEAD symbol.
-/// `t` must be an application/const (a fix-eigenvar was handled by source (2)). Gathers the
-/// nominated facts for that symbol and tries each: a fact whose formula α-equals `g` is a BASE
-/// discharge (cite directly); otherwise it is treated as a CLOSURE and applied recursively.
-fn emitModelDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
+/// ITERATIVE guard-discharge driver — replaces the former mutual recursion
+/// emitDischargeStep↔emitModelDischarge↔emitClosureDischarge↔emitConjDischarge (Zig will disallow
+/// recursion; the depth was composite-witness op-nesting). Produce a PROVEN step whose formula is
+/// `g0`, returning its SRef, or null if `g0` isn't dischargeable.
+///
+/// The recursion is a tree over the WITNESS structure: discharging `g = guard(op(a,b))` via a
+/// closure needs the SRefs of discharging `guard(a)` / `guard(b)` first, then emits its own
+/// elim/and_intro/modus_ponens. Modeled as a worklist of `Op` frames + a `results` SRef stack,
+/// two-color (a compound op is pushed, its sub-goals solved, then it COMBINES from their results).
+///
+/// `Op` variants:
+///   - `.solve` a single guard goal: dischargeLocal → SRef; else a model CLOSURE applies → cite +
+///     forall_elim NOW (no children), then push `.mp_chain` + a `.conj` per `->` premise; else a
+///     top-level conjunction → push `.conj`; else FAIL.
+///   - `.conj` discharge a conjunction TREE: `and` → push `.and_fold` + `.conj`(lhs)+`.conj`(rhs);
+///     leaf → `.solve` it.
+///   - `.and_fold` / `.mp_chain` COMBINE: pop child SRefs, emit and_intro / the modus_ponens chain.
+/// A failed sub-goal sets `failed` (like the recursion's `orelse return null`), abandoning the
+/// driver (any steps already emitted are orphaned — exactly as the recursion left them).
+fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?kernel.SRef {
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+
+    const Op = union(enum) {
+        solve: TermId, // discharge a single guard goal g
+        conj: TermId, // discharge a conjunction tree f (fold of leaf solves)
+        and_fold: TermId, // pop 2 child SRefs → and_intro(f) → push
+        mp_chain: struct { cur: kernel.SRef, cur_formula: TermId, g: TermId, nprem: usize }, // pop nprem premise SRefs → cite-elim'd `cur` mp'd down to g
+    };
+    var work: std.ArrayList(Op) = .empty;
+    var results: std.ArrayList(kernel.SRef) = .empty;
+    var failed = false;
+    try work.append(a, .{ .solve = g0 });
+
+    while (work.pop()) |op| {
+        if (failed) break;
+        switch (op) {
+            .solve => |g| {
+                if (try self.dischargeLocal(kb, loc, g)) |sref| {
+                    try results.append(a, sref);
+                    continue;
+                }
+                // model closure? — g = pred(t), t = op(args); cite+elim, then the `->` premises.
+                if (self.model != InternPool.Index.none and self.model != .universe) {
+                    switch (try self.setupClosure(kb, loc, g, a, &work)) {
+                        .base => |sref| {
+                            try results.append(a, sref);
+                            continue;
+                        },
+                        .setup => continue, // closure frames pushed
+                        .none => {},
+                    }
+                }
+                // top-level conjunction (source 4).
+                const n = self.pool.get(g);
+                if (n == .bin and n.bin.op == .and_op) {
+                    try work.append(a, .{ .conj = g });
+                    continue;
+                }
+                failed = true; // undischargeable
+            },
+            .conj => |f| {
+                const n = self.pool.get(f);
+                if (n == .bin and n.bin.op == .and_op) {
+                    // push FOLD then children (right, left) → left folds first (results order).
+                    try work.append(a, .{ .and_fold = f });
+                    try work.append(a, .{ .conj = n.bin.rhs });
+                    try work.append(a, .{ .conj = n.bin.lhs });
+                } else {
+                    try work.append(a, .{ .solve = f }); // a leaf guard
+                }
+            },
+            .and_fold => |f| {
+                const r = results.pop().?;
+                const l = results.pop().?;
+                try results.append(a, try self.emitSynthetic(kb, loc, f, .{ .and_intro = .{ .left = l, .right = r } }));
+            },
+            .mp_chain => |mc| {
+                // the nprem premise SRefs are the top of `results`, in premise order (premise 0
+                // pushed first = deeper). modus_ponens the cited-elim'd `cur` down the `->` chain.
+                const prems = results.items[results.items.len - mc.nprem ..];
+                var cur = mc.cur;
+                var cur_formula = mc.cur_formula;
+                for (prems) |p_step| {
+                    const node = self.pool.get(cur_formula);
+                    // cur_formula is `Pi -> rest`; mp off Pi.
+                    cur = try self.emitSynthetic(kb, loc, node.bin.rhs, .{ .modus_ponens = .{ .implication = cur, .antecedent = p_step } });
+                    cur_formula = node.bin.rhs;
+                }
+                results.items.len -= mc.nprem;
+                std.debug.assert(self.pool.alphaEq(cur_formula, mc.g)); // reached the conclusion == g
+                try results.append(a, cur);
+            },
+        }
+    }
+    if (failed or results.items.len == 0) return null;
+    return results.items[0];
+}
+
+/// Try to SET UP a model-closure discharge of `g = pred(t)` (t = op(args)) onto `work`: find the
+/// first nominated fact that either IS `g` (base — cite, push its SRef, done) or applies as a
+/// CLOSURE (cite + forall_elim the args NOW — those steps need no children — then push an
+/// `.mp_chain` combiner + a `.conj` sub-goal per `->` premise). Returns true if a discharge was set
+/// up (base pushed a result, or closure pushed frames), false if no fact applied (caller continues).
+fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.mem.Allocator, work: anytype) Error!union(enum) { base: kernel.SRef, setup, none } {
     const gnode = self.pool.get(g);
-    if (gnode != .pred) return null; // a guard is a predicate application
+    if (gnode != .pred) return .none;
     const gargs = self.pool.args(gnode.pred);
-    if (gargs.len != 1) return null; // a sort guard is unary `pred(t)`
+    if (gargs.len != 1) return .none;
     const t = gargs[0];
     const tnode = self.pool.get(t);
     const head: InternPool.Index = switch (tnode) {
-        .app => |a| @enumFromInt(@intFromEnum(a.sym)),
-        else => return null, // fvar/bvar/etc — not a model symbol
+        .app => |ap| @enumFromInt(@intFromEnum(ap.sym)),
+        else => return .none,
     };
     var facts: std.ArrayList(InternPool.Index) = .empty;
     try self.ctx.interner.modelDischargers(self.model, head, &facts, self.ctx.arena);
     for (facts.items) |fact| {
         const kind = self.ctx.interner.keyOf(fact).fact.kind;
         const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-        // BASE: the nominated fact IS the guard (a ground `good(c)`). Cite it; the kernel
-        // re-checks fact.formula == g (so a wrong nomination is rejected, not trusted).
+        const cite_just: kernel.Justification = switch (kind) {
+            .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
+            .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
+        };
+        // BASE: the fact IS the guard → cite; the kernel re-checks formula == g. The driver pushes
+        // the returned SRef onto its results stack.
         if (self.pool.alphaEq(formula, g)) {
-            const just: kernel.Justification = switch (kind) {
-                .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
-                .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
-            };
-            return try self.emitSynthetic(kb, loc, g, just);
+            return .{ .base = try self.emitSynthetic(kb, loc, g, cite_just) };
         }
-        // COMPOSITE: try the fact as a closure over `t = op(args)`.
-        if (try self.emitClosureDischarge(kb, loc, g, t, fact, formula, kind)) |sref| return sref;
-    }
-    return null;
-}
-
-/// Apply a CLOSURE fact to discharge `g = guard(op(a1..an))`. The closure `formula` is
-/// `∀v1..vk; P1 -> … -> Pm -> guard(op(v1..vk))` (binders positionally match `op`'s args;
-/// only GUARDED args carry a premise). Steps emitted:
-///   1. cite the closure fact;
-///   2. multi-arg forall_elim at (a1..an) → `P1' -> … -> Pm' -> g` (P' = P at the args);
-///   3. for each premise Pi', RECURSIVELY `emitDischargeStep` (a guarded arg — recurse into
-///      base/fix/closure as its structure demands);
-///   4. and_intro-fold the premise proofs (matching the `->` chain's nesting), modus_ponens
-///      down the chain to reach `g`.
-/// Returns null (declines) if the fact doesn't have this shape or a premise can't be discharged.
-fn emitClosureDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, t: TermId, fact: InternPool.Index, formula: TermId, kind: InternPool.Key.Kind) Error!?kernel.SRef {
-    const tnode = self.pool.get(t);
-    if (tnode != .app) return null;
-    const args = self.pool.args(tnode.app);
-
-    // 1 + 2: cite the closure, then forall_elim at each of `t`'s args in order.
-    const cite_just: kernel.Justification = switch (kind) {
-        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
-        .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
-    };
-    var cur = try self.emitSynthetic(kb, loc, formula, cite_just);
-    var cur_formula = formula;
-    for (args) |arg| {
-        const node = self.pool.get(cur_formula);
-        if (node != .quant or node.quant.q != .forall) return null; // fewer binders than args
-        const opened = try self.pool.open(node.quant.body, arg);
-        cur = try self.emitSynthetic(kb, loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg, .with_loc = loc } });
-        cur_formula = opened;
-    }
-
-    // 3 + 4: walk the leading `->` premise chain, discharge each, modus_ponens it off. A premise
-    // may itself be a conjunction (`good(a) and good(b)`) — prove it via `emitConjDischarge`.
-    while (true) {
-        const node = self.pool.get(cur_formula);
-        if (self.pool.alphaEq(cur_formula, g)) return cur; // reached the conclusion == g
-        if (node != .bin or node.bin.op != .implies) return null; // shape mismatch
-        const premise = node.bin.lhs;
-        const rest = node.bin.rhs;
-        const p_step = (try self.emitConjDischarge(kb, loc, premise)) orelse return null; // recurse
-        cur = try self.emitSynthetic(kb, loc, rest, .{ .modus_ponens = .{ .implication = cur, .antecedent = p_step } });
-        cur_formula = rest;
-    }
-}
-
-/// Discharge a premise that may be a single guard `pred(t)` OR a CONJUNCTION of guards
-/// (`good(a) and good(b)` — a multi-guarded arg, or several args folded into one `->` premise).
-/// Recursively discharges each conjunct via `emitDischargeStep` and `and_intro`-folds them,
-/// matching the conjunction's own nesting (left-assoc: `(x and y) and z`).
-/// Discharge a premise that may be a single guard OR a CONJUNCTION of guards, and_intro-folding
-/// the conjunct discharges to match the conjunction's own (left-assoc) nesting. ITERATIVE two-color
-/// post-order fold (was native recursion) — depth-safe over a deep conjunction premise. A `.and_op`
-/// node is EXPANDED (children pushed) then FOLDED from its two child SRefs; a leaf discharges via
-/// `emitDischargeStep`. Any null (undischargeable conjunct) aborts the whole fold → null.
-fn emitConjDischarge(self: *Prove, kb: kernel.BlockId, loc: u32, f: TermId) Error!?kernel.SRef {
-    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
-    defer scratch.deinit();
-    const a = scratch.allocator();
-    const Frame = struct { f: TermId, expanded: bool };
-    var work: std.ArrayList(Frame) = .empty;
-    var results: std.ArrayList(kernel.SRef) = .empty;
-    try work.append(a, .{ .f = f, .expanded = false });
-    while (work.pop()) |fr| {
-        const node = self.pool.get(fr.f);
-        const is_conj = node == .bin and node.bin.op == .and_op;
-        if (!is_conj) {
-            // a leaf guard (or a nested COMPOSITE — emitDischargeStep may re-enter the closure
-            // path, whose depth is composite-witness nesting, handled there).
-            const s = (try self.emitDischargeStep(kb, loc, fr.f)) orelse return null;
-            try results.append(a, s);
-        } else if (!fr.expanded) {
-            // EXPAND: re-push FOLDED, then children (right then left → left folds first, matching
-            // the recursion's `left = lhs; right = rhs` order on the results stack).
-            try work.append(a, .{ .f = fr.f, .expanded = true });
-            try work.append(a, .{ .f = node.bin.rhs, .expanded = false });
-            try work.append(a, .{ .f = node.bin.lhs, .expanded = false });
-        } else {
-            // FOLD: left + right results are the top two (left pushed first → deeper).
-            const r = results.pop().?;
-            const l = results.pop().?;
-            try results.append(a, try self.emitSynthetic(kb, loc, fr.f, .{ .and_intro = .{ .left = l, .right = r } }));
+        // CLOSURE: cite + forall_elim at the args (no children); then push mp_chain + premises.
+        if (tnode != .app) continue;
+        const args = self.pool.args(tnode.app);
+        var cur = try self.emitSynthetic(kb, loc, formula, cite_just);
+        var cur_formula = formula;
+        var ok = true;
+        for (args) |arg| {
+            const node = self.pool.get(cur_formula);
+            if (node != .quant or node.quant.q != .forall) {
+                ok = false;
+                break;
+            }
+            const opened = try self.pool.open(node.quant.body, arg);
+            cur = try self.emitSynthetic(kb, loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg, .with_loc = loc } });
+            cur_formula = opened;
         }
+        if (!ok) continue;
+        // count the `->` premise chain down to g; collect the premises (each a conjunction tree).
+        var premises: std.ArrayList(TermId) = .empty;
+        var f = cur_formula;
+        while (!self.pool.alphaEq(f, g)) {
+            const node = self.pool.get(f);
+            if (node != .bin or node.bin.op != .implies) {
+                ok = false;
+                break;
+            }
+            try premises.append(a, node.bin.lhs);
+            f = node.bin.rhs;
+        }
+        if (!ok) continue;
+        // push the mp-chain combiner, then a `.conj` per premise (premise 0 pushed FIRST = its
+        // result deepest, matching `.mp_chain`'s premise-order read).
+        try work.append(a, .{ .mp_chain = .{ .cur = cur, .cur_formula = cur_formula, .g = g, .nprem = premises.items.len } });
+        var i = premises.items.len;
+        while (i > 0) {
+            i -= 1;
+            try work.append(a, .{ .conj = premises.items[i] });
+        }
+        return .setup;
     }
-    return results.items[0];
+    return .none;
 }
 
 fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
