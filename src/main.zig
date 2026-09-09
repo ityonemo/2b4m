@@ -299,7 +299,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --faster | --reckless] [--draft] <file.bpa>
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -317,16 +317,18 @@ pub fn main(init: std.process.Init) !u8 {
             \\Import paths beginning "std/" resolve in the standard library
             \\($BPA_STD_DIR, default ./std).
             \\
-            \\By default check VERIFIES EVERYTHING: `by arithmetic`/`by
-            \\tautology` must produce a checkable certificate (elaborated to
-            \\kernel steps; an accelerated fallback is a hard error), imported
-            \\proofs are re-checked, and imported schemas are re-instantiated.
-            \\The speed flags defer that work to speed up iteration while
-            \\developing (each run says so loudly):
-            \\  --fast      accept accelerated verdicts for arithmetic/tautology
-            \\  --faster    also trust imported theorem proofs (skip re-check)
-            \\  --reckless  also trust imported schemas (skip re-instantiation)
-            \\Re-run plain `bpa check` to fully verify before finalizing.
+            \\By default check VERIFIES EVERYTHING: every `using` step (an
+            \\accelerant, or a model/import citation) produces a checkable
+            \\certificate the kernel re-checks; `by` primitives always are.
+            \\`--fast` defers that work per `using` WORD to speed up iteration
+            \\(the run discloses exactly which words it admitted):
+            \\  --fast            trust ALL `using` words
+            \\  --fast-only W…    trust ONLY the listed words (allowlist)
+            \\  --fast-except W…  trust all words EXCEPT the listed (denylist)
+            \\Words are accelerant tactics (arithmetic, tautology, polynomial,
+            \\simplify, …, plus their `_quantified` variants) and the engine
+            \\words model / import (group word `engine`); `instantiation` is
+            \\never trustable. Re-run plain `bpa check` to fully verify.
             \\
             \\fmt normalizes whitespace and indentation in place; --check
             \\reports instead of rewriting. On a literate `.md` it reformats
@@ -376,35 +378,32 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast [W…] | --fast --slow W…] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
     // --fast TRUST FLAGS: a `using` step whose WORD is trusted is accelerated (its proof is not
     // generated/checked — the word ADMITS it via its own fast check). `by` primitives are ALWAYS
-    // kernel-checked. Grammar:
+    // kernel-checked. Grammar (the three modes are mutually exclusive):
     //   --fast                 trust ALL `using` words
-    //   --fast W…              trust ONLY the listed words (allowlist)
-    //   --fast --slow W…       trust all words EXCEPT the listed (denylist)
+    //   --fast-only W…         trust ONLY the listed words (allowlist)
+    //   --fast-except W…       trust all words EXCEPT the listed (denylist)
     // Words are the 17 individual `using` words plus group words `engine` and `<tactic>_all`
     // (the six tactics that have a `_quantified` variant). See src/Verify.zig `Word.parse`.
     // `--draft` (allows holes / relaxes author-hygiene; NOT a trust bypass) is orthogonal.
+    const Mode = enum { none, all, only, except };
     var verify: bpa.Verify = .{};
     var draft = false;
-    var fast = false; // saw --fast
-    var slow = false; // saw --slow (denylist mode; requires --fast)
+    var mode: Mode = .none;
     var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
-    var any_word = false; // saw at least one trust word after --fast
-    // Non-flag positionals: the trust WORDS (only valid after --fast) followed by the PATH.
-    // The path is the LAST positional; every earlier positional is a trust word. Collect them
-    // in order, then split.
+    // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except) followed
+    // by the PATH. The path is the LAST positional; every earlier positional is a trust word.
     var positionals: std.ArrayList([]const u8) = .empty;
     for (args[2..]) |arg| {
-        if (std.mem.eql(u8, arg, "--fast")) {
-            fast = true;
-        } else if (std.mem.eql(u8, arg, "--slow")) {
-            if (!fast) return fail("error: --slow requires --fast (--fast --slow W… trusts all but W…)\n", .{});
-            slow = true;
+        const flag: ?Mode = if (std.mem.eql(u8, arg, "--fast")) .all else if (std.mem.eql(u8, arg, "--fast-only")) .only else if (std.mem.eql(u8, arg, "--fast-except")) .except else null;
+        if (flag) |m| {
+            if (mode != .none) return fail("error: at most one of --fast / --fast-only / --fast-except\n", .{});
+            mode = m;
         } else if (std.mem.eql(u8, arg, "--draft")) {
             draft = true;
         } else if (std.mem.startsWith(u8, arg, "--")) {
@@ -416,24 +415,23 @@ pub fn main(init: std.process.Init) !u8 {
     if (positionals.items.len == 0) return fail(usage, .{});
     const root_path = positionals.items[positionals.items.len - 1];
     const words = positionals.items[0 .. positionals.items.len - 1];
-    if (words.len > 0 and !fast) return fail(usage, .{}); // trust words without --fast = misuse
-    if (words.len > 0 and !slow) any_word = true;
+    // bare --fast (and no-fast) take no trust words; --fast-only/--fast-except require them.
+    switch (mode) {
+        .none, .all => if (words.len > 0) return fail(usage, .{}),
+        .only, .except => if (words.len == 0) return fail("error: {s} needs at least one word (e.g. `--fast-only tautology`)\n", .{if (mode == .only) "--fast-only" else "--fast-except"}),
+    }
     for (words) |wtext| {
         const set = bpa.Verify.Word.parse(wtext) orelse
             return fail("error: unknown trust word '{s}' (see `bpa check` help)\n", .{wtext});
         listed = listed.unionWith(set);
     }
-    if (slow) any_word = true; // even an empty --slow list is a (no-op) denylist
-    // resolve the trusted set from the flags.
-    if (fast) {
-        if (slow) {
-            verify.trusted = bpa.Verify.Word.all().differenceWith(listed); // denylist
-        } else if (any_word) {
-            verify.trusted = listed; // allowlist
-        } else {
-            verify.trusted = bpa.Verify.Word.all(); // bare --fast: all
-        }
-    }
+    // resolve the trusted set from the mode.
+    verify.trusted = switch (mode) {
+        .none => bpa.Verify.Word.Set.initEmpty(),
+        .all => bpa.Verify.Word.all(),
+        .only => listed, // allowlist
+        .except => bpa.Verify.Word.all().differenceWith(listed), // denylist
+    };
     // --draft is for WIP proofs: allow holes AND relax author-hygiene checks
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
     verify.draft = draft;

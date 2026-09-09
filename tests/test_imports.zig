@@ -1,4 +1,4 @@
-//! Integration gates — multi-file checking: import resolution, the trust model, and the --fast/--faster/--reckless speed flags.
+//! Integration gates — multi-file checking: import resolution, the trust model, and the --fast trust flags (--fast / --fast-only / --fast-except).
 //!
 //! Each gate spawns the built `bpa` binary and asserts its stdout / stderr /
 //! exit code; wired into the `test` step via `test_step.dependOn`.
@@ -28,51 +28,42 @@ pub fn addTests(
     // a namespace name collides with a local declaration
     ctx.fail(&.{ "check", "tests/cases/imports/collide.bpa" }, "tests/cases/imports/collide.bpa:3:8: error: duplicate declaration of 'lib'\n");
 
-    // --faster trusts imported proofs (peano-imports imports peano.bpa,
-    // whose one accelerated step would otherwise be re-checked and hard-error).
-    ctx.ok(&.{ "check", "--faster", "examples/peano-imports.bpa" },
-        \\OK: 24 declarations, 7 theorems proven (6 via trusted imports)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); imported proofs were trusted, not re-checked; re-run `bpa check` to fully verify.
+    // `--fast-only import` trusts the import CITATION (admits the cross-file `using import`
+    // step by α-matching the cited statement, no re-derivation here). peano-imports declares
+    // ONE theorem (addStillCommutes); the demand engine counts only THIS file's theorems (the
+    // 6 in the imported peano.bpa are dependencies, not this file's — the old eager engine's
+    // transitive "7" was the whole dependency closure).
+    ctx.ok(&.{ "check", "--fast-only", "import", "examples/peano-imports.bpa" },
+        \\OK: 24 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );
 
-    // --fast re-checks the imported proofs; since Cooper-replay emits the
-    // once-accelerated evenOrOdd as kernel steps, nothing is trusted and all
-    // seven are proven (the --fast banner still fires). --fast is decide-only, so
-    // simplify (and arithmetic's certifiers) disclose as accelerated rather than
-    // emitting kernel chains.
+    // --fast (trust everything) admits the same import step; the disclosure names the word.
     ctx.ok(&.{ "check", "--fast", "examples/peano-imports.bpa" },
-        \\OK: 24 declarations, 7 theorems proven (7 accelerated: simplify, arithmetic)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 24 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );
 
-    // trust semantics: importing an INCORRECT theorem passes under --faster
-    // (imported proofs trusted)...
-    ctx.ok(&.{ "check", "--faster", "tests/cases/imports/trusts_broken.bpa" },
-        \\OK: 7 declarations, 2 theorems proven (1 via trusted imports)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); imported proofs were trusted, not re-checked; re-run `bpa check` to fully verify.
-        \\
-    );
-
-    // ...and is caught by the DEFAULT (imported proofs re-checked),
-    // poisoning its citations downstream
-    ctx.fail(&.{ "check", "tests/cases/imports/trusts_broken.bpa" },
-        \\tests/cases/imports/trusts_broken.bpa:8:17: error: cites unproven theorem 'aIsB'
+    // trust semantics: importing an INCORRECT theorem is caught EVEN WITH `import` trusted.
+    // The demand engine re-checks any imported theorem a proof actually demands (trusting the
+    // `import` word admits the citation SHAPE, not the imported proof's content) — so the
+    // broken library proof (`A = A` claimed as `A = B`) fails regardless of the flag. There is
+    // no longer a blind "trust imported proofs" escape (the old --faster).
+    ctx.fail(&.{ "check", "--fast-only", "import", "tests/cases/imports/trusts_broken.bpa" },
         \\tests/cases/imports/broken_lib.bpa:9:4: error: proof concludes 'A = A' but the theorem states 'A = B'
         \\
     );
 
-    // --reckless additionally trusts imported schemas (banner names all
-    // three deferred layers)
-    ctx.ok(&.{ "check", "--reckless", "examples/peano-imports.bpa" },
-        \\OK: 24 declarations, 7 theorems proven (6 via trusted imports)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); imported proofs were trusted, not re-checked; imported schemas were trusted, not re-instantiated; re-run `bpa check` to fully verify.
+    // ...and the DEFAULT (strict) catches it the same way.
+    ctx.fail(&.{ "check", "tests/cases/imports/trusts_broken.bpa" },
+        \\tests/cases/imports/broken_lib.bpa:9:4: error: proof concludes 'A = A' but the theorem states 'A = B'
         \\
     );
 
-    // at most one speed flag
-    ctx.fail(&.{ "check", "--fast", "--reckless", "examples/peano-imports.bpa" }, "error: at most one of --fast / --faster / --reckless\n");
+    // the three --fast modes are mutually exclusive.
+    ctx.fail(&.{ "check", "--fast", "--fast-except", "import", "examples/peano-imports.bpa" }, "error: at most one of --fast / --fast-only / --fast-except\n");
 
     ctx.okSilent(&.{ "check", "tests/cases/imports/uses.bpa" });
 

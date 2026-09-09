@@ -14,8 +14,8 @@
 //! `[using instantiation …]` is ALWAYS strict-proved; it has no `Word` and cannot be trusted.
 //!
 //! `Verify.trusted` is a per-word set over the trustable `using` words; a word is trusted iff it
-//! is in the set. The CLI builds it: `--fast` (all), `--fast W…` (allowlist), `--fast --slow W…`
-//! (all but). Group words (`<tactic>_all`, `engine`) expand at parse time (see `Word.parse`).
+//! is in the set. The CLI builds it: `--fast` (all), `--fast-only W…` (allowlist), `--fast-except
+//! W…` (all but). Group words (`<tactic>_all`, `engine`) expand at parse time (see `Word.parse`).
 
 const std = @import("std");
 
