@@ -82,7 +82,7 @@ pub fn addTests(
     test_step.dependOn(&decls.step);
 
     // M2: sort errors are caught at elaboration with a precise location.
-    ctx.fail(&.{ "check", "tests/cases/sort_mismatch.bpa" }, "tests/cases/sort_mismatch.bpa:5:17: error: expected sort 'Nat', got 'Prop'\n");
+    ctx.fail(&.{ "check", "tests/cases/sort_mismatch.bpa" }, "tests/cases/sort_mismatch.bpa:9:35: error: expected sort 'Nat', got 'Prop'\n");
 
     // M3: proofs that must check
     ctx.okSilent(&.{ "check", "tests/cases/modus_ponens.bpa" });

@@ -78,7 +78,7 @@ pub fn addTests(
     // (before parse), so a back-reference resolves to the existing id — cycles just work.
     ctx.okSilent(&.{ "check", "tests/cases/imports/cycle_a.bpa" });
 
-    ctx.fail(&.{ "check", "tests/cases/imports/bad_alias.bpa" }, "tests/cases/imports/bad_alias.bpa:3:14: error: 'lib.NIL' is not a sort\n");
+    ctx.fail(&.{ "check", "tests/cases/imports/bad_alias.bpa" }, "tests/cases/imports/bad_alias.bpa:4:14: error: 'lib.NIL' is not a sort\n");
 
-    ctx.fail(&.{ "check", "tests/cases/imports/unknown_ns.bpa" }, "tests/cases/imports/unknown_ns.bpa:3:10: error: unknown namespace 'ghost'\n");
+    ctx.fail(&.{ "check", "tests/cases/imports/unknown_ns.bpa" }, "tests/cases/imports/unknown_ns.bpa:4:10: error: reference not found: 'ghost'\n");
 }
