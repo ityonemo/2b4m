@@ -665,28 +665,214 @@ pub const Parser = struct {
         return p;
     }
 
+    /// Parse one expression. The grammar is the recursive-descent chain
+    /// `expr(quant/lambda) → iff → implies → or → and → cmp → unary → primary`, with
+    /// sub-expression recursion at four sites (quant/lambda body, `->`'s right side,
+    /// call args, paren groups). Was native recursion over input nesting depth; now a
+    /// CONTINUATION MACHINE — the same grammar functions CPS-converted onto explicit
+    /// frames, preserving the exact token-consumption + `requireExplicit` order (note
+    /// iff/or/and check the lhs BEFORE consuming their operator; implies checks AFTER).
+    ///
+    /// `iff` is the lowest-precedence boolean operator (below `->`); SURFACE sugar,
+    /// desugared by elaboration to `(P -> Q) and (Q -> P)`. Like the other boolean
+    /// ops, a *different* boolean operator as an operand must be parenthesized (so
+    /// `A -> B iff C` errors, `(A -> B) iff C` is fine). `->` is right-associative
+    /// (its rhs re-enters the full expr level, so quantifiers are legal there);
+    /// or/and/iff chains are left-associative.
+    ///
+    /// Each iteration of the outer loop DESCENDS from `level`: pushes the `*_after_lhs`
+    /// continuations for every precedence level the entry passes through (outermost
+    /// first, so they pop innermost-first — the recursive return path), then runs the
+    /// unary+primary entry inline. A primary that needs a sub-expression (call arg,
+    /// paren) pushes its continuation and re-descends; an atom produces a value and
+    /// falls into the APPLY loop, which pops continuations until one needs another
+    /// descend or the stack drains (the parse result).
     pub fn parseExpr(self: *Parser) ParseError!*const ast.Expr {
-        switch (self.tok.tag) {
-            .keyword_forall, .keyword_exists => {
-                const tok = self.advance();
-                const binders = try self.parseBinders();
-                _ = try self.expect(.semicolon);
-                const body = try self.parseExpr();
-                return self.newExpr(.{ .quant = .{
-                    .q = if (tok.tag == .keyword_forall) .forall else .exists,
-                    .tok = tok,
-                    .binders = binders,
-                    .body = body,
-                } });
-            },
-            .keyword_fun => {
-                const tok = self.advance();
-                const binders = try self.parseBinders();
-                _ = try self.expect(.fat_arrow);
-                const body = try self.parseExpr();
-                return self.newExpr(.{ .lambda = .{ .tok = tok, .binders = binders, .body = body } });
-            },
-            else => return self.parseIff(),
+        const Level = enum(u3) { expr = 0, implies = 1, or_lvl = 2, and_lvl = 3, cmp = 4, unary = 5 };
+        const Frame = union(enum) {
+            quant_done: struct { tok: Token, binders: []const ast.Binder },
+            lambda_done: struct { tok: Token, binders: []const ast.Binder },
+            iff_after_lhs,
+            iff_after_rhs: struct { lhs: *const ast.Expr, tok: Token },
+            implies_after_lhs,
+            implies_after_rhs: struct { lhs: *const ast.Expr, tok: Token },
+            or_after_lhs,
+            or_after_rhs: struct { lhs: *const ast.Expr, tok: Token },
+            and_after_lhs,
+            and_after_rhs: struct { lhs: *const ast.Expr, tok: Token },
+            cmp_after_lhs,
+            cmp_after_rhs: struct { lhs: *const ast.Expr, op: ast.Expr.BinOp, tok: Token },
+            unary_wrap: struct { nots: []const Token },
+            call_arg: struct { callee: Token, args: std.ArrayList(*const ast.Expr) },
+            paren_done,
+        };
+        var conts: std.ArrayList(Frame) = .empty;
+        defer conts.deinit(self.arena);
+
+        var level: Level = .expr;
+        var value: *const ast.Expr = undefined;
+        descend: while (true) {
+            // -- DESCEND: entry code from `level` down to a primary --
+            if (level == .expr) {
+                switch (self.tok.tag) {
+                    .keyword_forall, .keyword_exists => {
+                        const tok = self.advance();
+                        const binders = try self.parseBinders();
+                        _ = try self.expect(.semicolon);
+                        try conts.append(self.arena, .{ .quant_done = .{ .tok = tok, .binders = binders } });
+                        continue :descend; // body: a full expr
+                    },
+                    .keyword_fun => {
+                        const tok = self.advance();
+                        const binders = try self.parseBinders();
+                        _ = try self.expect(.fat_arrow);
+                        try conts.append(self.arena, .{ .lambda_done = .{ .tok = tok, .binders = binders } });
+                        continue :descend; // body: a full expr
+                    },
+                    else => {},
+                }
+            }
+            if (@intFromEnum(level) <= 0) try conts.append(self.arena, .iff_after_lhs);
+            if (@intFromEnum(level) <= 1) try conts.append(self.arena, .implies_after_lhs);
+            if (@intFromEnum(level) <= 2) try conts.append(self.arena, .or_after_lhs);
+            if (@intFromEnum(level) <= 3) try conts.append(self.arena, .and_after_lhs);
+            if (@intFromEnum(level) <= 4) try conts.append(self.arena, .cmp_after_lhs);
+            // unary: collect the `not` chain (wrapped inner-to-outer once the operand is built).
+            var nots: std.ArrayList(Token) = .empty;
+            while (self.tok.tag == .keyword_not) try nots.append(self.arena, self.advance());
+            if (nots.items.len > 0) try conts.append(self.arena, .{ .unary_wrap = .{ .nots = nots.items } });
+            // primary
+            switch (self.tok.tag) {
+                .identifier => {
+                    const name = self.advance();
+                    if (self.tok.tag != .l_paren) {
+                        value = try self.newExpr(.{ .name = name });
+                        // an atom: fall into APPLY below.
+                    } else {
+                        _ = self.advance();
+                        try conts.append(self.arena, .{ .call_arg = .{ .callee = name, .args = .empty } });
+                        level = .expr;
+                        continue :descend; // first argument
+                    }
+                },
+                .l_paren => {
+                    _ = self.advance();
+                    try conts.append(self.arena, .paren_done);
+                    level = .expr;
+                    continue :descend; // the group
+                },
+                else => return self.fail("expected an expression, got '{s}'", .{self.describe()}),
+            }
+
+            // -- APPLY: feed `value` through continuations until one needs a sub-parse --
+            while (conts.pop()) |fr| switch (fr) {
+                .quant_done => |c| value = try self.newExpr(.{ .quant = .{
+                    .q = if (c.tok.tag == .keyword_forall) .forall else .exists,
+                    .tok = c.tok,
+                    .binders = c.binders,
+                    .body = value,
+                } }),
+                .lambda_done => |c| value = try self.newExpr(.{ .lambda = .{ .tok = c.tok, .binders = c.binders, .body = value } }),
+                .iff_after_lhs => if (self.tok.tag == .keyword_iff) {
+                    try self.requireExplicit(value, .iff); // lhs checked BEFORE consuming `iff`
+                    const tok = self.advance();
+                    try conts.append(self.arena, .{ .iff_after_rhs = .{ .lhs = value, .tok = tok } });
+                    level = .implies;
+                    continue :descend;
+                },
+                .iff_after_rhs => |c| {
+                    try self.requireExplicit(value, .iff);
+                    value = try self.newExpr(.{ .binary = .{ .op = .iff, .tok = c.tok, .lhs = c.lhs, .rhs = value } });
+                    if (self.tok.tag == .keyword_iff) { // left-assoc chain continues
+                        const tok = self.advance();
+                        try conts.append(self.arena, .{ .iff_after_rhs = .{ .lhs = value, .tok = tok } });
+                        level = .implies;
+                        continue :descend;
+                    }
+                },
+                .implies_after_lhs => if (self.tok.tag == .arrow) {
+                    const tok = self.advance(); // consumed BEFORE the lhs check (original order)
+                    try self.requireExplicit(value, .implies);
+                    try conts.append(self.arena, .{ .implies_after_rhs = .{ .lhs = value, .tok = tok } });
+                    // right-assoc; RHS may be a quantifier: `A -> forall x: Nat; prop(x)`.
+                    level = .expr;
+                    continue :descend;
+                },
+                .implies_after_rhs => |c| {
+                    try self.requireExplicit(value, .implies);
+                    value = try self.newExpr(.{ .binary = .{ .op = .implies, .tok = c.tok, .lhs = c.lhs, .rhs = value } });
+                },
+                .or_after_lhs => if (self.tok.tag == .keyword_or) {
+                    try self.requireExplicit(value, .or_op);
+                    const tok = self.advance();
+                    try conts.append(self.arena, .{ .or_after_rhs = .{ .lhs = value, .tok = tok } });
+                    level = .and_lvl;
+                    continue :descend;
+                },
+                .or_after_rhs => |c| {
+                    try self.requireExplicit(value, .or_op);
+                    value = try self.newExpr(.{ .binary = .{ .op = .or_op, .tok = c.tok, .lhs = c.lhs, .rhs = value } });
+                    if (self.tok.tag == .keyword_or) {
+                        const tok = self.advance();
+                        try conts.append(self.arena, .{ .or_after_rhs = .{ .lhs = value, .tok = tok } });
+                        level = .and_lvl;
+                        continue :descend;
+                    }
+                },
+                .and_after_lhs => if (self.tok.tag == .keyword_and) {
+                    try self.requireExplicit(value, .and_op);
+                    const tok = self.advance();
+                    try conts.append(self.arena, .{ .and_after_rhs = .{ .lhs = value, .tok = tok } });
+                    level = .cmp;
+                    continue :descend;
+                },
+                .and_after_rhs => |c| {
+                    try self.requireExplicit(value, .and_op);
+                    value = try self.newExpr(.{ .binary = .{ .op = .and_op, .tok = c.tok, .lhs = c.lhs, .rhs = value } });
+                    if (self.tok.tag == .keyword_and) {
+                        const tok = self.advance();
+                        try conts.append(self.arena, .{ .and_after_rhs = .{ .lhs = value, .tok = tok } });
+                        level = .cmp;
+                        continue :descend;
+                    }
+                },
+                .cmp_after_lhs => {
+                    const op: ast.Expr.BinOp = switch (self.tok.tag) {
+                        .equal => .equal,
+                        .bang_equal => .not_equal,
+                        else => continue,
+                    };
+                    const tok = self.advance();
+                    try conts.append(self.arena, .{ .cmp_after_rhs = .{ .lhs = value, .op = op, .tok = tok } });
+                    level = .unary;
+                    continue :descend;
+                },
+                .cmp_after_rhs => |c| value = try self.newExpr(.{ .binary = .{ .op = c.op, .tok = c.tok, .lhs = c.lhs, .rhs = value } }),
+                .unary_wrap => |c| {
+                    var i: usize = c.nots.len;
+                    while (i > 0) {
+                        i -= 1;
+                        value = try self.newExpr(.{ .not = .{ .tok = c.nots[i], .operand = value } });
+                    }
+                },
+                .call_arg => |c| {
+                    var args = c.args;
+                    try args.append(self.arena, value);
+                    if (self.tok.tag == .comma) {
+                        _ = self.advance();
+                        try conts.append(self.arena, .{ .call_arg = .{ .callee = c.callee, .args = args } });
+                        level = .expr;
+                        continue :descend; // next argument
+                    }
+                    _ = try self.expect(.r_paren);
+                    value = try self.newExpr(.{ .call = .{ .callee = c.callee, .args = try args.toOwnedSlice(self.arena) } });
+                },
+                .paren_done => {
+                    _ = try self.expect(.r_paren);
+                    value = try self.markParen(value);
+                },
+            };
+            return value; // continuations drained: the full expression
         }
     }
 
@@ -746,113 +932,6 @@ pub const Parser = struct {
         return error.Recover;
     }
 
-    /// `iff` — the lowest-precedence boolean operator (below `->`). SURFACE
-    /// sugar: elaboration desugars `P iff Q` to `(P -> Q) and (Q -> P)`. Like
-    /// the other boolean ops, a *different* boolean operator as an operand must
-    /// be parenthesized (so `A -> B iff C` errors, `(A -> B) iff C` is fine).
-    fn parseIff(self: *Parser) ParseError!*const ast.Expr {
-        var lhs = try self.parseImplies();
-        if (self.tok.tag != .keyword_iff) return lhs; // no iff at this level: pass through
-        try self.requireExplicit(lhs, .iff);
-        while (self.tok.tag == .keyword_iff) {
-            const tok = self.advance();
-            const rhs = try self.parseImplies();
-            try self.requireExplicit(rhs, .iff);
-            lhs = try self.newExpr(.{ .binary = .{ .op = .iff, .tok = tok, .lhs = lhs, .rhs = rhs } });
-        }
-        return lhs;
-    }
-
-    fn parseImplies(self: *Parser) ParseError!*const ast.Expr {
-        const lhs = try self.parseOr();
-        if (self.tok.tag != .arrow) return lhs;
-        const tok = self.advance();
-        try self.requireExplicit(lhs, .implies);
-        // right-assoc; RHS may be a quantifier: `A -> forall x: Nat; prop(x)`.
-        // A -> B -> C chains are fine (same op); a bare and/or/not on the right
-        // still needs parens. quant/lambda RHS are not boolean ops, so pass.
-        const rhs = try self.parseExpr();
-        try self.requireExplicit(rhs, .implies);
-        return self.newExpr(.{ .binary = .{ .op = .implies, .tok = tok, .lhs = lhs, .rhs = rhs } });
-    }
-
-    fn parseOr(self: *Parser) ParseError!*const ast.Expr {
-        var lhs = try self.parseAnd();
-        if (self.tok.tag != .keyword_or) return lhs; // no or at this level: pass through
-        try self.requireExplicit(lhs, .or_op);
-        while (self.tok.tag == .keyword_or) {
-            const tok = self.advance();
-            const rhs = try self.parseAnd();
-            try self.requireExplicit(rhs, .or_op);
-            lhs = try self.newExpr(.{ .binary = .{ .op = .or_op, .tok = tok, .lhs = lhs, .rhs = rhs } });
-        }
-        return lhs;
-    }
-
-    fn parseAnd(self: *Parser) ParseError!*const ast.Expr {
-        var lhs = try self.parseCmp();
-        if (self.tok.tag != .keyword_and) return lhs; // no and at this level: pass through
-        try self.requireExplicit(lhs, .and_op);
-        while (self.tok.tag == .keyword_and) {
-            const tok = self.advance();
-            const rhs = try self.parseCmp();
-            try self.requireExplicit(rhs, .and_op);
-            lhs = try self.newExpr(.{ .binary = .{ .op = .and_op, .tok = tok, .lhs = lhs, .rhs = rhs } });
-        }
-        return lhs;
-    }
-
-    fn parseCmp(self: *Parser) ParseError!*const ast.Expr {
-        const lhs = try self.parseUnary();
-        const op: ast.Expr.BinOp = switch (self.tok.tag) {
-            .equal => .equal,
-            .bang_equal => .not_equal,
-            else => return lhs,
-        };
-        const tok = self.advance();
-        const rhs = try self.parseUnary();
-        return self.newExpr(.{ .binary = .{ .op = op, .tok = tok, .lhs = lhs, .rhs = rhs } });
-    }
-
-    fn parseUnary(self: *Parser) ParseError!*const ast.Expr {
-        // `not not … X` — iterative (was self-recursion) so a deep `not` chain can't overflow the C
-        // stack: collect the `not` tokens, parse the primary, then wrap inner-to-outer.
-        var nots: std.ArrayList(lexer.Token) = .empty;
-        defer nots.deinit(self.arena);
-        while (self.tok.tag == .keyword_not) try nots.append(self.arena, self.advance());
-        var e = try self.parsePrimary();
-        var i: usize = nots.items.len;
-        while (i > 0) {
-            i -= 1;
-            e = try self.newExpr(.{ .not = .{ .tok = nots.items[i], .operand = e } });
-        }
-        return e;
-    }
-
-    fn parsePrimary(self: *Parser) ParseError!*const ast.Expr {
-        switch (self.tok.tag) {
-            .identifier => {
-                const name = self.advance();
-                if (self.tok.tag != .l_paren) return self.newExpr(.{ .name = name });
-                _ = self.advance();
-                var args: std.ArrayList(*const ast.Expr) = .empty;
-                while (true) {
-                    try args.append(self.arena, try self.parseExpr());
-                    if (self.tok.tag != .comma) break;
-                    _ = self.advance();
-                }
-                _ = try self.expect(.r_paren);
-                return self.newExpr(.{ .call = .{ .callee = name, .args = try args.toOwnedSlice(self.arena) } });
-            },
-            .l_paren => {
-                _ = self.advance();
-                const inner = try self.parseExpr();
-                _ = try self.expect(.r_paren);
-                return self.markParen(inner);
-            },
-            else => return self.fail("expected an expression, got '{s}'", .{self.describe()}),
-        }
-    }
 };
 
 // --- tests ---
@@ -1253,4 +1332,30 @@ test "error recovery: two bad declarations yield two diagnostics" {
     try testing.expectEqualStrings("expected ':', got 'forall'", sink.list.items[0].message);
     // recovery still parsed the good declarations
     try testing.expectEqual(3, file.decls.len);
+}
+
+test "deep nesting: the expression machine is not bounded by the C stack" {
+    // ~100k-deep inputs of each recursion-driving shape (paren groups, right-assoc
+    // implies chain, not chain). The recursive-descent parser this replaced overflowed
+    // the C stack around ~10k frames on these; the continuation machine must not.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const depth = 100_000;
+    inline for (.{
+        .{ "(", "p", ")" }, // ((((p))))
+        .{ "p -> ", "p", "" }, // p -> p -> … -> p
+        .{ "(not ", "p", ")" }, // (not (not … p))
+    }) |shape| {
+        var src: std.ArrayList(u8) = .empty;
+        for (0..depth) |_| try src.appendSlice(arena, shape[0]);
+        try src.appendSlice(arena, shape[1]);
+        for (0..depth) |_| try src.appendSlice(arena, shape[2]);
+
+        var sink: Diagnostics.Sink = .init(arena);
+        var p: Parser = .init(arena, src.items, &sink);
+        _ = try p.parseExpr();
+        try testing.expectEqual(0, sink.list.items.len);
+    }
 }
