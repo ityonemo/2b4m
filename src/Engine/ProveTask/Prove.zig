@@ -904,6 +904,30 @@ fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *s
 /// plain, guard-leaking elim). Emits ordinary kernel steps into `low_steps`; the final proof is
 /// kernel-checked once at the end (no mid-synthesis kernel call).
 fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
+    // NON-RECURSIVE local sources (1/2/2b/2c) first.
+    if (try self.dischargeLocal(kb, loc, g)) |sref| return sref;
+    // (3) a model-nominated discharger for `t`'s head symbol.
+    if (self.model != InternPool.Index.none and self.model != .universe) {
+        if (try self.emitModelDischarge(kb, loc, g)) |sref| return sref;
+    }
+    // (4) a CONJUNCTION obligation (the canonical multi-qualifier guard, `inH(t) and inK(t)`)
+    // with no direct source: discharge each conjunct and and_intro them back together.
+    {
+        const n = self.pool.get(g);
+        if (n == .bin and n.bin.op == .and_op) {
+            if (try self.emitConjDischarge(kb, loc, g)) |sref| return sref;
+        }
+    }
+    return null;
+}
+
+/// The NON-RECURSIVE guard-discharge sources (no re-entry into the discharge cycle): (1) a prior
+/// in-scope step already proving `g`; (2) an enclosing fix-block guard = `g` (or a conjunct of it);
+/// (2c) an enclosing assume-block premise = `g` (or a conjunct); (2b) an unpack-witness `and` whose
+/// left conjunct is `g`. Returns the SRef of the first hit, or null (the caller tries the recursive
+/// model-closure / conjunction sources). Factored out so the iterative discharge driver can call it
+/// as its leaf step.
+fn dischargeLocal(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
     // (1) an accessible prior step already proves g.
     for (self.low_steps.items, 0..) |s, i| {
         if (!lowAncestorOrSelf(self.low_blocks.items, s.block, kb)) continue;
@@ -949,18 +973,6 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
             }
         }
         cur = b.parent;
-    }
-    // (3) a model-nominated discharger for `t`'s head symbol.
-    if (self.model != InternPool.Index.none and self.model != .universe) {
-        if (try self.emitModelDischarge(kb, loc, g)) |sref| return sref;
-    }
-    // (4) a CONJUNCTION obligation (the canonical multi-qualifier guard, `inH(t) and inK(t)`)
-    // with no direct source: discharge each conjunct and and_intro them back together.
-    {
-        const n = self.pool.get(g);
-        if (n == .bin and n.bin.op == .and_op) {
-            if (try self.emitConjDischarge(kb, loc, g)) |sref| return sref;
-        }
     }
     return null;
 }
