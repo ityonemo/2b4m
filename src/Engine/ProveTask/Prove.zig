@@ -6308,36 +6308,74 @@ fn arithWitnessCandidates(self: *Prove, symbols: presburger_mod.Symbols, ih_witn
 /// Prove `goal` (= P(succ(k))) by an `or_elim` over `disj` (the IH witness disjunction at
 /// y0). Each arm assumes one disjunct — an equation over k, y0 — restates it by hypothesis,
 /// and proves `goal` by the witness search using that equation as a rewrite premise. Returns
-/// the concluding `or_elim` step's label, or null if any arm fails. Right-nested `or` recurses.
+/// the concluding `or_elim` step's label, or null if any arm fails.
+///
+/// A right-nested `or` was handled by self-recursion on the rhs; now an iterative
+/// descend-then-unwind over the spine: DESCEND emits each level's left arm and seeds its
+/// right-arm body (the next level's target block); UNWIND (innermost→outermost) wraps each
+/// right body as its assume block and claims the level's `or_elim` — the same emission
+/// order the recursion produced. Scratch stacks on the pool's GPA; the right bodies are
+/// scratch-heap-allocated so their pointers stay stable across levels.
 fn arithEmitInductionCases(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), disj: TermId, disj_label: StrId, goal: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!?StrId {
-    const node = self.pool.get(disj);
-    if (node != .bin or node.bin.op != .or_op) return null;
+    const root = self.pool.get(disj);
+    if (root != .bin or root.bin.op != .or_op) return null;
 
-    // left arm: assume the lhs disjunct, prove goal at some witness using it as a premise.
-    const left_label = try self.freshNamed("arm-left");
-    const left_hyp = try self.freshNamed("arm-hyp");
-    var left_body: std.ArrayList(ast.Step) = .empty;
-    try left_body.append(self.ctx.arena, try cert.b.claimStep(left_hyp, try cert.b.termExpr(node.bin.lhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, left_label)));
-    const lprem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.lhs, .local = true, .hyp = left_hyp, .head = undefined, .is_axiom = false }});
-    if (!try self.arithEmitExistsWitness(cert, &left_body, goal, candidates, lprem, symbols)) return null;
-    try block.append(self.ctx.arena, try cert.b.assumeStep(left_label, try cert.b.termExpr(node.bin.lhs), left_body.items));
+    var scratch: std.heap.ArenaAllocator = .init(self.pool.gpa);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
 
-    // right arm: the rhs disjunct (possibly itself an `or`, recursed).
-    const right_label = try self.freshNamed("arm-right");
-    const right_hyp = try self.freshNamed("arm-hyp");
-    var right_body: std.ArrayList(ast.Step) = .empty;
-    try right_body.append(self.ctx.arena, try cert.b.claimStep(right_hyp, try cert.b.termExpr(node.bin.rhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, right_label)));
-    const rn = self.pool.get(node.bin.rhs);
-    if (rn == .bin and rn.bin.op == .or_op) {
-        const inner = (try self.arithEmitInductionCases(cert, &right_body, node.bin.rhs, right_hyp, goal, candidates, symbols)) orelse return null;
-        _ = inner;
-    } else {
+    const Level = struct {
+        block: *std.ArrayList(ast.Step), // where this level's assume/or_elim steps land
+        rhs: TermId,
+        disj_label: StrId,
+        left_label: StrId,
+        right_label: StrId,
+        right_body: *std.ArrayList(ast.Step),
+    };
+    var levels: std.ArrayList(Level) = .empty;
+
+    var cur_disj = disj;
+    var cur_label = disj_label;
+    var cur_block = block;
+    while (true) {
+        const node = self.pool.get(cur_disj); // an `or` (root check above / descend condition below)
+        // left arm: assume the lhs disjunct, prove goal at some witness using it as a premise.
+        const left_label = try self.freshNamed("arm-left");
+        const left_hyp = try self.freshNamed("arm-hyp");
+        var left_body: std.ArrayList(ast.Step) = .empty;
+        try left_body.append(self.ctx.arena, try cert.b.claimStep(left_hyp, try cert.b.termExpr(node.bin.lhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, left_label)));
+        const lprem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.lhs, .local = true, .hyp = left_hyp, .head = undefined, .is_axiom = false }});
+        if (!try self.arithEmitExistsWitness(cert, &left_body, goal, candidates, lprem, symbols)) return null;
+        try cur_block.append(self.ctx.arena, try cert.b.assumeStep(left_label, try cert.b.termExpr(node.bin.lhs), left_body.items));
+
+        // right arm: the rhs disjunct (possibly itself an `or`, descended into).
+        const right_label = try self.freshNamed("arm-right");
+        const right_hyp = try self.freshNamed("arm-hyp");
+        const right_body = try sa.create(std.ArrayList(ast.Step));
+        right_body.* = .empty;
+        try right_body.append(self.ctx.arena, try cert.b.claimStep(right_hyp, try cert.b.termExpr(node.bin.rhs), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, right_label)));
+        try levels.append(sa, .{ .block = cur_block, .rhs = node.bin.rhs, .disj_label = cur_label, .left_label = left_label, .right_label = right_label, .right_body = right_body });
+
+        const rn = self.pool.get(node.bin.rhs);
+        if (rn == .bin and rn.bin.op == .or_op) {
+            cur_disj = node.bin.rhs;
+            cur_label = right_hyp;
+            cur_block = right_body;
+            continue;
+        }
         const rprem = try self.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.rhs, .local = true, .hyp = right_hyp, .head = undefined, .is_axiom = false }});
-        if (!try self.arithEmitExistsWitness(cert, &right_body, goal, candidates, rprem, symbols)) return null;
+        if (!try self.arithEmitExistsWitness(cert, right_body, goal, candidates, rprem, symbols)) return null;
+        break;
     }
-    try block.append(self.ctx.arena, try cert.b.assumeStep(right_label, try cert.b.termExpr(node.bin.rhs), right_body.items));
 
-    return try cert.claim(block, goal, "or_elim", &.{}, &.{ disj_label, left_label, right_label });
+    // unwind: close each level's right assume + or_elim, innermost first; the outermost
+    // level's or_elim label (the last popped) is the result.
+    var result: StrId = undefined;
+    while (levels.pop()) |lvl| {
+        try lvl.block.append(self.ctx.arena, try cert.b.assumeStep(lvl.right_label, try cert.b.termExpr(lvl.rhs), lvl.right_body.items));
+        result = try cert.claim(lvl.block, goal, "or_elim", &.{}, &.{ lvl.disj_label, lvl.left_label, lvl.right_label });
+    }
+    return result;
 }
 
 /// Build the induction predicate arg `fun x: Nat => P(x)` as a lambda AST expr. The binder is
@@ -6548,6 +6586,16 @@ fn arithEquationCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Ste
 }
 
 /// Certify one (∀-free) equation/order body into `block`; returns false if out of scope.
+///
+/// The EXISTS case is a witness search: `exists y; inner` tries constant witnesses
+/// succ^k(ZERO), k=0..33, proving `inner[y:=witness]` by the equation/order cert, then
+/// `exists_intro` (the old arithCertCore C2c). Handles e.g. `exists y; add(y,y) =
+/// succ(succ(ZERO))` (witness y=1). A NESTED exists recursed; now an explicit backtracking
+/// frame stack — one frame per open exists level, `k` its next witness index; a child frame
+/// lives for exactly one parent witness attempt (child exhausted → pop → parent advances).
+/// On a leaf success the leaf steps + one `exists_intro` per level (innermost→outermost,
+/// each citing the previous last label) flatten into `block` — the same step sequence the
+/// recursive appendSlice chain produced. Scratch on the pool's GPA.
 fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const node = self.pool.get(body);
     if (node == .eq) {
@@ -6556,29 +6604,74 @@ fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
     if (node == .pred and self.symIs(node.pred.sym, symbols.less_than) and node.pred.args_len == 2) {
         return self.arithEmitOrder(cert, block, body, prems, symbols);
     }
-    // EXISTS-witness search: `exists y; inner` — try constant witnesses succ^k(ZERO), k=0..33,
-    // proving `inner[y:=witness]` by the equation/order cert, then `exists_intro` (the old
-    // arithCertCore C2c). Handles e.g. `exists y; add(y,y) = succ(succ(ZERO))` (witness y=1).
-    if (node == .quant and node.quant.q == .exists) {
-        const zero = symbols.zero orelse return false;
-        const zero_t = try self.pool.addApp(.app, zero, &.{});
-        for (0..34) |k| {
-            const witness = (try self.buildArithTowerSigned(@intCast(k), zero_t, symbols)) orelse break;
-            const instance = try self.pool.open(node.quant.body, witness);
-            var probe: std.ArrayList(ast.Step) = .empty;
-            if (try self.arithBodyEqCert(cert, &probe, instance, prems, symbols)) {
-                try block.appendSlice(self.ctx.arena, probe.items);
-                const inst_label = try self.arithLastLabel(probe.items);
-                const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
-                arg1[0] = try cert.b.termExpr(witness);
-                const label = try self.freshNamed("arith");
-                const refs = try self.ctx.arena.alloc(lexer.Token, 1);
-                refs[0] = cert.b.tok(inst_label);
-                try block.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(body), .by, try self.internStr("exists_intro"), arg1, refs));
-                return true;
-            }
+    if (node != .quant or node.quant.q != .exists) return false;
+
+    const zero = symbols.zero orelse return false;
+    const zero_t = try self.pool.addApp(.app, zero, &.{});
+
+    var scratch: std.heap.ArenaAllocator = .init(self.pool.gpa);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
+
+    const Frame = struct {
+        formula: TermId, // the `exists y; inner` this level proves
+        inner: TermId, // its quant body
+        k: usize = 0, // next witness index (0..34)
+        witness: TermId = undefined, // current attempt's witness (set before descending)
+    };
+    var stack: std.ArrayList(Frame) = .empty;
+    try stack.append(sa, .{ .formula = body, .inner = node.quant.body });
+
+    while (stack.items.len > 0) {
+        const f = &stack.items[stack.items.len - 1];
+        if (f.k >= 34) {
+            // exhausted: this level fails; the parent advances to its next witness.
+            _ = stack.pop();
+            continue;
         }
-        return false;
+        const witness = (try self.buildArithTowerSigned(@intCast(f.k), zero_t, symbols)) orelse {
+            // tower construction failing stops the search at this level (the recursive `break`).
+            _ = stack.pop();
+            continue;
+        };
+        f.k += 1;
+        f.witness = witness;
+        const instance = try self.pool.open(f.inner, witness);
+        const in = self.pool.get(instance);
+        if (in == .quant and in.quant.q == .exists) {
+            // nested exists: a child frame for this attempt. (f is invalidated by the append.)
+            try stack.append(sa, .{ .formula = instance, .inner = in.quant.body });
+            continue;
+        }
+        // leaf attempt into a fresh probe (discarded on failure, like the recursive version).
+        var probe: std.ArrayList(ast.Step) = .empty;
+        const ok = if (in == .eq)
+            try self.arithEmitEquation(cert, &probe, in.eq.lhs, in.eq.rhs, prems, symbols)
+        else if (in == .pred and self.symIs(in.pred.sym, symbols.less_than) and in.pred.args_len == 2)
+            try self.arithEmitOrder(cert, &probe, instance, prems, symbols)
+        else
+            false;
+        if (!ok) continue; // next witness at this level
+        // SUCCESS: flatten — the leaf steps, then one exists_intro per level innermost first
+        // (accumulated in `probe`), the whole sequence + the root's exists_intro into `block`.
+        var inst_label = try self.arithLastLabel(probe.items);
+        var i = stack.items.len;
+        while (i > 0) {
+            i -= 1;
+            const fr = stack.items[i];
+            const out: *std.ArrayList(ast.Step) = if (i == 0) blk: {
+                try block.appendSlice(self.ctx.arena, probe.items);
+                break :blk block;
+            } else &probe;
+            const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
+            arg1[0] = try cert.b.termExpr(fr.witness);
+            const label = try self.freshNamed("arith");
+            const refs = try self.ctx.arena.alloc(lexer.Token, 1);
+            refs[0] = cert.b.tok(inst_label);
+            try out.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(fr.formula), .by, try self.internStr("exists_intro"), arg1, refs));
+            inst_label = label;
+        }
+        return true;
     }
     return false;
 }
