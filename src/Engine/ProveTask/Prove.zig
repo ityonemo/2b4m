@@ -2440,7 +2440,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
 
     // the innermost block's steps: the whole cert, concluding `goal`.
     var inner: std.ArrayList(ast.Step) = .empty;
-    _ = try cert.deriveGoal(&inner);
+    try cert.deriveGoal(&inner);
 
     // wrap in nested `assume prem_i { restate hyp; … }` blocks, exporting each `->` back out.
     const steps = try self.wrapTautologyPremises(&b, prems, goal, inner.items);
@@ -2593,14 +2593,16 @@ const TautAst = struct {
     /// Prove `goal` in `block`. The entry point: a refuted premise closes by `absurd`; a
     /// true goal derives structurally; otherwise split on the first unassigned atom via an
     /// excluded-middle lemma + `or_elim` over the two assumption branches.
-    /// The entry point — an iterative DFS over the excluded-middle decision tree (was self-
-    /// recursion in the two split arms; depth is the ≤16-atom cap, but Zig will disallow
-    /// recursion regardless). `expand` handles one node (premise-refute / true-derive / split);
-    /// a split pushes `finish` (below) then the right-arm setup then the left-arm setup+expand,
-    /// so the LEFT subtree fully drains before the RIGHT arm's `assignment[idx]` is set, and the
-    /// `finish` frame (finishBlocks + or_elim + restore) runs after BOTH arms — identical to the
-    /// recursive set/recurse/restore discipline. Scratch stacks on the pool's GPA.
-    fn deriveGoal(self: *TautAst, block: *std.ArrayList(ast.Step)) CertError!StrId {
+    ///
+    /// An iterative DFS over the decision tree (was self-recursion in the two split arms;
+    /// depth is the ≤16-atom cap, but Zig will disallow recursion regardless). `expand`
+    /// handles one node (premise-refute / true-derive / split); a split pushes `finish`
+    /// (below) then the right-arm setup then the left-arm setup+expand, so the LEFT subtree
+    /// fully drains before the RIGHT arm's `assignment[idx]` is set, and the `finish` frame
+    /// (finishBlocks + or_elim + restore) runs after BOTH arms — identical to the recursive
+    /// set/recurse/restore discipline. Scratch stacks on the pool's GPA. The goal-proving
+    /// step is the block's last; callers read it from there (no label to return).
+    fn deriveGoal(self: *TautAst, block: *std.ArrayList(ast.Step)) CertError!void {
         var scratch: std.heap.ArenaAllocator = .init(self.pool().gpa);
         defer scratch.deinit();
         const sa = scratch.allocator();
@@ -2608,7 +2610,7 @@ const TautAst = struct {
         const Frame = union(enum) {
             expand: *std.ArrayList(ast.Step),
             // set the right arm's assignment, then expand it into `right.body`.
-            arm_right: struct { idx: usize, not_atom: TermId, right: *OpenBlock },
+            arm_right: struct { idx: usize, right: *OpenBlock },
             // both arms drained: finish them into `block` + or_elim + restore assignment.
             finish: struct { block: *std.ArrayList(ast.Step), idx: usize, atom: TermId, not_atom: TermId, lem: StrId, left: *OpenBlock, right: *OpenBlock },
         };
@@ -2647,7 +2649,7 @@ const TautAst = struct {
                 // stack order (LIFO): left-expand runs first (drains fully), then arm_right sets
                 // the right assignment + expands it, then finish closes both arms.
                 try work.append(sa, .{ .finish = .{ .block = blk, .idx = idx, .atom = atom, .not_atom = not_atom, .lem = lem, .left = left, .right = right } });
-                try work.append(sa, .{ .arm_right = .{ .idx = idx, .not_atom = not_atom, .right = right } });
+                try work.append(sa, .{ .arm_right = .{ .idx = idx, .right = right } });
                 // left arm: assume atom; the arm block IS its literal source.
                 self.assignment[idx] = true;
                 self.lit_blocks[idx] = left.label;
@@ -2666,9 +2668,6 @@ const TautAst = struct {
                 _ = try self.emit(c.block, self.goal, "or_elim", &.{ c.lem, c.left.label, c.right.label });
             },
         };
-        // the entry's result label is unused by all callers (`_ = try cert.deriveGoal(...)`); the
-        // caller reads the emitted goal step from the block. Return a placeholder.
-        return InternPool.Index.none;
     }
 
     /// `atom or not atom` the classical way: not_intro on the negated disjunction, then
@@ -4613,7 +4612,7 @@ fn emitExtSetResidue(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList
         .assignment = assignment,
         .lit_blocks = lit_blocks,
     };
-    _ = try cert.deriveGoal(block);
+    try cert.deriveGoal(block);
 }
 
 /// Recurse over `body`, and for each `member(x, op(args…))` subterm instantiate the cited
@@ -5803,49 +5802,79 @@ const MixedAst = struct {
     /// theory-UNSAT derives a theory contradiction; otherwise split on the first unassigned
     /// atom via excluded-middle + `or_elim`.
     fn deriveGoal(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error!bool {
-        // a premise assumed false on this branch → absurd (rare; premises are asserted true).
-        for (self.premise_labels.items) |pl| {
-            if (self.eval(pl.formula) == false) {
-                const refuted = (try self.deriveFalse(block, pl.formula)) orelse return false;
-                _ = try self.cert.claim(block, self.body, "absurd", &.{}, &.{ pl.label, refuted });
-                return true;
+        var scratch: std.heap.ArenaAllocator = .init(self.pool().gpa);
+        defer scratch.deinit();
+        const sa = scratch.allocator();
+
+        const Frame = union(enum) {
+            expand: *std.ArrayList(ast.Step),
+            arm_right: struct { idx: usize, right: *OpenBlock },
+            finish: struct { block: *std.ArrayList(ast.Step), idx: usize, atom: TermId, not_atom: TermId, lem: StrId, left: *OpenBlock, right: *OpenBlock },
+        };
+        var work: std.ArrayList(Frame) = .empty;
+        var failed = false;
+        try work.append(sa, .{ .expand = block });
+
+        while (work.pop()) |frame| {
+            if (failed) continue; // a leaf/theory discharge failed; drain, then return false.
+            switch (frame) {
+                .expand => |blk| {
+                    // a premise assumed false on this branch → absurd (rare; premises are true).
+                    const refuted_idx: ?usize = for (self.premise_labels.items, 0..) |pl, i| {
+                        if (self.eval(pl.formula) == false) break i;
+                    } else null;
+                    if (refuted_idx) |ri| {
+                        const pl = self.premise_labels.items[ri];
+                        if (try self.deriveFalse(blk, pl.formula)) |refuted| {
+                            _ = try self.cert.claim(blk, self.body, "absurd", &.{}, &.{ pl.label, refuted });
+                        } else failed = true;
+                        continue;
+                    }
+                    if (self.eval(self.body) == true) {
+                        if ((try self.deriveTrue(blk, self.body)) == null) failed = true;
+                        continue;
+                    }
+                    // find the first unassigned atom.
+                    const unassigned = for (self.assignment, 0..) |v, i| {
+                        if (v == null) break i;
+                    } else null;
+                    if (unassigned == null) {
+                        // fully decided, body false, no premise refuted: theory-UNSAT branch.
+                        if (!try self.deriveTheoryContradiction(blk)) failed = true;
+                        continue;
+                    }
+                    const idx = unassigned.?;
+                    const atom = self.atoms[idx];
+                    const not_atom = try self.pool().add(.{ .not = atom });
+                    const disj = try self.pool().add(.{ .bin = .{ .op = .or_op, .lhs = atom, .rhs = not_atom } });
+                    const lem = try self.emitLem(blk, atom, not_atom, disj);
+
+                    const left = try sa.create(OpenBlock);
+                    left.* = try self.openBlock();
+                    const right = try sa.create(OpenBlock);
+                    right.* = try self.openBlock();
+
+                    try work.append(sa, .{ .finish = .{ .block = blk, .idx = idx, .atom = atom, .not_atom = not_atom, .lem = lem, .left = left, .right = right } });
+                    try work.append(sa, .{ .arm_right = .{ .idx = idx, .right = right } });
+                    self.assignment[idx] = true;
+                    self.lit_blocks[idx] = left.label;
+                    try work.append(sa, .{ .expand = &left.body });
+                },
+                .arm_right => |a| {
+                    self.assignment[a.idx] = false;
+                    self.lit_blocks[a.idx] = a.right.label;
+                    try work.append(sa, .{ .expand = &a.right.body });
+                },
+                .finish => |c| {
+                    try self.finishBlock(c.block, c.left, c.atom);
+                    try self.finishBlock(c.block, c.right, c.not_atom);
+                    self.assignment[c.idx] = null;
+                    self.lit_blocks[c.idx] = null;
+                    _ = try self.cert.claim(c.block, self.body, "or_elim", &.{}, &.{ c.lem, c.left.label, c.right.label });
+                },
             }
         }
-        if (self.eval(self.body) == true) {
-            return (try self.deriveTrue(block, self.body)) != null;
-        }
-        // find the first unassigned atom.
-        const unassigned = for (self.assignment, 0..) |v, i| {
-            if (v == null) break i;
-        } else null;
-        if (unassigned == null) {
-            // fully decided, body false, no premise refuted: the branch is theory-UNSAT. Derive
-            // a contradiction — prove a theory atom assumed FALSE (from the true theory literals)
-            // and `absurd` against its negation hypothesis.
-            return self.deriveTheoryContradiction(block);
-        }
-        const idx = unassigned.?;
-        const atom = self.atoms[idx];
-        const not_atom = try self.pool().add(.{ .not = atom });
-        const disj = try self.pool().add(.{ .bin = .{ .op = .or_op, .lhs = atom, .rhs = not_atom } });
-        const lem = try self.emitLem(block, atom, not_atom, disj);
-
-        var left = try self.openBlock();
-        self.assignment[idx] = true;
-        self.lit_blocks[idx] = left.label;
-        if (!try self.deriveGoal(&left.body)) return false;
-        try self.finishBlock(block, &left, atom);
-
-        var right = try self.openBlock();
-        self.assignment[idx] = false;
-        self.lit_blocks[idx] = right.label;
-        if (!try self.deriveGoal(&right.body)) return false;
-        try self.finishBlock(block, &right, not_atom);
-
-        self.assignment[idx] = null;
-        self.lit_blocks[idx] = null;
-        _ = try self.cert.claim(block, self.body, "or_elim", &.{}, &.{ lem, left.label, right.label });
-        return true;
+        return !failed;
     }
 
     /// A fully-decided theory-UNSAT branch: for each theory atom assigned FALSE, try to PROVE
@@ -5915,105 +5944,193 @@ const MixedAst = struct {
     /// Prove `f` (evaluates true) in `block`; return its label, or null on a theory-leaf
     /// discharge failure.
     fn deriveTrue(self: *MixedAst, block: *std.ArrayList(ast.Step), f: TermId) Error!?StrId {
-        switch (self.pool().get(f)) {
-            .bin => |bin| switch (bin.op) {
-                .and_op => {
-                    const left = (try self.deriveTrue(block, bin.lhs)) orelse return null;
-                    const right = (try self.deriveTrue(block, bin.rhs)) orelse return null;
-                    const rule: []const u8 = if (self.p.isBiconditionalShape(f)) "iff_intro" else "and_intro";
-                    return try self.emit(block, f, rule, &.{ left, right });
-                },
-                .or_op => {
-                    if (self.eval(bin.lhs) == true) {
-                        const l = (try self.deriveTrue(block, bin.lhs)) orelse return null;
-                        return try self.emit(block, f, "or_intro_left", &.{l});
-                    }
-                    const r = (try self.deriveTrue(block, bin.rhs)) orelse return null;
-                    return try self.emit(block, f, "or_intro_right", &.{r});
-                },
-                .implies => {
-                    var blk = try self.openBlock();
-                    if (self.eval(bin.rhs) == true) {
-                        _ = (try self.deriveTrue(&blk.body, bin.rhs)) orelse return null;
-                    } else {
-                        const h = try self.hyp(&blk, bin.lhs);
-                        const refuted = (try self.deriveFalse(&blk.body, bin.lhs)) orelse return null;
-                        _ = try self.emit(&blk.body, bin.rhs, "absurd", &.{ h, refuted });
-                    }
-                    try self.finishBlock(block, &blk, bin.lhs);
-                    return try self.emit(block, f, "implies_intro", &.{blk.label});
-                },
-            },
-            .not => |inner| return (try self.deriveFalse(block, inner)),
-            else => {
-                // an atom assigned true. A THEORY atom: discharge via the arith cert (from the
-                // branch's true theory literals). A propositional atom: restate its assumption.
-                if (self.isTheory(f)) {
-                    const tp = try self.theoryPremises(block);
-                    if (!try self.p.arithBodyEqCert(self.cert, block, f, tp, self.symbols)) return null;
-                    return try self.p.arithLastLabel(block.items);
-                }
-                return try self.emit(block, f, "hypothesis", &.{self.litBlock(f)});
-            },
-        }
+        return self.deriveStructural(.true, block, f);
     }
 
     /// Prove `not f` (f evaluates false) in `block`; return its label, or null on failure.
     fn deriveFalse(self: *MixedAst, block: *std.ArrayList(ast.Step), f: TermId) Error!?StrId {
-        const nf = try self.pool().add(.{ .not = f });
-        switch (self.pool().get(f)) {
-            .bin => |bin| switch (bin.op) {
-                .and_op => {
-                    const left_false = self.eval(bin.lhs) == false;
-                    const side = if (left_false) bin.lhs else bin.rhs;
-                    const refuted = (try self.deriveFalse(block, side)) orelse return null;
-                    var blk = try self.openBlock();
-                    const h = try self.hyp(&blk, f);
-                    const elim = try self.emit(&blk.body, side, if (left_false) "and_elim_left" else "and_elim_right", &.{h});
-                    try self.finishBlock(block, &blk, f);
-                    return try self.emit(block, nf, "not_intro", &.{ blk.label, elim, refuted });
+        return self.deriveStructural(.false, block, f);
+    }
+
+    const Mode = enum { true, false };
+
+    /// The shared iterative engine behind `deriveTrue`/`deriveFalse` (was mutual native recursion
+    /// over formula structure). Same post-order worklist as `TautAst.deriveStructural`, but a
+    /// theory-leaf discharge can FAIL: on failure a leaf sets `failed`, the loop drains without
+    /// emitting, and the entry returns null. Otherwise byte-identical step vocabulary + order.
+    fn deriveStructural(self: *MixedAst, root_mode: Mode, root_block: *std.ArrayList(ast.Step), root_f: TermId) Error!?StrId {
+        var scratch: std.heap.ArenaAllocator = .init(self.pool().gpa);
+        defer scratch.deinit();
+        const sa = scratch.allocator();
+
+        const Frame = union(enum) {
+            expand: struct { mode: Mode, block: *std.ArrayList(ast.Step), f: TermId },
+            combine_and: struct { block: *std.ArrayList(ast.Step), f: TermId },
+            combine_or_left: struct { block: *std.ArrayList(ast.Step), f: TermId },
+            combine_or_right: struct { block: *std.ArrayList(ast.Step), f: TermId },
+            combine_true_implies: struct { block: *std.ArrayList(ast.Step), f: TermId, blk: *OpenBlock, ante: TermId },
+            combine_true_implies_absurd: struct { block: *std.ArrayList(ast.Step), f: TermId, blk: *OpenBlock, ante: TermId, conseq: TermId, hyp: StrId },
+            combine_false_and: struct { block: *std.ArrayList(ast.Step), f: TermId, nf: TermId, side: TermId, left_false: bool },
+            combine_false_or: struct { block: *std.ArrayList(ast.Step), f: TermId, nf: TermId, lhs: TermId, rhs: TermId },
+            combine_false_implies: struct { block: *std.ArrayList(ast.Step), f: TermId, nf: TermId, rhs: TermId },
+            combine_false_not: struct { block: *std.ArrayList(ast.Step), f: TermId, nf: TermId },
+        };
+        var work: std.ArrayList(Frame) = .empty;
+        var results: std.ArrayList(StrId) = .empty;
+        var failed = false;
+        try work.append(sa, .{ .expand = .{ .mode = root_mode, .block = root_block, .f = root_f } });
+
+        while (work.pop()) |frame| {
+            if (failed) continue; // a theory leaf failed; drain without emitting.
+            switch (frame) {
+                .expand => |e| switch (e.mode) {
+                    .true => switch (self.pool().get(e.f)) {
+                        .bin => |bin| switch (bin.op) {
+                            .and_op => {
+                                try work.append(sa, .{ .combine_and = .{ .block = e.block, .f = e.f } });
+                                try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bin.rhs } });
+                                try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bin.lhs } });
+                            },
+                            .or_op => {
+                                if (self.eval(bin.lhs) == true) {
+                                    try work.append(sa, .{ .combine_or_left = .{ .block = e.block, .f = e.f } });
+                                    try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bin.lhs } });
+                                } else {
+                                    try work.append(sa, .{ .combine_or_right = .{ .block = e.block, .f = e.f } });
+                                    try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bin.rhs } });
+                                }
+                            },
+                            .implies => {
+                                const blk = try sa.create(OpenBlock);
+                                blk.* = try self.openBlock();
+                                if (self.eval(bin.rhs) == true) {
+                                    try work.append(sa, .{ .combine_true_implies = .{ .block = e.block, .f = e.f, .blk = blk, .ante = bin.lhs } });
+                                    try work.append(sa, .{ .expand = .{ .mode = .true, .block = &blk.body, .f = bin.rhs } });
+                                } else {
+                                    const h = try self.hyp(blk, bin.lhs);
+                                    try work.append(sa, .{ .combine_true_implies_absurd = .{ .block = e.block, .f = e.f, .blk = blk, .ante = bin.lhs, .conseq = bin.rhs, .hyp = h } });
+                                    try work.append(sa, .{ .expand = .{ .mode = .false, .block = &blk.body, .f = bin.lhs } });
+                                }
+                            },
+                        },
+                        .not => |inner| try work.append(sa, .{ .expand = .{ .mode = .false, .block = e.block, .f = inner } }),
+                        else => {
+                            // an atom assigned true. THEORY atom: discharge via arith cert; a
+                            // failure bails the whole cert. Propositional: restate its assumption.
+                            if (self.isTheory(e.f)) {
+                                const tp = try self.theoryPremises(e.block);
+                                if (!try self.p.arithBodyEqCert(self.cert, e.block, e.f, tp, self.symbols)) {
+                                    failed = true;
+                                } else {
+                                    try results.append(sa, try self.p.arithLastLabel(e.block.items));
+                                }
+                            } else {
+                                try results.append(sa, try self.emit(e.block, e.f, "hypothesis", &.{self.litBlock(e.f)}));
+                            }
+                        },
+                    },
+                    .false => switch (self.pool().get(e.f)) {
+                        .bin => |bin| switch (bin.op) {
+                            .and_op => {
+                                const left_false = self.eval(bin.lhs) == false;
+                                const side = if (left_false) bin.lhs else bin.rhs;
+                                const nf = try self.pool().add(.{ .not = e.f });
+                                try work.append(sa, .{ .combine_false_and = .{ .block = e.block, .f = e.f, .nf = nf, .side = side, .left_false = left_false } });
+                                try work.append(sa, .{ .expand = .{ .mode = .false, .block = e.block, .f = side } });
+                            },
+                            .or_op => {
+                                const nf = try self.pool().add(.{ .not = e.f });
+                                try work.append(sa, .{ .combine_false_or = .{ .block = e.block, .f = e.f, .nf = nf, .lhs = bin.lhs, .rhs = bin.rhs } });
+                                try work.append(sa, .{ .expand = .{ .mode = .false, .block = e.block, .f = bin.rhs } });
+                                try work.append(sa, .{ .expand = .{ .mode = .false, .block = e.block, .f = bin.lhs } });
+                            },
+                            .implies => {
+                                const nf = try self.pool().add(.{ .not = e.f });
+                                try work.append(sa, .{ .combine_false_implies = .{ .block = e.block, .f = e.f, .nf = nf, .rhs = bin.rhs } });
+                                try work.append(sa, .{ .expand = .{ .mode = .false, .block = e.block, .f = bin.rhs } });
+                                try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bin.lhs } });
+                            },
+                        },
+                        .not => |inner| {
+                            const nf = try self.pool().add(.{ .not = e.f });
+                            try work.append(sa, .{ .combine_false_not = .{ .block = e.block, .f = e.f, .nf = nf } });
+                            try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = inner } });
+                        },
+                        else => {
+                            const nf = try self.pool().add(.{ .not = e.f });
+                            try results.append(sa, try self.emit(e.block, nf, "hypothesis", &.{self.litBlock(e.f)}));
+                        },
+                    },
                 },
-                .or_op => {
-                    const not_left = (try self.deriveFalse(block, bin.lhs)) orelse return null;
-                    const not_right = (try self.deriveFalse(block, bin.rhs)) orelse return null;
+                .combine_and => |c| {
+                    const right = results.pop().?;
+                    const left = results.pop().?;
+                    const rule: []const u8 = if (self.p.isBiconditionalShape(c.f)) "iff_intro" else "and_intro";
+                    try results.append(sa, try self.emit(c.block, c.f, rule, &.{ left, right }));
+                },
+                .combine_or_left => |c| {
+                    const l = results.pop().?;
+                    try results.append(sa, try self.emit(c.block, c.f, "or_intro_left", &.{l}));
+                },
+                .combine_or_right => |c| {
+                    const r = results.pop().?;
+                    try results.append(sa, try self.emit(c.block, c.f, "or_intro_right", &.{r}));
+                },
+                .combine_true_implies => |c| {
+                    _ = results.pop().?;
+                    try self.finishBlock(c.block, c.blk, c.ante);
+                    try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                },
+                .combine_true_implies_absurd => |c| {
+                    const refuted = results.pop().?;
+                    _ = try self.emit(&c.blk.body, c.conseq, "absurd", &.{ c.hyp, refuted });
+                    try self.finishBlock(c.block, c.blk, c.ante);
+                    try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                },
+                .combine_false_and => |c| {
+                    const refuted = results.pop().?;
                     var blk = try self.openBlock();
-                    const h = try self.hyp(&blk, f);
+                    const h = try self.hyp(&blk, c.f);
+                    const elim = try self.emit(&blk.body, c.side, if (c.left_false) "and_elim_left" else "and_elim_right", &.{h});
+                    try self.finishBlock(c.block, &blk, c.f);
+                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, elim, refuted }));
+                },
+                .combine_false_or => |c| {
+                    const not_right = results.pop().?;
+                    const not_left = results.pop().?;
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, c.f);
                     var left = try self.openBlock();
-                    _ = try self.hyp(&left, bin.lhs);
-                    try self.finishBlock(&blk.body, &left, bin.lhs);
+                    _ = try self.hyp(&left, c.lhs);
+                    try self.finishBlock(&blk.body, &left, c.lhs);
                     var right = try self.openBlock();
-                    const rh = try self.hyp(&right, bin.rhs);
-                    _ = try self.emit(&right.body, bin.lhs, "absurd", &.{ rh, not_right });
-                    try self.finishBlock(&blk.body, &right, bin.rhs);
-                    const conc = try self.emit(&blk.body, bin.lhs, "or_elim", &.{ h, left.label, right.label });
-                    try self.finishBlock(block, &blk, f);
-                    return try self.emit(block, nf, "not_intro", &.{ blk.label, conc, not_left });
+                    const rh = try self.hyp(&right, c.rhs);
+                    _ = try self.emit(&right.body, c.lhs, "absurd", &.{ rh, not_right });
+                    try self.finishBlock(&blk.body, &right, c.rhs);
+                    const conc = try self.emit(&blk.body, c.lhs, "or_elim", &.{ h, left.label, right.label });
+                    try self.finishBlock(c.block, &blk, c.f);
+                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conc, not_left }));
                 },
-                .implies => {
-                    const ante = (try self.deriveTrue(block, bin.lhs)) orelse return null;
-                    const not_conseq = (try self.deriveFalse(block, bin.rhs)) orelse return null;
+                .combine_false_implies => |c| {
+                    const not_conseq = results.pop().?;
+                    const ante = results.pop().?;
                     var blk = try self.openBlock();
-                    const h = try self.hyp(&blk, f);
-                    const conseq = try self.emit(&blk.body, bin.rhs, "modus_ponens", &.{ h, ante });
-                    try self.finishBlock(block, &blk, f);
-                    return try self.emit(block, nf, "not_intro", &.{ blk.label, conseq, not_conseq });
+                    const h = try self.hyp(&blk, c.f);
+                    const conseq = try self.emit(&blk.body, c.rhs, "modus_ponens", &.{ h, ante });
+                    try self.finishBlock(c.block, &blk, c.f);
+                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conseq, not_conseq }));
                 },
-            },
-            .not => |inner| {
-                const truth = (try self.deriveTrue(block, inner)) orelse return null;
-                var blk = try self.openBlock();
-                const h = try self.hyp(&blk, f);
-                try self.finishBlock(block, &blk, f);
-                return try self.emit(block, nf, "not_intro", &.{ blk.label, truth, h });
-            },
-            else => {
-                // an atom assigned false. A propositional atom: its assumption IS the negation.
-                // A THEORY atom assigned false is handled by the branch-contradiction path (it
-                // is never the STRUCTURE of a false goal we need to refute positively here); if
-                // one reaches here it cites its negative literal hypothesis.
-                return try self.emit(block, nf, "hypothesis", &.{self.litBlock(f)});
-            },
+                .combine_false_not => |c| {
+                    const truth = results.pop().?;
+                    var blk = try self.openBlock();
+                    const h = try self.hyp(&blk, c.f);
+                    try self.finishBlock(c.block, &blk, c.f);
+                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, truth, h }));
+                },
+            }
         }
+        if (failed) return null;
+        return results.items[0];
     }
 };
 
