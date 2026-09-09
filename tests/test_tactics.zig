@@ -88,8 +88,8 @@ pub fn addTests(
     // --fast trusts the transfer wholesale (remap the source theorem, α-match the
     // goal, taint accelerated: model) — checks nothing about the source proof.
     ctx.ok(&.{ "check", "--fast", "tests/cases/model_transfer.bpa" },
-        \\OK: 13 declarations, 3 theorems proven (1 accelerated: model)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 13 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): model
         \\
     );
     // default (strict) MATERIALIZES the remapped source proof as a synthetic
@@ -282,8 +282,8 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.bpa" }, "tests/cases/polynomial_oracle.bpa:22:12: error: reference not found: 'mulAddDistribRight'\n");
 
     ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oracle.bpa" },
-        \\OK: 6 declarations, 1 theorems proven (1 accelerated: polynomial)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 6 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
     );
 
@@ -292,8 +292,8 @@ pub fn addTests(
     // which pool.args aliases — the old code read a dangling arg slice and
     // panicked. Must check clean under --fast (never crash).
     ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oob.bpa" },
-        \\OK: 6 declarations, 1 theorems proven (1 accelerated: polynomial)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 6 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
     );
 
@@ -415,8 +415,8 @@ pub fn addTests(
     // fixture has no ring lemmas in scope to certify with; strict certification
     // is exercised over the real integer theory in the std corpus.)
     ctx.ok(&.{ "check", "--fast", "tests/cases/arithmetic_integer.bpa" },
-        \\OK: 17 declarations, 8 theorems proven (8 accelerated: arithmetic)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 17 declarations, 8 theorems proven
+        \\  — NOT FULLY VERIFIED: 8 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
 
@@ -429,8 +429,8 @@ pub fn addTests(
 
     // Milestone D: the SMT combination — mixed goals, one accelerated-tactic name
     ctx.ok(&.{ "check", "--fast", "tests/cases/smt.bpa" },
-        \\OK: 9 declarations, 2 theorems proven (2 accelerated: arithmetic)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 9 declarations, 2 theorems proven
+        \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
 
@@ -519,8 +519,8 @@ pub fn addTests(
     );
     // ...and --fast accepts the accelerated verdict, marking the theorem accelerated.
     ctx.ok(&.{ "check", "--fast", "tests/cases/cooper_gap_raw.bpa" },
-        \\OK: 15 declarations, 1 theorems proven (1 accelerated: arithmetic)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 15 declarations, 1 theorems proven
+        \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
     // ...and `[using arithmetic fallback(<thm>)]` closes the gap fully proven in default
