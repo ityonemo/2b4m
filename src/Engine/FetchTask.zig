@@ -577,7 +577,11 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []
     const fid = try ctx.discover(path, source);
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| try ctx.registerDecl(fid, decl);
+    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
+    // this fixture registers the root file's decls DIRECTLY (bypassing ParseTask); mark it
+    // `.parsed` so a later `demandParse` doesn't re-rack a ParseTask that would re-register
+    // every decl and (now) diagnose each as a duplicate.
+    ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
 }
@@ -607,7 +611,7 @@ test "ast registry: declOf resolves parsed decls by name; a miss is null; a synt
     // same way — the mechanism accelerant generators rely on.
     const synth = try arena.create(ast.Decl);
     synth.* = .{ .sort = .{ .local = .{ .tag = .identifier, .start = 0, .end = 0, .name = try ctx.interner.internString("foo[3]") } } };
-    try ctx.registerDecl(fid, synth);
+    _ = try ctx.registerDecl(fid, synth);
     try testing.expectEqual(synth, ctx.declOf(fid, try ctx.interner.internString("foo[3]")).?);
 }
 
@@ -694,7 +698,8 @@ test "fetch: an import binds to the target file's namespace" {
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| try ctx.registerDecl(child_fid, decl);
+        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
@@ -814,7 +819,8 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| try ctx.registerDecl(child_fid, decl);
+        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");

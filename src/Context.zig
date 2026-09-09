@@ -156,16 +156,20 @@ pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !
 }
 
 /// Register one decl in the by-name AST registry under (file, its stamped name). A
-/// duplicate name in a file leaves the FIRST winning (later decls don't overwrite) — a
-/// name-collision is a separate diagnostic concern, not the registry's job. Called by
-/// ParseTask for each parsed decl, and by accelerant generators for synthetic decls.
-/// A `forward` (`intheory`) decl is SKIPPED: it is a manifest PROMISE, not a definition —
-/// it must never occupy a name's registry slot (else it shadows the real theorem/axiom the
-/// promise refers to). ParseTask separately checks every forward is fulfilled.
-pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!void {
-    if (decl.* == .forward) return;
+/// duplicate name in a file leaves the FIRST winning (later decls don't overwrite): this is
+/// LOAD-BEARING — the re-entrant demand tasks (Model/Fetch materialization) re-register a
+/// file's decls idempotently and rely on keep-first silence. Returns `true` if this was a
+/// FRESH insert, `false` if the name was already registered. Only ParseTask's first,
+/// authoritative pass acts on `false` (a genuine intra-file duplicate declaration); the
+/// re-registration callers ignore it. A `forward` (`intheory`) decl is SKIPPED (returns
+/// true): it is a manifest PROMISE, not a definition — it must never occupy a name's slot
+/// (else it shadows the real theorem the promise refers to); ParseTask checks fulfilment
+/// separately.
+pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!bool {
+    if (decl.* == .forward) return true;
     const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
     if (!gop.found_existing) gop.value_ptr.* = decl;
+    return !gop.found_existing;
 }
 
 /// Resolve a decl by NAME in a file (registry lookup; null = no such decl). Replaces the

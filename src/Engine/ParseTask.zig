@@ -19,6 +19,7 @@
 
 const std = @import("std");
 const parser = @import("../parser.zig");
+const ast = @import("../ast.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 
@@ -57,7 +58,19 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     self.declarations += parsed.decls.len;
     // register each decl by name for O(1) by-name resolution (the demand tasks look up
     // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
-    for (self.parsed.items[idx].decls) |*decl| try self.registerDecl(task.file_id, decl);
+    // This is the AUTHORITATIVE first pass: a name already registered here is a genuine
+    // intra-file duplicate declaration — diagnosed at the later decl's name token (the
+    // demand engine would otherwise silently keep the first and never notice, since a file
+    // is only elaborated on demand). `forward` (intheory) decls register nothing and never
+    // collide (registerDecl returns true for them).
+    for (self.parsed.items[idx].decls) |*decl| {
+        const fresh = try self.registerDecl(task.file_id, decl);
+        if (!fresh) {
+            self.sink.current_file = idx;
+            const nt = ast.declName(decl);
+            try self.sink.add(nt.start, "duplicate declaration of '{s}'", .{self.interner.stringBytes(nt.name)});
+        }
+    }
 
     // FORWARD (`intheory name`) is a manifest PROMISE that `name` is defined later in this file
     // as a THEOREM. It lands NOWHERE durable (not the registry, not the pool); ParseTask just

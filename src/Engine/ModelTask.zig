@@ -346,7 +346,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
     const fid = try ctx.discover(path, src);
     var p: parser.Parser = .initInterning(arena, src, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| try ctx.registerDecl(fid, decl);
+    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
     ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
