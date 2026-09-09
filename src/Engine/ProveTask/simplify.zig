@@ -73,6 +73,15 @@ pub fn normalize(
 
 /// Find the innermost-leftmost rewrite in `t`, or null at normal form. Returns the
 /// rewritten version of `t` plus the licensing instance.
+///
+/// Was native recursion over term depth; now an explicit DFS stack. INVARIANT (the whole
+/// point of innermost-leftmost): a node tries the rules on ITSELF only after ALL its
+/// children — left to right, each subtree exhaustively — have failed. A frame holds a
+/// node + its (copied) args + the index of the child currently being searched; a child
+/// subtree failing pops its frame and advances the parent's index; a HIT bubbles up by
+/// rebuilding each ancestor's app with the active child slot replaced (innermost ancestor
+/// first — the recursion's unwind order). Frame scratch on the pool's GPA; `bindings`
+/// (returned in the Rewrite) stays on `arena`.
 fn findRewrite(
     arena: Allocator,
     pool: *term.Pool,
@@ -80,31 +89,69 @@ fn findRewrite(
     rules: []const Rule,
     t: TermId,
 ) Error!?Rewrite {
-    // children first (innermost)
-    switch (pool.get(t)) {
-        .app => |a| {
-            // pool.args() aliases the pool's extra buffer, which the recursive calls below
-            // may grow (poisoning the old buffer) — copy the ids out first.
-            const args = try arena.dupe(TermId, pool.args(a));
-            for (args, 0..) |arg, i| {
-                if (try findRewrite(arena, pool, interner, rules, arg)) |child| {
-                    const new_args = try arena.dupe(TermId, args);
-                    new_args[i] = child.after;
-                    const rebuilt = try pool.addApp(.app, a.sym, new_args);
-                    return .{
-                        .before = t,
-                        .after = rebuilt,
-                        .rule_idx = child.rule_idx,
-                        .bindings = child.bindings,
-                        .inst_lhs = child.inst_lhs,
-                        .inst_rhs = child.inst_rhs,
-                    };
-                }
+    var scratch: std.heap.ArenaAllocator = .init(pool.gpa);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
+
+    const Frame = struct { t: TermId, sym: term.SymId, args: []const TermId, i: usize };
+    var stack: std.ArrayList(Frame) = .empty;
+
+    // push a frame for `id`: an app's args are copied out up front (pool.args() aliases the
+    // pool's extra buffer, which rebuilds/substs below may grow, poisoning the old slice).
+    const push = struct {
+        fn go(sa_: Allocator, pool_: *term.Pool, stack_: *std.ArrayList(Frame), id: TermId) Error!void {
+            switch (pool_.get(id)) {
+                .app => |a| try stack_.append(sa_, .{ .t = id, .sym = a.sym, .args = try sa_.dupe(TermId, pool_.args(a)), .i = 0 }),
+                else => try stack_.append(sa_, .{ .t = id, .sym = undefined, .args = &.{}, .i = 0 }),
             }
-        },
-        else => {},
+        }
+    }.go;
+    try push(sa, pool, &stack, t);
+
+    while (stack.items.len > 0) {
+        const f = &stack.items[stack.items.len - 1];
+        if (f.i < f.args.len) {
+            // children first (innermost): descend into the current child. The parent's `i`
+            // stays on this slot until the child subtree fails (it is the rebuild slot on a hit).
+            try push(sa, pool, &stack, f.args[f.i]);
+            continue;
+        }
+        // all children failed (or a leaf): try this position, rules in citation order.
+        const here = f.t; // copy out — the bubble loop pops frames, invalidating `f`.
+        if (try matchRulesAt(arena, pool, interner, rules, here)) |hit| {
+            // bubble up: rebuild each ancestor's app with its active child slot replaced.
+            var rw = hit;
+            _ = stack.pop();
+            while (stack.pop()) |anc| {
+                const new_args = try sa.dupe(TermId, anc.args);
+                new_args[anc.i] = rw.after;
+                const rebuilt = try pool.addApp(.app, anc.sym, new_args);
+                rw = .{
+                    .before = anc.t,
+                    .after = rebuilt,
+                    .rule_idx = rw.rule_idx,
+                    .bindings = rw.bindings,
+                    .inst_lhs = rw.inst_lhs,
+                    .inst_rhs = rw.inst_rhs,
+                };
+            }
+            return rw;
+        }
+        // no rewrite anywhere in this subtree: pop, advance the parent to its next child.
+        _ = stack.pop();
+        if (stack.items.len > 0) stack.items[stack.items.len - 1].i += 1;
     }
-    // then this position, rules in citation order
+    return null;
+}
+
+/// Try every rule at position `t` (citation order); the licensing instance on a match.
+fn matchRulesAt(
+    arena: Allocator,
+    pool: *term.Pool,
+    interner: *const InternPool,
+    rules: []const Rule,
+    t: TermId,
+) Error!?Rewrite {
     for (rules, 0..) |rule, ri| {
         const bound = try arena.alloc(?TermId, rule.binders.len);
         @memset(bound, null);
