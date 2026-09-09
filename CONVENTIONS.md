@@ -305,12 +305,13 @@ steps, no filler:
   the local namespace. `std/peano-ordering.bpa` is the canonical theory module
   (it carries the full order + Farkas lemma set). A named theory must supply
   every symbol the goal uses, or the check hard-errors naming the gap.
-- **Trust model**: `bpa check` verifies everything by default — arithmetic
-  must certify, imported proofs are re-checked, schemas re-instantiate. The
-  speed flags defer layers for iteration (`--fast` accepts arithmetic
-  accelerated verdicts; `--faster` also trusts imported proofs, reporting them
-  as trusted; `--reckless` also trusts imported schemas), always with a loud
-  accelerated banner. Re-run plain `bpa check` before finalizing.
+- **Trust model**: `bpa check` verifies everything by default — every `using`
+  step (accelerant / model / import) produces a kernel-checked certificate.
+  `--fast` defers that per `using` WORD for iteration, admitting the trusted
+  words (`--fast` = all, `--fast-only W…` = allowlist, `--fast-except W…` =
+  denylist), always with a loud accelerated banner. `instantiation` is never
+  trustable (the per-instance proof is the only soundness gate). Re-run plain
+  `bpa check` before finalizing.
 
 ## Layout of steps
 

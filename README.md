@@ -107,7 +107,7 @@ examples/incorrect.bpa:39:41: error: modus_ponens: expected antecedent 'raining'
 ## Commands
 
 ```
-bpa check [--fast | --faster | --reckless] <file.bpa | file.md>
+bpa check [--fast | --fast-only W… | --fast-except W…] <file.bpa | file.md>
 bpa fmt [--check] <file.bpa>
 bpa lint <file.bpa | file.md>
 bpa debug accelerant <file> <line | theorem step-label>
@@ -118,11 +118,11 @@ bpa query search   <file|dir> <query>
 ```
 
 `check` verifies a file and everything it imports. By default it verifies
-everything; the speed flags defer work during development and say so loudly
-(`--fast` accepts accelerated verdicts, `--faster` also trusts imported proofs,
-`--reckless` also trusts imported schemas). Re-run plain `bpa check` to
-finalize. `fmt` normalizes whitespace and indentation in place (`--check`
-reports instead of rewriting). `lint` reports convention violations `check`
+everything; `--fast` defers per-`using`-word verification during development
+and says so loudly (`--fast` trusts all `using` words, `--fast-only W…` only
+the listed words, `--fast-except W…` all but the listed). Re-run plain
+`bpa check` to finalize. `fmt` normalizes whitespace and indentation in place
+(`--check` reports instead of rewriting). `lint` reports convention violations `check`
 ignores because they don't affect validity — currently canonical binder order
 (a leading `forall` must bind in first-appearance order); see `CONVENTIONS.md`.
 
@@ -228,10 +228,11 @@ means every step is kernel-checked.
   summary line. In other words, the default is certificate-or-error; accelerated
   verdicts are never accepted unless you ask for `--fast`.
 - **Imports** (`import peano <<< "std/peano.bpa"`) bring in namespaced
-  declarations, and by default their proofs are re-verified too. The
-  `--faster` flag opts out (trusting imported proofs to skip the re-check),
-  and `--reckless` also skips re-instantiating imported schemas — both
-  development shortcuts that the summary announces.
+  declarations. A cross-file citation is an `import` `using` step; under
+  `--fast` (or `--fast-only import`) that step is *admitted* — accepted by
+  matching the cited statement rather than re-deriving it — and the summary
+  announces it. (A demanded imported theorem is still re-checked in its own
+  file: trust admits the citation, not the imported proof's content.)
 
 ## Compared to other proof assistants
 

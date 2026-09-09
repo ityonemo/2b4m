@@ -20,9 +20,11 @@ The trust is disclosed, never silent:
   error** — the goal must be kernel-checked. The accelerated verdict is accepted only
   under `--fast` (which then discloses it under a loud accelerated banner).
 
-Under `--faster`/`--reckless`, imported theorems are *trusted* (their proofs
-are not re-checked), which supersedes any acceleration disclosure; the summary
-reports those separately.
+A cross-file `import` citation is itself a `using` word: under `--fast` (or
+`--fast-only import`) the citation is *admitted* by matching the cited
+statement, disclosed alongside any accelerant admissions. This trusts the
+citation shape only — a demanded imported theorem is still re-checked in its
+own file.
 
 Tactics are **certificate-first**: an invocation that can emit ordinary
 kernel steps does so and stays kernel-checked. Certificates are produced by an

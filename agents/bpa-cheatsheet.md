@@ -33,9 +33,9 @@ guarantee. A proof can pass `--fast` but FAIL strict (an accelerant couldn't
 produce a kernel certificate) — the final strict pass catches that. A file is not
 "done" until plain `bpa check` is green with NO `NOT FULLY VERIFIED` banner.
 
-(Flags: `--fast` trusts accelerated verdicts; `--faster` also trusts imported
-proofs; `--reckless` also trusts imported schemas; `--draft` allows `hole`s. Use
-`--fast` for the loop; plain check to finalize.)
+(Flags: `--fast` trusts ALL `using` words; `--fast-only W…` only the listed;
+`--fast-except W…` all but the listed; `--draft` allows `hole`s. `instantiation`
+is never trustable. Use `--fast` for the loop; plain check to finalize.)
 
 ## Proof skeleton
 

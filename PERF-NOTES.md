@@ -248,11 +248,15 @@ trust-shortcutting is OPT-IN, disclosed, and non-default. Corollaries:
   cache). A served-from-cache result still reports trust status / dead-step /
   accelerated-taint exactly as if freshly checked — the cache is a speed layer,
   never a correctness- or disclosure-shortcut.
-- **Collapse the fast-flag ladder (user ruling):** fold `--fast`/`--faster`/
-  `--reckless` toward ONE dev-speed flag — `--fast` does what `--reckless` does
-  (trust imports AND imported schemas for iteration). The finer split is an
-  implementation distinction nobody reaches for at the CLI. Two user intents
-  only: dev-speed (`--fast`) vs the real guarantee (plain `check`, always strict).
+- **Collapse the fast-flag ladder (user ruling — LANDED).** The old
+  `--fast`/`--faster`/`--reckless` ladder folded into ONE dev-speed flag `--fast`
+  with granular per-`using`-word trust: `--fast` (all), `--fast-only W…`
+  (allowlist), `--fast-except W…` (denylist). Two user intents only: dev-speed
+  (`--fast…`) vs the real guarantee (plain `check`, always strict). NOTE: this is
+  NOT "trust imports and imported schemas" as first sketched — `#93` made
+  `instantiation` never trustable (the per-instance proof is the sole soundness
+  gate), and trusting the `import` word admits a citation's SHAPE only (a
+  demanded imported theorem is still re-checked in its own file).
 
 **The cache unit is the statement, matching the proving unit.** (This
 supersedes the earlier "files are the permanent trust/cache boundary" ruling,
