@@ -81,8 +81,16 @@ pub fn addTests(
     decls.expectExitCode(0);
     test_step.dependOn(&decls.step);
 
-    // M2: sort errors are caught at elaboration with a precise location.
-    ctx.fail(&.{ "check", "tests/cases/sort_mismatch.bpa" }, "tests/cases/sort_mismatch.bpa:9:35: error: expected sort 'Nat', got 'Prop'\n");
+    // M2: sort errors are caught at elaboration with a precise location. A root-file AXIOM is
+    // now elaborated for well-formedness too (its statement's guard/refined obligations are the
+    // point — see div_nested), so the ill-typed `bad` axiom reports at its OWN site (7:17) in
+    // addition to the theorem that also cites the shape (9:35). Both are genuine, at the right
+    // locations; errors print sorted by source position.
+    ctx.fail(&.{ "check", "tests/cases/sort_mismatch.bpa" },
+        \\tests/cases/sort_mismatch.bpa:7:17: error: expected sort 'Nat', got 'Prop'
+        \\tests/cases/sort_mismatch.bpa:9:35: error: expected sort 'Nat', got 'Prop'
+        \\
+    );
 
     // M3: proofs that must check
     ctx.okSilent(&.{ "check", "tests/cases/modus_ponens.bpa" });

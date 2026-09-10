@@ -15,8 +15,11 @@
 //! (the target file was resolved at parse time via the import map). LAYER 2 (W4.5):
 //! constants, funcs and preds — their referenced SORTS are themselves DEMANDED (IdentKV
 //! lookup; a miss racks a sub-FetchTask and SUSPENDS; resume re-runs `produce`, which is
-//! idempotent — earlier demands now hit `done`). Still unsupported (diagnosed, no
-//! publish): guarded funcs (`requires`), predicated params, defines, aliases.
+//! idempotent — earlier demands now hit `done`). A GUARDED func (`requires`) additionally
+//! REIFIES its precondition into the func Item's `.guard` term (`reifyGuard`): the closure of
+//! the precondition's refs is demanded first (it must resolve before elaboration), then a
+//! throwaway Elab elaborates it over the params (bound to `#gN` fvars) and it is reified durably.
+//! Still unsupported (diagnosed, no publish): predicated params (`where` on a param).
 //!
 //! FAILURE ("reference not found" — the UndefinedError terminal): if no declaration
 //! produces the name, a diagnostic is recorded and the task completes WITHOUT publishing.
@@ -31,6 +34,9 @@ const InternPool = @import("../InternPool.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 const IdentKV = @import("../IdentKV.zig");
+const term = @import("../term.zig");
+const Elab = @import("ProveTask/Elab.zig");
+const Walk = @import("ProveTask/Walk.zig");
 
 const FetchTask = @This();
 
@@ -204,19 +210,24 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
             },
             .func => |fu| switch (fu) {
                 .local => |d| {
-                    // STATIC rejection first (before any demand/suspend, so the diagnostic
-                    // fires exactly once): the TCC machinery isn't built yet.
-                    if (d.requires != null) {
-                        self.sink.add(name_tok.start, "guarded functions ('requires') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
-                        return; // no publish
-                    }
                     const parts = assembleSig(self, h, task.file, source, d.params, d.result) catch |e| switch (e) {
                         error.OutOfMemory => return error.OutOfMemory,
                         error.Unresolved => return,
                     };
+                    // A GUARDED func (`requires`): reify its precondition into the Item's guard
+                    // term (params as hygienic `#gN` fvars — see `reifyGuard`), so every call site
+                    // substitutes the actuals and owes the resulting obligation (mirrors the
+                    // refined-sort TCC path). Unguarded funcs store `no_term`.
+                    const guard: InternPool.TermOff = if (d.requires) |req|
+                        reifyGuard(self, h, task.file, source, task.name, d.params, parts.sig, req) catch |e| switch (e) {
+                            error.OutOfMemory => return error.OutOfMemory,
+                            error.Unresolved => return, // suspended on a guard ref, or diagnosed
+                        }
+                    else
+                        InternPool.no_term;
                     _ = try self.idents.publish(self.io, key, .{ .func = .{
                         .sig = parts.sig,
-                        .guard = InternPool.no_term,
+                        .guard = guard,
                         .param_names = parts.param_names,
                         .name = task.name,
                         .loc = name_tok.start,
@@ -541,6 +552,63 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
     return .{ .sig = sig, .param_names = names };
 }
 
+/// The hygienic fvar name for a guard's parameter at position `i` — `#gN`. '#' cannot lex, so
+/// these never collide with a userland arg term's free variables (the capture-safety `substFvar`
+/// relies on at the call site). Position-based is enough: a guard is copied in + FULLY
+/// substituted at each call before it enters the surrounding term, so two funcs may reuse `#g0`.
+fn guardParamName(self: *Context, i: usize) std.mem.Allocator.Error!InternPool.StrId {
+    const bytes = try std.fmt.allocPrint(self.arena, "#g{d}", .{i});
+    return self.interner.internString(bytes);
+}
+
+/// Reify a guarded func's `requires` precondition into a durable guard TERM over its PARAMS,
+/// returning the `extra` offset (an `InternPool.TermOff`) stored in the func Item. The params
+/// bind to hygienic `#gN` fvars (`guardParamName`); a call site substitutes the actual arg
+/// terms for these fvars and owes the resulting obligation (`Elab.elaborateCall`).
+///
+/// LAYERING: the precondition may reference other identifiers (`ZERO`, guard predicates, …).
+/// Elab CANNOT suspend, so their transitive reference closure is demanded FIRST (reusing the
+/// define-closure walk over `requires` as the "body" with the params as locals); a miss suspends
+/// this FetchTask (resume re-runs `produce`, idempotent). Once resolved, a throwaway scratchpad
+/// Elab elaborates the precondition — the params pushed as expression-local binders at their
+/// carrier sorts — and `reify` serializes it under the InternPool write-mutex.
+fn reifyGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, name: InternPool.StrId, params: []const ast.Binder, sig: InternPool.Index, requires: *const ast.Expr) ResolveError!InternPool.TermOff {
+    // (a) demand the precondition's reference closure (like a define body) so Elab won't suspend.
+    try demandDefineClosure(self, h, file, .{ .value = requires, .params = params }, name);
+
+    // (b) elaborate the precondition to a scratchpad term with the params bound to `#gN` fvars.
+    const ns = try self.interner.namespace(.universe, file);
+    var scratch: term.Pool = .init(self.arena, self.gpa);
+    var walk: Walk = Walk.init(self.arena, self.interner, source, self.sink);
+    var fresh: u32 = 0;
+    var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, &scratch, self.sink, source, &walk, ns, &fresh);
+    const arg_ixs = self.interner.keyOf(sig).sig.args;
+    for (params, arg_ixs, 0..) |b, arg_ix, i| {
+        const carrier: term.SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(arg_ix)));
+        const fv = try guardParamName(self, i);
+        e.pushBinder(b.name.name, carrier, fv) catch return error.OutOfMemory;
+    }
+    const typed = e.elaborateExpr(requires) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        // a malformed precondition (bad sort, unknown name) is DIAGNOSED into the sink by Elab;
+        // yield without publishing (demanders wedge — same red-phase mode as any diagnosed miss).
+        error.Recover => return error.Unresolved,
+    };
+    if (typed.sort != Elab.prop_sort) {
+        self.sink.add(exprLocOf(requires), "a function's 'requires' precondition must be a proposition", .{}) catch return error.OutOfMemory;
+        return error.Unresolved;
+    }
+
+    // (c) serialize the guard durably (params live as `#gN` fvars in the reified term).
+    self.interner.lockWrite(self.io);
+    defer self.interner.unlockWrite(self.io);
+    return scratch.reify(typed.id, self.interner) catch return error.OutOfMemory;
+}
+
+fn exprLocOf(e: *const ast.Expr) u32 {
+    return Elab.exprLoc(e);
+}
+
 // --- tests ----------------------------------------------------------------------------
 
 const testing = std.testing;
@@ -846,7 +914,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     try testing.expectEqual(nat, sig.args[0]);
 }
 
-test "fetch layer 2: a guarded func ('requires') diagnoses unsupported, publishes nothing" {
+test "fetch layer 2: a guarded func ('requires') reifies its precondition into the Item's guard" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -866,11 +934,20 @@ test "fetch layer 2: a guarded func ('requires') diagnoses unsupported, publishe
     _ = try eng.rack(try new(arena, .{ .file = f, .name = dec, .loc = 0 }));
     try eng.run();
 
-    try testing.expectEqual(@as(usize, 1), ctx.sink.list.items.len);
-    try testing.expect(std.mem.indexOf(u8, ctx.sink.list.items[0].message, "guarded functions") != null);
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
     const ns = try ctx.interner.namespace(.universe, f);
-    const state = ctx.idents.lookup(io, .{ .namespace = ns, .name = dec }).?;
-    try testing.expect(state != .done); // never published
+    const dec_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = dec }).?.done;
+    const c = ctx.interner.keyOf(dec_ix).func;
+    // a guard was reified (not `no_term`); rebuild it and check it is `pos(#g0)` — the
+    // precondition over the param-0 fvar, ready for a call site to substitute the actual arg.
+    try testing.expect(c.guard != InternPool.no_term);
+    var scratch: term.Pool = .init(arena, arena);
+    const g = try scratch.copyIn(ctx.interner, c.guard);
+    const pos_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("pos") }).?.done;
+    const nat_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("Nat") }).?.done;
+    const fv = try scratch.add(.{ .fvar = .{ .name = try ctx.interner.internString("#g0"), .sort = @enumFromInt(@intFromEnum(nat_ix)) } });
+    const want = try scratch.addApp(.pred, @enumFromInt(@intFromEnum(pos_ix)), &.{fv});
+    try testing.expect(scratch.alphaEq(g, want));
 }
 
 test "fetch: a fact name demanded as an identifier is a kind mismatch" {

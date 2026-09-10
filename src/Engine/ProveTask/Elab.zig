@@ -18,9 +18,13 @@
 //! pool's reserved Prop (`Index.prop`); at the demand flip `term.SortId.prop` renumbers
 //! to the same value and the two spellings collapse.
 //!
-//! NOT YET SUPPORTED (diagnosed, proof goes red; later layers/phases): guarded functions
-//! (`requires` — the TCC machinery), transparent defines, predicated sorts/binders
-//! (`where`), lambdas (schema arguments — schemas are unsupported wholesale).
+//! GUARDED FUNCTIONS (`requires`): a call to a guarded func emits its precondition — the stored
+//! guard term with the param fvars (`#gN`) substituted by the actual args — as a proof obligation
+//! into `tccs`, exactly as a refined param sort does (Step 3c). The guard was reified over `#gN`
+//! fvars by FetchTask `reifyGuard`; here `emitGuardObligation` copies + substitutes it.
+//!
+//! NOT YET SUPPORTED (diagnosed, proof goes red; later layers/phases): lambdas (schema arguments
+//! — schemas are unsupported wholesale).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -100,6 +104,13 @@ no_relativize: bool = false,
 /// formula against the LOCAL proof context (result_facts + block guards + prior steps).
 tccs: ?*std.ArrayList(Tcc) = null,
 result_facts: ?*std.ArrayList(TermId) = null,
+/// STATEMENT (goal) phase: elaborating a fact's STATED formula rather than a proof step. A
+/// guarded-FUNC application still owes its precondition here (partiality is a real soundness
+/// gate — `div(ONE, ZERO)` in a statement smuggles a partial function outside its domain), but
+/// a REFINED-SORT argument obligation is SUPPRESSED: a refined param `inC(c)` over a plain-base
+/// variable is the canonical relativization shape a stated law uses (`∀c; (inC(c) and …) -> …`),
+/// which was never checked at statement level; enforcing it would reject well-formed axioms.
+in_statement: bool = false,
 
 /// expression-local binders (quantifiers), innermost last; transient per elaboration
 scope: std.ArrayList(ScopeEntry) = .empty,
@@ -435,9 +446,10 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
             if (sig.args.len != 0) {
                 return self.fail(tok.start, "'{s}' expects {d} argument(s), got 0", .{ self.text(tok), sig.args.len });
             }
-            if (c.guard != InternPool.no_term) {
-                return self.fail(tok.start, "guarded functions are not yet supported by the demand prover", .{});
-            }
+            // a nullary guarded func (guard over globals only, no params) still owes its
+            // precondition here; a guarded func WITH params can't reach name position (the
+            // arg-count check above already rejected it).
+            try self.emitGuardObligation(c.guard, &.{}, tok.start);
             return self.applyResolved(sym, &.{});
         },
         // a constant is a nullary application — route through applyResolved so a REFINED
@@ -480,9 +492,6 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
             self.text(c.callee), sig.args.len, c.args.len,
         });
     }
-    if (callable.guard != InternPool.no_term) {
-        return self.fail(c.callee.start, "guarded functions are not yet supported by the demand prover", .{});
-    }
     const arg_ids = try self.arena.alloc(TermId, c.args.len);
     for (c.args, sig.args, arg_ids) |arg, expected_ix, *out| {
         const typed = try self.elaborateExpr(arg);
@@ -501,6 +510,10 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         try self.emitArgObligations(expected_ix, typed.id, exprLoc(arg));
         out.* = typed.id;
     }
+    // a GUARDED func demands its (substituted) precondition — the TCC that forbids `div(x, 0)`
+    // (mirrors the refined-sort obligation above). Emitted AFTER the args, so a nested guarded
+    // arg's obligation is reported before the outer one.
+    try self.emitGuardObligation(callable.guard, arg_ids, c.callee.start);
     return self.applyResolved(sym, arg_ids);
 }
 
@@ -580,10 +593,30 @@ fn resolveSortIn(self: *Elab, ns: InternPool.Index, tok: lexer.Token) Error!Sort
     return @enumFromInt(@intFromEnum(sym));
 }
 
+/// A GUARDED function's precondition, instantiated at a call's actual arguments, becomes a
+/// proof obligation (the TCC that forbids `div(x, 0)`). The stored guard is a term over the
+/// hygienic `#gN` param fvars (see FetchTask `reifyGuard`): copy it into the scratchpad, then
+/// `substFvar` each `#gi` with the corresponding actual arg term (capture-safe — `#` cannot lex,
+/// so no userland arg fvar collides), and append the closed result to `tccs`. No-op for an
+/// unguarded func (`no_term`) or when obligations aren't tracked.
+fn emitGuardObligation(self: *Elab, guard: InternPool.TermOff, args: []const TermId, loc: u32) Error!void {
+    if (guard == InternPool.no_term) return;
+    const sink = self.tccs orelse return;
+    var g = self.scratch.copyIn(self.interner, guard) catch return error.OutOfMemory;
+    for (args, 0..) |arg, i| {
+        const bytes = std.fmt.allocPrint(self.arena, "#g{d}", .{i}) catch return error.OutOfMemory;
+        const fv = self.interner.internString(bytes) catch return error.OutOfMemory;
+        g = self.scratch.substFvar(g, fv, arg) catch return error.OutOfMemory;
+    }
+    sink.append(self.arena, .{ .formula = g, .loc = loc }) catch return error.OutOfMemory;
+}
+
 /// For a refined param sort, append `qpred(arg)` obligations to `tccs` (one per qualifier).
 /// No-op for a root param sort or when obligations aren't tracked.
 fn emitArgObligations(self: *Elab, param_sort: InternPool.Index, arg: TermId, loc: u32) Error!void {
     const sink = self.tccs orelse return;
+    // a refined-sort argument obligation is NOT enforced in the statement phase (see `in_statement`).
+    if (self.in_statement) return;
     if (!self.interner.isRefined(param_sort)) return;
     const quals = self.interner.qualifiersOf(self.arena, param_sort) catch return error.OutOfMemory;
     for (quals) |qpred| {
@@ -1059,29 +1092,53 @@ test "elab: sort mismatch and prop-in-'=' diagnose and Recover" {
     }
 }
 
-test "elab: guarded funcs, defines-absent, and lambdas are cleanly unsupported/unknown" {
+test "elab: a guarded func application emits its substituted precondition as an obligation" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const w = try World.init(arena);
 
-    // a guarded function: div(Nat,Nat):Nat requires ...
+    // build a reified guard `le(#g0, #g1)` over the two param fvars (as FetchTask would),
+    // then publish a guarded `div(Nat, Nat): Nat requires le(a, b)`.
+    const nat_sort: SortId = @enumFromInt(@intFromEnum(w.nat));
+    const g0 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g0"), .sort = nat_sort } });
+    const g1 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g1"), .sort = nat_sort } });
+    const guard_term = try w.scratch.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ g0, g1 });
+    w.interner.lockWrite(w.io);
+    const guard_off = try w.scratch.reify(guard_term, w.interner);
+    w.interner.unlockWrite(w.io);
+
     const nat2 = [_]InternPool.Index{ w.nat, w.nat };
     const div_sig = try w.interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
     const div_name = try w.interner.internString("div");
     _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{
         .func = .{
             .sig = div_sig,
-            .guard = 123, // any reified guard offset — non-no_term means guarded
+            .guard = guard_off,
             .param_names = &.{},
             .name = div_name,
             .loc = 0,
         },
     });
 
-    const rig = try w.elabOf("forall k: Nat; le(div(k, k), k)");
-    try testing.expectError(error.Recover, rig.elab.elaborateExpr(rig.expr));
-    try testing.expect(std.mem.indexOf(u8, w.sink.list.items[0].message, "guarded functions are not yet supported") != null);
+    // elaborating `div(a, a)` must SUCCEED and append the obligation `le(a, a)` to `tccs`
+    // (the guard with #g0/#g1 substituted by the actual arg `a`).
+    var tccs: std.ArrayList(Tcc) = .empty;
+    rig: {
+        const rig = try w.elabOf("le(div(a, a), a)");
+        rig.elab.tccs = &tccs;
+        const typed = try rig.elab.elaborateExpr(rig.expr);
+        try testing.expectEqual(prop_sort, typed.sort);
+        break :rig;
+    }
+    try testing.expectEqual(@as(usize, 0), w.sink.list.items.len);
+    try testing.expectEqual(@as(usize, 1), tccs.items.len);
+
+    const p = w.scratch;
+    const a_ix = w.idents.lookup(w.io, .{ .namespace = w.ns, .name = try w.interner.internString("a") }).?.done;
+    const a_term = try p.addApp(.app, @enumFromInt(@intFromEnum(a_ix)), &.{});
+    const want = try p.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ a_term, a_term });
+    try testing.expect(p.alphaEq(tccs.items[0].formula, want));
 }
 
 test "elab: pathologically deep spine does not overflow the C stack (task #92)" {

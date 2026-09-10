@@ -861,6 +861,17 @@ fn dischargeTccs(self: *Prove, kb: kernel.BlockId, start: usize) Error!void {
     if (any_failed) return error.Recover;
 }
 
+/// Discharge the obligations accrued while elaborating the theorem's STATEMENT formula — a
+/// guarded application in the stated goal (`div(ONE, ZERO) = …`) owes its precondition just as
+/// one in a proof step does. The context is the ROOT block (kernel block 0): the statement has
+/// no local hypotheses, so an obligation discharges only if it is SELF-relativized — a guarded
+/// use under `forall d; d != ZERO -> …` closes to `∀d; d != ZERO -> (d != ZERO)` and peels
+/// clean, while `div(ONE, ZERO)` in a bare statement has nothing to lean on and is rejected.
+/// Mirrors the per-step `dischargeTccs`; called from the goal phase (`elaborateGoalInto`).
+pub fn dischargeGoalTccs(self: *Prove) Error!void {
+    return self.dischargeTccs(@enumFromInt(0), 0);
+}
+
 /// True if obligation `f` follows from the LOCAL context. Peels `->`/`and`/`forall` (adding
 /// antecedents as local hypotheses, monomorphizing `forall` at a fresh fvar) and matches
 /// each atom against: result_facts (surfaced closures), enclosing block guards/assumes, and

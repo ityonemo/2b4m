@@ -260,12 +260,23 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     e.model = st.prove.model; // remap source globals for a model transfer (identity else)
     e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
     e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
+    // a guarded/refined application in the STATEMENT owes its obligation just as one in a step
+    // does — wire the same sinks so `dischargeGoalTccs` (below) proves them against the empty
+    // statement context (a self-relativized `forall d; d != ZERO -> …` discharges; a bare
+    // `div(ONE, ZERO)` does not).
+    e.tccs = &st.prove.pending_tccs;
+    e.result_facts = &st.prove.result_facts;
+    e.in_statement = true; // suppress refined-sort arg obligations in the statement (guard-func only)
     const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .done, // diagnosed; no publish (st.goal stays null)
     }, formula) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .done,
+    };
+    st.prove.dischargeGoalTccs() catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .done, // an undischarged statement obligation — diagnosed; no publish
     };
     st.goal = typed.id;
     return .done;

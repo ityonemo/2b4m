@@ -156,6 +156,19 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                     },
                     .alias => {},
                 },
+                // a root-file AXIOM is not "proved", but its ProveTask still ELABORATES its
+                // stated formula — which discharges any guarded/refined-application obligation
+                // in the statement (an axiom asserting `div(ZERO, ZERO) = …` owes `ZERO != ZERO`,
+                // else it smuggles a partial function outside its domain). A ground axiom's task
+                // is a leaf publish; a schema-axiom (params) stays an on-demand template.
+                .axiom => |a| switch (a) {
+                    .local => |f| {
+                        if (f.params == null) {
+                            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = f.name.name }));
+                        }
+                    },
+                    .alias => {},
+                },
                 // a `model` decl is NOT built eagerly — a model is validated only when it is
                 // actually CITED (`[by model(M) …]` racks its ModelTask). An unused model,
                 // even a malformed one, is inert: nothing depends on it, so nothing is wrong.
