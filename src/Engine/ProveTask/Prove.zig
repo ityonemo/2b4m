@@ -2365,10 +2365,10 @@ fn internStrRt(self: *Prove, s: []const u8) Error!StrId {
 /// proof = nest one `assume prem_i` per premise (restating each hypothesis), then in the
 /// innermost context emit the cert. The call site discharges the antecedents with `c.refs`.
 ///
-/// PARAMS: the fixtures (+ every propositional consequence at a closed site) have no caller-
-/// local free fvars, so no params are abstracted (unlike specialize's value params). A
-/// tautology inside a `fix` would surface a free fvar in a premise/goal; that abstraction is
-/// left for a follow-up; a goal/premise carrying a free fvar is rejected gracefully below.
+/// PARAMS: a tautology inside a `fix a { … }` has free caller-local eigenvars in its goal/
+/// premises; `abstractGoal` lifts them (shared across goal + premises) into schema value
+/// params `p1,p2,…`, mirrored by call-site args — the same machinery `arithmetic` uses. A
+/// closed site abstracts nothing (empty params/args, the common case).
 fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     if (c.args.len != 0) return self.fail(c.rule.start, "tautology takes no arguments", .{});
     // ADMIT: the only pre-cert validation is the arg-count; the DECISION (smt.tautology) and the
@@ -2410,19 +2410,28 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
         },
     }
 
-    // GENERATE the certificate. Collect the atoms once (the cert's split order), then replay.
-    var atom_list: std.ArrayList(TermId) = .empty;
-    for (prem_formulae) |f| smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, f) catch return error.OutOfMemory;
-    smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, goal) catch return error.OutOfMemory;
-
-    // A free caller-local fvar (a `fix` eigenvariable in the goal/premises — tautology inside
-    // a fix block) would delaborate to a name unresolvable in the empty-scope schema body.
-    // Abstracting such fvars into schema value params (as specialize does with its args) is a
-    // shared-framework follow-up; until then this is a clean FAILURE, never a crash.
-    if (self.hasFreeFvar(goal)) return self.fail(c.rule.start, "tautology over a proof-local variable is not yet supported (free variable in the goal)", .{});
-    for (prem_formulae) |f| {
-        if (self.hasFreeFvar(f)) return self.fail(c.rule.start, "tautology over a proof-local variable is not yet supported (free variable in a premise)", .{});
+    // ABSTRACT the free caller-local eigenvars (an enclosing `fix a { … }` around this step)
+    // into schema value params `p1,p2,…`, shared across the goal AND every premise formula (all
+    // speak the same `fix` vars). Without this, delaborating the goal/premise to the empty-scope
+    // schema body leaves those names unresolvable. The verdict above was decided on the ORIGINAL
+    // terms (fvar substitution is uniform, so the propositional structure — atoms + truth table —
+    // is identical); the cert is built on the ABSTRACTED terms so its body speaks the params.
+    // A closed (no-`fix`) site abstracts nothing — params/args empty, the common case.
+    const abstracted = try self.abstractGoal(&b, goal, prem_formulae, &.{});
+    const abs = abstracted.abs;
+    const goal_p = abstracted.goal_p;
+    // rewrite each premise's formula into param space (the cert + the schema antecedents use it).
+    const prems_p = try self.ctx.arena.alloc(TautAst.Prem, prems.len);
+    for (prems, prems_p) |src, *out| {
+        out.* = src;
+        out.formula = try self.substFvarsToParams(src.formula, abs);
     }
+
+    // GENERATE the certificate over the param-space goal/premises. Collect the atoms once (the
+    // cert's split order), then replay.
+    var atom_list: std.ArrayList(TermId) = .empty;
+    for (prems_p) |p| smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, p.formula) catch return error.OutOfMemory;
+    smt.collectAtoms(self.ctx.arena, self.pool, &atom_list, goal_p) catch return error.OutOfMemory;
 
     const assignment = try self.ctx.arena.alloc(?bool, atom_list.items.len);
     @memset(assignment, null);
@@ -2431,8 +2440,8 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     var cert: TautAst = .{
         .p = self,
         .b = &b,
-        .goal = goal,
-        .premises = prems,
+        .goal = goal_p,
+        .premises = prems_p,
         .atoms = atom_list.items,
         .assignment = assignment,
         .lit_blocks = lit_blocks,
@@ -2443,44 +2452,34 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     try cert.deriveGoal(&inner);
 
     // wrap in nested `assume prem_i { restate hyp; … }` blocks, exporting each `->` back out.
-    const steps = try self.wrapTautologyPremises(&b, prems, goal, inner.items);
+    const steps = try self.wrapTautologyPremises(&b, prems_p, goal_p, inner.items);
 
     // schema body = `prem0 -> … -> goal` (an ordinary proof with no premises just = goal).
-    var body_expr = try b.termExpr(goal);
-    var i: usize = prems.len;
+    var body_expr = try b.termExpr(goal_p);
+    var i: usize = prems_p.len;
     while (i > 0) {
         i -= 1;
-        body_expr = try b.implies(try b.termExpr(prems[i].formula), body_expr);
+        body_expr = try b.implies(try b.termExpr(prems_p[i].formula), body_expr);
     }
 
-    // deterministic hash-name from the goal + all premise formulae (re-entry stable).
-    var hash = Schema.termHash(self.pool, goal);
-    for (prem_formulae) |f| hash ^= Schema.termHash(self.pool, f) *% 0x9E3779B97F4A7C15;
+    // deterministic hash-name from the abstracted goal + all premise formulae (re-entry stable).
+    var hash = Schema.termHash(self.pool, goal_p);
+    for (prems_p) |p| hash ^= Schema.termHash(self.pool, p.formula) *% 0x9E3779B97F4A7C15;
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "tautology{{{x}}}", .{hash}));
+
+    // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
+    const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
+    for (abs.names, abs.sorts, params) |pname, sort, *pp| {
+        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
+        pp.* = .{ .name = b.tok(pname), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+    }
 
     return .{
         .name = name,
-        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = &.{} }, .steps = steps } } },
-        .args = &.{},
+        .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
+        .args = abs.args,
         .premises = c.refs,
     };
-}
-
-/// True if `id` contains any FREE fvar — a caller-local variable the delaborated schema body
-/// could not re-resolve in its empty scope. The tautology producer rejects such a goal/premise
-/// gracefully (the abstraction of free locals into params is deferred; see `produceTautology`).
-fn hasFreeFvar(self: *Prove, id: TermId) bool {
-    var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), self.ctx.gpa);
-    const a = fb.get();
-    var stack: std.ArrayList(TermId) = .empty;
-    defer stack.deinit(a);
-    stack.append(a, id) catch return true; // OOM conservative
-    while (stack.pop()) |cur| {
-        const node = self.pool.get(cur);
-        if (node == .fvar) return true;
-        self.pool.pushChildren(&stack, a, node) catch return true;
-    }
-    return false;
 }
 
 /// Wrap the innermost cert `inner` (which concludes `goal`) in nested `assume prem_i { … }`
