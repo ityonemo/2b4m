@@ -37,6 +37,17 @@ pub const Synthetic = struct {
     args: []const *const ast.Expr,
     /// the premise step-refs the call site discharges against the instance's `->` antecedents
     premises: []const Token,
+    /// Caller-scope bindings (display-name → the abstracted free eigenvar) that must be in the
+    /// caller's Elab scope while its `args` are elaborated. Normally a producer abstracts only
+    /// caller `fix`-bound eigenvars, whose display name the proof-local scope already resolves —
+    /// so this is empty. But a LOCAL specialize head can carry a free fvar INHERITED from a
+    /// schema-instance monomorphization (e.g. `induction`'s `prop` was instantiated at a lambda
+    /// mentioning the OUTER proof's `fix b`): inside the instance ProveTask that `b#N` is a free
+    /// constant with NO source binder, so its display-name arg (`b`) would fail to re-resolve.
+    /// The plumbing installs these bindings so the arg elaborates back to the very fvar.
+    fvar_binds: []const FvarBind = &.{},
+
+    pub const FvarBind = struct { name: StrId, fvar: StrId, sort: SortId };
 };
 
 /// A minimal synthetic-AST builder: mints tokens/exprs/steps on `arena`, all stamped with a

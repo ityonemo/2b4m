@@ -1929,6 +1929,15 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
         .args = syn.args,
         .refs = syn.premises,
     };
+    // Install the producer's caller-scope fvar bindings (display-name → the abstracted free
+    // eigenvar) so each call-site arg elaborates back to its very fvar — needed when a free
+    // fvar was INHERITED from a schema-instance monomorphization (no source binder resolves it;
+    // see `Synthetic.fvar_binds`). A no-op for the common `fix`-bound case. Truncated after.
+    const scope_mark = e.scopeMark();
+    for (syn.fvar_binds) |bind| {
+        e.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
+    }
+    defer e.scopeTruncate(scope_mark);
     return self.demandInstance(e, inst_c, true);
 }
 
@@ -2117,6 +2126,11 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     try self.collectFreeFvars(head_formula, &free_fvars);
     const fparams = try self.ctx.arena.alloc(ast.SchemaParam, free_fvars.items.len);
     const fargs = try self.ctx.arena.alloc(*const ast.Expr, free_fvars.items.len);
+    // Bindings so each call-site arg (a display-trimmed fvar name) re-resolves to its very
+    // fvar. A caller `fix`-bound eigenvar already resolves through the proof-local scope, but a
+    // free fvar INHERITED from a schema-instance monomorphization (see `Synthetic.fvar_binds`)
+    // has no source binder — the plumbing installs these into the caller Elab scope.
+    const fbinds = try self.ctx.arena.alloc(Accelerant.Synthetic.FvarBind, free_fvars.items.len);
     for (free_fvars.items, 0..) |fv, i| {
         const fname = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "f{d}", .{i + 1}));
         const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
@@ -2124,6 +2138,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
         fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.tok(sort_name) };
         fargs[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // caller binder name at the call site
+        fbinds[i] = .{ .name = try self.displayName(fv.name), .fvar = fv.name, .sort = fv.sort };
     }
 
     const nargs = c.args.len;
@@ -2191,6 +2206,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = args,
         .premises = c.refs,
+        .fvar_binds = fbinds,
     };
 }
 
