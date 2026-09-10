@@ -843,6 +843,58 @@ pub fn modelDischargers(self: *const InternPool, model: Index, symbol: Index, ou
     }
 }
 
+/// COMPOSE two models: the model that is `outer ∘ inner` AS A FUNCTION on symbols — for every
+/// `x`, `applyModel(composed, x) == applyModel(outer, applyModel(inner, x))`. Returns a new
+/// (interned, deduped) `.model` whose overlay maps each source in `inner`'s WHOLE domain to
+/// `applyModel(outer, applyModel(inner, src))` — inner's answer run one more step through the
+/// ambient model — with `parent = outer`, so a source `inner` does not touch falls through to
+/// `outer` (correct, since `inner` is the identity there). Dischargers compose the same way
+/// (the establishing facts are target-space Indices, so they too route through `outer`).
+///
+/// WHY precompose instead of parent-chaining `inner` onto `outer`: a model is an OVERRIDE
+/// table, not a function — `applyModel` returns the overlay target on FIRST hit and never
+/// re-applies the parent to that result, so an inner mapping `{src → tgt}` would stop at
+/// `tgt` (source space) instead of reaching `applyModel(outer, tgt)`. Baking the second hop
+/// into the overlay makes the result exact function composition.
+///
+/// WHY flatten `inner`'s ENTIRE parent chain (not just its top overlay): `inner`'s domain is
+/// everything any level of its chain maps (nearest level wins — exactly `applyModel(inner, ·)`).
+/// A top-overlay-only composition would send a source mapped only by inner's PARENT to
+/// `outer(src)` instead of `outer(parent(src))` — silently mis-relativized. Every declared
+/// model is universe-parented today, but a composed model is not (its parent is the ambient
+/// model), and a nested transfer at depth ≥ 2 composes with one of those as the inner. So
+/// composition is associative and holds at ANY nesting depth by induction: the outer side is
+/// always `applyModel` (correct for any chain), and the inner side is fully flattened here.
+///
+/// Used by a NESTED model transfer: proving `[using model(inner) src.thm]` while an ambient
+/// `outer` model is active (a transferred proof re-proving a transfer) must relativize down
+/// BOTH models. The chain is copied out BEFORE the mint (`Key.Model` slices alias `extra`,
+/// which the `get` may grow). Takes the write lock around the `get`-that-appends, like any
+/// model mint.
+pub fn composeModel(self: *InternPool, io: std.Io, outer: Index, inner: Index) std.mem.Allocator.Error!Index {
+    var overlay: std.ArrayList(Key.Mapping) = .empty;
+    var dischargers: std.ArrayList(Key.Mapping) = .empty;
+    const home = self.keyOf(inner).model.home;
+    var cur = inner;
+    while (true) {
+        const m = self.keyOf(cur).model;
+        // overlay: nearest level wins per source (applyModel's first-hit rule), then compose.
+        for (m.overlay) |e| {
+            const seen = for (overlay.items) |have| {
+                if (have.src == e.src) break true;
+            } else false;
+            if (!seen) try overlay.append(self.arena, .{ .src = e.src, .tgt = self.applyModel(outer, e.tgt) });
+        }
+        // dischargers ACCUMULATE across the chain (modelDischargers collects every level).
+        for (m.dischargers) |d| try dischargers.append(self.arena, .{ .src = d.src, .tgt = self.applyModel(outer, d.tgt) });
+        if (cur == m.parent) break; // universe fixpoint
+        cur = m.parent;
+    }
+    self.lockWrite(io);
+    defer self.unlockWrite(io);
+    return self.get(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
+}
+
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
 // A model's parent + sparse overlay; variable-length, so the fixed-struct reflection
 // encoder can't express it. The overlay is empty for now (mappings deferred).
@@ -1188,6 +1240,60 @@ test "universe model is seeded at Index 0 as its own parent" {
     // and therefore DEDUPS to universe. Distinct child models require a distinct parent or
     // a non-empty overlay (deferred). Assert the dedup is exactly that:
     try std.testing.expectEqual(InternPool.Index.universe, child);
+}
+
+test "composeModel is exact function composition, at any depth, through a parented inner" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: InternPool = try .init(arena);
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    // symbols: any distinct Indexes serve (applyModel only compares sources).
+    const a = try pool.internString("a");
+    const b = try pool.internString("b");
+    const c = try pool.internString("c");
+    const d = try pool.internString("d");
+    const e = try pool.internString("e");
+    const f = try pool.internString("f");
+    const g = try pool.internString("g");
+    const p = try pool.internString("p");
+    const q = try pool.internString("q");
+    const all = [_]Index{ a, b, c, d, e, f, g, p, q };
+
+    // inner = {a→b} PARENTED on {c→d}: its domain is {a, c}, and `c` lives ONLY in the parent
+    // level — the case a top-overlay-only composition gets wrong.
+    const inner_parent = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = c, .tgt = d }} } });
+    const inner = try pool.get(.{ .model = .{ .parent = inner_parent, .overlay = &.{.{ .src = a, .tgt = b }} } });
+    try std.testing.expectEqual(d, pool.applyModel(inner, c)); // the parent level is live
+    // outer maps inner's targets on (b→e, d→f) plus a source inner never touches (g→p).
+    const outer = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{ .{ .src = b, .tgt = e }, .{ .src = d, .tgt = f }, .{ .src = g, .tgt = p } } } });
+
+    // THE PROPERTY: composed(x) == outer(inner(x)) for every x — inner's top overlay (a→b→e),
+    // inner's PARENT level (c→d→f), outer-only fallthrough (g→p), and unmapped (q→q).
+    const composed = try pool.composeModel(io, outer, inner);
+    for (all) |x| {
+        try std.testing.expectEqual(pool.applyModel(outer, pool.applyModel(inner, x)), pool.applyModel(composed, x));
+    }
+    try std.testing.expectEqual(e, pool.applyModel(composed, a));
+    try std.testing.expectEqual(f, pool.applyModel(composed, c)); // parent-level source composed, not dropped
+    try std.testing.expectEqual(p, pool.applyModel(composed, g));
+    try std.testing.expectEqual(q, pool.applyModel(composed, q));
+
+    // A THIRD LAYER: composing with the (parented, composed) model as the AMBIENT still holds —
+    // the associativity that makes nesting sound at any depth.
+    const third = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = q, .tgt = a }} } });
+    const composed2 = try pool.composeModel(io, composed, third);
+    for (all) |x| {
+        try std.testing.expectEqual(pool.applyModel(composed, pool.applyModel(third, x)), pool.applyModel(composed2, x));
+    }
+    try std.testing.expectEqual(e, pool.applyModel(composed2, q)); // q→a→b→e, three hops
+
+    // structural interning: the same composition is the same model (stable namespace identity).
+    try std.testing.expectEqual(composed, try pool.composeModel(io, outer, inner));
+    // composing with the universe on either side is the identity on the other.
+    try std.testing.expectEqual(pool.applyModel(inner, c), pool.applyModel(try pool.composeModel(io, .universe, inner), c));
 }
 
 test "namespace = (model, file), deduped per pair" {

@@ -1774,8 +1774,22 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
             .in_flight => |owner| return .{ .blocked = owner },
         };
     };
-    // demand the transferred fact in namespace (M, src_file).
-    const tns = self.ctx.interner.namespace(model_ix, src_file) catch return error.OutOfMemory;
+    // COMPOSE with the AMBIENT model, if any. When this proof is itself a model transfer
+    // (`self.model != universe` — e.g. proving `ring.thm` under IntegerRing), a nested
+    // `[using model(M) src.thm]` step must transfer `src.thm` down BOTH models: `model_ix`
+    // (source → THIS proof's target space) then the ambient `self.model` (that space → the
+    // outer target). `composeModel` bakes the second hop into a fresh interned model whose
+    // parent is the ambient one, so unmapped sources fall through. When self.model IS the
+    // universe (the common case — a standalone proof, or a top-level transfer), the effective
+    // model is `model_ix` unchanged (behavior-neutral).
+    const effective_model = if (self.model == InternPool.Index.universe)
+        model_ix
+    else
+        self.ctx.interner.composeModel(self.ctx.io, self.model, model_ix) catch return error.OutOfMemory;
+    // demand the transferred fact in namespace (effective_model, src_file). A distinct ambient
+    // model composes to a distinct model → a distinct namespace → a distinct fact (each is its
+    // own relativization); the in_flight/proven dedup below keys on that namespace, so it holds.
+    const tns = self.ctx.interner.namespace(effective_model, src_file) catch return error.OutOfMemory;
     if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = base })) |st| switch (st) {
         .proven => |ix| return .{ .proven = ix },
         .in_flight => |owner| {
@@ -1791,7 +1805,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         .name = base,
         .loc = rtok.start,
         .loc_file = self.file,
-        .model = model_ix,
+        .model = effective_model,
     }));
     return .{ .blocked = blocker };
 }
