@@ -846,6 +846,10 @@ pub fn pushBinder(self: *Elab, name: StrId, sort: SortId, fvar: StrId) Error!voi
 }
 
 fn text(self: *const Elab, t: lexer.Token) []const u8 {
+    // A SYNTHETIC token (accelerant-generated AST) has an empty source span (start == end) but
+    // carries the real interned name — render that so a diagnostic on generated code names the
+    // identifier instead of an empty slice. Real tokens span their source text.
+    if (t.start == t.end and t.name != InternPool.Index.none) return self.interner.stringBytes(t.name);
     return self.source[t.start..t.end];
 }
 
