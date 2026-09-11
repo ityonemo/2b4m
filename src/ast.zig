@@ -158,7 +158,10 @@ pub const Decl = union(enum) {
     /// `define NAME[(params)] = expr` — a transparent (macro) abbreviation: every
     /// use expands to the body at elaboration (with actual args substituted for the
     /// params); the kernel never sees the name. `params` empty = nullary.
-    define: struct { name: Token, params: []const Binder, value: *const Expr },
+    /// `define f(a, b) = body` — a transparent MACRO. Params are bare NAMES (no sorts): the
+    /// args arrive already elaborated and are substituted by name, so the body's own
+    /// elaboration types everything; a declared sort would be a second, redundant source.
+    define: struct { name: Token, params: []const Token, value: *const Expr },
     func: Func,
     pred: Pred,
     axiom: Axiom,

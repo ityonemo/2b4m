@@ -276,7 +276,7 @@ pub const Parser = struct {
                 const name = try self.expect(.identifier);
                 // optional `(params)` — a parameterized define is a macro function
                 // or predicate; no parens = a nullary term/prop abbreviation.
-                const params = try self.parseParams();
+                const params = try self.parseDefineParams();
                 _ = try self.expect(.equal);
                 return .{ .define = .{ .name = name, .params = params, .value = try self.parseExpr() } };
             },
@@ -465,6 +465,26 @@ pub const Parser = struct {
                 guard = try self.expect(.identifier);
             }
             try params.append(self.arena, .{ .name = name, .sort = sort, .guard = guard });
+            if (self.tok.tag != .comma) break;
+            _ = self.advance();
+        }
+        _ = try self.expect(.r_paren);
+        return params.toOwnedSlice(self.arena);
+    }
+
+    /// `(a, b, …)` — a define's params are bare NAMES. A sort annotation is a hard error: a
+    /// define is a macro, its sorts are inferred from its body (a declared sort would be a
+    /// second, possibly disagreeing, source).
+    fn parseDefineParams(self: *Parser) ParseError![]const Token {
+        if (self.tok.tag != .l_paren) return &.{};
+        _ = self.advance();
+        var params: std.ArrayList(Token) = .empty;
+        while (self.tok.tag != .r_paren) {
+            const name = try self.expect(.identifier);
+            if (self.tok.tag == .colon) {
+                return self.fail("define parameters take no sort — a define is a macro whose sorts are inferred from its body", .{});
+            }
+            try params.append(self.arena, name);
             if (self.tok.tag != .comma) break;
             _ = self.advance();
         }

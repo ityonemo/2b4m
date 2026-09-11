@@ -216,6 +216,12 @@ pub fn addTests(
     // defines share the declaration namespace
     ctx.fail(&.{ "check", "tests/cases/define_bad.bpa" }, "tests/cases/define_bad.bpa:5:8: error: duplicate declaration of 'TWO'\n");
 
+    // a define's PARAMS TAKE NO SORT: a define is a macro whose args arrive already
+    // elaborated, so the body's own elaboration types every use of them — a declared param
+    // sort is a second, redundant source that can only agree or spuriously disagree. A parse
+    // error, so --draft does not relax it.
+    ctx.fail(&.{ "check", "tests/cases/define_param_sort_bad.bpa" }, "tests/cases/define_param_sort_bad.bpa:7:16: error: define parameters take no sort — a define is a macro whose sorts are inferred from its body\n");
+
     // a define that ONLY FORWARDS an opaque symbol (`define lt(a, b) = ordering.less_than(a, b)`)
     // is an alias written as a macro — the name gets the wrong kind (define, not pred), so
     // downstream `pred lt = this.lt` aliases refuse it. Rejected unless --draft; the

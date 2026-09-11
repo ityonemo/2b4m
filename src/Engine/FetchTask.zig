@@ -435,11 +435,11 @@ fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index
     defer closure_scratch.deinit();
     const scratch = closure_scratch.allocator();
 
-    const Frame = struct { e: *const ast.Expr, file: InternPool.Index, params: []const ast.Binder };
+    const Frame = struct { e: *const ast.Expr, file: InternPool.Index, params: []const InternPool.StrId };
     var visited: std.ArrayList(DefineSite) = .empty;
     try visited.append(scratch, .{ .file = file, .name = name });
     var stack: std.ArrayList(Frame) = .empty;
-    try stack.append(scratch, .{ .e = d.value, .file = file, .params = d.params });
+    try stack.append(scratch, .{ .e = d.value, .file = file, .params = try paramNames(scratch, d.params) });
 
     while (stack.pop()) |f| {
         switch (f.e.*) {
@@ -461,6 +461,15 @@ fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index
 
 const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
 
+/// The param NAMES a closure walk treats as locals. Accepts a define's bare-name params
+/// (`lexer.Token`) and a guarded func's sorted params (`ast.Binder`) alike — the walk only
+/// ever needs the names.
+fn paramNames(scratch: std.mem.Allocator, params: anytype) std.mem.Allocator.Error![]const InternPool.StrId {
+    const out = try scratch.alloc(InternPool.StrId, params.len);
+    for (params, out) |p, *o| o.* = if (@TypeOf(p) == ast.Binder) p.name.name else p.name;
+    return out;
+}
+
 /// A define that merely FORWARDS an opaque symbol — `define f(p1, …, pn) = ns.g(p1, …, pn)`
 /// (each arg the same-position param, nothing else) or `define X = ns.C` — is an ALIAS written
 /// as a macro. That is the wrong tool: an alias binds the local name to the origin's identity
@@ -476,14 +485,14 @@ fn rejectAliasShapedDefine(self: *Context, h: *Engine.Handle, file: InternPool.I
             if (c.args.len != d.params.len) return;
             for (c.args, d.params) |arg, param| {
                 if (arg.* != .name) return;
-                if (arg.name.qualifier != InternPool.Index.none or arg.name.name != param.name.name) return;
+                if (arg.name.qualifier != InternPool.Index.none or arg.name.name != param.name) return;
             }
             break :blk c.callee;
         },
         else => return,
     };
     // a param in name position is the define's own local, not a forward.
-    for (d.params) |param| if (callee.qualifier == InternPool.Index.none and callee.name == param.name.name) return;
+    for (d.params) |param| if (callee.qualifier == InternPool.Index.none and callee.name == param.name) return;
     const target = try demandTok(self, h, file, callee); // resolved by the closure walk — no suspend
     const keyword: []const u8 = switch (self.interner.keyOf(target)) {
         .constant => "const",
@@ -499,23 +508,23 @@ fn rejectAliasShapedDefine(self: *Context, h: *Engine.Handle, file: InternPool.I
 
 /// A binder scope: demand each binder's SORT/GUARD (global refs), then push the body frame with an
 /// EXTENDED `params` (binder names shadow → skipped as locals in the body). Helper for the walk.
-fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const ast.Binder, stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
+fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const InternPool.StrId, stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
     for (binders) |b| {
         _ = try demandTok(self, h, file, b.sort);
         if (b.guard) |g| _ = try demandTok(self, h, file, g);
     }
-    const extended = try scratch.alloc(ast.Binder, params.len + binders.len);
+    const extended = try scratch.alloc(InternPool.StrId, params.len + binders.len);
     @memcpy(extended[0..params.len], params);
-    @memcpy(extended[params.len..], binders);
+    for (binders, extended[params.len..]) |b, *o| o.* = b.name.name;
     try stack.append(scratch, .{ .e = body, .file = file, .params = extended });
 }
 
 /// One reference token in a define body. A param/binder-local bare name is skipped. Else resolve
 /// its target (qualifier → import) + demand it; if it names a define, PUSH its body onto `stack`
 /// (under the target's file + params) to continue the walk. Cycle-guarded via `visited`.
-fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const ast.Binder, visited: *std.ArrayList(DefineSite), stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
+fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const InternPool.StrId, visited: *std.ArrayList(DefineSite), stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
     if (tok.qualifier == InternPool.Index.none) {
-        for (params) |p| if (p.name.name == tok.name) return; // a define param / binder local
+        for (params) |p| if (p == tok.name) return; // a define param / binder local
     }
     const target = try demandTok(self, h, file, tok);
     if (self.interner.keyOf(target) == .define) {
@@ -524,7 +533,7 @@ fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, to
         const dfid = self.pool_file.get(dfile).?;
         const ddecl = self.declOf(dfid, tok.name).?;
         try visited.append(scratch, .{ .file = dfile, .name = tok.name });
-        try stack.append(scratch, .{ .e = ddecl.define.value, .file = dfile, .params = ddecl.define.params });
+        try stack.append(scratch, .{ .e = ddecl.define.value, .file = dfile, .params = try paramNames(scratch, ddecl.define.params) });
     }
 }
 

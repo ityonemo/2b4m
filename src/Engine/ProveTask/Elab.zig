@@ -86,6 +86,10 @@ define_args: ?*const std.AutoHashMapUnmanaged(StrId, Typed) = null,
 /// body reaches itself. Owned by the driving Prove so it persists across the Elabs a proof
 /// builds; null = not tracked (a throwaway sort-resolution Elab, which sees no defines).
 define_stack: ?*std.ArrayList(InternPool.Index) = null,
+/// The define expansion in progress (outermost): every diagnostic raised while elaborating a
+/// define's BODY is anchored at this USE-SITE offset and prefixed with the define's name —
+/// the body's own offsets index the define's home file, not the file being diagnosed.
+expansion: ?struct { loc: u32, name: StrId } = null,
 /// MODEL this elaboration resolves THROUGH (Step 13): when set, every global identifier
 /// resolved here is filtered `interner.applyModel(model, source)` — so proving a source
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
@@ -553,55 +557,32 @@ fn expandDefine(self: *Elab, sym: InternPool.Index, callee: lexer.Token, args: [
     }
 
     // elaborate each arg in the CALLER's context (current ns, scope, define_args); bind to
-    // its param name. Sort-check against the param's declared sort (resolved in HOME ns).
+    // its param name. No declared sort to check against — the body's own elaboration types
+    // every use of the bound arg (a mismatch is diagnosed there, anchored at this use site).
     const home_ns = try self.interner.namespace(self.model, loc.file);
     var bindings: std.AutoHashMapUnmanaged(StrId, Typed) = .empty;
     for (d.params, args) |p, arg| {
         const typed = try self.elaborateExpr(arg);
-        const pname = try self.localName(p.name);
-        const expected = try self.resolveSortIn(home_ns, p.sort);
-        const want: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(expected)))));
-        const got: SortId = if (typed.sort == prop_sort)
-            typed.sort
-        else
-            @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort)))));
-        if (got != want) {
-            return self.fail(exprLoc(arg), "expected sort '{s}', got '{s}'", .{ self.sortName(want), self.sortName(typed.sort) });
-        }
-        try bindings.put(self.arena, pname, typed);
+        try bindings.put(self.arena, try self.localName(p), typed);
     }
 
     // elaborate the BODY under the home namespace with the param bindings, restoring on exit.
     const saved_ns = self.ns;
     const saved_args = self.define_args;
+    const saved_expansion = self.expansion;
     self.ns = home_ns;
     self.define_args = &bindings;
+    // the OUTERMOST use site anchors every diagnostic raised inside the body (its offsets
+    // belong to the define's home file, not to the file this proof is rendered against).
+    if (self.expansion == null) self.expansion = .{ .loc = callee.start, .name = loc.name };
     if (self.define_stack) |stk| try stk.append(self.arena, sym);
     defer {
         self.ns = saved_ns;
         self.define_args = saved_args;
+        self.expansion = saved_expansion;
         if (self.define_stack) |stk| _ = stk.pop();
     }
     return self.elaborateExpr(d.value);
-}
-
-/// Resolve a sort token in a GIVEN namespace (not necessarily `self.ns`) to a scratchpad
-/// SortId. Used to type-check define args against param sorts declared in the define's home
-/// namespace. The read pass already fetched the sort (a define's body-closure demand covers
-/// its param sorts), so a miss reads as an error rather than a suspend.
-fn resolveSortIn(self: *Elab, ns: InternPool.Index, tok: lexer.Token) Error!SortId {
-    const base = if (tok.qualifier != InternPool.Index.none) blk: {
-        const imp = self.lookupIdent(ns, tok.qualifier) orelse
-            return self.fail(tok.start, "unknown namespace '{s}'", .{self.interner.stringBytes(tok.qualifier)});
-        switch (self.interner.keyOf(imp)) {
-            .import => |m| break :blk Qualified{ .ns = m.namespace, .base = tokName(tok) },
-            else => return self.fail(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}),
-        }
-    } else Qualified{ .ns = ns, .base = tokName(tok) };
-    const sym = self.lookupIdent(base.ns, base.base) orelse
-        return self.fail(tok.start, "unknown sort '{s}'", .{self.text(tok)});
-    if (self.interner.keyOf(sym) != .sort) return self.fail(tok.start, "'{s}' is not a sort", .{self.text(tok)});
-    return @enumFromInt(@intFromEnum(sym));
 }
 
 /// A GUARDED function's precondition, instantiated at a call's actual arguments, becomes a
@@ -923,6 +904,11 @@ pub fn exprLoc(e: *const ast.Expr) u32 {
 }
 
 fn fail(self: *Elab, offset: u32, comptime fmt: []const u8, args: anytype) Error {
+    if (self.expansion) |x| {
+        const msg = std.fmt.allocPrint(self.arena, fmt, args) catch return error.OutOfMemory;
+        self.sink.add(x.loc, "in expansion of define '{s}': {s}", .{ self.interner.stringBytes(x.name), msg }) catch return error.OutOfMemory;
+        return error.Recover;
+    }
     self.sink.add(offset, fmt, args) catch return error.OutOfMemory;
     return error.Recover;
 }

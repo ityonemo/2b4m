@@ -174,15 +174,33 @@ const ZERO: Nat
 
 ### KEYWORD: define
 
-Names a term.  Expansion is performed transparently at elaboration — the
-kernel only ever sees the underlying term, so definitions add nothing to
-the trusted surface and work everywhere a term does, including inside automation.
-Definitions may build on each other. The sort is inferred.
+Names a term or a proposition.  Expansion is performed transparently at
+elaboration — the kernel only ever sees the underlying term, so definitions add
+nothing to the trusted surface and work everywhere a term does, including inside
+automation. Definitions may build on each other. The sort is inferred.
 
 ```bpa
 define TWO = succ(succ(ZERO))
 define FOUR = succ(succ(TWO))
 ```
+
+A define may take PARAMETERS, making it a macro function or predicate. **Parameters
+take no sort** — a define is not a declaration, it is an expansion: the arguments
+arrive already elaborated at each use, and the body's own elaboration types every
+use of them. A declared param sort would be a second source of the same fact, able
+only to agree (noise) or to disagree (a spurious error). Writing one is an error.
+
+```bpa
+define divides(d, n) = exists k: Int; n = mul(d, k)   // parameters are bare names
+define even(n) = divides(TWO, n)                      // defines build on defines
+```
+
+A define that merely FORWARDS an opaque symbol in the same argument order —
+`define lt(a, b) = ordering.less_than(a, b)` — is an ALIAS written as a macro, and
+is rejected (`--draft` allows it). Write the alias form `pred lt = ordering.less_than`
+instead: an alias binds the name to the target's identity, so it keeps its KIND and
+downstream files can alias it in turn. A PERMUTED forward (`define gt(a, b) =
+ordering.less_than(b, a)`) is a genuine macro and is fine.
 
 ### KEYWORD: func
 
