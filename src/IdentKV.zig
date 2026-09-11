@@ -1,4 +1,4 @@
-//! IdentKV — the demand table for IDENTIFIERS (sort/const/func/pred/define/import), filled
+//! IdentKV — the demand table for IDENTIFIERS (sort/const/func/pred/import), filled
 //! by FetchTask. `(namespace, name) -> State`, where State is `done` (the interned
 //! identifier `Index`) or `in_flight` (the TaskIndex currently fetching it); "absent" = no
 //! entry. The pool holds the identifier's CONTENT (its refinement/sort/signature/body);
@@ -81,7 +81,6 @@ pub const Mint = union(enum) {
     constant: InternPool.Key.Constant,
     func: InternPool.Key.Callable,
     pred: InternPool.Key.Callable,
-    define: InternPool.Key.Define,
     import: InternPool.Key.Import,
     /// a MODEL (interpretation). Unlike the others, a model is DEDUPED by content
     /// (parent+overlay), so it goes through `get`, not a `mint*`; a model name in IdentKV
@@ -120,7 +119,6 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .constant => |c| self.pool.mintConstant(c),
         .func => |c| self.pool.mintFunc(c),
         .pred => |c| self.pool.mintPred(c),
-        .define => |d| self.pool.mintDefine(d),
         .import => |m| self.pool.mintImport(m),
         .model => |m| self.pool.get(.{ .model = m }), // deduped by content (parent+overlay)
         .existing => |ix| ix, // alias-collapse: bind to the target's origin Index, mint nothing

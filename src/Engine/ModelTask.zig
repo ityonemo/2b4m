@@ -97,17 +97,26 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     // uniform (src Index → tgt Index). A `:` map may also carry GUARD-DISCHARGER witnesses
     // (`tgt(f…)` for a const→refined sort, `tgt -| f` for a func→refined result) — validated
     // here (const-vs-func kind check) since the target's KIND is resolved at this point.
-    const overlay = try self.arena.alloc(InternPool.Key.Mapping, m.identifiers.len + m.obligations.len);
+    var overlay: std.ArrayList(InternPool.Key.Mapping) = .empty;
     var dischargers: std.ArrayList(InternPool.Key.Mapping) = .empty; // (target-symbol, establishing-fact)
+    // `src: D` with D a DEFINE (a macro, no Index): not an overlay entry — recorded on the
+    // Context at publish so the expansion pass substitutes D's body for `src` in a transfer.
+    var define_targets: std.ArrayList(struct { src: InternPool.Index, def: Context.DefineKey }) = .empty;
     var blocker: ?Engine.TaskIndex = null;
-    var oi: usize = 0;
     for (m.identifiers) |im| {
-        defer oi += 1;
         const mapping = identMapping(im);
         const src = try resolveEntity(self, h, task.file, source, mapping.source, .ident, &blocker);
+        if (try defineTargetOf(self, h, task.file, mapping.target, &blocker)) |def| {
+            if (im != .basic) {
+                try demandDiag(self, task, "'{s}' is a define; a define target takes no guard-witness clause", .{self.interner.stringBytes(mapping.target.name)});
+                return;
+            }
+            if (src) |s| try define_targets.append(self.arena, .{ .src = s, .def = def });
+            continue;
+        }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .ident, &blocker);
         if (src) |s| if (tgt) |t| {
-            overlay[oi] = .{ .src = s, .tgt = t };
+            try overlay.append(self.arena, .{ .src = s, .tgt = t });
             // witness clauses: kind-check against the resolved TARGET, resolve each discharger
             // fact, and record `(target-symbol, fact)` into the model's discharger table (keyed
             // by the target symbol so the transfer's discharge walk finds it in target space).
@@ -115,7 +124,6 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
         };
     }
     for (m.obligations) |mapping| {
-        defer oi += 1;
         const src = try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
         if (mapping.projection) |proj| {
             // `srcAxiom <- NamedModel@proj.thm` — discharge srcAxiom by transferring the theorem
@@ -124,20 +132,57 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
             // is the TRANSFERRED `(NamedModel, proj-file).thm`.
             const tgt = try resolveProjection(self, h, task.file, source, mapping.target, proj, &blocker);
             if (src) |s| if (tgt) |t| {
-                overlay[oi] = .{ .src = s, .tgt = t };
+                try overlay.append(self.arena, .{ .src = s, .tgt = t });
             };
             continue;
         }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
         if (src) |s| if (tgt) |t| {
-            overlay[oi] = .{ .src = s, .tgt = t };
+            try overlay.append(self.arena, .{ .src = s, .tgt = t });
         };
     }
     if (blocker) |b| return h.suspendOn(b);
 
     // everything resolved — build the model (deduped via get, under the write lock) and
-    // publish its Index into IdentKV under M's name.
-    _ = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = overlay, .dischargers = try dischargers.toOwnedSlice(self.arena), .home = task.file } });
+    // publish its Index into IdentKV under M's name; then record its define targets.
+    const model_ix = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = try overlay.toOwnedSlice(self.arena), .dischargers = try dischargers.toOwnedSlice(self.arena), .home = task.file } });
+    for (define_targets.items) |dt| try self.model_define_targets.put(self.arena, .{ .model = model_ix, .src = dt.src }, dt.def);
+}
+
+/// Is a `:` mapping's TARGET token a define (in the model's file, or an imported file)? A
+/// define never enters IdentKV, so it is answered from the by-name AST registry — demanding
+/// the import + the target file's parse as needed (blocker recorded).
+fn defineTargetOf(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: @import("../lexer.zig").Token, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?Context.DefineKey {
+    var target_file = file;
+    if (tok.qualifier != InternPool.Index.none) {
+        const ns = try self.interner.namespace(.universe, file);
+        const st = self.idents.lookup(self.io, .{ .namespace = ns, .name = tok.qualifier }) orelse {
+            blocker.* = try h.rackIndexed(try FetchTask.new(self.arena, .{ .file = file, .name = tok.qualifier, .loc = tok.start, .loc_file = file }));
+            return null;
+        };
+        switch (st) {
+            .in_flight => |owner| {
+                if (owner != h.self_index) blocker.* = owner;
+                return null;
+            },
+            .done => |ix| switch (self.interner.keyOf(ix)) {
+                .import => |imp| target_file = self.interner.keyOf(imp.namespace).namespace.file,
+                else => return null,
+            },
+        }
+        switch (try self.demandParse(h, target_file)) {
+            .parsed => {},
+            .parsing => |t| {
+                blocker.* = t;
+                return null;
+            },
+            .unparsed => return null,
+        }
+    }
+    const fid = self.pool_file.get(target_file) orelse return null;
+    const decl = self.declOf(fid, tok.name) orelse return null;
+    if (decl.* != .define) return null;
+    return .{ .file = target_file, .name = tok.name };
 }
 
 /// Which demand table a mapping token resolves against.

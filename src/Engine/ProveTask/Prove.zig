@@ -34,6 +34,7 @@ const Engine = @import("../../Engine.zig");
 const Context = @import("../../Context.zig");
 const Walk = @import("Walk.zig");
 const RefScan = @import("RefScan.zig");
+const Expand = @import("../Expand.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
 const Accelerant = @import("Accelerant.zig");
@@ -77,6 +78,12 @@ low_steps: std.ArrayList(kernel.Step) = .empty,
 /// from here (`producerPremiseFormula`): they build their synthetic in source space, and the
 /// instance ProveTask adopts the model. See `demandUsing`.
 source_formulas: std.ArrayList(TermId) = .empty,
+/// SOURCE-SPACE AST (a model transfer only): the decl expanded WITHOUT the model, paired per
+/// step formula / arg / goal with the model-expanded AST the Walk drives (`sourceExpr`). The
+/// source twin of a step is elaborated from THIS — the source proof's own text — not from the
+/// model AST with the model switched off: a source symbol the model maps ONTO A DEFINE was
+/// already substituted by its parent-space body there, which is not source space at all.
+source_ast: ?*const std.AutoHashMapUnmanaged(*const ast.Expr, *const ast.Expr) = null,
 low_blocks: std.ArrayList(kernel.Block) = .empty,
 /// Walk StepOrdinal -> kernel StepId (main steps only; synthetics skip)
 ordinal_step: std.ArrayList(kernel.StepId) = .empty,
@@ -109,10 +116,6 @@ extra_reachable_steps: std.ArrayList(u32) = .empty,
 pending_tccs: std.ArrayList(Elab.Tcc) = .empty,
 /// closure facts surfaced by refined-RESULT funcs/consts (an available discharger).
 result_facts: std.ArrayList(TermId) = .empty,
-/// currently-expanding define locators — the cycle guard for `define TWO = TWO` and mutual
-/// define cycles. Reset per formula (an expansion always unwinds before the next one), so a
-/// leftover entry can't leak across formulae. Installed on every Elab this Prove builds.
-define_stack: std.ArrayList(InternPool.Index) = .empty,
 /// SCHEMA CONTEXT (set only when this Prove drives a schema INSTANCE): the bound args
 /// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
@@ -170,7 +173,6 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     e.no_relativize = self.pre_relativized; // synthetic instance: skip guard re-injection
     e.tccs = &self.pending_tccs; // refined-sort obligation sink (Step 3c)
     e.result_facts = &self.result_facts;
-    e.define_stack = &self.define_stack; // define-expansion cycle guard
     return e;
 }
 
@@ -179,6 +181,12 @@ fn elab(self: *Prove, w: *const Walk) Elab {
 /// already did). Used to build the accelerant producers' inputs under a model transfer
 /// (`demandUsing`) and to record `source_formulas` at lowering. Only meaningful when
 /// `self.model` is a real model; callers use the ordinary term otherwise.
+/// The source-space AST for a model-AST expression (itself when unchanged / not a transfer).
+fn sourceExpr(self: *const Prove, e: *const ast.Expr) *const ast.Expr {
+    const m = self.source_ast orelse return e;
+    return m.get(e) orelse e;
+}
+
 fn sourceElab(self: *Prove, w: *const Walk) Elab {
     var e = self.elab(w);
     e.model = .universe;
@@ -428,11 +436,17 @@ pub fn elaborateFactStatement(
         self.sink.add(fact.name.start, "'{s}' is a schema; its statement is not a ground formula", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
         return .failed;
     }
-    const formula = fact.formula;
+    // DEFINE EXPANSION first (see Engine/Expand): the statement is made define-free before its
+    // read pass or elaboration sees it.
+    const formula = switch (try Expand.expandFormula(self, h, file, fact.formula, .{ .model = model })) {
+        .ready => |f| f,
+        .suspended => return .suspended,
+        .failed => return .failed,
+    };
 
     // RESOLUTION ns = the file's UNIVERSE ns (source names resolve there, then applyModel
-    // redirects for a transfer). A fresh Walk (no proof-local binders) + fresh counter +
-    // empty define stack own the standalone-call scratch state.
+    // redirects for a transfer). A fresh Walk (no proof-local binders) + fresh counter own
+    // the standalone-call scratch state.
     const resolve_ns = try self.interner.namespace(.universe, file);
     const walk = try self.arena.create(Walk);
     walk.* = Walk.init(self.arena, self.interner, source, self.sink);
@@ -446,12 +460,9 @@ pub fn elaborateFactStatement(
 
     const fresh_counter = try self.arena.create(u32);
     fresh_counter.* = 0;
-    const define_stack = try self.arena.create(std.ArrayList(InternPool.Index));
-    define_stack.* = .empty;
 
     var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, pool, self.sink, source, walk, resolve_ns, fresh_counter);
     e.model = model; // remap source globals for a model transfer (identity for .universe)
-    e.define_stack = define_stack;
     const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -660,7 +671,8 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             // this step as a premise builds in source space — see `source_formulas`).
             const f_source: ?TermId = if (self.sourceSpaceAccelerants() and !self.inGuardWrapper(kb)) blk: {
                 var se = self.sourceElab(w);
-                break :blk (try se.requireProp(try se.elaborateExpr(c.formula), c.formula)).id;
+                const src_f = self.sourceExpr(c.formula);
+                break :blk (try se.requireProp(try se.elaborateExpr(src_f), src_f)).id;
             } else null;
             try self.appendMainStep(w, .{
                 .formula = f.id,
@@ -703,7 +715,8 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             // under a model transfer, also keep the goal in SOURCE space (see `source_formulas`).
             const goal_source: TermId = if (self.sourceSpaceAccelerants()) blk: {
                 var se = self.sourceElab(w);
-                break :blk (try se.requireProp(try se.elaborateExpr(c.goal), c.goal)).id;
+                const src_g = self.sourceExpr(c.goal);
+                break :blk (try se.requireProp(try se.elaborateExpr(src_g), src_g)).id;
             } else goal.id;
             try self.case_stack.append(self.ctx.arena, .{ .goal = goal.id, .goal_source = goal_source, .disj = disj, .loc = step.label.start });
         },
@@ -1641,7 +1654,9 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim,
 
     const args = try self.ctx.arena.create(Schema.SchemaArgs);
     args.* = .empty;
-    for (params, c.args) |p, arg_expr| {
+    for (params, c.args) |p, arg_raw| {
+        // in source space an arg is read from the source AST (see `source_ast`).
+        const arg_expr = if (source_space) self.sourceExpr(arg_raw) else arg_raw;
         const pname = tokName(p.name);
         if (p.arg_sorts.len == 0) {
             // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
@@ -1909,8 +1924,11 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     // model is `model_ix` unchanged (behavior-neutral).
     const effective_model = if (self.model == InternPool.Index.universe)
         model_ix
-    else
-        self.ctx.interner.composeModel(self.ctx.io, self.model, model_ix) catch return error.OutOfMemory;
+    else blk: {
+        const composed = self.ctx.interner.composeModel(self.ctx.io, self.model, model_ix) catch return error.OutOfMemory;
+        try self.ctx.copyModelDefineTargets(composed, self.model, model_ix); // define targets ride along
+        break :blk composed;
+    };
     // demand the transferred fact in namespace (effective_model, src_file). A distinct ambient
     // model composes to a distinct model → a distinct namespace → a distinct fact (each is its
     // own relativization); the in_flight/proven dedup below keys on that namespace, so it holds.
@@ -2057,7 +2075,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     const source_mode = self.sourceSpaceAccelerants();
     const goal_source: TermId = if (source_mode) blk: {
         var se = self.sourceElab(w);
-        break :blk elaborateGoal(&se, c.formula) catch |err| switch (err) {
+        break :blk elaborateGoal(&se, self.sourceExpr(c.formula)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed,
         };

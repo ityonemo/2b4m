@@ -36,6 +36,7 @@ const Context = @import("../Context.zig");
 const IdentKV = @import("../IdentKV.zig");
 const term = @import("../term.zig");
 const Elab = @import("ProveTask/Elab.zig");
+const Expand = @import("Expand.zig");
 const Walk = @import("ProveTask/Walk.zig");
 
 const FetchTask = @This();
@@ -261,25 +262,13 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },
-            // a DEFINE (transparent macro). We do NOT reify its body — a define is expanded
-            // IN PLACE by Elab. But we DO (a) demand its body's transitive reference closure
-            // here (so by the time an expansion happens every leaf name is resolved — Elab
-            // cannot suspend), following remote defines recursively; then (b) publish a thin
-            // LOCATOR so the NAME resolves in IdentKV (satisfying the read-pass ident demand).
-            .define => |d| {
-                demandDefineClosure(self, h, task.file, d, task.name) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return, // suspended on a body ref, or diagnosed
-                };
-                rejectAliasShapedDefine(self, h, task.file, source, d) catch |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Unresolved => return, // diagnosed (the closure above resolved every ref)
-                };
-                _ = try self.idents.publish(self.io, key, .{ .define = .{
-                    .name = task.name,
-                    .file = task.file,
-                    .loc = name_tok.start,
-                } });
+            // a DEFINE is a MACRO, never an identifier: the expansion pass (Engine/Expand)
+            // substitutes it away before any AST reaches a read pass, so no demand for its
+            // NAME can arise from an expression. One reaching here came from a position where
+            // a define cannot stand (a model mapping, an alias target of a non-expression
+            // walk) — diagnose the misuse at the demand site. No publish, ever.
+            .define => {
+                try demandDiag(self, task, "'{s}' is a define — it expands where it is used and cannot be named here", .{self.interner.stringBytes(task.name)});
                 return;
             },
         }
@@ -416,127 +405,6 @@ fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, s
     return ix;
 }
 
-/// Demand the TRANSITIVE REFERENCE CLOSURE of a define's body. A `define` is a transparent
-/// macro expanded in place by Elab, which CANNOT suspend — so every leaf name its body
-/// (recursively, through nested/remote defines) reaches must be resolved BEFORE any
-/// expansion. This walk demands each free reference (following imports to the right file);
-/// a reference that is itself a define is recursed into (under ITS home file). Suspends on
-/// the FIRST unresolved name (idempotent: each resume re-walks and gets one further).
-/// `visited` cycle-guards `define TWO = TWO` / mutual define cycles.
-fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index, d: anytype, name: InternPool.StrId) ResolveError!void {
-    // ITERATIVE define-closure walk (was mutual recursion demandDefineBody↔Ref↔Binders) — a deeply
-    // nested define body can no longer overflow the C stack. A work-stack of `(expr, file, params)`
-    // frames: each expr either demands a leaf ref or pushes its sub-exprs; a binder extends `params`
-    // (the locals to skip); following a cited define pushes ITS body under its OWN file+params.
-    // `visited` cycle-guards define→define chains. All scratch (stack, `visited`, per-binder
-    // `extended`) is a GPA-backed arena, reclaimed on return. A `demandTok` miss returns
-    // `error.Unresolved` (propagated): the FetchTask suspends + re-runs, restarting this walk.
-    var closure_scratch: std.heap.ArenaAllocator = .init(self.gpa);
-    defer closure_scratch.deinit();
-    const scratch = closure_scratch.allocator();
-
-    const Frame = struct { e: *const ast.Expr, file: InternPool.Index, params: []const InternPool.StrId };
-    var visited: std.ArrayList(DefineSite) = .empty;
-    try visited.append(scratch, .{ .file = file, .name = name });
-    var stack: std.ArrayList(Frame) = .empty;
-    try stack.append(scratch, .{ .e = d.value, .file = file, .params = try paramNames(scratch, d.params) });
-
-    while (stack.pop()) |f| {
-        switch (f.e.*) {
-            .name => |tok| try demandDefineRef(self, h, f.file, tok, f.params, &visited, &stack, scratch),
-            .call => |c| {
-                try demandDefineRef(self, h, f.file, c.callee, f.params, &visited, &stack, scratch);
-                for (c.args) |arg| try stack.append(scratch, .{ .e = arg, .file = f.file, .params = f.params });
-            },
-            .binary => |b| {
-                try stack.append(scratch, .{ .e = b.lhs, .file = f.file, .params = f.params });
-                try stack.append(scratch, .{ .e = b.rhs, .file = f.file, .params = f.params });
-            },
-            .not => |n| try stack.append(scratch, .{ .e = n.operand, .file = f.file, .params = f.params }),
-            .quant => |q| try demandDefineBinders(self, h, f.file, q.binders, q.body, f.params, &stack, scratch),
-            .lambda => |l| try demandDefineBinders(self, h, f.file, l.binders, l.body, f.params, &stack, scratch),
-        }
-    }
-}
-
-const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
-
-/// The param NAMES a closure walk treats as locals. Accepts a define's bare-name params
-/// (`lexer.Token`) and a guarded func's sorted params (`ast.Binder`) alike — the walk only
-/// ever needs the names.
-fn paramNames(scratch: std.mem.Allocator, params: anytype) std.mem.Allocator.Error![]const InternPool.StrId {
-    const out = try scratch.alloc(InternPool.StrId, params.len);
-    for (params, out) |p, *o| o.* = if (@TypeOf(p) == ast.Binder) p.name.name else p.name;
-    return out;
-}
-
-/// A define that merely FORWARDS an opaque symbol — `define f(p1, …, pn) = ns.g(p1, …, pn)`
-/// (each arg the same-position param, nothing else) or `define X = ns.C` — is an ALIAS written
-/// as a macro. That is the wrong tool: an alias binds the local name to the origin's identity
-/// (`pred f = ns.g`), while a define mints a macro whose expansion merely mentions it — so the
-/// name has a different KIND (`.define`, not `.pred`), which downstream aliases (`pred f =
-/// this.f`) then rightly refuse. Hard error (like every diagnostic) unless --draft. A define
-/// forwarding another DEFINE is left alone: there is no alias form for a macro (yet).
-fn rejectAliasShapedDefine(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, d: anytype) ResolveError!void {
-    if (self.verify.draft) return;
-    const callee: lexer.Token = switch (d.value.*) {
-        .name => |tok| if (d.params.len == 0) tok else return,
-        .call => |c| blk: {
-            if (c.args.len != d.params.len) return;
-            for (c.args, d.params) |arg, param| {
-                if (arg.* != .name) return;
-                if (arg.name.qualifier != InternPool.Index.none or arg.name.name != param.name) return;
-            }
-            break :blk c.callee;
-        },
-        else => return,
-    };
-    // a param in name position is the define's own local, not a forward.
-    for (d.params) |param| if (callee.qualifier == InternPool.Index.none and callee.name == param.name) return;
-    const target = try demandTok(self, h, file, callee); // resolved by the closure walk — no suspend
-    const keyword: []const u8 = switch (self.interner.keyOf(target)) {
-        .constant => "const",
-        .func => "func",
-        .pred => "pred",
-        else => return, // a define forwarding a define (or a sort/import — elaboration diagnoses)
-    };
-    self.sink.add(d.name.start, "define '{s}' only forwards '{s}' — it is an alias, not a macro; write `{s} {s} = {s}` (--draft allows)", .{
-        source[d.name.start..d.name.end], source[callee.start..callee.end], keyword, source[d.name.start..d.name.end], source[callee.start..callee.end],
-    }) catch return error.OutOfMemory;
-    return error.Unresolved;
-}
-
-/// A binder scope: demand each binder's SORT/GUARD (global refs), then push the body frame with an
-/// EXTENDED `params` (binder names shadow → skipped as locals in the body). Helper for the walk.
-fn demandDefineBinders(self: *Context, h: *Engine.Handle, file: InternPool.Index, binders: []const ast.Binder, body: *const ast.Expr, params: []const InternPool.StrId, stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
-    for (binders) |b| {
-        _ = try demandTok(self, h, file, b.sort);
-        if (b.guard) |g| _ = try demandTok(self, h, file, g);
-    }
-    const extended = try scratch.alloc(InternPool.StrId, params.len + binders.len);
-    @memcpy(extended[0..params.len], params);
-    for (binders, extended[params.len..]) |b, *o| o.* = b.name.name;
-    try stack.append(scratch, .{ .e = body, .file = file, .params = extended });
-}
-
-/// One reference token in a define body. A param/binder-local bare name is skipped. Else resolve
-/// its target (qualifier → import) + demand it; if it names a define, PUSH its body onto `stack`
-/// (under the target's file + params) to continue the walk. Cycle-guarded via `visited`.
-fn demandDefineRef(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lexer.Token, params: []const InternPool.StrId, visited: *std.ArrayList(DefineSite), stack: anytype, scratch: std.mem.Allocator) ResolveError!void {
-    if (tok.qualifier == InternPool.Index.none) {
-        for (params) |p| if (p == tok.name) return; // a define param / binder local
-    }
-    const target = try demandTok(self, h, file, tok);
-    if (self.interner.keyOf(target) == .define) {
-        const dfile = self.interner.keyOf(target).define.file;
-        for (visited.items) |v| if (v.file == dfile and v.name == tok.name) return; // cycle
-        const dfid = self.pool_file.get(dfile).?;
-        const ddecl = self.declOf(dfid, tok.name).?;
-        try visited.append(scratch, .{ .file = dfile, .name = tok.name });
-        try stack.append(scratch, .{ .e = ddecl.define.value, .file = dfile, .params = try paramNames(scratch, ddecl.define.params) });
-    }
-}
-
 /// Resolve a (possibly `ns.`-qualified) token to its pool Index, demanding the import +
 /// (if qualified) parsing the target file. Suspends on the first miss. Kind-AGNOSTIC — the
 /// caller inspects the returned Index (a define recurses; anything else is just demanded).
@@ -622,8 +490,16 @@ fn guardParamName(self: *Context, i: usize) std.mem.Allocator.Error!InternPool.S
 /// Elab elaborates the precondition — the params pushed as expression-local binders at their
 /// carrier sorts — and `reify` serializes it under the InternPool write-mutex.
 fn reifyGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, name: InternPool.StrId, params: []const ast.Binder, sig: InternPool.Index, requires: *const ast.Expr) ResolveError!InternPool.TermOff {
-    // (a) demand the precondition's reference closure (like a define body) so Elab won't suspend.
-    try demandDefineClosure(self, h, file, .{ .value = requires, .params = params }, name);
+    // (a) DEFINE-EXPAND the precondition with every free global SYMBOLIZED (resolved to its
+    // identity, demanded — a miss suspends this FetchTask; resume re-runs `produce`), so the
+    // throwaway Elab below needs no read pass of its own.
+    _ = name;
+    const pnames = try self.arena.alloc(InternPool.StrId, params.len);
+    for (params, pnames) |b, *o| o.* = b.name.name;
+    const body = switch (try Expand.expandFormula(self, h, file, requires, .{ .scope = pnames, .symbolize_root = true })) {
+        .ready => |x| x,
+        .suspended, .failed => return error.Unresolved,
+    };
 
     // (b) elaborate the precondition to a scratchpad term with the params bound to `#gN` fvars.
     const ns = try self.interner.namespace(.universe, file);
@@ -631,13 +507,15 @@ fn reifyGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source:
     var walk: Walk = Walk.init(self.arena, self.interner, source, self.sink);
     var fresh: u32 = 0;
     var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, &scratch, self.sink, source, &walk, ns, &fresh);
-    const arg_ixs = self.interner.keyOf(sig).sig.args;
+    // COPY the sig's arg slice: it aliases `extra`, which `guardParamName`'s interning below can
+    // reallocate mid-loop (the stale-slice trap).
+    const arg_ixs = try self.arena.dupe(InternPool.Index, self.interner.keyOf(sig).sig.args);
     for (params, arg_ixs, 0..) |b, arg_ix, i| {
         const carrier: term.SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(arg_ix)));
         const fv = try guardParamName(self, i);
         e.pushBinder(b.name.name, carrier, fv) catch return error.OutOfMemory;
     }
-    const typed = e.elaborateExpr(requires) catch |err| switch (err) {
+    const typed = e.elaborateExpr(body) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         // a malformed precondition (bad sort, unknown name) is DIAGNOSED into the sink by Elab;
         // yield without publishing (demanders wedge — same red-phase mode as any diagnosed miss).

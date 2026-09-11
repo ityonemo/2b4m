@@ -43,6 +43,7 @@ const Elab = @import("ProveTask/Elab.zig");
 const Prove = @import("ProveTask/Prove.zig");
 const Schema = @import("ProveTask/Schema.zig");
 const Accelerant = @import("ProveTask/Accelerant.zig");
+const Expand = @import("Expand.zig");
 
 const ProveTask = @This();
 
@@ -264,7 +265,6 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
     e.model = st.prove.model; // remap source globals for a model transfer (identity else)
     e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
-    e.define_stack = &st.prove.define_stack; // define-expansion cycle guard
     // a guarded/refined application in the STATEMENT owes its obligation just as one in a step
     // does — wire the same sinks so `dischargeGoalTccs` (below) proves them against the empty
     // statement context (a self-relativized `forall d; d != ZERO -> …` discharges; a bare
@@ -422,7 +422,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         return null;
     };
     const name_tok = ast.declName(decl);
-    const d: State.Decl = switch (decl.*) {
+    const raw: State.Decl = switch (decl.*) {
         .axiom => |a| switch (a) {
             .local => |f| blk: {
                 // a bare axiom is a leaf; a SCHEMA (params != null) cited as a fact is misuse.
@@ -470,6 +470,34 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
             return null;
         },
     };
+    // DEFINE EXPANSION (the lifecycle's first step — see Engine/Expand): the decl's AST is made
+    // define-free BEFORE its read pass or elaboration ever sees it. A suspend returns null with
+    // `task.st` unset, so the resume re-locates and re-expands (idempotent).
+    self.sink.current_file = @intFromEnum(fid);
+    const d: State.Decl = switch (raw) {
+        .axiom => |a| switch (try Expand.expandFormula(self, h, task.file, a.formula, .{ .model = task.model })) {
+            .ready => |f| .{ .axiom = .{ .formula = f } },
+            .suspended, .failed => return null,
+        },
+        .hole => |hh| switch (try Expand.expandFormula(self, h, task.file, hh.formula, .{ .model = task.model })) {
+            .ready => |f| .{ .hole = .{ .formula = f, .name = hh.name } },
+            .suspended, .failed => return null,
+        },
+        .theorem => |t| switch (try Expand.expandProof(self, h, task.file, t.formula, t.steps, .{ .model = task.model })) {
+            .ready => |pr| .{ .theorem = .{ .formula = pr.formula, .steps = pr.steps } },
+            .suspended, .failed => return null,
+        },
+        .instance => unreachable, // built by buildInstanceState
+    };
+    // a TRANSFER also keeps the SOURCE-space AST (expanded with the model off) paired per step,
+    // for the accelerant producers' source twins (see Prove.source_ast).
+    const source_ast: ?*const std.AutoHashMapUnmanaged(*const ast.Expr, *const ast.Expr) = if (task.model != .universe and task.model != InternPool.Index.none and d == .theorem)
+        switch (try Expand.expandProof(self, h, task.file, raw.theorem.formula, raw.theorem.steps, .{})) {
+            .ready => |src| try Expand.pairSource(self, .{ .formula = d.theorem.formula, .steps = d.theorem.steps }, src),
+            .suspended, .failed => return null,
+        }
+    else
+        null;
     const st = try self.arena.create(State);
     const walk = try self.arena.create(Walk);
     walk.* = Walk.init(self.arena, self.interner, source, self.sink);
@@ -479,6 +507,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     const resolve_ns = try self.interner.namespace(.universe, task.file);
     const prove = try Prove.init(self, h, source, task.file, resolve_ns);
     prove.model = task.model;
+    prove.source_ast = source_ast;
     st.* = .{
         .source = source,
         .ns = ns,
@@ -505,13 +534,32 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     // has steps (re-checked at this instance); an axiom-schema has none (trusted monomorph).
     const schema_decl = self.declOf(fid, inst.schema_name).?;
     const schema_fact = ast.factOf(schema_decl).?;
-    const schema_steps: ?[]const ast.Step = if (schema_decl.* == .theorem) schema_decl.theorem.local.steps else null;
+    // DEFINE EXPANSION of the schema's body + steps in the SCHEMA's file (its params shadow).
+    self.sink.current_file = @intFromEnum(fid);
+    const schema_formula: *const ast.Expr, const schema_steps: ?[]const ast.Step = if (schema_decl.* == .theorem)
+        switch (try Expand.expandProof(self, h, task.file, schema_fact.formula, schema_decl.theorem.local.steps, .{ .scope = inst.params, .model = task.model })) {
+            .ready => |pr| .{ pr.formula, pr.steps },
+            .suspended, .failed => return null,
+        }
+    else switch (try Expand.expandFormula(self, h, task.file, schema_fact.formula, .{ .scope = inst.params, .model = task.model })) {
+        .ready => |f| .{ f, null },
+        .suspended, .failed => return null,
+    };
+    // a proof-carrying schema under a TRANSFER keeps its source-space AST twin (Prove.source_ast).
+    const inst_source_ast: ?*const std.AutoHashMapUnmanaged(*const ast.Expr, *const ast.Expr) = if (task.model != .universe and task.model != InternPool.Index.none and schema_steps != null)
+        switch (try Expand.expandProof(self, h, task.file, schema_fact.formula, schema_decl.theorem.local.steps, .{ .scope = inst.params })) {
+            .ready => |src| try Expand.pairSource(self, .{ .formula = schema_formula, .steps = schema_steps.? }, src),
+            .suspended, .failed => return null,
+        }
+    else
+        null;
 
     // RESOLUTION ns is the schema file's UNIVERSE ns; a model instance remaps source syms
     // via prove.model + applyModel (so the monomorphized body is in target terms).
     const resolve_ns = try self.interner.namespace(.universe, task.file);
     const prove = try Prove.init(self, h, source, task.file, resolve_ns);
     prove.model = task.model;
+    prove.source_ast = inst_source_ast;
     prove.pre_relativized = inst.synthetic; // delaborated formulas: no guard re-injection
 
     // rebuild the live SchemaArgs by copying each durable arg into the task's scratchpad.
@@ -562,7 +610,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     // model that also remaps a symbol named `good` remaps the SOURCE's `good`, not the target
     // sort's refinement). The schema itself (parsed or a source-space synthetic) says nothing
     // about guards. Nothing is injected outside a model transfer.
-    var inst_formula: *const ast.Expr = schema_fact.formula;
+    var inst_formula: *const ast.Expr = schema_formula;
     var inst_steps: ?[]const ast.Step = schema_steps;
     if (task.model != InternPool.Index.none and task.model != .universe) {
         var b: Accelerant.Builder = .{ .arena = self.arena, .interner = self.interner, .pool = prove.pool, .loc = schema_fact.name.start };
@@ -607,7 +655,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
                     const blk_label = prove.freshNamed("guard-assume") catch return error.OutOfMemory;
                     var lvl: std.ArrayList(ast.Step) = .empty;
                     try lvl.append(self.arena, try b.assumeStep(blk_label, guards.items[j], body));
-                    var exported = schema_fact.formula;
+                    var exported = schema_formula;
                     var k = guards.items.len;
                     while (k > j) {
                         k -= 1;

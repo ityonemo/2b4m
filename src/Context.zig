@@ -116,8 +116,26 @@ holes_reached: std.ArrayList(HoleDecl) = .empty,
 /// report, per hole, which theorems rest on it ("rested on by: …"). Hole = axiom everywhere
 /// else; this is a pure reporting side-channel, never consulted for the proof verdict.
 hole_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.StrId) = .empty,
+/// DEFINE EXPANSION (Engine/Expand): the hygienic-binder counter (`name#N` — program-wide, so
+/// two expansions nested by substitution never rename to the same binder) and the set of
+/// defines already diagnosed as an alias-in-disguise (once each).
+expand_fresh: u32 = 0,
+expand_linted: std.AutoHashMapUnmanaged(DefineKey, void) = .empty,
+/// MODEL MAPPINGS ONTO DEFINES: `model M { src.UNIT: DOUBLED }` where `DOUBLED` is a define. A
+/// define has no pool Index, so it cannot sit in M's overlay; instead the mapping is recorded
+/// here — (M, source symbol) → the define — and the expansion pass, expanding a source proof
+/// under M, treats that source symbol AS the define (substituting its body, in the parent
+/// space). Filled by ModelTask at publish; composed models copy their inner's entries
+/// (`copyModelDefineTargets`), and the pass walks a model's parent chain for the rest.
+model_define_targets: std.AutoHashMapUnmanaged(ModelDefineKey, DefineKey) = .empty,
+
+pub const ModelDefineKey = struct { model: InternPool.Index, src: InternPool.Index };
 
 pub const HoleDecl = struct { name: InternPool.StrId, file: InternPool.Index, loc: u32 };
+
+/// A define's identity (its home file + name) — the key of the expansion pass's per-define
+/// "alias written as a macro" lint (diagnosed once, at the first use).
+pub const DefineKey = struct { file: InternPool.Index, name: InternPool.StrId };
 
 pub const ParseState = union(enum) {
     unparsed,
@@ -170,6 +188,36 @@ pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem
     const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
     if (!gop.found_existing) gop.value_ptr.* = decl;
     return !gop.found_existing;
+}
+
+/// The define a source symbol maps onto under `model` (or a model up its parent chain — a
+/// composed model's parent is its outer model, whose entries apply to every symbol the inner
+/// leaves alone). Null = no define mapping.
+pub fn modelDefineTarget(self: *const Context, model: InternPool.Index, src: InternPool.Index) ?DefineKey {
+    var cur = model;
+    while (cur != InternPool.Index.none and cur != .universe) {
+        if (self.model_define_targets.get(.{ .model = cur, .src = src })) |d| return d;
+        const m = self.interner.keyOf(cur).model;
+        if (m.parent == cur) break;
+        cur = m.parent;
+    }
+    return null;
+}
+
+/// After `composed = outer ∘ inner`: the inner's define mappings apply to the composed model
+/// as-is (its sources are the composed model's sources); an outer define mapping of a symbol
+/// the inner maps ONTO (`inner: s → t`, `outer: t → D`) applies to `s`. Outer mappings of
+/// symbols the inner leaves alone are found through the parent chain (composed.parent = outer).
+pub fn copyModelDefineTargets(self: *Context, composed: InternPool.Index, outer: InternPool.Index, inner: InternPool.Index) std.mem.Allocator.Error!void {
+    var it = self.model_define_targets.iterator();
+    var pending: std.ArrayList(struct { key: ModelDefineKey, def: DefineKey }) = .empty;
+    while (it.next()) |e| {
+        if (e.key_ptr.model == inner) try pending.append(self.arena, .{ .key = .{ .model = composed, .src = e.key_ptr.src }, .def = e.value_ptr.* });
+    }
+    for (self.interner.keyOf(inner).model.overlay) |m| {
+        if (self.modelDefineTarget(outer, m.tgt)) |d| try pending.append(self.arena, .{ .key = .{ .model = composed, .src = m.src }, .def = d });
+    }
+    for (pending.items) |p| try self.model_define_targets.put(self.arena, p.key, p.def);
 }
 
 /// Resolve a decl by NAME in a file (registry lookup; null = no such decl). Replaces the

@@ -55,9 +55,8 @@ pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.prop));
 
 arena: Allocator,
 io: std.Io,
-/// the owning Context — read-only here, consulted ONLY to resolve a `.define` locator to
-/// its AST decl (`declOf`) for in-place macro expansion. Every other resolution goes
-/// through `idents`/`interner`.
+/// the owning Context — read-only here (the define-expansion pass that once ran through Elab
+/// now runs BEFORE elaboration, over the AST; see Engine/Expand).
 ctx: *Context,
 interner: *InternPool,
 idents: *IdentKV,
@@ -76,20 +75,6 @@ fresh_counter: *u32,
 /// value param resolves to its term, a generator param BETA-REDUCES at a call. Set by the
 /// instance ProveTask (post-init) on the Elab it uses for the schema body/steps.
 schema_args: ?*const Schema.SchemaArgs = null,
-/// DEFINE-EXPANSION param bindings (param name -> the caller's already-elaborated arg term),
-/// installed while elaborating a define's BODY (under the define's home namespace). Consulted
-/// in name/call position BEFORE the global lookup — a param resolves to its bound arg term.
-/// Save/restored around each `expandDefine`, so nested/remote defines each see their own map.
-/// Distinct from `schema_args` (schemas may have generator params; a define's are value-only).
-define_args: ?*const std.AutoHashMapUnmanaged(StrId, Typed) = null,
-/// currently-expanding defines (by their locator Index), the cycle guard for a define whose
-/// body reaches itself. Owned by the driving Prove so it persists across the Elabs a proof
-/// builds; null = not tracked (a throwaway sort-resolution Elab, which sees no defines).
-define_stack: ?*std.ArrayList(InternPool.Index) = null,
-/// The define expansion in progress (outermost): every diagnostic raised while elaborating a
-/// define's BODY is anchored at this USE-SITE offset and prefixed with the define's name —
-/// the body's own offsets index the define's home file, not the file being diagnosed.
-expansion: ?struct { loc: u32, name: StrId } = null,
 /// MODEL this elaboration resolves THROUGH (Step 13): when set, every global identifier
 /// resolved here is filtered `interner.applyModel(model, source)` — so proving a source
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
@@ -418,11 +403,6 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
         return self.elaborateSymRef(tok, target.ns, target.base);
     }
     const name = tokName(tok);
-    // 0. define parameter (while expanding a define body): a param SHADOWS everything in the
-    // body — it must win over proof-local/expression-local binders that happen to share its
-    // spelling (the capture the `define_no_capture` fixture guards). The bound value is the
-    // caller's already-elaborated arg term, so it carries the caller's own binder identities.
-    if (self.define_args) |da| if (da.get(name)) |bound| return bound;
     // 1. expression-local quantifier binders (innermost wins)
     var i = self.scope.items.len;
     while (i > 0) {
@@ -445,7 +425,7 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
         .value => |v| return .{ .id = v.id, .sort = v.sort },
         .lambda => return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
     };
-    // 4. global (define params were consulted at step 0 — they shadow everything)
+    // 4. global
     return self.elaborateSymRef(tok, self.ns, name);
 }
 
@@ -472,7 +452,6 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
         .constant => return self.applyResolved(sym, &.{}),
         .sort => return self.fail(tok.start, "'{s}' is a sort, not a value", .{self.text(tok)}),
         .import => return self.fail(tok.start, "'{s}' is a namespace, not a value", .{self.text(tok)}),
-        .define => return self.expandDefine(sym, tok, &.{}),
         else => return self.fail(tok.start, "'{s}' cannot appear in an expression", .{self.text(tok)}),
     }
 }
@@ -483,11 +462,6 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         try self.resolveQualified(c.callee)
     else
         Qualified{ .ns = self.ns, .base = tokName(c.callee) };
-    // a define VALUE param in call position is an error (params are value-only, not callable);
-    // consulted before the global lookup so a param shadowing a global func still errors.
-    if (!dotted) if (self.define_args) |da| if (da.get(target.base) != null) {
-        return self.fail(c.callee.start, "define parameter '{s}' is not callable", .{self.text(c.callee)});
-    };
     // schema GENERATOR param in call position: beta-reduce (only a bare name is a param).
     if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base)) |arg| switch (arg) {
         .lambda => |lam| return self.applyGeneratorParam(c, lam),
@@ -498,7 +472,6 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
     };
     const callable = switch (self.interner.keyOf(sym)) {
         .func, .pred => |cb| cb,
-        .define => return self.expandDefine(sym, c.callee, c.args),
         else => return self.fail(c.callee.start, "'{s}' is not callable", .{self.text(c.callee)}),
     };
     const sig = self.interner.keyOf(callable.sig).sig;
@@ -530,59 +503,6 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
     // arg's obligation is reported before the outer one.
     try self.emitGuardObligation(callable.guard, arg_ids, c.callee.start);
     return self.applyResolved(sym, arg_ids);
-}
-
-/// Expand a `define` IN PLACE (transparent macro). `sym` is its `.define` LOCATOR Index; the
-/// authoritative params/body come from the AST registry (`ctx.declOf(home_file, name)`). Args
-/// (empty for a bare-name use) are elaborated in the CALLER's context, bound to the params,
-/// then the BODY is elaborated under the define's HOME namespace (so its own qualifiers
-/// resolve against the define's imports) with the param bindings in scope. Cycle-guarded.
-fn expandDefine(self: *Elab, sym: InternPool.Index, callee: lexer.Token, args: []const *const ast.Expr) Error!Typed {
-    const loc = self.interner.keyOf(sym).define;
-    // cycle guard: a define whose body reaches itself.
-    if (self.define_stack) |stk| {
-        for (stk.items) |seen| if (seen == sym) {
-            return self.fail(callee.start, "cyclic define '{s}'", .{self.interner.stringBytes(loc.name)});
-        };
-    }
-    const fid = self.ctx.pool_file.get(loc.file) orelse {
-        return self.fail(callee.start, "internal: define '{s}' in an undiscovered file", .{self.interner.stringBytes(loc.name)});
-    };
-    const decl = self.ctx.declOf(fid, loc.name) orelse {
-        return self.fail(callee.start, "internal: define '{s}' vanished from the AST registry", .{self.interner.stringBytes(loc.name)});
-    };
-    const d = decl.define;
-    if (args.len != d.params.len) {
-        return self.fail(callee.start, "'{s}' expects {d} argument(s), got {d}", .{ self.text(callee), d.params.len, args.len });
-    }
-
-    // elaborate each arg in the CALLER's context (current ns, scope, define_args); bind to
-    // its param name. No declared sort to check against — the body's own elaboration types
-    // every use of the bound arg (a mismatch is diagnosed there, anchored at this use site).
-    const home_ns = try self.interner.namespace(self.model, loc.file);
-    var bindings: std.AutoHashMapUnmanaged(StrId, Typed) = .empty;
-    for (d.params, args) |p, arg| {
-        const typed = try self.elaborateExpr(arg);
-        try bindings.put(self.arena, try self.localName(p), typed);
-    }
-
-    // elaborate the BODY under the home namespace with the param bindings, restoring on exit.
-    const saved_ns = self.ns;
-    const saved_args = self.define_args;
-    const saved_expansion = self.expansion;
-    self.ns = home_ns;
-    self.define_args = &bindings;
-    // the OUTERMOST use site anchors every diagnostic raised inside the body (its offsets
-    // belong to the define's home file, not to the file this proof is rendered against).
-    if (self.expansion == null) self.expansion = .{ .loc = callee.start, .name = loc.name };
-    if (self.define_stack) |stk| try stk.append(self.arena, sym);
-    defer {
-        self.ns = saved_ns;
-        self.define_args = saved_args;
-        self.expansion = saved_expansion;
-        if (self.define_stack) |stk| _ = stk.pop();
-    }
-    return self.elaborateExpr(d.value);
 }
 
 /// A GUARDED function's precondition, instantiated at a call's actual arguments, becomes a
@@ -675,7 +595,7 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     const base = try self.resolveSortTok(b.sort);
     const g = b.guard orelse return base;
     const gname = try self.localName(g);
-    const gpred = self.lookupIdent(self.ns, gname) orelse {
+    const gpred = self.resolveSymbolTok(g) orelse self.lookupIdent(self.ns, gname) orelse {
         return self.fail(g.start, "sort refinement '{s}' is not a predicate in scope", .{self.text(g)});
     };
     const carrier = self.interner.carrierOf(@enumFromInt(@intFromEnum(base)));
@@ -797,13 +717,9 @@ fn lookupIdent(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPool.Index
 /// ALREADY-FETCHED global. (An unfetched global can slip — nonexistence is unknowable
 /// without fetching; a known gap vs the eager checker, acceptable in the red phase.)
 ///
-/// EXCEPTION — DEFINE EXPANSION (`define_args != null`): a define is an eager macro whose
-/// body's own binders (`define divides(d,n) = exists k: Nat; …`) are freshened to hygienic
-/// `#N` fvars on expansion, so they CANNOT capture; a collision with a caller's same-spelled
-/// variable (`k`) is not a user error — the define author can't know the caller's scope. Skip
-/// the stylistic shadow check for macro-internal binders (capture is already impossible).
+/// A define body's binders arrive already renamed to hygienic `name#N` by the expansion
+/// pass (Engine/Expand), so they never collide here.
 fn checkNoShadow(self: *Elab, name: StrId, tok: lexer.Token) Error!void {
-    if (self.define_args != null) return;
     for (self.scope.items) |entry| {
         if (entry.name == name) {
             return self.fail(tok.start, "'{s}' shadows an enclosing variable; choose a fresh name", .{self.text(tok)});
@@ -888,7 +804,11 @@ fn text(self: *const Elab, t: lexer.Token) []const u8 {
     // carries the real interned name — render that so a diagnostic on generated code names the
     // identifier instead of an empty slice. Real tokens span their source text.
     if (t.tag == .symbol) return self.interner.stringBytes(self.interner.nameOf(t.name));
-    if (t.start == t.end and t.name != InternPool.Index.none) return self.interner.stringBytes(t.name);
+    if (t.start == t.end and t.name != InternPool.Index.none) {
+        // a hygienic `name#N` (an expanded define's binder) renders as the name the author wrote.
+        const bytes = self.interner.stringBytes(t.name);
+        return bytes[0 .. std.mem.indexOfScalar(u8, bytes, '#') orelse bytes.len];
+    }
     return self.source[t.start..t.end];
 }
 
@@ -904,11 +824,6 @@ pub fn exprLoc(e: *const ast.Expr) u32 {
 }
 
 fn fail(self: *Elab, offset: u32, comptime fmt: []const u8, args: anytype) Error {
-    if (self.expansion) |x| {
-        const msg = std.fmt.allocPrint(self.arena, fmt, args) catch return error.OutOfMemory;
-        self.sink.add(x.loc, "in expansion of define '{s}': {s}", .{ self.interner.stringBytes(x.name), msg }) catch return error.OutOfMemory;
-        return error.Recover;
-    }
     self.sink.add(offset, fmt, args) catch return error.OutOfMemory;
     return error.Recover;
 }
