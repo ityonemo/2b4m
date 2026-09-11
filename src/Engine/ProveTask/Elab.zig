@@ -407,6 +407,8 @@ pub fn requireProp(self: *Elab, typed: Typed, e: *const ast.Expr) Error!Typed {
 // -- name resolution -------------------------------------------------------------------
 
 fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
+    // a resolved-symbol token is a global by construction — never a local of any kind.
+    if (tok.tag == .symbol) return self.elaborateSymRef(tok, self.ns, tok.name);
     if (tok.qualifier != InternPool.Index.none) {
         const target = try self.resolveQualified(tok);
         return self.elaborateSymRef(tok, target.ns, target.base);
@@ -446,7 +448,7 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
 /// A resolved global in NAME position (no written arguments): a constant or a nullary
 /// func/pred applies bare; anything wanting arguments (or that isn't a value) errors.
 fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: StrId) Error!Typed {
-    const sym = self.lookupIdent(ns, name) orelse {
+    const sym = self.resolveSymbolTok(tok) orelse self.lookupIdent(ns, name) orelse {
         return self.fail(tok.start, "unknown identifier '{s}'", .{self.text(tok)});
     };
     switch (self.interner.keyOf(sym)) {
@@ -472,7 +474,7 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
 }
 
 fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
-    const dotted = c.callee.qualifier != InternPool.Index.none;
+    const dotted = c.callee.tag != .symbol and c.callee.qualifier != InternPool.Index.none;
     const target = if (dotted)
         try self.resolveQualified(c.callee)
     else
@@ -487,7 +489,7 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         .lambda => |lam| return self.applyGeneratorParam(c, lam),
         .value => return self.fail(c.callee.start, "schema parameter '{s}' takes no arguments", .{self.text(c.callee)}),
     };
-    const sym = self.lookupIdent(target.ns, target.base) orelse {
+    const sym = self.resolveSymbolTok(c.callee) orelse self.lookupIdent(target.ns, target.base) orelse {
         return self.fail(c.callee.start, "unknown identifier '{s}'", .{self.text(c.callee)});
     };
     const callable = switch (self.interner.keyOf(sym)) {
@@ -752,6 +754,10 @@ pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
     // etc.) — never a userland-declared/fetched sort. Its name string is reserved, so the
     // check is an integer comparison.
     if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return prop_sort;
+    if (self.resolveSymbolTok(tok)) |sym| switch (self.interner.keyOf(sym)) {
+        .sort => return @enumFromInt(@intFromEnum(sym)),
+        else => return self.fail(tok.start, "'{s}' is not a sort", .{self.text(tok)}),
+    };
     const target = if (tok.qualifier != InternPool.Index.none)
         try self.resolveQualified(tok)
     else
@@ -871,6 +877,15 @@ pub fn lookupIdentPub(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPoo
     return self.lookupIdent(ns, name);
 }
 
+/// A `.symbol` token's identity (see lexer.Token.Tag.symbol): the Index it carries, under the
+/// ambient model like any resolved name — or EXACT (qualifier `.universe`: the parent-space
+/// symbol, no model). Null for an ordinary name token.
+pub fn resolveSymbolTok(self: *const Elab, tok: lexer.Token) ?InternPool.Index {
+    if (tok.tag != .symbol) return null;
+    if (tok.qualifier == .universe) return tok.name;
+    return self.interner.applyModel(self.model, tok.name);
+}
+
 /// Current expr-local scope depth — pair with `scopeTruncate` to bracket lambda binders.
 pub fn scopeMark(self: *const Elab) usize {
     return self.scope.items.len;
@@ -891,6 +906,7 @@ fn text(self: *const Elab, t: lexer.Token) []const u8 {
     // A SYNTHETIC token (accelerant-generated AST) has an empty source span (start == end) but
     // carries the real interned name — render that so a diagnostic on generated code names the
     // identifier instead of an empty slice. Real tokens span their source text.
+    if (t.tag == .symbol) return self.interner.stringBytes(self.interner.nameOf(t.name));
     if (t.start == t.end and t.name != InternPool.Index.none) return self.interner.stringBytes(t.name);
     return self.source[t.start..t.end];
 }

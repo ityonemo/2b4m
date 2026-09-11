@@ -62,6 +62,18 @@ pub const Builder = struct {
         return .{ .tag = .identifier, .start = self.loc, .end = self.loc, .name = name };
     }
 
+    /// A synthetic SYMBOL token (lexer.Token.Tag.symbol): the resolved identity `sym` itself.
+    /// `exact` = the parent/universe-space symbol, NOT subject to the ambient model (a refined
+    /// target sort's guard predicate); otherwise the model applies as to any resolved name.
+    pub fn symTok(self: *Builder, sym: InternPool.Index, exact: bool) Token {
+        return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym, .qualifier = if (exact) .universe else .none };
+    }
+
+    /// A sort token for a resolved sort: its identity (an anonymous refined sort has no name).
+    pub fn sortTok(self: *Builder, sort: term.SortId) Token {
+        return self.symTok(@enumFromInt(@intFromEnum(sort)), false);
+    }
+
     pub fn intern(self: *Builder, bytes: []const u8) Allocator.Error!StrId {
         return self.interner.internString(bytes) catch error.OutOfMemory;
     }

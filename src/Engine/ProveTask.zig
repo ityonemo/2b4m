@@ -584,7 +584,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
                 const arg1 = try self.arena.alloc(*const ast.Expr, 1);
                 arg1[0] = try b.nameExpr(p.name.name);
                 const call = try self.arena.create(ast.Expr);
-                call.* = .{ .call = .{ .callee = b.tok(self.interner.nameOf(q)), .args = arg1 } };
+                call.* = .{ .call = .{ .callee = b.symTok(q, true), .args = arg1 } };
                 try guards.append(self.arena, call);
             }
         }

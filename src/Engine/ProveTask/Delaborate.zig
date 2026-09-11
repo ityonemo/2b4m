@@ -19,11 +19,16 @@
 //! per-depth name is collision-free and re-closes to the identical de Bruijn structure
 //! (alpha-equal to the original). `bN` interns like any identifier.
 //!
+//! SYMBOLS carry IDENTITY, not names: a term's app/pred callee and quantifier binder sort are
+//! emitted as `.symbol` tokens holding the InternPool Index itself (see lexer.Token.Tag.symbol)
+//! — re-elaboration resolves them without a name lookup, so a term mentioning symbols the
+//! re-elaboration file never declared (a schema instantiated at another file's args) or an
+//! anonymous refined sort (no IdentKV name) round-trips. The ambient model still applies.
+//!
 //! LIMITS (caller's responsibility): a FREE fvar delaborates to its `#`-trimmed name, which
 //! re-resolves only if that name is in the re-elaboration scope — so the caller must ensure
 //! the term has no free caller-locals it can't resolve there (`specialize` abstracts those
-//! into schema params). A refined/anonymous sort (no IdentKV name) has no re-resolvable sort
-//! token — flagged, not handled here.
+//! into schema params).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -55,6 +60,11 @@ pub fn run(arena: Allocator, pool: *const term.Pool, interner: *InternPool, id: 
 /// A synthetic identifier token carrying the stamped name (no qualifier).
 fn tok(self: *Delaborate, name: StrId) Token {
     return .{ .tag = .identifier, .start = self.loc, .end = self.loc, .name = name };
+}
+
+/// A synthetic SYMBOL token: the resolved identity `sym` itself (no name lookup on re-elab).
+fn symTok(self: *Delaborate, sym: InternPool.Index) Token {
+    return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym };
 }
 
 fn box(self: *Delaborate, e: ast.Expr) Allocator.Error!*const ast.Expr {
@@ -111,7 +121,7 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
                 .fvar => |v| try results.append(a, try self.box(.{ .name = self.tok(try self.displayId(v.name)) })),
                 .app, .pred => |ap| {
                     if (ap.args_len == 0) {
-                        const callee = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(ap.sym))));
+                        const callee = self.symTok(@enumFromInt(@intFromEnum(ap.sym)));
                         try results.append(a, try self.box(.{ .name = callee }));
                     } else {
                         try work.append(a, .{ .rebuild = id });
@@ -151,7 +161,7 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
         },
         .rebuild => |id| switch (self.pool.get(id)) {
             .app, .pred => |ap| {
-                const callee = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(ap.sym))));
+                const callee = self.symTok(@enumFromInt(@intFromEnum(ap.sym)));
                 const n = ap.args_len;
                 const kids = results.items[results.items.len - n ..];
                 const args = try self.arena.dupe(*const ast.Expr, kids);
@@ -185,7 +195,7 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
             },
             .quant => |q| {
                 const body = results.pop().?;
-                const sort_tok = self.tok(self.interner.nameOf(@enumFromInt(@intFromEnum(q.sort))));
+                const sort_tok = self.symTok(@enumFromInt(@intFromEnum(q.sort)));
                 const binders = try self.arena.alloc(ast.Binder, 1);
                 binders[0] = .{ .name = self.tok(self.bound.items[self.bound.items.len - 1]), .sort = sort_tok };
                 try results.append(a, try self.box(.{ .quant = .{

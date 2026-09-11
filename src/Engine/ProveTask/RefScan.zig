@@ -269,6 +269,7 @@ fn pushBinderBody(self: *Scanner, stack: *std.ArrayList(ScanItem), binders: []co
 /// BARE name can be one — a qualified token never shadows); the rest are global ident
 /// candidates.
 fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
+    if (tok.tag == .symbol) return; // a resolved identity — nothing to fetch
     if (tok.qualifier == InternPool.Index.none) {
         const name = tok.name;
         for (self.expr_locals.items) |b| if (b == name) return; // expr-local binder
@@ -282,6 +283,7 @@ fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
 /// For a qualified `ns.base`: the ns is ALSO recorded as an ident candidate (the import
 /// must resolve), and the base carries the qualifier.
 fn addTok(self: *Scanner, tok: lexer.Token, domain: Ref.Domain) Allocator.Error!void {
+    if (tok.tag == .symbol) return; // a resolved identity — nothing to fetch
     if (tok.qualifier != InternPool.Index.none) {
         try self.add(.{ .ns = null, .name = tok.qualifier, .domain = .ident, .loc = tok.start });
         try self.add(.{ .ns = tok.qualifier, .name = tok.name, .domain = domain, .loc = tok.start });

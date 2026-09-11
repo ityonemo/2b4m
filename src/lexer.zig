@@ -28,6 +28,14 @@ pub const Token = struct {
         /// `@` immediately followed by a (kebab-capable) name, no space. Marks a
         /// step DEFINITION; citations of the label stay bare (no `@`).
         at_label,
+        /// A SYNTHETIC token (never lexed) whose `.name` is a resolved SYMBOL's InternPool
+        /// Index — a sort/const/func/pred IDENTITY, not a name to look up. Delaboration
+        /// (kernel term → AST) emits these so a term's symbols survive re-elaboration in any
+        /// namespace — a schema instantiated at another file's symbols has synthetics
+        /// mentioning names that file never declared. Elab applies the ambient model to it
+        /// like any resolved name; `.qualifier == .universe` marks an EXACT identity (the
+        /// parent/universe space, no model — a refined target sort's guard predicate).
+        symbol,
         // declaration keywords
         keyword_import,
         keyword_forward,
@@ -95,6 +103,7 @@ pub const Token = struct {
                 .identifier => "identifier",
                 .kebab_identifier => "identifier",
                 .at_label => "@label",
+                .symbol => "symbol",
                 .keyword_import => "import",
                 .keyword_forward => "intheory",
                 .keyword_sort => "sort",

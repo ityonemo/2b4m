@@ -1724,8 +1724,7 @@ fn etaApply(self: *Prove, e: *Elab, tok: lexer.Token, fvars: []const TermId, res
     // reuse the caller Elab's call machinery by synthesizing a call expr is awkward; apply
     // directly via IdentKV lookup. (A qualified bare symbol was never supported here —
     // matching only its base name could falsely hit a local, so reject.)
-    const name = try self.localName(tok);
-    const sym = e.lookupIdentPub(self.ns, name) orelse
+    const sym = e.resolveSymbolTok(tok) orelse e.lookupIdentPub(self.ns, try self.localName(tok)) orelse
         return self.fail(tok.start, "unknown identifier '{s}'", .{self.text(tok)});
     const kind: term.AppKind = switch (self.ctx.interner.keyOf(sym)) {
         .pred => .pred,
@@ -2332,8 +2331,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const fname = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "f{d}", .{i + 1}));
         const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
         head_formula = try self.pool.substFvar(head_formula, fv.name, pf);
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
-        fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.sortTok(fv.sort) };
         fargs[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // caller binder name at the call site
         fbinds[i] = .{ .name = try self.displayName(fv.name), .fvar = fv.name, .sort = fv.sort };
     }
@@ -2348,8 +2346,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
             return self.fail(c.rule.start, "specialize: head is not universally quantified enough for {d} argument(s)", .{nargs});
         };
         tail = opened.body;
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(opened.sort)));
-        arg_params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        arg_params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.sortTok(opened.sort) };
     }
     // schema params = the free-eigenvar params FIRST, then the ∀-arg params.
     const params = try std.mem.concat(self.ctx.arena, ast.SchemaParam, &.{ fparams, arg_params });
@@ -2683,8 +2680,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |pname, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(pname), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(pname), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     return .{
@@ -3334,8 +3330,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     // deterministic hash-name from the (pre-substitution) full proposition (re-entry stable).
@@ -3430,10 +3425,9 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
             try gsteps.append(self.ctx.arena, try b.claimStep(try self.freshNamed("export-guard"), try b.termExpr(prop), .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(b, blk_label)));
             steps = try gsteps.toOwnedSlice(self.ctx.arena);
         };
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(fv.sort)));
         const fix_label = try self.freshNamed("fix");
         const bname = b.tok(try self.displayName(fv.name));
-        const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.tok(sort_name), .steps = steps } } };
+        const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.sortTok(fv.sort), .steps = steps } } };
         // plain ∀-close: the guard (if any) is already folded into `prop` above.
         const closed = try self.pool.close(prop, fv.name);
         prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
@@ -3779,8 +3773,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     // deterministic hash-name from the full proposition (re-entry stable).
@@ -4414,8 +4407,7 @@ fn finishReorder(
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -4514,8 +4506,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -4703,10 +4694,9 @@ fn emitExtObligation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList
     }
 
     // wrap the fix block + forall_intro out.
-    const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(universe)));
     const fix_label = try self.freshNamed("fix");
     const bname = b.tok(try self.displayName(x.name));
-    const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.tok(sort_name), .steps = fix_steps.items } } };
+    const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.sortTok(universe), .steps = fix_steps.items } } };
     try block.append(self.ctx.arena, fix_step);
 
     // the ∀-closed obligation.
@@ -5152,10 +5142,9 @@ const ArithCert = struct {
 
     /// A `fix name: sort { steps }` block step (returns the step + label).
     fn fixStep(self: *ArithCert, label_prefix: []const u8, name: StrId, sort: SortId, steps: []const ast.Step) Error!struct { step: ast.Step, label: StrId } {
-        const sort_name = self.p.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
         const fix_label = try self.p.freshNamed(label_prefix);
         const bname = self.b.tok(try self.p.displayName(name));
-        return .{ .step = .{ .label = self.b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = self.b.tok(sort_name), .steps = steps } } }, .label = fix_label };
+        return .{ .step = .{ .label = self.b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = self.b.sortTok(sort), .steps = steps } } }, .label = fix_label };
     }
 };
 
@@ -5278,8 +5267,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
     const body_expr = try b.termExpr(inner_prop);
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        const sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(sort)));
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.tok(sort_name) };
+        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
     }
 
     const hash = Schema.termHash(self.pool, inner_prop);
@@ -6402,10 +6390,9 @@ fn arithCooperInduction(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.
     if ((try self.arithEmitInductionCases(cert, &unpack_body, ih_body, ih_body_label, p_succ_k, step_candidates, symbols)) == null) return false;
 
     // the unpack block: `unpack y from <ih>` — draws the existential witness y0 out of the IH.
-    const y0_sort_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(y0.sort)));
     const unpack_step: ast.Step = .{ .label = cert.b.tok(unpack_block_label), .body = .{ .unpack = .{
         .name = cert.b.tok(try self.displayName(y0.name)),
-        .sort = cert.b.tok(y0_sort_name),
+        .sort = cert.b.sortTok(y0.sort),
         .from = cert.b.tok(ih_label),
         .steps = unpack_body.items,
     } } };
@@ -6556,9 +6543,8 @@ fn arithInductionLambda(self: *Prove, b: *Accelerant.Builder, p_closed: TermId, 
     const p_open = try self.pool.open(p_closed, x_id);
     const body = try b.termExpr(p_open);
     const bname = try self.displayName(x.name);
-    const nat_name = self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(nat)));
     const binders = try self.ctx.arena.alloc(ast.Binder, 1);
-    binders[0] = .{ .name = b.tok(bname), .sort = b.tok(nat_name) };
+    binders[0] = .{ .name = b.tok(bname), .sort = b.sortTok(nat) };
     const e = try self.ctx.arena.create(ast.Expr);
     e.* = .{ .lambda = .{ .tok = b.tok(InternPool.Index.none), .binders = binders, .body = body } };
     return e;
@@ -7056,7 +7042,7 @@ fn arithEmitOrderFromPremise(self: *Prove, cert: *ArithCert, block: *std.ArrayLi
 
         const unpack_step: ast.Step = .{ .label = cert.b.tok(unpack_block), .body = .{ .unpack = .{
             .name = cert.b.tok(try self.displayName(w.name)),
-            .sort = cert.b.tok(self.ctx.interner.nameOf(@enumFromInt(@intFromEnum(w.sort)))),
+            .sort = cert.b.sortTok(w.sort),
             .from = cert.b.tok(exists_label),
             .steps = ub.items,
         } } };
