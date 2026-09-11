@@ -271,6 +271,10 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     error.OutOfMemory => return error.OutOfMemory,
                     error.Unresolved => return, // suspended on a body ref, or diagnosed
                 };
+                rejectAliasShapedDefine(self, h, task.file, source, d) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Unresolved => return, // diagnosed (the closure above resolved every ref)
+                };
                 _ = try self.idents.publish(self.io, key, .{ .define = .{
                     .name = task.name,
                     .file = task.file,
@@ -456,6 +460,42 @@ fn demandDefineClosure(self: *Context, h: *Engine.Handle, file: InternPool.Index
 }
 
 const DefineSite = struct { file: InternPool.Index, name: InternPool.StrId };
+
+/// A define that merely FORWARDS an opaque symbol — `define f(p1, …, pn) = ns.g(p1, …, pn)`
+/// (each arg the same-position param, nothing else) or `define X = ns.C` — is an ALIAS written
+/// as a macro. That is the wrong tool: an alias binds the local name to the origin's identity
+/// (`pred f = ns.g`), while a define mints a macro whose expansion merely mentions it — so the
+/// name has a different KIND (`.define`, not `.pred`), which downstream aliases (`pred f =
+/// this.f`) then rightly refuse. Hard error (like every diagnostic) unless --draft. A define
+/// forwarding another DEFINE is left alone: there is no alias form for a macro (yet).
+fn rejectAliasShapedDefine(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, d: anytype) ResolveError!void {
+    if (self.verify.draft) return;
+    const callee: lexer.Token = switch (d.value.*) {
+        .name => |tok| if (d.params.len == 0) tok else return,
+        .call => |c| blk: {
+            if (c.args.len != d.params.len) return;
+            for (c.args, d.params) |arg, param| {
+                if (arg.* != .name) return;
+                if (arg.name.qualifier != InternPool.Index.none or arg.name.name != param.name.name) return;
+            }
+            break :blk c.callee;
+        },
+        else => return,
+    };
+    // a param in name position is the define's own local, not a forward.
+    for (d.params) |param| if (callee.qualifier == InternPool.Index.none and callee.name == param.name.name) return;
+    const target = try demandTok(self, h, file, callee); // resolved by the closure walk — no suspend
+    const keyword: []const u8 = switch (self.interner.keyOf(target)) {
+        .constant => "const",
+        .func => "func",
+        .pred => "pred",
+        else => return, // a define forwarding a define (or a sort/import — elaboration diagnoses)
+    };
+    self.sink.add(d.name.start, "define '{s}' only forwards '{s}' — it is an alias, not a macro; write `{s} {s} = {s}` (--draft allows)", .{
+        source[d.name.start..d.name.end], source[callee.start..callee.end], keyword, source[d.name.start..d.name.end], source[callee.start..callee.end],
+    }) catch return error.OutOfMemory;
+    return error.Unresolved;
+}
 
 /// A binder scope: demand each binder's SORT/GUARD (global refs), then push the body frame with an
 /// EXTENDED `params` (binder names shadow → skipped as locals in the body). Helper for the walk.

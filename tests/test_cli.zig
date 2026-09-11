@@ -216,6 +216,15 @@ pub fn addTests(
     // defines share the declaration namespace
     ctx.fail(&.{ "check", "tests/cases/define_bad.bpa" }, "tests/cases/define_bad.bpa:5:8: error: duplicate declaration of 'TWO'\n");
 
+    // a define that ONLY FORWARDS an opaque symbol (`define lt(a, b) = ordering.less_than(a, b)`)
+    // is an alias written as a macro — the name gets the wrong kind (define, not pred), so
+    // downstream `pred lt = this.lt` aliases refuse it. Rejected unless --draft; the
+    // diagnostic spells the alias form. A PERMUTED forward (`gt(a, b) = less_than(b, a)`) is
+    // a genuine macro and is accepted.
+    ctx.fail(&.{ "check", "tests/cases/define_alias_bad.bpa" }, "tests/cases/define_alias_bad.bpa:6:8: error: define 'lt' only forwards 'ordering.less_than' — it is an alias, not a macro; write `pred lt = ordering.less_than` (--draft allows)\n");
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/define_alias_bad.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/define_forward_permuted_ok.bpa" });
+
     // ALIAS-COLLAPSE (Foundation C): an IDENT alias (sort/const/func/pred) binds to the
     // target's origin Index, so a local proof matches a source axiom cited across the alias
     // boundary (the collapsed sorts are one Index — no mismatch).
