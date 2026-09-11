@@ -195,6 +195,14 @@ define divides(d, n) = exists k: Int; n = mul(d, k)   // parameters are bare nam
 define even(n) = divides(TWO, n)                      // defines build on defines
 ```
 
+A define is a MACRO, not a declaration: it is substituted wherever it appears, before
+anything else looks at the text (imports resolved, body substituted, repeated until
+nothing changes). So a define can stand anywhere an expression can — including as a
+`where` guard (`sort Big = Nat where isBig`, `forall x: Nat where isBig; …`) and as a
+model mapping's target (`model M { src.UNIT: DOUBLED }`) — and can be re-exported by an
+alias (`pred does_divide = int_divides.divides`). It has no identity of its own, so it
+cannot be *named* where a symbol is required (a model mapping's SOURCE, a citation).
+
 A define that merely FORWARDS an opaque symbol in the same argument order —
 `define lt(a, b) = ordering.less_than(a, b)` — is an ALIAS written as a macro, and
 is rejected (`--draft` allows it). Write the alias form `pred lt = ordering.less_than`

@@ -948,9 +948,9 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     w.pending_binder = .{ .sort = sort, .source_sort = source_sort, .fvar = fvar };
     // build the guard over the fresh fvar (conjunction if multiple qualifiers).
     var guard: ?TermId = null;
-    for (quals) |qpred| {
+    for (quals) |qual| {
         const fv = try self.pool.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
-        const app = try self.pool.addApp(.pred, @enumFromInt(@intFromEnum(qpred)), &.{fv});
+        const app = try e.qualifierApp(qual, fv); // an opaque pred applies; a define'd guard term substitutes
         guard = if (guard) |prev| try self.pool.add(.{ .bin = .{ .op = .and_op, .lhs = prev, .rhs = app } }) else app;
     }
     return .{ .v = .{ .name = fvar, .sort = sort }, .guard = guard };

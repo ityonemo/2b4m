@@ -254,7 +254,12 @@ pub const Tag = enum(u8) {
     /// A PREDICATE. Identical `[sig, guard, paramc, pn0, …]` layout to `func`, a distinct
     /// tag. Minted; name is IdentKV's.
     pred,
-    /// A DEFINE (transparent macro). `data` is an offset into `extra` holding
+    /// An anonymous GUARD TERM: a refined sort's qualifier given by a define'd predicate
+    /// (`sort Big = Nat where isBig` with `define isBig(n) = …`), EXPANDED and reified at
+    /// fetch as a prop over the hygienic fvar `#g0` (the guarded element) at `carrier`. Sits
+    /// in a sort's qualifier list beside opaque `.pred` qualifiers; applied by substituting
+    /// `#g0`. `data` is an offset into `extra` holding `[term, carrier]`. Minted; nameless.
+    guard,
     /// An IMPORT. `data` IS the `.namespace` `Index` it binds to (single-ref, no `extra`).
     /// Minted (a file can bind one namespace under several local names — distinct imports).
     /// Its local name lives in IdentKV.
@@ -296,6 +301,8 @@ pub const Key = union(enum) {
     func: Callable,
     /// A predicate identifier's content — same `Callable` payload, a distinct kind. Minted.
     pred: Callable,
+    /// An anonymous guard TERM (see the `guard` tag): `[term, carrier]`.
+    guard: Guard,
     /// An import identifier's content: the `.namespace` `Index` it binds to + name/loc.
     import: Import,
     /// A schema identifier's content: a LOCATOR back to its AST decl (name/file/loc). The
@@ -359,6 +366,9 @@ pub const Key = union(enum) {
     /// Shared by `func` and `pred` (identical layout; the tag says which). Variable-length.
     pub const Callable = struct { sig: Index, guard: TermOff, param_names: []const Index, name: StrId, loc: u32 };
 
+    /// A define'd refinement guard reified as a prop TERM over the fvar `#g0` at `carrier`.
+    pub const Guard = struct { term: TermOff, carrier: Index };
+
     /// An import's content: the `.namespace` `Index` it binds to + name/loc.
     pub const Import = struct { namespace: Index, name: StrId, loc: u32 };
 
@@ -416,7 +426,7 @@ fn hashKey(key: Key) u64 {
             for (s.args) |arg| std.hash.autoHash(&h, arg);
         },
         // facts and identifiers are never deduped — minted via mintFact/mint*, not get
-        .fact, .sort, .constant, .func, .pred, .import, .schema => unreachable,
+        .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable,
     }
     return h.final();
 }
@@ -442,7 +452,7 @@ fn keyEql(a: Key, b: Key) bool {
         .model => modelEql(a.model, b.model),
         .namespace => std.meta.eql(a.namespace, b.namespace),
         .sig => sigEql(a.sig, b.sig),
-        .fact, .sort, .constant, .func, .pred, .import, .schema => unreachable, // minted
+        .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable, // minted
     };
 }
 
@@ -504,7 +514,7 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
             try self.items.append(self.arena, .{ .tag = .sig, .data = off });
         },
         // facts/identifiers are minted via mintFact/mint*, never `get` (no dedup)
-        .fact, .sort, .constant, .func, .pred, .import, .schema => unreachable,
+        .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable,
     }
     gop.key_ptr.* = index;
     return index;
@@ -623,6 +633,14 @@ pub fn symResult(self: *const InternPool, sym: Index) Index {
 /// Mint a fresh CONSTANT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// Spills `[sort, name, loc]` into `extra`. Two constants of the same sort get distinct
 /// Indexes.
+/// Mint an anonymous GUARD term Item (a define'd `where` qualifier), always appending.
+pub fn mintGuard(self: *InternPool, g: Key.Guard) std.mem.Allocator.Error!Index {
+    const index: Index = @enumFromInt(self.items.len);
+    const off = try self.addExtra(g); // reflection: [term, carrier]
+    try self.items.append(self.arena, .{ .tag = .guard, .data = off });
+    return index;
+}
+
 pub fn mintConstant(self: *InternPool, c: Key.Constant) std.mem.Allocator.Error!Index {
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(c); // reflection: [sort, name, loc]
@@ -749,6 +767,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
         .constant => .{ .constant = self.extraData(Key.Constant, item.data) },
         .func => .{ .func = self.callableData(item.data) },
         .pred => .{ .pred = self.callableData(item.data) },
+        .guard => .{ .guard = self.extraData(Key.Guard, item.data) },
         .import => .{ .import = self.extraData(Key.Import, item.data) },
         .schema => .{ .schema = self.extraData(Key.Schema, item.data) },
     };

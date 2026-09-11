@@ -331,6 +331,17 @@ const Expander = struct {
                     try work.append(a, .{ .expand = .{ .e = n.operand, .env = x.env } });
                 },
                 .quant, .lambda => {
+                    // INLINE `where` over a DEFINE'd guard (`forall x: Nat where isBig; B`): the
+                    // guard is a predicate MACRO, so the binder desugars to its meaning — one
+                    // single-binder quantifier per binder, the guard's call as the body's
+                    // antecedent (∀: `isBig(x) -> B`) / conjunct (∃: `isBig(x) and B`) — and the
+                    // rewritten node is expanded like any other (the call expands). Matches the
+                    // kernel's guarded-∀ shape (`∀x; guard(x) -> …`, one binder at a time). An
+                    // opaque guard stays a binder guard (the elaborator relativizes it).
+                    if (x.e.* == .quant) if (try self.desugarDefineGuards(x.env, x.e.quant)) |rewritten| {
+                        try work.append(a, .{ .expand = .{ .e = rewritten, .env = x.env } });
+                        continue;
+                    };
                     const binders = switch (x.e.*) {
                         .quant => |q| q.binders,
                         .lambda => |l| l.binders,
@@ -386,6 +397,36 @@ const Expander = struct {
         };
         std.debug.assert(results.items.len == 1);
         return results.items[0];
+    }
+
+    /// If any binder of `q` carries a DEFINE'd guard, the desugared quantifier (see the `.quant`
+    /// arm); else null. A guard whose resolution is pending is treated as opaque this run (the
+    /// resume re-expands from the parsed AST).
+    fn desugarDefineGuards(self: *Expander, env: *const Env, q: @FieldType(ast.Expr, "quant")) Allocator.Error!?*const ast.Expr {
+        var any = false;
+        for (q.binders) |b| if (b.guard) |g| {
+            if ((try self.resolveDefine(env, g)) == .define) any = true;
+        };
+        if (!any) return null;
+        var body = q.body;
+        var i = q.binders.len;
+        while (i > 0) {
+            i -= 1;
+            const b = q.binders[i];
+            const nb = try self.arena.alloc(ast.Binder, 1);
+            nb[0] = b;
+            if (b.guard) |g| if ((try self.resolveDefine(env, g)) == .define) {
+                const arg = try self.box(.{ .name = b.name });
+                const args = try self.arena.alloc(*const ast.Expr, 1);
+                args[0] = arg;
+                const gcall = try self.box(.{ .call = .{ .callee = g, .args = args } });
+                const op: ast.Expr.BinOp = if (q.q == .forall) .implies else .and_op;
+                body = try self.box(.{ .binary = .{ .op = op, .tok = q.tok, .lhs = gcall, .rhs = body } });
+                nb[0].guard = null;
+            };
+            body = try self.box(.{ .quant = .{ .q = q.q, .tok = q.tok, .binders = nb, .body = body } });
+        }
+        return body;
     }
 
     /// A NAME position. A define param → its bound arg; a binder → its (renamed) token; a

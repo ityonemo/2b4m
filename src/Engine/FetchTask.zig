@@ -164,7 +164,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                     };
                     const quals = try self.arena.alloc(InternPool.Index, g.guards.len);
                     for (g.guards, quals) |gt, *q| {
-                        q.* = resolveGuardPred(self, h, task.file, source, gt, parent) catch |e| switch (e) {
+                        q.* = resolveGuard(self, h, task.file, source, gt, parent) catch |e| switch (e) {
                             error.OutOfMemory => return error.OutOfMemory,
                             error.Unresolved => return,
                         };
@@ -378,31 +378,63 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
     return ix;
 }
 
-/// Resolve a refinement GUARD token (`inH` in `sort H = G where inH`) to a UNARY predicate
-/// Index over the parent sort's carrier. Demands the pred; checks it is a unary pred whose
-/// argument carrier matches the parent's carrier.
-fn resolveGuardPred(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token, parent: InternPool.Index) ResolveError!InternPool.Index {
-    const ix = switch (try demandIdent(self, h, file, tok.name, tok.start)) {
-        .done => |x| x,
-        .pending => |t| {
-            h.suspendOn(t);
-            return error.Unresolved;
-        },
+/// Resolve a refinement GUARD token (`g` in `sort H = G where g`) to a QUALIFIER Index. The
+/// guard is walked like any AST: the expansion pass is run over the synthetic call `g(#g0)`
+/// (`#g0` = the guarded element, a root local). An OPAQUE predicate survives as a resolved
+/// call: check it is unary over the parent's carrier and use its `.pred` Index. A DEFINE'd
+/// guard was substituted away: elaborate the expanded body with `#g0` bound at the carrier,
+/// reify it, and mint an anonymous `.guard` TERM Item (applied later by substituting `#g0` —
+/// Elab.qualifierApp). Suspends (Unresolved) while the pass has demands outstanding.
+fn resolveGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, tok: lexer.Token, parent: InternPool.Index) ResolveError!InternPool.Index {
+    const g0 = try guardParamName(self, 0);
+    const arg = try self.arena.create(ast.Expr);
+    arg.* = .{ .name = .{ .tag = .identifier, .start = tok.start, .end = tok.start, .name = g0 } };
+    const args = try self.arena.alloc(*const ast.Expr, 1);
+    args[0] = arg;
+    const call = try self.arena.create(ast.Expr);
+    call.* = .{ .call = .{ .callee = tok, .args = args } };
+    const scope_names = [_]InternPool.StrId{g0};
+    const expanded = switch (try Expand.expandFormula(self, h, file, call, .{ .scope = &scope_names, .symbolize_root = true })) {
+        .ready => |x| x,
+        .suspended, .failed => return error.Unresolved,
     };
-    const cb = switch (self.interner.keyOf(ix)) {
-        .pred => |c| c,
-        else => {
-            self.sink.add(tok.start, "sort refinement '{s}' is not a predicate in scope", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+    const carrier = self.interner.carrierOf(parent);
+    if (expanded.* == .call and expanded.call.callee.tag == .symbol) {
+        // an opaque predicate (resolved to its identity by the pass): unary over the carrier.
+        const ix = expanded.call.callee.name;
+        const cb = switch (self.interner.keyOf(ix)) {
+            .pred => |c| c,
+            else => {
+                self.sink.add(tok.start, "sort refinement '{s}' is not a predicate in scope", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+                return error.Unresolved;
+            },
+        };
+        const sig = self.interner.keyOf(cb.sig).sig;
+        if (sig.args.len != 1 or self.interner.carrierOf(sig.args[0]) != carrier) {
+            self.sink.add(tok.start, "sort refinement '{s}' must be a unary predicate over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
             return error.Unresolved;
-        },
+        }
+        return ix;
+    }
+    // a define'd guard: its expanded body over `#g0` at the carrier, reified as a guard term.
+    const ns = try self.interner.namespace(.universe, file);
+    var scratch: term.Pool = .init(self.arena, self.gpa);
+    var walk: Walk = Walk.init(self.arena, self.interner, source, self.sink);
+    var fresh: u32 = 0;
+    var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, &scratch, self.sink, source, &walk, ns, &fresh);
+    e.pushBinder(g0, @enumFromInt(@intFromEnum(carrier)), g0) catch return error.OutOfMemory;
+    const typed = e.elaborateExpr(expanded) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return error.Unresolved, // diagnosed by Elab
     };
-    const sig = self.interner.keyOf(cb.sig).sig;
-    const ok = sig.args.len == 1 and self.interner.carrierOf(sig.args[0]) == self.interner.carrierOf(parent);
-    if (!ok) {
-        self.sink.add(tok.start, "sort refinement '{s}' must be a unary predicate over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+    if (typed.sort != Elab.prop_sort) {
+        self.sink.add(tok.start, "sort refinement '{s}' must be a proposition over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
-    return ix;
+    self.interner.lockWrite(self.io);
+    defer self.interner.unlockWrite(self.io);
+    const off = scratch.reify(typed.id, self.interner) catch return error.OutOfMemory;
+    return self.interner.mintGuard(.{ .term = off, .carrier = carrier }) catch return error.OutOfMemory;
 }
 
 /// Resolve a (possibly `ns.`-qualified) token to its pool Index, demanding the import +

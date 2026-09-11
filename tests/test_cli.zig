@@ -204,13 +204,13 @@ pub fn addTests(
     // so a proof that needs the body gets it for free — no unfold/cite step.
     ctx.okSilent(&.{ "check", "tests/cases/define_pred.bpa" });
 
-    // WHERE-REIFICATION (task #125): a `define`d pred is ACCEPTED as a `where`
-    // guard — it rides along as a qualifier symbol and its uses expand to the
-    // inlined body. Both the named-sort `sort H = G where D` site …
+    // a `define`d pred is ACCEPTED as a `where` guard: the sort decl's walk EXPANDS it
+    // (define lifecycle) into an anonymous guard TERM qualifier. Both the named-sort
+    // `sort H = G where D` site (a `fix x: H` carries the expanded guard) …
     ctx.okSilent(&.{ "check", "tests/cases/define_where_guard.bpa" });
 
-    // … and the anonymous inline-`where` site (`x: G where D` in a binder), whose
-    // guard now expands in the goal so the proof (which sees the expanded body) matches.
+    // … and the anonymous inline-`where` site (`x: G where D` in a binder), which the
+    // expansion pass desugars to `forall x: G; D(x) -> …` with the call expanded.
     ctx.okSilent(&.{ "check", "tests/cases/define_where_guard_inline.bpa" });
 
     // defines share the declaration namespace

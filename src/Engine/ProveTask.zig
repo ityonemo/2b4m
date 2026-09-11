@@ -44,6 +44,7 @@ const Prove = @import("ProveTask/Prove.zig");
 const Schema = @import("ProveTask/Schema.zig");
 const Accelerant = @import("ProveTask/Accelerant.zig");
 const Expand = @import("Expand.zig");
+const Delaborate = @import("ProveTask/Delaborate.zig");
 
 const ProveTask = @This();
 
@@ -628,13 +629,24 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
             const image_ix: InternPool.Index = @enumFromInt(@intFromEnum(image));
             if (!self.interner.isRefined(image_ix)) continue;
             const quals = try self.interner.qualifiersOf(self.arena, image_ix);
-            for (quals) |q| {
-                const arg1 = try self.arena.alloc(*const ast.Expr, 1);
-                arg1[0] = try b.nameExpr(p.name.name);
-                const call = try self.arena.create(ast.Expr);
-                call.* = .{ .call = .{ .callee = b.symTok(q, true), .args = arg1 } };
-                try guards.append(self.arena, call);
-            }
+            for (quals) |q| switch (self.interner.keyOf(q)) {
+                // a define'd guard TERM: substitute the param (as an fvar named after it, which
+                // delaborates to the param's name and re-resolves as the schema arg) for `#g0`.
+                .guard => |g| {
+                    const t = try prove.pool.copyIn(self.interner, g.term);
+                    const pv = try prove.pool.add(.{ .fvar = .{ .name = p.name.name, .sort = @enumFromInt(@intFromEnum(g.carrier)) } });
+                    const g0 = self.interner.internString("#g0") catch return error.OutOfMemory;
+                    const at_p = try prove.pool.substFvar(t, g0, pv);
+                    try guards.append(self.arena, try Delaborate.runExact(self.arena, prove.pool, self.interner, at_p, schema_fact.name.start));
+                },
+                else => {
+                    const arg1 = try self.arena.alloc(*const ast.Expr, 1);
+                    arg1[0] = try b.nameExpr(p.name.name);
+                    const call = try self.arena.create(ast.Expr);
+                    call.* = .{ .call = .{ .callee = b.symTok(q, true), .args = arg1 } };
+                    try guards.append(self.arena, call);
+                },
+            };
         }
         if (guards.items.len > 0) {
             // stated formula: g1 -> g2 -> … -> body.

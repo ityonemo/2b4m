@@ -49,11 +49,20 @@ interner: *InternPool,
 loc: u32,
 /// enclosing binder NAMES (their interned StrIds), innermost last — a bvar indexes this.
 bound: std.ArrayList(StrId) = .empty,
+/// emit EXACT symbol tokens (`.qualifier = .universe`: the parent space, no model applied) —
+/// for a term that already lives in the parent space (a refined sort's guard).
+exact: bool = false,
 
 /// Delaborate `id` into a fresh `ast.Expr` tree on `arena`. `loc` is stamped into every
 /// synthetic token (a valid offset in the file the AST will be elaborated against).
 pub fn run(arena: Allocator, pool: *const term.Pool, interner: *InternPool, id: TermId, loc: u32) Allocator.Error!*const ast.Expr {
     var d: Delaborate = .{ .arena = arena, .pool = pool, .interner = interner, .loc = loc };
+    return d.go(id);
+}
+
+/// Like `run`, emitting EXACT symbol tokens (no model applies on re-elaboration).
+pub fn runExact(arena: Allocator, pool: *const term.Pool, interner: *InternPool, id: TermId, loc: u32) Allocator.Error!*const ast.Expr {
+    var d: Delaborate = .{ .arena = arena, .pool = pool, .interner = interner, .loc = loc, .exact = true };
     return d.go(id);
 }
 
@@ -64,7 +73,7 @@ fn tok(self: *Delaborate, name: StrId) Token {
 
 /// A synthetic SYMBOL token: the resolved identity `sym` itself (no name lookup on re-elab).
 fn symTok(self: *Delaborate, sym: InternPool.Index) Token {
-    return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym };
+    return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym, .qualifier = if (self.exact) .universe else .none };
 }
 
 fn box(self: *Delaborate, e: ast.Expr) Allocator.Error!*const ast.Expr {

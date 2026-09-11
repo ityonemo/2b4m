@@ -618,9 +618,18 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     return @enumFromInt(@intFromEnum(ix));
 }
 
-/// Build the guard proposition `qpred(arg)` for a refinement qualifier.
-fn qualifierApp(self: *Elab, qpred: InternPool.Index, arg: TermId) Error!TermId {
-    return self.scratch.addApp(.pred, @enumFromInt(@intFromEnum(qpred)), &.{arg});
+/// Build the guard proposition for a refinement qualifier at `arg`: an opaque predicate
+/// applies (`qpred(arg)`); a define'd guard (an anonymous `.guard` TERM over `#g0`, see
+/// InternPool.Key.Guard) substitutes `arg` for `#g0`.
+pub fn qualifierApp(self: *Elab, qual: InternPool.Index, arg: TermId) Error!TermId {
+    switch (self.interner.keyOf(qual)) {
+        .guard => |g| {
+            const t = self.scratch.copyIn(self.interner, g.term) catch return error.OutOfMemory;
+            const g0 = self.interner.internString("#g0") catch return error.OutOfMemory;
+            return self.scratch.substFvar(t, g0, arg) catch return error.OutOfMemory;
+        },
+        else => return self.scratch.addApp(.pred, @enumFromInt(@intFromEnum(qual)), &.{arg}),
+    }
 }
 
 /// Close a proposition `f` (mentioning the free fvar `fvar` at carrier `sort`) under a
