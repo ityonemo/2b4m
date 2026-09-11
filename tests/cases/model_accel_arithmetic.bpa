@@ -4,15 +4,17 @@
 // certified strictly by the equation certifier replaying the recursion facts) is
 // transferred through a GUARDED model (sort restricted to `good`). The
 // transfer must materialize a MODEL-MANGLED, relativized synthetic certificate
-// for the step — but today the accelerant builds its synthetic theorem at
-// elaboration in the SOURCE space, blind to the model, so the guarded re-emission
-// escapes an eigenvariable.
+// for the step.
 //
 // The source is a self-contained Peano fragment: `arithmetic` recognizes
 // ZERO/succ/add by name and certifies the ground equation via the recursion
 // axioms in scope.
 //
-// RED: this is the characterization test for making accelerants model-aware.
+// The accelerant builds its synthetic in SOURCE space; the instance ProveTask adopts the
+// model and injects the target sort's guard on each value param (the parent model's `good`),
+// the call site discharges it. The transferred cert is a source proof relativized under the
+// model, so — exactly like a hand-written transfer — the model must NOMINATE closure
+// dischargers (`C: TC(baseFact)`, `f: tf -| closureFact`) for the guard to close.
 
 sort Src
 const ZERO: Src
@@ -47,9 +49,9 @@ axiom taddSuccLeft: forall a, b: Tgt; tadd(tsucc(a), b) = tsucc(tadd(a, b))
 
 model SrcIsGood {
   Src: GoodTgt
-  ZERO: TZERO
-  succ: tsucc
-  add: tadd
+  ZERO: TZERO(goodZero)
+  succ: tsucc -| goodSucc
+  add: tadd -| goodAddClosed
   addZeroLeft <- taddZeroLeft
   addSuccLeft <- taddSuccLeft
 }

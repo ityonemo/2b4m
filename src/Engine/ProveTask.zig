@@ -42,6 +42,7 @@ const RefScan = @import("ProveTask/RefScan.zig");
 const Elab = @import("ProveTask/Elab.zig");
 const Prove = @import("ProveTask/Prove.zig");
 const Schema = @import("ProveTask/Schema.zig");
+const Accelerant = @import("ProveTask/Accelerant.zig");
 
 const ProveTask = @This();
 
@@ -551,13 +552,92 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     }
     prove.schema_params = inst.params;
 
+    // VALUE-PARAM GUARDS — the model's business, not the schema's. Under a model transfer a
+    // value param whose image sort is REFINED (`p: Src` with `Src → Tgt where good`) is
+    // relativized exactly like a `∀p` binder: the instance's stated formula leads with
+    // `good(p) ->`, its proof ASSUMES it (so the guard is in scope for the body's own
+    // discharges), and the CALL SITE discharges it (Prove.withGuardPremises). The guard
+    // predicate is the refined sort's declared qualifier: the r-values of a model live in its
+    // PARENT space, so this is the parent's `good`, never re-interpreted through the model (a
+    // model that also remaps a symbol named `good` remaps the SOURCE's `good`, not the target
+    // sort's refinement). The schema itself (parsed or a source-space synthetic) says nothing
+    // about guards. Nothing is injected outside a model transfer.
+    var inst_formula: *const ast.Expr = schema_fact.formula;
+    var inst_steps: ?[]const ast.Step = schema_steps;
+    if (task.model != InternPool.Index.none and task.model != .universe) {
+        var b: Accelerant.Builder = .{ .arena = self.arena, .interner = self.interner, .pool = prove.pool, .loc = schema_fact.name.start };
+        // a schema-scoped, model-aware Elab to resolve each param's sort token to its image.
+        var sort_walk = Walk.init(self.arena, self.interner, source, self.sink);
+        var se = Elab.init(self.arena, self.io, self, self.interner, &self.idents, prove.pool, self.sink, source, &sort_walk, resolve_ns, &prove.fresh_counter);
+        se.model = task.model;
+        var guards: std.ArrayList(*const ast.Expr) = .empty; // in param order (outermost first)
+        for (schema_fact.params.?) |p| {
+            if (p.arg_sorts.len != 0) continue; // a generator param has no element to guard
+            const image = se.resolveSortTok(p.result) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => break, // diagnosed into the sink; the instance proof reports it
+            };
+            const image_ix: InternPool.Index = @enumFromInt(@intFromEnum(image));
+            if (!self.interner.isRefined(image_ix)) continue;
+            const quals = try self.interner.qualifiersOf(self.arena, image_ix);
+            for (quals) |q| {
+                const arg1 = try self.arena.alloc(*const ast.Expr, 1);
+                arg1[0] = try b.nameExpr(p.name.name);
+                const call = try self.arena.create(ast.Expr);
+                call.* = .{ .call = .{ .callee = b.tok(self.interner.nameOf(q)), .args = arg1 } };
+                try guards.append(self.arena, call);
+            }
+        }
+        if (guards.items.len > 0) {
+            // stated formula: g1 -> g2 -> … -> body.
+            var f = inst_formula;
+            var i = guards.items.len;
+            while (i > 0) {
+                i -= 1;
+                f = try b.implies(guards.items[i], f);
+            }
+            inst_formula = f;
+            // proof (a proof-carrying schema): nest `assume g_i { … }` innermost-last, exporting
+            // `g_i -> …` by implies_intro; the outermost export is the instance's conclusion.
+            if (inst_steps) |steps| {
+                var body = steps;
+                var j = guards.items.len;
+                while (j > 0) {
+                    j -= 1;
+                    const blk_label = prove.freshNamed("guard-assume") catch return error.OutOfMemory;
+                    var lvl: std.ArrayList(ast.Step) = .empty;
+                    try lvl.append(self.arena, try b.assumeStep(blk_label, guards.items[j], body));
+                    var exported = schema_fact.formula;
+                    var k = guards.items.len;
+                    while (k > j) {
+                        k -= 1;
+                        exported = try b.implies(guards.items[k], exported);
+                    }
+                    const refs = try self.arena.alloc(lexer.Token, 1);
+                    refs[0] = b.tok(blk_label);
+                    try lvl.append(self.arena, try b.claimStep(
+                        if (j == 0) try b.intern("conclusion") else prove.freshNamed("guard-export") catch return error.OutOfMemory,
+                        exported,
+                        .by,
+                        try b.intern("implies_intro"),
+                        &.{},
+                        refs,
+                    ));
+                    body = try lvl.toOwnedSlice(self.arena);
+                }
+                inst_steps = body;
+                prove.guard_wrappers = @intCast(guards.items.len);
+            }
+        }
+    }
+
     const st = try self.arena.create(State);
     const walk = try self.arena.create(Walk);
     walk.* = Walk.init(self.arena, self.interner, source, self.sink);
     st.* = .{
         .source = source,
         .ns = ns,
-        .decl = .{ .instance = .{ .formula = schema_fact.formula, .steps = schema_steps } },
+        .decl = .{ .instance = .{ .formula = inst_formula, .steps = inst_steps } },
         .walk = walk,
         .prove = prove,
         .goal_loc = schema_fact.name.start,

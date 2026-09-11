@@ -130,6 +130,12 @@ model: InternPool.Index = .universe,
 /// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
 /// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
 pre_relativized: bool = false,
+/// VALUE-PARAM GUARD WRAPPERS around a model-transferred schema instance's proof (injected by
+/// the instance ProveTask): the outermost `guard_wrappers` block levels are `assume good(p)`
+/// blocks whose export claims (`good(p) -> …`) are TARGET-space steps with no source-space
+/// twin (a source proof never states its model's guard) — the source twin is skipped there.
+/// Zero for every other proof.
+guard_wrappers: u32 = 0,
 /// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
 /// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
 /// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
@@ -188,21 +194,18 @@ fn underModel(self: *const Prove) bool {
     return self.model != InternPool.Index.none and self.model != .universe;
 }
 
-/// ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL — when the ambient model
-/// is WHOLE-SORT (unguarded). Then a synthetic is a plain source theorem, relativized by its
-/// instance ProveTask through the (possibly composed) model into exactly the claim's space, and
-/// every producer input carries a source-space twin (goal, `source_formulas`, binder
-/// `source_sort`, `schema_args_source`, raw cited facts). Under a GUARDED model (a sort mapped
-/// onto a refined target) relativization needs target-only guard predicates that have no
-/// source-space expression, and the instance would have to discharge the abstracted
-/// caller-locals' guards it never sees — the generic refined-target relativization of a
-/// source PROOF, which is not built yet. Until it is, a guarded model keeps the legacy
-/// TARGET-space production (the producer sees the relativized terms and threads the guards
-/// as premises via `guardPremises`, discharged at the call site). This predicate is the seam;
-/// the source-twin computations all gate on it (a legacy synthetic's target text cannot be
-/// re-elaborated in source space).
+/// ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL. Under any model
+/// transfer a synthetic is a plain source theorem, relativized by its instance ProveTask
+/// through the (possibly composed) model into exactly the claim's space; every producer input
+/// carries a source-space twin (goal, `source_formulas`, binder `source_sort`,
+/// `schema_args_source`, raw cited facts). A GUARDED model (a sort mapped onto a refined
+/// target) needs nothing from the producer: the guard is the ambient model's business — the
+/// instance injects `guard(p) ->` for each value param whose image sort is refined (ProveTask's
+/// instance setup; the r-values of a model live in its PARENT space, so the guard predicate is
+/// the parent's, never re-interpreted through the model) and the call site discharges it
+/// (`withGuardPremises`), exactly as a `∀` binder's guard is injected and discharged.
 fn sourceSpaceAccelerants(self: *const Prove) bool {
-    return self.underModel() and !self.ctx.interner.isGuardedModel(self.model);
+    return self.underModel();
 }
 
 // -- small utilities -------------------------------------------------------------------
@@ -655,7 +658,7 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             try self.dischargeTccs(kb, tcc_start);
             // under a model transfer, also keep the claim in SOURCE space (an accelerant citing
             // this step as a premise builds in source space — see `source_formulas`).
-            const f_source: ?TermId = if (self.sourceSpaceAccelerants()) blk: {
+            const f_source: ?TermId = if (self.sourceSpaceAccelerants() and !self.inGuardWrapper(kb)) blk: {
                 var se = self.sourceElab(w);
                 break :blk (try se.requireProp(try se.elaborateExpr(c.formula), c.formula)).id;
             } else null;
@@ -792,6 +795,19 @@ fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel
 }
 
 /// A block descoped: seal its kernel step range (same closing the eager path did).
+/// Is `kb` one of the injected value-param guard-wrapper levels (see `guard_wrappers`)? The
+/// wrappers are the outermost levels, so this is a block-depth test.
+fn inGuardWrapper(self: *const Prove, kb: kernel.BlockId) bool {
+    if (self.guard_wrappers == 0) return false;
+    var depth: u32 = 0;
+    var b = kb;
+    while (self.low_blocks.items[@intFromEnum(b)].parent) |p| {
+        depth += 1;
+        b = p;
+    }
+    return depth < self.guard_wrappers;
+}
+
 pub fn exitBlock(self: *Prove, w: *Walk, block: Walk.BlockOrdinal) Allocator.Error!void {
     _ = w;
     const kb = self.kernelBlock(block);
@@ -1807,7 +1823,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
 /// instance fact): look it up, copyIn its formula, and emit `schema_instance` with the
 /// caller's premise step-refs. The kernel peels the instance's `->` antecedents against the
 /// premises and requires the final consequent == the citing claim.
-fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) Error!kernel.Justification {
+fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
     const outcome = try self.demandInstance(e, null, c, false);
     const fact = switch (outcome) {
@@ -1819,7 +1835,9 @@ fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) E
     const instance = try self.pool.copyIn(self.ctx.interner, formula_off);
     const premises = try self.ctx.arena.alloc(kernel.SRef, c.refs.len);
     for (c.refs, premises) |r, *out| out.* = try self.resolveStepRef(w, r);
-    return .{ .schema_instance = .{ .instance = instance, .premises = premises } };
+    // under a model transfer the instance may lead with injected guard premises (see
+    // `withGuardPremises`) — discharge them here like the accelerant site does.
+    return self.withGuardPremises(kb, c.rule.start, instance, goal, premises);
 }
 
 // -- model transfer --------------------------------------------------------------------
@@ -2143,11 +2161,19 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: 
     // premises = the accelerant's own refs (the producer's premise order): the head-cite (if
     // the head is local) then the hyps, matching the synthetic body's antecedent order.
     const prems = try self.accelerantPremises(w, c);
-    // GUARD PREMISES (13e): under a transfer the synthetic's body leads with the abstracted
-    // caller-locals' guards (`inH(a) -> …`) — antecedents with no caller ref token. Count them
-    // (peel the instance's `->` chain until the remainder α-matches the goal; guards = total −
-    // the ref premises) and SYNTHESIZE a discharge step for each in the CALLER's context (the
-    // fix-block guard, source (2); or closure recursion for a composite).
+    return self.withGuardPremises(kb, c.rule.start, instance, goal, prems);
+}
+
+/// The `schema_instance` justification for a proven instance, discharging its GUARD PREMISES.
+/// Under a model transfer an instance's stated formula leads with `guard(arg) ->` for each
+/// value param whose image sort is refined (injected by the instance ProveTask — the r-values
+/// of a model live in its parent space, so these are the parent's guard predicates) — leading
+/// antecedents with no caller ref. Count them (peel the `->` chain until the remainder
+/// α-matches the goal; guards = total − the ref premises) and SYNTHESIZE a discharge step for
+/// each in the CALLER's context: the enclosing fix-block guard, or closure recursion for a
+/// composite (`emitDischargeStep`). Shared by the accelerant (`lowerUsing`) and the user
+/// `[using instantiation …]` (`lowerInstantiate`) sites.
+fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermId, goal: TermId, prems: []const kernel.SRef) Error!kernel.Justification {
     var total: usize = 0;
     var walk_f = instance;
     while (!self.pool.alphaEq(walk_f, goal)) {
@@ -2162,8 +2188,8 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: 
         var gf = instance;
         for (0..k) |i| {
             const n = self.pool.get(gf);
-            all[i] = (try self.emitDischargeStep(kb, c.rule.start, n.bin.lhs)) orelse
-                return self.fail(c.rule.start, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(n.bin.lhs)});
+            all[i] = (try self.emitDischargeStep(kb, loc, n.bin.lhs)) orelse
+                return self.fail(loc, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(n.bin.lhs)});
             gf = n.bin.rhs;
         }
         @memcpy(all[k..], prems);
@@ -3292,15 +3318,13 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
         try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
     };
 
-    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
-    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     // the inner proposition the cert proves under its assumptions: `prem0 -> … -> (s = t)`.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
     const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
 
     // wrap the cert in nested `assume <local-prem>` blocks (the `->` antecedents), then in
     // `fix` blocks for the ∀ eigenvariables (the quantified variant's re-generalization).
-    steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps, n_guards);
+    steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(&b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop` (params already in place).
@@ -3349,55 +3373,20 @@ fn impliesChain(self: *Prove, consequent: TermId, ants: []const TermId) Error!Te
     return acc;
 }
 
-/// GUARD PREMISES for the abstracted caller-locals (13e): under a model TRANSFER, an
-/// abstracted `fix`-eigenvar carries a refined-sort guard (`inH(a)`) in the CALLER's block.
-/// The synthetic's discharge (a closure recursion bottoming out at the param fvar) needs that
-/// guard available INSIDE the instance — so surface it as a leading LOCAL premise: the schema
-/// body gains `inH(p) -> …`, the proof an enclosing `assume` block (no eager restate — the
-/// discharge's assume-source (2c) emits the hypothesis step on demand, so an unused guard
-/// leaves no dead step), and the CALL SITE discharges it from the fix guard (lowerUsing).
-/// PREPENDS to `formulae`/`cites` (guards outermost); returns how many were added.
-fn guardPremises(self: *Prove, abs: FvarAbstraction, formulae: *std.ArrayList(TermId), cites: *std.ArrayList(EqCert.RuleCite)) Error!usize {
-    if (self.model == InternPool.Index.none or self.model == .universe) return 0;
-    var add_f: std.ArrayList(TermId) = .empty;
-    var add_c: std.ArrayList(EqCert.RuleCite) = .empty;
-    for (abs.origs) |orig| {
-        const g = self.callerGuard(orig) orelse continue;
-        try add_f.append(self.ctx.arena, try self.substFvarsToParams(g, abs));
-        try add_c.append(self.ctx.arena, .{ .local = .{ .hyp = try self.freshNamed("guard-prem") } });
-    }
-    if (add_f.items.len == 0) return 0;
-    try formulae.insertSlice(self.ctx.arena, 0, add_f.items);
-    try cites.insertSlice(self.ctx.arena, 0, add_c.items);
-    return add_f.items.len;
-}
-
-/// The caller-block guard of a fix-eigenvar (by fvar identity), or null (unguarded/not a fix).
-fn callerGuard(self: *Prove, fvar_name: StrId) ?TermId {
-    for (self.low_blocks.items) |blk| if (blk.kind == .fix) {
-        if (blk.kind.fix.v.name == fvar_name) return blk.kind.fix.guard;
-    };
-    return null;
-}
-
 /// Wrap the cert `inner` (proving the equation `eq_prop`) in nested `assume <local-prem>`
 /// blocks — one per LOCAL rule premise, restating its hypothesis (under the deterministic
 /// `prem-…` label the cert cites) and exporting `prem_i -> …` with `implies_intro` out
 /// through each level. With no local premises the cert steps pass through verbatim. (Same
-/// shape as tautology's `wrapTautologyPremises`.) The FIRST `n_guards` premises are GUARD
-/// premises (13e): assume-wrapped but NOT eagerly restated — the discharge machinery emits
-/// the hypothesis step on demand (an unused restate would be a dead step).
-fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step, n_guards: usize) Error![]const ast.Step {
+/// shape as tautology's `wrapTautologyPremises`.)
+fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step) Error![]const ast.Step {
     var body_steps = inner;
     var i: usize = formulae.len;
     while (i > 0) {
         i -= 1;
         const blk_label = try self.freshNamed("assume-prem");
         var blk_body = try std.ArrayList(ast.Step).initCapacity(self.ctx.arena, body_steps.len + 1);
-        if (i >= n_guards) {
-            const hyp_label = cites[i].local.hyp;
-            blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, blk_label)));
-        }
+        const hyp_label = cites[i].local.hyp;
+        blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(b, blk_label)));
         blk_body.appendSliceAssumeCapacity(body_steps);
         var lvl: std.ArrayList(ast.Step) = .empty;
         try lvl.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(formulae[i]), blk_body.items));
@@ -3778,12 +3767,10 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         try local_formulae.append(self.ctx.arena, e.formula);
     };
 
-    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
-    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     // wrap the cert in nested `assume <local-eq>` blocks (the `->` antecedents), each restating
     // its hypothesis under `body_label` and exporting `prem_i -> … -> (start = target)` out.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = target } });
-    const steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, body_steps.items, n_guards);
+    const steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, body_steps.items);
 
     // schema body proposition = `local-prem0 -> … -> (start = target)`; params already in place.
     const full_prop = try self.impliesChain(eq_prop, local_formulae.items);
@@ -4416,11 +4403,9 @@ fn finishReorder(
         try local_formulae.append(self.ctx.arena, try self.substFvarsToParams(p.formula, abs));
     }
 
-    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
-    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
     const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
-    steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps, n_guards);
+    steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
     // the schema body proposition = the ∀-generalized `inner_prop`.
@@ -5287,10 +5272,8 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         try local_formulae.append(self.ctx.arena, p.formula);
     };
 
-    // guard premises for the abstracted caller-locals (13e; no-op outside a transfer).
-    const n_guards = try self.guardPremises(abs, &local_formulae, &local_cites);
     const inner_prop = try self.impliesChain(goal_p, local_formulae.items);
-    const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps, n_guards);
+    const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps);
 
     const body_expr = try b.termExpr(inner_prop);
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
@@ -7897,7 +7880,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         // `instantiation` resolves a SCHEMA (not a kernel rule) — the instance fact was
         // demanded (racked + proven) in the read pass; look it up, copyIn its formula, and
         // emit the kernel schema_instance justification (peels premises against `c.refs`).
-        .instantiation => return self.lowerInstantiate(w, e, c),
+        .instantiation => return self.lowerInstantiate(w, e, kb, goal, c),
         // `using model(M) src.thm` transfers a source theorem: the transferred fact was
         // demanded (proved in namespace (M, src_file)) in the read pass; cite it.
         .model => return self.lowerModel(w, c),
