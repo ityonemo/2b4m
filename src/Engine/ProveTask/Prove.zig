@@ -2677,9 +2677,15 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
         body_expr = try b.implies(try b.termExpr(prems_p[i].formula), body_expr);
     }
 
-    // deterministic hash-name from the abstracted goal + all premise formulae (re-entry stable).
-    var hash = Schema.termHash(self.pool, goal_p);
-    for (prems_p) |p| hash ^= Schema.termHash(self.pool, p.formula) *% 0x9E3779B97F4A7C15;
+    // deterministic hash-name from the FULL proposition `prem0 -> … -> goal` (re-entry stable).
+    // The premises' ORDER is part of the identity: the instance's antecedents are discharged
+    // positionally against the call site's refs, so two steps with the same premises in a
+    // different order are DIFFERENT schemas (an order-blind XOR combine once conflated them —
+    // set.bpa's forward/backward union-commutativity halves).
+    const prem_formulae_p = try self.ctx.arena.alloc(TermId, prems_p.len);
+    for (prems_p, prem_formulae_p) |p, *f| f.* = p.formula;
+    const full_prop = try self.impliesChain(goal_p, prem_formulae_p);
+    const hash = Schema.termHash(self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "tautology{{{x}}}", .{hash}));
 
     // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
