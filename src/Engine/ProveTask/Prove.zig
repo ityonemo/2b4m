@@ -70,6 +70,13 @@ ns: InternPool.Index,
 
 // -- the accumulated kernel lowering (survives suspends; arena-resident) ---------------
 low_steps: std.ArrayList(kernel.Step) = .empty,
+/// Per lowered step (index-aligned with `low_steps`): the step's formula in SOURCE space —
+/// elaborated with the model OFF. In an ordinary proof this is the lowered formula itself; in a
+/// MODEL TRANSFER the lowered formula is relativized to the target and this is the un-remapped
+/// original (same hygienic fvars, source global symbols). Accelerant PRODUCERS read premises
+/// from here (`producerPremiseFormula`): they build their synthetic in source space, and the
+/// instance ProveTask adopts the model. See `demandUsing`.
+source_formulas: std.ArrayList(TermId) = .empty,
 low_blocks: std.ArrayList(kernel.Block) = .empty,
 /// Walk StepOrdinal -> kernel StepId (main steps only; synthetics skip)
 ordinal_step: std.ArrayList(kernel.StepId) = .empty,
@@ -110,6 +117,9 @@ define_stack: std.ArrayList(InternPool.Index) = .empty,
 /// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
 schema_args: ?*const Schema.SchemaArgs = null,
+/// SOURCE-space twins of `schema_args` (the same map outside a model transfer) — what a
+/// source-space Elab substitutes for the params. See `source_formulas` / `sourceElab`.
+schema_args_source: ?*const Schema.SchemaArgs = null,
 schema_params: []const StrId = &.{},
 /// MODEL this proof runs THROUGH (Step 13): when non-`.universe`, this Prove is
 /// re-proving a source theorem in a model namespace — every global (sym via Elab, fact
@@ -126,7 +136,9 @@ pre_relativized: bool = false,
 /// forall_intro derivation. Empty outside a transfer / for unguarded goals.
 quant_guards: []const ?TermId = &.{},
 
-const CaseCtx = struct { goal: TermId, disj: kernel.SRef, loc: u32 };
+/// `goal_source` = the case goal in SOURCE space (== `goal` unless under a model transfer); the
+/// concluding step records it alongside its lowered (target-space) formula — see `source_formulas`.
+const CaseCtx = struct { goal: TermId, goal_source: TermId, disj: kernel.SRef, loc: u32 };
 
 pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPool.Index, ns: InternPool.Index) Allocator.Error!*Prove {
     const p = try ctx.arena.create(Prove);
@@ -154,6 +166,43 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     e.result_facts = &self.result_facts;
     e.define_stack = &self.define_stack; // define-expansion cycle guard
     return e;
+}
+
+/// An Elab in SOURCE space: the model OFF (global symbols resolve un-remapped) and the
+/// obligation sinks detached (a source-space pass records no TCCs — the target-space pass
+/// already did). Used to build the accelerant producers' inputs under a model transfer
+/// (`demandUsing`) and to record `source_formulas` at lowering. Only meaningful when
+/// `self.model` is a real model; callers use the ordinary term otherwise.
+fn sourceElab(self: *Prove, w: *const Walk) Elab {
+    var e = self.elab(w);
+    e.model = .universe;
+    e.source_space = true; // locals resolve at their SOURCE sort (see Elab.source_space)
+    e.schema_args = self.schema_args_source orelse self.schema_args; // params at source terms
+    e.tccs = null;
+    e.result_facts = null;
+    return e;
+}
+
+/// True when this proof runs under a model transfer (its lowered formulas are relativized).
+fn underModel(self: *const Prove) bool {
+    return self.model != InternPool.Index.none and self.model != .universe;
+}
+
+/// ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL — when the ambient model
+/// is WHOLE-SORT (unguarded). Then a synthetic is a plain source theorem, relativized by its
+/// instance ProveTask through the (possibly composed) model into exactly the claim's space, and
+/// every producer input carries a source-space twin (goal, `source_formulas`, binder
+/// `source_sort`, `schema_args_source`, raw cited facts). Under a GUARDED model (a sort mapped
+/// onto a refined target) relativization needs target-only guard predicates that have no
+/// source-space expression, and the instance would have to discharge the abstracted
+/// caller-locals' guards it never sees — the generic refined-target relativization of a
+/// source PROOF, which is not built yet. Until it is, a guarded model keeps the legacy
+/// TARGET-space production (the producer sees the relativized terms and threads the guards
+/// as premises via `guardPremises`, discharged at the call site). This predicate is the seam;
+/// the source-twin computations all gate on it (a legacy synthetic's target text cannot be
+/// re-elaborated in source space).
+fn sourceSpaceAccelerants(self: *const Prove) bool {
+    return self.underModel() and !self.ctx.interner.isGuardedModel(self.model);
 }
 
 // -- small utilities -------------------------------------------------------------------
@@ -435,7 +484,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         const c = step.body.claim;
         if (c.rule.name == InternPool.RuleStr.instantiation.id()) {
             var e = self.elab(w);
-            switch (try self.demandInstance(&e, c, false)) {
+            switch (try self.demandInstance(&e, null, c, false)) {
                 .proven => return null, // ready — process can run lowerInstantiate
                 .blocked => |t| return t,
                 .failed => return null, // diagnosed; process will re-hit .failed and reject
@@ -604,13 +653,19 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             const f = try e.requireProp(try e.elaborateExpr(c.formula), c.formula);
             const just = try self.lowerJustification(w, &e, kb, f.id, c);
             try self.dischargeTccs(kb, tcc_start);
+            // under a model transfer, also keep the claim in SOURCE space (an accelerant citing
+            // this step as a premise builds in source space — see `source_formulas`).
+            const f_source: ?TermId = if (self.sourceSpaceAccelerants()) blk: {
+                var se = self.sourceElab(w);
+                break :blk (try se.requireProp(try se.elaborateExpr(c.formula), c.formula)).id;
+            } else null;
             try self.appendMainStep(w, .{
                 .formula = f.id,
                 .just = just,
                 .block = kb,
                 .label = label,
                 .loc = step.label.start,
-            });
+            }, f_source);
         },
         .assume => |blk| {
             const tcc_start = self.pending_tccs.items.len;
@@ -642,7 +697,12 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             }
             // the arm blocks walk as siblings (assume-shaped); caseConclude assembles the
             // (possibly nested, for N>2) or_elim tree over the disjunction structure.
-            try self.case_stack.append(self.ctx.arena, .{ .goal = goal.id, .disj = disj, .loc = step.label.start });
+            // under a model transfer, also keep the goal in SOURCE space (see `source_formulas`).
+            const goal_source: TermId = if (self.sourceSpaceAccelerants()) blk: {
+                var se = self.sourceElab(w);
+                break :blk (try se.requireProp(try se.elaborateExpr(c.goal), c.goal)).id;
+            } else goal.id;
+            try self.case_stack.append(self.ctx.arena, .{ .goal = goal.id, .goal_source = goal_source, .disj = disj, .loc = step.label.start });
         },
     }
 }
@@ -672,7 +732,7 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
         .block = kb,
         .label = try self.localName(step.label),
         .loc = cc.loc,
-    });
+    }, cc.goal_source);
 }
 
 /// Build the (possibly nested) or_elim justification for a `case` over a LEFT-NESTED
@@ -759,11 +819,26 @@ fn kernelBlock(self: *const Prove, ord: Walk.BlockOrdinal) kernel.BlockId {
 
 /// Append the walked step's MAIN kernel step and record its ordinal (Walk assigns the
 /// matching StepOrdinal in bindStepLabel right after process returns — asserted aligned).
-fn appendMainStep(self: *Prove, w: *const Walk, step: kernel.Step) Error!void {
+/// `source_formula` = the step's formula in SOURCE space when it differs from the lowered one
+/// (a model transfer); null = same as `step.formula`. Kept index-aligned in `source_formulas`.
+fn appendMainStep(self: *Prove, w: *const Walk, step: kernel.Step, source_formula: ?TermId) Error!void {
     std.debug.assert(w.next_step == self.ordinal_step.items.len);
     const id: kernel.StepId = @enumFromInt(self.low_steps.items.len);
     try self.low_steps.append(self.ctx.arena, step);
+    try self.source_formulas.append(self.ctx.arena, source_formula orelse step.formula);
     try self.ordinal_step.append(self.ctx.arena, id);
+}
+
+/// The formula of a cited local step AS AN ACCELERANT PRODUCER'S INPUT: source space. Under a
+/// model transfer the lowered formula (`low_steps[..].formula`) is relativized to the target;
+/// a producer must not mix that with its source-space goal, so it reads the source-space twin
+/// recorded at lowering. Identical to the lowered formula in an ordinary proof.
+fn producerPremiseFormula(self: *const Prove, sref: kernel.SRef) TermId {
+    // While a producer runs in SOURCE mode, `self.model` is toggled to the universe
+    // (demandUsing) → the source twin. Under a guarded model's legacy target-space production
+    // the model stays set → the lowered (target) formula. Both coincide in an ordinary proof.
+    if (self.model == .universe) return self.source_formulas.items[@intFromEnum(sref.id)];
+    return self.low_steps.items[@intFromEnum(sref.id)].formula;
 }
 
 /// Append a SYNTHETIC kernel step (multi-arg forall_elim intermediate) — no ordinal.
@@ -776,6 +851,8 @@ fn emitSynthetic(self: *Prove, kb: kernel.BlockId, loc: u32, formula: TermId, ju
         .label = try self.freshNamed("simplify"),
         .loc = loc,
     });
+    // a synthetic intermediate is never an accelerant premise; keep `source_formulas` aligned.
+    try self.source_formulas.append(self.ctx.arena, formula);
     return .{ .id = id, .loc = loc };
 }
 
@@ -831,7 +908,15 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     const sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
     const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
     const fvar = try self.freshNamed(self.ctx.interner.stringBytes(name));
-    w.pending_binder = .{ .sort = sort, .fvar = fvar };
+    // under a model transfer `sort` is the model's IMAGE of the written sort; also record the
+    // written (SOURCE) sort, so a source-space pass (accelerant producer inputs) sees this
+    // binder in its own space. Identical outside a transfer.
+    const source_sort: SortId = if (self.sourceSpaceAccelerants()) blk: {
+        var se = self.sourceElab(w);
+        const src_refined = try se.resolveBinderSort(b);
+        break :blk @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(src_refined)))));
+    } else sort;
+    w.pending_binder = .{ .sort = sort, .source_sort = source_sort, .fvar = fvar };
     // build the guard over the fresh fvar (conjunction if multiple qualifiers).
     var guard: ?TermId = null;
     for (quals) |qpred| {
@@ -1522,7 +1607,9 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
 /// may reference caller-local binders), binding each schema param to a `Schema.SchemaArg`.
 /// A value param → the elaborated arg term; an N-ary param → a lambda arg (or a bare
 /// symbol eta-expanded). Sort tokens resolve in the SCHEMA's ns via a schema-scoped Elab.
-fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim) Error!*Schema.SchemaArgs {
+/// `source_space`: bind the args in SOURCE space (the param sorts resolve un-remapped and `e`
+/// is a source-space Elab) — the twins a source-space pass inside the instance substitutes.
+fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim, source_space: bool) Error!*Schema.SchemaArgs {
     const params = rs.fact.params.?;
     if (c.args.len != params.len) {
         return self.fail(c.schema.?.start, "schema '{s}' expects {d} argument(s), got {d}", .{
@@ -1534,7 +1621,7 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim)
     // matching the caller's already-remapped lambda args.
     var empty_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
     var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
-    se.model = self.model;
+    se.model = if (source_space) .universe else self.model;
 
     const args = try self.ctx.arena.create(Schema.SchemaArgs);
     args.* = .empty;
@@ -1639,15 +1726,42 @@ fn etaApply(self: *Prove, e: *Elab, tok: lexer.Token, fvars: []const TermId, res
 /// Builds the payload idempotently (re-run on each wake); the hash keys FactKV dedup.
 const InstanceOutcome = union(enum) { proven: InternPool.Index, blocked: Engine.TaskIndex, failed };
 
-fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim, synthetic: bool) Allocator.Error!InstanceOutcome {
+/// Reify a bound arg map durably (one `DurableArg` per param, in `pnames` order).
+fn reifyArgs(self: *Prove, pnames: []const StrId, args: *const Schema.SchemaArgs) Allocator.Error![]const ProveTask.DurableArg {
+    const durable = try self.ctx.arena.alloc(ProveTask.DurableArg, pnames.len);
+    for (pnames, durable) |pname, *out| {
+        const arg = args.get(pname).?;
+        out.* = switch (arg) {
+            .value => |v| .{ .value = .{ .off = try self.pool.reify(v.id, self.ctx.interner), .sort = v.sort } },
+            .lambda => |l| .{ .lambda = .{ .off = try self.pool.reify(l.body, self.ctx.interner), .params = l.params, .arg_sorts = l.arg_sorts, .result_sort = l.result_sort } },
+        };
+    }
+    return durable;
+}
+
+/// `se`: a SOURCE-space Elab for binding the args' source twins under a model transfer (the
+/// accelerant plumbing passes one with the producer's fvar binds in scope); null → one is
+/// derived from `e`'s walk. Unused outside a transfer.
+fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthetic: bool) Allocator.Error!InstanceOutcome {
     const rs = self.resolveSchemaRef(c.schema.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     };
-    const args = self.bindSchemaArgs(e, rs, c) catch |err| switch (err) {
+    const args = self.bindSchemaArgs(e, rs, c, false) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     };
+    // SOURCE-space twins of the args (see `source_formulas`): bound with the model off, so a
+    // source-space pass inside the instance substitutes source terms for the params. The same
+    // map outside a model transfer.
+    const args_source: *Schema.SchemaArgs = if (self.sourceSpaceAccelerants()) blk: {
+        var derived = self.sourceElab(e.walk);
+        const sp: *Elab = se orelse &derived;
+        break :blk self.bindSchemaArgs(sp, rs, c, true) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return .failed,
+        };
+    } else args;
     const params = rs.fact.params.?;
     const schema_name = tokName(c.schema.?);
     // stable ordered param-name list for the hash + payload.
@@ -1675,22 +1789,16 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim, synthetic: bool) Al
             return .{ .blocked = owner };
         },
     };
-    // ABSENT: reify the args durably + rack the instance ProveTask.
-    const durable = try self.ctx.arena.alloc(ProveTask.DurableArg, params.len);
-    for (pnames, durable) |pname, *out| {
-        const arg = args.get(pname).?;
-        out.* = switch (arg) {
-            .value => |v| .{ .value = .{ .off = try self.pool.reify(v.id, self.ctx.interner), .sort = v.sort } },
-            .lambda => |l| .{ .lambda = .{ .off = try self.pool.reify(l.body, self.ctx.interner), .params = l.params, .arg_sorts = l.arg_sorts, .result_sort = l.result_sort } },
-        };
-    }
+    // ABSENT: reify the args (and their source twins) durably + rack the instance ProveTask.
+    const durable = try self.reifyArgs(pnames, args);
+    const durable_source = if (args_source == args) durable else try self.reifyArgs(pnames, args_source);
     const blocker = try self.h.rackIndexed(try ProveTask.new(self.ctx.arena, .{
         .file = rs.file,
         .name = inst_name,
         .loc = c.schema.?.start,
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
-        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .synthetic = synthetic },
+        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
     }));
     return .{ .blocked = blocker };
 }
@@ -1701,7 +1809,7 @@ fn demandInstance(self: *Prove, e: *Elab, c: ast.Step.Claim, synthetic: bool) Al
 /// premises and requires the final consequent == the citing claim.
 fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, c: ast.Step.Claim) Error!kernel.Justification {
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
-    const outcome = try self.demandInstance(e, c, false);
+    const outcome = try self.demandInstance(e, null, c, false);
     const fact = switch (outcome) {
         .proven => |ix| ix,
         .failed => return error.Recover,
@@ -1914,10 +2022,33 @@ fn elaborateGoal(e: *Elab, formula: *const ast.Expr) Error!TermId {
 /// exactly like `demandInstance`. RE-ENTRANT: racks + suspends the first pass; on resume the
 /// front gates (IdentKV for the schema, FactKV for the instance) skip the already-done work.
 fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
-    const syn = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Recover => return .failed,
-    } orelse return .failed; // producer diagnosed
+    // ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL. Under a model
+    // transfer `goal` (from the ambient Elab) is relativized to the target; a synthetic built
+    // from it would delaborate TARGET names (`Int`) into a schema registered in the SOURCE file
+    // (`group.bpa`), where they don't resolve. So the producer sees the goal re-elaborated with
+    // the model OFF (from `c.formula` — the SAME term on every pass, so the hash-name is
+    // re-entry stable), its local premises from `source_formulas`, and its cited global facts
+    // RAW (`resolveFactRef` skips the transfer/overlay redirection while `self.model` is the
+    // universe). The synthetic is then a plain source-space theorem, and `demandInstance` racks
+    // its instance ProveTask WITH the ambient model, which relativizes it (through a COMPOSED
+    // model when nested) to exactly the space the claim lives in. The universe case is untouched.
+    const source_mode = self.sourceSpaceAccelerants();
+    const goal_source: TermId = if (source_mode) blk: {
+        var se = self.sourceElab(w);
+        break :blk elaborateGoal(&se, c.formula) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return .failed,
+        };
+    } else goal;
+    const syn = blk: {
+        const ambient = self.model;
+        if (source_mode) self.model = .universe; // produce in source space (see above)
+        defer self.model = ambient;
+        break :blk self.produceAccelerant(w, e, goal_source, c) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return .failed,
+        } orelse return .failed; // producer diagnosed
+    };
     // MODEL-MANGLE the synthetic's name (13e): the same source step produces DIFFERENT
     // synthetics standalone vs under a transfer (the transfer's terms are remapped +
     // relativized). The registry/FactKV keys carry no model, so an unmangled name would
@@ -1958,12 +2089,27 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // eigenvar) so each call-site arg elaborates back to its very fvar — needed when a free
     // fvar was INHERITED from a schema-instance monomorphization (no source binder resolves it;
     // see `Synthetic.fvar_binds`). A no-op for the common `fix`-bound case. Truncated after.
+    // The binds were collected in SOURCE space (the fvar's source sort); the caller Elab `e` is
+    // TARGET space, so map the sort through the ambient model (identity in the universe).
+    // `se` is the SOURCE-space twin of `e` (binds at their recorded source sort): under a model
+    // transfer the instance's arg twins are bound through it (demandInstance).
     const scope_mark = e.scopeMark();
+    var se = self.sourceElab(w);
+    const se_mark = se.scopeMark();
     for (syn.fvar_binds) |bind| {
-        e.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
+        const sort_ix: InternPool.Index = @enumFromInt(@intFromEnum(bind.sort));
+        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.applyModel(self.model, sort_ix)));
+        e.pushBinder(bind.name, target_sort, bind.fvar) catch return error.OutOfMemory;
+        se.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
     }
     defer e.scopeTruncate(scope_mark);
-    return self.demandInstance(e, inst_c, true);
+    defer se.scopeTruncate(se_mark);
+    // `synthetic` (→ the instance's no_relativize) skips refined-sort guard injection because a
+    // synthetic's text was DELABORATED from already-elaborated terms with the guards baked in.
+    // That holds in the universe. Under a model transfer the synthetic is SOURCE-space text: the
+    // model's target-side guards (`Src → Tgt where good`) were never in it, so the instance must
+    // inject them like a parsed schema — matching the guard a `fix` binder gets (bindProofVar).
+    return self.demandInstance(e, &se, inst_c, !source_mode);
 }
 
 /// Rewrite a synthetic fact decl's NAME token identity (the `{m<N>}` model-mangle). Only the
@@ -2128,7 +2274,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     var head_formula: TermId = undefined;
     if (head_local) {
         const sref = try self.resolveStepRef(w, head);
-        head_formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
+        head_formula = self.producerPremiseFormula(sref);
     } else {
         // resolveFactRef rejects a schema head (no ground formula) — a clean diagnostic, not a
         // crash — so `.fact` is safe here. (The generated cert cites it kind-agnostically with
@@ -2425,7 +2571,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     for (c.refs, prems) |r, *out| {
         const sref = try self.resolveStepRef(w, r);
         out.* = .{
-            .formula = self.low_steps.items[@intFromEnum(sref.id)].formula,
+            .formula = self.producerPremiseFormula(sref),
             .label = try self.freshNamed("prem"), // the restated-hypothesis step (in the block)
             .blk_label = try self.freshNamed("assume-prem"), // the assume block itself
         };
@@ -2960,7 +3106,7 @@ fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRul
     if (is_local) {
         // a LOCAL equation step: it becomes a schema antecedent, restated by hypothesis.
         const sref = try self.resolveStepRef(w, ref);
-        formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
+        formula = self.producerPremiseFormula(sref);
         cite = .{ .local = .{ .hyp = try self.premiseHypLabel(ref) } };
     } else {
         const fact = try self.resolveFactRef(ref);
@@ -3498,7 +3644,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         var is_axiom = false;
         if (is_local) {
             const sref = try self.resolveStepRef(w, ref);
-            formula = self.low_steps.items[@intFromEnum(sref.id)].formula;
+            formula = self.producerPremiseFormula(sref);
             body_label = try self.premiseHypLabel(ref); // the restated-hypothesis step's label
         } else {
             const fact = try self.resolveFactRef(ref);
@@ -4947,7 +5093,7 @@ fn resolveArithPremise(self: *Prove, w: *const Walk, ref: lexer.Token) Error!Ari
     if (is_local) {
         const sref = try self.resolveStepRef(w, ref);
         return .{
-            .formula = self.low_steps.items[@intFromEnum(sref.id)].formula,
+            .formula = self.producerPremiseFormula(sref),
             .local = true,
             .hyp = try self.premiseHypLabel(ref),
             .head = ref,

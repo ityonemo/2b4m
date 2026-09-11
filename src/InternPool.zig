@@ -843,6 +843,23 @@ pub fn modelDischargers(self: *const InternPool, model: Index, symbol: Index, ou
     }
 }
 
+/// Is `model` GUARDED — does any SORT mapping anywhere in its chain land on a REFINED target
+/// (`Src → Tgt where good`)? Under such a model relativization injects target-only guard
+/// predicates that have no expression in source space; the accelerant plumbing keys on this
+/// (see Prove.sourceSpaceAccelerants). A composed model's overlay already carries composed
+/// targets, and the parent walk covers the ambient model. The universe is unguarded.
+pub fn isGuardedModel(self: *const InternPool, model: Index) bool {
+    var cur = model;
+    while (true) {
+        const m = self.keyOf(cur).model;
+        for (m.overlay) |e| {
+            if (self.keyOf(e.src) == .sort and self.isRefined(e.tgt)) return true;
+        }
+        if (cur == m.parent) return false;
+        cur = m.parent;
+    }
+}
+
 /// COMPOSE two models: the model that is `outer ∘ inner` AS A FUNCTION on symbols — for every
 /// `x`, `applyModel(composed, x) == applyModel(outer, applyModel(inner, x))`. Returns a new
 /// (interned, deduped) `.model` whose overlay maps each source in `inner`'s WHOLE domain to

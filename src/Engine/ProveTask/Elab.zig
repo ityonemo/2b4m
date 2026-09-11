@@ -91,6 +91,13 @@ define_stack: ?*std.ArrayList(InternPool.Index) = null,
 /// theorem in model M's namespace remaps `op`→`add` etc. Null (`.universe` at the call
 /// site) in an ordinary proof = identity. Set by the model ProveTask on its Elab.
 model: InternPool.Index = .universe,
+/// SOURCE SPACE: this Elab builds the un-remapped term of a formula whose proof runs under a
+/// model transfer (`model` is the universe here; the driving Prove's is not). Proof-local
+/// binders were bound in TARGET space (their fvar sort is the model's image), so in this mode
+/// a local resolves at its recorded SOURCE sort (`BinderInfo.source_sort`) — otherwise a
+/// source symbol's parameter (`Src`) would be checked against a target-sorted fvar (`Tgt`).
+/// Set by `Prove.sourceElab`; the accelerant producers' inputs are built this way.
+source_space: bool = false,
 /// NO_RELATIVIZE (13e): set when elaborating a SYNTHETIC (accelerant-generated) schema's
 /// formulas — they were DELABORATED from already-elaborated terms, so refined-sort guard
 /// injection at binders must be SKIPPED (it would double the guards). Parsed schemas keep
@@ -422,8 +429,10 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
     }
     // 2. proof-local binders (fix eigenvariables / unpack witnesses)
     if (self.walk.findIdent(name)) |local| {
-        const id = try self.scratch.add(.{ .fvar = .{ .name = local.info.fvar, .sort = local.info.sort } });
-        return .{ .id = id, .sort = local.info.sort };
+        // a source-space pass sees the binder at its SOURCE sort (see `source_space`).
+        const sort = if (self.source_space) local.info.source_sort else local.info.sort;
+        const id = try self.scratch.add(.{ .fvar = .{ .name = local.info.fvar, .sort = sort } });
+        return .{ .id = id, .sort = sort };
     }
     // 3. schema parameter (only while elaborating a schema body/steps)
     if (self.schema_args) |sa| if (sa.get(name)) |arg| switch (arg) {

@@ -71,8 +71,12 @@ const LocalStep = struct { name: StrId, target: LocalTarget };
 /// the walk via `pending_binder`. Defaults are placeholders for structure-only drivers
 /// (the W1 fakes) that never read them.
 pub const BinderInfo = struct {
-    /// the binder's KERNEL sort (numerically a pool Index in the demand world)
+    /// the binder's KERNEL sort (numerically a pool Index in the demand world). Under a model
+    /// transfer this is the model's IMAGE of the written sort (target space).
     sort: @import("../../term.zig").SortId = @enumFromInt(0),
+    /// the WRITTEN sort (source space) — equals `sort` outside a model transfer. A source-space
+    /// Elab (accelerant producer inputs) resolves the binder at this sort; see Elab.source_space.
+    source_sort: @import("../../term.zig").SortId = @enumFromInt(0),
     /// the hygienic disambiguated fvar identity (`x#N`) terms bind through
     fvar: StrId = .none,
 };

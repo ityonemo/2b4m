@@ -76,6 +76,10 @@ pub const Instance = struct {
     schema_name: StrId, // the schema decl's name — resolved via the by-name AST registry
     params: []const StrId, // param names, in order (for schema_args keys + read-pass skip)
     args: []const DurableArg, // one per param, in order
+    /// SOURCE-space twins of `args` (same slice outside a model transfer): bound with the model
+    /// OFF, so a source-space pass inside the instance (accelerant producers' inputs — see
+    /// Prove.source_formulas) substitutes source terms for the params, never target ones.
+    args_source: []const DurableArg,
     /// SYNTHETIC (accelerant-generated) schema: its formulas are delaborated from already-
     /// elaborated terms — re-elaboration must not re-inject refined-sort guards (13e).
     synthetic: bool = false,
@@ -525,6 +529,26 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
         try args.put(self.arena, pname, live);
     }
     prove.schema_args = args;
+    // the SOURCE-space twins (the same map when they are the same slice — no model transfer).
+    if (inst.args_source.ptr == inst.args.ptr) {
+        prove.schema_args_source = args;
+    } else {
+        const args_source = try self.arena.create(Schema.SchemaArgs);
+        args_source.* = .empty;
+        for (inst.params, inst.args_source) |pname, darg| {
+            const live: Schema.SchemaArg = switch (darg) {
+                .value => |v| .{ .value = .{ .id = try prove.pool.copyIn(self.interner, v.off), .sort = v.sort } },
+                .lambda => |l| .{ .lambda = .{
+                    .body = try prove.pool.copyIn(self.interner, l.off),
+                    .params = l.params,
+                    .arg_sorts = l.arg_sorts,
+                    .result_sort = l.result_sort,
+                } },
+            };
+            try args_source.put(self.arena, pname, live);
+        }
+        prove.schema_args_source = args_source;
+    }
     prove.schema_params = inst.params;
 
     const st = try self.arena.create(State);
