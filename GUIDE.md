@@ -730,7 +730,7 @@ below it (see the Index for the full anchor list).
 | `tautology refs...` | tactic: propositional consequence (see Automation) |
 | `arithmetic refs...` | tactic: linear arithmetic over Nat (see Automation) |
 | `model(INSTANCE) source.theorem` | transfer an abstract theory's theorem to a sort that models it, remapped through the named model (see `KEYWORD: model` and `RULE: model`) |
-| `import(I) thm` | cite a theorem from import `I`'s file across the file boundary (see `RULE: import`) |
+| `import(I) thm` | cite a fact (axiom or theorem) from import `I`'s file across the file boundary (see `RULE: import`) |
 
 The leaves below cover each rule that has a gotcha or a non-obvious ref count;
 the simple rules get a one-line leaf too, so every rule name is greppable.

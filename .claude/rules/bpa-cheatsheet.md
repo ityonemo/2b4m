@@ -110,7 +110,7 @@ qed
 All of these take the `using` keyword: `[using simplify …]`, `[using specialize HEAD(args) …]`,
 `[using instantiation NAME(args) refs…]` (monomorphize a schema; refs discharge its leading
 antecedents), `[using model(M) src.thm]` (transfer a source theorem through model M),
-`[using import(I) thm]` (cite a theorem from import I's file — the PREFERRED cross-file
+`[using import(I) thm]` (cite a fact — axiom or theorem — from import I's file — the PREFERRED cross-file
 citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation. Use
 `import(I)` across a file boundary, `by cite` for a same-file fact).
 

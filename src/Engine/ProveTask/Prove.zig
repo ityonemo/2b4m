@@ -1972,14 +1972,19 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
     };
     // the cited theorem, proven in I's namespace (the read pass demanded it there).
     const fstate = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = imp_ns, .name = tokName(rtok) }) orelse
-        return self.fail(rtok.start, "'{s}' is not a theorem in '{s}'", .{ self.text(rtok), self.text(itok) });
+        return self.fail(rtok.start, "'{s}' is not a fact in '{s}'", .{ self.text(rtok), self.text(itok) });
     const fact = switch (fstate) {
         .proven => |ix| ix,
         .in_flight => return self.fail(rtok.start, "cites '{s}', whose proof has not completed", .{self.text(rtok)}),
     };
     if (self.ctx.interner.keyOf(fact) == .schema)
         return self.fail(rtok.start, "'{s}' is a schema; use `[using instantiation …]`, not an import citation", .{self.text(rtok)});
-    return .{ .theorem_ref = .{ .stmt = fact, .loc = rtok.start } };
+    // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
+    // imported axiom is as citable as an imported theorem).
+    return switch (self.ctx.interner.keyOf(fact).fact.kind) {
+        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = rtok.start } },
+        .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = rtok.start } },
+    };
 }
 
 // -- the `using` accelerant framework --------------------------------------------------
