@@ -79,6 +79,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/arithmetic_unused_premise.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/simplify_unused_premise.bpa" });
 
+    // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own
+    // accelerant steps then run over a body mentioning a free `b` belonging to the
+    // INSTANTIATING file. Every accelerant that abstracts free fvars must carry the
+    // caller-scope binding (Synthetic.fvar_binds — only `specialize` did), or the
+    // re-elaborated synthetic fails "unknown identifier 'b'" against the schema's file.
+    ctx.okSilent(&.{ "check", "tests/cases/schema_inherited_fvar.bpa" });
+
     // polynomial(field): the accelerant over a FIELD theory (bare ONE constant,
     // not the ℤ succ-tower). Guards field.bpa's ring-lemma shims + swaps resolving
     // by bare name in field's scope, and the additive-inverse cancellation of the

@@ -2742,6 +2742,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = c.refs,
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -3400,6 +3401,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -3614,6 +3616,26 @@ const FvarAbstraction = struct {
     origs: []const StrId,
     args: []const *const ast.Expr,
 };
+
+/// The CALLER-SCOPE bindings for an abstraction's inherited free fvars (`Synthetic.fvar_binds`).
+/// A caller `fix`-bound eigenvar already resolves through the proof-local scope, but one
+/// INHERITED from a schema-instance monomorphization (the schema was instantiated at a lambda
+/// capturing the instantiating proof's variable) has no source binder — so the call-site arg,
+/// which delaborates to the variable's DISPLAY spelling, would not re-resolve. `demandUsing`
+/// installs these into the caller Elab so each arg elaborates back to the very fvar.
+fn fvarBinds(self: *Prove, w: *const Walk, abs: FvarAbstraction) Error![]const Accelerant.Synthetic.FvarBind {
+    var binds: std.ArrayList(Accelerant.Synthetic.FvarBind) = .empty;
+    for (abs.origs, abs.sorts) |orig, sort| {
+        const display = try self.displayName(orig);
+        // ONLY the inherited ones: a fvar the proof-local scope already resolves (a caller
+        // `fix`) must NOT be re-bound here — pushing a binder for it SHADOWS the real one,
+        // and a refined-sort `fix` would lose the guard its binder carries (a transferred
+        // proof could then not discharge `good(x)` at the call site).
+        if (w.findIdent(display) != null) continue;
+        try binds.append(self.ctx.arena, .{ .name = display, .fvar = orig, .sort = sort });
+    }
+    return binds.items;
+}
 fn abstractFreeFvars(self: *Prove, b: *Accelerant.Builder, terms: []const TermId, exclude: []const term.Node.Fvar) Error!FvarAbstraction {
     var seen: std.ArrayList(term.Node.Fvar) = .empty;
     for (terms) |t| try self.collectFreeFvars(t, &seen);
@@ -3919,6 +3941,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -4627,6 +4650,7 @@ fn finishReorder(
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -4726,6 +4750,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // a LOCAL unfold/ext cite, if any
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -5489,6 +5514,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs,
+        .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
 
@@ -8576,4 +8602,44 @@ test "usedPremiseCites: a GLOBAL cite is never a local antecedent; an empty cert
     const mask = try p.usedPremiseCites(&cites, &.{});
     try testing.expect(!mask[0]);
     try testing.expect(!mask[1]); // a global is never a local antecedent
+}
+
+test "fvarBinds: an abstraction's origs become caller-scope bindings (display name, fvar, sort)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    // an abstraction over two inherited fvars: a hygienic `b#7` and a plain `x`.
+    const mangled = try p.internStrRt("b#7");
+    const plain = try p.internStrRt("x");
+    const abs: FvarAbstraction = .{
+        .names = &.{ try p.internStrRt("p1"), try p.internStrRt("p2") },
+        .sorts = &.{ rig.int, rig.int },
+        .origs = &.{ mangled, plain },
+        .args = &.{},
+    };
+    var wk = Walk.init(arena, rig.ctx.interner, Polynomial.Rig.source, rig.ctx.sink);
+    const binds = try p.fvarBinds(&wk, abs);
+    try testing.expectEqual(@as(usize, 2), binds.len);
+    // the DISPLAY name drops the hygiene mangle (so the call-site arg re-resolves by spelling)
+    // while `fvar` keeps the identity.
+    try testing.expectEqualStrings("b", rig.ctx.interner.stringBytes(binds[0].name));
+    try testing.expectEqual(mangled, binds[0].fvar);
+    try testing.expectEqual(rig.int, binds[0].sort);
+    try testing.expectEqualStrings("x", rig.ctx.interner.stringBytes(binds[1].name));
+    try testing.expectEqual(plain, binds[1].fvar);
+}
+
+test "fvarBinds: an abstraction with no free fvars yields no bindings" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const abs: FvarAbstraction = .{ .names = &.{}, .sorts = &.{}, .origs = &.{}, .args = &.{} };
+    var wk = Walk.init(arena, rig.ctx.interner, Polynomial.Rig.source, rig.ctx.sink);
+    const binds = try rig.prove.fvarBinds(&wk, abs);
+    try testing.expectEqual(@as(usize, 0), binds.len);
 }
