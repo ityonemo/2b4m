@@ -478,6 +478,12 @@ const Expander = struct {
             }
         }
         if (tok.tag != .symbol) switch (try self.resolveDefine(env, tok)) {
+            // PENDING: a demand is outstanding (an alias hop needs its import fetched, say).
+            // Leave the call as written — `finish` suspends and the whole pass re-runs — and
+            // do NOT fall through to `globalTok`: symbolizing would demand this name as an
+            // IDENTIFIER, and if it resolves to a define that demand is a misuse (FetchTask's
+            // `.define` arm), diagnosed against another file's offsets.
+            .pending => return results.append(a, try self.box(.{ .call = .{ .callee = stamp(env, tok), .args = args } })),
             .define => |d| {
                 const def = d.decl.define;
                 if (def.params.len != args.len) {
@@ -492,7 +498,7 @@ const Expander = struct {
                 }
                 return results.append(a, try self.box(.{ .call = .{ .callee = stamp(env, tok), .args = args } }));
             },
-            .pending, .other => {},
+            .other => {},
         };
         const callee = try self.globalTok(env, tok);
         try results.append(a, try self.box(.{ .call = .{ .callee = callee, .args = args } }));

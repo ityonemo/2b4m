@@ -232,6 +232,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/define_alias_bad.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/define_forward_permuted_ok.bpa" });
 
+    // a define whose body calls an ALIAS to a REMOTE define: expanding the outer define
+    // resolves the callee in the outer define's home file, where it is an alias, and
+    // following that alias needs the alias's own import fetched. While that demand is
+    // outstanding the pass must report PENDING (suspend + retry), not fall through and
+    // demand the name as an IDENTIFIER — a define is never one, so the demand would hit
+    // FetchTask's misuse arm against another file's offsets (it crashed, pre-fix).
+    ctx.okSilent(&.{ "check", "tests/cases/define_alias_nested.bpa" });
+
     // ALIAS-COLLAPSE (Foundation C): an IDENT alias (sort/const/func/pred) binds to the
     // target's origin Index, so a local proof matches a source axiom cited across the alias
     // boundary (the collapsed sorts are one Index — no mismatch).
