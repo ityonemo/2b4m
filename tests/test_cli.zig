@@ -240,6 +240,11 @@ pub fn addTests(
     // FetchTask's misuse arm against another file's offsets (it crashed, pre-fix).
     ctx.okSilent(&.{ "check", "tests/cases/define_alias_nested.bpa" });
 
+    // the same PENDING window at a binder GUARD: an inline `where` whose guard aliases a
+    // remote define, inside another define's body. A pending guard must be left as written
+    // (the pass re-runs), never symbolized — symbolizing demands a define as an identifier.
+    ctx.okSilent(&.{ "check", "tests/cases/define_guard_nested.bpa" });
+
     // ALIAS-COLLAPSE (Foundation C): an IDENT alias (sort/const/func/pred) binds to the
     // target's origin Index, so a local proof matches a source axiom cited across the alias
     // boundary (the collapsed sorts are one Index — no mismatch).

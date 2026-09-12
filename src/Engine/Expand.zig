@@ -278,6 +278,15 @@ const Expander = struct {
         return null;
     }
 
+    /// A BINDER-GUARD token: like `globalTok`, but never symbolizes while the name's
+    /// define-resolution is outstanding — symbolizing demands it as an IDENTIFIER, and a name
+    /// that turns out to be a define is a misuse there (FetchTask's `.define` arm). The
+    /// guard desugaring handles a RESOLVED define; this covers the pending window.
+    fn guardTok(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Token {
+        if (tok.tag != .symbol and (try self.resolveDefine(env, tok)) == .pending) return stamp(env, tok);
+        return self.globalTok(env, tok);
+    }
+
     /// A GLOBAL-position token (a callee, a sort, a guard, a bare/qualified name that is no
     /// local/param/define): symbolized when the env demands it, else copied (re-stamped).
     fn globalTok(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Token {
@@ -360,7 +369,12 @@ const Expander = struct {
                         out.* = .{
                             .name = nameTok(x.env, b.name, fresh_name),
                             .sort = try self.globalTok(x.env, b.sort),
-                            .guard = if (b.guard) |g| try self.globalTok(x.env, g) else null,
+                            // a binder GUARD naming a define is desugared away above; one that
+                            // survives here is an opaque predicate, so symbolize it — unless its
+                            // resolution is still PENDING, in which case leave the name as
+                            // written (the pass re-runs) rather than demanding a define as an
+                            // identifier. `guardTok` makes that distinction.
+                            .guard = if (b.guard) |g| try self.guardTok(x.env, g) else null,
                         };
                     }
                     try work.append(a, .{ .pop_scope = mark });
@@ -404,8 +418,14 @@ const Expander = struct {
     /// resume re-expands from the parsed AST).
     fn desugarDefineGuards(self: *Expander, env: *const Env, q: @FieldType(ast.Expr, "quant")) Allocator.Error!?*const ast.Expr {
         var any = false;
-        for (q.binders) |b| if (b.guard) |g| {
-            if ((try self.resolveDefine(env, g)) == .define) any = true;
+        for (q.binders) |b| if (b.guard) |g| switch (try self.resolveDefine(env, g)) {
+            .define => any = true,
+            // PENDING: a demand is outstanding (an alias hop needs its import). Leave the
+            // quantifier alone — `finish` suspends and the whole pass re-runs — rather than
+            // reading it as "not a define" and leaving an opaque binder guard, which would
+            // then be demanded as an IDENTIFIER (and a define is never one).
+            .pending => return null,
+            .other => {},
         };
         if (!any) return null;
         var body = q.body;
@@ -416,6 +436,7 @@ const Expander = struct {
             const nb = try self.arena.alloc(ast.Binder, 1);
             nb[0] = b;
             if (b.guard) |g| if ((try self.resolveDefine(env, g)) == .define) {
+                // (resolution settled above: a PENDING guard returned early.)
                 const arg = try self.box(.{ .name = b.name });
                 const args = try self.arena.alloc(*const ast.Expr, 1);
                 args[0] = arg;
