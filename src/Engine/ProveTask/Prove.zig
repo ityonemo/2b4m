@@ -6026,6 +6026,13 @@ fn emitFarkasCommEq(cert: *ArithCert, block: *std.ArrayList(ast.Step), comm_stmt
 /// certs (a theory atom, closed from the branch's assumed theory literals). Every step is
 /// kernel-checked. Declines (false) when `smt.decideMixed` doesn't confirm validity, when the
 /// atom count exceeds the limit, or when a theory leaf can't be discharged.
+/// Is `body` a skeleton the mixed certifier can decompose into atoms — i.e. quantifier-free?
+/// A bare atom counts (see `arithMixedCert`); a quantifier does not, its binders having been
+/// peeled into eigenvariables before the body is examined.
+fn mixedCertShape(self: *const Prove, body: TermId) bool {
+    return self.pool.get(body) != .quant;
+}
+
 fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const peel = try self.arithPeel(goal_p);
     // strip the body's leading `->` antecedents into local hypotheses (assume blocks); each
@@ -6038,10 +6045,14 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
         try strip_assumes.append(self.ctx.arena, node.bin.lhs);
         body = node.bin.rhs;
     }
-    // the body must be genuinely MIXED — a boolean combination (bin/not) mentioning at least
-    // one propositional (non-theory) atom; a pure equation/order/exists is another cert's job.
-    const bn = self.pool.get(body);
-    if (bn != .bin and bn != .not) return false;
+    // the body must be a SKELETON the atom decomposition can handle: any quantifier-free
+    // proposition. A boolean combination is the motivating case, but a BARE atom belongs here
+    // too — the equation certifier proves an equation by REWRITING, which cannot always
+    // connect goal to premise (`sub(y,x) = succ(d)` from `add(x, succ(d)) = y`: the premise
+    // rule fires on a term the goal does not contain), while the skeleton decides it
+    // semantically. Gating on `bin`/`not` refused exactly that and declined the whole chain —
+    // the pre-refactor engine's mixed certifier had no such gate (std/integer-divides.bpa:1073).
+    if (!self.mixedCertShape(body)) return false;
 
     // collect the atoms (premises + stripped antecedents + body); decide validity.
     var decide_prems: std.ArrayList(TermId) = .empty;
@@ -8642,4 +8653,37 @@ test "fvarBinds: an abstraction with no free fvars yields no bindings" {
     var wk = Walk.init(arena, rig.ctx.interner, Polynomial.Rig.source, rig.ctx.sink);
     const binds = try rig.prove.fvarBinds(&wk, abs);
     try testing.expectEqual(@as(usize, 0), binds.len);
+}
+
+test "mixedCertShape: a bare equation/order atom is in scope for the mixed skeleton" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    const a = try rig.v("a");
+    const b = try rig.v("b");
+    // `a = b` — the std/integer-divides.bpa:1073 shape (a bare equation the equation cert
+    // cannot reach by rewriting, decided semantically by the skeleton instead).
+    try testing.expect(p.mixedCertShape(try rig.eq(a, b)));
+    // a boolean combination is in scope too (the original motivating shape).
+    const conj = try p.pool.add(.{ .bin = .{ .op = .and_op, .lhs = try rig.eq(a, b), .rhs = try rig.eq(b, a) } });
+    try testing.expect(p.mixedCertShape(conj));
+    const neg = try p.pool.add(.{ .not = try rig.eq(a, b) });
+    try testing.expect(p.mixedCertShape(neg));
+}
+
+test "mixedCertShape: a QUANTIFIED body is not a skeleton (its binders are peeled first)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    const a = try rig.v("a");
+    const body = try rig.eq(a, a);
+    const closed = try p.pool.close(body, try rig.ctx.interner.internString("a"));
+    const q = try p.pool.add(.{ .quant = .{ .q = .forall, .sort = rig.int, .hint = try rig.ctx.interner.internString("a"), .body = closed } });
+    try testing.expect(!p.mixedCertShape(q));
 }
