@@ -523,7 +523,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
             .succ = ops.succ,
             .prev = ops.prev,
         };
-        sorted = (try cancelInverses(self, cancel_symbols, pr.rules, pr.add_comm.?, pr.add_swap.?, 0, sorted, &trace)) orelse return null;
+        sorted = (try cancelInverses(self, cancel_symbols, pr.rules, pr.add_comm.?, pr.add_swap.?, sorted, &trace)) orelse return null;
     }
     return .{ .nf = sorted, .trace = trace.items };
 }
@@ -791,19 +791,20 @@ fn emitSwap(
     return after;
 }
 
-/// Cancel additive-inverse pairs in a sorted tower. The neg-cancel rule indices are located by
-/// scanning `rules` for the addNegRight/addNegLeft/addZeroLeft/addZeroRight cite heads (a
-/// structural scan over the hardcoded set — the fold rules past fold_end and the fold prefix).
-/// `pub` so the arithmetic additive normalizer (arithCanon) reuses the SAME bubble-to-adjacent
-/// cancellation (a non-adjacent inverse pair `x … neg(x)` is bubbled together before cancelling)
-/// rather than relying on sort adjacency, which misses pairs separated by another summand.
+/// Cancel additive-inverse pairs in a sorted tower `succ^k(sum)`; the tower (its offset k) is
+/// re-parsed from `whole` each round, and every emitted rewrite rebuilds the WHOLE tower. The
+/// neg-cancel rule indices are located by scanning `rules` for the addNegRight/addNegLeft/
+/// addZeroLeft/addZeroRight cite heads (a structural scan over the hardcoded set — the fold
+/// rules past fold_end and the fold prefix). `pub` so the arithmetic additive normalizer
+/// (arithCanon) reuses the SAME bubble-to-adjacent cancellation (a non-adjacent inverse pair
+/// `x … neg(x)` is bubbled together before cancelling) rather than relying on sort adjacency,
+/// which misses pairs separated by another summand.
 pub fn cancelInverses(
     self: *Prove,
     symbols: presburger_mod.Symbols,
     rules: []const simplify_mod.Rule,
     comm_idx: ?usize,
     swap_idx: ?usize,
-    offset: i128,
     whole0: TermId,
     trace: *std.ArrayList(simplify_mod.Rewrite),
 ) Error!?TermId {
@@ -818,6 +819,7 @@ pub fn cancelInverses(
     var whole = whole0;
     outer: while (true) {
         const tower = (try parseTower(self, symbols, whole)) orelse return whole;
+        const offset = tower.offset;
         const leaves = tower.leaves;
         var pair: ?struct { i: usize, j: usize } = null;
         for (leaves, 0..) |lj, j| {
@@ -946,6 +948,7 @@ pub const Rig = struct {
     add: term.SymId,
     mul: term.SymId,
     neg: term.SymId,
+    succ: term.SymId,
 
     pub const source =
         \\sort Int
@@ -953,6 +956,7 @@ pub const Rig = struct {
         \\func add(a: Int, b: Int): Int
         \\func mul(a: Int, b: Int): Int
         \\func neg(a: Int): Int
+        \\func succ(a: Int): Int
     ;
 
     pub fn init(arena: std.mem.Allocator, io: std.Io) !Rig {
@@ -962,7 +966,7 @@ pub const Rig = struct {
         const ns = try ctx.interner.namespace(.universe, file);
         const eng = try arena.create(Engine);
         eng.* = Engine.init(arena, ctx);
-        for ([_][]const u8{ "Int", "ZERO", "add", "mul", "neg" }) |n| {
+        for ([_][]const u8{ "Int", "ZERO", "add", "mul", "neg", "succ" }) |n| {
             _ = try eng.rack(try FetchTask.new(arena, .{ .file = file, .name = try ctx.interner.internString(n), .loc = 0 }));
         }
         try eng.run();
@@ -982,6 +986,7 @@ pub const Rig = struct {
             .add = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "add"))),
             .mul = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "mul"))),
             .neg = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "neg"))),
+            .succ = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "succ"))),
         };
     }
 

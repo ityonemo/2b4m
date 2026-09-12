@@ -77,6 +77,8 @@ pub fn addTests(
     // cites, tripping its own use-all-facts pass ("unused fact: step 'prem-N'"). The producer
     // drops it from the antecedents AND from the call-site discharge list, in lockstep.
     ctx.okSilent(&.{ "check", "tests/cases/arithmetic_unused_premise.bpa" });
+    // the additive canonicalizer sorts + inverse-cancels UNDER a succ tower (premise combination).
+    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_sub_from_add.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/simplify_unused_premise.bpa" });
 
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own

@@ -7163,20 +7163,19 @@ fn arithEmitEquation(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.S
 /// concatenating every trace. The sort places an inverse pair adjacent so the next normalize's
 /// addNegRight/Left cancels it. Returns the final `Result` (NF + full trace), null on decline.
 fn arithCanon(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, pre_rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: simplify_mod.Result) Error!?simplify_mod.Result {
-    // cancelInverses (below) needs neg/zero/add/succ/prev to bubble + cancel an inverse pair; the
-    // AC sort itself only reorders over `add`, so acPlan gets the add-only view.
-    const acsym: presburger_mod.Symbols = .{ .add = symbols.add };
+    // the pre-rules float succ/prev to the root (`succ(add(…))`), so both the AC sort and the
+    // inverse-cancel work UNDER that tower: acPlan strips it, cancelInverses parses it.
     var nf = pre.nf;
     var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
     try trace.appendSlice(self.ctx.arena, pre.trace);
     var iter: usize = 0;
     while (iter < 6) : (iter += 1) {
-        const plan = (try self.acPlan(acsym, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
+        const plan = (try self.acPlan(symbols, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
         try trace.appendSlice(self.ctx.arena, plan.trace);
         // BUBBLE-cancel non-adjacent inverse pairs (`x … neg(x)` separated by other summands):
         // reuse Polynomial's cancelInverses, which moves the pair together before applying
         // addNegRight/Left — sort adjacency alone (the re-normalize below) misses separated pairs.
-        const cancelled = (try Polynomial.cancelInverses(self, symbols, rules, comm_idx, swap_idx, 0, plan.sorted, &trace)) orelse plan.sorted;
+        const cancelled = (try Polynomial.cancelInverses(self, symbols, rules, comm_idx, swap_idx, plan.sorted, &trace)) orelse plan.sorted;
         // re-normalize the (bubble-cancelled) sorted form (drop any residual ZERO, fold).
         const renorm = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, pre_rules, cancelled, 1000) catch |e| switch (e) {
             error.Limit => return null,
@@ -7914,7 +7913,9 @@ const AcPlan = struct { sorted: TermId, trace: []const simplify_mod.Rewrite };
 /// Re-associate `start` to a right-nested comb (via associativity only, terminating), then
 /// bubble-sort its atoms into canonical `termOrder`, accumulating one trace. `assoc_idx` is
 /// the rule-array index of the associativity rule (after the distribute pre-rules); `comm_idx`
-/// / `swap_idx` the commutativity / swap rules.
+/// / `swap_idx` the commutativity / swap rules. A succ/prev TOWER prefix (the pre-rules float
+/// succ/prev to the root: `succ(add(…))`) is stripped first and the sum sorted UNDER it — every
+/// emitted rewrite still names the whole tower, as the kernel's `rewrite` requires.
 pub fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
     const op_sym = symbols.add.?; // the reordered operator (the AC vocabulary's `add` slot)
     // phase 1: right-nest via associativity ONLY (a single-rule slice, terminating).
@@ -7923,9 +7924,10 @@ pub fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simp
         error.Limit => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
-    // phase 2: flatten the right-nested comb and bubble-sort.
+    // phase 2: strip the tower, flatten the right-nested comb under it, and bubble-sort.
+    const tower = self.stripTower(symbols, rn.nf);
     var leaves: std.ArrayList(TermId) = .empty;
-    try self.flattenSum(op_sym, rn.nf, &leaves);
+    try self.flattenSum(op_sym, tower.inner, &leaves);
     var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
     // phase-1 normalized over the single-rule slice, so its trace rule_idx is 0-relative;
     // rebase it to the full-array index.
@@ -7934,24 +7936,48 @@ pub fn acPlan(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simp
         r.rule_idx = rw.rule_idx + assoc_idx;
         try trace.append(self.ctx.arena, r);
     }
-    const sorted = (try self.sortTrace(rules, comm_idx, swap_idx, op_sym, leaves.items, &trace)) orelse return null;
+    const sorted = (try self.sortTrace(symbols, rules, comm_idx, swap_idx, op_sym, tower.offset, leaves.items, &trace)) orelse return null;
     return .{ .sorted = sorted, .trace = trace.items };
 }
 
+/// A term split into its succ/prev prefix (signed count) and the term underneath.
+const StrippedTower = struct { offset: i128, inner: TermId };
+
+/// Peel `succ^j(prev^k(inner))` (in any interleaving) off the root: the signed offset and
+/// the inner term. A theory without succ/prev never strips (offset 0, inner = the term).
+fn stripTower(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) StrippedTower {
+    var offset: i128 = 0;
+    var cur = t;
+    while (true) {
+        const node = self.pool.get(cur);
+        if (node != .app or node.app.args_len != 1) break;
+        if (self.symIs(node.app.sym, symbols.succ)) {
+            offset += 1;
+        } else if (self.symIs(node.app.sym, symbols.prev)) {
+            offset -= 1;
+        } else break;
+        cur = self.pool.args(node.app)[0];
+    }
+    return .{ .offset = offset, .inner = cur };
+}
+
 /// Bubble-sort a comb's summands, appending one rewrite per adjacent swap (the swap lemma
-/// inside the comb, the commutativity lemma for the final pair). Returns the sorted whole
-/// comb, or null when a fabricated rewrite fails to match its lemma. `leaves` is mutated.
+/// inside the comb, the commutativity lemma for the final pair). The comb sits under the
+/// tower `succ^offset(…)`: each rewrite's before/after is the whole tower. Returns the sorted
+/// whole, or null when a fabricated rewrite fails to match its lemma. `leaves` is mutated.
 fn sortTrace(
     self: *Prove,
+    symbols: presburger_mod.Symbols,
     rules: []const simplify_mod.Rule,
     comm_idx: usize,
     swap_idx: usize,
     op_sym: term.SymId,
+    offset: i128,
     leaves_in: []const TermId,
     trace: *std.ArrayList(simplify_mod.Rewrite),
 ) Error!?TermId {
     const leaves = try self.ctx.arena.dupe(TermId, leaves_in);
-    var whole = try self.buildRightNested(op_sym, leaves);
+    var whole = (try self.buildArithTowerSigned(offset, try self.buildRightNested(op_sym, leaves), symbols)) orelse return null;
     if (leaves.len > 1) {
         for (0..leaves.len - 1) |pass| {
             for (0..leaves.len - 1 - pass) |i| {
@@ -7963,7 +7989,7 @@ fn sortTrace(
                 const sub_before = try self.buildRightNested(op_sym, leaves[i..]);
                 std.mem.swap(TermId, &leaves[i], &leaves[i + 1]);
                 const sub_after = try self.buildRightNested(op_sym, leaves[i..]);
-                const after = try self.buildRightNested(op_sym, leaves);
+                const after = (try self.buildArithTowerSigned(offset, try self.buildRightNested(op_sym, leaves), symbols)) orelse return null;
                 const rule = rules[rule_idx];
                 const bindings = (try simplify_mod.matchRule(self.ctx.arena, self.pool, self.ctx.interner, rule, rule.lhs, sub_before)) orelse return null;
                 try trace.append(self.ctx.arena, .{
@@ -8686,4 +8712,79 @@ test "mixedCertShape: a QUANTIFIED body is not a skeleton (its binders are peele
     const closed = try p.pool.close(body, try rig.ctx.interner.internString("a"));
     const q = try p.pool.add(.{ .quant = .{ .q = .forall, .sort = rig.int, .hint = try rig.ctx.interner.internString("a"), .body = closed } });
     try testing.expect(!p.mixedCertShape(q));
+}
+
+/// The additive normalizer's rule set over the rig's ring + succ, exactly as arithEmitEquation
+/// builds it: the ℤ elimination pre-rules (qualified, so the rig file needn't declare the
+/// lemmas) followed by the add AC triple at assoc/comm/swap.
+const TowerRules = struct { rules: []const simplify_mod.Rule, assoc: usize, comm: usize, swap: usize, symbols: presburger_mod.Symbols };
+fn towerRules(rig: Polynomial.Rig) !TowerRules {
+    const symbols: presburger_mod.Symbols = .{ .nat = rig.int, .zero = rig.zero, .succ = rig.succ, .add = rig.add, .neg = rig.neg };
+    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    try rig.prove.pushAdditiveElim(&rules, &cites, symbols, try rig.ctx.interner.internString("T"), 0);
+    const pre = rules.items.len;
+    try rig.prove.pushACTriple(&rules, &cites, rig.add, rig.int, "addIsAssociative", "addIsCommutative", "addLeftSwap", 0);
+    return .{ .rules = rules.items, .assoc = pre, .comm = pre + 1, .swap = pre + 2, .symbols = symbols };
+}
+
+test "acPlan: a succ-tower root sorts the sum UNDER the tower — succ(add(y, x)) ≡ succ(add(x, y))" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
+    const x = try rig.v("x");
+    const y = try rig.v("y");
+    const yx = try rig.a1(rig.succ, try rig.a2(rig.add, y, x));
+    const xy = try rig.a1(rig.succ, try rig.a2(rig.add, x, y));
+    const ps = (try rig.prove.acPlan(tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, yx)).?;
+    const pt = (try rig.prove.acPlan(tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, xy)).?;
+    try testing.expect(rig.prove.pool.alphaEq(ps.sorted, pt.sorted));
+    // exactly one side moved, by ONE commutativity rewrite whose before/after are the whole towers.
+    const moved = if (ps.trace.len > 0) ps else pt;
+    const moved_start = if (ps.trace.len > 0) yx else xy;
+    try testing.expectEqual(@as(usize, 1), moved.trace.len);
+    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].before, moved_start));
+    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].after, moved.sorted));
+}
+
+test "cancelInverses: an inverse pair UNDER a succ tower cancels and the tower survives — succ(add(x, add(d, neg(x)))) ≡ succ(d)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
+    const x = try rig.v("x");
+    const d = try rig.v("d");
+    const whole = try rig.a1(rig.succ, try rig.a2(rig.add, x, try rig.a2(rig.add, d, try rig.a1(rig.neg, x))));
+    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    const out = (try Polynomial.cancelInverses(rig.prove, tr.symbols, tr.rules, tr.comm, tr.swap, whole, &trace)).?;
+    try testing.expect(rig.prove.pool.alphaEq(out, try rig.a1(rig.succ, d)));
+    // the rewrites chain: the first starts at the whole tower, each next at the previous after,
+    // the last lands on the result — every step names the WHOLE term (kernel `rewrite` shape).
+    try testing.expect(trace.items.len > 0);
+    try testing.expect(rig.prove.pool.alphaEq(trace.items[0].before, whole));
+    for (trace.items[1..], 0..) |rw, i| try testing.expect(rig.prove.pool.alphaEq(rw.before, trace.items[i].after));
+    try testing.expect(rig.prove.pool.alphaEq(trace.items[trace.items.len - 1].after, out));
+}
+
+test "arithCanon: sort + inverse-cancel both act UNDER the succ tower — succ(add(add(x, d), add(y, neg(x)))) ≡ succ(add(y, d))" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
+    const x = try rig.v("x");
+    const y = try rig.v("y");
+    const d = try rig.v("d");
+    const lhs = try rig.a1(rig.succ, try rig.a2(rig.add, try rig.a2(rig.add, x, d), try rig.a2(rig.add, y, try rig.a1(rig.neg, x))));
+    const rhs = try rig.a1(rig.succ, try rig.a2(rig.add, y, d));
+    const pre_rules = tr.rules[0..tr.assoc];
+    const rs = (try rig.prove.arithCanon(tr.symbols, tr.rules, pre_rules, tr.assoc, tr.comm, tr.swap, .{ .nf = lhs, .trace = &.{} })).?;
+    const rt = (try rig.prove.arithCanon(tr.symbols, tr.rules, pre_rules, tr.assoc, tr.comm, tr.swap, .{ .nf = rhs, .trace = &.{} })).?;
+    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
 }
