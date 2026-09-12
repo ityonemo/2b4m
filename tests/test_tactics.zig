@@ -72,6 +72,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/polynomial_cross_term.bpa" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_cross_term.bpa" });
 
+    // a cited premise the CERTIFIER never uses (its rewrite rule never fires) must not become
+    // a schema antecedent: the generated schema would carry a restated hypothesis nothing
+    // cites, tripping its own use-all-facts pass ("unused fact: step 'prem-N'"). The producer
+    // drops it from the antecedents AND from the call-site discharge list, in lockstep.
+    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_unused_premise.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/simplify_unused_premise.bpa" });
+
     // polynomial(field): the accelerant over a FIELD theory (bare ONE constant,
     // not the ℤ succ-tower). Guards field.bpa's ring-lemma shims + swaps resolving
     // by bare name in field's scope, and the additive-inverse cancellation of the

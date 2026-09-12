@@ -145,6 +145,12 @@ guard_wrappers: u32 = 0,
 /// diagnostic; `demandUsing` then reports `.blocked` (the step's read pass suspends and the
 /// producer re-runs on resume, idempotently). Null = no demand outstanding.
 producer_blocker: ?Engine.TaskIndex = null,
+/// The LOCAL premise refs the last produced accelerant synthetic actually kept as antecedents
+/// (`Synthetic.premises`) — a producer DROPS a cited rule its certificate never fired, so the
+/// call site must discharge exactly these, not every local ref the author wrote. Set by
+/// `demandUsing` per step; read by `lowerUsing` (`accelerantPremises`). Null = not produced
+/// this pass (an admitted/trusted step, or a non-accelerant word).
+producer_premise_refs: ?[]const lexer.Token = null,
 /// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
 /// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
 /// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
@@ -2094,7 +2100,10 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed,
         };
-        if (produced) |s| break :blk s;
+        if (produced) |s| {
+            self.producer_premise_refs = s.premises;
+            break :blk s;
+        }
         // a null WITHOUT a diagnostic = the producer racked a demand it needs first.
         if (self.producer_blocker) |blocker| {
             self.producer_blocker = null;
@@ -2276,7 +2285,10 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
         c.rule.name == try self.internStr("arithmetic") or c.rule.name == try self.internStr("arithmetic_quantified"))
     {
         // polynomial has NO refs (all rules are global well-known lemmas cited inside the cert);
-        // localRefsToSteps returns empty for it. The others' LOCAL equation refs are antecedents.
+        // localRefsToSteps returns empty for it. The others' LOCAL equation refs are antecedents
+        // — except any the producer DROPPED (a cited rule its cert never fired): it recorded the
+        // surviving refs, and the instance's antecedents match those exactly.
+        if (self.producer_premise_refs) |kept| return self.localRefsToSteps(w, kept);
         return self.localRefsToSteps(w, c.refs);
     }
     // tautology has no head: its antecedents ARE the cited refs, in order.
@@ -3358,7 +3370,11 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
 
     // the inner proposition the cert proves under its assumptions: `prem0 -> … -> (s = t)`.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
-    const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
+    // the antecedents are the premises the cert CITES (an uncited rule is dropped — see
+    // wrapSimplifyPremises), so compute them from the emitted cert before wrapping.
+    const kept = try self.keptPremises(local_cites.items, local_formulae.items, steps);
+    const kept_refs = try self.keptRefTokens(w, c.refs, local_cites.items, steps);
+    const inner_prop = try self.impliesChain(eq_prop, kept);
 
     // wrap the cert in nested `assume <local-prem>` blocks (the `->` antecedents), then in
     // `fix` blocks for the ∀ eigenvariables (the quantified variant's re-generalization).
@@ -3383,7 +3399,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
         .name = name,
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
-        .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
+        .premises = kept_refs, // the cited premises, discharged at the call site
     };
 }
 
@@ -3399,6 +3415,18 @@ fn localRefTokens(self: *Prove, w: *const Walk, refs: []const lexer.Token) Error
     return out.items;
 }
 
+/// The LOCAL refs whose premises the cert CITES — the call-site discharge list, in lockstep
+/// with the antecedents `keptPremises`/`wrapSimplifyPremises` keep. A ref whose rewrite never
+/// fired is neither an antecedent nor discharged (see `wrapSimplifyPremises`).
+fn keptRefTokens(self: *Prove, w: *const Walk, refs: []const lexer.Token, cites: []const EqCert.RuleCite, inner: []const ast.Step) Error![]const lexer.Token {
+    const locals = try self.localRefTokens(w, refs);
+    const used = try self.usedPremiseCites(cites, inner);
+    if (locals.len != used.len) return locals; // shapes disagree — keep every local (no filter)
+    var out: std.ArrayList(lexer.Token) = .empty;
+    for (locals, used) |r, u| if (u) try out.append(self.ctx.arena, r);
+    return out.items;
+}
+
 /// `ants[0] -> … -> ants[n] -> consequent` (right-assoc) as a kernel term.
 fn impliesChain(self: *Prove, consequent: TermId, ants: []const TermId) Error!TermId {
     var acc = consequent;
@@ -3410,12 +3438,75 @@ fn impliesChain(self: *Prove, consequent: TermId, ants: []const TermId) Error!Te
     return acc;
 }
 
+/// Which LOCAL premises the emitted certificate ACTUALLY cites: a premise becomes a rewrite
+/// RULE offered to the normalizer, but a rule whose lhs never matches never fires, and
+/// `EqCert` emits a citation only for rules the trace used. `cites[i]` names premise `i`'s
+/// restated-hypothesis label; scan `steps` for a citation of it. (Scanning the emitted proof
+/// — rather than threading each producer's trace here — keeps the one seam every producer
+/// already shares, and is exactly the question being asked: does the cert cite this step?)
+fn usedPremiseCites(self: *Prove, cites: []const EqCert.RuleCite, steps: []const ast.Step) Error![]bool {
+    const used = try self.ctx.arena.alloc(bool, cites.len);
+    @memset(used, false);
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    var stack: std.ArrayList([]const ast.Step) = .empty;
+    try stack.append(a, steps);
+    while (stack.pop()) |lvl| for (lvl) |st| switch (st.body) {
+        .claim => |c| for (c.refs) |r| {
+            for (cites, used) |cite, *u| {
+                if (cite == .local and cite.local.hyp == r.name) u.* = true;
+            }
+        },
+        .assume => |blk| try stack.append(a, blk.steps),
+        .fix => |blk| try stack.append(a, blk.steps),
+        .unpack => |blk| {
+            for (cites, used) |cite, *u| {
+                if (cite == .local and cite.local.hyp == blk.from.name) u.* = true;
+            }
+            try stack.append(a, blk.steps);
+        },
+        .case => |cb| {
+            for (cites, used) |cite, *u| {
+                if (cite == .local and cite.local.hyp == cb.disj.name) u.* = true;
+            }
+            for (cb.arms) |arm| try stack.append(a, arm.steps);
+        },
+    };
+    return used;
+}
+
+/// The LOCAL premises the cert cites, in order — what `wrapSimplifyPremises` will wrap, so a
+/// caller's `impliesChain` antecedents match the wrapper's blocks exactly. (An uncited premise
+/// is dropped from both: see `wrapSimplifyPremises`.)
+fn keptPremises(self: *Prove, cites: []const EqCert.RuleCite, formulae: []const TermId, inner: []const ast.Step) Error![]const TermId {
+    const used = try self.usedPremiseCites(cites, inner);
+    var out: std.ArrayList(TermId) = .empty;
+    for (formulae, used) |f, u| if (u) try out.append(self.ctx.arena, f);
+    return out.items;
+}
+
 /// Wrap the cert `inner` (proving the equation `eq_prop`) in nested `assume <local-prem>`
-/// blocks — one per LOCAL rule premise, restating its hypothesis (under the deterministic
-/// `prem-…` label the cert cites) and exporting `prem_i -> …` with `implies_intro` out
-/// through each level. With no local premises the cert steps pass through verbatim. (Same
-/// shape as tautology's `wrapTautologyPremises`.)
-fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites: []const EqCert.RuleCite, formulae: []const TermId, eq_prop: TermId, inner: []const ast.Step) Error![]const ast.Step {
+/// blocks — one per LOCAL rule premise the cert CITES, restating its hypothesis (under the
+/// deterministic `prem-…` label the cert cites) and exporting `prem_i -> …` with
+/// `implies_intro` out through each level. With no such premises the cert steps pass through
+/// verbatim. (Same shape as tautology's `wrapTautologyPremises`.)
+///
+/// A premise the cert never cites is DROPPED — not wrapped: it was offered to the normalizer
+/// as a rewrite rule and never fired, so restating it would leave an uncited step that trips
+/// the generated schema's own use-all-facts pass. `keptPremises` computes the surviving
+/// formulae so the caller's `impliesChain` antecedents match this wrapper's blocks exactly.
+fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites_in: []const EqCert.RuleCite, formulae_in: []const TermId, eq_prop: TermId, inner: []const ast.Step) Error![]const ast.Step {
+    const used = try self.usedPremiseCites(cites_in, inner);
+    var cites_kept: std.ArrayList(EqCert.RuleCite) = .empty;
+    var formulae_kept: std.ArrayList(TermId) = .empty;
+    for (cites_in, formulae_in, used) |c, f, u| if (u) {
+        try cites_kept.append(self.ctx.arena, c);
+        try formulae_kept.append(self.ctx.arena, f);
+    };
+    const cites = cites_kept.items;
+    const formulae = formulae_kept.items;
+
     var body_steps = inner;
     var i: usize = formulae.len;
     while (i > 0) {
@@ -3806,10 +3897,12 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // wrap the cert in nested `assume <local-eq>` blocks (the `->` antecedents), each restating
     // its hypothesis under `body_label` and exporting `prem_i -> … -> (start = target)` out.
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = target } });
+    const kept = try self.keptPremises(local_cites.items, local_formulae.items, body_steps.items);
+    const kept_refs = try self.keptRefTokens(w, c.refs, local_cites.items, body_steps.items);
     const steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, body_steps.items);
 
     // schema body proposition = `local-prem0 -> … -> (start = target)`; params already in place.
-    const full_prop = try self.impliesChain(eq_prop, local_formulae.items);
+    const full_prop = try self.impliesChain(eq_prop, kept);
     const body_expr = try b.termExpr(full_prop);
 
     // params from the abstracted free fvars (value params of the fvars' sorts).
@@ -3825,7 +3918,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         .name = name,
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
-        .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
+        .premises = kept_refs, // the cited premises, discharged at the call site
     };
 }
 
@@ -4512,7 +4605,9 @@ fn finishReorder(
     }
 
     const eq_prop = try self.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
-    const inner_prop = try self.impliesChain(eq_prop, local_formulae.items);
+    const kept = try self.keptPremises(local_cites.items, local_formulae.items, steps);
+    const kept_refs = try self.keptRefTokens(w, c.refs, local_cites.items, steps);
+    const inner_prop = try self.impliesChain(eq_prop, kept);
     steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
@@ -4531,7 +4626,7 @@ fn finishReorder(
         .name = name,
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
-        .premises = try self.localRefTokens(w, c.refs), // discharged at the call site
+        .premises = kept_refs, // the cited premises, discharged at the call site
     };
 }
 
@@ -5376,7 +5471,9 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         try local_formulae.append(self.ctx.arena, p.formula);
     };
 
-    const inner_prop = try self.impliesChain(goal_p, local_formulae.items);
+    const kept = try self.keptPremises(local_cites.items, local_formulae.items, body_steps);
+    const kept_refs = try self.keptRefTokens(w, c.refs, local_cites.items, body_steps);
+    const inner_prop = try self.impliesChain(goal_p, kept);
     const steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, goal_p, body_steps);
 
     const body_expr = try b.termExpr(inner_prop);
@@ -5391,7 +5488,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         .name = name,
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
-        .premises = try self.localRefTokens(w, c.refs),
+        .premises = kept_refs,
     };
 }
 
@@ -8414,4 +8511,69 @@ test "completePolyOps: a goal with neg but no ZERO demands ZERO from the theory 
     ops = (try rig.prove.readPolyOps(plain)).?;
     const done2 = (try rig.prove.completePolyOps(null, ops)).?;
     try testing.expect(done2.zero == null);
+}
+
+test "usedPremiseCites: a premise whose hypothesis the cert CITES is kept; an uncited one is dropped" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    var b: Accelerant.Builder = .{ .arena = arena, .interner = rig.ctx.interner, .pool = p.pool, .loc = 0 };
+    const used_lbl = try p.internStrRt("prem-used");
+    const unused_lbl = try p.internStrRt("prem-unused");
+    const cites = [_]EqCert.RuleCite{
+        .{ .local = .{ .hyp = used_lbl } },
+        .{ .local = .{ .hyp = unused_lbl } },
+    };
+    // a cert body that cites ONLY the first premise's hypothesis label.
+    const a = try rig.v("a");
+    const refs = try arena.alloc(lexer.Token, 1);
+    refs[0] = b.tok(used_lbl);
+    const steps = [_]ast.Step{
+        try b.claimStep(try p.internStrRt("s1"), try b.termExpr(a), .by, try p.internStrRt("rewrite"), &.{}, refs),
+    };
+    const mask = try p.usedPremiseCites(&cites, &steps);
+    try testing.expect(mask[0]);
+    try testing.expect(!mask[1]);
+}
+
+test "usedPremiseCites: a citation NESTED in an assume/fix block still counts" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    var b: Accelerant.Builder = .{ .arena = arena, .interner = rig.ctx.interner, .pool = p.pool, .loc = 0 };
+    const hyp = try p.internStrRt("prem-deep");
+    const cites = [_]EqCert.RuleCite{.{ .local = .{ .hyp = hyp } }};
+    const a = try rig.v("a");
+    const refs = try arena.alloc(lexer.Token, 1);
+    refs[0] = b.tok(hyp);
+    const inner = [_]ast.Step{
+        try b.claimStep(try p.internStrRt("deep"), try b.termExpr(a), .by, try p.internStrRt("rewrite"), &.{}, refs),
+    };
+    const outer = [_]ast.Step{
+        try b.assumeStep(try p.internStrRt("blk"), try b.termExpr(a), &inner),
+    };
+    const mask = try p.usedPremiseCites(&cites, &outer);
+    try testing.expect(mask[0]);
+}
+
+test "usedPremiseCites: a GLOBAL cite is never a local antecedent; an empty cert cites nothing" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+    const cites = [_]EqCert.RuleCite{
+        .{ .local = .{ .hyp = try p.internStrRt("prem-0") } },
+        .{ .global = .{ .head = .{ .tag = .identifier, .start = 0, .end = 0 }, .is_axiom = false } },
+    };
+    const mask = try p.usedPremiseCites(&cites, &.{});
+    try testing.expect(!mask[0]);
+    try testing.expect(!mask[1]); // a global is never a local antecedent
 }
