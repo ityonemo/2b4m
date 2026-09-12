@@ -139,6 +139,12 @@ pre_relativized: bool = false,
 /// twin (a source proof never states its model's guard) — the source twin is skipped there.
 /// Zero for every other proof.
 guard_wrappers: u32 = 0,
+/// A PRODUCER's outstanding demand: an accelerant producer that needs an identifier not in
+/// the goal (polynomial's `ZERO` for inverse cancellation, `add` for numeral expansion —
+/// `completePolyOps`) racks the FetchTask, records it here, and returns null WITHOUT a
+/// diagnostic; `demandUsing` then reports `.blocked` (the step's read pass suspends and the
+/// producer re-runs on resume, idempotently). Null = no demand outstanding.
+producer_blocker: ?Engine.TaskIndex = null,
 /// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
 /// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
 /// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
@@ -2084,10 +2090,17 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
         const ambient = self.model;
         if (source_mode) self.model = .universe; // produce in source space (see above)
         defer self.model = ambient;
-        break :blk self.produceAccelerant(w, e, goal_source, c) catch |err| switch (err) {
+        const produced = self.produceAccelerant(w, e, goal_source, c) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed,
-        } orelse return .failed; // producer diagnosed
+        };
+        if (produced) |s| break :blk s;
+        // a null WITHOUT a diagnostic = the producer racked a demand it needs first.
+        if (self.producer_blocker) |blocker| {
+            self.producer_blocker = null;
+            return .{ .blocked = blocker };
+        }
+        return .failed; // producer diagnosed
     };
     // MODEL-MANGLE the synthetic's name (13e): the same source step produces DIFFERENT
     // synthetics standalone vs under a transfer (the transfer's terms are remapped +
@@ -3987,7 +4000,7 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     // read the ring operators off the goal (by well-known head NAME — inspecting the goal, not
     // a scope lookup). `add`/`mul` are required; the rest are optional (present iff the goal
     // has them). The theory selector's qualifier is stamped into every emitted cite.
-    const ops = (try self.readPolyOps(eq_goal_raw)) orelse
+    const goal_ops = (try self.readPolyOps(eq_goal_raw)) orelse
         return self.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
     // ADMIT: the goal well-formedness check for polynomial is that it has add/mul structure
     // (readPolyOps, a pure structural read). Below builds the hardcoded rule set + canonicalizes
@@ -3996,6 +4009,8 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
         self.admit_ok = true;
         return null;
     }
+    // COMPLETE the vocabulary from the theory (a demand may be outstanding → null, blocked).
+    const ops = (try self.completePolyOps(c.schema, goal_ops)) orelse return null;
     const qualifier: StrId = if (c.schema) |s| s.name else .none;
     const pr = try Polynomial.polyRules(self, ops, qualifier, c.rule.start);
 
@@ -4023,14 +4038,16 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
 }
 
 /// Read the ring operator SymIds off `eq_goal` (an equation) by scanning for apps whose head
-/// NAME is a well-known ring operator. `add`/`mul` are required (null return if either is
-/// absent). The operand sort (for freshly-built rule-pattern fvars) is the equation's lhs sort.
+/// NAME is a well-known ring operator. At least ONE of `add`/`mul` is required (null return
+/// otherwise — a goal with neither is no polynomial); each is optional on its own, a ring
+/// identity in one operator being a polynomial identity in that operator. The operand sort
+/// (for freshly-built rule-pattern fvars) is the equation's lhs sort.
 fn readPolyOps(self: *Prove, eq_goal: TermId) Error!?Polynomial.Ops {
     const eqn = self.pool.get(eq_goal);
     if (eqn != .eq) return null;
     var found: Polynomial.Ops = .{
-        .add = undefined,
-        .mul = undefined,
+        .add = null,
+        .mul = null,
         .zero = null,
         .one = null,
         .neg = null,
@@ -4042,8 +4059,77 @@ fn readPolyOps(self: *Prove, eq_goal: TermId) Error!?Polynomial.Ops {
     var have_add = false;
     var have_mul = false;
     try self.collectPolyOps(eq_goal, &found, &have_add, &have_mul);
-    if (!have_add or !have_mul) return null;
+    if (!have_add and !have_mul) return null;
     return found;
+}
+
+/// COMPLETE a goal's ring vocabulary from the THEORY: the canonicalization can need a symbol
+/// the goal never mentions — `ZERO` to cancel an inverse pair (`t + neg(t) → ZERO`), `neg`
+/// to expand `sub`, `add` to expand a numeral coefficient (`mul(succ(a), b) → add(…)`) or a
+/// `sub`. Deterministic in (goal, selector): only the vocabulary the goal's own operators
+/// IMPLY the theory has is demanded (a `neg` implies a ring with `ZERO`; never a probe for
+/// optional vocabulary such as `succ` in a field). Resolved by name in the theory namespace
+/// (the selector's import, else this proof's); an unfetched symbol racks its FetchTask and
+/// returns null with `producer_blocker` set (the step suspends; the producer re-runs). A
+/// missing symbol surfaces as that FetchTask's "reference not found" at the step.
+fn completePolyOps(self: *Prove, selector: ?lexer.Token, goal: Polynomial.Ops) Error!?Polynomial.Ops {
+    var ops = goal;
+    const need_zero = ops.zero == null and (ops.neg != null or ops.sub != null);
+    const need_neg = ops.neg == null and ops.sub != null;
+    const need_add = ops.add == null and (ops.sub != null or (ops.mul != null and (ops.succ != null or ops.prev != null)));
+    if (!need_zero and !need_neg and !need_add) return ops;
+    // the theory namespace + file: the selector's import (demanded if unfetched), else ours.
+    var ns = self.ns;
+    var file = self.file;
+    if (selector) |sel| {
+        const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(sel) }) orelse {
+            self.producer_blocker = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = self.file, .name = tokName(sel), .loc = sel.start, .loc_file = self.file }));
+            return null;
+        };
+        switch (st) {
+            .in_flight => |owner| {
+                self.producer_blocker = owner;
+                return null;
+            },
+            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+                .import => |m| {
+                    ns = m.namespace;
+                    file = self.ctx.interner.keyOf(m.namespace).namespace.file;
+                },
+                else => return self.fail(sel.start, "'{s}' is not a theory (an import)", .{self.text(sel)}),
+            },
+        }
+    }
+    if (need_zero) ops.zero = (try self.demandWellKnown(ns, file, "ZERO", .constant, selector)) orelse return null;
+    if (need_neg) ops.neg = (try self.demandWellKnown(ns, file, "neg", .func, selector)) orelse return null;
+    if (need_add) ops.add = (try self.demandWellKnown(ns, file, "add", .func, selector)) orelse return null;
+    return ops;
+}
+
+/// A well-known symbol by NAME in the theory namespace `ns` (file `file`): its SymId when
+/// fetched (kind-checked; the ambient model applied), else null with `producer_blocker` set
+/// (racked or already in flight). Diagnoses a fetched symbol of the wrong kind.
+fn demandWellKnown(self: *Prove, ns: InternPool.Index, file: InternPool.Index, name: []const u8, comptime kind: enum { func, constant }, at: ?lexer.Token) Error!?term.SymId {
+    const nid = try self.internStrRt(name);
+    const loc: u32 = if (at) |t| t.start else 0;
+    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = nid }) orelse {
+        self.producer_blocker = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = file, .name = nid, .loc = loc, .loc_file = self.file }));
+        return null;
+    };
+    const ix = switch (st) {
+        .done => |x| self.ctx.interner.applyModel(self.model, x),
+        .in_flight => |owner| {
+            self.producer_blocker = owner;
+            return null;
+        },
+    };
+    const ok = switch (self.ctx.interner.keyOf(ix)) {
+        .func => kind == .func,
+        .constant => kind == .constant,
+        else => false,
+    };
+    if (!ok) return self.fail(loc, "polynomial: the theory's '{s}' is not a {s}", .{ name, if (kind == .func) "function" else "constant" });
+    return @enumFromInt(@intFromEnum(ix));
 }
 
 /// A symbol's WELL-KNOWN name for vocabulary matching: under a TRANSFER the goal's syms are
@@ -8268,4 +8354,64 @@ fn mark(reached: []bool, work: *std.ArrayList(u32), arena: Allocator, id: u32) A
     if (id >= reached.len or reached[id]) return;
     reached[id] = true;
     try work.append(arena, id);
+}
+
+// --- tests ----------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "readPolyOps: an add-only goal reads add (and neg), leaves mul absent" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const a = try rig.v("a");
+    const b = try rig.v("b");
+    // neg(add(a, b)) = add(neg(a), neg(b))
+    const goal = try rig.eq(try rig.a1(rig.neg, try rig.a2(rig.add, a, b)), try rig.a2(rig.add, try rig.a1(rig.neg, a), try rig.a1(rig.neg, b)));
+    const ops = (try rig.prove.readPolyOps(goal)).?;
+    try testing.expectEqual(rig.add, ops.add.?);
+    try testing.expect(ops.mul == null);
+    try testing.expectEqual(rig.neg, ops.neg.?);
+    try testing.expect(ops.zero == null);
+}
+
+test "readPolyOps: a mul-only goal reads mul, leaves add absent; a goal with neither is no polynomial" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const e = try rig.v("e");
+    const k = try rig.v("k");
+    // mul(e, k) = mul(neg(e), neg(k))
+    const goal = try rig.eq(try rig.a2(rig.mul, e, k), try rig.a2(rig.mul, try rig.a1(rig.neg, e), try rig.a1(rig.neg, k)));
+    const ops = (try rig.prove.readPolyOps(goal)).?;
+    try testing.expectEqual(rig.mul, ops.mul.?);
+    try testing.expect(ops.add == null);
+    // neg(e) = neg(k): no ring operator at all → not a polynomial goal.
+    const bare = try rig.eq(try rig.a1(rig.neg, e), try rig.a1(rig.neg, k));
+    try testing.expect((try rig.prove.readPolyOps(bare)) == null);
+}
+
+test "completePolyOps: a goal with neg but no ZERO demands ZERO from the theory — blocked until fetched, then filled" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const e = try rig.v("e");
+    const goal = try rig.eq(try rig.a2(rig.add, e, try rig.a1(rig.neg, e)), e);
+    var ops = (try rig.prove.readPolyOps(goal)).?;
+    try testing.expect(ops.zero == null);
+    // ZERO is already fetched in the rig's namespace → completes immediately, no blocker.
+    const done = (try rig.prove.completePolyOps(null, ops)).?;
+    try testing.expectEqual(rig.zero, done.zero.?);
+    try testing.expect(rig.prove.producer_blocker == null);
+    // a goal with NO neg never asks for ZERO (the vocabulary the goal implies is all we demand).
+    const plain = try rig.eq(try rig.a2(rig.add, e, e), try rig.a2(rig.add, e, e));
+    ops = (try rig.prove.readPolyOps(plain)).?;
+    const done2 = (try rig.prove.completePolyOps(null, ops)).?;
+    try testing.expect(done2.zero == null);
 }

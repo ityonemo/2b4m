@@ -580,8 +580,9 @@ fn readNothing(_: ?*anyopaque, _: std.mem.Allocator, _: []const u8) anyerror![]c
     return error.FileNotFound;
 }
 
-/// Build a REAL Context around one discovered + parsed fixture file.
-fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []const u8) !*Context {
+/// Build a REAL Context around one discovered + parsed fixture file. `pub` for the other
+/// engine modules' unit tests (Polynomial/Prove rigs build on it).
+pub fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source: []const u8) !*Context {
     const sink = try arena.create(diagnostics.Sink);
     sink.* = .init(arena);
     const interner = try arena.create(InternPool);

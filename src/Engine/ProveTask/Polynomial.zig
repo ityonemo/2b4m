@@ -19,6 +19,9 @@ const simplify_mod = @import("simplify.zig");
 const presburger_mod = @import("presburger.zig");
 const EqCert = @import("EqCert.zig");
 const Prove = @import("Prove.zig");
+const Context = @import("../../Context.zig");
+const Engine = @import("../../Engine.zig");
+const InternPool = @import("../../InternPool.zig");
 const lexer = @import("../../lexer.zig");
 
 const Error = error{OutOfMemory};
@@ -34,10 +37,14 @@ fn narrow(v: anytype) Error!@typeInfo(@TypeOf(v)).error_union.payload {
     };
 }
 
-/// The ring operator SymIds read off the goal + the operand sort for pattern fvars.
+/// The ring operator SymIds read off the goal (then COMPLETED from the theory — see
+/// Prove.completePolyOps) + the operand sort for pattern fvars. `add`/`mul` are each optional:
+/// a ring identity in ONE operator (`neg(add(a,b)) = add(neg(a),neg(b))`; `mul(e,k) =
+/// mul(neg(e),neg(k))`) is a polynomial identity whose canonicalization never touches the
+/// other, and the rules/phases mentioning it are simply not applicable. At least one is set.
 pub const Ops = struct {
-    add: term.SymId,
-    mul: term.SymId,
+    add: ?term.SymId,
+    mul: ?term.SymId,
     zero: ?term.SymId,
     one: ?term.SymId,
     neg: ?term.SymId,
@@ -54,12 +61,13 @@ pub const PolyRules = struct {
     rules: []const simplify_mod.Rule,
     cites: []const EqCert.RuleCite, // parallel to rules; each .global{ head, is_axiom }
     fold_end: usize,
-    mul_assoc: usize,
-    mul_comm: usize,
-    mul_swap: usize,
-    add_assoc: usize,
-    add_comm: usize,
-    add_swap: usize,
+    /// the operator triples' indices — null when that operator is absent from `ops`.
+    mul_assoc: ?usize,
+    mul_comm: ?usize,
+    mul_swap: ?usize,
+    add_assoc: ?usize,
+    add_comm: ?usize,
+    add_swap: ?usize,
     ops: Ops,
 };
 
@@ -123,31 +131,34 @@ pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyR
         }
     }.f;
 
-    // -- REQUIRED fold rules [0 .. ) — distribution + identity/zero folding ----------
-    // mulAddDistribLeft: mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
-    {
-        const a = try freshFvar(self, ops);
-        const b = try freshFvar(self, ops);
-        const c = try freshFvar(self, ops);
-        const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops), binder(c.name, ops) });
-        const lhs = try app(self, ops.mul, &.{ a.term, try app(self, ops.add, &.{ b.term, c.term }) });
-        const rhs = try app(self, ops.add, &.{ try app(self, ops.mul, &.{ a.term, b.term }), try app(self, ops.mul, &.{ a.term, c.term }) });
-        try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulAddDistribLeft"), qualifier);
+    // -- fold rules [0 .. fold_end) — distribution + identity/zero folding. Each rule is
+    //    built only when every operator it mentions is present in `ops` (a one-operator goal
+    //    has no distribution to do; a goal without ZERO has no zero-fold). ------------------
+    if (ops.add != null and ops.mul != null) {
+        const add = ops.add.?;
+        const mul = ops.mul.?;
+        // mulAddDistribLeft: mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+        {
+            const a = try freshFvar(self, ops);
+            const b = try freshFvar(self, ops);
+            const c = try freshFvar(self, ops);
+            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops), binder(c.name, ops) });
+            const lhs = try app(self, mul, &.{ a.term, try app(self, add, &.{ b.term, c.term }) });
+            const rhs = try app(self, add, &.{ try app(self, mul, &.{ a.term, b.term }), try app(self, mul, &.{ a.term, c.term }) });
+            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulAddDistribLeft"), qualifier);
+        }
+        // mulAddDistribRight: mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+        {
+            const a = try freshFvar(self, ops);
+            const b = try freshFvar(self, ops);
+            const c = try freshFvar(self, ops);
+            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops), binder(c.name, ops) });
+            const lhs = try app(self, mul, &.{ try app(self, add, &.{ a.term, b.term }), c.term });
+            const rhs = try app(self, add, &.{ try app(self, mul, &.{ a.term, c.term }), try app(self, mul, &.{ b.term, c.term }) });
+            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulAddDistribRight"), qualifier);
+        }
     }
-    // mulAddDistribRight: mul(add(a, b), c) = add(mul(a, c), mul(b, c))
-    {
-        const a = try freshFvar(self, ops);
-        const b = try freshFvar(self, ops);
-        const c = try freshFvar(self, ops);
-        const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops), binder(c.name, ops) });
-        const lhs = try app(self, ops.mul, &.{ try app(self, ops.add, &.{ a.term, b.term }), c.term });
-        const rhs = try app(self, ops.add, &.{ try app(self, ops.mul, &.{ a.term, c.term }), try app(self, ops.mul, &.{ b.term, c.term }) });
-        try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulAddDistribRight"), qualifier);
-    }
-    // identity/zero folds need ONE and ZERO constants; if the goal lacks them the pattern
-    // can't be built — but they are REQUIRED, so build them from the (optional) syms when
-    // present and skip only when the const isn't in the goal at all. To keep the required
-    // index layout stable we always attempt: use a nullary const term when the sym exists.
+    // identity/zero folds: each needs its constant AND its operator (skipped otherwise).
     try pushIdentityFold(self, &acc, ops, qualifier, .mul_one_left);
     try pushIdentityFold(self, &acc, ops, qualifier, .mul_one_right);
     try pushIdentityFold(self, &acc, ops, qualifier, .mul_zero_left);
@@ -156,23 +167,23 @@ pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyR
     try pushIdentityFold(self, &acc, ops, qualifier, .add_zero_right);
 
     // -- OPTIONAL ring folds (gated on goal-present operators) -----------------------
-    if (ops.sub != null and ops.neg != null) {
+    if (ops.sub != null and ops.neg != null and ops.add != null) {
         // definitionOfSubtraction: sub(a, b) = add(a, neg(b))
         const a = try freshFvar(self, ops);
         const b = try freshFvar(self, ops);
         const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
         const lhs = try app(self, ops.sub.?, &.{ a.term, b.term });
-        const rhs = try app(self, ops.add, &.{ a.term, try app(self, ops.neg.?, &.{b.term}) });
+        const rhs = try app(self, ops.add.?, &.{ a.term, try app(self, ops.neg.?, &.{b.term}) });
         try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "definitionOfSubtraction"), qualifier);
     }
     if (ops.neg) |neg| {
         // negAdd: neg(add(a, b)) = add(neg(a), neg(b))
-        {
+        if (ops.add) |add| {
             const a = try freshFvar(self, ops);
             const b = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
-            const lhs = try app(self, neg, &.{try app(self, ops.add, &.{ a.term, b.term })});
-            const rhs = try app(self, ops.add, &.{ try app(self, neg, &.{a.term}), try app(self, neg, &.{b.term}) });
+            const lhs = try app(self, neg, &.{try app(self, add, &.{ a.term, b.term })});
+            const rhs = try app(self, add, &.{ try app(self, neg, &.{a.term}), try app(self, neg, &.{b.term}) });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "negAdd"), qualifier);
         }
         // negZero: neg(ZERO) = ZERO  (only if ZERO present)
@@ -209,33 +220,38 @@ pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyR
             const lhs = try app(self, neg, &.{try app(self, neg, &.{a.term})});
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = a.term, .formula = try quantifyRule(self, binders, lhs, a.term) }, try nm(self, "negNeg"), qualifier);
         }
-        // mulNegLeft: mul(neg(a), b) = neg(mul(a, b))
-        {
-            const a = try freshFvar(self, ops);
-            const b = try freshFvar(self, ops);
-            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
-            const lhs = try app(self, ops.mul, &.{ try app(self, neg, &.{a.term}), b.term });
-            const rhs = try app(self, neg, &.{try app(self, ops.mul, &.{ a.term, b.term })});
-            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulNegLeft"), qualifier);
-        }
-        // mulNegRight: mul(a, neg(b)) = neg(mul(a, b))
-        {
-            const a = try freshFvar(self, ops);
-            const b = try freshFvar(self, ops);
-            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
-            const lhs = try app(self, ops.mul, &.{ a.term, try app(self, neg, &.{b.term}) });
-            const rhs = try app(self, neg, &.{try app(self, ops.mul, &.{ a.term, b.term })});
-            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulNegRight"), qualifier);
+        if (ops.mul) |mul| {
+            // mulNegLeft: mul(neg(a), b) = neg(mul(a, b))
+            {
+                const a = try freshFvar(self, ops);
+                const b = try freshFvar(self, ops);
+                const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
+                const lhs = try app(self, mul, &.{ try app(self, neg, &.{a.term}), b.term });
+                const rhs = try app(self, neg, &.{try app(self, mul, &.{ a.term, b.term })});
+                try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulNegLeft"), qualifier);
+            }
+            // mulNegRight: mul(a, neg(b)) = neg(mul(a, b))
+            {
+                const a = try freshFvar(self, ops);
+                const b = try freshFvar(self, ops);
+                const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
+                const lhs = try app(self, mul, &.{ a.term, try app(self, neg, &.{b.term}) });
+                const rhs = try app(self, neg, &.{try app(self, mul, &.{ a.term, b.term })});
+                try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulNegRight"), qualifier);
+            }
         }
     }
-    if (ops.succ) |succ| {
+    if (ops.succ != null and ops.mul != null and ops.add != null) {
+        const succ = ops.succ.?;
+        const mul = ops.mul.?;
+        const add = ops.add.?;
         // mulSuccLeft: mul(succ(a), b) = add(mul(a, b), b)
         {
             const a = try freshFvar(self, ops);
             const b = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
-            const lhs = try app(self, ops.mul, &.{ try app(self, succ, &.{a.term}), b.term });
-            const rhs = try app(self, ops.add, &.{ try app(self, ops.mul, &.{ a.term, b.term }), b.term });
+            const lhs = try app(self, mul, &.{ try app(self, succ, &.{a.term}), b.term });
+            const rhs = try app(self, add, &.{ try app(self, mul, &.{ a.term, b.term }), b.term });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulSuccLeft"), qualifier);
         }
         // mulSuccRight: mul(a, succ(b)) = add(mul(a, b), a)
@@ -243,8 +259,8 @@ pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyR
             const a = try freshFvar(self, ops);
             const b = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{ binder(a.name, ops), binder(b.name, ops) });
-            const lhs = try app(self, ops.mul, &.{ a.term, try app(self, succ, &.{b.term}) });
-            const rhs = try app(self, ops.add, &.{ try app(self, ops.mul, &.{ a.term, b.term }), a.term });
+            const lhs = try app(self, mul, &.{ a.term, try app(self, succ, &.{b.term}) });
+            const rhs = try app(self, add, &.{ try app(self, mul, &.{ a.term, b.term }), a.term });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "mulSuccRight"), qualifier);
         }
     }
@@ -252,43 +268,50 @@ pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyR
     const fold_end = acc.rules.items.len;
 
     // -- additive-inverse cancellation (past fold_end) ------------------------------
-    if (ops.neg) |neg| {
-        if (ops.zero) |zero| {
-            // addNegRight: add(a, neg(a)) = ZERO
-            {
-                const a = try freshFvar(self, ops);
-                const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-                const lhs = try app(self, ops.add, &.{ a.term, try app(self, neg, &.{a.term}) });
-                const rhs = try app(self, zero, &.{});
-                try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "addNegRight"), qualifier);
-            }
-            // addNegLeft: add(neg(a), a) = ZERO
-            {
-                const a = try freshFvar(self, ops);
-                const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-                const lhs = try app(self, ops.add, &.{ try app(self, neg, &.{a.term}), a.term });
-                const rhs = try app(self, zero, &.{});
-                try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "addNegLeft"), qualifier);
-            }
+    if (ops.neg != null and ops.zero != null and ops.add != null) {
+        const neg = ops.neg.?;
+        const zero = ops.zero.?;
+        const add = ops.add.?;
+        // addNegRight: add(a, neg(a)) = ZERO
+        {
+            const a = try freshFvar(self, ops);
+            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
+            const lhs = try app(self, add, &.{ a.term, try app(self, neg, &.{a.term}) });
+            const rhs = try app(self, zero, &.{});
+            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "addNegRight"), qualifier);
+        }
+        // addNegLeft: add(neg(a), a) = ZERO
+        {
+            const a = try freshFvar(self, ops);
+            const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
+            const lhs = try app(self, add, &.{ try app(self, neg, &.{a.term}), a.term });
+            const rhs = try app(self, zero, &.{});
+            try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = try quantifyRule(self, binders, lhs, rhs) }, try nm(self, "addNegLeft"), qualifier);
         }
     }
 
-    // -- the two operator triples (assoc / comm / swap) -----------------------------
-    const mul_assoc = acc.rules.items.len;
-    try pushTriple(self, &acc, ops, qualifier, .mul);
-    const add_assoc = acc.rules.items.len;
-    try pushTriple(self, &acc, ops, qualifier, .add);
+    // -- the operator triples (assoc / comm / swap), each only for a present operator --
+    var mul_assoc: ?usize = null;
+    if (ops.mul != null) {
+        mul_assoc = acc.rules.items.len;
+        try pushTriple(self, &acc, ops, qualifier, .mul);
+    }
+    var add_assoc: ?usize = null;
+    if (ops.add != null) {
+        add_assoc = acc.rules.items.len;
+        try pushTriple(self, &acc, ops, qualifier, .add);
+    }
 
     return .{
         .rules = acc.rules.items,
         .cites = acc.cites.items,
         .fold_end = fold_end,
         .mul_assoc = mul_assoc,
-        .mul_comm = mul_assoc + 1,
-        .mul_swap = mul_assoc + 2,
+        .mul_comm = if (mul_assoc) |i| i + 1 else null,
+        .mul_swap = if (mul_assoc) |i| i + 2 else null,
         .add_assoc = add_assoc,
-        .add_comm = add_assoc + 1,
-        .add_swap = add_assoc + 2,
+        .add_comm = if (add_assoc) |i| i + 1 else null,
+        .add_swap = if (add_assoc) |i| i + 2 else null,
         .ops = ops,
     };
 }
@@ -308,48 +331,54 @@ fn pushIdentityFold(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, whi
     switch (which) {
         .mul_one_left => {
             const one = ops.one orelse return;
+            const mul = ops.mul orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-            const lhs = try app(self, ops.mul, &.{ try app(self, one, &.{}), a.term });
+            const lhs = try app(self, mul, &.{ try app(self, one, &.{}), a.term });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = a.term, .formula = try quantifyRule(self, binders, lhs, a.term) }, try nm(self, "mulOneLeft"), qualifier);
         },
         .mul_one_right => {
             const one = ops.one orelse return;
+            const mul = ops.mul orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-            const lhs = try app(self, ops.mul, &.{ a.term, try app(self, one, &.{}) });
+            const lhs = try app(self, mul, &.{ a.term, try app(self, one, &.{}) });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = a.term, .formula = try quantifyRule(self, binders, lhs, a.term) }, try nm(self, "mulOneRight"), qualifier);
         },
         .mul_zero_left => {
             const zero = ops.zero orelse return;
+            const mul = ops.mul orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
             const z0 = try app(self, zero, &.{});
             const z1 = try app(self, zero, &.{});
-            const lhs = try app(self, ops.mul, &.{ z0, a.term });
+            const lhs = try app(self, mul, &.{ z0, a.term });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = z1, .formula = try quantifyRule(self, binders, lhs, z1) }, try nm(self, "mulZeroLeft"), qualifier);
         },
         .mul_zero_right => {
             const zero = ops.zero orelse return;
+            const mul = ops.mul orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
             const z0 = try app(self, zero, &.{});
             const z1 = try app(self, zero, &.{});
-            const lhs = try app(self, ops.mul, &.{ a.term, z0 });
+            const lhs = try app(self, mul, &.{ a.term, z0 });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = z1, .formula = try quantifyRule(self, binders, lhs, z1) }, try nm(self, "mulZeroRight"), qualifier);
         },
         .add_zero_left => {
             const zero = ops.zero orelse return;
+            const add = ops.add orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-            const lhs = try app(self, ops.add, &.{ try app(self, zero, &.{}), a.term });
+            const lhs = try app(self, add, &.{ try app(self, zero, &.{}), a.term });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = a.term, .formula = try quantifyRule(self, binders, lhs, a.term) }, try nm(self, "addZeroLeft"), qualifier);
         },
         .add_zero_right => {
             const zero = ops.zero orelse return;
+            const add = ops.add orelse return;
             const a = try freshFvar(self, ops);
             const binders = try self.ctx.arena.dupe(simplify_mod.Binder, &.{binder(a.name, ops)});
-            const lhs = try app(self, ops.add, &.{ a.term, try app(self, zero, &.{}) });
+            const lhs = try app(self, add, &.{ a.term, try app(self, zero, &.{}) });
             try acc.push(self, .{ .binders = binders, .lhs = lhs, .rhs = a.term, .formula = try quantifyRule(self, binders, lhs, a.term) }, try nm(self, "addZeroRight"), qualifier);
         },
     }
@@ -357,7 +386,7 @@ fn pushIdentityFold(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, whi
 
 /// Push the [assoc, comm, swap] triple for the `add` or `mul` operator, in that order.
 fn pushTriple(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, comptime op: enum { add, mul }) Error!void {
-    const sym = if (op == .add) ops.add else ops.mul;
+    const sym = if (op == .add) ops.add.? else ops.mul.?;
     const assoc_nm = if (op == .add) "addIsAssociative" else "mulIsAssociative";
     const comm_nm = if (op == .add) "addIsCommutative" else "mulIsCommutative";
     const swap_nm = if (op == .add) "addLeftSwap" else "mulLeftSwap";
@@ -403,6 +432,23 @@ fn symsFrom(ops: Ops, comptime which: enum { add, mul }) presburger_mod.Symbols 
     return .{ .add = if (which == .add) ops.add else ops.mul };
 }
 
+/// Right-nest `x` under the add-associativity rule alone (a terminating normalization),
+/// appending the re-indexed trace. `x` when there is no `add` (nothing to nest).
+fn rightNestSum(self: *Prove, pr: PolyRules, x: TermId, trace: *std.ArrayList(simplify_mod.Rewrite)) Error!?TermId {
+    const add_assoc = pr.add_assoc orelse return x;
+    const rules = pr.rules[add_assoc .. add_assoc + 1];
+    const rn = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules, x, 4000) catch |e| switch (e) {
+        error.Limit => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    for (rn.trace) |rw| {
+        var r = rw;
+        r.rule_idx = rw.rule_idx + add_assoc;
+        try trace.append(self.ctx.arena, r);
+    }
+    return rn.nf;
+}
+
 /// Canonicalize `x` to a sorted-sum-of-sorted-monomials NF + the replayable trace over
 /// `pr.rules`. Null on cap overflow / unhandled shape (caller then FAILS the accelerant).
 pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Result {
@@ -421,38 +467,49 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
     const mul_symbols = symsFrom(ops, .mul);
 
     // 2) RIGHT-NEST the outer sum first (add-associativity only, terminating), so the running
-    //    term is a right-nested comb and the buildComb contexts below match exactly.
-    const add_assoc_only = pr.rules[pr.add_assoc .. pr.add_assoc + 1];
-    const rn = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, add_assoc_only, dist.nf, 4000) catch |e| switch (e) {
-        error.Limit => return null,
-        error.OutOfMemory => return error.OutOfMemory,
-    };
-    for (rn.trace) |rw| {
-        var r = rw;
-        r.rule_idx = rw.rule_idx + pr.add_assoc;
-        try trace.append(self.ctx.arena, r);
-    }
+    //    term is a right-nested comb and the buildComb contexts below match exactly. Without
+    //    `add` the whole term is ONE monomial: the sum phases (2, 4, 5) have a single leaf.
+    const nested = (try rightNestSum(self, pr, dist.nf, &trace)) orelse return null;
 
     // 3) sort each monomial's factors (mul-acPlan), lifting each sub-trace into the
-    //    (right-nested) whole-sum context so the chain stays whole-term.
+    //    (right-nested) whole-sum context so the chain stays whole-term. Without `mul` a
+    //    monomial is an atom (nothing to sort).
     var monos: std.ArrayList(TermId) = .empty;
-    try narrow(self.flattenSum(ops.add, rn.nf, &monos));
+    if (ops.add) |add| try narrow(self.flattenSum(add, nested, &monos)) else try monos.append(self.ctx.arena, nested);
     var sorted_monos: std.ArrayList(TermId) = .empty;
     for (monos.items, 0..) |m, i| {
+        if (pr.mul_assoc == null) {
+            try sorted_monos.append(self.ctx.arena, m);
+            continue;
+        }
+        // a NEGATED monomial `neg(m)` (the neg-folds pushed every neg outward to the summand):
+        // its factors are sorted INSIDE the neg — a cross-term pair `a·b + neg(b·a)` only
+        // cancels if both copies are canonical — and the sort trace is lifted through `neg(·)`.
+        var wrap: ?term.SymId = null;
+        var body = m;
+        if (ops.neg) |neg| {
+            const mn = self.pool.get(m);
+            if (mn == .app and mn.app.sym == neg and mn.app.args_len == 1) {
+                wrap = neg;
+                body = self.pool.args(mn.app)[0];
+            }
+        }
         // Prove.acPlan reads symbols.add.? as the reordered operator — pass mul in that slot.
-        const mp = (try narrow(self.acPlan(mul_symbols, pr.rules, pr.mul_assoc, pr.mul_comm, pr.mul_swap, m))) orelse return null;
+        const mp = (try narrow(self.acPlan(mul_symbols, pr.rules, pr.mul_assoc.?, pr.mul_comm.?, pr.mul_swap.?, body))) orelse return null;
         if (mp.trace.len > 0) {
-            const lifted = try liftMonoTrace(self, add_symbols, sorted_monos.items, monos.items[i + 1 ..], mp.trace, &trace);
+            // lifted into the whole-sum context (a one-leaf comb when there is no `add`).
+            const lifted = try liftMonoTrace(self, add_symbols, sorted_monos.items, monos.items[i + 1 ..], wrap, mp.trace, &trace);
             if (!lifted) return null;
         }
-        try sorted_monos.append(self.ctx.arena, mp.sorted);
+        try sorted_monos.append(self.ctx.arena, if (wrap) |w| try self.pool.addApp(.app, w, &.{mp.sorted}) else mp.sorted);
     }
+    if (ops.add == null) return .{ .nf = sorted_monos.items[0], .trace = trace.items };
     const mono_sum = (try buildComb(self, add_symbols, sorted_monos.items)) orelse return null;
 
     // 4) bubble-sort the sum of monomials (already right-nested → sort phase only).
     var leaves: std.ArrayList(TermId) = .empty;
-    try narrow(self.flattenSum(ops.add, mono_sum, &leaves));
-    var sorted = (try sortTraceTower(self, add_symbols, pr.rules, pr.add_comm, pr.add_swap, .{ .offset = 0, .leaves = leaves.items }, &trace)) orelse return null;
+    try narrow(self.flattenSum(ops.add.?, mono_sum, &leaves));
+    var sorted = (try sortTraceTower(self, add_symbols, pr.rules, pr.add_comm.?, pr.add_swap.?, .{ .offset = 0, .leaves = leaves.items }, &trace)) orelse return null;
 
     // 5) cancel additive-inverse monomials (m + neg(m) → 0) in the sorted sum. `one` is
     //    deliberately LEFT NULL: polynomial does NOT reduce ONE to succ(ZERO), so a bare ONE
@@ -466,7 +523,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
             .succ = ops.succ,
             .prev = ops.prev,
         };
-        sorted = (try cancelInverses(self, cancel_symbols, pr.rules, pr.add_comm, pr.add_swap, 0, sorted, &trace)) orelse return null;
+        sorted = (try cancelInverses(self, cancel_symbols, pr.rules, pr.add_comm.?, pr.add_swap.?, 0, sorted, &trace)) orelse return null;
     }
     return .{ .nf = sorted, .trace = trace.items };
 }
@@ -479,12 +536,15 @@ fn symIs(id: term.SymId, want: ?term.SymId) bool {
     return want != null and id == want.?;
 }
 
-/// Lift a sub-term trace into whole-term context (ported liftMonoTrace).
+/// Lift a sub-term trace into whole-term context (ported liftMonoTrace): the rewritten
+/// monomial sits in the hole between `before` and `after` in the sum comb — wrapped in
+/// `wrap(·)` (a negated summand) when given.
 fn liftMonoTrace(
     self: *Prove,
     add_symbols: presburger_mod.Symbols,
     before: []const TermId,
     after: []const TermId,
+    wrap: ?term.SymId,
     sub_trace: []const simplify_mod.Rewrite,
     out: *std.ArrayList(simplify_mod.Rewrite),
 ) Error!bool {
@@ -494,9 +554,9 @@ fn liftMonoTrace(
     try slots.append(self.ctx.arena, sub_trace[0].before); // placeholder, overwritten per entry
     try slots.appendSlice(self.ctx.arena, after);
     for (sub_trace) |rw| {
-        slots.items[hole] = rw.before;
+        slots.items[hole] = if (wrap) |w| try self.pool.addApp(.app, w, &.{rw.before}) else rw.before;
         const w_before = (try buildComb(self, add_symbols, slots.items)) orelse return false;
-        slots.items[hole] = rw.after;
+        slots.items[hole] = if (wrap) |w| try self.pool.addApp(.app, w, &.{rw.after}) else rw.after;
         const w_after = (try buildComb(self, add_symbols, slots.items)) orelse return false;
         try out.append(self.ctx.arena, .{
             .before = w_before,
@@ -865,4 +925,170 @@ fn findZeroDrop(self: *Prove, rules: []const simplify_mod.Rule, symbols: presbur
         if (self.pool.alphaEq(rule.rhs, rest_arg)) return i;
     }
     return null;
+}
+
+// --- tests ----------------------------------------------------------------------------
+
+const testing = std.testing;
+
+/// A unit-test RIG: a real Context over one inline ring theory (`Int` with ZERO/add/mul/neg),
+/// its symbols FETCHED through the engine, and a standalone `Prove` whose pool the tests build
+/// goal terms in. Shared by the polynomial unit tests here and the op-reader tests in Prove.
+pub const Rig = struct {
+    ctx: *Context,
+    eng: *Engine,
+    h: *Engine.Handle,
+    prove: *Prove,
+    file: InternPool.Index,
+    ns: InternPool.Index,
+    int: term.SortId,
+    zero: term.SymId,
+    add: term.SymId,
+    mul: term.SymId,
+    neg: term.SymId,
+
+    pub const source =
+        \\sort Int
+        \\const ZERO: Int
+        \\func add(a: Int, b: Int): Int
+        \\func mul(a: Int, b: Int): Int
+        \\func neg(a: Int): Int
+    ;
+
+    pub fn init(arena: std.mem.Allocator, io: std.Io) !Rig {
+        const FetchTask = @import("../FetchTask.zig");
+        const ctx = try FetchTask.fixtureCtx(arena, io, "/t/ring.bpa", source);
+        const file = try ctx.fileIndex("/t/ring.bpa");
+        const ns = try ctx.interner.namespace(.universe, file);
+        const eng = try arena.create(Engine);
+        eng.* = Engine.init(arena, ctx);
+        for ([_][]const u8{ "Int", "ZERO", "add", "mul", "neg" }) |n| {
+            _ = try eng.rack(try FetchTask.new(arena, .{ .file = file, .name = try ctx.interner.internString(n), .loc = 0 }));
+        }
+        try eng.run();
+        try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+        const h = try arena.create(Engine.Handle);
+        h.* = .{ .engine = eng, .self_index = @enumFromInt(0) };
+        const prove = try Prove.init(ctx, h, source, file, ns);
+        return .{
+            .ctx = ctx,
+            .eng = eng,
+            .h = h,
+            .prove = prove,
+            .file = file,
+            .ns = ns,
+            .int = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "Int"))),
+            .zero = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "ZERO"))),
+            .add = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "add"))),
+            .mul = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "mul"))),
+            .neg = @enumFromInt(@intFromEnum(try lookup(ctx, ns, "neg"))),
+        };
+    }
+
+    fn lookup(ctx: *Context, ns: InternPool.Index, name: []const u8) !InternPool.Index {
+        return ctx.idents.lookup(ctx.io, .{ .namespace = ns, .name = try ctx.interner.internString(name) }).?.done;
+    }
+
+    /// A free variable of the ring sort.
+    pub fn v(self: Rig, name: []const u8) !TermId {
+        return self.prove.pool.add(.{ .fvar = .{ .name = try self.ctx.interner.internString(name), .sort = self.int } });
+    }
+    pub fn a2(self: Rig, sym: term.SymId, x: TermId, y: TermId) !TermId {
+        return self.prove.pool.addApp(.app, sym, &.{ x, y });
+    }
+    pub fn a1(self: Rig, sym: term.SymId, x: TermId) !TermId {
+        return self.prove.pool.addApp(.app, sym, &.{x});
+    }
+    pub fn eq(self: Rig, l: TermId, r: TermId) !TermId {
+        return self.prove.pool.add(.{ .eq = .{ .lhs = l, .rhs = r } });
+    }
+    pub fn opsOf(self: Rig, add: ?term.SymId, mul: ?term.SymId, neg: ?term.SymId, zero: ?term.SymId) Ops {
+        return .{ .add = add, .mul = mul, .zero = zero, .one = null, .neg = neg, .sub = null, .succ = null, .prev = null, .sort = self.int };
+    }
+};
+
+test "polyRules: an add-only op set builds the add triple and neg-folds but NO mul rules" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Rig.init(arena, threaded.io());
+    const pr = try polyRules(rig.prove, rig.opsOf(rig.add, null, rig.neg, null), .none, 0);
+    try testing.expect(pr.add_assoc != null);
+    try testing.expect(pr.mul_assoc == null);
+    // every rule's pattern mentions only add/neg: no rule head is `mul`.
+    for (pr.rules) |r| {
+        const n = rig.prove.pool.get(r.lhs);
+        if (n == .app) try testing.expect(n.app.sym != rig.mul);
+    }
+}
+
+test "polyCanon: an add-only identity canonicalizes — neg(add(a, b)) ≡ add(neg(a), neg(b))" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Rig.init(arena, threaded.io());
+    const pr = try polyRules(rig.prove, rig.opsOf(rig.add, null, rig.neg, null), .none, 0);
+    const a = try rig.v("a");
+    const b = try rig.v("b");
+    const lhs = try rig.a1(rig.neg, try rig.a2(rig.add, a, b));
+    const rhs = try rig.a2(rig.add, try rig.a1(rig.neg, a), try rig.a1(rig.neg, b));
+    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
+    const rt = (try polyCanon(rig.prove, pr, rhs)).?;
+    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+}
+
+test "polyCanon: a mul-only identity canonicalizes — mul(mul(d, k), m) ≡ mul(k, mul(d, m))" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Rig.init(arena, threaded.io());
+    const pr = try polyRules(rig.prove, rig.opsOf(null, rig.mul, null, null), .none, 0);
+    try testing.expect(pr.add_assoc == null);
+    const d = try rig.v("d");
+    const k = try rig.v("k");
+    const m = try rig.v("m");
+    const lhs = try rig.a2(rig.mul, try rig.a2(rig.mul, d, k), m);
+    const rhs = try rig.a2(rig.mul, k, try rig.a2(rig.mul, d, m));
+    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
+    const rt = (try polyCanon(rig.prove, pr, rhs)).?;
+    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+}
+
+test "polyCanon: an inverse pair cancels when ZERO is supplied by the theory, not the goal — add(x, add(t, neg(t))) ≡ x" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Rig.init(arena, threaded.io());
+    // the goal mentions no ZERO; the op set carries the theory's ZERO (completePolyOps' job).
+    const pr = try polyRules(rig.prove, rig.opsOf(rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
+    const x = try rig.v("x");
+    const t = try rig.a2(rig.mul, try rig.v("a"), try rig.v("r"));
+    const lhs = try rig.a2(rig.add, x, try rig.a2(rig.add, t, try rig.a1(rig.neg, t)));
+    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
+    const rt = (try polyCanon(rig.prove, pr, x)).?;
+    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+}
+
+test "polyCanon: a cross-term cancels — the monomial INSIDE neg(…) gets its factors sorted too: add(mul(a, b), neg(mul(b, a))) ≡ ZERO" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Rig.init(arena, threaded.io());
+    const pr = try polyRules(rig.prove, rig.opsOf(rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
+    const a = try rig.v("a");
+    const b = try rig.v("b");
+    const lhs = try rig.a2(rig.add, try rig.a2(rig.mul, a, b), try rig.a1(rig.neg, try rig.a2(rig.mul, b, a)));
+    const zero = try rig.prove.pool.addApp(.app, rig.zero, &.{});
+    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
+    const rt = (try polyCanon(rig.prove, pr, zero)).?;
+    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+    // and with NO surrounding sum: neg(mul(b, a)) alone canonicalizes like neg(mul(a, b)).
+    const n1 = (try polyCanon(rig.prove, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, b, a)))).?;
+    const n2 = (try polyCanon(rig.prove, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, a, b)))).?;
+    try testing.expect(rig.prove.pool.alphaEq(n1.nf, n2.nf));
 }

@@ -306,4 +306,6 @@ test {
     std.testing.refAllDecls(Engine.ProveTask);
     std.testing.refAllDecls(Engine.FetchTask);
     std.testing.refAllDecls(Engine.ModelTask);
+    std.testing.refAllDecls(@import("Engine/ProveTask/Prove.zig"));
+    std.testing.refAllDecls(@import("Engine/ProveTask/Polynomial.zig"));
 }

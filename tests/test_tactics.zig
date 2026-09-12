@@ -58,6 +58,19 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_neg.bpa" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_inverse.bpa" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_coeff.bpa" });
+    // a ring identity in ONE operator is still a polynomial identity: an ADD-ONLY goal
+    // (neg-push, regroup, cancellation to ZERO — no mul anywhere) and a MUL-ONLY goal (a
+    // single monomial: neg-push through mul, regroup — no add anywhere). The op reader must
+    // not demand both operators be present; the rules/phases needing the absent one are
+    // simply not applicable.
+    ctx.okSilent(&.{ "check", "tests/cases/polynomial_add_only.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/polynomial_mul_only.bpa" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_add_only.bpa" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_mul_only.bpa" });
+    // a CROSS-TERM inverse pair (`a·b + neg(b·a)`) cancels: the monomial inside `neg(…)` is
+    // factor-sorted like any other (its sort trace lifted through the neg context).
+    ctx.okSilent(&.{ "check", "tests/cases/polynomial_cross_term.bpa" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_cross_term.bpa" });
 
     // polynomial(field): the accelerant over a FIELD theory (bare ONE constant,
     // not the ℤ succ-tower). Guards field.bpa's ring-lemma shims + swaps resolving
