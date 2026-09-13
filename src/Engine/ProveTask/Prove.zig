@@ -4013,7 +4013,7 @@ fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Term
     // validate the shape `f(f(a,b),c) = f(a,f(b,c))`: the LHS must be a binary app whose head
     // `f` is shared by the RHS. (The rule's binders/lhs/rhs carry pattern fvars already.)
     const l = self.pool.get(prepared.rule.lhs);
-    if (l != .app or l.app.args_len != 2) {
+    if (l != .app or l.app.args.len != 2) {
         return self.fail(Elab.exprLoc(c.args[0]), "assoc: the associativity lemma must have shape 'f(f(a, b), c) = f(a, f(b, c))'", .{});
     }
     const op_sym = l.app.sym;
@@ -4415,7 +4415,7 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
         const c_rule = try self.argRule(w, c.args[1]);
         const w_rule = try self.argRule(w, c.args[2]);
         const c_lhs = self.pool.get(c_rule.rule.lhs);
-        if (c_lhs != .app or c_lhs.app.args_len != 2) {
+        if (c_lhs != .app or c_lhs.app.args.len != 2) {
             return self.fail(Elab.exprLoc(c.args[1]), "assoc_commut: the commutativity lemma must have shape 'f(a, b) = f(b, a)'", .{});
         }
         op_sym = c_lhs.app.sym;
@@ -5062,7 +5062,8 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
             break;
         }
     }
-    // COPY the op-arg ids: pool.args aliases pool.extra, which the emitStep/open calls below grow.
+    // COPY the op-arg ids (a plain snapshot; app args are arena-owned and stable, so this is
+    // only for the local mutation below).
     const op_args = try self.ctx.arena.dupe(TermId, self.pool.args(app));
     // helper: queue the op's set-typed (app) args, REVERSED so arg 0 processes first.
     const queueArgs = struct {
@@ -5639,11 +5640,11 @@ fn arithMatchPattern(self: *Prove, pattern: []const term.Node.Fvar, pat: TermId,
             .bvar => if (pn.bvar != tn.bvar) return false,
             .fvar => unreachable,
             .app => |a| {
-                if (a.sym != tn.app.sym or a.args_len != tn.app.args_len) return false;
+                if (a.sym != tn.app.sym or a.args.len != tn.app.args.len) return false;
                 for (self.pool.args(a), self.pool.args(tn.app)) |x, y| try stack.append(wa, .{ x, y });
             },
             .pred => |a| {
-                if (a.sym != tn.pred.sym or a.args_len != tn.pred.args_len) return false;
+                if (a.sym != tn.pred.sym or a.args.len != tn.pred.args.len) return false;
                 for (self.pool.args(a), self.pool.args(tn.pred)) |x, y| try stack.append(wa, .{ x, y });
             },
             .eq => |pp| {
@@ -5710,7 +5711,7 @@ fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
         if (node != .bin or node.bin.op != .implies) break;
         const ante = node.bin.lhs;
         const an = self.pool.get(ante);
-        if (an != .pred or !self.symIs(an.pred.sym, less_than) or an.pred.args_len != 2) return false;
+        if (an != .pred or !self.symIs(an.pred.sym, less_than) or an.pred.args.len != 2) return false;
         const args = self.pool.args(an.pred);
         const blk_label = try self.freshNamed("given-order");
         const restate_label = try self.freshNamed("order-hyp"); // the OrderHyp ref (the fold cites this)
@@ -5746,7 +5747,7 @@ fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
     //     derive a summed edge from a pair of base hypotheses.
     if (symbols.add != null) {
         const cn0 = self.pool.get(body);
-        const wants_sum = cn0 == .pred and self.symIs(cn0.pred.sym, less_than) and cn0.pred.args_len == 2 and
+        const wants_sum = cn0 == .pred and self.symIs(cn0.pred.sym, less_than) and cn0.pred.args.len == 2 and
             self.isFarkasAddSum(symbols, self.pool.args(cn0.pred)[0]);
         if (wants_sum and base_count >= 2) {
             if (!try self.emitFarkasSumEdge(cert, &inner, symbols, body, base_count, &edges, &hyps, &node_ids)) return false;
@@ -5803,7 +5804,7 @@ fn farkasNodeId(self: *Prove, list: *std.ArrayList(TermId), t: TermId) Error!usi
 /// `lessThanIrreflexive`, and `absurd` proves the (arbitrary) conclusion.
 fn emitFarkasConclusion(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, less_than: term.SymId, body: TermId, edges: []const farkas.Edge, hyps: []const OrderHyp, node_ids: *std.ArrayList(TermId)) Error!?StrId {
     const cn = self.pool.get(body);
-    const is_order = cn == .pred and self.symIs(cn.pred.sym, less_than) and cn.pred.args_len == 2;
+    const is_order = cn == .pred and self.symIs(cn.pred.sym, less_than) and cn.pred.args.len == 2;
 
     if (is_order) {
         const cargs = self.pool.args(cn.pred);
@@ -5860,12 +5861,12 @@ fn farkasLiteral(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) usize
     var cur = t;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             k += 1;
             cur = self.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args_len == 0) return k;
+        if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args.len == 0) return k;
         return 0;
     }
 }
@@ -5883,7 +5884,7 @@ fn collectFarkasScaleLiterals(self: *Prove, symbols: presburger_mod.Symbols, t: 
         const node = self.pool.get(cur);
         switch (node) {
             .app, .pred => |a| {
-                if (self.symIs(a.sym, symbols.mul) and a.args_len == 2) {
+                if (self.symIs(a.sym, symbols.mul) and a.args.len == 2) {
                     const args = self.pool.args(a);
                     const k = self.farkasLiteral(symbols, args[0]);
                     if (k >= 2) {
@@ -5903,7 +5904,7 @@ fn collectFarkasScaleLiterals(self: *Prove, symbols: presburger_mod.Symbols, t: 
 /// Is `t` an `add(_, _)` application?
 fn isFarkasAddSum(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool {
     const node = self.pool.get(t);
-    return node == .app and self.symIs(node.app.sym, symbols.add) and node.app.args_len == 2;
+    return node == .app and self.symIs(node.app.sym, symbols.add) and node.app.args.len == 2;
 }
 
 /// For each base hypothesis and literal k, emit a SCALED edge `less_than(mul(k,lo), mul(k,hi))`
@@ -7006,7 +7007,7 @@ fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
     if (node == .eq) {
         return self.arithEmitEquation(cert, block, node.eq.lhs, node.eq.rhs, prems, symbols);
     }
-    if (node == .pred and self.symIs(node.pred.sym, symbols.less_than) and node.pred.args_len == 2) {
+    if (node == .pred and self.symIs(node.pred.sym, symbols.less_than) and node.pred.args.len == 2) {
         return self.arithEmitOrder(cert, block, body, prems, symbols);
     }
     if (node != .quant or node.quant.q != .exists) return false;
@@ -7052,7 +7053,7 @@ fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
         var probe: std.ArrayList(ast.Step) = .empty;
         const ok = if (in == .eq)
             try self.arithEmitEquation(cert, &probe, in.eq.lhs, in.eq.rhs, prems, symbols)
-        else if (in == .pred and self.symIs(in.pred.sym, symbols.less_than) and in.pred.args_len == 2)
+        else if (in == .pred and self.symIs(in.pred.sym, symbols.less_than) and in.pred.args.len == 2)
             try self.arithEmitOrder(cert, &probe, instance, prems, symbols)
         else
             false;
@@ -7245,7 +7246,7 @@ fn arithEmitOrderFromPremise(self: *Prove, cert: *ArithCert, block: *std.ArrayLi
     const intro_stmt = (try self.arithLemmaFormula("lessThanIntro", symbols)) orelse return false;
     for (prems) |p| {
         const pn = self.pool.get(p.formula);
-        if (pn != .pred or !self.symIs(pn.pred.sym, less_than) or pn.pred.args_len != 2) continue;
+        if (pn != .pred or !self.symIs(pn.pred.sym, less_than) or pn.pred.args.len != 2) continue;
         const pargs = self.pool.args(pn.pred);
         const pl = pargs[0];
         const pr = pargs[1]; // premise: less_than(pl, pr)
@@ -7337,12 +7338,12 @@ fn parseArithTower(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) Err
     var cur = t;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             offset += 1;
             cur = self.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             offset -= 1;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -7361,7 +7362,7 @@ fn parseArithTower(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) Err
         }
         const node = self.pool.get(cur);
         if (node != .app) return null;
-        if (self.symIs(node.app.sym, symbols.add) and node.app.args_len == 2) {
+        if (self.symIs(node.app.sym, symbols.add) and node.app.args.len == 2) {
             const a = try self.ctx.arena.dupe(TermId, self.pool.args(node.app));
             if (self.arithNumeral(a[0], symbols)) |v| {
                 offset += v;
@@ -7384,7 +7385,7 @@ fn arithNumeral(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 
     var sign: i128 = 1;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and self.symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.neg) and node.app.args.len == 1) {
             sign = -sign;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -7394,12 +7395,12 @@ fn arithNumeral(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 
     var mag: i128 = 0;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             mag += 1;
             cur = self.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+        if (node == .app and self.symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             mag -= 1;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -7407,7 +7408,7 @@ fn arithNumeral(self: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 
         break;
     }
     const node = self.pool.get(cur);
-    if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args_len == 0) return sign * mag;
+    if (node == .app and self.symIs(node.app.sym, symbols.zero) and node.app.args.len == 0) return sign * mag;
     return null;
 }
 
@@ -7417,7 +7418,7 @@ fn isArithLeaf(self: *Prove, t0: TermId, symbols: presburger_mod.Symbols) bool {
     var t = t0;
     const node = while (true) {
         const n = self.pool.get(t);
-        if (n == .app and self.symIs(n.app.sym, symbols.neg) and n.app.args_len == 1) {
+        if (n == .app and self.symIs(n.app.sym, symbols.neg) and n.app.args.len == 1) {
             t = self.pool.args(n.app)[0];
             continue;
         }
@@ -7875,7 +7876,7 @@ pub fn flattenSum(self: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayL
     try stack.append(wa, id);
     while (stack.pop()) |cur| {
         const node = self.pool.get(cur);
-        if (node == .app and node.app.sym == op_sym and node.app.args_len == 2) {
+        if (node == .app and node.app.sym == op_sym and node.app.args.len == 2) {
             const args = self.pool.args(node.app);
             try stack.append(wa, args[1]); // rhs pushed first → pops second
             try stack.append(wa, args[0]); // lhs pushed second → pops first
@@ -7951,7 +7952,7 @@ fn stripTower(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) Stripped
     var cur = t;
     while (true) {
         const node = self.pool.get(cur);
-        if (node != .app or node.app.args_len != 1) break;
+        if (node != .app or node.app.args.len != 1) break;
         if (self.symIs(node.app.sym, symbols.succ)) {
             offset += 1;
         } else if (self.symIs(node.app.sym, symbols.prev)) {

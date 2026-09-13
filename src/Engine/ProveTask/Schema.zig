@@ -102,7 +102,7 @@ fn hashTerm(pool: *const term.Pool, h: *std.hash.Wyhash, id: TermId, canon: []co
             },
             .app, .pred => |ap| {
                 std.hash.autoHash(h, @intFromEnum(ap.sym));
-                std.hash.autoHash(h, ap.args_len);
+                std.hash.autoHash(h, ap.args.len);
                 pushRev(&stack, a, pool.args(ap));
             },
             .eq => |p| pushRev(&stack, a, &.{ p.lhs, p.rhs }),

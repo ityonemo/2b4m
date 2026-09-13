@@ -226,12 +226,12 @@ fn matchPattern(
             },
             .app => |a| {
                 const tn = pool.get(term_id);
-                if (tn != .app or tn.app.sym != a.sym or tn.app.args_len != a.args_len) return false;
+                if (tn != .app or tn.app.sym != a.sym or tn.app.args.len != a.args.len) return false;
                 for (pool.args(a), pool.args(tn.app)) |pa, ta| stack.append(al, .{ pa, ta }) catch return false;
             },
             .pred => |a| {
                 const tn = pool.get(term_id);
-                if (tn != .pred or tn.pred.sym != a.sym or tn.pred.args_len != a.args_len) return false;
+                if (tn != .pred or tn.pred.sym != a.sym or tn.pred.args.len != a.args.len) return false;
                 for (pool.args(a), pool.args(tn.pred)) |pa, ta| stack.append(al, .{ pa, ta }) catch return false;
             },
             .eq => |p| {

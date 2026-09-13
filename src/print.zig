@@ -114,7 +114,7 @@ const Printer = struct {
             .fvar => |v| try w.writeAll(self.displayName(v.name)),
             .app, .pred => |ap| {
                 try w.writeAll(self.symName(ap.sym));
-                if (ap.args_len > 0) {
+                if (ap.args.len > 0) {
                     // sym( arg0, arg1, … ) — push ")" then, for each arg from last to first,
                     // the arg then a ", " separator (except before arg0).
                     try stack.append(a, .{ .lit = ")" });

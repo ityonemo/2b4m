@@ -753,7 +753,7 @@ pub const Kernel = struct {
     /// Two apps are congruent for rewriting iff same sym + arity; push their arg pairs. Returns
     /// false (no push) on a sym/arity mismatch.
     fn pushRewriteApp(self: *Kernel, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: term.Node.App, y: term.Node.App) bool {
-        if (x.sym != y.sym or x.args_len != y.args_len) return false;
+        if (x.sym != y.sym or x.args.len != y.args.len) return false;
         for (self.pool.args(x), self.pool.args(y)) |ax, ay| stack.append(al, .{ ax, ay }) catch return false;
         return true;
     }

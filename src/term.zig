@@ -43,7 +43,10 @@ pub const Node = union(enum) {
     quant: Quant,
 
     pub const Fvar = struct { name: StrId, sort: SortId };
-    pub const App = struct { sym: SymId, args_start: u32, args_len: u16 };
+    /// An application's args are an ARENA-OWNED slice that never moves: a caller may hold
+    /// `pool.args(app)` across any pool mutation (the former `extra` list reallocated on
+    /// growth, and a slice held across an `open`/`addApp` went stale — the "stale-slice trap").
+    pub const App = struct { sym: SymId, args: []const TermId };
     pub const Pair = struct { lhs: TermId, rhs: TermId };
     pub const Bin = struct { op: BinOp, lhs: TermId, rhs: TermId };
     pub const Quant = struct { q: Quantifier, sort: SortId, hint: StrId, body: TermId };
@@ -70,7 +73,13 @@ pub const Pool = struct {
     /// never recurse deeply, passing the same `arena` is acceptable (small, short-lived).
     gpa: Allocator,
     nodes: std.ArrayList(Node) = .empty,
-    extra: std.ArrayList(TermId) = .empty,
+    /// HASH-CONSING (the "no content addressing" ruling, see memory `obligation-discharge-by-
+    /// identity`): structurally identical nodes share ONE id, so a term written twice — or reached
+    /// twice by substitution — IS one term, and alpha-equality of locally closed terms is id
+    /// equality. The set holds every node's id, probed by its structural `Key` (children are already
+    /// canonical when a parent is built, so a shallow key over child ids is a deep identity). The
+    /// key agrees with `alphaEq` EXACTLY: a quantifier's binder `hint` is NOT part of it.
+    index: std.HashMapUnmanaged(TermId, void, IdContext, std.hash_map.default_max_load_percentage) = .empty,
 
     pub fn init(arena: Allocator, gpa: Allocator) Pool {
         return .{ .arena = arena, .gpa = gpa };
@@ -80,25 +89,126 @@ pub const Pool = struct {
         return self.nodes.items[@intFromEnum(id)];
     }
 
+    /// The canonical id of `node`: the existing structurally identical node's, else a fresh one.
+    /// An app/pred node passed here must already have its args in `extra` (use `addApp` to build
+    /// one from an argument list).
     pub fn add(self: *Pool, node: Node) Allocator.Error!TermId {
+        const gop = try self.index.getOrPutContextAdapted(self.arena, keyOf(node), KeyContext{ .pool = self }, IdContext{ .pool = self });
+        if (gop.found_existing) return gop.key_ptr.*;
         const id: TermId = @enumFromInt(self.nodes.items.len);
         try self.nodes.append(self.arena, node);
+        gop.key_ptr.* = id;
         return id;
     }
 
-    /// Build an app/pred node from a symbol and argument list.
+    /// Build an app/pred node from a symbol and argument list (canonical: an identical
+    /// application already in the pool is returned, and nothing is allocated).
     pub fn addApp(self: *Pool, kind: AppKind, sym: SymId, arg_ids: []const TermId) Allocator.Error!TermId {
-        const start: u32 = @intCast(self.extra.items.len);
-        try self.extra.appendSlice(self.arena, arg_ids);
-        const app: Node.App = .{ .sym = sym, .args_start = start, .args_len = @intCast(arg_ids.len) };
-        return self.add(switch (kind) {
+        const app_key: Key.App = .{ .sym = sym, .args = arg_ids };
+        const key: Key = switch (kind) {
+            .app => .{ .app = app_key },
+            .pred => .{ .pred = app_key },
+        };
+        const gop = try self.index.getOrPutContextAdapted(self.arena, key, KeyContext{ .pool = self }, IdContext{ .pool = self });
+        if (gop.found_existing) return gop.key_ptr.*;
+        const app: Node.App = .{ .sym = sym, .args = try self.arena.dupe(TermId, arg_ids) };
+        const id: TermId = @enumFromInt(self.nodes.items.len);
+        try self.nodes.append(self.arena, switch (kind) {
             .app => .{ .app = app },
             .pred => .{ .pred = app },
         });
+        gop.key_ptr.* = id;
+        return id;
     }
 
+    /// A node's STRUCTURAL identity: the node with its app args as a slice (so a caller's
+    /// argument list keys the same as a stored one) and WITHOUT a quantifier's hint.
+    const Key = union(enum) {
+        bvar: u16,
+        fvar: Node.Fvar,
+        app: App,
+        pred: App,
+        eq: Node.Pair,
+        not: TermId,
+        bin: Node.Bin,
+        quant: Quant,
+
+        const App = struct { sym: SymId, args: []const TermId };
+        const Quant = struct { q: Quantifier, sort: SortId, body: TermId };
+
+        fn hash(k: Key) u64 {
+            var h = std.hash.Wyhash.init(0);
+            std.hash.autoHash(&h, std.meta.activeTag(k));
+            switch (k) {
+                .bvar => |i| std.hash.autoHash(&h, i),
+                .fvar => |v| std.hash.autoHash(&h, v),
+                .app, .pred => |a| {
+                    std.hash.autoHash(&h, a.sym);
+                    std.hash.autoHash(&h, a.args.len);
+                    for (a.args) |id| std.hash.autoHash(&h, id);
+                },
+                .eq => |p| std.hash.autoHash(&h, p),
+                .not => |t| std.hash.autoHash(&h, t),
+                .bin => |b| std.hash.autoHash(&h, b),
+                .quant => |q| std.hash.autoHash(&h, q),
+            }
+            return h.final();
+        }
+
+        fn eql(a: Key, b: Key) bool {
+            if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
+            return switch (a) {
+                .bvar => |i| i == b.bvar,
+                .fvar => |v| v.name == b.fvar.name and v.sort == b.fvar.sort,
+                .app => |x| x.sym == b.app.sym and std.mem.eql(TermId, x.args, b.app.args),
+                .pred => |x| x.sym == b.pred.sym and std.mem.eql(TermId, x.args, b.pred.args),
+                .eq => |p| p.lhs == b.eq.lhs and p.rhs == b.eq.rhs,
+                .not => |t| t == b.not,
+                .bin => |x| x.op == b.bin.op and x.lhs == b.bin.lhs and x.rhs == b.bin.rhs,
+                .quant => |q| q.q == b.quant.q and q.sort == b.quant.sort and q.body == b.quant.body,
+            };
+        }
+    };
+
+    fn keyOf(node: Node) Key {
+        return switch (node) {
+            .bvar => |i| .{ .bvar = i },
+            .fvar => |v| .{ .fvar = v },
+            .app => |a| .{ .app = .{ .sym = a.sym, .args = a.args } },
+            .pred => |a| .{ .pred = .{ .sym = a.sym, .args = a.args } },
+            .eq => |p| .{ .eq = p },
+            .not => |t| .{ .not = t },
+            .bin => |b| .{ .bin = b },
+            .quant => |q| .{ .quant = .{ .q = q.q, .sort = q.sort, .body = q.body } },
+        };
+    }
+
+    /// The set's own context: an id hashes/compares as the node it names.
+    const IdContext = struct {
+        pool: *const Pool,
+        pub fn hash(self: IdContext, id: TermId) u64 {
+            return Key.hash(keyOf(self.pool.get(id)));
+        }
+        pub fn eql(self: IdContext, a: TermId, b: TermId) bool {
+            return a == b or Key.eql(keyOf(self.pool.get(a)), keyOf(self.pool.get(b)));
+        }
+    };
+
+    /// The probe context: a not-yet-stored `Key` against the stored ids.
+    const KeyContext = struct {
+        pool: *const Pool,
+        pub fn hash(self: KeyContext, k: Key) u64 {
+            _ = self;
+            return Key.hash(k);
+        }
+        pub fn eql(self: KeyContext, k: Key, id: TermId) bool {
+            return Key.eql(k, keyOf(self.pool.get(id)));
+        }
+    };
+
     pub fn args(self: *const Pool, app: Node.App) []const TermId {
-        return self.extra.items[app.args_start..][0..app.args_len];
+        _ = self;
+        return app.args;
     }
 
     // --- the substitution calculus ---
@@ -286,7 +396,7 @@ pub const Pool = struct {
     /// alphaEq helper: two apps match iff same sym + arity; push their arg pairs onto the frontier.
     /// Returns false (no push) on a sym/arity mismatch. May allocate (`stack` spill).
     fn pushAppPairs(self: *const Pool, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: Node.App, y: Node.App) Allocator.Error!bool {
-        if (x.sym != y.sym or x.args_len != y.args_len) return false;
+        if (x.sym != y.sym or x.args.len != y.args.len) return false;
         for (self.args(x), self.args(y)) |ax, ay| try stack.append(al, .{ ax, ay });
         return true;
     }
@@ -364,7 +474,7 @@ pub const Pool = struct {
     fn pushOrderApp(self: *const Pool, stack: *std.ArrayList([2]TermId), al: std.mem.Allocator, x: Node.App, y: Node.App) Allocator.Error!std.math.Order {
         const sym = std.math.order(@intFromEnum(x.sym), @intFromEnum(y.sym));
         if (sym != .eq) return sym;
-        const len = std.math.order(x.args_len, y.args_len);
+        const len = std.math.order(x.args.len, y.args.len);
         if (len != .eq) return len;
         const xs = self.args(x);
         const ys = self.args(y);
@@ -451,7 +561,7 @@ pub const Pool = struct {
     fn childArity(node: Node) usize {
         return switch (node) {
             .bvar, .fvar => 0,
-            .app, .pred => |ap| ap.args_len,
+            .app, .pred => |ap| ap.args.len,
             .not, .quant => 1,
             .eq, .bin => 2,
         };
@@ -952,6 +1062,100 @@ test "occursFree sees through binders; open substitutes at correct depth" {
     try testing.expectEqual(Node{ .fvar = .{ .name = sid(4), .sort = nat } }, p.get(p.args(oapp)[0]));
     // x untouched
     try testing.expectEqual(Node{ .fvar = .{ .name = sid(1), .sort = nat } }, p.get(p.args(oapp)[1]));
+}
+
+test "hash-cons: the same node added twice is ONE id, and the pool does not grow" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    const x1 = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const x2 = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    try testing.expectEqual(x1, x2);
+    const e1 = try p.add(.{ .eq = .{ .lhs = x1, .rhs = x1 } });
+    const n = p.nodes.items.len;
+    const e2 = try p.add(.{ .eq = .{ .lhs = x2, .rhs = x2 } });
+    try testing.expectEqual(e1, e2);
+    try testing.expectEqual(n, p.nodes.items.len);
+    // a DIFFERENT node is a different id: another name, another sort, another node kind.
+    try testing.expect(x1 != try p.add(.{ .fvar = .{ .name = sid(2), .sort = nat } }));
+    try testing.expect(x1 != try p.add(.{ .fvar = .{ .name = sid(1), .sort = @enumFromInt(5) } }));
+    try testing.expect(e1 != try p.add(.{ .not = e1 }));
+}
+
+test "hash-cons: addApp with the same symbol and args is ONE id, and the pool does not grow" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const y = try p.add(.{ .fvar = .{ .name = sid(2), .sort = nat } });
+    const fxy1 = try p.addApp(.app, tsym(7), &.{ x, y });
+    const n = p.nodes.items.len;
+    const fxy2 = try p.addApp(.app, tsym(7), &.{ x, y });
+    try testing.expectEqual(fxy1, fxy2);
+    try testing.expectEqual(n, p.nodes.items.len);
+    // arg ORDER, symbol, and app-vs-pred all distinguish.
+    try testing.expect(fxy1 != try p.addApp(.app, tsym(7), &.{ y, x }));
+    try testing.expect(fxy1 != try p.addApp(.app, tsym(8), &.{ x, y }));
+    try testing.expect(fxy1 != try p.addApp(.pred, tsym(7), &.{ x, y }));
+    // a compound built from canonical children is canonical too: the same term twice.
+    const g1 = try p.addApp(.app, tsym(9), &.{fxy1});
+    const g2 = try p.addApp(.app, tsym(9), &.{try p.addApp(.app, tsym(7), &.{ x, y })});
+    try testing.expectEqual(g1, g2);
+}
+
+test "hash-cons: quantifiers differing only in their binder HINT are one id (the key agrees with alphaEq)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    // `exists k; f(k)` written by the author vs the same body under a hygienically renamed
+    // `k#7` from an expanded define: alpha-equal, so ONE term.
+    const b0 = try p.add(.{ .bvar = 0 });
+    const fb = try p.addApp(.app, tsym(3), &.{b0});
+    const ek = try p.add(.{ .quant = .{ .q = .exists, .sort = nat, .hint = sid(1), .body = fb } });
+    const ek7 = try p.add(.{ .quant = .{ .q = .exists, .sort = nat, .hint = sid(77), .body = fb } });
+    try testing.expectEqual(ek, ek7);
+    // but the quantifier kind and the binder sort still distinguish.
+    try testing.expect(ek != try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(1), .body = fb } }));
+    try testing.expect(ek != try p.add(.{ .quant = .{ .q = .exists, .sort = @enumFromInt(5), .hint = sid(1), .body = fb } }));
+}
+
+test "hash-cons: open(close(t, x), x) is t ITSELF, and alphaEq is id equality on locally closed terms" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const _a = arena_state.allocator();
+    var pool: Pool = .init(_a, _a);
+    const p = &pool;
+
+    // t = forall n; f(n, x)   (x free)
+    const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const b0 = try p.add(.{ .bvar = 0 });
+    const body = try p.addApp(.app, tsym(3), &.{ b0, x });
+    const t = try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(2), .body = body } });
+    // close over x then reopen at x: the substitution calculus canonicalizes through `add`, so the
+    // round trip lands on the very same id — not merely an alpha-equal copy.
+    const closed = try p.close(t, sid(1));
+    const reopened = try p.open(closed, x);
+    try testing.expectEqual(t, reopened);
+    // the same term built along a different path (a fresh fvar node for x, a fresh body) is
+    // the same id; a different term is not.
+    const x_again = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
+    const body_again = try p.addApp(.app, tsym(3), &.{ try p.add(.{ .bvar = 0 }), x_again });
+    const t_again = try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(99), .body = body_again } });
+    try testing.expectEqual(t, t_again);
+    try testing.expect(p.alphaEq(t, t_again));
+    const y = try p.add(.{ .fvar = .{ .name = sid(5), .sort = nat } });
+    const other = try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(2), .body = try p.addApp(.app, tsym(3), &.{ b0, y }) } });
+    try testing.expect(t != other);
+    try testing.expect(!p.alphaEq(t, other));
 }
 
 test "unchanged subtrees share ids (no pool bloat)" {

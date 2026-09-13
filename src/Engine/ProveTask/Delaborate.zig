@@ -129,7 +129,7 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
                 .bvar => |i| try results.append(a, try self.box(.{ .name = self.tok(self.boundName(i)) })),
                 .fvar => |v| try results.append(a, try self.box(.{ .name = self.tok(try self.displayId(v.name)) })),
                 .app, .pred => |ap| {
-                    if (ap.args_len == 0) {
+                    if (ap.args.len == 0) {
                         const callee = self.symTok(@enumFromInt(@intFromEnum(ap.sym)));
                         try results.append(a, try self.box(.{ .name = callee }));
                     } else {
@@ -171,7 +171,7 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
         .rebuild => |id| switch (self.pool.get(id)) {
             .app, .pred => |ap| {
                 const callee = self.symTok(@enumFromInt(@intFromEnum(ap.sym)));
-                const n = ap.args_len;
+                const n = ap.args.len;
                 const kids = results.items[results.items.len - n ..];
                 const args = try self.arena.dupe(*const ast.Expr, kids);
                 results.items.len -= n;

@@ -489,7 +489,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
         var body = m;
         if (ops.neg) |neg| {
             const mn = self.pool.get(m);
-            if (mn == .app and mn.app.sym == neg and mn.app.args_len == 1) {
+            if (mn == .app and mn.app.sym == neg and mn.app.args.len == 1) {
                 wrap = neg;
                 body = self.pool.args(mn.app)[0];
             }
@@ -576,7 +576,7 @@ fn numeralValue(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) ?i128 
     var sign: i128 = 1;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args.len == 1) {
             sign = -sign;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -586,12 +586,12 @@ fn numeralValue(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) ?i128 
     var mag: i128 = 0;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             mag += 1;
             cur = self.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             mag -= 1;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -599,7 +599,7 @@ fn numeralValue(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) ?i128 
         break;
     }
     const node = self.pool.get(cur);
-    if (node == .app and symIs(node.app.sym, symbols.zero) and node.app.args_len == 0)
+    if (node == .app and symIs(node.app.sym, symbols.zero) and node.app.args.len == 0)
         return sign * mag;
     return null;
 }
@@ -610,12 +610,12 @@ fn parseTower(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) Error!?T
     var cur = t;
     while (true) {
         const node = self.pool.get(cur);
-        if (node == .app and symIs(node.app.sym, symbols.succ) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             offset += 1;
             cur = self.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and symIs(node.app.sym, symbols.prev) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             offset -= 1;
             cur = self.pool.args(node.app)[0];
             continue;
@@ -634,7 +634,7 @@ fn parseTower(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) Error!?T
             break;
         }
         if (node != .app) return null;
-        if (symIs(node.app.sym, symbols.add) and node.app.args_len == 2) {
+        if (symIs(node.app.sym, symbols.add) and node.app.args.len == 2) {
             const args = self.pool.args(node.app);
             const a0 = args[0];
             const a1 = args[1];
@@ -660,7 +660,7 @@ fn isTowerLeaf(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool {
     while (true) {
         const node = self.pool.get(cur);
         if (node == .fvar) return true;
-        if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args_len == 1) {
+        if (node == .app and symIs(node.app.sym, symbols.neg) and node.app.args.len == 1) {
             cur = self.pool.args(node.app)[0]; // peel neg, keep going
             continue;
         }
@@ -895,10 +895,10 @@ pub fn cancelInverses(
 fn findNegCancel(self: *Prove, rules: []const simplify_mod.Rule, symbols: presburger_mod.Symbols, side: enum { left, right }) ?usize {
     for (rules, 0..) |rule, i| {
         const n = self.pool.get(rule.lhs);
-        if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args_len != 2) continue;
+        if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args.len != 2) continue;
         // rhs must be a bare ZERO
         const rn = self.pool.get(rule.rhs);
-        if (rn != .app or !symIs(rn.app.sym, symbols.zero.?) or rn.app.args_len != 0) continue;
+        if (rn != .app or !symIs(rn.app.sym, symbols.zero.?) or rn.app.args.len != 0) continue;
         const args = self.pool.args(n.app);
         const a0 = args[0];
         const a1 = args[1];
@@ -906,7 +906,7 @@ fn findNegCancel(self: *Prove, rules: []const simplify_mod.Rule, symbols: presbu
         const neg_arg = if (side == .right) a1 else a0;
         const pos_arg = if (side == .right) a0 else a1;
         const nn = self.pool.get(neg_arg);
-        if (nn != .app or !symIs(nn.app.sym, symbols.neg.?) or nn.app.args_len != 1) continue;
+        if (nn != .app or !symIs(nn.app.sym, symbols.neg.?) or nn.app.args.len != 1) continue;
         if (self.pool.alphaEq(self.pool.args(nn.app)[0], pos_arg)) return i;
     }
     return null;
@@ -917,12 +917,12 @@ fn findNegCancel(self: *Prove, rules: []const simplify_mod.Rule, symbols: presbu
 fn findZeroDrop(self: *Prove, rules: []const simplify_mod.Rule, symbols: presburger_mod.Symbols, side: enum { left, right }) ?usize {
     for (rules, 0..) |rule, i| {
         const n = self.pool.get(rule.lhs);
-        if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args_len != 2) continue;
+        if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args.len != 2) continue;
         const args = self.pool.args(n.app);
         const zero_arg = if (side == .left) args[0] else args[1];
         const rest_arg = if (side == .left) args[1] else args[0];
         const zn = self.pool.get(zero_arg);
-        if (zn != .app or !symIs(zn.app.sym, symbols.zero.?) or zn.app.args_len != 0) continue;
+        if (zn != .app or !symIs(zn.app.sym, symbols.zero.?) or zn.app.args.len != 0) continue;
         // rhs must be the rest arg (the surviving fvar)
         if (self.pool.alphaEq(rule.rhs, rest_arg)) return i;
     }
