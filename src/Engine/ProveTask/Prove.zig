@@ -107,15 +107,12 @@ admitted: Verify.Word.Set = Verify.Word.Set.initEmpty(),
 /// on holes (inherited in `resolveFactRef` from `ctx.hole_taint`). Deduped. Recorded against the
 /// published fact for the summary's blast-radius report ONLY (never a proof verdict). [[hole-mechanism]]
 holes_used: std.ArrayList(InternPool.StrId) = .empty,
-/// use-all-facts extra reachability roots (TCC dischargers — none yet; kept for shape)
-extra_reachable_steps: std.ArrayList(u32) = .empty,
-/// REFINED-SORT proof obligations (Step 3c): a guarded-function application over a refined
-/// param appends `inH(arg)` here (via the Elab); `dischargeTccs` after each formula proves
-/// them against the LOCAL context (result_facts + block guards/assumes + prior steps) — no
-/// global scan (the plan's fetch-only mandate; global-fact discharge is deferred).
-pending_tccs: std.ArrayList(Elab.Tcc) = .empty,
-/// closure facts surfaced by refined-RESULT funcs/consts (an available discharger).
-result_facts: std.ArrayList(TermId) = .empty,
+/// KNOWN PROPOSITIONS (see Elab.Known): what binders, hypotheses and proved steps have TAUGHT,
+/// looked up by identity at every guarded application. `blocks` points at `low_blocks`.
+known: Elab.Known = undefined,
+/// the kernel block of the step being PROCESSED — the block a use's lookup is made from. Only
+/// the process pass checks obligations (the read pass re-elaborates without checking).
+current_block: ?kernel.BlockId = null,
 /// SCHEMA CONTEXT (set only when this Prove drives a schema INSTANCE): the bound args
 /// (installed on every Elab it builds) + the param names (skipped by the read pass). Null/
 /// empty for an ordinary proof. See [[schema-reification-blocker]] rebuild (Step 12).
@@ -166,6 +163,7 @@ pub fn init(ctx: *Context, h: *Engine.Handle, source: []const u8, file: InternPo
     const pool = try ctx.arena.create(term.Pool);
     pool.* = .init(ctx.arena, ctx.gpa); // durable nodes on the main arena; work-stacks on the GPA
     p.* = .{ .ctx = ctx, .h = h, .pool = pool, .source = source, .file = file, .ns = ns };
+    p.known = .{ .blocks = &p.low_blocks };
     // kernel block 0 = the root proof body; sealed in finish().
     try p.low_blocks.append(ctx.arena, .{
         .parent = null,
@@ -183,8 +181,11 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
     e.no_relativize = self.pre_relativized; // synthetic instance: skip guard re-injection
-    e.tccs = &self.pending_tccs; // refined-sort obligation sink (Step 3c)
-    e.result_facts = &self.result_facts;
+    // obligations are checked in the PROCESS pass only (a read-pass elaboration is redone there).
+    if (self.current_block) |kb| {
+        e.known = &self.known;
+        e.known_block = kb;
+    }
     return e;
 }
 
@@ -204,8 +205,7 @@ fn sourceElab(self: *Prove, w: *const Walk) Elab {
     e.model = .universe;
     e.source_space = true; // locals resolve at their SOURCE sort (see Elab.source_space)
     e.schema_args = self.schema_args_source orelse self.schema_args; // params at source terms
-    e.tccs = null;
-    e.result_facts = null;
+    e.known = null;
     return e;
 }
 
@@ -672,13 +672,15 @@ pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockO
 fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Error!void {
     const kb = self.kernelBlock(block);
     const label = try self.localName(step.label);
+    self.current_block = kb;
+    defer self.current_block = null;
+    self.known.missed = false;
     switch (step.body) {
         .claim => |c| {
-            const tcc_start = self.pending_tccs.items.len;
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(c.formula), c.formula);
             const just = try self.lowerJustification(w, &e, kb, f.id, c);
-            try self.dischargeTccs(kb, tcc_start);
+            if (self.known.missed) return error.Recover; // an unproved obligation was diagnosed
             // under a model transfer, also keep the claim in SOURCE space (an accelerant citing
             // this step as a premise builds in source space — see `source_formulas`).
             const f_source: ?TermId = if (self.sourceSpaceAccelerants() and !self.inGuardWrapper(kb)) blk: {
@@ -693,26 +695,33 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
                 .label = label,
                 .loc = step.label.start,
             }, f_source);
+            // a PROVED step TEACHES its formula to the rest of its block (appended first, so a
+            // step never discharges its own obligation).
+            try self.known.teach(self.ctx.arena, f.id, kb, @intCast(self.low_steps.items.len - 1));
         },
         .assume => |blk| {
-            const tcc_start = self.pending_tccs.items.len;
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(blk.formula), blk.formula);
-            try self.dischargeTccs(kb, tcc_start);
+            if (self.known.missed) return error.Recover;
             try self.newBlock(w, label, kb, .{ .assume = f.id });
+            // the hypothesis is KNOWN inside the block it opens.
+            try self.known.teach(self.ctx.arena, f.id, self.lastBlock(), null);
         },
         .fix => |blk| {
             const b = try self.bindProofVar(w, .{ .name = blk.name, .sort = blk.sort });
             try self.newBlock(w, label, kb, .{ .fix = .{ .v = b.v, .guard = b.guard } });
+            try self.teachBinder(b);
         },
         .unpack => |blk| {
             const source_ref = try self.resolveStepRef(w, blk.from);
             const b = try self.bindProofVar(w, .{ .name = blk.name, .sort = blk.sort });
             try self.newBlock(w, label, kb, .{ .unpack = .{ .v = b.v, .source = source_ref } });
+            try self.teachBinder(b);
         },
         .case => |c| {
             var e = self.elab(w);
             const goal = try e.requireProp(try e.elaborateExpr(c.goal), c.goal);
+            if (self.known.missed) return error.Recover;
             const disj = try self.resolveStepRef(w, c.disj);
             const disj_formula = self.low_steps.items[@intFromEnum(disj.id)].formula;
             const node = self.pool.get(disj_formula);
@@ -748,6 +757,8 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
     const c = step.body.case;
     const cc = self.case_stack.pop().?;
     const kb = self.kernelBlock(block);
+    self.current_block = kb;
+    defer self.current_block = null;
     // resolve each arm's walked assume-block (each assumes its disjunct + concludes goal).
     const arm_blocks = try self.ctx.arena.alloc(kernel.BRef, c.arms.len);
     for (c.arms, arm_blocks) |arm, *out| out.* = try self.resolveBlockRef(w, arm.label);
@@ -761,6 +772,21 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
         .label = try self.localName(step.label),
         .loc = cc.loc,
     }, cc.goal_source);
+    try self.known.teach(self.ctx.arena, cc.goal, kb, @intCast(self.low_steps.items.len - 1));
+}
+
+/// The kernel block most recently created by `newBlock` (the block a fix/assume/unpack opened).
+fn lastBlock(self: *const Prove) kernel.BlockId {
+    return @enumFromInt(self.low_blocks.items.len - 1);
+}
+
+/// A refined binder TEACHES its guard inside the block it opens: each qualifier's atom (what a
+/// guarded use of the variable requires) and the conjoined guard (what the kernel's guarded
+/// forall_intro / a `requires` over the conjunction states).
+fn teachBinder(self: *Prove, b: BoundVar) Error!void {
+    const blk = self.lastBlock();
+    for (b.quals) |q| try self.known.teach(self.ctx.arena, q, blk, null);
+    if (b.guard) |g| if (b.quals.len != 1) try self.known.teach(self.ctx.arena, g, blk, null);
 }
 
 /// Build the (possibly nested) or_elim justification for a `case` over a LEFT-NESTED
@@ -932,7 +958,7 @@ fn closeSyntheticBlock(self: *Prove, id: kernel.BlockId) void {
     self.low_blocks.items[@intFromEnum(id)].last_step = @intCast(self.low_steps.items.len);
 }
 
-const BoundVar = struct { v: term.Node.Fvar, guard: ?TermId };
+const BoundVar = struct { v: term.Node.Fvar, guard: ?TermId, quals: []const TermId = &.{} };
 
 /// A fix/unpack binder: resolve its (possibly refined/inline-`where`) sort, mint the
 /// hygienic fvar at the CARRIER, and — for a refined sort — build its guard `inH(v)`
@@ -958,95 +984,17 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
         break :blk @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(src_refined)))));
     } else sort;
     w.pending_binder = .{ .sort = sort, .source_sort = source_sort, .fvar = fvar };
-    // build the guard over the fresh fvar (conjunction if multiple qualifiers).
+    // build the guard over the fresh fvar (conjunction if multiple qualifiers), keeping each
+    // qualifier's atom (what the binder TEACHES, see `teachBinder`).
     var guard: ?TermId = null;
-    for (quals) |qual| {
+    const atoms = try self.ctx.arena.alloc(TermId, quals.len);
+    for (quals, atoms) |qual, *atom| {
         const fv = try self.pool.add(.{ .fvar = .{ .name = fvar, .sort = sort } });
         const app = try e.qualifierApp(qual, fv); // an opaque pred applies; a define'd guard term substitutes
+        atom.* = app;
         guard = if (guard) |prev| try self.pool.add(.{ .bin = .{ .op = .and_op, .lhs = prev, .rhs = app } }) else app;
     }
-    return .{ .v = .{ .name = fvar, .sort = sort }, .guard = guard };
-}
-
-// -- refined-sort obligation discharge (Step 3c) ---------------------------------------
-
-/// Discharge the obligations accrued since `start` (a guarded application over a refined
-/// param demands `inH(arg)`), proving each against the LOCAL proof context. On any failure
-/// records "unproved obligation" and rejects. Obligations discharged here also mark their
-/// discharging step reachable (so the use-all-facts pass doesn't flag it dead).
-fn dischargeTccs(self: *Prove, kb: kernel.BlockId, start: usize) Error!void {
-    var any_failed = false;
-    for (self.pending_tccs.items[start..]) |t| {
-        if (!self.tccDischarged(kb, t.formula)) {
-            self.ctx.sink.add(t.loc, "unproved obligation: '{s}'", .{try self.renderTerm(t.formula)}) catch return error.OutOfMemory;
-            any_failed = true;
-        }
-    }
-    self.pending_tccs.shrinkRetainingCapacity(start);
-    if (start == 0) self.result_facts.clearRetainingCapacity();
-    if (any_failed) return error.Recover;
-}
-
-/// Discharge the obligations accrued while elaborating the theorem's STATEMENT formula — a
-/// guarded application in the stated goal (`div(ONE, ZERO) = …`) owes its precondition just as
-/// one in a proof step does. The context is the ROOT block (kernel block 0): the statement has
-/// no local hypotheses, so an obligation discharges only if it is SELF-relativized — a guarded
-/// use under `forall d; d != ZERO -> …` closes to `∀d; d != ZERO -> (d != ZERO)` and peels
-/// clean, while `div(ONE, ZERO)` in a bare statement has nothing to lean on and is rejected.
-/// Mirrors the per-step `dischargeTccs`; called from the goal phase (`elaborateGoalInto`).
-pub fn dischargeGoalTccs(self: *Prove) Error!void {
-    return self.dischargeTccs(@enumFromInt(0), 0);
-}
-
-/// True if obligation `f` follows from the LOCAL context. Peels `->`/`and`/`forall` (adding
-/// antecedents as local hypotheses, monomorphizing `forall` at a fresh fvar) and matches
-/// each atom against: result_facts (surfaced closures), enclosing block guards/assumes, and
-/// prior in-scope steps. NO global-statement scan — the demand model has no "all facts" set
-/// (the plan's fetch-only mandate); an obligation needing a global fact goes red for now.
-fn tccDischarged(self: *Prove, kb: kernel.BlockId, formula: TermId) bool {
-    var hyps: std.ArrayList(TermId) = .empty;
-    return self.tccDischargedHyps(kb, formula, &hyps);
-}
-
-fn tccDischargedHyps(self: *Prove, kb: kernel.BlockId, formula: TermId, hyps: *std.ArrayList(TermId)) bool {
-    // Iterative (was a `while` loop with one `.and_op` self-recursion): a work-stack of formulas
-    // that must ALL discharge (an AND). Each is peeled (implies pushes its antecedent onto the
-    // SHARED `hyps`; a forall opens under a fresh eigenvar) until it matches a hyp/TCC or splits on
-    // `and`. Preserves the original's shared-`hyps` semantics (an implies antecedent from one
-    // conjunct stays visible to later conjuncts — same pointer, sequential processing).
-    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
-    defer scratch.deinit();
-    const wa = scratch.allocator();
-    var stack: std.ArrayList(TermId) = .empty;
-    stack.append(wa, formula) catch return false;
-    outer: while (stack.pop()) |start| {
-        var f = start;
-        while (true) {
-            for (hyps.items) |h| if (self.pool.alphaEq(h, f)) continue :outer; // this conjunct discharged
-            if (self.tccMatches(kb, f)) continue :outer;
-            const node = self.pool.get(f);
-            if (node == .bin and node.bin.op == .implies) {
-                hyps.append(self.ctx.arena, node.bin.lhs) catch return false;
-                f = node.bin.rhs;
-                continue;
-            }
-            if (node == .bin and node.bin.op == .and_op) {
-                // push rhs then lhs so LHS pops first — matches the original `lhs and rhs` order,
-                // so an antecedent LHS pushes onto the shared `hyps` is visible to RHS.
-                stack.append(wa, node.bin.rhs) catch return false;
-                stack.append(wa, node.bin.lhs) catch return false;
-                continue :outer;
-            }
-            if (node == .quant and node.quant.q == .forall) {
-                const fresh = self.freshNamed("obl") catch return false;
-                const fv = self.pool.add(.{ .fvar = .{ .name = fresh, .sort = node.quant.sort } }) catch return false;
-                f = self.pool.open(node.quant.body, fv) catch return false;
-                continue;
-            }
-            return false; // this conjunct couldn't discharge → whole thing fails
-        }
-    }
-    return true; // every conjunct discharged
+    return .{ .v = .{ .name = fvar, .sort = sort }, .guard = guard, .quals = atoms };
 }
 
 /// Produce a PROVEN step whose formula is the guard `g` (`good(t)`), and return its SRef —
@@ -1451,32 +1399,6 @@ fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.me
         return .setup;
     }
     return .none;
-}
-
-fn tccMatches(self: *Prove, kb: kernel.BlockId, f: TermId) bool {
-    for (self.result_facts.items) |fact| if (self.pool.alphaEq(fact, f)) return true;
-    // enclosing block guards (fix) + assumptions, walking to the root.
-    var cur: ?kernel.BlockId = kb;
-    while (cur) |c| {
-        const b = self.low_blocks.items[@intFromEnum(c)];
-        switch (b.kind) {
-            .assume => |a| if (self.pool.alphaEq(a, f)) return true,
-            .fix => |fx| if (fx.guard) |g| {
-                if (self.pool.alphaEq(g, f)) return true;
-            },
-            else => {},
-        }
-        cur = b.parent;
-    }
-    // prior in-scope proof steps.
-    for (self.low_steps.items, 0..) |s, i| {
-        if (!lowAncestorOrSelf(self.low_blocks.items, s.block, kb)) continue;
-        if (self.pool.alphaEq(s.formula, f)) {
-            self.extra_reachable_steps.append(self.ctx.arena, @intCast(i)) catch {};
-            return true;
-        }
-    }
-    return false;
 }
 
 fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.BlockId) bool {
@@ -8449,7 +8371,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
     var work: std.ArrayList(u32) = .empty;
     try work.append(arena, start);
     reached[start] = true;
-    for (self.extra_reachable_steps.items) |di| try mark(reached, &work, arena, di);
+    for (self.known.reachable.items) |di| try mark(reached, &work, arena, di);
     while (work.pop()) |si| {
         {
             var b: ?kernel.BlockId = steps[si].block;

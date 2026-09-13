@@ -266,12 +266,12 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
     e.model = st.prove.model; // remap source globals for a model transfer (identity else)
     e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
-    // a guarded/refined application in the STATEMENT owes its obligation just as one in a step
-    // does — wire the same sinks so `dischargeGoalTccs` (below) proves them against the empty
-    // statement context (a self-relativized `forall d; d != ZERO -> …` discharges; a bare
-    // `div(ONE, ZERO)` does not).
-    e.tccs = &st.prove.pending_tccs;
-    e.result_facts = &st.prove.result_facts;
+    // a guarded application in the STATEMENT owes its obligation just as one in a step does —
+    // it is looked up in the statement's own knowledge (a binder / antecedent teaches: a
+    // self-relativized `forall d; d != ZERO -> …` discharges; a bare `div(ONE, ZERO)` does not).
+    st.prove.known.missed = false;
+    e.known = &st.prove.known;
+    e.known_block = @enumFromInt(0);
     e.in_statement = true; // suppress refined-sort arg obligations in the statement (guard-func only)
     const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -280,10 +280,7 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .done,
     };
-    st.prove.dischargeGoalTccs() catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Recover => return .done, // an undischarged statement obligation — diagnosed; no publish
-    };
+    if (st.prove.known.missed) return .done; // an undischarged statement obligation — diagnosed; no publish
     st.goal = typed.id;
     return .done;
 }

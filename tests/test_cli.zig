@@ -357,6 +357,27 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/use_all_facts_unpack_ok.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/use_all_facts_tcc_ok.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/use_all_facts_accel_chain_ok.bpa" });
+
+    // OBLIGATION DISCHARGE BY IDENTITY (no content search): a guarded application's required
+    // proposition must be KNOWN where it is used — taught by an enclosing assume, a prior step,
+    // a binder at the refined sort, or a refined result — and is looked up by identity (a
+    // compound subject written twice is one term in the hash-consed pool).
+    ctx.okSilent(&.{ "check", "tests/cases/tcc_teach.bpa" });
+    // a define'd guard and the same guard spelled out as `requires` are ONE proposition; a
+    // teaching written either way discharges either.
+    ctx.okSilent(&.{ "check", "tests/cases/tcc_teach_define_vs_spelled.bpa" });
+    // an UNCITED axiom never discharges — the author states it as a step first.
+    ctx.fail(&.{ "check", "tests/cases/tcc_uncited_bad.bpa" },
+        \\tests/cases/tcc_uncited_bad.bpa:15:11: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/tcc_uncited_bad.bpa:15:25: error: unproved obligation: 'inH(UNIT)'
+        \\
+    );
+    // knowledge is block-scoped: taught inside an assume, gone after it closes.
+    ctx.fail(&.{ "check", "tests/cases/tcc_scope_bad.bpa" },
+        \\tests/cases/tcc_scope_bad.bpa:22:11: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/tcc_scope_bad.bpa:22:25: error: unproved obligation: 'inH(UNIT)'
+        \\
+    );
     // REGRESSION: a schema `instantiate` step re-enters checkProofSteps (to
     // re-verify the schema body under recheck_schemas), which must NOT wipe the
     // outer proof's accelerant-premise reachability roots. Under --fast the
