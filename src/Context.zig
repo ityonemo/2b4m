@@ -43,6 +43,10 @@ const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, FileId);
 /// Key into the by-name AST registry: a decl is addressed by its file + stamped name.
 pub const DeclKey = struct { file: FileId, name: InternPool.StrId };
 
+/// Key into the synthetic-by-step map: the file + the byte offset of the citing step's rule
+/// token (the `loc` every accelerant stamps on its synthetic).
+pub const SyntheticKey = struct { file: FileId, loc: u32 };
+
 /// DURABLE allocator — the process-lifetime main arena (never reset). Holds the AST, InternPool,
 /// facts, task payloads, per-Pool nodes — everything read by pointer/Index after a task returns.
 arena: std.mem.Allocator,
@@ -91,6 +95,11 @@ parsed: std.ArrayList(ast.File) = .empty,
 /// instance/schema path finds them by name identically. `parsed[fid].decls` (the ordered
 /// slice) stays for the order/iteration consumers (root scan, queries, lint).
 ast_index: std.AutoHashMapUnmanaged(DeclKey, *const ast.Decl) = .empty,
+/// SYNTHETIC decl by STEP: `(FileId, the citing step's rule-token offset) -> the registry key
+/// of the accelerant-generated decl that step produced` (filled by `Prove.demandUsing` beside
+/// `registerDecl`, keep-first). The debug reprint (`bpa debug accelerant`) locates a step's
+/// synthetic through this; the engine itself resolves synthetics by NAME via `ast_index`.
+synthetic_at: std.AutoHashMapUnmanaged(SyntheticKey, DeclKey) = .empty,
 import_maps: std.ArrayList(ImportMap) = .empty,
 /// LAZY-PARSE state per FileId (Step 11): a file is discovered (source read, FileId +
 /// table slots reserved) LONG before it is parsed — parsing is on demand, when a
@@ -224,6 +233,19 @@ pub fn copyModelDefineTargets(self: *Context, composed: InternPool.Index, outer:
 /// linear `parsed[fid].decls` name-scans, and transparently serves synthetic decls.
 pub fn declOf(self: *const Context, file: FileId, name: InternPool.StrId) ?*const ast.Decl {
     return self.ast_index.get(.{ .file = file, .name = name });
+}
+
+/// Record that the step at `loc` in `file` produced the synthetic decl registered as `name`
+/// (keep-first: a step's synthetic is produced once per space; the first stays the answer).
+pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: InternPool.StrId) std.mem.Allocator.Error!void {
+    const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc });
+    if (!gop.found_existing) gop.value_ptr.* = .{ .file = file, .name = name };
+}
+
+/// The synthetic decl the step at `loc` in `file` produced, if any.
+pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Decl {
+    const key = self.synthetic_at.get(.{ .file = file, .loc = loc }) orelse return null;
+    return self.ast_index.get(key);
 }
 
 /// Ensure `file`'s AST is available, the LAZY-PARSE demand step. Returns:

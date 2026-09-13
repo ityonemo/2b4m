@@ -299,6 +299,7 @@ test {
     std.testing.refAllDecls(query.search);
     std.testing.refAllDecls(query.uses);
     std.testing.refAllDecls(debug.taint);
+    std.testing.refAllDecls(debug.accelerant);
     std.testing.refAllDecls(literate);
     std.testing.refAllDecls(lint);
     // engine task-payload sub-files (their tests aren't reached by the shallow @This() ref)

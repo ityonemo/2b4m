@@ -1,9 +1,11 @@
 // A schema whose proof uses `[using arithmetic]` on a goal mentioning the schema's
-// VALUE parameter `k`. The goal is fine when `k` is a real forall variable, but
-// the schema wellformedness self-check reifies `k` as an OPAQUE symbol, which
-// arithmetic's Presburger fragment cannot treat as a Nat variable. This is a
-// known, planned-but-unsupported case — bpa should say so clearly (naming `k`),
-// not leak the internal `opaque-schema-param#N` symbol.
+// VALUE parameter `k`. Under the eager engine this was a deliberate NEGATIVE: the
+// decl-time wellformedness self-check reified `k` as an OPAQUE symbol, which the
+// Presburger fragment could not treat as a Nat variable ("cannot yet decide this
+// goal over the schema parameter 'k'"). The demand engine has no opaque path — a
+// schema is checked PER INSTANCE at the citer's actual arguments, where `k` is an
+// ordinary term — so the goal certifies and the file is simply OK. (The name keeps
+// its history; the gate now pins the acceptance.)
 sort Nat
 const ZERO: Nat
 const ONE: Nat
@@ -18,4 +20,12 @@ proof
   @arith-step |
     add(k, ONE) = succ(k)
     [using arithmetic]
+qed
+
+// the instance that actually runs the schema's proof (uncited code isn't checked).
+theorem valArithAtZero: add(ZERO, ONE) = succ(ZERO)
+proof
+  @conclusion |
+    add(ZERO, ONE) = succ(ZERO)
+    [using instantiation valArith(ZERO)]
 qed

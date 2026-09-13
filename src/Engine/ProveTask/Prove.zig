@@ -2128,6 +2128,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // register the synthetic decl + publish its `.schema` locator into the FACT table ONCE
     // (both idempotent). A schema is a fact-with-params, so it lives in FactKV like any fact.
     _ = self.ctx.registerDecl(fid, decl_ptr) catch return error.OutOfMemory; // keep-first
+    self.ctx.registerSynthetic(fid, c.rule.start, syn_name) catch return error.OutOfMemory; // by step, for the debug reprint
     const schema_key = FactKV.Key{ .namespace = self.ns, .name = syn_name };
     if (self.ctx.facts.lookup(self.ctx.io, schema_key) == null) {
         _ = self.ctx.facts.publishSchema(self.ctx.io, schema_key, .{

@@ -604,13 +604,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/schema_arithmetic_fallback_bad.bpa" });
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/schema_arithmetic_fallback_bad.bpa" });
 
-    // arithmetic over a reified SCHEMA PARAMETER: the schema's opaque
-    // wellformedness self-check reifies the value-param `k` as an opaque symbol
-    // arithmetic can't treat as a Nat variable — a known, planned-but-unsupported
-    // case. The message names the user's parameter (not the internal symbol) and
-    // says it's unsupported-but-planned. (`--fast` skips the self-check, so it
-    // wouldn't hit this — not gated here.)
-    ctx.fail(&.{ "check", "tests/cases/schema_arithmetic_param_bad.bpa" }, "tests/cases/schema_arithmetic_param_bad.bpa:20:9: error: arithmetic cannot yet decide this goal over the schema parameter 'k' (reified opaque while the schema's proof is checked). Certifying an arithmetic step over a schema parameter is currently unsupported but planned; use --fast to accept the accelerated verdict\n");
+    // arithmetic over a SCHEMA VALUE PARAMETER: the demand engine checks a schema per
+    // instance at the citer's actual arguments (no opaque-param self-check), so `k` is an
+    // ordinary term there and the step certifies. (The eager engine rejected this — "cannot
+    // yet decide this goal over the schema parameter 'k'" — an artifact of its opaque
+    // reification; the fixture keeps its historical name.)
+    ctx.okSilent(&.{ "check", "tests/cases/schema_arithmetic_param_bad.bpa" });
 
     // Milestone D2: mixed skeletons replay as kernel-checked certificates
     ctx.okSilent(&.{ "check", "tests/cases/smt_cert.bpa" });

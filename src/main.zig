@@ -69,15 +69,34 @@ fn lintCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     return emitQuery(result.text, result.ok);
 }
 
+/// `bpa debug accelerant <file> <line>` | `<file> <theorem> <step-label>`: reprint the
+/// synthetic theorem the named accelerant step produced, as re-parseable bpa source. Reads
+/// `.md` through the literate extractor.
 const debug_usage =
-    "usage: bpa debug taint <file> [theorem]\n";
+    "usage: bpa debug accelerant <file> <line>\n" ++
+    "       bpa debug accelerant <file> <theorem> <step-label>\n" ++
+    "       bpa debug taint <file> [theorem]\n";
 
 /// `bpa debug <op>` — proof-machinery introspection.
+///   accelerant — reprint the synthetic theorem an accelerated step produced.
 ///   taint      — per proof, every accelerated step at its file:line:col.
-/// (`debug accelerant` retired with the eager elaborator; returns with the
-/// Phase-5 demand-aware accelerant rebuild.)
 fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:0]const u8) !u8 {
-    _ = std_root;
+    if (rest.len >= 1 and std.mem.eql(u8, rest[0], "accelerant")) {
+        if (rest.len < 3) return fail(debug_usage, .{});
+        const p = rest[1];
+        const selector: bpa.debug.accelerant.Selector = if (rest.len == 3)
+            (if (std.fmt.parseInt(usize, rest[2], 10)) |ln| .{ .line = ln } else |_| return fail(debug_usage, .{}))
+        else if (rest.len == 4)
+            .{ .step = .{ .theorem = rest[2], .label = rest[3] } }
+        else
+            return fail(debug_usage, .{});
+        const source = readSource(arena, p) catch |e| switch (e) {
+            error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
+            else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
+        };
+        const result = try bpa.debug.accelerant.accelerant(io, arena, p, source, selector, null, queryReadFile, std_root);
+        return emitQuery(result.text, result.ok);
+    }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "taint")) {
         if (rest.len < 2 or rest.len > 3) return fail(debug_usage, .{});
         const path = rest[1];

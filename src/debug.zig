@@ -4,3 +4,5 @@
 
 /// per proof, every accelerated step at its file:line:col — where trust enters
 pub const taint = @import("debug/taint.zig");
+/// reprint the synthetic theorem an accelerated step produced, as re-parseable bpa
+pub const accelerant = @import("debug/accelerant.zig");
