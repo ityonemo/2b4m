@@ -41,7 +41,7 @@ pub fn addTests(
     ctx.fail(&.{ "check", "examples/incorrect.bpa" },
         \\examples/incorrect.bpa:39:41: error: modus_ponens: expected antecedent 'raining', got 'wet'
         \\examples/incorrect.bpa:61:4: error: step claims 'forall n: Nat; is_zero(n)' but forall_intro derives 'forall n: Nat; is_zero(ZERO)'
-        \\examples/incorrect.bpa:73:28: error: unproved obligation: 'ZERO != ZERO'
+        \\examples/incorrect.bpa:77:5: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 

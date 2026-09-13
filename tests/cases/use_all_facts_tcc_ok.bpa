@@ -1,48 +1,33 @@
-// RED-for-the-bug / GREEN-when-fixed: a VALID proof whose step exists ONLY to
-// discharge a guarded-application obligation (a TCC). Inside `fix g`, the guard
-// `inH(g)` is available (via `predicate`), and `succInH` lifts it to
-// `inH(succ(g))`. The step @conclusion-q writes `apply(succ(g))`, whose argument
-// is refined (H = G where inH), so it emits the obligation `inH(succ(g))`. ONLY
-// @succ-in-subset supplies that fact — there is no global axiom giving it, so the
-// discharge is a step α-match, NOT a `[by …]` citation. A reachability walk that
-// follows only citations wrongly flags @succ-in-subset as dead. It IS used (the
-// proof would not check without it), so this must PASS.
+// A VALID proof whose step exists ONLY to discharge a guarded-application obligation.
+// `apply(h: H)` requires `inH(<arg>)`. Inside `fix g: H` the step @g-in-subset restates the
+// binder's guard `inH(g)`; the use `apply(g)` looks that obligation up BY IDENTITY and finds
+// its most recent teacher — that step — consuming it. A reachability walk that followed only
+// citations would wrongly flag @g-in-subset as dead. It IS used, so this must PASS.
 sort G
-func succ(g: G): G
 pred inH(g: G)
 sort H = G where inH
 func apply(h: H): G
 pred Q(g: G)
 
-axiom succInH: forall g: G; inH(g) -> inH(succ(g))
 // `qEverywhere` is stated over the raw sort G, so IT emits no guard obligation.
 axiom qEverywhere: forall x: G; Q(x)
 
-theorem allGGiveQ: forall g: H; Q(apply(succ(g)))
+theorem allGGiveQ: forall g: H; Q(apply(g))
 proof
   @generalize-g |
     fix g: H {
+      // discharges the `inH(g)` obligation that `apply(g)` owes below.
       @g-in-subset |
         inH(g)
         [by predicate generalize-g]
-      @succ-lifts-guard |
-        forall a: G; inH(a) -> inH(succ(a))
-        [by cite succInH]
-      @succ-guard-at-g |
-        inH(g) -> inH(succ(g))
-        [by forall_elim(g) succ-lifts-guard]
-      // discharges the `inH(succ(g))` obligation that `apply(succ(g))` emits below.
-      @succ-in-subset |
-        inH(succ(g))
-        [by modus_ponens succ-guard-at-g g-in-subset]
       @q-everywhere |
         forall x: G; Q(x)
         [by cite qEverywhere]
       @conclusion-q |
-        Q(apply(succ(g)))
-        [by forall_elim(apply(succ(g))) q-everywhere]
+        Q(apply(g))
+        [by forall_elim(apply(g)) q-everywhere]
     }
   @conclusion |
-    forall g: H; Q(apply(succ(g)))
+    forall g: H; Q(apply(g))
     [by forall_intro generalize-g]
 qed

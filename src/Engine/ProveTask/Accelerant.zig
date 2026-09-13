@@ -46,6 +46,11 @@ pub const Synthetic = struct {
     /// constant with NO source binder, so its display-name arg (`b`) would fail to re-resolve.
     /// The plumbing installs these bindings so the arg elaborates back to the very fvar.
     fvar_binds: []const FvarBind = &.{},
+    /// Every kernel term the producer DELABORATED into the synthetic (goal, premises, each
+    /// intermediate step's formula) — `Builder.seen`. The shared plumbing reads the OBLIGATIONS
+    /// these terms owe (a guarded application's required proposition) and prepends them to the
+    /// schema body as antecedents the call site discharges (`Prove.wrapObligations`).
+    seen: []const TermId = &.{},
 
     pub const FvarBind = struct { name: StrId, fvar: StrId, sort: SortId };
 };
@@ -57,6 +62,8 @@ pub const Builder = struct {
     interner: *InternPool,
     pool: *const term.Pool,
     loc: u32,
+    /// the terms `termExpr` delaborated, in order (see `Synthetic.seen`)
+    seen: std.ArrayList(TermId) = .empty,
 
     pub fn tok(self: *Builder, name: StrId) Token {
         return .{ .tag = .identifier, .start = self.loc, .end = self.loc, .name = name };
@@ -87,6 +94,7 @@ pub const Builder = struct {
 
     /// Delaborate a kernel term into a fresh AST sub-tree (via `Delaborate`).
     pub fn termExpr(self: *Builder, id: TermId) Allocator.Error!*const ast.Expr {
+        try self.seen.append(self.arena, id);
         return Delaborate.run(self.arena, self.pool, self.interner, id, self.loc);
     }
 

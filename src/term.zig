@@ -319,6 +319,35 @@ pub const Pool = struct {
         return false;
     }
 
+    /// Is `id` LOCALLY CLOSED — no loose bound variable (every `bvar` sits under enough
+    /// binders)? Iterative work-stack over (node, binders-passed) pairs.
+    pub fn isLocallyClosed(self: *const Pool, id: TermId) bool {
+        var fb = std.heap.stackFallback(inline_stack * @sizeOf(struct { TermId, u16 }), self.gpa);
+        const a = fb.get();
+        var stack: std.ArrayList(struct { TermId, u16 }) = .empty;
+        defer stack.deinit(a);
+        stack.append(a, .{ id, 0 }) catch return false; // OOM: conservatively "not closed"
+        while (stack.pop()) |f| {
+            const node = self.get(f[0]);
+            switch (node) {
+                .bvar => |i| if (i >= f[1]) return false,
+                .fvar => {},
+                .app, .pred => |ap| for (ap.args) |x| stack.append(a, .{ x, f[1] }) catch return false,
+                .eq => |p| {
+                    stack.append(a, .{ p.lhs, f[1] }) catch return false;
+                    stack.append(a, .{ p.rhs, f[1] }) catch return false;
+                },
+                .not => |t| stack.append(a, .{ t, f[1] }) catch return false,
+                .bin => |b| {
+                    stack.append(a, .{ b.lhs, f[1] }) catch return false;
+                    stack.append(a, .{ b.rhs, f[1] }) catch return false;
+                },
+                .quant => |q| stack.append(a, .{ q.body, f[1] + 1 }) catch return false,
+            }
+        }
+        return true;
+    }
+
     /// Does any function/predicate application in `id` use a symbol whose
     /// declared name is `name`? (Used by the named-theory contract to detect a
     /// goal referencing an arithmetic symbol the theory failed to provide.)

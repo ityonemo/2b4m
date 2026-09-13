@@ -290,17 +290,18 @@ pub fn addTests(
     // M5: guards discharged by hypothesis and by matching lemma
     ctx.okSilent(&.{ "check", "tests/cases/div_ok.bpa" });
 
-    // M5: unguarded division is rejected with the exact obligation
+    // M5: unguarded division is rejected with the exact obligation — at the PROOF STEP that
+    // writes the term (a statement is a claim and owes nothing; user ruling 2026-09-13).
     ctx.fail(&.{ "check", "tests/cases/div_bad.bpa" },
-        \\tests/cases/div_bad.bpa:7:14: error: unproved obligation: 'ZERO != ZERO'
-        \\tests/cases/div_bad.bpa:7:31: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/div_bad.bpa:10:5: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/div_bad.bpa:10:22: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 
-    // M5: nested guarded applications report every obligation
+    // M5: nested guarded applications report every obligation (at the step citing the axiom).
     ctx.fail(&.{ "check", "tests/cases/div_nested.bpa" },
-        \\tests/cases/div_nested.bpa:6:16: error: unproved obligation: 'div(ZERO, ZERO) != ZERO'
-        \\tests/cases/div_nested.bpa:6:26: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/div_nested.bpa:11:5: error: unproved obligation: 'div(ZERO, ZERO) != ZERO'
+        \\tests/cases/div_nested.bpa:11:15: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 
@@ -366,6 +367,10 @@ pub fn addTests(
     // a define'd guard and the same guard spelled out as `requires` are ONE proposition; a
     // teaching written either way discharges either.
     ctx.okSilent(&.{ "check", "tests/cases/tcc_teach_define_vs_spelled.bpa" });
+    // a GENERATED theorem states its preconditions: an accelerant's synthetic restates the
+    // caller's guarded terms, so their obligations become its leading antecedents, discharged
+    // at the call site from what the citing proof knows (consuming the teaching step).
+    ctx.okSilent(&.{ "check", "tests/cases/tcc_synthetic.bpa" });
     // an UNCITED axiom never discharges — the author states it as a step first.
     ctx.fail(&.{ "check", "tests/cases/tcc_uncited_bad.bpa" },
         \\tests/cases/tcc_uncited_bad.bpa:15:11: error: unproved obligation: 'inH(UNIT)'

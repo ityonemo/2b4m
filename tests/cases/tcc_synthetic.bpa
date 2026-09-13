@@ -1,0 +1,43 @@
+// A GENERATED theorem states its preconditions. An accelerant's synthetic schema restates the
+// caller's terms (`shift(UNIT)` requires `inH(UNIT)`) in a proof of its own, where nothing
+// could teach them — so the producer prepends each such obligation as an antecedent of the
+// schema body, `assume`d around its proof, and the CALL SITE discharges it from what the citing
+// proof knows (here the step `@unit-in-h`, which is thereby USED — a citation-only reachability
+// walk would flag it dead). Same identity lookup as everywhere else; no search.
+sort G
+const UNIT: G
+const OTHER: G
+func succ(g: G): G
+pred inH(g: G)
+pred Q(g: G)
+sort H = G where inH
+func shift(h: H): G
+
+axiom unitInH: inH(UNIT)
+axiom shiftUnit: shift(UNIT) = OTHER
+axiom law: forall x: G; inH(x) -> Q(shift(x))
+
+// `simplify`'s synthetic rewrites through `shift(UNIT)`.
+theorem viaSimplify: succ(shift(UNIT)) = succ(OTHER)
+proof
+  @unit-in-h |
+    inH(UNIT)
+    [by cite unitInH]
+  @shift-unit |
+    shift(UNIT) = OTHER
+    [by cite shiftUnit]
+  @conclusion |
+    succ(shift(UNIT)) = succ(OTHER)
+    [using simplify shift-unit]
+qed
+
+// `specialize`'s synthetic instantiates `law` at UNIT: its elim step states `Q(shift(UNIT))`.
+theorem viaSpecialize: Q(shift(UNIT))
+proof
+  @unit-in-h |
+    inH(UNIT)
+    [by cite unitInH]
+  @conclusion |
+    Q(shift(UNIT))
+    [using specialize law(UNIT) unit-in-h]
+qed

@@ -20,7 +20,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/imports/diamond.bpa" });
 
     // guards travel across imports
-    ctx.fail(&.{ "check", "tests/cases/imports/guarded_bad.bpa" }, "tests/cases/imports/guarded_bad.bpa:4:14: error: unproved obligation: 'Z != Z'\n");
+    ctx.fail(&.{ "check", "tests/cases/imports/guarded_bad.bpa" }, "tests/cases/imports/guarded_bad.bpa:7:5: error: unproved obligation: 'Z != Z'\n");
 
     // a missing import file is a clean diagnostic at the import site
     ctx.fail(&.{ "check", "tests/cases/imports/missing_import.bpa" }, "tests/cases/imports/missing_import.bpa:2:18: error: cannot open 'tests/cases/imports/nope.bpa': file not found\n");

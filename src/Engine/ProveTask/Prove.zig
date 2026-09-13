@@ -645,7 +645,8 @@ fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.Ta
     var refs: std.ArrayList(RefScan.Ref) = .empty;
     for (wk) |name| {
         const nid = self.ctx.interner.internString(name) catch return error.OutOfMemory;
-        if (self.ctx.declOf(fid, nid) == null) continue; // not declared here → skip
+        const decl = self.ctx.declOf(fid, nid) orelse continue; // not declared here → skip
+        if (decl.* == .define) continue; // a define is a macro, not an identifier to fetch (`define ONE = succ(ZERO)`)
         try refs.append(self.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = loc });
     }
     // the Cooper induction path instantiates the `induction` schema — demand its `.schema`
@@ -1267,6 +1268,12 @@ fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?
         if (failed) break;
         switch (op) {
             .solve => |g| {
+                // what the proof KNOWS, by identity (the only local source once the alpha-
+                // matching `dischargeLocal` is retired — kept as a fallback for this pass).
+                if (try self.refForKnown(kb, loc, g)) |sref| {
+                    try results.append(a, sref);
+                    continue;
+                }
                 if (try self.dischargeLocal(kb, loc, g)) |sref| {
                     try results.append(a, sref);
                     continue;
@@ -2041,7 +2048,17 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     var syn_name = syn.name;
     const fid = self.ctx.pool_file.get(self.file).?;
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
-    decl_ptr.* = syn.decl;
+    // the generated theorem STATES the preconditions of the terms it restates (see
+    // `wrapObligations`); deterministic per step, so the keep-first registration is stable.
+    var wb: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+    const obligations = self.syntheticObligations(w, syn.seen) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    };
+    decl_ptr.* = self.wrapObligations(&wb, syn.decl, obligations) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Recover => return .failed,
+    };
     if (self.model != InternPool.Index.none and self.model != .universe) {
         const bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{m{d}}}", .{ self.ctx.interner.stringBytes(syn.name), @intFromEnum(self.model) }) catch return error.OutOfMemory;
         syn_name = self.ctx.interner.internString(bytes) catch return error.OutOfMemory;
@@ -2371,6 +2388,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = args,
         .premises = c.refs,
+        .seen = b.seen.items,
         .fvar_binds = fbinds,
     };
 }
@@ -2467,6 +2485,80 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
 }
 
 /// `ants[0] -> ants[1] -> … -> consequent` as an AST expr (right-assoc `->`).
+/// The OBLIGATIONS a synthetic's terms owe: for every term the producer delaborated (`seen`),
+/// each guarded application's required proposition (a refined param's qualifier at the arg, a
+/// `requires` guard at the args) — deduplicated by identity, in first-seen order. Only locally
+/// closed subterms count (a proposition over a bound variable is a statement's business).
+fn syntheticObligations(self: *Prove, w: *const Walk, seen: []const TermId) Error![]const TermId {
+    var e = self.elab(w);
+    e.known = null;
+    var out: std.ArrayList(TermId) = .empty;
+    for (seen) |t| try e.collectObligations(t, &out);
+    return out.items;
+}
+
+/// Prepend a synthetic's obligations as LEADING ANTECEDENTS of its schema body, `assume`d around
+/// its proof (so every step inside knows them, as the citing proof did), and exported back out by
+/// `implies_intro`. The call site discharges them from what it knows (`withGuardPremises` →
+/// `refForKnown`), exactly like the premises it cites. The generated theorem thereby states the
+/// preconditions of the terms it mentions instead of re-owing them where nothing can teach them.
+fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: []const TermId) Error!ast.Decl {
+    if (obls.len == 0) return decl;
+    const local = decl.theorem.local; // a producer's synthetic is always a local theorem
+    var body = local.fact.formula;
+    var steps = local.steps;
+    var i = obls.len;
+    while (i > 0) {
+        i -= 1;
+        const blk = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "obligation{d}", .{i}));
+        const opened = try b.assumeStep(blk, try b.termExpr(obls[i]), steps);
+        const exported = try b.implies(try b.termExpr(obls[i]), body);
+        const export_label = if (i == 0) try b.intern("conclusion") else try b.intern(try std.fmt.allocPrint(self.ctx.arena, "obligation-export{d}", .{i}));
+        const closed = try b.claimStep(export_label, exported, .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(b, blk));
+        const pair = try self.ctx.arena.alloc(ast.Step, 2);
+        pair[0] = opened;
+        pair[1] = closed;
+        steps = pair;
+        body = exported;
+    }
+    return .{ .theorem = .{ .local = .{ .fact = .{ .name = local.fact.name, .formula = body, .params = local.fact.params }, .steps = steps } } };
+}
+
+/// An SRef proving `prop` in block `kb`, from what the proof KNOWS (identity lookup — never a
+/// search): a teaching STEP is cited directly (and marked consumed); a teaching BLOCK's
+/// hypothesis is restated as a synthetic `hypothesis` step — the assumption itself, a refined
+/// binder's guard (a multi-qualifier guard's conjunct extracted), an unpack witness's guard
+/// conjunct. Null when nothing taught it here (a refined result's closure fact has no step).
+fn refForKnown(self: *Prove, kb: kernel.BlockId, loc: u32, prop: TermId) Error!?kernel.SRef {
+    const t = self.known.lookup(prop, kb) orelse return null;
+    if (t.step) |s| {
+        try self.known.reachable.append(self.ctx.arena, s);
+        return .{ .id = @enumFromInt(s), .loc = loc };
+    }
+    const b = self.low_blocks.items[@intFromEnum(t.block)];
+    switch (b.kind) {
+        .assume => |a| {
+            if (a == prop) return try self.emitSynthetic(kb, loc, prop, .{ .hypothesis = .{ .id = t.block, .loc = loc } });
+            return try self.emitConjunctExtract(kb, loc, a, prop, t.block);
+        },
+        .fix => |fx| {
+            const g = fx.guard orelse return null;
+            if (g == prop) return try self.emitSynthetic(kb, loc, prop, .{ .hypothesis = .{ .id = t.block, .loc = loc } });
+            return try self.emitConjunctExtract(kb, loc, g, prop, t.block);
+        },
+        .unpack => |uv| {
+            // the unpacked hypothesis is the opened existential body `guard and P(w)`.
+            const src_f = self.low_steps.items[@intFromEnum(uv.source.id)].formula;
+            const sn = self.pool.get(src_f);
+            if (sn != .quant or sn.quant.q != .exists) return null;
+            const hyp = try self.pool.open(sn.quant.body, try self.pool.add(.{ .fvar = uv.v }));
+            if (hyp == prop) return try self.emitSynthetic(kb, loc, prop, .{ .hypothesis = .{ .id = t.block, .loc = loc } });
+            return try self.emitConjunctExtract(kb, loc, hyp, prop, t.block);
+        },
+        .root => return null,
+    }
+}
+
 fn impliesFrom(b: *Accelerant.Builder, ants: []const TermId, consequent: TermId) Error!*const ast.Expr {
     var acc = try b.termExpr(consequent);
     var i: usize = ants.len;
@@ -2665,6 +2757,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = c.refs,
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
@@ -3324,6 +3417,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
@@ -3864,6 +3958,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
@@ -4573,6 +4668,7 @@ fn finishReorder(
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
@@ -4673,6 +4769,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = try self.localRefTokens(w, c.refs), // a LOCAL unfold/ext cite, if any
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }
@@ -5438,6 +5535,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         .decl = .{ .theorem = .{ .local = .{ .fact = .{ .name = b.tok(name), .formula = body_expr, .params = params }, .steps = steps } } },
         .args = abs.args,
         .premises = kept_refs,
+        .seen = b.seen.items,
         .fvar_binds = try self.fvarBinds(w, abs),
     };
 }

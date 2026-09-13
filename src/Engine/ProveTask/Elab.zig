@@ -147,15 +147,16 @@ no_relativize: bool = false,
 known: ?*Known = null,
 known_block: kernel.BlockId = @enumFromInt(0),
 /// FORMULA-LOCAL knowledge: an antecedent `P -> …` teaches its consequent, `P and …` its right
-/// conjunct, a binder `forall x: H` its body (the guard `inH(x)`). Pushed when the scope opens,
-/// popped when it closes — no relativization of anything.
+/// conjunct. Pushed when the scope opens, popped when it closes — no relativization of anything.
+/// (A binder teaches nothing: a proposition about a bound element is never owed, see
+/// `requireKnown`.)
 local_known: std.ArrayList(TermId) = .empty,
 /// STATEMENT (goal) phase: elaborating a fact's STATED formula rather than a proof step. A
-/// guarded-FUNC application still owes its precondition here (partiality is a real soundness
-/// gate — `div(ONE, ZERO)` in a statement smuggles a partial function outside its domain), but
-/// a REFINED-SORT argument obligation is SUPPRESSED: a refined param `inC(c)` over a plain-base
-/// variable is the canonical relativization shape a stated law uses (`∀c; (inC(c) and …) -> …`),
-/// which was never checked at statement level; enforcing it would reject well-formed axioms.
+/// statement is a CLAIM and carries no obligation of either kind (a `requires` precondition or a
+/// refined-sort argument guard): the proof step that writes the guarded term owes its guard
+/// there, where something can teach it — a stated law over a bound element (`∀k: NonNeg;
+/// … sumUpTo(s, succ(k)) …`) has nothing that could teach `nonneg(succ(k))` at statement level.
+/// (User ruling 2026-09-13: "only the proof steps carry the guards".)
 in_statement: bool = false,
 
 /// expression-local binders (quantifiers), innermost last; transient per elaboration
@@ -268,20 +269,12 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
                     fr.* = try self.freshNamed(bname);
                     try self.scope.append(self.arena, .{ .name = bname, .sort = sort, .fvar = fr.* });
                 }
-                // the binder's guard is KNOWN throughout the body (a use of the bound variable at
-                // a refined position looks it up) — taught locally, popped at LEAVE.
-                const known_mark = self.local_known.items.len;
-                for (fresh) |fr| for (quals) |qual| {
-                    const fv = try self.scratch.add(.{ .fvar = .{ .name = fr, .sort = sort } });
-                    try self.local_known.append(self.arena, try self.qualifierApp(qual, fv));
-                };
                 try frames.append(wa, .{ .finish_quant = .{
                     .q = q,
                     .sort = sort,
                     .quals = quals,
                     .fresh = fresh,
                     .mark = mark,
-                    .known_mark = known_mark,
                 } });
                 try frames.append(wa, .{ .require_prop_body = q.body });
                 try frames.append(wa, .{ .elaborate = q.body });
@@ -382,7 +375,6 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
                     .body = id,
                 } });
             }
-            self.local_known.shrinkRetainingCapacity(f.known_mark);
             try results.append(wa, .{ .id = id, .sort = prop_sort });
         },
     };
@@ -411,14 +403,13 @@ const Frame = union(enum) {
     finish_eq: ast.Expr.Binary,
     /// build the `not` node.
     finish_not: @FieldType(ast.Expr, "not"),
-    /// LEAVE a quantifier: pop scope, build the binder prefix, pop the binder's local knowledge.
+    /// LEAVE a quantifier: pop scope, build the binder prefix.
     finish_quant: struct {
         q: @FieldType(ast.Expr, "quant"),
         sort: SortId,
         quals: []const InternPool.Index,
         fresh: []StrId,
         mark: usize,
-        known_mark: usize,
     },
 };
 
@@ -549,13 +540,68 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
 fn emitGuardObligation(self: *Elab, guard: InternPool.TermOff, args: []const TermId, loc: u32) Error!void {
     if (guard == InternPool.no_term) return;
     if (self.known == null) return;
+    // a STATEMENT carries no obligation of either kind (user ruling 2026-09-13: a statement is a
+    // claim; the proof step that writes the term owes its guard) — same as `emitArgObligations`.
+    if (self.in_statement) return;
+    try self.requireKnown(try self.guardProposition(guard, args), loc);
+}
+
+/// A `requires` guard (a stored term over the hygienic `#gN` param fvars) at actual `args`.
+pub fn guardProposition(self: *Elab, guard: InternPool.TermOff, args: []const TermId) Error!TermId {
     var g = self.scratch.copyIn(self.interner, guard) catch return error.OutOfMemory;
     for (args, 0..) |arg, i| {
         const bytes = std.fmt.allocPrint(self.arena, "#g{d}", .{i}) catch return error.OutOfMemory;
         const fv = self.interner.internString(bytes) catch return error.OutOfMemory;
         g = self.scratch.substFvar(g, fv, arg) catch return error.OutOfMemory;
     }
-    try self.requireKnown(g, loc);
+    return g;
+}
+
+/// The obligations a TERM owes, appended to `out` (deduplicated by identity, first-seen
+/// order): at every application, a refined param's qualifier applied to the arg, and a
+/// `requires` guard at the args — for LOCALLY CLOSED subterms only (a proposition over a bound
+/// variable belongs to the statement that binds it). Iterative walk; no lookup, no diagnosis —
+/// the reading half of `requireKnown`, for a producer that must STATE its synthetic's
+/// preconditions (`Prove.wrapObligations`).
+pub fn collectObligations(self: *Elab, root: TermId, out: *std.ArrayList(TermId)) Error!void {
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, root);
+    while (stack.pop()) |cur| {
+        const node = self.scratch.get(cur);
+        switch (node) {
+            .app, .pred => |ap| {
+                const callable = switch (self.interner.keyOf(@enumFromInt(@intFromEnum(ap.sym)))) {
+                    .func, .pred => |cb| cb,
+                    else => null,
+                };
+                if (callable) |cb| {
+                    const sig = self.interner.keyOf(cb.sig).sig;
+                    var all_closed = true;
+                    for (ap.args, sig.args) |arg, expected| {
+                        const closed = self.scratch.isLocallyClosed(arg);
+                        if (!closed) all_closed = false;
+                        if (closed and self.interner.isRefined(expected)) {
+                            const quals = self.interner.qualifiersOf(self.arena, expected) catch return error.OutOfMemory;
+                            for (quals) |q| try appendUnique(self.arena, out, try self.qualifierApp(q, arg));
+                        }
+                    }
+                    if (cb.guard != InternPool.no_term and all_closed) {
+                        try appendUnique(self.arena, out, try self.guardProposition(cb.guard, ap.args));
+                    }
+                }
+                try self.scratch.pushChildren(&stack, wa, node);
+            },
+            else => try self.scratch.pushChildren(&stack, wa, node),
+        }
+    }
+}
+
+fn appendUnique(arena: Allocator, out: *std.ArrayList(TermId), p: TermId) Allocator.Error!void {
+    for (out.items) |x| if (x == p) return;
+    try out.append(arena, p);
 }
 
 /// For a refined param sort, REQUIRE `qpred(arg)` (one per qualifier). No-op for a root param
@@ -574,6 +620,11 @@ fn emitArgObligations(self: *Elab, param_sort: InternPool.Index, arg: TermId, lo
 /// a miss is reported once at the use and flags the driver to reject the step.
 fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
     const known = self.known orelse return;
+    // a proposition about a BOUND element (its subject mentions one of this formula's
+    // quantifier binders, still open as a scope fvar while the body elaborates) is not owed:
+    // a quantified formula is a CLAIM about all its elements, like a statement (user ruling
+    // 2026-09-13); the step that uses a specific element — a `fix`-var, a constant — owes it.
+    for (self.scope.items) |entry| if (self.scratch.occursFree(prop, entry.fvar)) return;
     for (self.local_known.items) |k| if (k == prop) return;
     if (known.lookup(prop, self.known_block)) |t| {
         if (t.step) |s| known.reachable.append(self.arena, s) catch return error.OutOfMemory;
@@ -1029,6 +1080,28 @@ const World = struct {
         return w;
     }
 
+    /// Publish a guarded `div(Nat, Nat): Nat requires le(#g0, #g1)` (the reified guard over
+    /// the two param fvars, as FetchTask would).
+    fn publishGuardedDiv(w: *World) !void {
+        const nat_sort: SortId = @enumFromInt(@intFromEnum(w.nat));
+        const g0 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g0"), .sort = nat_sort } });
+        const g1 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g1"), .sort = nat_sort } });
+        const guard_term = try w.scratch.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ g0, g1 });
+        w.interner.lockWrite(w.io);
+        const guard_off = try w.scratch.reify(guard_term, w.interner);
+        w.interner.unlockWrite(w.io);
+        const nat2 = [_]InternPool.Index{ w.nat, w.nat };
+        const div_sig = try w.interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
+        const div_name = try w.interner.internString("div");
+        _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{ .func = .{
+            .sig = div_sig,
+            .guard = guard_off,
+            .param_names = &.{},
+            .name = div_name,
+            .loc = 0,
+        } });
+    }
+
     /// A fresh known-proposition table over a one-block (root) proof, for tests.
     fn known(w: *World) !*Known {
         const blocks = try w.arena.create(std.ArrayList(kernel.Block));
@@ -1144,26 +1217,7 @@ test "elab: a `requires` guard is REQUIRED at the call — unknown is one diagno
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const w = try World.init(arena);
-
-    // publish a guarded `div(Nat, Nat): Nat requires le(#g0, #g1)` (the reified guard over the
-    // two param fvars, as FetchTask would).
-    const nat_sort: SortId = @enumFromInt(@intFromEnum(w.nat));
-    const g0 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g0"), .sort = nat_sort } });
-    const g1 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g1"), .sort = nat_sort } });
-    const guard_term = try w.scratch.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ g0, g1 });
-    w.interner.lockWrite(w.io);
-    const guard_off = try w.scratch.reify(guard_term, w.interner);
-    w.interner.unlockWrite(w.io);
-    const nat2 = [_]InternPool.Index{ w.nat, w.nat };
-    const div_sig = try w.interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
-    const div_name = try w.interner.internString("div");
-    _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{ .func = .{
-        .sig = div_sig,
-        .guard = guard_off,
-        .param_names = &.{},
-        .name = div_name,
-        .loc = 0,
-    } });
+    try w.publishGuardedDiv();
 
     // `div(a, a)` requires `le(a, a)`: nothing taught → exactly ONE diagnosis naming it, and the
     // driver flag set; the elaboration itself still completes (the step is rejected by the driver).
@@ -1187,19 +1241,23 @@ test "elab: a `requires` guard is REQUIRED at the call — unknown is one diagno
     try testing.expectEqualSlices(u32, &.{7}, k.reachable.items);
 }
 
-test "elab: a refined param sort requires its qualifier atom; a `forall x: H` binder teaches its body" {
+test "elab: a refined param sort requires its qualifier atom for a CLOSED subject; a bound subject is a claim, not owed" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const w = try World.init(arena);
     const k = try w.known();
-    // the binder is at H: `inH(k)` is known throughout the body.
+    // a closed subject with nothing taught: owed, and missed.
+    _ = try w.checkWith(k, "le(shift(a), a)");
+    try testing.expectEqual(@as(usize, 1), w.diagnosticCount());
+    try testing.expectEqualStrings("unproved obligation: 'inH(a)'", w.lastDiagnostic());
+    // a BOUND subject — at H or at Nat — is a quantified claim about every element: never owed.
     _ = try w.checkWith(k, "forall k: H; le(shift(k), k)");
-    try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
-    // the binder is at Nat: `shift(k)` requires `inH(k)`, which nothing teaches.
     _ = try w.checkWith(k, "forall k: Nat; le(shift(k), k)");
     try testing.expectEqual(@as(usize, 1), w.diagnosticCount());
-    try testing.expectEqualStrings("unproved obligation: 'inH(k)'", w.lastDiagnostic());
+    // …but a closed subject INSIDE a quantifier still is.
+    _ = try w.checkWith(k, "forall k: Nat; le(shift(a), k)");
+    try testing.expectEqual(@as(usize, 2), w.diagnosticCount());
 }
 
 test "elab: an antecedent teaches its consequent only; a left conjunct its right conjunct only" {
@@ -1208,12 +1266,12 @@ test "elab: an antecedent teaches its consequent only; a left conjunct its right
     const arena = arena_state.allocator();
     const w = try World.init(arena);
     const k = try w.known();
-    _ = try w.checkWith(k, "forall k: Nat; inH(k) -> le(shift(k), k)");
+    _ = try w.checkWith(k, "inH(a) -> le(shift(a), a)");
     try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
     _ = try w.checkWith(k, "inH(a) and le(shift(a), a)");
     try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
     // the other way round nothing is known yet where the use sits.
-    _ = try w.checkWith(k, "forall k: Nat; le(shift(k), k) -> inH(k)");
+    _ = try w.checkWith(k, "le(shift(a), a) -> inH(a)");
     try testing.expectEqual(@as(usize, 1), w.diagnosticCount());
     _ = try w.checkWith(k, "le(shift(a), a) and inH(a)");
     try testing.expectEqual(@as(usize, 2), w.diagnosticCount());
@@ -1280,6 +1338,36 @@ test "elab: the proof table — a taught COMPOUND is found at another occurrence
     }
     _ = try w.checkWith(k, "le(shift(add(a, a)), a)");
     try testing.expectEqual(@as(usize, 2), w.diagnosticCount());
+}
+
+test "elab: collectObligations reads a term's guarded applications — refined params and requires — once each, closed subterms only" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const w = try World.init(arena);
+    try w.publishGuardedDiv();
+    const p = w.scratch;
+    const a_ix = w.idents.lookup(w.io, .{ .namespace = w.ns, .name = try w.interner.internString("a") }).?.done;
+    const a_term = try p.addApp(.app, @enumFromInt(@intFromEnum(a_ix)), &.{});
+    const aa = try p.addApp(.app, @enumFromInt(@intFromEnum(w.add_f)), &.{ a_term, a_term });
+    const inh_aa = try p.addApp(.pred, @enumFromInt(@intFromEnum(w.inh_p)), &.{aa});
+    const le_a_a = try p.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ a_term, a_term });
+
+    // `shift(add(a, a))` twice and `div(a, a)` once: two obligations, in first-seen order.
+    const rig = try w.elabOf("le(shift(add(a, a)), div(a, a)) and le(shift(add(a, a)), a)");
+    const t = try rig.elab.elaborateExpr(rig.expr); // known == null: nothing checked, nothing taught
+    var out: std.ArrayList(TermId) = .empty;
+    try rig.elab.collectObligations(t.id, &out);
+    try testing.expectEqual(@as(usize, 2), out.items.len);
+    try testing.expectEqual(inh_aa, out.items[0]);
+    try testing.expectEqual(le_a_a, out.items[1]);
+    // under a binder the subject is bound: not a term-level obligation.
+    const rig2 = try w.elabOf("forall k: Nat; le(shift(k), div(k, k))");
+    const t2 = try rig2.elab.elaborateExpr(rig2.expr);
+    var out2: std.ArrayList(TermId) = .empty;
+    try rig2.elab.collectObligations(t2.id, &out2);
+    try testing.expectEqual(@as(usize, 0), out2.items.len);
+    try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
 }
 
 test "elab: pathologically deep spine does not overflow the C stack (task #92)" {
