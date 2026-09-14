@@ -217,12 +217,12 @@ pub fn addTests(
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
     ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.bpa" });
 
-    // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA
-    // (elemInduction) is discharged by a local guard-relativized schema
-    // (goodInduction), α-checked at the model decl against the remapped source;
-    // `[using model(...) source.elemInduction]` then instantiates the discharge.
+    // SCHEMA TRANSFER through a guarded model: the source theory (an induction SCHEMA,
+    // elemInduction) checks on its own. NO positive transfer fixture yet — citing the
+    // transferred schema from an instantiated schema body is unimplemented (`internal:
+    // citation does not reference a fact`); the former model_schema.bpa never instantiated
+    // its schema and so passed vacuously, and was removed. The negative twin is below.
     ctx.okSilent(&.{ "check", "tests/cases/model_schema_source.bpa" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_schema.bpa" });
     // RED: a schema source must be discharged by a SCHEMA (matching predicate
     // parameter); a plain axiom cannot, and the model decl rejects it.
     ctx.fail(&.{ "check", "tests/cases/model_schema_bad.bpa" }, "tests/cases/model_schema_bad.bpa:20:27: error: 'notASchema' discharges a schema, so it must itself be a schema (with a matching predicate parameter)\n");
