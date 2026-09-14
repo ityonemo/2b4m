@@ -6927,16 +6927,9 @@ fn arithBuildWitness(self: *Prove, replay: presburger_mod.Replay, dump: presburg
         if (fix_index != null) return null;
         fix_index = pos;
     }
-    // DEGENERATE-WITNESS GUARD: a witness that is exactly a fixed eigenvariable (coeff-1 on a
-    // fix var, zero constant/offset) — e.g. Cooper picking `y := x` for `exists y; x = y or …`,
-    // where the left arm holds reflexively — trips the schema-instance binder machinery on
-    // re-elaboration (the existential var and the fixed var collapse to one de Bruijn slot,
-    // deriving `forall :; exists b1; b1 = b1 …`). The proof is semantically valid but the
-    // instance can't re-check it; decline this candidate so the cert either finds a
-    // non-degenerate witness or declines cleanly (the honest "no certifier" boundary) rather
-    // than emitting an un-recheckable proof. (Deferred: the reflexive-arm / witness==fixvar
-    // Cooper case — task #76.)
-    if (fix_index != null and dump.konst + j == 0) return null;
+    // A witness that is exactly a fixed eigenvariable (`y := x` for `exists y; x = y or …`, the
+    // left arm reflexive) is fine: the proof pool is locally nameless and hash-consed, so
+    // `exists_intro(x)` closes only the existential slot and the instance re-checks as written.
     const offset = dump.konst + j;
     const base = if (fix_index) |pos| blk: {
         if (pos >= fix_vars.len) return null;
@@ -8091,6 +8084,17 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
             // reach an admit decision (a producer not yet admit-aware) — treat as a reject.
             _ = try self.produceAccelerant(w, e, goal, c);
             if (!self.admit_ok) return self.fail(c.rule.start, "'{s}' cannot admit this step under `--fast` (no fast acceptance)", .{self.text(c.rule)});
+            // an admitted accelerant builds no certificate, so nothing carries the citation
+            // edges its premises would have had: the cited local steps are its use-all-facts
+            // roots (a global fact cited by name is not a step and needs no root).
+            for (c.refs) |r| {
+                const name = self.localName(r) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Recover => continue,
+                };
+                const target = w.resolveStep(name) orelse continue;
+                if (target == .step) try self.known.reachable.append(self.ctx.arena, @intFromEnum(self.ordinal_step.items[@intFromEnum(target.step)]));
+            }
         },
         // model: the transferred statement = the source theorem elaborated under M's overlay
         // (relativization included). α-match the claim.
