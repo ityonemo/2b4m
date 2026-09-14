@@ -430,7 +430,10 @@ pub fn elaborateFactStatement(
         self.sink.add(0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
         return .failed;
     };
-    // point diagnostics at the STATEMENT's own file (offsets below index its source).
+    // point diagnostics at the STATEMENT's own file (offsets below index its source) for the
+    // duration of this elaboration only — the caller's diagnostics index the caller's file.
+    const caller_file = self.sink.current_file;
+    defer self.sink.current_file = caller_file;
     self.sink.current_file = @intFromEnum(fid);
     const source = self.files.items[@intFromEnum(fid)].source;
 
@@ -4449,7 +4452,13 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
         if (w_rule.local) try pre_prepared.append(self.ctx.arena, w_rule);
     } else {
         const gn = self.pool.get(eq_goal_raw).eq;
-        const s_head: ?term.SymId = if (self.pool.get(gn.lhs) == .app) self.pool.get(gn.lhs).app.sym else null;
+        // the reordered operator is the head of the left side AFTER the cited pre-rules have
+        // distributed it (`mul(add(a, b), c)` is an add-sum once mulAddDistribRight fires).
+        const lhs_pre = simplify_mod.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules.items[0..pre_count], gn.lhs, 1000) catch |e| switch (e) {
+            error.Limit => return self.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        const s_head: ?term.SymId = if (self.pool.get(lhs_pre.nf) == .app) self.pool.get(lhs_pre.nf).app.sym else null;
         const op = self.pickWellKnownOp(s_head) orelse
             return self.fail(c.rule.start, "assoc_commut reorders an add- or mul-sum; the goal's left side is '{s}'", .{try self.renderTerm(gn.lhs)});
         op_sym = op.sym;
@@ -5484,8 +5493,48 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
         };
         const verdict = smt.decideMixed(self.ctx.arena, self.pool, symbols, decide_prems.items, decide_peel.body) catch return error.OutOfMemory;
         switch (verdict) {
-            .valid => return self.fail(c.rule.start, "'arithmetic' is valid but no certifier could prove it here (equation/order/exists, farkas, cooper all declined); the goal is outside the certifiable fragment", .{}),
-            .countermodel => return self.fail(c.rule.start, "arithmetic: not a consequence of the cited premises", .{}),
+            .valid => {
+                // every link declined; name each one's reason (the farkas link needs the order
+                // predicate, the others decline on shape).
+                const farkas_reason: []const u8 = if (symbols.less_than == null) "theory lacks symbol 'less_than'" else "form not in certification scope";
+                return self.fail(c.rule.start, "'arithmetic' is valid but no certifier could prove it here:\n  - equation/order/exists: form not in certification scope\n  - mixed-skeleton: form not in certification scope\n  - farkas: {s}\n  - cooper: form not in certification scope\nuse --fast to accept the accelerated verdict", .{farkas_reason});
+            },
+            .countermodel => |cm| {
+                // an abstracted opaque subterm (mul(a, b), f(x)) in the countermodel means the goal
+                // needs reasoning beyond linear arithmetic — its atom values are not independently
+                // realizable, so a numeric countermodel would mislead: name the subterm instead.
+                for (cm.values) |a| if (a.term) |offending|
+                    return self.fail(c.rule.start, "arithmetic: '{s}' is outside linear arithmetic", .{try self.renderTerm(offending)});
+                if (cm.values.len == 0 and cm.opaques.len == 0)
+                    return self.fail(c.rule.start, "arithmetic: the statement is false", .{});
+                // the values name the abstraction's params (p1, p2, …): show the caller's own
+                // fixed variables, ordered by name.
+                const Shown = struct { name: []const u8, value: i128 };
+                const shown = try self.ctx.arena.alloc(Shown, cm.values.len);
+                for (cm.values, shown) |a, *out| {
+                    var orig = a.name;
+                    for (abs.names, abs.origs) |pn, on| if (pn == a.name) {
+                        orig = on;
+                    };
+                    out.* = .{ .name = self.ctx.interner.stringBytes(try self.displayName(orig)), .value = a.value };
+                }
+                std.mem.sort(Shown, shown, {}, struct {
+                    fn lessThan(_: void, x: Shown, y: Shown) bool {
+                        return std.mem.lessThan(u8, x.name, y.name);
+                    }
+                }.lessThan);
+                var msg: std.Io.Writer.Allocating = .init(self.ctx.arena);
+                var count: usize = 0;
+                for (shown) |a| {
+                    msg.writer.print("{s}{s} := {d}", .{ if (count > 0) ", " else "", a.name, a.value }) catch return error.OutOfMemory;
+                    count += 1;
+                }
+                for (cm.opaques) |lit| {
+                    msg.writer.print("{s}{s} := {s}", .{ if (count > 0) ", " else "", try self.renderTerm(lit.atom), if (lit.value) "true" else "false" }) catch return error.OutOfMemory;
+                    count += 1;
+                }
+                return self.fail(c.rule.start, "arithmetic: false at {s}", .{msg.written()});
+            },
             .too_many_atoms => |n| return self.fail(c.rule.start, "arithmetic: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
             .too_large => return self.fail(c.rule.start, "arithmetic: decision exceeded the work limit", .{}),
             .overflow => return self.fail(c.rule.start, "arithmetic: coefficient overflow", .{}),

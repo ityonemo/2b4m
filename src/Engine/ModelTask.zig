@@ -27,6 +27,7 @@ const IdentKV = @import("../IdentKV.zig");
 const FactKV = @import("../FactKV.zig");
 const FetchTask = @import("FetchTask.zig");
 const ProveTask = @import("ProveTask.zig");
+const Token = @import("../lexer.zig").Token;
 
 const ModelTask = @This();
 
@@ -105,6 +106,17 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     var blocker: ?Engine.TaskIndex = null;
     for (m.identifiers) |im| {
         const mapping = identMapping(im);
+        // the SHAPE of a `:` map, read off the source's own declaration before any demand
+        // resolves it (the demand tables would only say "names a fact, not a symbol", twice).
+        if (try mappingDecl(self, h, task.file, mapping.source, &blocker)) |sd| {
+            const t = try tokText(self, mapping.source);
+            switch (sd.decl.*) {
+                .define => return diagAt(self, task, mapping.source.start, "'{s}' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead", .{t}),
+                .axiom => return diagAt(self, task, mapping.source.start, "'{s}' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`{s} <- <local fact>`), not `:`", .{ t, t }),
+                .theorem => return diagAt(self, task, mapping.source.start, "model maps only axioms; '{s}' is a theorem — it materializes through the mapped axioms, so drop this mapping", .{t}),
+                else => {},
+            }
+        } else if (blocker) |b| return h.suspendOn(b);
         const src = try resolveEntity(self, h, task.file, source, mapping.source, .ident, &blocker);
         if (try defineTargetOf(self, h, task.file, mapping.target, &blocker)) |def| {
             if (im != .basic) {
@@ -124,6 +136,24 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
         };
     }
     for (m.obligations) |mapping| {
+        // the SHAPE of a `<-` discharge, likewise read off the declarations.
+        if (try mappingDecl(self, h, task.file, mapping.source, &blocker)) |sd| {
+            const t = try tokText(self, mapping.source);
+            switch (sd.decl.*) {
+                .sort, .constant, .func, .pred => return diagAt(self, task, mapping.source.start, "'{s}' is a sort or symbol, not an axiom — map it with `:` (`{s}: <target>`), not `<-`", .{ t, t }),
+                .define => return diagAt(self, task, mapping.source.start, "'{s}' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead", .{t}),
+                .theorem => return diagAt(self, task, mapping.source.start, "model maps only axioms; '{s}' is a theorem — it materializes through the mapped axioms, so drop this mapping", .{t}),
+                // a SCHEMA obligation is discharged by a schema (a matching predicate parameter).
+                .axiom => if (mapping.projection == null) if (ast.factOf(sd.decl)) |sf| if (sf.params != null) {
+                    if (try mappingDecl(self, h, task.file, mapping.target, &blocker)) |td| {
+                        const tf = ast.factOf(td.decl);
+                        if (tf == null or tf.?.params == null)
+                            return diagAt(self, task, mapping.target.start, "'{s}' discharges a schema, so it must itself be a schema (with a matching predicate parameter)", .{try tokText(self, mapping.target)});
+                    } else if (blocker) |b| return h.suspendOn(b);
+                },
+                else => {},
+            }
+        } else if (blocker) |b| return h.suspendOn(b);
         const src = try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
         if (mapping.projection) |proj| {
             // `srcAxiom <- NamedModel@proj.thm` — discharge srcAxiom by transferring the theorem
@@ -152,7 +182,18 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
 /// Is a `:` mapping's TARGET token a define (in the model's file, or an imported file)? A
 /// define never enters IdentKV, so it is answered from the by-name AST registry — demanding
 /// the import + the target file's parse as needed (blocker recorded).
-fn defineTargetOf(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: @import("../lexer.zig").Token, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?Context.DefineKey {
+fn defineTargetOf(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: Token, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?Context.DefineKey {
+    const md = (try mappingDecl(self, h, file, tok, blocker)) orelse return null;
+    if (md.decl.* != .define) return null;
+    return .{ .file = md.file, .name = tok.name };
+}
+
+/// The declaration a mapping token names — in the model's file for a bare token, in the
+/// import's file for a qualified one (demanding the import + that file's parse as needed;
+/// blocker recorded). Answered from the by-name AST registry, so it reads a define (which never
+/// enters IdentKV) and a fact alike. Null = unresolved (blocked) or undeclared.
+const MappingDecl = struct { decl: *const ast.Decl, file: InternPool.Index };
+fn mappingDecl(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: Token, blocker: *?Engine.TaskIndex) std.mem.Allocator.Error!?MappingDecl {
     var target_file = file;
     if (tok.qualifier != InternPool.Index.none) {
         const ns = try self.interner.namespace(.universe, file);
@@ -181,8 +222,20 @@ fn defineTargetOf(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok
     }
     const fid = self.pool_file.get(target_file) orelse return null;
     const decl = self.declOf(fid, tok.name) orelse return null;
-    if (decl.* != .define) return null;
-    return .{ .file = target_file, .name = tok.name };
+    return .{ .decl = decl, .file = target_file };
+}
+
+/// A mapping token as the writer spelled it (`ns.name` or `name`).
+fn tokText(self: *Context, tok: Token) std.mem.Allocator.Error![]const u8 {
+    const name = self.interner.stringBytes(tok.name);
+    if (tok.qualifier == InternPool.Index.none) return name;
+    return std.fmt.allocPrint(self.arena, "{s}.{s}", .{ self.interner.stringBytes(tok.qualifier), name });
+}
+
+/// A diagnostic at a token of the model's OWN declaration (not the citing site).
+fn diagAt(self: *Context, task: ModelTask, loc: u32, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
+    if (self.pool_file.get(task.file)) |f| self.sink.current_file = @intFromEnum(f);
+    self.sink.add(loc, fmt, args) catch return error.OutOfMemory;
 }
 
 /// Which demand table a mapping token resolves against.

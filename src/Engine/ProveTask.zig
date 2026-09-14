@@ -422,7 +422,16 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
 
     // resolve the fact's decl by name (O(1) registry lookup); a miss is "reference not found".
     const decl = self.declOf(fid, task.name) orelse {
-        try demandDiag(self, task, "reference not found: '{s}'", .{self.interner.stringBytes(task.name)});
+        const name = self.interner.stringBytes(task.name);
+        // a demand anchored at a step that registered a SYNTHETIC proof comes from that
+        // generated proof (its tokens carry the step's rule offset): the accelerant cited a
+        // well-known lemma by name and the citing file has no such name in scope.
+        const loc_file = task.loc_file orelse task.file;
+        if (self.pool_file.get(loc_file)) |lfid| if (self.syntheticAt(lfid, task.loc) != null) {
+            try demandDiag(self, task, "the generated proof of this step cites '{s}', which is not in scope here; alias it from the theory that states it (`theorem {s} = <module>.{s}`)", .{ name, name, name });
+            return null;
+        };
+        try demandDiag(self, task, "reference not found: '{s}'", .{name});
         return null;
     };
     const name_tok = ast.declName(decl);

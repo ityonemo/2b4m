@@ -117,7 +117,7 @@ pub fn addTests(
     // --fast trusts the transfer wholesale (remap the source theorem, α-match the
     // goal, taint accelerated: model) — checks nothing about the source proof.
     ctx.ok(&.{ "check", "--fast", "tests/cases/model_transfer.bpa" },
-        \\OK: 13 declarations, 1 theorems proven
+        \\OK: 14 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): model
         \\
     );
@@ -134,7 +134,7 @@ pub fn addTests(
     // proof is NOT re-materialized), disclosed via the NOT-FULLY-VERIFIED banner. Scoped to
     // `model` so the banner lists just that word.
     ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model_recurse.bpa" },
-        \\OK: 14 declarations, 2 theorems proven
+        \\OK: 15 declarations, 2 theorems proven
         \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): model
         \\
     );
@@ -152,12 +152,12 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/model_cite_bad.bpa" }, "tests/cases/model_cite_source.bpa:43:8: error: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
     // a model maps only the source theory's AXIOMS; mapping a source THEOREM (which
     // materializes through the mapped axioms) is misuse and rejected at that mapping.
-    ctx.fail(&.{ "check", "tests/cases/model_maps_theorem_bad.bpa" }, "tests/cases/model_maps_theorem_bad.bpa:19:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
+    ctx.fail(&.{ "check", "tests/cases/model_maps_theorem_bad.bpa" }, "tests/cases/model_maps_theorem_bad.bpa:22:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
 
     // a transparent (`define`d) symbol cannot be a model mapping source/target — it
     // rides along on the primitives in its body (which the model maps); nominally
     // remapping its NAME would ignore the definition (definition-blind, unsound).
-    ctx.fail(&.{ "check", "tests/cases/model_define_source_bad.bpa" }, "tests/cases/model_define_source_bad.bpa:21:3: error: 'TWICE' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead\n");
+    ctx.fail(&.{ "check", "tests/cases/model_define_source_bad.bpa" }, "tests/cases/model_define_source_bad.bpa:19:3: error: 'source.TWICE' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead\n");
 
     // …but a define'd TARGET is legitimate: mapping a source symbol ONTO a defined
     // target EXPRESSION works — the target expands to its body during transfer, so
@@ -231,9 +231,9 @@ pub fn addTests(
     // obligation. The happy path uses both; the two rejection paths are hard errors.
     ctx.okSilent(&.{ "check", "tests/cases/model_obligation_arrow.bpa" });
     // `:` on an axiom obligation → error, directing to `<-`.
-    ctx.fail(&.{ "check", "tests/cases/model_axiom_colon_bad.bpa" }, "tests/cases/model_axiom_colon_bad.bpa:17:3: error: 'source.opUnitLeft' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`source.opUnitLeft <- <local fact>`), not `:`\n");
+    ctx.fail(&.{ "check", "tests/cases/model_axiom_colon_bad.bpa" }, "tests/cases/model_axiom_colon_bad.bpa:21:3: error: 'source.opUnitLeft' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`source.opUnitLeft <- <local fact>`), not `:`\n");
     // `<-` on a sort/symbol → error, directing to `:`.
-    ctx.fail(&.{ "check", "tests/cases/model_symbol_arrow_bad.bpa" }, "tests/cases/model_symbol_arrow_bad.bpa:15:3: error: 'source.op' is a sort or symbol, not an axiom — map it with `:` (`source.op: <target>`), not `<-`\n");
+    ctx.fail(&.{ "check", "tests/cases/model_symbol_arrow_bad.bpa" }, "tests/cases/model_symbol_arrow_bad.bpa:19:3: error: 'source.op' is a sort or symbol, not an axiom — map it with `:` (`source.op: <target>`), not `<-`\n");
 
     // ACCELERANT-THROUGH-GUARDED-MODEL boundary (RED characterization, one per
     // accelerant). Transferring a source theorem whose proof USES an accelerant
@@ -300,16 +300,16 @@ pub fn addTests(
     // goal — a flipped-equation goal is rejected (you can't prove what the source
     // theorem doesn't say).
     ctx.fail(&.{ "check", "--fast", "tests/cases/model_bad.bpa" },
-        \\tests/cases/model_bad.bpa:24:9: error: model transfer of 'source.opUnitLeftTwice' does not match the goal:
-        \\  transferred: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
-        \\  goal:        forall a: Thing; combine(ZED, a) = combine(ZED, combine(ZED, a))
+        \\tests/cases/model_bad.bpa:24:12: error: the claim does not match the model transfer of 'source.opUnitLeftTwice':
+        \\  claim:      forall a: Thing; combine(ZED, a) = combine(ZED, combine(ZED, a))
+        \\  transfer:   forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
         \\
     );
 
     // the polynomial tactic on a thin theory (no ring lemmas): it EMITS the certificate citing
     // the well-known lemmas by name (no produce-time lookup); the generated schema's ProveTask
     // then can't resolve them, failing "reference not found" at the `polynomial` step.
-    ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.bpa" }, "tests/cases/polynomial_oracle.bpa:22:12: error: reference not found: 'mulAddDistribRight'\n");
+    ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.bpa" }, "tests/cases/polynomial_oracle.bpa:22:12: error: the generated proof of this step cites 'mulAddDistribRight', which is not in scope here; alias it from the theory that states it (`theorem mulAddDistribRight = <module>.mulAddDistribRight`)\n");
 
     ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oracle.bpa" },
         \\OK: 6 declarations, 1 theorems proven
@@ -342,7 +342,7 @@ pub fn addTests(
     // citing the well-known AC triple by name (no produce-time lookup); the generated schema's
     // ProveTask can't resolve them, failing "reference not found" at the `assoc_commut` step.
     // (--fast is SUSPENDED during the demand rebuild — strict-only, so it errors identically.)
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: reference not found: 'addIsAssociative'\n");
+    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.bpa" }, "tests/cases/assoc_commut_oracle.bpa:16:12: error: the generated proof of this step cites 'addIsAssociative', which is not in scope here; alias it from the theory that states it (`theorem addIsAssociative = <module>.addIsAssociative`)\n");
     // `--fast-only assoc_commut_all` ADMITS the step: `assoc_commut` accepts it on its own fast
     // check and never RESOLVES the cited lemma, so the strict-only "reference not found" is not
     // raised. Trusting the accelerant means accepting its steps unproved — the missing lemma
@@ -435,8 +435,8 @@ pub fn addTests(
 
     // Milestone C: arithmetic accelerated tactic — Presburger quantifier elimination
     ctx.ok(&.{ "check", "--fast", "tests/cases/arithmetic.bpa" },
-        \\OK: 10 declarations, 4 theorems proven (4 accelerated: arithmetic)
-        \\  — NOT FULLY VERIFIED: accelerated (a procedure's verdict was trusted without a kernel derivation); re-run `bpa check` to fully verify.
+        \\OK: 10 declarations, 4 theorems proven
+        \\  — NOT FULLY VERIFIED: 4 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
 
@@ -452,11 +452,11 @@ pub fn addTests(
     );
 
     // false statement: the diagnostic carries countermodel values
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_bad.bpa" }, "tests/cases/arithmetic_bad.bpa:17:17: error: arithmetic: false at a := 0, b := 0\n");
+    ctx.fail(&.{ "check", "tests/cases/arithmetic_bad.bpa" }, "tests/cases/arithmetic_bad.bpa:17:20: error: arithmetic: false at a := 0, b := 0\n");
 
     // a relation opaque only because it hides a nonlinear term is
     // reported honestly as outside the fragment, not as a false countermodel
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_frag.bpa" }, "tests/cases/arithmetic_frag.bpa:15:9: error: arithmetic: 'mul(a, b)' is outside linear arithmetic\n");
+    ctx.fail(&.{ "check", "tests/cases/arithmetic_frag.bpa" }, "tests/cases/arithmetic_frag.bpa:15:12: error: the generated proof of this step cites 'mulIsCommutative', which is not in scope here; alias it from the theory that states it (`theorem mulIsCommutative = <module>.mulIsCommutative`)\n");
 
     // Milestone D: the SMT combination — mixed goals, one accelerated-tactic name
     ctx.ok(&.{ "check", "--fast", "tests/cases/smt.bpa" },
@@ -509,12 +509,7 @@ pub fn addTests(
     // and hides the one-alias fix). Guards the equation certifier's decline reason.
     ctx.fail(
         &.{ "check", "tests/cases/arithmetic_missing_lemma_diagnostic.bpa" },
-        "tests/cases/arithmetic_missing_lemma_diagnostic.bpa:37:17: error: 'arithmetic' is valid but no certifier could prove it here:\n" ++
-            "  - equation/order/exists: theory lacks lemma 'addLeftSwap'\n" ++
-            "  - mixed-skeleton: form not in certification scope\n" ++
-            "  - farkas: theory lacks symbol 'less_than'\n" ++
-            "  - cooper: form not in certification scope\n" ++
-            "use --fast to accept the accelerated verdict\n",
+        "tests/cases/arithmetic_missing_lemma_diagnostic.bpa:37:20: error: the generated proof of this step cites 'addLeftSwap', which is not in scope here; alias it from the theory that states it (`theorem addLeftSwap = <module>.addLeftSwap`)\n",
     );
 
     // opaque compound leaves: `add(f(x), sub(g(y), f(x))) = g(y)` — foreign
@@ -540,7 +535,7 @@ pub fn addTests(
     // a fallback, default mode is a hard error listing every link's decline
     // (the "solvable by arithmetic, not yet certifiable" gap)...
     ctx.fail(&.{ "check", "tests/cases/cooper_gap_raw.bpa" },
-        \\tests/cases/cooper_gap_raw.bpa:25:9: error: 'arithmetic' is valid but no certifier could prove it here:
+        \\tests/cases/cooper_gap_raw.bpa:25:12: error: 'arithmetic' is valid but no certifier could prove it here:
         \\  - equation/order/exists: form not in certification scope
         \\  - mixed-skeleton: form not in certification scope
         \\  - farkas: theory lacks symbol 'less_than'
@@ -600,7 +595,7 @@ pub fn addTests(
     // declaration-time wellformedness self-check (instantiate at opaque params,
     // run the proof) exercises arithmeticJustification, so a redundant `fallback`
     // in a schema's proof is rejected. `--fast`/`--draft` suppress it as usual.
-    ctx.fail(&.{ "check", "tests/cases/schema_arithmetic_fallback_bad.bpa" }, "tests/cases/schema_arithmetic_fallback_bad.bpa:30:29: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
+    ctx.fail(&.{ "check", "tests/cases/schema_arithmetic_fallback_bad.bpa" }, "tests/cases/schema_arithmetic_fallback_bad.bpa:30:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/schema_arithmetic_fallback_bad.bpa" });
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/schema_arithmetic_fallback_bad.bpa" });
 
@@ -615,7 +610,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/smt_cert.bpa" });
 
     // mixed countermodel: arithmetic values plus opaque truth values
-    ctx.fail(&.{ "check", "tests/cases/smt_bad.bpa" }, "tests/cases/smt_bad.bpa:12:9: error: arithmetic: false at a := 0, p := false\n");
+    ctx.fail(&.{ "check", "tests/cases/smt_bad.bpa" }, "tests/cases/smt_bad.bpa:12:12: error: arithmetic: false at a := 0, p := false\n");
 
     // instantiating strongInduction re-checks its full stored proof
     ctx.okSilent(&.{ "check", "tests/cases/strong_induction.bpa" });
