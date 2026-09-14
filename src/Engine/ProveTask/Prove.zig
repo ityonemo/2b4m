@@ -676,12 +676,13 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     self.current_block = kb;
     defer self.current_block = null;
     self.known.missed = false;
+    self.known.misses.clearRetainingCapacity();
     switch (step.body) {
         .claim => |c| {
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(c.formula), c.formula);
             const just = try self.lowerJustification(w, &e, kb, f.id, c);
-            if (self.known.missed) return error.Recover; // an unproved obligation was diagnosed
+            try self.settleMisses(&e, kb);
             // under a model transfer, also keep the claim in SOURCE space (an accelerant citing
             // this step as a premise builds in source space — see `source_formulas`).
             const f_source: ?TermId = if (self.sourceSpaceAccelerants() and !self.inGuardWrapper(kb)) blk: {
@@ -696,17 +697,17 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
                 .label = label,
                 .loc = step.label.start,
             }, f_source);
-            // a PROVED step TEACHES its formula to the rest of its block (appended first, so a
-            // step never discharges its own obligation).
-            try self.known.teach(self.ctx.arena, f.id, kb, @intCast(self.low_steps.items.len - 1));
+            // a PROVED step TEACHES its formula (and every conjunct of it) to the rest of its
+            // block (appended first, so a step never discharges its own obligation).
+            try self.teachAll(&e, f.id, kb, @intCast(self.low_steps.items.len - 1));
         },
         .assume => |blk| {
             var e = self.elab(w);
             const f = try e.requireProp(try e.elaborateExpr(blk.formula), blk.formula);
-            if (self.known.missed) return error.Recover;
+            try self.settleMisses(&e, kb);
             try self.newBlock(w, label, kb, .{ .assume = f.id });
-            // the hypothesis is KNOWN inside the block it opens.
-            try self.known.teach(self.ctx.arena, f.id, self.lastBlock(), null);
+            // the hypothesis (and every conjunct of it) is KNOWN inside the block it opens.
+            try self.teachAll(&e, f.id, self.lastBlock(), null);
         },
         .fix => |blk| {
             const b = try self.bindProofVar(w, .{ .name = blk.name, .sort = blk.sort });
@@ -722,7 +723,7 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         .case => |c| {
             var e = self.elab(w);
             const goal = try e.requireProp(try e.elaborateExpr(c.goal), c.goal);
-            if (self.known.missed) return error.Recover;
+            try self.settleMisses(&e, kb);
             const disj = try self.resolveStepRef(w, c.disj);
             const disj_formula = self.low_steps.items[@intFromEnum(disj.id)].formula;
             const node = self.pool.get(disj_formula);
@@ -774,6 +775,39 @@ fn caseConcludeInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.
         .loc = cc.loc,
     }, cc.goal_source);
     try self.known.teach(self.ctx.arena, cc.goal, kb, @intCast(self.low_steps.items.len - 1));
+}
+
+/// SETTLE the step's failed obligation lookups. Under a MODEL TRANSFER the model's NOMINATED
+/// dischargers may derive one — a base fact for a constant (`src.C: TGT(fact)`), a closure fact
+/// instantiated for a compound (`src.op: F -| closure`), deterministically from the nomination
+/// (`dischargeGoal` → `setupClosure`; no search) — and the derivation's step then TEACHES it.
+/// Whatever remains is diagnosed here as `unproved obligation`, and the step is rejected.
+fn settleMisses(self: *Prove, e: *Elab, kb: kernel.BlockId) Error!void {
+    if (self.known.misses.items.len == 0) return;
+    const misses = try self.ctx.arena.dupe(Elab.Known.Miss, self.known.misses.items);
+    self.known.misses.clearRetainingCapacity();
+    var unresolved = false;
+    for (misses) |m| {
+        if (self.model != InternPool.Index.none and self.model != .universe) {
+            if (try self.dischargeGoal(kb, m.loc, m.prop)) |sref| {
+                try self.known.teach(self.ctx.arena, m.prop, kb, @intFromEnum(sref.id));
+                continue;
+            }
+        }
+        self.ctx.sink.add(m.loc, "unproved obligation: '{s}'", .{try e.renderProp(m.prop)}) catch return error.OutOfMemory;
+        unresolved = true;
+    }
+    if (unresolved) return error.Recover;
+}
+
+/// Teach `prop` and every member of its `and`-tree (and-elimination is structural: a
+/// hypothesis `A and (B and C)` makes A, B and C known — the same standing as an antecedent
+/// teaching its consequent). The teaching step/block is the same for each member; `refForKnown`
+/// extracts a conjunct from a block hypothesis with `emitConjunctExtract`.
+fn teachAll(self: *Prove, e: *Elab, prop: TermId, block: kernel.BlockId, step: ?u32) Error!void {
+    var members: std.ArrayList(TermId) = .empty;
+    try e.conjuncts(prop, &members);
+    for (members.items) |m| try self.known.teach(self.ctx.arena, m, block, step);
 }
 
 /// The kernel block most recently created by `newBlock` (the block a fix/assume/unpack opened).
@@ -1015,69 +1049,22 @@ fn emitDischargeStep(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Erro
     return self.dischargeGoal(kb, loc, g);
 }
 
-/// The NON-RECURSIVE guard-discharge sources (no re-entry into the discharge cycle): (1) a prior
-/// in-scope step already proving `g`; (2) an enclosing fix-block guard = `g` (or a conjunct of it);
-/// (2c) an enclosing assume-block premise = `g` (or a conjunct); (2b) an unpack-witness `and` whose
-/// left conjunct is `g`. Returns the SRef of the first hit, or null (the caller tries the recursive
-/// model-closure / conjunction sources). Factored out so the iterative discharge driver can call it
-/// as its leaf step.
-fn dischargeLocal(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId) Error!?kernel.SRef {
-    // (1) an accessible prior step already proves g.
-    for (self.low_steps.items, 0..) |s, i| {
-        if (!lowAncestorOrSelf(self.low_blocks.items, s.block, kb)) continue;
-        if (self.pool.alphaEq(s.formula, g)) return .{ .id = @enumFromInt(i), .loc = loc };
-    }
-    // (2) an enclosing fix-block's guard is g → restate it via [by predicate] (hypothesis).
-    var cur: ?kernel.BlockId = kb;
-    while (cur) |c| {
-        const b = self.low_blocks.items[@intFromEnum(c)];
-        if (b.kind == .fix) if (b.kind.fix.guard) |bg| {
-            if (self.pool.alphaEq(bg, g)) {
-                return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
-            }
-            // a MULTI-QUALIFIER fix's guard is a CONJUNCTION (`inH(v) and inK(v)`); if g is
-            // one of its conjuncts, restate the whole then and_elim down to it.
-            if (try self.emitConjunctExtract(kb, loc, bg, g, c)) |sref| return sref;
-        };
-        // (2c) an enclosing ASSUME block whose assumption is g — a GUARD PREMISE of a
-        // synthetic schema (13e): restate it on demand via [by hypothesis]. A conjunction
-        // guard premise extracts its conjunct the same way.
-        if (b.kind == .assume) {
-            if (self.pool.alphaEq(b.kind.assume, g)) {
-                return try self.emitSynthetic(kb, loc, g, .{ .hypothesis = .{ .id = c, .loc = loc } });
-            }
-            if (try self.emitConjunctExtract(kb, loc, b.kind.assume, g, c)) |sref| return sref;
-        }
-        // (2b) an enclosing UNPACK block whose witness carries the guard: the sound
-        // relativization of `∃x; P` under a refined sort is `∃x; good(x) and P(x)`, so the
-        // unpacked hypothesis is `good(w) and P(w)`. If `good(w) == g`, restate the hypothesis
-        // (`[by hypothesis]`) then `and_elim_left` off the guard conjunct.
-        if (b.kind == .unpack) {
-            const uv = b.kind.unpack;
-            const src_f = self.low_steps.items[@intFromEnum(uv.source.id)].formula;
-            const sn = self.pool.get(src_f);
-            if (sn == .quant and sn.quant.q == .exists) {
-                const wfv = try self.pool.add(.{ .fvar = uv.v });
-                const hyp = try self.pool.open(sn.quant.body, wfv);
-                const hn = self.pool.get(hyp);
-                if (hn == .bin and hn.bin.op == .and_op and self.pool.alphaEq(hn.bin.lhs, g)) {
-                    const hyp_step = try self.emitSynthetic(kb, loc, hyp, .{ .hypothesis = .{ .id = c, .loc = loc } });
-                    return try self.emitSynthetic(kb, loc, g, .{ .and_elim_left = hyp_step });
-                }
-            }
-        }
-        cur = b.parent;
-    }
-    return null;
-}
-
 /// If `g` is a CONJUNCT of the and-tree `whole` (a multi-qualifier block guard/assumption),
 /// restate `whole` (`[by hypothesis]` on block `blk`) and and_elim down to `g`; else null.
 fn emitConjunctExtract(self: *Prove, kb: kernel.BlockId, loc: u32, whole: TermId, g: TermId, blk: kernel.BlockId) Error!?kernel.SRef {
     var path: std.ArrayList(bool) = .empty;
     if (!try self.conjunctPath(whole, g, &path)) return null;
     if (path.items.len == 0) return null; // whole == g — the caller's direct case
-    var step = try self.emitSynthetic(kb, loc, whole, .{ .hypothesis = .{ .id = blk, .loc = loc } });
+    const base = try self.emitSynthetic(kb, loc, whole, .{ .hypothesis = .{ .id = blk, .loc = loc } });
+    return try self.emitConjunctExtractFrom(kb, loc, whole, g, base);
+}
+
+/// and_elim down from an EXISTING step `base` proving the and-tree `whole` to its conjunct `g`
+/// (`base` itself when `g` is `whole`); null if `g` is not a conjunct.
+fn emitConjunctExtractFrom(self: *Prove, kb: kernel.BlockId, loc: u32, whole: TermId, g: TermId, base: kernel.SRef) Error!?kernel.SRef {
+    var path: std.ArrayList(bool) = .empty;
+    if (!try self.conjunctPath(whole, g, &path)) return null;
+    var step = base;
     var cur_t = whole;
     for (path.items) |left| {
         const n = self.pool.get(cur_t);
@@ -1268,13 +1255,8 @@ fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?
         if (failed) break;
         switch (op) {
             .solve => |g| {
-                // what the proof KNOWS, by identity (the only local source once the alpha-
-                // matching `dischargeLocal` is retired — kept as a fallback for this pass).
+                // what the proof KNOWS, by identity — the only local source.
                 if (try self.refForKnown(kb, loc, g)) |sref| {
-                    try results.append(a, sref);
-                    continue;
-                }
-                if (try self.dischargeLocal(kb, loc, g)) |sref| {
                     try results.append(a, sref);
                     continue;
                 }
@@ -2099,8 +2081,12 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     var se = self.sourceElab(w);
     const se_mark = se.scopeMark();
     for (syn.fvar_binds) |bind| {
+        // an fvar lives at a CARRIER (bindProofVar lowers a refined binder's sort): the model's
+        // image of the source sort may be a REFINED target (`Src: GoodTgt`) — bind at its carrier,
+        // so the arg elaborates to the very fvar the walk bound (sort is part of its identity).
         const sort_ix: InternPool.Index = @enumFromInt(@intFromEnum(bind.sort));
-        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.applyModel(self.model, sort_ix)));
+        const image = self.ctx.interner.applyModel(self.model, sort_ix);
+        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(image)));
         e.pushBinder(bind.name, target_sort, bind.fvar) catch return error.OutOfMemory;
         se.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
     }
@@ -2320,8 +2306,11 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
         head_formula = try self.pool.substFvar(head_formula, fv.name, pf);
         fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.sortTok(fv.sort) };
-        fargs[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // caller binder name at the call site
-        fbinds[i] = .{ .name = try self.displayName(fv.name), .fvar = fv.name, .sort = fv.sort };
+        // the call-site arg names the fvar by its EXACT hygienic name (`n#6`, never lexable), and
+        // the bind is keyed the same way: two eigenvariables that DISPLAY alike (the schema's
+        // own `fix n` and a caller `n` captured through a lambda) stay distinct.
+        fargs[i] = try b.nameExpr(fv.name);
+        fbinds[i] = .{ .name = fv.name, .fvar = fv.name, .sort = fv.sort };
     }
 
     const nargs = c.args.len;
@@ -2492,8 +2481,20 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
 fn syntheticObligations(self: *Prove, w: *const Walk, seen: []const TermId) Error![]const TermId {
     var e = self.elab(w);
     e.known = null;
+    var all: std.ArrayList(TermId) = .empty;
+    for (seen) |t| try e.collectObligations(t, &all, true);
+    // an obligation the synthetic CONTAINS as a conjunct of one of its formulas (a premise
+    // `is_nonneg(m) and (… at(t, m) …)`, whose assumption teaches every conjunct; a goal it
+    // proves) is its own business — a producer that delaborates a premise's atoms one by one
+    // loses that context, so it is recovered here. It is NOT the caller's; the caller may not
+    // even be able to name it.
+    var internal: std.ArrayList(TermId) = .empty;
+    for (seen) |t| try e.conjuncts(t, &internal);
     var out: std.ArrayList(TermId) = .empty;
-    for (seen) |t| try e.collectObligations(t, &out);
+    for (all.items) |p| {
+        const contained = for (internal.items) |x| (if (x == p) break true) else false;
+        if (!contained) try out.append(self.ctx.arena, p);
+    }
     return out.items;
 }
 
@@ -2533,7 +2534,10 @@ fn refForKnown(self: *Prove, kb: kernel.BlockId, loc: u32, prop: TermId) Error!?
     const t = self.known.lookup(prop, kb) orelse return null;
     if (t.step) |s| {
         try self.known.reachable.append(self.ctx.arena, s);
-        return .{ .id = @enumFromInt(s), .loc = loc };
+        const whole = self.low_steps.items[s].formula;
+        if (whole == prop) return .{ .id = @enumFromInt(s), .loc = loc };
+        // taught as a CONJUNCT of that step: and_elim down to it.
+        return try self.emitConjunctExtractFrom(kb, loc, whole, prop, .{ .id = @enumFromInt(s), .loc = loc });
     }
     const b = self.low_blocks.items[@intFromEnum(t.block)];
     switch (b.kind) {
@@ -3625,8 +3629,9 @@ fn guardedQuant(self: *Prove, prop_in: TermId, fv: term.Node.Fvar, level: usize)
 /// Abstract each distinct FREE fvar in `id` into a synthetic value param — the goal's
 /// genuinely-free caller-local fvars (an enclosing `fix` at the call site). Returns the param
 /// names/sorts (for the schema `params`), the original fvar names (for substitution), and the
-/// caller-site arg exprs (each the fvar's DISPLAY name, re-resolving to the caller binder).
-/// A closed `id` yields no params (like a plain tautology).
+/// caller-site arg exprs (each naming the fvar by its EXACT hygienic name, re-resolving through
+/// the bind `fvarBinds` installs — never by display spelling, which two distinct eigenvariables
+/// can share). A closed `id` yields no params (like a plain tautology).
 const FvarAbstraction = struct {
     names: []const StrId,
     sorts: []const SortId,
@@ -3634,22 +3639,18 @@ const FvarAbstraction = struct {
     args: []const *const ast.Expr,
 };
 
-/// The CALLER-SCOPE bindings for an abstraction's inherited free fvars (`Synthetic.fvar_binds`).
-/// A caller `fix`-bound eigenvar already resolves through the proof-local scope, but one
-/// INHERITED from a schema-instance monomorphization (the schema was instantiated at a lambda
-/// capturing the instantiating proof's variable) has no source binder — so the call-site arg,
-/// which delaborates to the variable's DISPLAY spelling, would not re-resolve. `demandUsing`
-/// installs these into the caller Elab so each arg elaborates back to the very fvar.
+/// The CALLER-SCOPE bindings for an abstraction's free fvars (`Synthetic.fvar_binds`): each
+/// call-site arg names its fvar by the EXACT hygienic name (`n#6`), and this binds that name to
+/// the very fvar. Keyed exactly, the binds shadow nothing an author can write (`#` never lexes),
+/// so a caller `fix`-bound eigenvar keeps its binder (and a refined-sort binder its guard), and
+/// one INHERITED from a schema-instance monomorphization (a lambda capturing the instantiating
+/// proof's variable — no binder of its own here) resolves too — even when it DISPLAYS like a
+/// local one (the schema's own `fix n` vs a captured `n`: the bug this replaces).
 fn fvarBinds(self: *Prove, w: *const Walk, abs: FvarAbstraction) Error![]const Accelerant.Synthetic.FvarBind {
+    _ = w;
     var binds: std.ArrayList(Accelerant.Synthetic.FvarBind) = .empty;
     for (abs.origs, abs.sorts) |orig, sort| {
-        const display = try self.displayName(orig);
-        // ONLY the inherited ones: a fvar the proof-local scope already resolves (a caller
-        // `fix`) must NOT be re-bound here — pushing a binder for it SHADOWS the real one,
-        // and a refined-sort `fix` would lose the guard its binder carries (a transferred
-        // proof could then not discharge `good(x)` at the call site).
-        if (w.findIdent(display) != null) continue;
-        try binds.append(self.ctx.arena, .{ .name = display, .fvar = orig, .sort = sort });
+        try binds.append(self.ctx.arena, .{ .name = orig, .fvar = orig, .sort = sort });
     }
     return binds.items;
 }
@@ -3671,7 +3672,7 @@ fn abstractFreeFvars(self: *Prove, b: *Accelerant.Builder, terms: []const TermId
         names[i] = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "p{d}", .{i + 1}));
         sorts[i] = fv.sort;
         origs[i] = fv.name;
-        args[i] = try b.termExpr(try self.pool.add(.{ .fvar = fv })); // display name → caller binder
+        args[i] = try b.nameExpr(fv.name); // the EXACT name → the bind `fvarBinds` installs
     }
     return .{ .names = names, .sorts = sorts, .origs = origs, .args = args };
 }
@@ -8663,7 +8664,7 @@ test "usedPremiseCites: a GLOBAL cite is never a local antecedent; an empty cert
     try testing.expect(!mask[1]); // a global is never a local antecedent
 }
 
-test "fvarBinds: an abstraction's origs become caller-scope bindings (display name, fvar, sort)" {
+test "fvarBinds: an abstraction's origs become caller-scope bindings keyed by their EXACT hygienic name (fvar, sort)" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -8684,10 +8685,10 @@ test "fvarBinds: an abstraction's origs become caller-scope bindings (display na
     try testing.expectEqual(@as(usize, 2), binds.len);
     // the DISPLAY name drops the hygiene mangle (so the call-site arg re-resolves by spelling)
     // while `fvar` keeps the identity.
-    try testing.expectEqualStrings("b", rig.ctx.interner.stringBytes(binds[0].name));
+    try testing.expectEqual(mangled, binds[0].name); // NOT the display `b`: two eigenvariables can display alike
     try testing.expectEqual(mangled, binds[0].fvar);
     try testing.expectEqual(rig.int, binds[0].sort);
-    try testing.expectEqualStrings("x", rig.ctx.interner.stringBytes(binds[1].name));
+    try testing.expectEqual(plain, binds[1].name);
     try testing.expectEqual(plain, binds[1].fvar);
 }
 

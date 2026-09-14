@@ -67,8 +67,14 @@ pub const Known = struct {
     reachable: std.ArrayList(u32) = .empty,
     /// set by a failed lookup; the driver rejects the step after its formula is elaborated
     missed: bool = false,
+    /// the failed lookups of the current step, for the driver to SETTLE: under a model
+    /// transfer the model's nominated dischargers may derive one (a closure fact instantiated
+    /// for the term, deterministically from the nomination — `Prove.settleMisses`); what remains
+    /// is diagnosed there as `unproved obligation`.
+    misses: std.ArrayList(Miss) = .empty,
 
     pub const Teach = struct { prop: TermId, block: kernel.BlockId, step: ?u32, next: ?u32 };
+    pub const Miss = struct { prop: TermId, loc: u32 };
 
     pub fn teach(self: *Known, arena: Allocator, prop: TermId, block: kernel.BlockId, step: ?u32) Allocator.Error!void {
         const idx: u32 = @intCast(self.entries.items.len);
@@ -563,14 +569,18 @@ pub fn guardProposition(self: *Elab, guard: InternPool.TermOff, args: []const Te
 /// variable belongs to the statement that binds it). Iterative walk; no lookup, no diagnosis —
 /// the reading half of `requireKnown`, for a producer that must STATE its synthetic's
 /// preconditions (`Prove.wrapObligations`).
-pub fn collectObligations(self: *Elab, root: TermId, out: *std.ArrayList(TermId)) Error!void {
+pub fn collectObligations(self: *Elab, root: TermId, out: *std.ArrayList(TermId), respect_local: bool) Error!void {
     var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
     defer scratch.deinit();
     const wa = scratch.allocator();
-    var stack: std.ArrayList(TermId) = .empty;
-    try stack.append(wa, root);
-    while (stack.pop()) |cur| {
-        const node = self.scratch.get(cur);
+    // each frame carries the FORMULA-LOCAL knowledge on its path (the same rule `requireKnown`
+    // applies while elaborating: an antecedent `P -> …` teaches its consequent, `P and …` its
+    // right conjunct) — an obligation that formula already discharges is not the caller's.
+    const Visit = struct { id: TermId, local: []const TermId };
+    var stack: std.ArrayList(Visit) = .empty;
+    try stack.append(wa, .{ .id = root, .local = &.{} });
+    while (stack.pop()) |f| {
+        const node = self.scratch.get(f.id);
         switch (node) {
             .app, .pred => |ap| {
                 const callable = switch (self.interner.keyOf(@enumFromInt(@intFromEnum(ap.sym)))) {
@@ -585,18 +595,37 @@ pub fn collectObligations(self: *Elab, root: TermId, out: *std.ArrayList(TermId)
                         if (!closed) all_closed = false;
                         if (closed and self.interner.isRefined(expected)) {
                             const quals = self.interner.qualifiersOf(self.arena, expected) catch return error.OutOfMemory;
-                            for (quals) |q| try appendUnique(self.arena, out, try self.qualifierApp(q, arg));
+                            for (quals) |q| try self.appendUnlessLocal(out, f.local, try self.qualifierApp(q, arg));
                         }
                     }
                     if (cb.guard != InternPool.no_term and all_closed) {
-                        try appendUnique(self.arena, out, try self.guardProposition(cb.guard, ap.args));
+                        try self.appendUnlessLocal(out, f.local, try self.guardProposition(cb.guard, ap.args));
                     }
                 }
-                try self.scratch.pushChildren(&stack, wa, node);
+                for (ap.args) |x| try stack.append(wa, .{ .id = x, .local = f.local });
             },
-            else => try self.scratch.pushChildren(&stack, wa, node),
+            .bin => |b| {
+                try stack.append(wa, .{ .id = b.lhs, .local = f.local });
+                const rhs_local = if (respect_local and (b.op == .implies or b.op == .and_op))
+                    try std.mem.concat(wa, TermId, &.{ f.local, &.{b.lhs} })
+                else
+                    f.local;
+                try stack.append(wa, .{ .id = b.rhs, .local = rhs_local });
+            },
+            .eq => |p| {
+                try stack.append(wa, .{ .id = p.lhs, .local = f.local });
+                try stack.append(wa, .{ .id = p.rhs, .local = f.local });
+            },
+            .not => |t| try stack.append(wa, .{ .id = t, .local = f.local }),
+            .quant => |q| try stack.append(wa, .{ .id = q.body, .local = f.local }),
+            .bvar, .fvar => {},
         }
     }
+}
+
+fn appendUnlessLocal(self: *const Elab, out: *std.ArrayList(TermId), local: []const TermId, p: TermId) Allocator.Error!void {
+    for (local) |k| if (self.conjunctOf(k, p)) return;
+    try appendUnique(self.arena, out, p);
 }
 
 fn appendUnique(arena: Allocator, out: *std.ArrayList(TermId), p: TermId) Allocator.Error!void {
@@ -618,6 +647,42 @@ fn emitArgObligations(self: *Elab, param_sort: InternPool.Index, arg: TermId, lo
 /// The one discharge: is `prop` KNOWN here? Formula-local knowledge first (identity), then the
 /// proof's table from this use's block. A hit through a proved step marks that step reachable;
 /// a miss is reported once at the use and flags the driver to reject the step.
+/// The members of `root`'s `and`-tree, root included (iterative). A hypothesis makes every
+/// conjunct known — and-elimination is structural, not a search.
+pub fn conjuncts(self: *Elab, root: TermId, out: *std.ArrayList(TermId)) Allocator.Error!void {
+    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
+    defer scratch.deinit();
+    const wa = scratch.allocator();
+    var stack: std.ArrayList(TermId) = .empty;
+    try stack.append(wa, root);
+    while (stack.pop()) |cur| {
+        try out.append(self.arena, cur);
+        const node = self.scratch.get(cur);
+        if (node == .bin and node.bin.op == .and_op) {
+            try stack.append(wa, node.bin.rhs);
+            try stack.append(wa, node.bin.lhs);
+        }
+    }
+}
+
+/// Is `prop` a member of `k`'s `and`-tree (k itself included)?
+fn conjunctOf(self: *const Elab, k: TermId, prop: TermId) bool {
+    var fb = std.heap.stackFallback(64 * @sizeOf(TermId), self.ctx.gpa);
+    const a = fb.get();
+    var stack: std.ArrayList(TermId) = .empty;
+    defer stack.deinit(a);
+    stack.append(a, k) catch return false;
+    while (stack.pop()) |cur| {
+        if (cur == prop) return true;
+        const node = self.scratch.get(cur);
+        if (node == .bin and node.bin.op == .and_op) {
+            stack.append(a, node.bin.rhs) catch return false;
+            stack.append(a, node.bin.lhs) catch return false;
+        }
+    }
+    return false;
+}
+
 fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
     const known = self.known orelse return;
     // a proposition about a BOUND element (its subject mentions one of this formula's
@@ -625,14 +690,18 @@ fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
     // a quantified formula is a CLAIM about all its elements, like a statement (user ruling
     // 2026-09-13); the step that uses a specific element — a `fix`-var, a constant — owes it.
     for (self.scope.items) |entry| if (self.scratch.occursFree(prop, entry.fvar)) return;
-    for (self.local_known.items) |k| if (k == prop) return;
+    for (self.local_known.items) |k| if (self.conjunctOf(k, prop)) return;
     if (known.lookup(prop, self.known_block)) |t| {
         if (t.step) |s| known.reachable.append(self.arena, s) catch return error.OutOfMemory;
         return;
     }
-    const text_ = print.render(self.arena, self.scratch, self.interner, prop) catch return error.OutOfMemory;
-    self.sink.add(loc, "unproved obligation: '{s}'", .{text_}) catch return error.OutOfMemory;
+    known.misses.append(self.arena, .{ .prop = prop, .loc = loc }) catch return error.OutOfMemory;
     known.missed = true;
+}
+
+/// Render a proposition for a diagnostic.
+pub fn renderProp(self: *Elab, prop: TermId) Error![]const u8 {
+    return print.render(self.arena, self.scratch, self.interner, prop) catch return error.OutOfMemory;
 }
 
 /// Apply a schema GENERATOR param at a call site: elaborate each actual, sort-check against
@@ -1117,7 +1186,18 @@ const World = struct {
     fn checkWith(w: *World, k: *Known, comptime formula: []const u8) !Typed {
         const rig = try w.elabOf(formula);
         rig.elab.known = k;
-        return rig.elab.elaborateExpr(rig.expr);
+        const typed = try rig.elab.elaborateExpr(rig.expr);
+        try w.settle(rig.elab, k);
+        return typed;
+    }
+
+    /// What the driver does with the misses Elab recorded and nothing else could settle:
+    /// diagnose each as `unproved obligation` (Prove.settleMisses' residue path) and drain them.
+    fn settle(w: *World, elab: *Elab, k: *Known) !void {
+        for (k.misses.items) |m| {
+            try w.sink.add(m.loc, "unproved obligation: '{s}'", .{try elab.renderProp(m.prop)});
+        }
+        k.misses.clearRetainingCapacity();
     }
 
     fn diagnosticCount(w: *World) usize {
@@ -1324,6 +1404,7 @@ test "elab: the proof table — a taught COMPOUND is found at another occurrence
         rig.elab.known = k;
         rig.elab.known_block = @enumFromInt(1);
         _ = try rig.elab.elaborateExpr(rig.expr);
+        try w.settle(rig.elab, k);
         try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
         try testing.expectEqualSlices(u32, &.{3}, k.reachable.items);
     }
@@ -1333,6 +1414,7 @@ test "elab: the proof table — a taught COMPOUND is found at another occurrence
         rig.elab.known = k;
         rig.elab.known_block = @enumFromInt(2);
         _ = try rig.elab.elaborateExpr(rig.expr);
+        try w.settle(rig.elab, k);
         try testing.expectEqual(@as(usize, 1), w.diagnosticCount());
         try testing.expectEqualStrings("unproved obligation: 'inH(add(a, a))'", w.lastDiagnostic());
     }
@@ -1357,15 +1439,31 @@ test "elab: collectObligations reads a term's guarded applications — refined p
     const rig = try w.elabOf("le(shift(add(a, a)), div(a, a)) and le(shift(add(a, a)), a)");
     const t = try rig.elab.elaborateExpr(rig.expr); // known == null: nothing checked, nothing taught
     var out: std.ArrayList(TermId) = .empty;
-    try rig.elab.collectObligations(t.id, &out);
+    try rig.elab.collectObligations(t.id, &out, true);
     try testing.expectEqual(@as(usize, 2), out.items.len);
     try testing.expectEqual(inh_aa, out.items[0]);
     try testing.expectEqual(le_a_a, out.items[1]);
+    // a left conjunct / antecedent discharges its right side INSIDE the term: not the caller's.
+    const rig3 = try w.elabOf("inH(add(a, a)) and le(shift(add(a, a)), a)");
+    const t3 = try rig3.elab.elaborateExpr(rig3.expr);
+    var out3: std.ArrayList(TermId) = .empty;
+    try rig3.elab.collectObligations(t3.id, &out3, true);
+    try testing.expectEqual(@as(usize, 0), out3.items.len);
+    const rig5 = try w.elabOf("(le(a, a) and inH(add(a, a))) -> le(shift(add(a, a)), a)");
+    const t5 = try rig5.elab.elaborateExpr(rig5.expr);
+    var out5: std.ArrayList(TermId) = .empty;
+    try rig5.elab.collectObligations(t5.id, &out5, true);
+    try testing.expectEqual(@as(usize, 0), out5.items.len);
+    const rig4 = try w.elabOf("le(shift(add(a, a)), a) and inH(add(a, a))");
+    const t4 = try rig4.elab.elaborateExpr(rig4.expr);
+    var out4: std.ArrayList(TermId) = .empty;
+    try rig4.elab.collectObligations(t4.id, &out4, true);
+    try testing.expectEqual(@as(usize, 1), out4.items.len);
     // under a binder the subject is bound: not a term-level obligation.
     const rig2 = try w.elabOf("forall k: Nat; le(shift(k), div(k, k))");
     const t2 = try rig2.elab.elaborateExpr(rig2.expr);
     var out2: std.ArrayList(TermId) = .empty;
-    try rig2.elab.collectObligations(t2.id, &out2);
+    try rig2.elab.collectObligations(t2.id, &out2, true);
     try testing.expectEqual(@as(usize, 0), out2.items.len);
     try testing.expectEqual(@as(usize, 0), w.diagnosticCount());
 }

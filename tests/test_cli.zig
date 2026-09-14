@@ -371,6 +371,10 @@ pub fn addTests(
     // caller's guarded terms, so their obligations become its leading antecedents, discharged
     // at the call site from what the citing proof knows (consuming the teaching step).
     ctx.okSilent(&.{ "check", "tests/cases/tcc_synthetic.bpa" });
+    // a schema instantiated at a lambda capturing the caller's `n` while its own proof fixes an
+    // `n`: an accelerant step inside mentions both; the synthetic's args name each fvar by its
+    // exact hygienic name, so two eigenvariables that display alike are never confused.
+    ctx.okSilent(&.{ "check", "tests/cases/schema_lambda_capture.bpa" });
     // an UNCITED axiom never discharges — the author states it as a step first.
     ctx.fail(&.{ "check", "tests/cases/tcc_uncited_bad.bpa" },
         \\tests/cases/tcc_uncited_bad.bpa:15:11: error: unproved obligation: 'inH(UNIT)'

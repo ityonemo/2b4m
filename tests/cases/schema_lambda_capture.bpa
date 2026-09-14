@@ -1,0 +1,58 @@
+// A schema instantiated at a LAMBDA that captures the instantiating proof's own `n`, while the
+// schema's proof also fixes an `n`. Inside the instance, an accelerant step mentions BOTH — the
+// schema's `n` (a fix eigenvariable) and the captured one (inherited through the lambda, no
+// binder of its own). They display alike; they must not be confused: the synthetic's arg for
+// the inherited one is keyed by its exact hygienic name, never by its display spelling.
+sort Int
+pred Q(x: Int, y: Int)
+
+theorem sch(prop: Int -> Prop): forall n: Int; forall m: Int; Q(n, m) -> prop(m) -> (Q(n, m) and prop(m))
+proof
+  @generalize-n |
+    fix n: Int {
+      @generalize-m |
+        fix m: Int {
+          @given-q |
+            assume Q(n, m) {
+              @given-prop |
+                assume prop(m) {
+                  @q-n-m |
+                    Q(n, m)
+                    [by hypothesis given-q]
+                  @prop-m |
+                    prop(m)
+                    [by hypothesis given-prop]
+                  @conclusion-both |
+                    Q(n, m) and prop(m)
+                    [using tautology q-n-m prop-m]
+                }
+              @discharge-prop |
+                prop(m) -> (Q(n, m) and prop(m))
+                [by implies_intro given-prop]
+            }
+          @discharge-q |
+            Q(n, m) -> prop(m) -> (Q(n, m) and prop(m))
+            [by implies_intro given-q]
+        }
+      @discharge-m |
+        forall m: Int; Q(n, m) -> prop(m) -> (Q(n, m) and prop(m))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall n: Int; forall m: Int; Q(n, m) -> prop(m) -> (Q(n, m) and prop(m))
+    [by forall_intro generalize-n]
+qed
+
+// the instantiating proof fixes its own `n` and passes a lambda capturing it.
+theorem useIt: forall n: Int; forall n2: Int; forall m: Int; Q(n2, m) -> Q(m, n) -> (Q(n2, m) and Q(m, n))
+proof
+  @generalize-n |
+    fix n: Int {
+      @instance |
+        forall n2: Int; forall m: Int; Q(n2, m) -> Q(m, n) -> (Q(n2, m) and Q(m, n))
+        [using instantiation sch(fun k: Int => Q(k, n))]
+    }
+  @conclusion |
+    forall n: Int; forall n2: Int; forall m: Int; Q(n2, m) -> Q(m, n) -> (Q(n2, m) and Q(m, n))
+    [by forall_intro generalize-n]
+qed

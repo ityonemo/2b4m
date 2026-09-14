@@ -280,7 +280,13 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .done,
     };
-    if (st.prove.known.missed) return .done; // an undischarged statement obligation — diagnosed; no publish
+    if (st.prove.known.missed) { // a statement carries no obligation; a miss here is diagnosed as one anyway
+        for (st.prove.known.misses.items) |m| {
+            const text = e.renderProp(m.prop) catch return error.OutOfMemory;
+            self.sink.add(m.loc, "unproved obligation: '{s}'", .{text}) catch return error.OutOfMemory;
+        }
+        return .done;
+    }
     st.goal = typed.id;
     return .done;
 }
