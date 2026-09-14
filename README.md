@@ -18,7 +18,7 @@ invoke explicitly, and its work is either replayed as ordinary checked
 steps or disclosed.
 
 **Optimized for LLMs and humans alike.** Both audiences read the same
-surface: names are greppable (`grep 'by axiom'` is an assumption audit),
+surface: names are greppable (`bpa query uses` lists every fact a proof cites),
 diagnostics re-parse verbatim as source, connectives are words rather than
 symbol soup, and libraries of schematic statements cost nothing until used
 — so context stays small and feedback stays precise. Layout is generous on

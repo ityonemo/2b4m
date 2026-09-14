@@ -90,7 +90,11 @@ form is a fine content label: `@add-is-commutative`.)
   **Phase comments** inside proofs mark structure (`// base case:`,
   `// inductive step:`). Comments say *why*; steps say *what* — don't paraphrase
   a step in its comment.
-- **Naming**: Sorts `ProudCamelCase`; consts `ALLCAPS`; funcs/preds `snake_case`
+- **Naming**: Sorts `ProudCamelCase`; consts `ALLCAPS` — EXCEPT the named
+  mathematical constants `pi`, `e`, `i` (circle constant, Euler's number,
+  imaginary unit), written **lowercase** because their conventional notation is
+  lowercase (`i*i = neg(one)`); the abstract group-identity `E` is a different
+  constant and stays uppercase; funcs/preds `snake_case`
   words never one letter (`succ` not `S`); axioms/theorems `camelCase` spelled
   out (`addZeroLeft`, not `addZ`; `addIsCommutative`, not `addComm`);
   equation-shaped names encode the argument position (`addZeroLeft` =

@@ -234,8 +234,8 @@ pred raining
 
 ### KEYWORD: axiom
 
-Asserts a formula without proof. Axioms are the file's assumptions;
-`grep 'by axiom'` audits exactly where they are used.
+Asserts a formula without proof. Axioms are the file's assumptions; a proof cites
+one with `[by cite NAME]`, and `bpa query uses` lists every fact a proof cites.
 
 ```bpa
 axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
