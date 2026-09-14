@@ -124,7 +124,9 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                 // author blank lines survive (collapsed to one)
                 if (gap >= 2 and prev_tag != .eof) try w.writeAll("\n");
                 try w.splatByteAll(' ', indent);
-                owner_indent = indent;
+                // a standalone comment annotates the lines around it; it never OWNS the
+                // continuation that follows (a model mapping after a comment keeps its indent).
+                if (tok.tag != .comment) owner_indent = indent;
             } else {
                 const line_indent = owner_indent + 2;
                 try w.splatByteAll(' ', line_indent);
@@ -355,6 +357,26 @@ test "comments: standalone keeps its line at indent, trailing stays attached" {
         \\    p // trailing
         \\    [by cite missing]
         \\qed
+        \\
+    );
+}
+
+test "a standalone comment inside a model block does not re-anchor the mappings after it" {
+    try expectFmt(
+        \\sort Thing
+        \\model M {
+        \\  Thing: Thing
+        \\  // why
+        \\  Thing: Thing
+        \\}
+        \\
+    ,
+        \\sort Thing
+        \\model M {
+        \\  Thing: Thing
+        \\  // why
+        \\  Thing: Thing
+        \\}
         \\
     );
 }

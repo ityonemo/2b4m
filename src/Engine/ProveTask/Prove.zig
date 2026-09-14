@@ -499,7 +499,13 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     // `process` α-matches the statement + emits `.accelerated`. Nothing is published, so a later
     // EXPLICIT (strict) demand of the same fact still does the full check (redone work is fine).
     if (step.body == .claim and self.trusted(step.body.claim)) {
-        return self.trustedReadPass(w, step);
+        // a transferred SCHEMA is an instantiation in disguise — strict even when trusted.
+        const schema_transfer = if (self.trustWord(step.body.claim)) |wd| wd == .model and switch (try self.transfersSchema(step.body.claim)) {
+            .yes => true,
+            .no => false,
+            .blocked => |t| return t,
+        } else false;
+        if (!schema_transfer) return self.trustedReadPass(w, step);
     }
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
@@ -523,7 +529,13 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         // (M, src_file)); the model name resolved above, so demand the transfer + suspend.
         if (c.rule.name == InternPool.RuleStr.model.id()) {
             switch (try self.demandTransfer(c)) {
-                .proven => return null,
+                // a transferred SCHEMA is cited as the discharging schema's instance at this
+                // proof's own arguments — demand that instance too.
+                .proven => |ix| if (self.ctx.interner.keyOf(ix) == .schema) switch (try self.demandSchemaTransfer(c, ix)) {
+                    .proven => return null,
+                    .blocked => |t| return t,
+                    .failed => return null,
+                } else return null,
                 .blocked => |t| return t,
                 .failed => return null,
             }
@@ -1860,7 +1872,26 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     // own relativization); the in_flight/proven dedup below keys on that namespace, so it holds.
     const tns = self.ctx.interner.namespace(effective_model, src_file) catch return error.OutOfMemory;
     if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = base })) |st| switch (st) {
-        .proven => |ix| return .{ .proven = ix },
+        .proven => |ix| {
+            // a SCHEMA source has no transferred proof of its own: it is the model's obligation
+            // `src.sch <- local`, and what the citer gets is the DISCHARGING schema.
+            if (self.ctx.interner.keyOf(ix) == .schema) {
+                // the obligation was recorded against the schema's UNIVERSE locator (what
+                // ModelTask resolved), not this transfer namespace's.
+                const uns = self.ctx.interner.namespace(.universe, src_file) catch return error.OutOfMemory;
+                const universe_ix = if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = uns, .name = base })) |ust| switch (ust) {
+                    .proven => |u| u,
+                    .in_flight => ix,
+                } else ix;
+                const mapped = self.ctx.interner.applyModel(effective_model, universe_ix);
+                if (mapped == universe_ix) {
+                    self.ctx.sink.add(rtok.start, "'{s}' is a schema obligation the model does not discharge (`{s} <- <local schema>`)", .{ self.text(rtok), self.text(rtok) }) catch return error.OutOfMemory;
+                    return .failed;
+                }
+                return .{ .proven = mapped };
+            }
+            return .{ .proven = ix };
+        },
         .in_flight => |owner| {
             if (owner == self.h.self_index) {
                 self.ctx.sink.add(rtok.start, "model transfer of '{s}' depends on itself", .{self.text(rtok)}) catch return error.OutOfMemory;
@@ -1879,18 +1910,139 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     return .{ .blocked = blocker };
 }
 
+/// Does `[using model(M) src.thm]` cite a SCHEMA source? Such a citation is the discharging
+/// schema's instantiation (see `demandSchemaTransfer`), and `instantiation` is never trustable
+/// (#93) — so it stays strict even under `--fast model`. Answered off the source declaration;
+/// `.blocked` while the import or its parse is pending (the read pass suspends).
+fn transfersSchema(self: *Prove, c: ast.Step.Claim) Allocator.Error!union(enum) { yes, no, blocked: Engine.TaskIndex } {
+    if (c.refs.len != 1) return .no;
+    const rtok = c.refs[0];
+    var src_file = self.file;
+    if (rtok.qualifier != InternPool.Index.none) {
+        const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse
+            return .{ .blocked = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = self.file, .name = rtok.qualifier, .loc = rtok.start, .loc_file = self.file })) };
+        switch (st) {
+            .in_flight => |owner| return if (owner != self.h.self_index) .{ .blocked = owner } else .no,
+            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+                .import => |imp| src_file = self.ctx.interner.keyOf(imp.namespace).namespace.file,
+                else => return .no,
+            },
+        }
+    }
+    switch (try self.ctx.demandParse(self.h, src_file)) {
+        .parsed => {},
+        .parsing => |t| return .{ .blocked = t },
+        .unparsed => return .no,
+    }
+    const fid = self.ctx.pool_file.get(src_file) orelse return .no;
+    const decl = self.ctx.declOf(fid, tokName(rtok)) orelse return .no;
+    const fact = ast.factOf(decl) orelse return .no;
+    return if (fact.params != null) .yes else .no;
+}
+
 /// The `[by model(M) src.thm]` justification (in process, after the read pass proved the
 /// transferred fact): copyIn its formula and cite it as a proven theorem. (The transferred
 /// fact's formula is already in TARGET terms — proved under M's overlay.)
-fn lowerModel(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error!kernel.Justification {
-    _ = w;
+fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     const outcome = try self.demandTransfer(c);
     const fact = switch (outcome) {
         .proven => |ix| ix,
         .failed => return error.Recover,
         .blocked => return self.fail(c.rule.start, "internal: model transfer not resolved before process (read-pass bug)", .{}),
     };
+    // a transferred SCHEMA: the step is the discharging schema's instance at this proof's
+    // arguments (demanded in the read pass) — a schema_instance, like `instantiation`.
+    if (self.ctx.interner.keyOf(fact) == .schema) {
+        const inst = switch (try self.demandSchemaTransfer(c, fact)) {
+            .proven => |ix| ix,
+            .failed => return error.Recover,
+            .blocked => return self.fail(c.rule.start, "internal: transferred schema instance not resolved before process (read-pass bug)", .{}),
+        };
+        const instance = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(inst).fact.formula);
+        return self.withGuardPremises(kb, c.rule.start, instance, goal, try self.ctx.arena.alloc(kernel.SRef, 0));
+    }
     return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
+}
+
+/// The instance a transferred SCHEMA citation stands for. `[using model(M) src.sch]` where
+/// `src.sch` is a parameterized axiom discharged by a local schema (`src.sch <- local`) has no
+/// ground fact to cite: the citing proof must itself be a schema instance whose parameters
+/// stand in for the source schema's, and the step IS the discharging schema instantiated at
+/// those same arguments — positionally, since ModelTask required a schema with a matching
+/// parameter list. Demands that instance exactly like `demandInstance` (read pass racks +
+/// suspends; process finds it proven).
+fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.Index) Allocator.Error!InstanceOutcome {
+    const rtok = c.refs[0];
+    const sk = self.ctx.interner.keyOf(schema_ix).schema;
+    const args_in = self.schema_args orelse {
+        self.ctx.sink.add(rtok.start, "'{s}' transfers as a schema; cite it from a schema whose parameters stand in for its own, and instantiate that schema", .{self.text(rtok)}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const citing_params = self.schema_params;
+    // the discharging schema's own parameter names, off its declaration.
+    const tfid = self.ctx.pool_file.get(sk.file) orelse {
+        self.ctx.sink.add(rtok.start, "internal: the discharging schema's file is undiscovered", .{}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const decl = self.ctx.declOf(tfid, sk.name) orelse {
+        self.ctx.sink.add(rtok.start, "reference not found: '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
+        return .failed;
+    };
+    const params = (if (ast.factOf(decl)) |f| f.params else null) orelse {
+        self.ctx.sink.add(rtok.start, "'{s}' discharges the schema '{s}' but is not a schema", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok) }) catch return error.OutOfMemory;
+        return .failed;
+    };
+    if (params.len != citing_params.len) {
+        self.ctx.sink.add(rtok.start, "'{s}' (discharging '{s}') takes {d} parameter(s); this schema takes {d}", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok), params.len, citing_params.len }) catch return error.OutOfMemory;
+        return .failed;
+    }
+    const pnames = try self.ctx.arena.alloc(StrId, params.len);
+    for (params, pnames) |p, *out| out.* = tokName(p.name);
+    // re-key this instance's arguments by the discharging schema's parameter names.
+    const args = try self.rekeyArgs(citing_params, pnames, args_in, rtok) orelse return .failed;
+    const src_in = self.schema_args_source orelse args_in;
+    const args_source: *Schema.SchemaArgs = if (src_in == args_in) args else (try self.rekeyArgs(citing_params, pnames, src_in, rtok) orelse return .failed);
+
+    const hash = Schema.instanceHash(self.pool, sk.name, pnames, args);
+    const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(sk.name), hash }) catch return error.OutOfMemory;
+    const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
+    const inst_ns = self.ctx.interner.namespace(self.model, sk.file) catch return error.OutOfMemory;
+    const key = FactKV.Key{ .namespace = inst_ns, .name = inst_name };
+    if (self.ctx.facts.lookup(self.ctx.io, key)) |state| switch (state) {
+        .proven => |ix| return .{ .proven = ix },
+        .in_flight => |owner| {
+            if (owner == self.h.self_index) {
+                self.ctx.sink.add(rtok.start, "cyclic schema instantiation of '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
+                return .failed;
+            }
+            return .{ .blocked = owner };
+        },
+    };
+    const durable = try self.reifyArgs(pnames, args);
+    const durable_source = if (args_source == args) durable else try self.reifyArgs(pnames, args_source);
+    const blocker = try self.h.rackIndexed(try ProveTask.new(self.ctx.arena, .{
+        .file = sk.file,
+        .name = inst_name,
+        .loc = rtok.start,
+        .loc_file = self.file,
+        .model = self.model,
+        .instance = .{ .schema_name = sk.name, .params = pnames, .args = durable, .args_source = durable_source },
+    }));
+    return .{ .blocked = blocker };
+}
+
+/// `args` (keyed by `from` names) re-keyed positionally by `to` names. Null = diagnosed.
+fn rekeyArgs(self: *Prove, from: []const StrId, to: []const StrId, args: *const Schema.SchemaArgs, loc_tok: lexer.Token) Allocator.Error!?*Schema.SchemaArgs {
+    const out = try self.ctx.arena.create(Schema.SchemaArgs);
+    out.* = .empty;
+    for (from, to) |f, t| {
+        const a = args.get(f) orelse {
+            self.ctx.sink.add(loc_tok.start, "internal: schema parameter '{s}' has no bound argument", .{self.ctx.interner.stringBytes(f)}) catch return error.OutOfMemory;
+            return null;
+        };
+        try out.put(self.ctx.arena, t, a);
+    }
+    return out;
 }
 
 /// The `[using import(I) thm]` justification: cite theorem `thm` from import `I`'s file across
@@ -2156,6 +2308,11 @@ fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermI
         walk_f = n.bin.rhs;
     }
     if (total > prems.len) {
+        // more antecedents than refs, and the remainder never reached the claim: the claim
+        // is not this instance's conclusion at all (say so, rather than failing to discharge
+        // an antecedent that was never a guard).
+        if (!self.pool.alphaEq(walk_f, goal))
+            return self.fail(loc, "the claim does not match the instance's conclusion:\n  claim:      {s}\n  instance:   {s}", .{ try self.renderTerm(goal), try self.renderTerm(instance) });
         const k = total - prems.len;
         const all = try self.ctx.arena.alloc(kernel.SRef, total);
         var gf = instance;
@@ -8201,9 +8358,12 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
     // primitives never reach here trusted (trustWord returns null). Publishes nothing; a later
     // strict demand redoes the work.
     if (self.trusted(c)) {
-        try self.admit(w, e, goal, c);
-        if (self.trustWord(c)) |word| self.admitted.insert(word);
-        return .{ .accelerated = c.rule.name };
+        const schema_transfer = if (self.trustWord(c)) |wd| wd == .model and (try self.transfersSchema(c)) == .yes else false;
+        if (!schema_transfer) {
+            try self.admit(w, e, goal, c);
+            if (self.trustWord(c)) |word| self.admitted.insert(word);
+            return .{ .accelerated = c.rule.name };
+        }
     }
     // An ACCELERANT (`using <accel> …`) lowers to a schema_instance over its generated
     // synthetic schema (the instance was demanded + proven in the read pass).
@@ -8220,7 +8380,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         .instantiation => return self.lowerInstantiate(w, e, kb, goal, c),
         // `using model(M) src.thm` transfers a source theorem: the transferred fact was
         // demanded (proved in namespace (M, src_file)) in the read pass; cite it.
-        .model => return self.lowerModel(w, c),
+        .model => return self.lowerModel(kb, goal, c),
         // `using import(I) thm` cites an imported theorem across the file boundary — the
         // explicit accelerant seam (the read pass demanded `thm` in I's namespace); cite it.
         .import => return self.lowerImport(c),

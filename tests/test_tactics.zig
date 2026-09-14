@@ -217,12 +217,27 @@ pub fn addTests(
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
     ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.bpa" });
 
-    // SCHEMA TRANSFER through a guarded model: the source theory (an induction SCHEMA,
-    // elemInduction) checks on its own. NO positive transfer fixture yet — citing the
-    // transferred schema from an instantiated schema body is unimplemented (`internal:
-    // citation does not reference a fact`); the former model_schema.bpa never instantiated
-    // its schema and so passed vacuously, and was removed. The negative twin is below.
+    // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA (elemInduction) is
+    // discharged by a local guard-relativized schema (goodInduction); a local schema cites it
+    // `[using model(...) source.elemInduction]`, and INSTANTIATING that schema makes the step
+    // the discharging schema's instance at the same argument (kernel-checked against the
+    // claim). A transferred schema is an instantiation in disguise, so it stays strict under
+    // `--fast model` (the summary reports no trusted word used).
     ctx.okSilent(&.{ "check", "tests/cases/model_schema_source.bpa" });
+    ctx.okSilent(&.{ "check", "tests/cases/model_schema.bpa" });
+    ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model_schema.bpa" },
+        \\OK: 14 declarations, 2 theorems proven
+        \\  — (--fast set given, but no step used a trusted word — fully verified)
+        \\
+    );
+    // RED: the transferring schema claims MORE than the discharging schema's instance gives
+    // (the unguarded conclusion) — rejected as a claim/instance mismatch at the transfer step.
+    ctx.fail(&.{ "check", "tests/cases/model_schema_claim_bad.bpa" },
+        \\tests/cases/model_schema_claim_bad.bpa:42:12: error: the claim does not match the instance's conclusion:
+        \\  claim:      good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n)
+        \\  instance:   good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n) -> good(n)
+        \\
+    );
     // RED: a schema source must be discharged by a SCHEMA (matching predicate
     // parameter); a plain axiom cannot, and the model decl rejects it.
     ctx.fail(&.{ "check", "tests/cases/model_schema_bad.bpa" }, "tests/cases/model_schema_bad.bpa:20:27: error: 'notASchema' discharges a schema, so it must itself be a schema (with a matching predicate parameter)\n");
