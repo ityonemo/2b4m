@@ -131,9 +131,9 @@ witnesses (they carry `x≥0`), so the existing Cooper tests stay green.
 ## Verification (fractal RED→GREEN)
 
 - **RED**: a fixture `tests/cases/arithmetic_integer_sub.bpa` with
-  `theorem t: forall a, b: Int; sub(add(a, b), b) = a proof … [by arithmetic(integer)]`
+  `theorem t: forall a, b: Int; sub(add(a, b), b) = a proof … [using arithmetic(integer)]`
   — today errors "sub(add(a,b),b) is outside linear arithmetic".
-- **GREEN**: after the change, `[by arithmetic(integer)]` decides it (strict, with a
+- **GREEN**: after the change, `[using arithmetic(integer)]` decides it (strict, with a
   kernel certificate via the equation certifier). Add the eight sub/add cancellation
   identities as a gate to exercise neg/sub/prev in every position.
 - **No regression** (the load-bearing check): the ENTIRE existing arithmetic gate set
@@ -183,7 +183,7 @@ inverse pairs (`cancelInverses`): bubble `x` adjacent-before `neg(x)`, collapse 
 `addNegRight`, drop the ZERO — all trace rewrites, kernel-checked. So
 `add(a, sub(b,a)) = b` (leaf multiset {a,b,neg(a)} → {b}) certifies STRICT. RED→GREEN
 gate `tests/cases/arithmetic_cert_neg_cancel.bpa`; unlocked migrating
-`std/integer.bpa` `addDiffReaches` (27-line chain → one `[by arithmetic]`).
+`std/integer.bpa` `addDiffReaches` (27-line chain → one `[using arithmetic]`).
 
 **LANDED (84ac3be) — opaque compound leaves in the equation certifier.** `isTowerLeaf`
 now accepts an opaque atom (`isOpaqueAtom`: an app whose head isn't part of the sum
@@ -198,9 +198,9 @@ detour can now be dropped (follow-up).
 
 ## Deferred (explicitly out of scope)
 - **Drop the gcd port's `subOfAddCancel` detour** — now that opaque-atom equations
-  certify, `dividesModStep`'s sub step can be plain `[by arithmetic(integer)]`.
+  certify, `dividesModStep`'s sub step can be plain `[using arithmetic(integer)]`.
 - **Broader corpus migration** — sweep more hand-proved sub/order ladders to
-  `[by arithmetic]` (a fixture must have `addLeftSwap`+`addIsCommutative`+`addNegRight/Left`+
+  `[using arithmetic]` (a fixture must have `addLeftSwap`+`addIsCommutative`+`addNegRight/Left`+
   `addZeroLeft/Right` in scope; certifier-rule-input lemmas like `addIsCommutative` itself
   stay hand-proved to avoid circularity).
 - Dense-ℚ quantifier elimination (Fourier–Motzkin) — the ℚ quantified case.

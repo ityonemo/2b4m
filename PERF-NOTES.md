@@ -175,7 +175,7 @@ citation-cycle diagnostic, deterministically.
 failed two-pass DEPCHECK attempt): a proof cannot even be *lowered* until its
 cited lemmas are proven — tactic certificates (`simplify`, `arithmetic`, …)
 check `t.proven` when they resolve well-known lemmas — and those tactic-implied
-dependencies are **invisible to any syntactic scan** (`[by arithmetic]` pulls
+dependencies are **invisible to any syntactic scan** (`[using arithmetic]` pulls
 `addIsAssociative` from scope without ever naming it). No static schedule can
 be complete; dependency discovery must happen inside elaboration. A syntactic
 pre-scan of the explicit `[by theorem X]` refs (what `query uses` computes)

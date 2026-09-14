@@ -39,10 +39,10 @@ pub const Result = struct {
 /// these is a potential acceleration site; every other rule is always
 /// kernel-checked.
 const accelerated_rules = [_][]const u8{
-    "arithmetic",       "tautology",
-    "polynomial",       "assoc_commut",
-    "assoc",            "assoc_commut_quantified",
-    "assoc_quantified", "extensionality",
+    "arithmetic",                "tautology",
+    "polynomial",                "assoc_commut",
+    "assoc",                     "assoc_commut_quantified",
+    "assoc_quantified",          "extensionality",
     "extensionality_quantified",
 };
 

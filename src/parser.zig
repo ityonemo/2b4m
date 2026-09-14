@@ -951,7 +951,6 @@ pub const Parser = struct {
         self.sink.add(b.tok.start, "parenthesize: '{s}' and '{s}' are different boolean operators and their nesting must be explicit", .{ @tagName(inner), @tagName(outer) }) catch return error.OutOfMemory;
         return error.Recover;
     }
-
 };
 
 // --- tests ---

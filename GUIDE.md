@@ -68,12 +68,12 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `TACTIC: assoc_commut` | associative-commutative reordering of a sum |
 | `TACTIC: assoc` | associativity-only reordering (non-commutative) |
 | `TACTIC: polynomial` | nonlinear `add`/`mul` polynomial identities |
-| `TACTIC: ext` | extensionality-reduction (sets/functions) |
+| `TACTIC: extensionality` | extensionality-reduction (sets/functions) |
 | `TACTIC: tautology` | propositional consequence |
 | `TACTIC: arithmetic` | linear arithmetic over Nat |
 
 (The `_quantified` variant of a tactic — `simplify_quantified`, `assoc_commut_quantified`,
-`assoc_quantified`, `polynomial_quantified`, `ext_quantified` — is documented inside its
+`assoc_quantified`, `polynomial_quantified`, `extensionality_quantified` — is documented inside its
 base tactic's leaf; it peels a leading `forall` prefix without a hand `fix`.)
 
 ## Files and checking
@@ -1312,38 +1312,40 @@ laws are never checked is why the result is **accelerated** (`accelerated:
 polynomial`). A false identity is still rejected (the accelerated tactic *decides*); the
 acceleration is for the unproven ring-structure assumption, not for the comparison.
 
-### TACTIC: ext
+### TACTIC: extensionality
 
 Extensionality-reduction.
 
-`[using ext(theory)]` proves an equation `LHS = RHS` between extensional objects
-by the *element-chase*: reduce `LHS = RHS`, through the theory's extensionality
-lemma, to its pointwise obligation; fix an element; unfold the operators; and
-close the residue. It is the mapping/set analogue of `polynomial` — a
-**structure tactic, model-parameterized**: the SAME tactic proves set equations
-and function equations (and any future extensional theory), selected by the
-theory argument. (Prior art: Lean's `ext`.)
+`[using extensionality(<extLemma>) <unfold lemmas…>]` proves an equation `LHS = RHS`
+between extensional objects by the *element-chase*: reduce `LHS = RHS`, through the
+cited extensionality lemma, to its pointwise obligation; fix an element; unfold the
+operators with the cited characterization lemmas; and close the residue. It is the
+mapping/set analogue of `polynomial` — a **structure tactic**: the SAME tactic proves
+set equations and function equations (and any extensional theory), selected by the
+lemmas you cite. Under a `forall` prefix, use `extensionality_quantified`.
+(Prior art: Lean's `ext`.)
 
 ```bpa
 @intersection-commutes |
   forall a, b: Set; intersection(a, b) = intersection(b, a)
-  [using ext_quantified(set)]
+  [using extensionality_quantified(extensionality) intersectionMember]
 
 @compose-associates |
   forall h, g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
-  [using ext_quantified(function)]
+  [using extensionality_quantified(funcExtensionality) composeApply]
 ```
 
-It reads the residue's shape to pick its closer: a **set** equation unfolds
-`member(x, ·)` via the `<op>Member` lemmas and closes the propositional residue
-with `tautology`; a **function** equation unfolds `apply(·, x)` via the
-`<op>Apply` lemmas and closes the equational residue with the rewrite join. One
-`[using ext…]` line replaces the ~85-line hand element-chase. Like `arithmetic`, it
-is **theory-parameterized** (`ext(set)` / `ext(function)` resolve the
-extensionality lemma, the `Universe` sort, and the operator lemmas against the
-named module); **under a `forall` prefix**, use `ext_quantified`. A false
-identity is rejected — the pointwise residue reports a countermodel or the
-values differ. It emits kernel steps (its closers do), so uses are kernel-checked.
+The parenthesized argument is the theory's extensionality lemma (`set.extensionality`,
+`function.funcExtensionality`, or a local alias of either); the element sort is read
+off that lemma's pointwise binder, so nothing is looked up by name. The remaining
+refs are the unfold lemmas for the operators the equation mentions (`unionMember`,
+`differenceMember`, `composeApply`, `identityApply`, …) — cite exactly the ones the
+sides use. The tactic reads the residue's shape to pick its closer: a **set** equation
+unfolds `member(x, ·)` and closes the propositional residue with `tautology`; a
+**function** equation unfolds `apply(·, x)` and closes the equational residue with the
+rewrite join. One line replaces the ~85-line hand element-chase; every emitted step is
+a kernel tactic. A false identity is rejected — the pointwise residue reports a
+countermodel or the rewrite join fails to meet.
 
 ### TACTIC: tautology
 
@@ -1452,7 +1454,7 @@ Lean/Isabelle/Rocq export would consume.
 
 `bpa debug taint <file> [theorem]` is the companion trust-entry audit: per proof,
 every step whose rule can fall back to an accelerated verdict (`arithmetic`,
-`tautology`, `polynomial`, `assoc_commut`, `assoc`, `ext`, and quantified
+`tautology`, `polynomial`, `assoc_commut`, `assoc`, `extensionality`, and quantified
 variants), at its `file:line:col`. A syntactic upper bound — a flagged step may
 still certify — so a clean report guarantees every step is kernel-checked. Pure
 over the AST (no elaboration), like the `query` commands.

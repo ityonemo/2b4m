@@ -186,7 +186,7 @@ test "three-cycle a<b, b<c, c<a is refuted" {
 test "self-loop less_than(x,x) is an immediate contradiction" {
     var a = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer a.deinit();
-    const edges = [_]Edge{ .{ .lo = 5, .hi = 5 } };
+    const edges = [_]Edge{.{ .lo = 5, .hi = 5 }};
     const r = (try refute(a.allocator(), &edges, null)) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(@as(usize, 1), r.chain.len);
     try std.testing.expectEqual(@as(usize, 5), r.node);

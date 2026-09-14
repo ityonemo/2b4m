@@ -93,7 +93,7 @@ theorem twoPlusTwo: add(TWO, TWO) = FOUR
 proof
   @conclusion |
     add(TWO, TWO) = FOUR
-    [by arithmetic]
+    [using arithmetic]
 qed
 ```
 
@@ -176,7 +176,7 @@ Query may support semantic searching in the future.
 
 ### Debug (see what an accelerant proved)
 
-An accelerated tactic like `[by simplify …]` or `[by arithmetic]` stands in for a
+An accelerated tactic like `[using simplify …]` or `[using arithmetic]` stands in for a
 chunk of proof the tactic generates and the kernel checks. In default (strict)
 mode that generated proof is a real, suppressed **synthetic theorem** — nothing is
 trusted, everything is kernel-checked. `bpa debug accelerant` reprints it, as the
@@ -204,7 +204,7 @@ future Lean/Isabelle/Rocq backend.
 
 `bpa debug taint <file> [theorem]` is the companion audit: per proof, every step
 whose rule can fall back to an accelerated verdict (`arithmetic`, `tautology`,
-`polynomial`, `assoc_commut`, `assoc`, `ext`, and their quantified variants),
+`polynomial`, `assoc_commut`, `assoc`, `extensionality`, and their quantified variants),
 flagged at its `file:line:col` — *where trust enters the proof*. A clean report
 means every step is kernel-checked.
 
