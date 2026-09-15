@@ -1,0 +1,63 @@
+// std/integer/sequence.bpa — nonneg-ℤ-indexed integer sequences: the SORT and its
+// entry-graph builders, with no fold.
+//
+// A sequence is honestly ℕ-indexed, but the ℤ theories index it by `NonNegZ =
+// Int where nonneg` (sound: the nonnegatives ARE a Peano model — the `NonNegInt`
+// model in std/integer.bpa), so index and value both sit on Int, the index being
+// the nonneg refinement.
+//
+// This file exists so that ONE sequence can carry MORE THAN ONE fold: the product
+// (std/integer/product.bpa, combine:mul) and the sum (std/integer/sum.bpa,
+// combine:add) both import this `Seq` and model the abstract fold of
+// std/sequence.bpa onto it. Before the split each declared its own `Seq`, so a
+// sequence could have a product or a sum but never both.
+//
+// What lives here is what is true of a sequence regardless of how you fold it:
+// the sort, the accessor, and the two PURE entry-graph builders. The builders
+// that also pin a fold value (singleton, concat, remove) state a `productUpTo`
+// clause, so they stay with the product.
+import integer <<< "std/integer.bpa"
+import order <<< "std/integer-order.bpa"
+
+sort Int = integer.Int
+sort NonNegZ = integer.NonNeg
+const ZERO = integer.ZERO
+func succ = integer.succ
+pred is_nonneg = order.nonneg
+pred less_than = order.less_than
+
+define at_most(a, b) = order.less_or_equal(a, b)
+
+// -- the sequence -----------------------------------------------------------
+
+sort Seq
+func at(s: Seq, i: NonNegZ): Int
+
+// -- reification-existence axioms: the pure entry-graph builders -------------
+//
+// `Seq` is otherwise observe-only: `at` READS a sequence but no term BUILDS one.
+// These are the analogue of `functionFromGraph` — that a `Seq` with the stated
+// graph EXISTS. Obviously true of finite integer sequences, taken as axioms
+// because the sort carries no first-class builder. Nothing is claimed about
+// entries outside the stated range.
+
+// The prepend x :: s: a sequence whose head is x and whose tail (indices shifted
+// up by one) is s: at(result, 0) = x, and at(result, succ i) = at(s, i) for i ≥ 0.
+// The cons the FTA-uniqueness index map σ is built from — prepend the matched
+// index, recurse on the shorter factorization.
+axiom seqPrependExists: forall x: Int; forall s: Seq;
+  exists u: Seq;
+  at(u, ZERO) = x
+  and (forall i: NonNegZ; at(u, succ(i)) = at(s, i))
+
+// The sequence g reindexed past a threshold m: every entry below m is copied,
+// every entry ≥ m is bumped up by one (succ). This is the index-inverse of the
+// product's `seqRemoveExists` deletion — "un-removing" the index m in an index
+// map — and is what the FTA-uniqueness permutation σ threads its recursive
+// witness through: after removing entry m from t, the sub-map's target indices
+// (into the shortened t2) must be lifted back to indices into the original t.
+axiom seqShiftPastExists: forall g: Seq; forall k: NonNegZ; forall m: Int;
+  is_nonneg(m) ->
+  exists r: Seq;
+  (forall i: NonNegZ; less_than(i, k) -> less_than(at(g, i), m) -> at(r, i) = at(g, i))
+  and (forall i: NonNegZ; less_than(i, k) -> at_most(m, at(g, i)) -> at(r, i) = succ(at(g, i)))

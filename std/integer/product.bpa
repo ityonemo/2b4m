@@ -1,20 +1,18 @@
-// std/integer-sequence.bpa — nonneg-ℤ-indexed integer sequences and their
-// finite products. This file MODELS the abstract ℕ-indexed fold theory in
-// std/sequence.bpa: it declares its own `Seq`/`at`/`productUpTo` over the ℤ
-// sort, maps the abstract fold onto them (`model IntSeq`), and transfers the
-// fold-structure facts, while keeping all the ℤ divisibility/number theory.
+// std/integer/product.bpa — the finite PRODUCT of an integer sequence (Π), one of
+// the two folds over std/sequence.bpa (the other, in std/integer/sum.bpa, is the
+// sum). It MODELS the abstract fold with Value:Int, combine:mul, IDENTITY:ONE →
+// productUpTo(s, k) = at(s,0) · … · at(s,k-1), the product of the first k entries.
 //
-// A sequence is honestly ℕ-indexed. The ℤ model OVERLOADS the abstract index
-// sort onto `NonNegZ = Int where nonneg` (sound: the nonnegatives ARE a Peano
-// model — the `NonNegInt` model in std/integer.bpa). So on the ℤ side the index
-// and the value both sit on the Int sort, the index being the nonneg
-// refinement; the finite product `productUpTo(s, k)` = at(s,0) · … · at(s,k-1)
-// is the fold with combine:mul, IDENTITY:ONE. Values stay Int — the FTA's ℤ
-// arithmetic is untouched. The headline reusable fact is
-// `everyEntryDividesProduct`: every entry below the bound divides the product,
-// which the infinitude-of-primes argument (aata/2.3-primes.md) needs.
+// The sequence SORT itself lives in std/integer/sequence.bpa, shared with the sum,
+// so one sequence has both folds. What stays here is the product: its recursion
+// axioms, the model, the three construction axioms that pin a PRODUCT value as
+// well as an entry graph, and the ℤ divisibility results built on them. The
+// headline reusable fact is `everyEntryDividesProduct` — every entry below the
+// bound divides the product — which the infinitude-of-primes argument
+// (aata/2.3-primes.md) needs.
 
 import sequence <<< "std/sequence.bpa"
+import seq <<< "std/integer/sequence.bpa"
 import integer <<< "std/integer.bpa"
 import order <<< "std/integer-order.bpa"
 import int_divides <<< "std/integer-divides.bpa"
@@ -80,8 +78,8 @@ theorem nonnegWellOrdering = wellordering.nonnegWellOrdering
 // STRUCTURE — Nat:NonNegZ, ZERO:ZERO, succ:succ — (not just the sort) is required
 // so a transferred fold theorem carries ℤ's succ/ZERO and α-matches the goal.
 
-sort Seq
-func at(s: Seq, i: NonNegZ): Int
+sort Seq = seq.Seq
+func at = seq.at
 func productUpTo(s: Seq, k: NonNegZ): Int
 axiom productUpToZero: forall s: Seq; productUpTo(s, ZERO) = ONE
 axiom productUpToSucc: forall s: Seq; forall k: NonNegZ; productUpTo(s, succ(k)) = mul(productUpTo(s, k), at(s, k))
@@ -163,6 +161,11 @@ qed
 
 // The singleton sequence [x]: its first entry is x and its length-one product
 // is x. The concrete index ONE = succ(ZERO) is nonneg (nonnegOne).
+// the pure entry-graph builders live with the sequence sort; forwarded so a
+// consumer of the product theory reaches them without a second import.
+axiom seqPrependExists = seq.seqPrependExists
+axiom seqShiftPastExists = seq.seqShiftPastExists
+
 axiom seqSingletonExists: forall x: Int;
   exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = x
 
@@ -177,29 +180,6 @@ axiom seqConcatExists: forall s: Seq; forall t: Seq; forall j: NonNegZ; forall k
   (forall i: NonNegZ; less_than(i, j) -> at(u, i) = at(s, i))
   and (forall i: NonNegZ; is_nonneg(add(j, i)) -> less_than(i, k) -> at(u, add(j, i)) = at(t, i))
   and productUpTo(u, add(j, k)) = mul(productUpTo(s, j), productUpTo(t, k))
-
-// The prepend x :: s: a sequence whose head is x and whose tail (indices shifted
-// up by one) is s. Unlike seqConcatExists this is a pure ENTRY-graph builder (no
-// product clause): at(result, 0) = x, and at(result, succ i) = at(s, i) for i ≥ 0.
-// The cons the FTA-uniqueness index map σ is built from — prepend the matched
-// index, recurse on the shorter factorization.
-axiom seqPrependExists: forall x: Int; forall s: Seq;
-  exists u: Seq;
-  at(u, ZERO) = x
-  and (forall i: NonNegZ; at(u, succ(i)) = at(s, i))
-
-// The sequence g reindexed past a threshold m: every entry below m is copied,
-// every entry ≥ m is bumped up by one (succ). This is the index-inverse of
-// seqRemoveExists's deletion — "un-removing" the index m in an index map — and is
-// what the FTA-uniqueness permutation σ threads its recursive witness through:
-// after removing entry m from t, the sub-map's target indices (into the shortened
-// t2) must be lifted back to indices into the original t, which is exactly this
-// shift. Obviously true of finite integer sequences; no product constraint.
-axiom seqShiftPastExists: forall g: Seq; forall k: NonNegZ; forall m: Int;
-  is_nonneg(m) ->
-  exists r: Seq;
-  (forall i: NonNegZ; less_than(i, k) -> less_than(at(g, i), m) -> at(r, i) = at(g, i))
-  and (forall i: NonNegZ; less_than(i, k) -> at_most(m, at(g, i)) -> at(r, i) = succ(at(g, i)))
 
 // The sequence s with the entry at index m (0 ≤ m ≤ k) deleted: its length-k
 // product times the removed entry recovers s's length-(k+1) product, and its
