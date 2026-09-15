@@ -340,6 +340,7 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
+    eng.trace = self.verify.trace_facts;
     for (roots) |r| {
         const fid = try self.discover(r.path, null);
         try self.root_files.append(self.arena, fid);

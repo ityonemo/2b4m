@@ -388,8 +388,27 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                             ctx.interner.keyOf(src) == .fact and ctx.interner.keyOf(src).fact.kind == .theorem)
                         {
                             const tns = try ctx.interner.namespace(model, target_file);
-                            if (ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name }) == null) {
+                            const tstate = ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name });
+                            if (ctx.verify.trace_facts) {
+                                const what: []const u8 = if (tstate == null) "ABSENT -> racking its ProveTask (blocks)" else switch (tstate.?) {
+                                    .proven => "proven",
+                                    .in_flight => |o| if (o == h.self_index) "in_flight owned by SELF" else "in_flight owned by ANOTHER task — read pass sets NO blocker",
+                                };
+                                const line = std.fmt.allocPrint(ctx.arena, "[read pass] transferred copy of {s} under model#{d}: {s}\n", .{ ctx.interner.stringBytes(r.name), @intFromEnum(model), what }) catch "";
+                                ctx.fact_trace.append(ctx.arena, line) catch {};
+                            }
+                            // ABSENT: rack its re-proof and wait. IN FLIGHT under another task:
+                            // wait on THAT task — the same rule as the universe key above. The
+                            // old code only racked on absent and set no blocker on in_flight, so a
+                            // citer whose other refs resolved first ran its process pass while the
+                            // transferred copy was still being proved, and `resolveFactRef` fell
+                            // through to the UNTRANSFERRED source copy — a statement in the source
+                            // sort against a claim in the target sort. Order-dependent (the run
+                            // queue is a stack), so it surfaced only in a large directory sweep.
+                            if (tstate == null) {
                                 blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model }));
+                            } else if (tstate.? == .in_flight and tstate.?.in_flight != h.self_index) {
+                                blocker = tstate.?.in_flight;
                             }
                         }
                     },
@@ -1560,8 +1579,16 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
                 self.traceFact(tok, x, "TRANSFER redirect: the citing task runs under a model, so the cited theorem resolved to its transferred copy");
                 return x;
             },
-            .in_flight => {},
-        };
+            // the transferred copy is being proved RIGHT NOW by another task (or by this one):
+            // falling through hands the citation the UNTRANSFERRED source copy, whose statement
+            // is in the source sort — the mismatch `--trace-facts` exists to expose.
+            .in_flight => |owner| self.traceFact(tok, src, if (owner == self.h.self_index)
+                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by THIS task (self-cycle) — using the untransferred source copy"
+            else
+                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by ANOTHER task — using the untransferred source copy"),
+        } else {
+            self.traceFact(tok, src, "TRANSFER redirect FELL THROUGH: no transferred copy was ever demanded for this citation — using the untransferred source copy");
+        }
     }
     const ix = switch (state) {
         // in a model transfer, a source-axiom citation remaps (via the overlay) to its

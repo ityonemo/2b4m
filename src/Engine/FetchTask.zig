@@ -66,6 +66,10 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 }
 
 pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+    if (self.verify.trace_facts) {
+        const line = std.fmt.allocPrint(self.arena, "[fetch] task#{d} = ident {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
+        self.fact_trace.append(self.arena, line) catch {};
+    }
     // point the sink at THIS task's file (see the same note in ProveTask.run): a fetch's
     // "reference not found" / kind-mismatch offset is relative to its own file's source.
     if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
