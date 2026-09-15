@@ -1,0 +1,88 @@
+// Worked examples for `std/complex.bpa`'s imaginary unit and real embedding.
+//
+// Why this file exists: `iSquared` is the defining property of ℂ — the one axiom that
+// makes it more than a copy of a field — and the `fromReal*` family says the embedding
+// ℝ ↪ ℂ is a ring homomorphism. Nothing in `complex.bpa` derives from them, so nothing
+// exercises them, and an embedding axiom whose direction is reversed would go unnoticed.
+// Each theorem below is the smallest fact that genuinely needs the axiom it names.
+import complex <<< "std/complex.bpa"
+import real <<< "std/real.bpa"
+
+sort Complex = complex.Complex
+sort Real = real.Real
+const ZERO = complex.ZERO
+const ONE = complex.ONE
+const i = complex.i
+func add = complex.add
+func mul = complex.mul
+func neg = complex.neg
+func fromReal = complex.fromReal
+
+axiom iSquared = complex.iSquared
+axiom fromRealZero = complex.fromRealZero
+axiom fromRealAdd = complex.fromRealAdd
+axiom fromRealNeg = complex.fromRealNeg
+
+// -- the imaginary unit ------------------------------------------------------
+
+// i⁴ = 1: squaring the defining property. (i·i)·(i·i) = (−1)·(−1), and a negation times
+// itself is the square — the smallest fact that actually consumes `iSquared`.
+theorem iToTheFourthIsOne: mul(mul(i, i), mul(i, i)) = mul(neg(ONE), neg(ONE))
+proof
+  @i-squared-is-negative-one |
+    mul(i, i) = neg(ONE)
+    [by cite iSquared]
+  @product-of-squares |
+    mul(mul(i, i), mul(i, i)) = mul(mul(i, i), mul(i, i))
+    [by reflexivity]
+  @left-factor-unfolded |
+    mul(mul(i, i), mul(i, i)) = mul(neg(ONE), mul(i, i))
+    [by rewrite i-squared-is-negative-one product-of-squares]
+  @conclusion |
+    mul(mul(i, i), mul(i, i)) = mul(neg(ONE), neg(ONE))
+    [by rewrite i-squared-is-negative-one left-factor-unfolded]
+qed
+
+// -- the real embedding is a ring homomorphism -------------------------------
+
+// the embedding takes ℝ's zero to ℂ's, so embedding a sum with zero lands on the complex
+// zero added to the embedded summand: the additive clause meeting the base case.
+theorem embeddingASumWithZero: forall r: Real; fromReal(real.add(real.ZERO, r)) = add(ZERO, fromReal(r))
+proof
+  @generalize-r |
+    fix r: Real {
+      @embedding-splits-the-sum |
+        fromReal(real.add(real.ZERO, r)) = add(fromReal(real.ZERO), fromReal(r))
+        [using specialize fromRealAdd(real.ZERO, r)]
+      @embedded-zero-is-zero |
+        fromReal(real.ZERO) = ZERO
+        [by cite fromRealZero]
+      @conclusion-sum-with-zero |
+        fromReal(real.add(real.ZERO, r)) = add(ZERO, fromReal(r))
+        [by rewrite embedded-zero-is-zero embedding-splits-the-sum]
+    }
+  @conclusion |
+    forall r: Real; fromReal(real.add(real.ZERO, r)) = add(ZERO, fromReal(r))
+    [by forall_intro generalize-r]
+qed
+
+// the embedding commutes with negation, so an embedded r plus the embedding of its
+// negation is the embedding of r + (−r) — the shape that makes the image a subGROUP.
+theorem embeddingANegatedSum: forall r: Real; fromReal(real.add(r, real.neg(r))) = add(fromReal(r), neg(fromReal(r)))
+proof
+  @generalize-r |
+    fix r: Real {
+      @embedding-splits-the-sum |
+        fromReal(real.add(r, real.neg(r))) = add(fromReal(r), fromReal(real.neg(r)))
+        [using specialize fromRealAdd(r, real.neg(r))]
+      @embedding-commutes-with-negation |
+        fromReal(real.neg(r)) = neg(fromReal(r))
+        [using specialize fromRealNeg(r)]
+      @conclusion-negated-sum |
+        fromReal(real.add(r, real.neg(r))) = add(fromReal(r), neg(fromReal(r)))
+        [by rewrite embedding-commutes-with-negation embedding-splits-the-sum]
+    }
+  @conclusion |
+    forall r: Real; fromReal(real.add(r, real.neg(r))) = add(fromReal(r), neg(fromReal(r)))
+    [by forall_intro generalize-r]
+qed
