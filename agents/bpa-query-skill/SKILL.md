@@ -79,9 +79,9 @@ any named decl (theorem/axiom/func/pred/sort/const/define/schema) and for import
 namespaces. Each hop shows `file:line` + the source line; origin marked.
 
 ```
-$ bpa query whereis std/peano-parity.bpa addZeroRight
+$ bpa query whereis std/peano/parity.bpa addZeroRight
 addZeroRight
-  std/peano-parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
+  std/peano/parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
   std/peano.bpa:79:  theorem addZeroRight: forall n: Nat; add(n, ZERO) = n  [origin]
 ```
 
@@ -133,7 +133,7 @@ $ bpa debug taint examples/peano.bpa
 theorem twoPlusTwo
   examples/peano.bpa:192:9: arithmetic
 ...
-$ bpa debug taint std/peano-divides.bpa
+$ bpa debug taint std/peano/divides.bpa
 no accelerated tactics — every step is kernel-checked
 ```
 

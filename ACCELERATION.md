@@ -143,7 +143,7 @@ rule.
      decision premises), and EMITS a `theorem_ref → forall_elim(x⃗) →
      modus_ponens(refs)` chain the KERNEL re-checks — so a mis-inferred witness
      can never pass. (`tests/cases/arithmetic_fallback_specialize.bpa`;
-     `std/integer-divides.bpa`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
+     `std/integer/divides.bpa`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
      from `aata/2.2-division-algorithm-exercises.md`.)
   `fallback` is a contextual modifier on `arithmetic` only (not a keyword —
   `fallback` is an ordinary identifier elsewhere); it is the

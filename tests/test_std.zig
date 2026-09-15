@@ -18,20 +18,20 @@ pub fn addTests(
 
     // the order theory + strong induction + well-ordering, split into its own
     // layer; proven, and --recursive re-verifies the imported peano proofs too
-    ctx.okSilent(&.{ "check", "std/peano-order.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/order.bpa" });
 
-    ctx.okSilent(&.{ "check", "std/peano-order.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/order.bpa" });
 
     // truncated subtraction + the gcd measure lemma (Euclid foundation)
-    ctx.okSilent(&.{ "check", "std/peano-subtraction.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/subtraction.bpa" });
 
     // divisibility, the guarded Euclidean div/mod, and THE PAYOFF: Euclid's
     // algorithm proved correct (common divisor + greatest), by strong
     // induction on the decreasing modulus — the whole ℕ number-theory unit
-    ctx.okSilent(&.{ "check", "std/peano-divides.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/divides.bpa" });
 
     // parity: even/odd + the crux 2|p² → 2|p, proven (no accelerated tactic)
-    ctx.okSilent(&.{ "check", "std/peano-parity.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/parity.bpa" });
 
     // the ℤ base std/integer.bpa now bundles the ring algebra (left/right
     // recursion, commutativity, associativity, n+(-n)=0, mul lemmas), the nonneg
@@ -47,22 +47,22 @@ pub fn addTests(
     // irreflexivity/transitivity/trichotomy (bidirectional induction on the
     // difference), addition preserves/cancels order, less_or_equal refl/trans/
     // split/antisymmetric. subSelf/subAddCancel from the inverse law, no induction.
-    ctx.okSilent(&.{ "check", "std/integer-order.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/order.bpa" });
 
     // strong induction + the Principle of Well-Ordering over the NONNEGATIVE
-    // integers (std/integer-wellordering.bpa), layered above the ℤ order (it can't
+    // integers (std/integer/wellordering.bpa), layered above the ℤ order (it can't
     // live in integer-nonneg, which sits below the order in the import DAG).
     // nonnegStrongInduction (course-of-values) and nonnegWellOrdering (every
     // nonempty nonneg subset has a least element) — nonneg-guarded ports of the
     // peano-order proofs; the Division Algorithm's existence half runs on these.
-    ctx.okSilent(&.{ "check", "std/integer-wellordering.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/wellordering.bpa" });
 
     // abstract divisibility (std/divisibility.bpa): a carrier with mul/add/ONE
     // and the divides predicate; dividesRefl/dividesMul/dividesAdd proved once,
     // over the abstract carrier. ℕ and ℤ `model` this to inherit them.
     ctx.okSilent(&.{ "check", "std/divisibility.bpa" });
 
-    // the whole ℤ number-theory unit (std/integer-divides.bpa): divisibility
+    // the whole ℤ number-theory unit (std/integer/divides.bpa): divisibility
     // (`divides` intro/elim, the refl/mul/add facts TRANSFERRED from the abstract
     // theory via `model IntegerDivisibility`) + powers; the Division Algorithm
     // (existence over all of ℤ via well-ordering on {a−bk≥0} + uniqueness, with the
@@ -70,7 +70,7 @@ pub fn addTests(
     // machinery); and the GCD / Bézout theory (the existence-form gcd `bezout` and
     // its coprime specialization `coprimeBezout`, the engine of Euclid's Lemma). An
     // independent std development of the theory AATA §2.2/§2.3 prove inline.
-    ctx.okSilent(&.{ "check", "std/integer-divides.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/divides.bpa" });
 
     // the abstract, ℕ-indexed sequence + FOLD theory (std/sequence.bpa): an opaque
     // `Seq` over an abstract `Value` with an `at` accessor, an abstract `combine`/
@@ -90,27 +90,27 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/integer/sequence.bpa" });
     ctx.okSilent(&.{ "check", "std/integer/product.bpa" });
 
-    // WORKED EXAMPLES (`<theory>-examples.bpa`): a theory's axioms are demonstrated by the
+    // WORKED EXAMPLES (`std/<theory>/examples.bpa`): a theory's axioms are demonstrated by the
     // library itself, not left for callers to be the first to exercise. `--library` over
     // std/ is what makes this an obligation rather than a nicety — an axiom no derivation
     // touches has never had its binders, guards or direction checked.
-    ctx.okSilent(&.{ "check", "std/sequence-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/integer-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/real-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/rational-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/collection-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/equivalence-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/function-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/complex-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/ring-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/field-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/peano-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/sequence/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/real/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/rational/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/collection/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/equivalence/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/function/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/complex/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/ring/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/field/examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano/examples.bpa" });
 
     // the reusable ℤ PRIME THEORY (std/primes.bpa): primality packaged once as a
     // transparent `define is_prime`, then Euclid's Lemma (via coprimeBezout),
     // primeDividesProductImpliesMember (FTA-uniqueness crux), and the infinitude
     // of primes — an independent std development of the facts that aata/2.3-primes.md
-    // proves inline. Layers over std/integer-divides.bpa + std/integer-sequence.bpa.
+    // proves inline. Layers over std/integer/divides.bpa + std/integer-sequence.bpa.
     ctx.okSilent(&.{ "check", "std/primes.bpa" });
 
     // the group theory (std/group.bpa): THREE axioms (associativity + LEFT identity
@@ -119,17 +119,17 @@ pub fn addTests(
     // …) are proved from those axioms alone. aata/3.2-groups.md aliases these.
     ctx.okSilent(&.{ "check", "std/group.bpa" });
 
-    // group powers (std/group-power.bpa): g^n over a Nat exponent, layered over
+    // group powers (std/group/power.bpa): g^n over a Nat exponent, layered over
     // std/group.bpa + std/peano.bpa (keeping the core group theory import-free).
     // Defines pow(g,n) recursively and proves the exponent-addition law
     // powAdd: pow(g, m+n) = op(pow(g,m), pow(g,n)) by induction on n.
-    ctx.okSilent(&.{ "check", "std/group-power.bpa" });
+    ctx.okSilent(&.{ "check", "std/group/power.bpa" });
 
-    // finite group products (std/group-sequence.bpa): models std/sequence.bpa's
+    // finite group products (std/group/sequence.bpa): models std/sequence.bpa's
     // fold with op/E to get productUpTo(s, n) = g0·…·g_{n-1}, and proves the n-ary
     // inverse law invOfProduct: inv(g0·…·g_{n-1}) = g_{n-1}⁻¹·…·g0⁻¹ (Judson §3.2
     // Ex 27) by induction, step = binary invProduct. Never cites opCommutative.
-    ctx.okSilent(&.{ "check", "std/group-sequence.bpa" });
+    ctx.okSilent(&.{ "check", "std/group/sequence.bpa" });
 
     // finite integer sums (std/integer-sum.bpa): the SECOND fold over sequence.bpa
     // (combine:add, IDENTITY:ZERO) → sumUpTo(s, n) = Σ_{i<n} at(s,i). Identity-style
@@ -152,17 +152,17 @@ pub fn addTests(
     // the smallest one containing a (integer induction), plus cyclic ⇒ abelian.
     ctx.okSilent(&.{ "check", "std/cyclic.bpa" });
 
-    // order of a group element (std/group-order.bpa, Judson §4.1): the fixed-A/N form
+    // order of a group element (std/group/order.bpa, Judson §4.1): the fixed-A/N form
     // proves a^k = e ⟺ n|k and ord(a^k) = n/gcd(k,n) (via euclidFromBezout); the
     // hasOrder(g,n) RELATION generalizes order over arbitrary elements (orderIsUnique,
     // inverseHasSameOrder = |a|=|a⁻¹|).
-    ctx.okSilent(&.{ "check", "std/group-order.bpa" });
+    ctx.okSilent(&.{ "check", "std/group/order.bpa" });
 
-    // the integers mod n (std/integer-mod-n.bpa, Judson §4.1 concrete): ℤ_n as a
+    // the integers mod n (std/integer/mod-n.bpa, Judson §4.1 concrete): ℤ_n as a
     // quotient sort ℤ/nℤ whose group/ring axioms LIFT from ℤ via cls-homomorphism,
     // with ZnGroup/ZnGroupPower/ZnRing models (⟨1⟩ cyclic) and the units U(n) as a
     // group (UnitsGroup). An abstract TEMPLATE modeled at a concrete n.
-    ctx.okSilent(&.{ "check", "std/integer-mod-n.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/mod-n.bpa" });
 
     // the ring theory (std/ring.bpa): an additive abelian group + associative,
     // distributing multiplication. Its additive half MODELS std/group.bpa (a
@@ -181,31 +181,31 @@ pub fn addTests(
     // recipMulLeft, and noZeroDivisors (a·b=0 → a=0 or b=0). Base of the ℚ/ℝ/ℂ tower.
     ctx.okSilent(&.{ "check", "std/field.bpa" });
 
-    // the ordered-field theory (std/field-order.bpa): a field + a total strict order
+    // the ordered-field theory (std/field/order.bpa): a field + a total strict order
     // `less_than` compatible with the ops (translation-invariant add, positive
     // product). MODELS std/field.bpa; postulates the order abstractly (opaque pred +
     // axioms, unlike the constructed ℤ order) and derives asymmetry etc. ℚ/ℝ model it.
-    ctx.okSilent(&.{ "check", "std/field-order.bpa" });
+    ctx.okSilent(&.{ "check", "std/field/order.bpa" });
 
     // the rationals ℚ (std/rational.bpa): the prime ordered field. MODELS
-    // std/field-order.bpa (RationalOrderedField, the algebra lens) + a ring embedding
+    // std/field/order.bpa (RationalOrderedField, the algebra lens) + a ring embedding
     // ℤ↪ℚ (fromInt: homomorphism + injective) linking integer arithmetic to ℚ.
     // Derives fromIntNonzero (nonzero ints embed to invertible rationals). First
     // concrete sort of the tower; independent, containment-by-embedding.
     ctx.okSilent(&.{ "check", "std/rational.bpa" });
 
     // the reals ℝ (std/real.bpa): an axiomatic COMPLETE ordered field. MODELS
-    // std/field-order.bpa + the least-upper-bound completeness AXIOM (a Real->Prop
+    // std/field/order.bpa + the least-upper-bound completeness AXIOM (a Real->Prop
     // predicate-argument axiom, like nonnegInduction). Carries isRational +
     // fromRational (ℚ↪ℝ embedding) to STATE facts about rationals — NO ℚ→ℝ transfer
     // model (ℚ has strictly fewer theorems than ℝ; nothing to lift, unlike ℕ↪ℤ).
     ctx.okSilent(&.{ "check", "std/real.bpa" });
 
-    // the nonnegative square root on ℝ (std/real-sqrt.bpa): sqrt pinned by its
+    // the nonnegative square root on ℝ (std/real/sqrt.bpa): sqrt pinned by its
     // guarded defining axioms (sqrt(x)·sqrt(x)=x, sqrt≥0 for x≥0); proves
     // sqrtMulNonneg, sqrtOne. (Also hosts the ℝ-order helpers squareNonneg etc. —
     // those live in std/real.bpa.)
-    ctx.okSilent(&.{ "check", "std/real-sqrt.bpa" });
+    ctx.okSilent(&.{ "check", "std/real/sqrt.bpa" });
 
     // the complex numbers ℂ (std/complex.bpa): an axiomatic FIELD (NOT ordered).
     // MODELS std/field.bpa; adjoins the imaginary unit I with I²=−1; embeds ℝ via
@@ -213,10 +213,10 @@ pub fn addTests(
     // RealsInComplex order-transfer model is left unbuilt until a theorem needs it.)
     ctx.okSilent(&.{ "check", "std/complex.bpa" });
 
-    // the complex modulus (std/complex-modulus.bpa, Judson §4.2): normSq/abs on ℂ and
+    // the complex modulus (std/complex/modulus.bpa, Judson §4.2): normSq/abs on ℂ and
     // the modulus identities (|z̄|=|z|, zz̄=|z|², |zw|=|z||w|) proved from ℂ's
     // projection algebra + real-sqrt (no trigonometry).
-    ctx.okSilent(&.{ "check", "std/complex-modulus.bpa" });
+    ctx.okSilent(&.{ "check", "std/complex/modulus.bpa" });
 
     // ℤ modeling the ring theory now lives INSIDE std/integer.bpa (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the
@@ -242,11 +242,11 @@ pub fn addTests(
     // a clean success (a file that proves zero theorems is fine).
     ctx.okSilent(&.{ "check", "std/function.bpa" });
 
-    // invertible functions form a GROUP (std/function-invertible.bpa): the bijections
+    // invertible functions form a GROUP (std/function/invertible.bpa): the bijections
     // of a set under composition. A GUARDED model of std/group.bpa (guard = invertible)
     // — the group axioms proved on invertible functions (assoc/identities from funcExt;
     // inverse laws + closure under compose/inverse), then the group corpus (identity/
     // inverse uniqueness, involution, cancellation) transfers onto them for free.
     // Exercises cross-sort guarded weakening (group.Grp -> Fn where invertible).
-    ctx.okSilent(&.{ "check", "std/function-invertible.bpa" });
+    ctx.okSilent(&.{ "check", "std/function/invertible.bpa" });
 }
