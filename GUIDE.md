@@ -83,8 +83,61 @@ them in order; every failure is reported as `file:line:col: error:
 <message>` on stderr, and success prints one summary line:
 
 ```
-OK: 18 declarations, 6 theorems proven (1 accelerated: arithmetic)
+OK: 18 declarations, 6 theorems proven
 ```
+
+**One theorem.** `bpa check <file> <theorem>` proves only that theorem and
+whatever it cites — the file's other proofs never run. That is the iteration
+loop for a long file (pair it with `--fast`). A name that is not there is
+`reference not found`; a SCHEMA is reported as checked at its instantiations
+(it has no proof of its own to run); an axiom is a legitimate target — its
+statement is elaborated, and the run says `0 theorems proven`.
+
+**A directory.** `bpa check <dir>` checks every `.bpa` and `.md` under it,
+recursively, in ONE engine pass — so a fact two files cite is proved once, not
+once per file — and prints one aggregate line:
+
+```
+OK: 47 files, 1862 declarations, 468 theorems proven
+```
+
+A `.md` with no ```` ```bpa ```` block parses to nothing and costs nothing. A
+theorem argument selects within one file, so it cannot be combined with a
+directory.
+
+**What a proof rests on.** `--axioms` reports the axioms the checked
+theorem(s) transitively bottom out in, with the site each was declared at. It
+follows the demand graph, not the surface syntax, so it sees through accelerant
+certificates, `instantiation`, model transfers and imports — things `query
+uses` cannot:
+
+```
+$ bpa check examples/gauss.bpa gaussSum --axioms
+OK: 72 declarations, 1 theorems proven
+  — rests on 7 axiom(s):
+      sumToZero  (examples/gauss.bpa:44)
+      sumToSucc  (examples/gauss.bpa:45)
+      addZeroLeft  (std/peano.bpa:39)
+      …
+      induction  (std/peano.bpa:81)
+```
+
+(`bpa query uses` shows `gaussSum` citing five facts by name; the other two —
+`addSuccLeft`, `mulSuccLeft` — arrive only inside the certificates its
+`arithmetic` steps generate, which is exactly the gap a syntactic scan leaves.)
+
+A `hole` is an axiom as far as the kernel is concerned, so it is listed too and
+marked `— HOLE`. Default mode rejects a hole-bearing run before the report, so a
+marked hole appears only under `--draft`.
+
+**A library owes its own examples.** `--library` (a directory) additionally
+FAILS on any axiom declared in that directory that no theorem in it rests on.
+An axiom no derivation ever touches is one whose binders, guards and direction
+have never been checked, so `std/` carries a `<namespace>-examples.bpa` per
+theory demonstrating exactly those axioms nothing else exercises. A fact a
+`model` names as a discharger (`src <- local`, a `@`-projection, a guard
+witness) counts as used — that is consumption by the model machinery rather
+than by a citation.
 
 By default `bpa check` **verifies everything**: `by arithmetic`/`by
 tautology` must produce a checkable certificate (an accelerated fallback is a hard

@@ -23,7 +23,13 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/imports/guarded_bad.bpa" }, "tests/cases/imports/guarded_bad.bpa:7:5: error: unproved obligation: 'Z != Z'\n");
 
     // a missing import file is a clean diagnostic at the import site
-    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.bpa" }, "tests/cases/imports/missing_import.bpa:2:18: error: cannot open 'tests/cases/imports/nope.bpa': file not found\n");
+    // an import is READ by its own ParseTask when first cited into: the missing file is
+    // reported at the import token that named it, and the citation then misses its fact.
+    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.bpa" },
+        \\tests/cases/imports/missing_import.bpa:4:18: error: cannot open 'tests/cases/imports/nope.bpa': file not found
+        \\tests/cases/imports/missing_import.bpa:10:26: error: reference not found: 'reflexive'
+        \\
+    );
 
     // a namespace name collides with a local declaration
     ctx.fail(&.{ "check", "tests/cases/imports/collide.bpa" }, "tests/cases/imports/collide.bpa:3:8: error: duplicate declaration of 'lib'\n");

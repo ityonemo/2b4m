@@ -602,7 +602,7 @@ pub fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source
         .verify = .{},
         .std_root = "",
     };
-    const fid = try ctx.discover(path, source);
+    const fid = try ctx.preload(path, source);
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
     for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
@@ -722,7 +722,7 @@ test "fetch: an import binds to the target file's namespace" {
     const ctx = try fixtureCtx(arena, io, "/t/parent.bpa",
         \\import peano <<< "child.bpa"
     );
-    const child_fid = try ctx.discover("/t/child.bpa", "sort Nat");
+    const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
@@ -843,7 +843,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
         \\import peano <<< "child.bpa"
         \\func double(n: peano.Nat): peano.Nat
     );
-    const child_fid = try ctx.discover("/t/child.bpa", "sort Nat");
+    const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();

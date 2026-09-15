@@ -94,30 +94,50 @@ const Counts = struct {
     accelerated_names: []const []const u8,
 };
 
-fn countRoot(context: *Context) !Counts {
-    const root_idx = @intFromEnum(context.root_file);
-    const root_parsed = context.parsed.items[root_idx];
-    const root_source = context.files.items[root_idx].source;
-    const root_pool_file = try context.fileIndex(context.files.items[root_idx].path);
-    const ns = try context.interner.namespace(.universe, root_pool_file);
+/// A single-theorem check that named a SCHEMA proves nothing: a schema is checked at its
+/// instantiations by design (its ProveTask only publishes a locator), so the run would end
+/// "0 theorems proven" with no word of why. Say so, at the declaration. (A missing name is
+/// the racked task's own diagnostic; an axiom is a legitimate statement-elaborating task.)
+fn noteSchemaRoot(ctx: *Context, theorem: ?[]const u8) !void {
+    const t = theorem orelse return;
+    const name = try ctx.interner.internString(t);
+    const decl = ctx.declOf(ctx.root_file, name) orelse return;
+    const fact = ast.factOf(decl) orelse return;
+    if (fact.params == null) return;
+    ctx.sink.current_file = @intCast(@intFromEnum(ctx.root_file));
+    try ctx.sink.add(fact.name.start, "'{s}' is a schema; it is checked at its instantiations — check a theorem that instantiates it", .{t});
+}
+
+/// `only` = a single-theorem check's theorem: the file's other theorems may have been PROVED
+/// (demanded by the named one) but were not ASKED about, so they are not counted.
+fn countRoot(context: *Context, only: ?[]const u8) !Counts {
+    const want: ?InternPool.StrId = if (only) |t| try context.interner.internString(t) else null;
     var proven: usize = 0;
     var accelerated: usize = 0;
     // union of all admitted words across root theorems — the disclosure lists these names.
     var word_set = Verify.Word.Set.initEmpty();
-    for (root_parsed.decls) |decl| {
-        if (decl != .theorem) continue;
-        // count only LOCAL theorems (things this file sets out to PROVE); a theorem ALIAS is
-        // a re-export, not a proof obligation (its origin is proved elsewhere).
-        if (decl.theorem != .local) continue;
-        const name_tok = ast.theoremName(decl.theorem);
-        const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
-        if (context.root_theorem) |want| if (name != want) continue; // a single-theorem check
-        if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
-            if (state == .proven) {
-                proven += 1;
-                if (context.accelerated.get(state.proven)) |words| {
-                    accelerated += 1;
-                    word_set = word_set.unionWith(words);
+    for (context.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const root_parsed = context.parsed.items[root_idx];
+        const root_source = context.files.items[root_idx].source;
+        const root_pool_file = try context.fileIndex(context.files.items[root_idx].path);
+        const ns = try context.interner.namespace(.universe, root_pool_file);
+        for (root_parsed.decls) |decl| {
+            if (decl != .theorem) continue;
+            // count only LOCAL theorems (things this file sets out to PROVE); a theorem ALIAS is
+            // a re-export, not a proof obligation (its origin is proved elsewhere). Under a
+            // single-theorem check only the named one was ever proved, so only it counts.
+            if (decl.theorem != .local) continue;
+            const name_tok = ast.theoremName(decl.theorem);
+            const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
+            if (want) |w| if (name != w) continue;
+            if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
+                if (state == .proven) {
+                    proven += 1;
+                    if (context.accelerated.get(state.proven)) |words| {
+                        accelerated += 1;
+                        word_set = word_set.unionWith(words);
+                    }
                 }
             }
         }
@@ -140,9 +160,26 @@ pub const CheckResult = struct {
     }
 };
 
-/// A read_fn for single-source checks (no imports resolvable).
-fn readNone(_: ?*anyopaque, _: std.mem.Allocator, _: []const u8) anyerror![]const u8 {
+/// An in-memory file set for tests: a read_fn that serves these paths and nothing else.
+pub const MemFile = struct { path: []const u8, source: []const u8 };
+const MemFiles = struct { files: []const MemFile };
+fn readMem(ctx: ?*anyopaque, _: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+    const mem: *const MemFiles = @ptrCast(@alignCast(ctx.?));
+    for (mem.files) |f| if (std.mem.eql(u8, f.path, path)) return f.source;
     return error.FileNotFound;
+}
+
+/// Check in-memory files as the roots of one run (a directory check over a fake tree), with
+/// the full report. Every path is a root; `library` asks for the unused-axiom report.
+pub fn checkSources(arena: std.mem.Allocator, files: []const MemFile, library: bool) !ProjectResult {
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+    const mem = try arena.create(MemFiles);
+    mem.* = .{ .files = files };
+    const roots = try arena.alloc(Context.Root, files.len);
+    for (files, roots) |f, *r| r.* = .{ .path = f.path };
+    const loaded = try loadProject(io, arena, roots, @ptrCast(mem), &readMem, .{}, "");
+    return summarize(arena, loaded, roots, true, library);
 }
 
 /// Check a .bpa source (single file; imports unresolvable). All allocations go into
@@ -156,10 +193,12 @@ pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
 pub fn checkSourceTheorem(arena: std.mem.Allocator, source: []const u8, theorem: ?[]const u8) !CheckResult {
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
-    const context = try newContext(io, arena, null, &readNone, .{}, "");
-    if (theorem) |t| context.root_theorem = try context.interner.internString(t);
-    _ = try context.loadProject("/check/source.bpa", source);
-    const counts = try countRoot(context);
+    const mem = try arena.create(MemFiles);
+    mem.* = .{ .files = try arena.dupe(MemFile, &.{.{ .path = "/check/source.bpa", .source = source }}) };
+    const context = try newContext(io, arena, @ptrCast(mem), &readMem, .{}, "");
+    _ = try context.loadRoots(&.{.{ .path = "/check/source.bpa", .theorem = theorem }});
+    try noteSchemaRoot(context, theorem);
+    const counts = try countRoot(context, theorem);
     return .{
         .file = context.parsed.items[@intFromEnum(context.root_file)],
         .sink = context.sink,
@@ -182,6 +221,11 @@ pub const ProjectResult = struct {
     theorems_accelerated: usize,
     accelerated_names: []const []const u8,
     holes: []const Hole,
+    /// how many ROOTS were checked (1 for a file; a directory's file count).
+    files_checked: usize,
+    /// `--library`: the root files' axioms NO root theorem rests on — a library must not ship
+    /// assumptions nothing uses. Empty unless asked. Same shape as `axioms` (never a hole).
+    unused_axioms: []const Axiom,
     /// the axioms the checked theorem(s) transitively rest on — only computed when the caller
     /// asked (`--axioms`); empty otherwise. A HOLE reached by the proof appears here with
     /// `is_hole` set: it is an axiom to the kernel, and the report says so explicitly.
@@ -212,46 +256,32 @@ pub const ProjectResult = struct {
 /// the report is stable. Reads `ctx.axiom_taint` — the set each proved root fact recorded — and
 /// resolves every axiom Index through `ctx.axiom_origin` to a name + site. A hole is flagged:
 /// the kernel treats it as an axiom, and the report should not quietly pass it off as one.
-fn collectAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.Axiom {
-    const root_idx = @intFromEnum(ctx.root_file);
-    const rsrc = ctx.files.items[root_idx].source;
-    const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
-    const rns = try ctx.interner.namespace(.universe, root_pf);
+fn collectAxioms(arena: std.mem.Allocator, ctx: *Context, only: ?[]const u8) ![]const ProjectResult.Axiom {
+    const want: ?InternPool.StrId = if (only) |t| try ctx.interner.internString(t) else null;
     // union the axiom sets of every root theorem that was actually proved (one, under a
-    // single-theorem check).
+    // single-theorem check — the others were never racked).
     var seen: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty;
     var out: std.ArrayList(ProjectResult.Axiom) = .empty;
-    for (ctx.parsed.items[root_idx].decls) |decl| {
-        if (decl != .theorem) continue;
-        const nt = ast.theoremName(decl.theorem);
-        const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
-        if (ctx.root_theorem) |want| if (name != want) continue;
-        const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name }) orelse continue;
-        if (state != .proven) continue;
-        const axs = ctx.axiom_taint.get(state.proven) orelse continue;
-        for (axs) |a| {
-            if ((try seen.getOrPut(arena, a)).found_existing) continue;
-            const origin = ctx.axiom_origin.get(a) orelse continue;
-            const fid = ctx.pool_file.get(origin.file) orelse continue;
-            const f = ctx.files.items[@intFromEnum(fid)];
-            var is_hole = false;
-            for (ctx.holes_reached.items) |hh| {
-                if (hh.file == origin.file and hh.loc == origin.loc) is_hole = true;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const rsrc = ctx.files.items[root_idx].source;
+        const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
+        const rns = try ctx.interner.namespace(.universe, root_pf);
+        for (ctx.parsed.items[root_idx].decls) |decl| {
+            if (decl != .theorem) continue;
+            const nt = ast.theoremName(decl.theorem);
+            const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
+            if (want) |w| if (name != w) continue;
+            const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name }) orelse continue;
+            if (state != .proven) continue;
+            const axs = ctx.axiom_taint.get(state.proven) orelse continue;
+            for (axs) |a| {
+                if ((try seen.getOrPut(arena, a)).found_existing) continue;
+                if (try axiomSite(ctx, a)) |site| try out.append(arena, site);
             }
-            try out.append(arena, .{
-                .name = ctx.interner.stringBytes(origin.name),
-                .path = f.path,
-                .line = std.zig.findLineColumn(f.source, origin.loc).line + 1,
-                .is_hole = is_hole,
-            });
         }
     }
-    std.mem.sort(ProjectResult.Axiom, out.items, {}, struct {
-        fn lessThan(_: void, x: ProjectResult.Axiom, y: ProjectResult.Axiom) bool {
-            if (!std.mem.eql(u8, x.path, y.path)) return std.mem.lessThan(u8, x.path, y.path);
-            return x.line < y.line;
-        }
-    }.lessThan);
+    std.mem.sort(ProjectResult.Axiom, out.items, {}, axiomLessThan);
     return out.items;
 }
 
@@ -272,18 +302,18 @@ pub const LoadedProject = struct {
 pub fn loadProject(
     io: std.Io,
     arena: std.mem.Allocator,
-    root_path: []const u8,
-    root_source: []const u8,
+    roots: []const Context.Root,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
     verify: Verify,
     std_root: []const u8,
-    theorem: ?[]const u8,
 ) !LoadedProject {
     const context = try newContext(io, arena, read_ctx, read_fn, verify, std_root);
-    if (theorem) |t| context.root_theorem = try context.interner.internString(t);
-    const canonical_root = try std.fs.path.resolve(arena, &.{root_path});
-    const root_file = try context.loadProject(canonical_root, root_source);
+    // canonicalize every root path (the engine keys files by canonical path, so a root and
+    // the same file reached as an import are one FileId).
+    const canon = try arena.alloc(Context.Root, roots.len);
+    for (roots, canon) |r, *c| c.* = .{ .path = try std.fs.path.resolve(arena, &.{r.path}), .theorem = r.theorem };
+    const root_file = try context.loadRoots(canon);
     return .{
         .interner = context.interner,
         .context = context,
@@ -297,17 +327,25 @@ pub fn loadProject(
 pub fn checkProject(
     io: std.Io,
     arena: std.mem.Allocator,
-    root_path: []const u8,
-    root_source: []const u8,
+    roots: []const Context.Root,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
     verify: Verify,
     std_root: []const u8,
-    theorem: ?[]const u8,
     want_axioms: bool,
+    library: bool,
 ) !ProjectResult {
-    const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root, theorem);
-    const counts = try countRoot(loaded.context);
+    const loaded = try loadProject(io, arena, roots, read_ctx, read_fn, verify, std_root);
+    return summarize(arena, loaded, roots, want_axioms, library);
+}
+
+/// The run's REPORT: counts, holes, and — when asked — the axiom report and the library's
+/// unused axioms. Pure reading of the finished context.
+fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Context.Root, want_axioms: bool, library: bool) !ProjectResult {
+    // a single-theorem check is one root with a theorem; a directory's roots name none.
+    const theorem: ?[]const u8 = if (roots.len == 1) roots[0].theorem else null;
+    try noteSchemaRoot(loaded.context, theorem);
+    const counts = try countRoot(loaded.context, theorem);
     // resolve every REACHED hole (a `hole` decl whose ProveTask published) to a reportable
     // {name, path, line, dependents}. The summary discloses all sites (default rejects; --draft
     // allows). DEPENDENTS (blast-radius) = the ROOT theorems whose proof transitively rests on
@@ -315,8 +353,8 @@ pub fn checkProject(
     const ctx = loaded.context;
     // hole-name StrId -> the root theorem names that rest on it.
     var deps: std.AutoHashMapUnmanaged(InternPool.StrId, std.ArrayList([]const u8)) = .empty;
-    {
-        const root_idx = @intFromEnum(ctx.root_file);
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
         const rsrc = ctx.files.items[root_idx].source;
         const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
         const rns = try ctx.interner.namespace(.universe, root_pf);
@@ -360,24 +398,102 @@ pub fn checkProject(
         .theorems_accelerated = counts.accelerated,
         .accelerated_names = counts.accelerated_names,
         .holes = holes.items,
-        .axioms = if (want_axioms) try collectAxioms(arena, ctx) else &.{},
+        .axioms = if (want_axioms) try collectAxioms(arena, ctx, theorem) else &.{},
+        .files_checked = roots.len,
+        .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
     };
 }
 
-/// `bpa check`'s non-flag positionals: `[trust words…] <file> [theorem]`. The file is the first
-/// positional that names a `.bpa`/`.md` source (trust words never do); at most one positional
-/// may follow it — the theorem to check alone. Null = the shape is wrong (usage).
+/// The site of an axiom Index for a report: a ground axiom's from `axiom_origin` (recorded at
+/// publish), a schema axiom's from its locator key. Null = not an axiom we can place.
+fn axiomSite(ctx: *Context, ix: InternPool.Index) !?ProjectResult.Axiom {
+    const name: InternPool.StrId, const file: InternPool.Index, const loc: u32 = switch (ctx.interner.keyOf(ix)) {
+        .schema => |sk| .{ sk.name, sk.file, sk.loc },
+        else => if (ctx.axiom_origin.get(ix)) |o| .{ o.name, o.file, o.loc } else return null,
+    };
+    const fid = ctx.pool_file.get(file) orelse return null;
+    const f = ctx.files.items[@intFromEnum(fid)];
+    var is_hole = false;
+    for (ctx.holes_reached.items) |hh| {
+        if (hh.file == file and hh.loc == loc) is_hole = true;
+    }
+    return .{
+        .name = ctx.interner.stringBytes(name),
+        .path = f.path,
+        .line = std.zig.findLineColumn(f.source, loc).line + 1,
+        .is_hole = is_hole,
+    };
+}
+
+fn axiomLessThan(_: void, x: ProjectResult.Axiom, y: ProjectResult.Axiom) bool {
+    if (!std.mem.eql(u8, x.path, y.path)) return std.mem.lessThan(u8, x.path, y.path);
+    return x.line < y.line;
+}
+
+/// Every axiom Index some ROOT theorem (local or re-exported) transitively rests on — the
+/// library's USED set.
+fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged(InternPool.Index, void) {
+    var used: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const rsrc = ctx.files.items[root_idx].source;
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(ctx.files.items[root_idx].path));
+        for (ctx.parsed.items[root_idx].decls) |decl| {
+            if (decl != .theorem) continue;
+            const nt = ast.theoremName(decl.theorem);
+            const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
+            const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name }) orelse continue;
+            if (state != .proven) continue;
+            for (ctx.axiom_taint.get(state.proven) orelse continue) |a| try used.put(arena, a, {});
+        }
+    }
+    // a fact a MODEL names as a discharger is used by the model machinery — it never appears in
+    // a proof's citation closure, but it is exactly as consumed.
+    var it = ctx.model_discharged.keyIterator();
+    while (it.next()) |k| try used.put(arena, k.*, {});
+    return used;
+}
+
+/// `--library`: the root files' LOCAL axioms (ground and schema) that no root theorem rests on.
+/// An axiom never even demanded has no fact entry; one only elaborated as a root statement has
+/// an entry but is in nobody's closure. Both are unused. Holes are not axioms here (they are
+/// reported on their own terms).
+fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.Axiom {
+    var used = try usedAxioms(arena, ctx);
+    defer used.deinit(arena);
+    var out: std.ArrayList(ProjectResult.Axiom) = .empty;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const f = ctx.files.items[root_idx];
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(f.path));
+        for (ctx.parsed.items[root_idx].decls) |decl| {
+            if (decl != .axiom or decl.axiom != .local) continue;
+            const name_tok = decl.axiom.local.name;
+            if (ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name_tok.name })) |state| {
+                if (state == .proven and used.contains(state.proven)) continue;
+            }
+            try out.append(arena, .{
+                .name = ctx.interner.stringBytes(name_tok.name),
+                .path = f.path,
+                .line = std.zig.findLineColumn(f.source, name_tok.start).line + 1,
+                .is_hole = false,
+            });
+        }
+    }
+    std.mem.sort(ProjectResult.Axiom, out.items, {}, axiomLessThan);
+    return out.items;
+}
+
+/// `bpa check`'s non-flag positionals: `[trust words…] <file | dir> [theorem]`. The trust words
+/// are a closed vocabulary (`Verify.Word.parse`), so the path is the FIRST positional that is
+/// not one of them — a file or a directory, whatever it is named; at most one positional may
+/// follow it — the theorem to check alone. Null = the shape is wrong (usage).
 pub const CheckArgs = struct { words: []const []const u8, path: []const u8, theorem: ?[]const u8 };
 pub fn splitCheckArgs(positionals: []const []const u8) ?CheckArgs {
     if (positionals.len == 0) return null;
-    var at: ?usize = null;
-    for (positionals, 0..) |a, i| {
-        if (std.mem.endsWith(u8, a, ".bpa") or std.mem.endsWith(u8, a, ".md")) {
-            at = i;
-            break;
-        }
-    }
-    const i = at orelse positionals.len - 1; // no source-looking positional: the last one is the path
+    var i: usize = 0;
+    while (i < positionals.len and Verify.Word.parse(positionals[i]) != null) i += 1;
+    if (i == positionals.len) return null; // nothing but trust words
     const rest = positionals[i + 1 ..];
     if (rest.len > 1) return null;
     return .{ .words = positionals[0..i], .path = positionals[i], .theorem = if (rest.len == 1) rest[0] else null };
@@ -396,8 +512,14 @@ test "splitCheckArgs: words before the file, an optional theorem after it" {
     try std.testing.expectEqualStrings("foo", words.theorem.?);
     try std.testing.expect(splitCheckArgs(&.{ "a.bpa", "foo", "bar" }) == null);
     try std.testing.expect(splitCheckArgs(&.{}) == null);
-    // no source-looking positional at all: the last one is taken as the path (usage error later)
-    try std.testing.expectEqualStrings("nope", splitCheckArgs(&.{ "x", "nope" }).?.path);
+    // a DIRECTORY has no suffix: it is the first non-word positional, and may take no theorem
+    // at the split level (the CLI rejects that pairing with its own message).
+    const dir = splitCheckArgs(&.{ "arithmetic", "some/dir", "thm" }).?;
+    try std.testing.expectEqualStrings("some/dir", dir.path);
+    try std.testing.expectEqualStrings("thm", dir.theorem.?);
+    try std.testing.expectEqual(@as(usize, 1), dir.words.len);
+    // only trust words: no path
+    try std.testing.expect(splitCheckArgs(&.{ "arithmetic", "tautology" }) == null);
 }
 
 const single_theorem_source =
@@ -436,17 +558,21 @@ test "a single-theorem check proves only the named theorem; the file's other pro
     try std.testing.expectEqual(@as(usize, 0), broken.theorems_proven);
 }
 
-test "a single-theorem check names a missing theorem, an axiom, a schema" {
+test "a single-theorem check: a missing name is the racked task's diagnostic; an axiom elaborates; a schema is noted" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
+    // the entry racks a ProveTask for the name; a miss is THAT task's diagnostic.
     const missing = try checkSourceTheorem(arena, single_theorem_source, "nosuch");
     try std.testing.expectEqual(@as(usize, 1), missing.sink.list.items.len);
-    try std.testing.expectEqualStrings("no theorem 'nosuch' in this file", missing.sink.list.items[0].message);
+    try std.testing.expectEqualStrings("reference not found: 'nosuch'", missing.sink.list.items[0].message);
+    // an axiom is a legitimate root task (its statement is elaborated); nothing is PROVED.
     const axiom = try checkSourceTheorem(arena, single_theorem_source, "pq");
-    try std.testing.expectEqualStrings("'pq' is an axiom, not a theorem", axiom.sink.list.items[0].message);
+    try std.testing.expect(axiom.ok());
+    try std.testing.expectEqual(@as(usize, 0), axiom.theorems_proven);
     const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop: T -> Prop): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
-    try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations", schema.sink.list.items[0].message);
+    try std.testing.expectEqual(@as(usize, 1), schema.sink.list.items.len);
+    try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations — check a theorem that instantiates it", schema.sink.list.items[0].message);
 }
 
 test "splitCheckArgs: --axioms is a flag, not a positional" {
@@ -455,6 +581,114 @@ test "splitCheckArgs: --axioms is a flag, not a positional" {
     const a = splitCheckArgs(&.{ "f.bpa", "thm" }).?;
     try std.testing.expectEqualStrings("f.bpa", a.path);
     try std.testing.expectEqualStrings("thm", a.theorem.?);
+}
+
+test "library: an axiom no root theorem rests on is unused; one reached through an import, or a schema reached by instantiation, is used" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const files = [_]MemFile{
+        .{ .path = "/lib/base.bpa", .source =
+        \\sort Nat
+        \\const ZERO: Nat
+        \\pred even(n: Nat)
+        \\axiom zeroEven: even(ZERO)
+        \\axiom spare: forall n: Nat; even(n)
+        \\axiom evenInduction(prop: Nat -> Prop): prop(ZERO) -> forall n: Nat; prop(n)
+        \\theorem zeroIsEven: even(ZERO)
+        \\proof
+        \\  @conclusion |
+        \\    even(ZERO)
+        \\    [by cite zeroEven]
+        \\qed
+        \\
+        },
+        .{ .path = "/lib/client.bpa", .source =
+        \\import base <<< "base.bpa"
+        \\sort Nat = base.Nat
+        \\const ZERO = base.ZERO
+        \\pred even = base.even
+        \\theorem viaImport: even(ZERO)
+        \\proof
+        \\  @conclusion |
+        \\    even(ZERO)
+        \\    [using import(base) zeroIsEven]
+        \\qed
+        \\theorem allEven: even(ZERO) -> forall n: Nat; even(n)
+        \\proof
+        \\  @conclusion |
+        \\    even(ZERO) -> forall n: Nat; even(n)
+        \\    [using instantiation base.evenInduction(fun k: Nat => even(k))]
+        \\qed
+        \\
+        },
+    };
+    const r = try checkSources(arena, &files, true);
+    try std.testing.expect(r.ok());
+    try std.testing.expectEqual(@as(usize, 3), r.theorems_proven);
+    // `spare` alone is unused: zeroEven is cited, evenInduction is instantiated (a schema
+    // reached through its locator), and the report names the site.
+    try std.testing.expectEqual(@as(usize, 1), r.unused_axioms.len);
+    try std.testing.expectEqualStrings("spare", r.unused_axioms[0].name);
+    try std.testing.expectEqual(@as(usize, 5), r.unused_axioms[0].line);
+    // the `--axioms` union sees both used axioms, the schema by its own name.
+    try std.testing.expectEqual(@as(usize, 2), r.axioms.len);
+}
+
+test "library: a fact a model names as a discharger is USED, not unused" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const files = [_]MemFile{
+        .{ .path = "/lib/theory.bpa", .source =
+        \\sort Elem
+        \\const UNIT: Elem
+        \\func op(a: Elem, b: Elem): Elem
+        \\axiom opUnitLeft: forall a: Elem; op(UNIT, a) = a
+        \\theorem opUnitTwice: forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\proof
+        \\  @generalize-a |
+        \\    fix a: Elem {
+        \\      @unit-left |
+        \\        forall b: Elem; op(UNIT, b) = b
+        \\        [by cite opUnitLeft]
+        \\      @conclusion-twice |
+        \\        op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\        [by forall_elim(op(UNIT, a)) unit-left]
+        \\    }
+        \\  @conclusion |
+        \\    forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\    [by forall_intro generalize-a]
+        \\qed
+        \\
+        },
+        .{ .path = "/lib/concrete.bpa", .source =
+        \\import theory <<< "theory.bpa"
+        \\sort Thing
+        \\const ZED: Thing
+        \\func combine(a: Thing, b: Thing): Thing
+        \\axiom combineZedLeft: forall a: Thing; combine(ZED, a) = a
+        \\model ThingModel {
+        \\  theory.Elem: Thing
+        \\  theory.UNIT: ZED
+        \\  theory.op: combine
+        \\  theory.opUnitLeft <- combineZedLeft
+        \\}
+        \\theorem combineZedTwice: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+        \\proof
+        \\  @conclusion |
+        \\    forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+        \\    [using model(ThingModel) theory.opUnitTwice]
+        \\qed
+        \\
+        },
+    };
+    const r = try checkSources(arena, &files, true);
+    try std.testing.expect(r.ok());
+    // `combineZedLeft` is cited by NO proof — the model discharges `theory.opUnitLeft` with it.
+    // That is a use.
+    for (r.unused_axioms) |a| std.debug.print("unexpected unused: {s}\n", .{a.name});
+    try std.testing.expectEqual(@as(usize, 0), r.unused_axioms.len);
 }
 
 test {
