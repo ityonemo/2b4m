@@ -110,6 +110,10 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
+/// A SINGLE-THEOREM check (`bpa check <file> <theorem>`): only this root-file theorem is a
+/// root of demand — what it cites is demanded from there; the file's other theorems and
+/// axioms are not proved. Null = every root theorem (and axiom statement) is a root.
+root_theorem: ?InternPool.StrId = null,
 /// ACCELERATED facts (`--fast`): a published fact Index -> the set of `using` words its proof
 /// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
 /// read by the summary to disclose which theorems accelerated + under which words.
@@ -119,6 +123,16 @@ accelerated: std.AutoHashMapUnmanaged(InternPool.Index, Verify.Word.Set) = .empt
 /// reports these (default mode rejects a hole-reaching result; --draft allows). See
 /// [[hole-mechanism]].
 holes_reached: std.ArrayList(HoleDecl) = .empty,
+/// AXIOM ORIGINS: a published AXIOM's fact Index -> where it was declared. Recorded at publish
+/// (the only place the declaring file is in hand); read by the `--axioms` report to name each
+/// axiom's file:line. A `hole` publishes as an axiom and is recorded here too — the report
+/// separates them by asking `holes_reached`.
+axiom_origin: std.AutoHashMapUnmanaged(InternPool.Index, HoleDecl) = .empty,
+/// AXIOM TAINT (the `--axioms` report): a published fact Index -> the AXIOM fact Indexes its
+/// proof transitively rests on. An axiom maps to `&.{itself}`; a theorem citing it INHERITS
+/// that list (via `resolveFactRef`, accumulated in `Prove.axioms_used`) — the same side-channel
+/// shape as `hole_taint`, and likewise never consulted for a proof verdict.
+axiom_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.Index) = .empty,
 /// HOLE TAINT (for the summary's blast-radius): a published fact Index -> the hole NAMES it
 /// transitively rests on. A `hole` maps to `&.{its own name}`; a theorem citing a hole-tainted
 /// fact INHERITS that list (via `resolveFactRef`, accumulated in `Prove.holes_used`). Read to
