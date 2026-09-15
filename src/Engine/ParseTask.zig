@@ -139,6 +139,28 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // just for being imported.)
     if (task.file_id == self.root_file) {
         const file_index = try self.fileIndex(task.path);
+        // a SINGLE-THEOREM check: the named theorem is the only root of demand.
+        if (self.root_theorem) |want| {
+            self.sink.current_file = idx;
+            const text = self.interner.stringBytes(want);
+            const decl = self.declOf(task.file_id, want) orelse {
+                try self.sink.add(0, "no theorem '{s}' in this file", .{text});
+                return;
+            };
+            switch (decl.*) {
+                .theorem => |t| switch (t) {
+                    .local => |l| if (l.fact.params == null) {
+                        try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = want }));
+                    } else {
+                        try self.sink.add(l.fact.name.start, "'{s}' is a schema; it is checked at its instantiations", .{text});
+                    },
+                    .alias => try self.sink.add(ast.declName(decl).start, "'{s}' is an alias; the theorem is proved in its origin file", .{text}),
+                },
+                .axiom => try self.sink.add(ast.declName(decl).start, "'{s}' is an axiom, not a theorem", .{text}),
+                else => try self.sink.add(ast.declName(decl).start, "'{s}' is not a theorem", .{text}),
+            }
+            return;
+        }
         for (parsed.decls) |decl| {
             switch (decl) {
                 // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a

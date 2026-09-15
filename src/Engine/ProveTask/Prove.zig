@@ -107,6 +107,10 @@ admitted: Verify.Word.Set = Verify.Word.Set.initEmpty(),
 /// on holes (inherited in `resolveFactRef` from `ctx.hole_taint`). Deduped. Recorded against the
 /// published fact for the summary's blast-radius report ONLY (never a proof verdict). [[hole-mechanism]]
 holes_used: std.ArrayList(InternPool.StrId) = .empty,
+/// AXIOM fact Indexes this proof transitively rests on — a cited axiom, or a cited theorem that
+/// itself rests on axioms (inherited in `resolveFactRef` from `ctx.axiom_taint`). Deduped.
+/// Recorded against the published fact for the `--axioms` report ONLY. [[axiom-tracking-plan]]
+axioms_used: std.ArrayList(InternPool.Index) = .empty,
 /// KNOWN PROPOSITIONS (see Elab.Known): what binders, hypotheses and proved steps have TAUGHT,
 /// looked up by identity at every guarded application. `blocks` points at `low_blocks`.
 known: Elab.Known = undefined,
@@ -1475,6 +1479,7 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = tokName(tok) })) |st| switch (st) {
             .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) {
                 self.inheritHoles(x);
+                self.inheritAxioms(x);
                 return x;
             },
             .in_flight => {},
@@ -1492,6 +1497,7 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     if (self.ctx.interner.keyOf(ix) == .schema)
         return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
     self.inheritHoles(ix);
+    self.inheritAxioms(ix);
     return ix;
 }
 
@@ -1504,6 +1510,18 @@ fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
     outer: for (names) |h| {
         for (self.holes_used.items) |seen| if (seen == h) continue :outer; // already tracked
         self.holes_used.append(self.ctx.arena, h) catch return; // OOM: best-effort taint
+    }
+}
+
+/// AXIOM DEPENDENCY inheritance (the `--axioms` report): the cited fact's own axiom set becomes
+/// part of this proof's. An AXIOM is its own seed — a theorem is not (it carries whatever its
+/// proof rested on). Deduped; never affects the proof verdict.
+fn inheritAxioms(self: *Prove, ix: InternPool.Index) void {
+    if (self.ctx.axiom_taint.get(ix)) |axs| {
+        outer: for (axs) |a| {
+            for (self.axioms_used.items) |seen| if (seen == a) continue :outer;
+            self.axioms_used.append(self.ctx.arena, a) catch return; // OOM: best-effort
+        }
     }
 }
 
