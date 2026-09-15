@@ -1,13 +1,26 @@
-// A `define`d predicate is accepted as a `where` guard (`where`-reification,
-// task #125): the refined sort carries the define as a qualifier symbol, and its
-// uses EXPAND to the inlined body. No synthetic pred or iff axiom is minted — a
-// define'd pred IS a real predicate symbol, so it rides along as a qualifier
-// exactly like an opaque pred; only its applications differ (they expand).
+// A `define`d predicate is accepted as a `where` guard: the sort decl is walked like
+// any AST, the guard EXPANDS (Engine/Expand) and its body is reified as an anonymous
+// guard TERM over the guarded element (an InternPool `.guard` qualifier beside opaque
+// `.pred` ones). A `fix x: Big` then carries the EXPANDED guard as its hypothesis
+// (`[by predicate]`), and `forall_intro` closes with it as the antecedent.
 
 sort Nat
 const ZERO: Nat
 func succ(n: Nat): Nat
 
-define isBig(n: Nat) = exists m: Nat; n = succ(m)
+define isBig(n) = exists m: Nat; n = succ(m)
 
 sort Big = Nat where isBig
+
+theorem bigIsBig: forall x: Big; exists m: Nat; x = succ(m)
+proof
+  @generalize-x |
+    fix x: Big {
+      @conclusion-x-is-a-successor |
+        exists m: Nat; x = succ(m)
+        [by predicate generalize-x]
+    }
+  @conclusion |
+    forall x: Big; exists m: Nat; x = succ(m)
+    [by forall_intro generalize-x]
+qed

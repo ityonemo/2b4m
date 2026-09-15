@@ -3,11 +3,13 @@
 // A source theorem proved with `assoc` (a single-operator reassociation) is
 // transferred through a GUARDED model (sort restricted to `good`). The
 // transfer must materialize a MODEL-MANGLED, relativized synthetic rewrite chain
-// for the `assoc` step — but today the accelerant builds its synthetic theorem
-// at elaboration in the SOURCE space, blind to the model, so the guarded
-// re-emission escapes an eigenvariable.
+// for the `assoc` step.
 //
-// RED: this is the characterization test for making accelerants model-aware.
+// The accelerant builds its synthetic in SOURCE space; the instance ProveTask adopts the
+// model and injects the target sort's guard on each value param (the parent model's `good`),
+// the call site discharges it. The transferred cert is a source proof relativized under the
+// model, so — exactly like a hand-written transfer — the model must NOMINATE closure
+// dischargers (`C: TC(baseFact)`, `f: tf -| closureFact`) for the guard to close.
 
 sort Src
 func op(a: Src, b: Src): Src
@@ -19,7 +21,7 @@ theorem reassociate: forall a, b, c, d: Src;
 proof
   @conclusion |
     forall a, b, c, d: Src; op(op(op(a, b), c), d) = op(a, op(b, op(c, d)))
-    [by assoc_quantified(opAssoc)]
+    [using assoc_quantified(opAssoc)]
 qed
 
 // a concrete sort with a membership guard `good`.
@@ -33,7 +35,7 @@ axiom topAssoc: forall a, b, c: Tgt; top(top(a, b), c) = top(a, top(b, c))
 
 model SrcIsGood {
   Src: GoodTgt
-  op: top
+  op: top -| goodClosed
   opAssoc <- topAssoc
 }
 
@@ -42,5 +44,5 @@ theorem transferred: forall a, b, c, d: GoodTgt;
 proof
   @conclusion |
     forall a, b, c, d: GoodTgt; top(top(top(a, b), c), d) = top(a, top(b, top(c, d)))
-    [by model(SrcIsGood) reassociate]
+    [using model(SrcIsGood) reassociate]
 qed

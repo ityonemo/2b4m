@@ -3,7 +3,7 @@
 // A define body may call another define; the inner define's formal parameter
 // names are named after their source spelling, and an actual argument may be an
 // fvar named after the OUTER define's parameter. A naive sequential substitution
-// captures — `outer(n, x)` would expand to `mul(x, x)` instead of `mul(n, x)`
+// captures — `outer(n, x)` would expand to `mul(x, x)` instead of `mul(x, n)`
 // because substituting the inner formal `d := fvar_n` introduces `fvar_n`, which
 // the later `inner.n := fvar_x` pass then wrongly rewrites too. Simultaneous
 // substitution (through fresh temporaries) keeps them distinct.
@@ -11,23 +11,24 @@
 sort T
 func mul(a: T, b: T): T
 
-// inner's SECOND formal is named `n`.
-define inner(d: T, n: T) = mul(d, n)
+// inner's SECOND formal is named `n`. (The args are PERMUTED so `inner` is a genuine
+// macro — a same-order forward of `mul` would be an alias in disguise and is rejected.)
+define inner(d, n) = mul(n, d)
 
 // outer passes a variable ALSO named `n` into inner's FIRST slot.
-define outer(n: T, x: T) = inner(n, x)
+define outer(n, x) = inner(n, x)
 
-// outer(n, x) must be mul(n, x) — NOT mul(x, x). If capture occurred the goal
-// would expand to `mul(x, x) = mul(n, x)`, which reflexivity cannot close.
-theorem outerIsMul: forall n, x: T; outer(n, x) = mul(n, x)
+// outer(n, x) must be mul(x, n) — NOT mul(x, x). If capture occurred the goal
+// would expand to `mul(x, x) = mul(x, n)`, which reflexivity cannot close.
+theorem outerIsMul: forall n, x: T; outer(n, x) = mul(x, n)
 proof
   @generalize-n |
     fix n: T {
       @generalize-x |
         fix x: T {
-          @body | outer(n, x) = mul(n, x) [by reflexivity]
+          @body | outer(n, x) = mul(x, n) [by reflexivity]
         }
-      @discharge-x | forall x: T; outer(n, x) = mul(n, x) [by forall_intro generalize-x]
+      @discharge-x | forall x: T; outer(n, x) = mul(x, n) [by forall_intro generalize-x]
     }
-  @conclusion | forall n, x: T; outer(n, x) = mul(n, x) [by forall_intro generalize-n]
+  @conclusion | forall n, x: T; outer(n, x) = mul(x, n) [by forall_intro generalize-n]
 qed

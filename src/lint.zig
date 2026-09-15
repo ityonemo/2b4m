@@ -76,10 +76,15 @@ fn lintDecl(arena: Allocator, sink: *diagnostics.Sink, source: []const u8, decl:
     // (future casing/label rules will gate on `is_literate` — suspended for .md)
     _ = is_literate;
     const formula: *const ast.Expr = switch (decl.*) {
-        .axiom => |d| d.formula,
-        .theorem => |d| d.formula,
-        .hole => |d| d.formula,
-        .schema => |d| d.formula,
+        // only a LOCAL fact has a formula to lint; an alias points elsewhere.
+        .axiom, .hole => |a| switch (a) {
+            .local => |f| f.formula,
+            .alias => return,
+        },
+        .theorem => |t| switch (t) {
+            .local => |l| l.fact.formula,
+            .alias => return,
+        },
         else => return, // sorts/consts/funcs/preds/imports/aliases/models: nothing to lint
     };
     try checkBinderOrder(arena, sink, source, formula);
@@ -129,42 +134,53 @@ fn checkBinderOrder(arena: Allocator, sink: *diagnostics.Sink, source: []const u
 fn recordAppearance(
     arena: Allocator,
     source: []const u8,
-    e: *const ast.Expr,
+    root: *const ast.Expr,
     targets: []const []const u8,
     appeared: *std.ArrayList([]const u8),
     seen: *std.StringHashMapUnmanaged(void),
 ) Allocator.Error!void {
-    switch (e.*) {
-        .name => |t| {
-            const txt = tokenText(source, t);
-            for (targets) |name| {
-                if (std.mem.eql(u8, name, txt)) {
-                    if (!seen.contains(name)) {
-                        try seen.put(arena, name, {});
-                        try appeared.append(arena, name);
+    // Explicit DFS pre-order (first-appearance order into `appeared` must match
+    // the recursive walk): a LIFO of expr pointers; children pushed REVERSED so
+    // they pop left-to-right.
+    var stack: std.ArrayList(*const ast.Expr) = .empty;
+    try stack.append(arena, root);
+    while (stack.pop()) |e| {
+        switch (e.*) {
+            .name => |t| {
+                const txt = tokenText(source, t);
+                for (targets) |name| {
+                    if (std.mem.eql(u8, name, txt)) {
+                        if (!seen.contains(name)) {
+                            try seen.put(arena, name, {});
+                            try appeared.append(arena, name);
+                        }
+                        break;
                     }
-                    return;
                 }
-            }
-        },
-        .call => |c| for (c.args) |arg| try recordAppearance(arena, source, arg, targets, appeared, seen),
-        .binary => |b| {
-            try recordAppearance(arena, source, b.lhs, targets, appeared, seen);
-            try recordAppearance(arena, source, b.rhs, targets, appeared, seen);
-        },
-        .not => |n| try recordAppearance(arena, source, n.operand, targets, appeared, seen),
-        // a nested quantifier/lambda is a new scope; a shadowing binder there
-        // hides the outer name, so stop descending into a body that rebinds one
-        // of our targets. Otherwise descend (the inner body may still mention
-        // our variables).
-        .quant => |inner| {
-            if (bindsAny(source, inner.binders, targets)) return;
-            try recordAppearance(arena, source, inner.body, targets, appeared, seen);
-        },
-        .lambda => |l| {
-            if (bindsAny(source, l.binders, targets)) return;
-            try recordAppearance(arena, source, l.body, targets, appeared, seen);
-        },
+            },
+            .call => |c| {
+                var i: usize = c.args.len;
+                while (i > 0) {
+                    i -= 1;
+                    try stack.append(arena, c.args[i]);
+                }
+            },
+            .binary => |b| {
+                try stack.append(arena, b.rhs);
+                try stack.append(arena, b.lhs);
+            },
+            .not => |n| try stack.append(arena, n.operand),
+            // a nested quantifier/lambda is a new scope; a shadowing binder there
+            // hides the outer name, so stop descending into a body that rebinds one
+            // of our targets. Otherwise descend (the inner body may still mention
+            // our variables).
+            .quant => |inner| {
+                if (!bindsAny(source, inner.binders, targets)) try stack.append(arena, inner.body);
+            },
+            .lambda => |l| {
+                if (!bindsAny(source, l.binders, targets)) try stack.append(arena, l.body);
+            },
+        }
     }
 }
 

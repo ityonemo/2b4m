@@ -18,7 +18,7 @@ invoke explicitly, and its work is either replayed as ordinary checked
 steps or disclosed.
 
 **Optimized for LLMs and humans alike.** Both audiences read the same
-surface: names are greppable (`grep 'by axiom'` is an assumption audit),
+surface: names are greppable (`bpa query uses` lists every fact a proof cites),
 diagnostics re-parse verbatim as source, connectives are words rather than
 symbol soup, and libraries of schematic statements cost nothing until used
 — so context stays small and feedback stays precise. Layout is generous on
@@ -93,7 +93,7 @@ theorem twoPlusTwo: add(TWO, TWO) = FOUR
 proof
   @conclusion |
     add(TWO, TWO) = FOUR
-    [by arithmetic]
+    [using arithmetic]
 qed
 ```
 
@@ -107,7 +107,7 @@ examples/incorrect.bpa:39:41: error: modus_ponens: expected antecedent 'raining'
 ## Commands
 
 ```
-bpa check [--fast | --faster | --reckless] <file.bpa | file.md>
+bpa check [--fast | --fast-only W… | --fast-except W…] <file.bpa | file.md>
 bpa fmt [--check] <file.bpa>
 bpa lint <file.bpa | file.md>
 bpa debug accelerant <file> <line | theorem step-label>
@@ -118,11 +118,11 @@ bpa query search   <file|dir> <query>
 ```
 
 `check` verifies a file and everything it imports. By default it verifies
-everything; the speed flags defer work during development and say so loudly
-(`--fast` accepts accelerated verdicts, `--faster` also trusts imported proofs,
-`--reckless` also trusts imported schemas). Re-run plain `bpa check` to
-finalize. `fmt` normalizes whitespace and indentation in place (`--check`
-reports instead of rewriting). `lint` reports convention violations `check`
+everything; `--fast` defers per-`using`-word verification during development
+and says so loudly (`--fast` trusts all `using` words, `--fast-only W…` only
+the listed words, `--fast-except W…` all but the listed). Re-run plain
+`bpa check` to finalize. `fmt` normalizes whitespace and indentation in place
+(`--check` reports instead of rewriting). `lint` reports convention violations `check`
 ignores because they don't affect validity — currently canonical binder order
 (a leading `forall` must bind in first-appearance order); see `CONVENTIONS.md`.
 
@@ -176,7 +176,7 @@ Query may support semantic searching in the future.
 
 ### Debug (see what an accelerant proved)
 
-An accelerated tactic like `[by simplify …]` or `[by arithmetic]` stands in for a
+An accelerated tactic like `[using simplify …]` or `[using arithmetic]` stands in for a
 chunk of proof the tactic generates and the kernel checks. In default (strict)
 mode that generated proof is a real, suppressed **synthetic theorem** — nothing is
 trusted, everything is kernel-checked. `bpa debug accelerant` reprints it, as the
@@ -204,7 +204,7 @@ future Lean/Isabelle/Rocq backend.
 
 `bpa debug taint <file> [theorem]` is the companion audit: per proof, every step
 whose rule can fall back to an accelerated verdict (`arithmetic`, `tautology`,
-`polynomial`, `assoc_commut`, `assoc`, `ext`, and their quantified variants),
+`polynomial`, `assoc_commut`, `assoc`, `extensionality`, and their quantified variants),
 flagged at its `file:line:col` — *where trust enters the proof*. A clean report
 means every step is kernel-checked.
 
@@ -228,10 +228,11 @@ means every step is kernel-checked.
   summary line. In other words, the default is certificate-or-error; accelerated
   verdicts are never accepted unless you ask for `--fast`.
 - **Imports** (`import peano <<< "std/peano.bpa"`) bring in namespaced
-  declarations, and by default their proofs are re-verified too. The
-  `--faster` flag opts out (trusting imported proofs to skip the re-check),
-  and `--reckless` also skips re-instantiating imported schemas — both
-  development shortcuts that the summary announces.
+  declarations. A cross-file citation is an `import` `using` step; under
+  `--fast` (or `--fast-only import`) that step is *admitted* — accepted by
+  matching the cited statement rather than re-deriving it — and the summary
+  announces it. (A demanded imported theorem is still re-checked in its own
+  file: trust admits the citation, not the imported proof's content.)
 
 ## Compared to other proof assistants
 

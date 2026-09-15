@@ -92,7 +92,7 @@ pub fn addTests(
     // axioms/theorems it pulls in are listed.
     ctx.ok(&.{ "query", "uses", "tests/cases/outline.bpa" },
         \\theorem everyoneIsQ
-        \\  rules: axiom×2 forall_elim×2 hypothesis×2 modus_ponens forall_intro
+        \\  rules: cite×2 forall_elim×2 hypothesis×2 modus_ponens forall_intro
         \\  cites: either pImpliesQ
         \\
     );
@@ -106,13 +106,13 @@ pub fn addTests(
     // variant runs the same accelerated core).
     ctx.ok(&.{ "debug", "taint", "tests/cases/assoc.bpa" },
         \\theorem reassoc1
-        \\  tests/cases/assoc.bpa:19:9: assoc_quantified
+        \\  tests/cases/assoc.bpa:19:12: assoc_quantified
         \\
         \\theorem reassoc2
-        \\  tests/cases/assoc.bpa:28:9: assoc_quantified
+        \\  tests/cases/assoc.bpa:28:12: assoc_quantified
         \\
         \\theorem reassoc3
-        \\  tests/cases/assoc.bpa:45:25: assoc
+        \\  tests/cases/assoc.bpa:45:28: assoc
         \\
     );
 
@@ -127,7 +127,7 @@ pub fn addTests(
         \\  // base case: addZeroLeft specialized at b := ZERO
         \\  @base-case |
         \\    add(ZERO, ZERO) = ZERO
-        \\    [by simplify addZeroLeft]
+        \\    [using simplify addZeroLeft]
         \\
         \\  // inductive step: unfold add on succ(k), then rewrite with the IH
         \\  @induction-step |
@@ -139,7 +139,7 @@ pub fn addTests(
         \\            [by hypothesis given-inductive-hypothesis]
         \\          @succ-case |
         \\            add(succ(k), ZERO) = succ(k)
-        \\            [by simplify addSuccLeft inductive-hypothesis]
+        \\            [using simplify addSuccLeft inductive-hypothesis]
         \\        }
         \\      @induction-step-at-k |
         \\        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
@@ -151,55 +151,43 @@ pub fn addTests(
         \\
         \\  @conclusion |
         \\    forall n: Nat; add(n, ZERO) = n
-        \\    [by instantiate induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
+        \\    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
         \\qed
         \\
     ;
 
-    // The synthetic theorem `simplify` produced for the ground `[by simplify
-    // addSuccLeft addZeroLeft]`: context-free (both cited axioms closed as
-    // premises), proof = assume both, then the reflexivity+forall_elim+rewrite
-    // certificate, closed by implies_intro. Fresh legal labels (s*/b*) so the
-    // reprint is valid bpa — it round-trips through `bpa check`.
+    // The synthetic theorem `simplify` produced for the ground `[using simplify
+    // addSuccLeft addZeroLeft]`, reprinted from the very ast.Decl the producer
+    // registered: the cited axioms are `cite`d (not hoisted as premises), the
+    // producer's own `freshNamed` labels render as kebab labels (`simplify-4`), the
+    // `{hash}` name mangle is trimmed. Re-parseable bpa.
     const debug_accelerant_text =
-        \\theorem simplify: (forall a: Nat; forall b: Nat; add(succ(a), b) = succ(add(a, b))) -> (forall b: Nat; add(ZERO, b) = b) -> add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
+        \\theorem simplify: add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
         \\proof
-        \\  @b2 |
-        \\    assume forall a: Nat; forall b: Nat; add(succ(a), b) = succ(add(a, b)) {
-        \\    @s1 |
-        \\      forall a: Nat; forall b: Nat; add(succ(a), b) = succ(add(a, b))
-        \\      [by hypothesis b2]
-        \\    @b3 |
-        \\      assume forall b: Nat; add(ZERO, b) = b {
-        \\      @s2 |
-        \\        forall b: Nat; add(ZERO, b) = b
-        \\        [by hypothesis b3]
-        \\      @s3 |
-        \\        add(succ(ZERO), succ(ZERO)) = add(succ(ZERO), succ(ZERO))
-        \\        [by reflexivity]
-        \\      @s4 |
-        \\        forall b: Nat; add(succ(ZERO), b) = succ(add(ZERO, b))
-        \\        [by forall_elim(ZERO) s1]
-        \\      @s5 |
-        \\        add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
-        \\        [by forall_elim(succ(ZERO)) s4]
-        \\      @s6 |
-        \\        add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
-        \\        [by rewrite s5 s3]
-        \\      @s7 |
-        \\        add(ZERO, succ(ZERO)) = succ(ZERO)
-        \\        [by forall_elim(succ(ZERO)) s2]
-        \\      @s8 |
-        \\        add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
-        \\        [by rewrite s7 s6]
-        \\      }
-        \\    @s9 |
-        \\      (forall b: Nat; add(ZERO, b) = b) -> add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
-        \\      [by implies_intro b3]
-        \\    }
-        \\  @s10 |
-        \\    (forall a: Nat; forall b: Nat; add(succ(a), b) = succ(add(a, b))) -> (forall b: Nat; add(ZERO, b) = b) -> add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
-        \\    [by implies_intro b2]
+        \\  @simplify-4 |
+        \\    add(succ(ZERO), succ(ZERO)) = add(succ(ZERO), succ(ZERO))
+        \\    [by reflexivity]
+        \\  @simplify-5 |
+        \\    forall b1: Nat; forall b2: Nat; add(succ(b1), b2) = succ(add(b1, b2))
+        \\    [by cite addSuccLeft]
+        \\  @simplify-6 |
+        \\    forall b1: Nat; add(succ(ZERO), b1) = succ(add(ZERO, b1))
+        \\    [by forall_elim(ZERO) simplify-5]
+        \\  @simplify-7 |
+        \\    add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
+        \\    [by forall_elim(succ(ZERO)) simplify-6]
+        \\  @simplify-8 |
+        \\    add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
+        \\    [by rewrite simplify-7 simplify-4]
+        \\  @simplify-9 |
+        \\    forall b1: Nat; add(ZERO, b1) = b1
+        \\    [by cite addZeroLeft]
+        \\  @simplify-10 |
+        \\    add(ZERO, succ(ZERO)) = succ(ZERO)
+        \\    [by forall_elim(succ(ZERO)) simplify-9]
+        \\  @simplify-11 |
+        \\    add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
+        \\    [by rewrite simplify-10 simplify-8]
         \\qed
         \\
     ;
@@ -211,14 +199,13 @@ pub fn addTests(
     // proof). The ground `simplify` on line 15 of the fixture has no
     // eigenvariables or premises, so its synthetic theorem's statement is the
     // bare equation; the proof is the reflexivity+rewrite chain simplify built.
-    // (RED: locked to the renderer's real output once GREEN.)
+    // The reprint is re-parseable: appending it to the fixture's declarations checks clean.
     ctx.ok(&.{ "debug", "accelerant", "tests/cases/debug_accelerant.bpa", "15" }, debug_accelerant_text);
 
-    // `debug accelerant` resolves a step inside a proof-carrying SCHEMA (not just
-    // plain theorems) and reprints its accelerant synthetic — the opaque-param
-    // wellformedness self-check already emitted it. Exit 0 = the selector found
-    // the schema step and reprinted (regression guard for the `.schema` arm in
-    // declSteps/declName).
+    // `debug accelerant` resolves a step inside a proof-carrying SCHEMA (not just plain
+    // theorems) and reprints its accelerant synthetic — the schema's INSTANCE proof (the
+    // only gate; there is no decl-time self-check) produced it. Exit 0 = the selector
+    // found the schema step and reprinted.
     ctx.okSilent(&.{ "debug", "accelerant", "tests/cases/schema_accelerant_polynomial.bpa", "polySchema", "poly-step" });
 
     // `debug accelerant` on an `arithmetic … fallback(<thm>)` step (certifiers
@@ -226,10 +213,10 @@ pub fn addTests(
     // reprint — say so and NAME the fallback, not the generic "no accelerant here".
     ctx.fail(&.{ "debug", "accelerant", "tests/cases/cooper_gap.bpa", "sumParity", "conclusion" }, "error: proof by fallback: this `arithmetic` step is discharged by the manual theorem 'provedHere' (the certifiers declined), so there is no accelerant synthetic to reprint\n");
 
-    // `debug accelerant` on an arithmetic step over a reified SCHEMA PARAMETER
-    // passes through the same "unsupported but planned" message (naming the
-    // parameter) that `bpa check` gives — no internal-symbol leak.
-    ctx.fail(&.{ "debug", "accelerant", "tests/cases/schema_arithmetic_param_bad.bpa", "valArith", "arith-step" }, "tests/cases/schema_arithmetic_param_bad.bpa:20:9: error: arithmetic cannot yet decide this goal over the schema parameter 'k' (reified opaque while the schema's proof is checked). Certifying an arithmetic step over a schema parameter is currently unsupported but planned; use --fast to accept the accelerated verdict\n");
+    // `debug accelerant` on a file whose check FAILS passes the check's own located
+    // diagnostic through (root path as given on the command line), rather than reprinting
+    // anything — here a redundant `fallback(...)` the certifier didn't need.
+    ctx.fail(&.{ "debug", "accelerant", "tests/cases/arithmetic_fallback_redundant_bad.bpa", "twoTimesTwoRedundant", "conclusion" }, "tests/cases/arithmetic_fallback_redundant_bad.bpa:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
 
     // an ALIAS (`theorem addZeroRight = peano.addZeroRight` in subtraction)
     // resolves across files to the real proof — identical output.

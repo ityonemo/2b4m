@@ -124,7 +124,9 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                 // author blank lines survive (collapsed to one)
                 if (gap >= 2 and prev_tag != .eof) try w.writeAll("\n");
                 try w.splatByteAll(' ', indent);
-                owner_indent = indent;
+                // a standalone comment annotates the lines around it; it never OWNS the
+                // continuation that follows (a model mapping after a comment keeps its indent).
+                if (tok.tag != .comment) owner_indent = indent;
             } else {
                 const line_indent = owner_indent + 2;
                 try w.splatByteAll(' ', line_indent);
@@ -224,9 +226,9 @@ fn needSpace(prev: Tag, cur: Tag) bool {
         .r_paren, .r_bracket, .comma, .dot, .colon, .semicolon => return false,
         // a step label reads `label |` — a space separates the tag from its pipe
         .pipe => return true,
-        // `model(Instance)` cites with no space, like `arithmetic(peano)` —
-        // `model` is a keyword here, not an identifier, so admit it explicitly.
-        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model,
+        // `model(Instance)` / `import(NS)` cite with no space, like `arithmetic(peano)`
+        // — `model`/`import` are keywords here, not identifiers, so admit them explicitly.
+        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model and prev != .keyword_import,
         else => {},
     }
     switch (prev) {
@@ -297,7 +299,7 @@ test "case: arms nest one level under `case`, closing brace aligns with it" {
         \\pred q
         \\theorem t: q
         \\proof
-        \\  d| p or q [by axiom e]
+        \\  d| p or q [by cite e]
         \\  r| q
         \\  case d {
         \\  a| assume p { c| q [by hypothesis a] }
@@ -312,7 +314,7 @@ test "case: arms nest one level under `case`, closing brace aligns with it" {
         \\proof
         \\  @d |
         \\    p or q
-        \\    [by axiom e]
+        \\    [by cite e]
         \\  @r |
         \\    q
         \\    case d {
@@ -342,7 +344,7 @@ test "comments: standalone keeps its line at indent, trailing stays attached" {
         \\proof
         \\// why
         \\  conclusion| p // trailing
-        \\  [by axiom missing]
+        \\  [by cite missing]
         \\qed
         \\
     ,
@@ -353,8 +355,28 @@ test "comments: standalone keeps its line at indent, trailing stays attached" {
         \\  // why
         \\  @conclusion |
         \\    p // trailing
-        \\    [by axiom missing]
+        \\    [by cite missing]
         \\qed
+        \\
+    );
+}
+
+test "a standalone comment inside a model block does not re-anchor the mappings after it" {
+    try expectFmt(
+        \\sort Thing
+        \\model M {
+        \\  Thing: Thing
+        \\  // why
+        \\  Thing: Thing
+        \\}
+        \\
+    ,
+        \\sort Thing
+        \\model M {
+        \\  Thing: Thing
+        \\  // why
+        \\  Thing: Thing
+        \\}
         \\
     );
 }
@@ -375,7 +397,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\proof
         \\  g| fix a: Nat {
         \\  // why this step
-        \\  s| p(a) [by axiom e]
+        \\  s| p(a) [by cite e]
         \\  }
         \\  conclusion| forall a: Nat; p(a) [by forall_intro g]
         \\qed
@@ -389,7 +411,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\      // why this step
         \\      @s |
         \\        p(a)
-        \\        [by axiom e]
+        \\        [by cite e]
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a)
@@ -410,7 +432,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\  g| fix a: Nat {
         \\  s| forall b: Nat;
         \\  p(a, b)
-        \\  [by axiom e]
+        \\  [by cite e]
         \\  }
         \\  conclusion| forall a: Nat; p(a, a) [by forall_intro g]
         \\qed
@@ -424,7 +446,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\      @s |
         \\        forall b: Nat;
         \\          p(a, b)
-        \\        [by axiom e]
+        \\        [by cite e]
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a, a)

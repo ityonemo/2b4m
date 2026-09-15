@@ -60,7 +60,7 @@ theorem induction = integer.induction
 // Transparent: divides(d, n) IS the multiple existential (matching the abstract
 // theory's own define). Since it is a define, it is NOT a model source/target —
 // it rides along on `mul` (already mapped) when divisibility's theorems transfer.
-define divides(d: Int, n: Int) = exists k: Int; n = mul(d, k)
+define divides(d, n) = exists k: Int; n = mul(d, k)
 
 // ℤ is a model of the abstract divisibility theory: its mul is associative with
 // right identity ONE and left-distributes over add, so the basic divisibility
@@ -88,7 +88,7 @@ theorem dividesRefl: forall d: Int; divides(d, d)
 proof
   @conclusion |
     forall d: Int; divides(d, d)
-    [by model(IntegerDivisibility) divisibility.dividesRefl]
+    [using model(IntegerDivisibility) divisibility.dividesRefl]
 qed
 
 // d | a  =>  d | a·c: if a = d·k, then a·c = (d·k)·c = d·(k·c), so d divides a·c.
@@ -98,7 +98,7 @@ theorem dividesMul: forall d, a, c: Int; divides(d, a) -> divides(d, mul(a, c))
 proof
   @conclusion |
     forall d, a, c: Int; divides(d, a) -> divides(d, mul(a, c))
-    [by model(IntegerDivisibility) divisibility.dividesMul]
+    [using model(IntegerDivisibility) divisibility.dividesMul]
 qed
 
 // d | a  and  d | b  =>  d | a+b: if a = d·j and b = d·k, then a+b = d·(j+k) by
@@ -108,14 +108,14 @@ theorem dividesAdd: forall d, a, b: Int; divides(d, a) -> divides(d, b) -> divid
 proof
   @conclusion |
     forall d, a, b: Int; divides(d, a) -> divides(d, b) -> divides(d, add(a, b))
-    [by model(IntegerDivisibility) divisibility.dividesAdd]
+    [using model(IntegerDivisibility) divisibility.dividesAdd]
 qed
 
 theorem dividesTransitive: forall a, b, c: Int; divides(a, b) -> divides(b, c) -> divides(a, c)
 proof
   @conclusion |
     forall a, b, c: Int; divides(a, b) -> divides(b, c) -> divides(a, c)
-    [by model(IntegerDivisibility) divisibility.dividesTransitive]
+    [using model(IntegerDivisibility) divisibility.dividesTransitive]
 qed
 
 // -- division-algorithm vocabulary ------------------------------------------
@@ -140,8 +140,8 @@ define FOUR = succ(THREE)
 // -- nonneg, order predicates (proofs use these names) ----------------------
 
 pred is_nonneg = nonneg.nonneg
-define less_than(a: Int, b: Int) = order.less_than(a, b)
-define at_most(a: Int, b: Int) = order.less_or_equal(a, b)
+pred less_than = order.less_than
+define at_most(a, b) = order.less_or_equal(a, b)
 axiom nonnegInduction = nonneg.nonnegInduction
 axiom lessThanIntro = order.lessThanIntro
 axiom lessThanElim = order.lessThanElim
@@ -199,10 +199,10 @@ proof
           // base: mul(b, ZERO) = ZERO is nonneg.
           @b-times-zero-is-zero |
             mul(b, ZERO) = ZERO
-            [by specialize mulZeroRight(b)]
+            [using specialize mulZeroRight(b)]
           @zero-is-nonneg |
             is_nonneg(ZERO)
-            [by axiom nonnegZero]
+            [by cite nonnegZero]
           @base-case |
             is_nonneg(mul(b, ZERO))
             [by rewrite b-times-zero-is-zero zero-is-nonneg]
@@ -219,10 +219,10 @@ proof
                         [by hypothesis given-product-nonneg]
                       @b-times-successor-k |
                         mul(b, succ(k)) = add(mul(b, k), b)
-                        [by specialize mulSuccRight(b, k)]
+                        [using specialize mulSuccRight(b, k)]
                       @product-plus-b-nonneg |
                         is_nonneg(add(mul(b, k), b))
-                        [by specialize nonnegAdd(mul(b, k), b) product-nonneg b-nonneg]
+                        [using specialize nonnegAdd(mul(b, k), b) product-nonneg b-nonneg]
                       @grown-product-nonneg |
                         is_nonneg(mul(b, succ(k)))
                         [by rewrite b-times-successor-k product-plus-b-nonneg]
@@ -240,7 +240,7 @@ proof
             [by forall_intro induction-step]
           @product-nonneg-for-nonneg-k |
             forall k: Int; is_nonneg(k) -> is_nonneg(mul(b, k))
-            [by instantiate nonnegInduction((fun k: Int => is_nonneg(mul(b, k)))) base-case induction-step-for-all-k]
+            [using instantiation nonnegInduction((fun k: Int => is_nonneg(mul(b, k)))) base-case induction-step-for-all-k]
         }
       @b-nonneg-implies-product-nonneg |
         is_nonneg(b) -> forall k: Int; is_nonneg(k) -> is_nonneg(mul(b, k))
@@ -265,7 +265,7 @@ proof
                     [by hypothesis given-n-nonneg]
                   @conclusion-product-nonneg |
                     is_nonneg(mul(b, n))
-                    [by specialize b-nonneg-gives-product-nonneg(b, n) b-nonneg n-nonneg]
+                    [using specialize b-nonneg-gives-product-nonneg(b, n) b-nonneg n-nonneg]
                 }
               @n-nonneg-gives-product-nonneg |
                 is_nonneg(n) -> is_nonneg(mul(b, n))
@@ -309,7 +309,7 @@ proof
                           // so b = succ(d) is nonneg.
                           @b-gap-exists-if-positive |
                             less_than(ZERO, b) -> exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = b
-                            [by specialize lessThanElim(ZERO, b)]
+                            [using specialize lessThanElim(ZERO, b)]
                           @b-gap-exists |
                             exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = b
                             [by modus_ponens b-gap-exists-if-positive b-positive]
@@ -326,7 +326,7 @@ proof
                                 [by and_elim_right gap-nonneg-and-reaches-b]
                               @zero-prefix-is-identity |
                                 forall n: Int; add(ZERO, n) = n
-                                [by axiom addZeroLeft]
+                                [by cite addZeroLeft]
                               @zero-plus-succ-gap |
                                 add(ZERO, succ(e)) = succ(e)
                                 [by forall_elim(succ(e)) zero-prefix-is-identity]
@@ -335,7 +335,7 @@ proof
                                 [by rewrite zero-plus-succ-gap gap-succ-reaches-b]
                               @successor-gap-nonneg |
                                 is_nonneg(e) -> is_nonneg(succ(e))
-                                [by specialize nonnegSucc(e)]
+                                [using specialize nonnegSucc(e)]
                               @succ-gap-is-nonneg |
                                 is_nonneg(succ(e))
                                 [by modus_ponens successor-gap-nonneg gap-nonneg]
@@ -357,7 +357,7 @@ proof
                                 [by hypothesis with-quotient-k]
                               @k-sign-trichotomy |
                                 less_than(k, ZERO) or k = ZERO or less_than(ZERO, k)
-                                [by specialize trichotomy(k, ZERO)]
+                                [using specialize trichotomy(k, ZERO)]
                               @multiple-is-zero-by-sign-of-quotient |
                                 m = ZERO
                                 case k-sign-trichotomy {
@@ -371,7 +371,7 @@ proof
                                         [by hypothesis when-k-negative]
                                       @k-gap-exists |
                                         exists d: Int; is_nonneg(d) and add(k, succ(d)) = ZERO
-                                        [by specialize lessThanElim(k, ZERO) k-negative]
+                                        [using specialize lessThanElim(k, ZERO) k-negative]
                                       @with-k-gap |
                                         unpack e: Int from k-gap-exists {
                                           @gap-nonneg-and-reaches-zero |
@@ -390,10 +390,10 @@ proof
                                           // the certifier gap).
                                           @negation-of-k-is-successor-gap |
                                             succ(e) = neg(k)
-                                            [by arithmetic fallback(additiveInverseUnique) gap-reaches-zero]
+                                            [using arithmetic fallback(additiveInverseUnique) gap-reaches-zero]
                                           @successor-gap-nonneg |
                                             is_nonneg(e) -> is_nonneg(succ(e))
-                                            [by specialize nonnegSucc(e)]
+                                            [using specialize nonnegSucc(e)]
                                           @succ-gap-is-nonneg |
                                             is_nonneg(succ(e))
                                             [by modus_ponens successor-gap-nonneg gap-nonneg]
@@ -403,17 +403,17 @@ proof
                                           // b*(-k) is a product of nonnegatives, hence nonneg.
                                           @product-of-nonnegatives |
                                             forall x, y: Int; is_nonneg(x) -> is_nonneg(y) -> is_nonneg(mul(x, y))
-                                            [by theorem productOfNonnegativesIsNonneg]
+                                            [by cite productOfNonnegativesIsNonneg]
                                           @b-times-negk-nonneg-if-parts |
                                             is_nonneg(b) -> is_nonneg(neg(k)) -> is_nonneg(mul(b, neg(k)))
                                             [by forall_elim(b, neg(k)) product-of-nonnegatives]
                                           @b-times-negk-nonneg |
                                             is_nonneg(mul(b, neg(k)))
-                                            [by tautology b-times-negk-nonneg-if-parts b-is-nonneg negation-of-k-is-nonneg]
+                                            [using tautology b-times-negk-nonneg-if-parts b-is-nonneg negation-of-k-is-nonneg]
                                           // b*(-k) = -(b*k) = -m.
                                           @b-times-negk-is-neg-product |
                                             mul(b, neg(k)) = neg(mul(b, k))
-                                            [by specialize mulNegRight(b, k)]
+                                            [using specialize mulNegRight(b, k)]
                                           @neg-product-reflexive |
                                             neg(mul(b, k)) = neg(mul(b, k))
                                             [by reflexivity]
@@ -429,7 +429,7 @@ proof
                                           // m <= 0: witness neg(m) nonneg with add(m, neg m) = 0.
                                           @m-plus-neg-m-zero |
                                             add(m, neg(m)) = ZERO
-                                            [by specialize addNegRight(m)]
+                                            [using specialize addNegRight(m)]
                                           @neg-m-witnesses-gap |
                                             is_nonneg(neg(m)) and add(m, neg(m)) = ZERO
                                             [by and_intro neg-m-nonneg m-plus-neg-m-zero]
@@ -438,7 +438,7 @@ proof
                                             [by exists_intro(neg(m)) neg-m-witnesses-gap]
                                           @m-at-most-zero-iff-gap |
                                             at_most(m, ZERO) iff (exists d: Int; is_nonneg(d) and add(m, d) = ZERO)
-                                            [by specialize lessOrEqualIsGapExistential(m, ZERO)]
+                                            [using specialize lessOrEqualIsGapExistential(m, ZERO)]
                                           @m-at-most-zero-if-gap |
                                             (exists d: Int; is_nonneg(d) and add(m, d) = ZERO) -> at_most(m, ZERO)
                                             [by iff_elim_backward m-at-most-zero-iff-gap]
@@ -448,7 +448,7 @@ proof
                                           // 0 <= m: witness m nonneg with add(0, m) = m.
                                           @zero-plus-m-is-m |
                                             add(ZERO, m) = m
-                                            [by specialize addZeroLeft(m)]
+                                            [using specialize addZeroLeft(m)]
                                           @m-witnesses-zero-at-most-m |
                                             is_nonneg(m) and add(ZERO, m) = m
                                             [by and_intro m-nonneg zero-plus-m-is-m]
@@ -457,7 +457,7 @@ proof
                                             [by exists_intro(m) m-witnesses-zero-at-most-m]
                                           @zero-at-most-m-iff-gap |
                                             at_most(ZERO, m) iff (exists d: Int; is_nonneg(d) and add(ZERO, d) = m)
-                                            [by specialize lessOrEqualIsGapExistential(ZERO, m)]
+                                            [using specialize lessOrEqualIsGapExistential(ZERO, m)]
                                           @zero-at-most-m-if-gap |
                                             (exists d: Int; is_nonneg(d) and add(ZERO, d) = m) -> at_most(ZERO, m)
                                             [by iff_elim_backward zero-at-most-m-iff-gap]
@@ -466,10 +466,10 @@ proof
                                             [by modus_ponens zero-at-most-m-if-gap zero-less_than-or-equal-m-gap]
                                           @m-and-zero-antisymmetric |
                                             at_most(m, ZERO) -> at_most(ZERO, m) -> m = ZERO
-                                            [by specialize lessOrEqualAntisymmetric(m, ZERO)]
+                                            [using specialize lessOrEqualAntisymmetric(m, ZERO)]
                                           @conclusion-m-is-zero |
                                             m = ZERO
-                                            [by tautology m-and-zero-antisymmetric m-at-most-zero zero-at-most-m]
+                                            [using tautology m-and-zero-antisymmetric m-at-most-zero zero-at-most-m]
                                         }
                                       @conclusion-m-is-zero |
                                         m = ZERO
@@ -486,7 +486,7 @@ proof
                                         [by rewrite k-is-zero m-is-b-times-k]
                                       @b-times-zero-is-zero |
                                         mul(b, ZERO) = ZERO
-                                        [by specialize mulZeroRight(b)]
+                                        [using specialize mulZeroRight(b)]
                                       @conclusion-m-is-zero |
                                         m = ZERO
                                         [by rewrite b-times-zero-is-zero m-is-b-times-zero]
@@ -501,7 +501,7 @@ proof
                                         [by hypothesis when-k-positive]
                                       @k-gap-exists-if-positive |
                                         less_than(ZERO, k) -> exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = k
-                                        [by specialize lessThanElim(ZERO, k)]
+                                        [using specialize lessThanElim(ZERO, k)]
                                       @k-gap-exists |
                                         exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = k
                                         [by modus_ponens k-gap-exists-if-positive k-positive]
@@ -518,7 +518,7 @@ proof
                                             [by and_elim_right gap-nonneg-and-reaches-k]
                                           @zero-prefix-is-identity |
                                             forall n: Int; add(ZERO, n) = n
-                                            [by axiom addZeroLeft]
+                                            [by cite addZeroLeft]
                                           @zero-plus-succ-gap |
                                             add(ZERO, succ(e)) = succ(e)
                                             [by forall_elim(succ(e)) zero-prefix-is-identity]
@@ -528,7 +528,7 @@ proof
                                           // m = b*succ(e) = b*e + b.
                                           @b-times-succ-gap |
                                             mul(b, succ(e)) = add(mul(b, e), b)
-                                            [by specialize mulSuccRight(b, e)]
+                                            [using specialize mulSuccRight(b, e)]
                                           @m-is-b-times-succ-gap |
                                             m = mul(b, succ(e))
                                             [by rewrite k-is-successor-gap m-is-b-times-k]
@@ -544,7 +544,7 @@ proof
                                             [by rewrite m-is-product-plus-b m-less_than-b-restated]
                                           @addition-is-commutative |
                                             forall x, y: Int; add(x, y) = add(y, x)
-                                            [by theorem addIsCommutative]
+                                            [by cite addIsCommutative]
                                           @product-and-b-commute |
                                             add(mul(b, e), b) = add(b, mul(b, e))
                                             [by forall_elim(mul(b, e), b) addition-is-commutative]
@@ -553,13 +553,13 @@ proof
                                             [by rewrite product-and-b-commute product-plus-b-less_than-b]
                                           @b-plus-zero-is-b |
                                             add(b, ZERO) = b
-                                            [by specialize addZeroRight(b)]
+                                            [using specialize addZeroRight(b)]
                                           @b-plus-product-less_than-b-plus-zero |
                                             less_than(add(b, mul(b, e)), add(b, ZERO))
                                             [by rewrite b-plus-zero-is-b b-plus-product-less_than-b]
                                           @common-prefix-cancels-order |
                                             forall c, x, y: Int; less_than(add(c, x), add(c, y)) -> less_than(x, y)
-                                            [by theorem lessThanAddCancelLeft]
+                                            [by cite lessThanAddCancelLeft]
                                           @product-less_than-zero-if-prefixed |
                                             less_than(add(b, mul(b, e)), add(b, ZERO)) -> less_than(mul(b, e), ZERO)
                                             [by forall_elim(b, mul(b, e), ZERO) common-prefix-cancels-order]
@@ -569,13 +569,13 @@ proof
                                           // but b*e is a product of nonnegatives, hence >= 0.
                                           @b-times-gap-nonneg-if-parts |
                                             is_nonneg(b) -> is_nonneg(e) -> is_nonneg(mul(b, e))
-                                            [by specialize productOfNonnegativesIsNonneg(b, e)]
+                                            [using specialize productOfNonnegativesIsNonneg(b, e)]
                                           @b-times-gap-nonneg |
                                             is_nonneg(mul(b, e))
-                                            [by tautology b-times-gap-nonneg-if-parts b-is-nonneg gap-nonneg]
+                                            [using tautology b-times-gap-nonneg-if-parts b-is-nonneg gap-nonneg]
                                           @nonneg-not-less_than-zero |
                                             forall n: Int; is_nonneg(n) -> (not less_than(n, ZERO))
-                                            [by theorem nonnegNotLessThanZero]
+                                            [by cite nonnegNotLessThanZero]
                                           @product-not-less_than-zero |
                                             is_nonneg(mul(b, e)) -> (not less_than(mul(b, e), ZERO))
                                             [by forall_elim(mul(b, e)) nonneg-not-less_than-zero]
@@ -641,7 +641,7 @@ proof
                   // b > 0 exhibits b = succ(gap), hence b is nonneg.
                   @b-gap-exists-if-positive |
                     less_than(ZERO, b) -> exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = b
-                    [by specialize lessThanElim(ZERO, b)]
+                    [using specialize lessThanElim(ZERO, b)]
                   @b-gap-exists |
                     exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = b
                     [by modus_ponens b-gap-exists-if-positive b-positive]
@@ -658,7 +658,7 @@ proof
                         [by and_elim_right gap-nonneg-and-reaches-b]
                       @zero-prefix-is-identity |
                         forall n: Int; add(ZERO, n) = n
-                        [by axiom addZeroLeft]
+                        [by cite addZeroLeft]
                       @zero-plus-succ-gap |
                         add(ZERO, succ(e)) = succ(e)
                         [by forall_elim(succ(e)) zero-prefix-is-identity]
@@ -667,7 +667,7 @@ proof
                         [by rewrite zero-plus-succ-gap gap-reaches-b]
                       @successor-gap-nonneg |
                         is_nonneg(e) -> is_nonneg(succ(e))
-                        [by specialize nonnegSucc(e)]
+                        [using specialize nonnegSucc(e)]
                       @succ-gap-nonneg |
                         is_nonneg(succ(e))
                         [by modus_ponens successor-gap-nonneg gap-nonneg]
@@ -681,7 +681,7 @@ proof
                   // k > 0 exhibits k = succ(d), so mul(b, k) = mul(b, d) + b.
                   @k-gap-exists-if-positive |
                     less_than(ZERO, k) -> exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = k
-                    [by specialize lessThanElim(ZERO, k)]
+                    [using specialize lessThanElim(ZERO, k)]
                   @k-gap-exists |
                     exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = k
                     [by modus_ponens k-gap-exists-if-positive k-positive]
@@ -698,7 +698,7 @@ proof
                         [by and_elim_right gap-nonneg-and-reaches-k]
                       @zero-prefix-is-identity |
                         forall n: Int; add(ZERO, n) = n
-                        [by axiom addZeroLeft]
+                        [by cite addZeroLeft]
                       @zero-plus-succ-gap |
                         add(ZERO, succ(d)) = succ(d)
                         [by forall_elim(succ(d)) zero-prefix-is-identity]
@@ -707,7 +707,7 @@ proof
                         [by rewrite zero-plus-succ-gap gap-reaches-k]
                       @b-times-succ-gap |
                         mul(b, succ(d)) = add(mul(b, d), b)
-                        [by specialize mulSuccRight(b, d)]
+                        [using specialize mulSuccRight(b, d)]
                       @product-is-partial-plus-b |
                         mul(b, k) = add(mul(b, d), b)
                         [by rewrite k-is-successor-gap b-times-succ-gap]
@@ -715,13 +715,13 @@ proof
                       // so 0 <= mul(b, d) < mul(b, k) gives 0 < mul(b, k).
                       @partial-product-nonneg-if-parts |
                         is_nonneg(b) -> is_nonneg(d) -> is_nonneg(mul(b, d))
-                        [by specialize productOfNonnegativesIsNonneg(b, d)]
+                        [using specialize productOfNonnegativesIsNonneg(b, d)]
                       @partial-product-nonneg |
                         is_nonneg(mul(b, d))
-                        [by tautology partial-product-nonneg-if-parts b-is-nonneg gap-nonneg]
+                        [using tautology partial-product-nonneg-if-parts b-is-nonneg gap-nonneg]
                       @addition-preserves-order |
                         forall x, y, c: Int; less_than(x, y) -> less_than(add(c, x), add(c, y))
-                        [by theorem additionPreservesOrder]
+                        [by cite additionPreservesOrder]
                       @adding-partial-product-preserves |
                         less_than(ZERO, b) -> less_than(add(mul(b, d), ZERO), add(mul(b, d), b))
                         [by forall_elim(ZERO, b, mul(b, d)) addition-preserves-order]
@@ -730,7 +730,7 @@ proof
                         [by modus_ponens adding-partial-product-preserves b-positive]
                       @adding-zero-is-identity |
                         forall n: Int; add(n, ZERO) = n
-                        [by theorem addZeroRight]
+                        [by cite addZeroRight]
                       @partial-plus-zero-is-partial |
                         add(mul(b, d), ZERO) = mul(b, d)
                         [by forall_elim(mul(b, d)) adding-zero-is-identity]
@@ -752,7 +752,7 @@ proof
                         [by exists_intro(mul(b, d)) partial-witnesses-gap]
                       @at-most-is-gap-existential |
                         forall x, y: Int; at_most(x, y) iff (exists dd: Int; is_nonneg(dd) and add(x, dd) = y)
-                        [by theorem lessOrEqualIsGapExistential]
+                        [by cite lessOrEqualIsGapExistential]
                       @zero-at-most-partial-iff-gap |
                         at_most(ZERO, mul(b, d)) iff (exists dd: Int; is_nonneg(dd) and add(ZERO, dd) = mul(b, d))
                         [by forall_elim(ZERO, mul(b, d)) at-most-is-gap-existential]
@@ -764,7 +764,7 @@ proof
                         [by modus_ponens zero-at-most-partial-if-gap zero-less_than-or-equal-partial-gap]
                       @at-most-splits |
                         forall x, y: Int; at_most(x, y) -> (less_than(x, y) or x = y)
-                        [by theorem lessOrEqualSplit]
+                        [by cite lessOrEqualSplit]
                       @zero-less_than-or-equals-partial-if |
                         at_most(ZERO, mul(b, d)) -> (less_than(ZERO, mul(b, d)) or ZERO = mul(b, d))
                         [by forall_elim(ZERO, mul(b, d)) at-most-splits]
@@ -781,13 +781,13 @@ proof
                                 [by hypothesis when-partial-positive]
                               @order-is-transitive |
                                 forall x, y, z: Int; less_than(x, y) -> less_than(y, z) -> less_than(x, z)
-                                [by theorem lessThanTransitive]
+                                [by cite lessThanTransitive]
                               @zero-less_than-product-if-chain |
                                 less_than(ZERO, mul(b, d)) -> less_than(mul(b, d), mul(b, k)) -> less_than(ZERO, mul(b, k))
                                 [by forall_elim(ZERO, mul(b, d), mul(b, k)) order-is-transitive]
                               @conclusion-product-positive |
                                 less_than(ZERO, mul(b, k))
-                                [by tautology zero-less_than-product-if-chain partial-positive partial-less_than-product]
+                                [using tautology zero-less_than-product-if-chain partial-positive partial-less_than-product]
                             }
                           @when-partial-zero |
                             assume ZERO = mul(b, d) {
@@ -840,13 +840,13 @@ proof
                     [by hypothesis given-product-zero]
                   @z-sign-trichotomy |
                     less_than(z, ZERO) or z = ZERO or less_than(ZERO, z)
-                    [by specialize trichotomy(z, ZERO)]
+                    [using specialize trichotomy(z, ZERO)]
                   @multiply-by-positive |
                     forall x, y: Int; less_than(ZERO, x) -> less_than(ZERO, y) -> less_than(ZERO, mul(x, y))
-                    [by theorem productWithPositiveIsPositive]
+                    [by cite productWithPositiveIsPositive]
                   @zero-not-less_than-zero |
                     not less_than(ZERO, ZERO)
-                    [by specialize lessThanIrreflexive(ZERO)]
+                    [using specialize lessThanIrreflexive(ZERO)]
                   @conclusion-z-is-zero |
                     z = ZERO
                     case z-sign-trichotomy {
@@ -858,7 +858,7 @@ proof
                             [by hypothesis when-z-negative]
                           @z-gap-exists |
                             exists d: Int; is_nonneg(d) and add(z, succ(d)) = ZERO
-                            [by specialize lessThanElim(z, ZERO) z-negative]
+                            [using specialize lessThanElim(z, ZERO) z-negative]
                           @with-z-gap |
                             unpack e: Int from z-gap-exists {
                               @gap-nonneg-and-reaches-zero |
@@ -874,23 +874,23 @@ proof
                               // Certifier gap marked via additiveInverseUnique.
                               @successor-gap-is-neg-z |
                                 succ(e) = neg(z)
-                                [by arithmetic fallback(additiveInverseUnique) gap-reaches-zero]
+                                [using arithmetic fallback(additiveInverseUnique) gap-reaches-zero]
                               // succ(e) > 0 since 0 + succ(e) = succ(e) with e nonneg.
                               @strict-gap-witnesses-order |
                                 forall x, dd, y: Int; is_nonneg(dd) -> add(x, succ(dd)) = y -> less_than(x, y)
-                                [by axiom lessThanIntro]
+                                [by cite lessThanIntro]
                               @zero-less_than-succ-gap-if |
                                 is_nonneg(e) -> add(ZERO, succ(e)) = succ(e) -> less_than(ZERO, succ(e))
                                 [by forall_elim(ZERO, e, succ(e)) strict-gap-witnesses-order]
                               @zero-prefix-is-identity |
                                 forall n: Int; add(ZERO, n) = n
-                                [by axiom addZeroLeft]
+                                [by cite addZeroLeft]
                               @zero-plus-succ-gap |
                                 add(ZERO, succ(e)) = succ(e)
                                 [by forall_elim(succ(e)) zero-prefix-is-identity]
                               @zero-less_than-succ-gap |
                                 less_than(ZERO, succ(e))
-                                [by tautology zero-less_than-succ-gap-if gap-nonneg zero-plus-succ-gap]
+                                [using tautology zero-less_than-succ-gap-if gap-nonneg zero-plus-succ-gap]
                               @zero-less_than-neg-z |
                                 less_than(ZERO, neg(z))
                                 [by rewrite successor-gap-is-neg-z zero-less_than-succ-gap]
@@ -900,11 +900,11 @@ proof
                                 [by forall_elim(b, neg(z)) multiply-by-positive]
                               @b-times-negz-positive |
                                 less_than(ZERO, mul(b, neg(z)))
-                                [by tautology b-times-negz-positive-if b-positive zero-less_than-neg-z]
+                                [using tautology b-times-negz-positive-if b-positive zero-less_than-neg-z]
                               // b*(-z) = -(b*z) = -0 = 0.
                               @b-times-negz-is-neg-product |
                                 mul(b, neg(z)) = neg(mul(b, z))
-                                [by specialize mulNegRight(b, z)]
+                                [using specialize mulNegRight(b, z)]
                               @neg-product-reflexive |
                                 neg(mul(b, z)) = neg(mul(b, z))
                                 [by reflexivity]
@@ -913,7 +913,7 @@ proof
                                 [by rewrite product-zero neg-product-reflexive]
                               @negation-of-zero |
                                 neg(ZERO) = ZERO
-                                [by axiom negZero]
+                                [by cite negZero]
                               @neg-product-is-zero |
                                 neg(mul(b, z)) = ZERO
                                 [by rewrite negation-of-zero neg-product-is-neg-zero]
@@ -945,10 +945,10 @@ proof
                             [by hypothesis when-z-positive]
                           @b-times-z-positive-if |
                             less_than(ZERO, b) -> less_than(ZERO, z) -> less_than(ZERO, mul(b, z))
-                            [by specialize productWithPositiveIsPositive(b, z)]
+                            [using specialize productWithPositiveIsPositive(b, z)]
                           @b-times-z-positive |
                             less_than(ZERO, mul(b, z))
-                            [by tautology b-times-z-positive-if b-positive z-positive]
+                            [using tautology b-times-z-positive-if b-positive z-positive]
                           @zero-less_than-zero |
                             less_than(ZERO, ZERO)
                             [by rewrite product-zero b-times-z-positive]
@@ -996,7 +996,7 @@ proof
                         [by hypothesis given-y-less_than-z]
                       @x-less_than-or-equals-y |
                         less_than(x, y) or x = y
-                        [by specialize lessOrEqualSplit(x, y) x-at-most-y]
+                        [using specialize lessOrEqualSplit(x, y) x-at-most-y]
                       @conclusion-x-less_than-z |
                         less_than(x, z)
                         case x-less_than-or-equals-y {
@@ -1007,7 +1007,7 @@ proof
                                 [by hypothesis when-x-less_than-y]
                               @conclusion-x-less_than-z |
                                 less_than(x, z)
-                                [by specialize lessThanTransitive(x, y, z) x-less_than-y y-less_than-z]
+                                [using specialize lessThanTransitive(x, y, z) x-less_than-y y-less_than-z]
                             }
                           @when-x-equals-y |
                             assume x = y {
@@ -1055,7 +1055,7 @@ proof
                 [by hypothesis given-x-less_than-y]
               @gap-exists |
                 exists d: Int; is_nonneg(d) and add(x, succ(d)) = y
-                [by specialize lessThanElim(x, y) x-less_than-y]
+                [using specialize lessThanElim(x, y) x-less_than-y]
               @with-gap |
                 unpack d: Int from gap-exists {
                   @gap-nonneg-and-reaches |
@@ -1070,10 +1070,10 @@ proof
                   // sub(y, x) = succ(d): rearrange add(x, succ(d)) = y linearly.
                   @difference-is-successor-gap |
                     sub(y, x) = succ(d)
-                    [by arithmetic gap-reaches-y]
+                    [using arithmetic gap-reaches-y]
                   @successor-gap-nonneg-if |
                     is_nonneg(d) -> is_nonneg(succ(d))
-                    [by specialize nonnegSucc(d)]
+                    [using specialize nonnegSucc(d)]
                   @successor-gap-nonneg |
                     is_nonneg(succ(d))
                     [by modus_ponens successor-gap-nonneg-if gap-nonneg]
@@ -1109,7 +1109,7 @@ proof
             fix q2: Int {
               @conclusion-distribute |
                 mul(b, sub(q1, q2)) = sub(mul(b, q1), mul(b, q2))
-                [by simplify definitionOfSubtraction mulAddDistribLeft mulNegRight]
+                [using simplify definitionOfSubtraction mulAddDistribLeft mulNegRight]
             }
           @discharge-q2 |
             forall q2: Int; mul(b, sub(q1, q2)) = sub(mul(b, q1), mul(b, q2))
@@ -1149,7 +1149,7 @@ proof
                       // a·(x−y) = a·x − a·y
                       @product-of-difference |
                         mul(a, sub(x, y)) = sub(mul(a, x), mul(a, y))
-                        [by specialize distributesOverDifference(a, x, y)]
+                        [using specialize distributesOverDifference(a, x, y)]
                       // a·x − a·y = a·y − a·y, using a·x = a·y
                       @reflexivity-of-collapse |
                         sub(mul(a, x), mul(a, y)) = sub(mul(a, x), mul(a, y))
@@ -1160,7 +1160,7 @@ proof
                       // a·y − a·y = 0
                       @collapsed-difference-is-zero |
                         sub(mul(a, y), mul(a, y)) = ZERO
-                        [by arithmetic]
+                        [using arithmetic]
                       @product-difference-collapses |
                         mul(a, sub(x, y)) = sub(mul(a, y), mul(a, y))
                         [by rewrite difference-collapses product-of-difference]
@@ -1170,23 +1170,23 @@ proof
                       // a > 0 and a·(x−y) = 0 force x−y = 0
                       @positive-factor-zero |
                         forall b, z: Int; less_than(ZERO, b) -> mul(b, z) = ZERO -> z = ZERO
-                        [by theorem positiveFactorZeroForcesZero]
+                        [by cite positiveFactorZeroForcesZero]
                       @difference-forced-zero-if |
                         less_than(ZERO, a) -> mul(a, sub(x, y)) = ZERO -> sub(x, y) = ZERO
                         [by forall_elim(a, sub(x, y)) positive-factor-zero]
                       @difference-is-zero |
                         sub(x, y) = ZERO
-                        [by tautology difference-forced-zero-if a-positive product-of-difference-is-zero]
+                        [using tautology difference-forced-zero-if a-positive product-of-difference-is-zero]
                       // x − y = 0 gives x = y: (x−y)+y = x and (x−y)+y = 0+y = y
                       @difference-plus-y-is-x |
                         add(sub(x, y), y) = x
-                        [by arithmetic]
+                        [using arithmetic]
                       @zero-plus-y-is-x |
                         add(ZERO, y) = x
                         [by rewrite difference-is-zero difference-plus-y-is-x]
                       @zero-plus-y-is-y |
                         add(ZERO, y) = y
-                        [by specialize addZeroLeft(y)]
+                        [using specialize addZeroLeft(y)]
                       // y = add(ZERO, y) = x
                       @y-is-zero-plus-y |
                         y = add(ZERO, y)
@@ -1242,10 +1242,10 @@ proof
                         [by hypothesis given-products-equal]
                       @x-times-a-commutes |
                         mul(x, a) = mul(a, x)
-                        [by specialize mulIsCommutative(x, a)]
+                        [using specialize mulIsCommutative(x, a)]
                       @y-times-a-commutes |
                         mul(y, a) = mul(a, y)
-                        [by specialize mulIsCommutative(y, a)]
+                        [using specialize mulIsCommutative(y, a)]
                       @left-products-equal-step |
                         mul(a, x) = mul(y, a)
                         [by rewrite x-times-a-commutes products-equal]
@@ -1254,10 +1254,10 @@ proof
                         [by rewrite y-times-a-commutes left-products-equal-step]
                       @cancel-at-a-x-y |
                         less_than(ZERO, a) -> mul(a, x) = mul(a, y) -> x = y
-                        [by specialize mulCancelLeft(a, x, y)]
+                        [using specialize mulCancelLeft(a, x, y)]
                       @conclusion-x-equals-y |
                         x = y
-                        [by tautology cancel-at-a-x-y a-positive left-products-equal]
+                        [using tautology cancel-at-a-x-y a-positive left-products-equal]
                     }
                   @products-equal-gives-equal |
                     mul(x, a) = mul(y, a) -> x = y
@@ -1300,25 +1300,25 @@ proof
                             [by hypothesis given-decompositions-equal]
                           @sub-def |
                             forall u, v: Int; sub(u, v) = add(u, neg(v))
-                            [by axiom definitionOfSubtraction]
+                            [by cite definitionOfSubtraction]
                           @difference-of-remainders-unfolds |
                             sub(r2, r1) = add(r2, neg(r1))
-                            [by specialize definitionOfSubtraction(r2, r1)]
+                            [using specialize definitionOfSubtraction(r2, r1)]
                           @difference-of-products-unfolds |
                             sub(mul(b, q1), mul(b, q2)) = add(mul(b, q1), neg(mul(b, q2)))
                             [by forall_elim(mul(b, q1), mul(b, q2)) sub-def]
                           // cancel bq2 in the decomposition equality: r2-r1 = bq1-bq2.
                           @remainder-difference-equals-product-difference |
                             add(r2, neg(r1)) = add(mul(b, q1), neg(mul(b, q2)))
-                            [by arithmetic decompositions-equal]
+                            [using arithmetic decompositions-equal]
                           // fold both sides back to sub form, and sub(bq1,bq2) = b*(q1-q2).
                           @product-difference-is-multiple |
                             mul(b, sub(q1, q2)) = sub(mul(b, q1), mul(b, q2))
-                            [by specialize distributesOverDifference(b, q1, q2)]
+                            [using specialize distributesOverDifference(b, q1, q2)]
                           // r2-r1 = r2+(-r1) = bq1+(-bq2) = bq1-bq2 = b*(q1-q2)
                           @conclusion-difference-is-multiple |
                             sub(r2, r1) = mul(b, sub(q1, q2))
-                            [by chain difference-of-remainders-unfolds remainder-difference-equals-product-difference difference-of-products-unfolds product-difference-is-multiple]
+                            [using chain difference-of-remainders-unfolds remainder-difference-equals-product-difference difference-of-products-unfolds product-difference-is-multiple]
                         }
                       @decompositions-equal-implies |
                         add(mul(b, q1), r1) = add(mul(b, q2), r2) -> sub(r2, r1) = mul(b, sub(q1, q2))
@@ -1383,11 +1383,11 @@ proof
                                   // difference is nonneg (small < big).
                                   @difference-nonneg |
                                     is_nonneg(sub(big, small))
-                                    [by specialize lessThanGivesNonnegDifference(small, big) small-less_than-big]
+                                    [using specialize lessThanGivesNonnegDifference(small, big) small-less_than-big]
                                   // difference <= big (subtracting a nonneg), and big < b.
                                   @difference-plus-small-is-big |
                                     add(sub(big, small), small) = big
-                                    [by arithmetic]
+                                    [using arithmetic]
                                   @small-witnesses-difference-at-most-big |
                                     is_nonneg(small) and add(sub(big, small), small) = big
                                     [by and_intro small-nonneg difference-plus-small-is-big]
@@ -1396,7 +1396,7 @@ proof
                                     [by exists_intro(small) small-witnesses-difference-at-most-big]
                                   @at-most-is-gap-existential |
                                     forall x, y: Int; at_most(x, y) iff (exists d: Int; is_nonneg(d) and add(x, d) = y)
-                                    [by theorem lessOrEqualIsGapExistential]
+                                    [by cite lessOrEqualIsGapExistential]
                                   @difference-at-most-big-iff-gap |
                                     at_most(sub(big, small), big) iff (exists d: Int; is_nonneg(d) and add(sub(big, small), d) = big)
                                     [by forall_elim(sub(big, small), big) at-most-is-gap-existential]
@@ -1408,23 +1408,23 @@ proof
                                     [by modus_ponens difference-at-most-big-if-gap difference-less_than-or-equal-big-gap]
                                   @at-most-then-less_than |
                                     forall x, y, z: Int; at_most(x, y) -> less_than(y, z) -> less_than(x, z)
-                                    [by theorem atMostThenLessThan]
+                                    [by cite atMostThenLessThan]
                                   @difference-less_than-b-if |
                                     at_most(sub(big, small), big) -> less_than(big, b) -> less_than(sub(big, small), b)
                                     [by forall_elim(sub(big, small), big, b) at-most-then-less_than]
                                   @difference-less_than-b |
                                     less_than(sub(big, small), b)
-                                    [by tautology difference-less_than-b-if difference-at-most-big big-less_than-b]
+                                    [using tautology difference-less_than-b-if difference-at-most-big big-less_than-b]
                                   // a nonneg multiple of b less_than b is zero.
                                   @bounded-multiple-is-zero |
                                     forall bb, m: Int; less_than(ZERO, bb) -> divides(bb, m) -> is_nonneg(m) -> less_than(m, bb) -> m = ZERO
-                                    [by theorem boundedNonnegMultipleIsZero]
+                                    [by cite boundedNonnegMultipleIsZero]
                                   @difference-is-zero-if |
                                     less_than(ZERO, b) -> divides(b, sub(big, small)) -> is_nonneg(sub(big, small)) -> less_than(sub(big, small), b) -> sub(big, small) = ZERO
                                     [by forall_elim(b, sub(big, small)) bounded-multiple-is-zero]
                                   @conclusion-difference-is-zero |
                                     sub(big, small) = ZERO
-                                    [by tautology difference-is-zero-if b-positive b-divides-difference difference-nonneg difference-less_than-b]
+                                    [using tautology difference-is-zero-if b-positive b-divides-difference difference-nonneg difference-less_than-b]
                                 }
                               @divides-implies-zero |
                                 divides(b, sub(big, small)) -> sub(big, small) = ZERO
@@ -1505,7 +1505,7 @@ proof
                                                 [by hypothesis given-decompositions-equal]
                                               @r1-r2-trichotomy |
                                                 less_than(r1, r2) or r1 = r2 or less_than(r2, r1)
-                                                [by specialize trichotomy(r1, r2)]
+                                                [using specialize trichotomy(r1, r2)]
                                               @conclusion-remainders-equal |
                                                 r1 = r2
                                                 case r1-r2-trichotomy {
@@ -1517,26 +1517,26 @@ proof
                                                       // sub(r2,r1) = b*(q1-q2), so b | sub(r2,r1).
                                                       @r2-minus-r1-multiple |
                                                         sub(r2, r1) = mul(b, sub(q1, q2))
-                                                        [by specialize remainderDifferenceIsMultiple(b, q1, r1, q2, r2) decompositions-equal]
+                                                        [using specialize remainderDifferenceIsMultiple(b, q1, r1, q2, r2) decompositions-equal]
                                                       @b-divides-r2-minus-r1 |
                                                         divides(b, sub(r2, r1))
                                                         [by exists_intro(sub(q1, q2)) r2-minus-r1-multiple]
                                                       @r2-minus-r1-zero-if |
                                                         less_than(ZERO, b) -> is_nonneg(r1) -> less_than(r2, b) -> less_than(r1, r2) -> divides(b, sub(r2, r1)) -> sub(r2, r1) = ZERO
-                                                        [by specialize boundedRemainderDifferenceIsZero(b, r1, r2)]
+                                                        [using specialize boundedRemainderDifferenceIsZero(b, r1, r2)]
                                                       @r2-minus-r1-zero |
                                                         sub(r2, r1) = ZERO
-                                                        [by tautology r2-minus-r1-zero-if b-positive r1-nonneg r2-less_than-b r1-less_than-r2 b-divides-r2-minus-r1]
+                                                        [using tautology r2-minus-r1-zero-if b-positive r1-nonneg r2-less_than-b r1-less_than-r2 b-divides-r2-minus-r1]
                                                       // sub(r2,r1)=0 gives r2 = r1.
                                                       @difference-plus-r1-is-r2 |
                                                         add(sub(r2, r1), r1) = r2
-                                                        [by arithmetic]
+                                                        [using arithmetic]
                                                       @zero-plus-r1-is-r2 |
                                                         add(ZERO, r1) = r2
                                                         [by rewrite r2-minus-r1-zero difference-plus-r1-is-r2]
                                                       @zero-plus-r1-is-r1 |
                                                         add(ZERO, r1) = r1
-                                                        [by specialize addZeroLeft(r1)]
+                                                        [using specialize addZeroLeft(r1)]
                                                       @conclusion-remainders-equal |
                                                         r1 = r2
                                                         [by rewrite zero-plus-r1-is-r1 zero-plus-r1-is-r2]
@@ -1558,25 +1558,25 @@ proof
                                                         [by symmetry decompositions-equal]
                                                       @r1-minus-r2-multiple |
                                                         sub(r1, r2) = mul(b, sub(q2, q1))
-                                                        [by specialize remainderDifferenceIsMultiple(b, q2, r2, q1, r1) decompositions-equal-flipped]
+                                                        [using specialize remainderDifferenceIsMultiple(b, q2, r2, q1, r1) decompositions-equal-flipped]
                                                       @b-divides-r1-minus-r2 |
                                                         divides(b, sub(r1, r2))
                                                         [by exists_intro(sub(q2, q1)) r1-minus-r2-multiple]
                                                       @r1-minus-r2-zero-if |
                                                         less_than(ZERO, b) -> is_nonneg(r2) -> less_than(r1, b) -> less_than(r2, r1) -> divides(b, sub(r1, r2)) -> sub(r1, r2) = ZERO
-                                                        [by specialize boundedRemainderDifferenceIsZero(b, r2, r1)]
+                                                        [using specialize boundedRemainderDifferenceIsZero(b, r2, r1)]
                                                       @r1-minus-r2-zero |
                                                         sub(r1, r2) = ZERO
-                                                        [by tautology r1-minus-r2-zero-if b-positive r2-nonneg r1-less_than-b r2-less_than-r1 b-divides-r1-minus-r2]
+                                                        [using tautology r1-minus-r2-zero-if b-positive r2-nonneg r1-less_than-b r2-less_than-r1 b-divides-r1-minus-r2]
                                                       @difference-plus-r2-is-r1 |
                                                         add(sub(r1, r2), r2) = r1
-                                                        [by arithmetic]
+                                                        [using arithmetic]
                                                       @zero-plus-r2-is-r1 |
                                                         add(ZERO, r2) = r1
                                                         [by rewrite r1-minus-r2-zero difference-plus-r2-is-r1]
                                                       @zero-plus-r2-is-r2 |
                                                         add(ZERO, r2) = r2
-                                                        [by specialize addZeroLeft(r2)]
+                                                        [using specialize addZeroLeft(r2)]
                                                       @r2-is-r1 |
                                                         r2 = r1
                                                         [by rewrite zero-plus-r2-is-r2 zero-plus-r2-is-r1]
@@ -1694,17 +1694,17 @@ proof
                                                       // remainders agree.
                                                       @remainders-equal-if |
                                                         less_than(ZERO, b) -> is_nonneg(r1) -> less_than(r1, b) -> is_nonneg(r2) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> r1 = r2
-                                                        [by specialize remaindersEqual(b, q1, r1, q2, r2)]
+                                                        [using specialize remaindersEqual(b, q1, r1, q2, r2)]
                                                       @remainders-equal |
                                                         r1 = r2
-                                                        [by tautology remainders-equal-if b-positive r1-nonneg r1-less_than-b r2-nonneg r2-less_than-b decompositions-equal]
+                                                        [using tautology remainders-equal-if b-positive r1-nonneg r1-less_than-b r2-nonneg r2-less_than-b decompositions-equal]
                                                       // substitute r2 = r1 and cancel the common remainder.
                                                       @decompositions-equal-same-remainder |
                                                         add(mul(b, q1), r1) = add(mul(b, q2), r1)
                                                         [by rewrite remainders-equal decompositions-equal]
                                                       @addition-commutes |
                                                         forall u, v: Int; add(u, v) = add(v, u)
-                                                        [by theorem addIsCommutative]
+                                                        [by cite addIsCommutative]
                                                       @left-commuted |
                                                         add(mul(b, q1), r1) = add(r1, mul(b, q1))
                                                         [by forall_elim(mul(b, q1), r1) addition-commutes]
@@ -1719,7 +1719,7 @@ proof
                                                         [by rewrite right-commuted remainder-prefixed-equal-partial]
                                                       @cancel-remainder-on-left |
                                                         forall c, u, v: Int; add(c, u) = add(c, v) -> u = v
-                                                        [by theorem addCancelLeft]
+                                                        [by cite addCancelLeft]
                                                       @products-equal-if-cancel |
                                                         add(r1, mul(b, q1)) = add(r1, mul(b, q2)) -> mul(b, q1) = mul(b, q2)
                                                         [by forall_elim(r1, mul(b, q1), mul(b, q2)) cancel-remainder-on-left]
@@ -1729,7 +1729,7 @@ proof
                                                       // b*(q1-q2) = bq1 - bq2 = 0.
                                                       @product-of-quotient-difference |
                                                         mul(b, sub(q1, q2)) = sub(mul(b, q1), mul(b, q2))
-                                                        [by specialize distributesOverDifference(b, q1, q2)]
+                                                        [using specialize distributesOverDifference(b, q1, q2)]
                                                       @products-difference-reflexive |
                                                         sub(mul(b, q1), mul(b, q2)) = sub(mul(b, q1), mul(b, q2))
                                                         [by reflexivity]
@@ -1738,7 +1738,7 @@ proof
                                                         [by rewrite products-equal products-difference-reflexive]
                                                       @product-self-difference-zero |
                                                         sub(mul(b, q1), mul(b, q1)) = ZERO
-                                                        [by arithmetic]
+                                                        [using arithmetic]
                                                       @products-difference-zero |
                                                         sub(mul(b, q1), mul(b, q2)) = ZERO
                                                         [by rewrite product-self-difference-zero difference-of-equal-products]
@@ -1748,23 +1748,23 @@ proof
                                                       // b > 0 forces the factor sub(q1,q2) to be 0.
                                                       @positive-factor-zero |
                                                         forall bb, zz: Int; less_than(ZERO, bb) -> mul(bb, zz) = ZERO -> zz = ZERO
-                                                        [by theorem positiveFactorZeroForcesZero]
+                                                        [by cite positiveFactorZeroForcesZero]
                                                       @quotient-difference-zero-if |
                                                         less_than(ZERO, b) -> mul(b, sub(q1, q2)) = ZERO -> sub(q1, q2) = ZERO
                                                         [by forall_elim(b, sub(q1, q2)) positive-factor-zero]
                                                       @quotient-difference-zero |
                                                         sub(q1, q2) = ZERO
-                                                        [by tautology quotient-difference-zero-if b-positive quotient-difference-times-b-zero]
+                                                        [using tautology quotient-difference-zero-if b-positive quotient-difference-times-b-zero]
                                                       // sub(q1,q2)=0 gives q1 = q2.
                                                       @difference-plus-q2-is-q1 |
                                                         add(sub(q1, q2), q2) = q1
-                                                        [by arithmetic]
+                                                        [using arithmetic]
                                                       @zero-plus-q2-is-q1 |
                                                         add(ZERO, q2) = q1
                                                         [by rewrite quotient-difference-zero difference-plus-q2-is-q1]
                                                       @zero-plus-q2-is-q2 |
                                                         add(ZERO, q2) = q2
-                                                        [by specialize addZeroLeft(q2)]
+                                                        [using specialize addZeroLeft(q2)]
                                                       @q2-is-q1 |
                                                         q2 = q1
                                                         [by rewrite zero-plus-q2-is-q2 zero-plus-q2-is-q1]
@@ -1839,19 +1839,19 @@ proof
             fix y: Int {
               @addition-associates |
                 forall u, v, w: Int; add(add(u, v), w) = add(u, add(v, w))
-                [by theorem addIsAssociative]
+                [by cite addIsAssociative]
               @cancel-prefix |
                 forall c, u, v: Int; add(c, u) = add(c, v) -> u = v
-                [by theorem addCancelLeft]
+                [by cite addCancelLeft]
               @prefixed-larger-reaches |
                 add(add(p, y), sub(add(p, x), add(p, y))) = add(p, x)
-                [by arithmetic]
+                [using arithmetic]
               @prefixed-difference-associates |
                 add(add(p, y), sub(x, y)) = add(p, add(y, sub(x, y)))
                 [by forall_elim(p, y, sub(x, y)) addition-associates]
               @inner-difference-reaches |
                 add(y, sub(x, y)) = x
-                [by arithmetic]
+                [using arithmetic]
               @prefixed-difference-is-larger |
                 add(add(p, y), sub(x, y)) = add(p, x)
                 [by rewrite inner-difference-reaches prefixed-difference-associates]
@@ -1892,7 +1892,7 @@ proof
                 [by hypothesis given-x-at-most-y]
               @at-most-iff-gap |
                 at_most(x, y) iff (exists d: Int; is_nonneg(d) and add(x, d) = y)
-                [by specialize lessOrEqualIsGapExistential(x, y)]
+                [using specialize lessOrEqualIsGapExistential(x, y)]
               @gap-exists-if-at-most |
                 at_most(x, y) -> exists d: Int; is_nonneg(d) and add(x, d) = y
                 [by iff_elim_forward at-most-iff-gap]
@@ -1913,7 +1913,7 @@ proof
                   // sub(y,x) = d: rearrange add(x, d) = y linearly.
                   @difference-is-gap |
                     sub(y, x) = d
-                    [by arithmetic gap-reaches-y]
+                    [using arithmetic gap-reaches-y]
                   @conclusion-difference-nonneg |
                     is_nonneg(sub(y, x))
                     [by rewrite difference-is-gap gap-nonneg]
@@ -1949,13 +1949,13 @@ proof
                 [by hypothesis given-b-positive]
               @prefixing-x-preserves |
                 less_than(ZERO, b) -> less_than(add(x, ZERO), add(x, b))
-                [by specialize additionPreservesOrder(ZERO, b, x)]
+                [using specialize additionPreservesOrder(ZERO, b, x)]
               @x-plus-zero-less_than-x-plus-b |
                 less_than(add(x, ZERO), add(x, b))
                 [by modus_ponens prefixing-x-preserves b-positive]
               @x-plus-zero-is-x |
                 add(x, ZERO) = x
-                [by specialize addZeroRight(x)]
+                [using specialize addZeroRight(x)]
               @conclusion-x-less_than-x-plus-b |
                 less_than(x, add(x, b))
                 [by rewrite x-plus-zero-is-x x-plus-zero-less_than-x-plus-b]
@@ -2022,7 +2022,7 @@ proof
                                                 [by hypothesis given-m-is-member]
                                               @order-n-m |
                                                 less_than(n, m) or n = m or less_than(m, n)
-                                                [by specialize trichotomy(n, m)]
+                                                [using specialize trichotomy(n, m)]
                                               @n-at-most-m |
                                                 at_most(n, m)
                                                 case order-n-m {
@@ -2033,7 +2033,7 @@ proof
                                                         [by hypothesis when-n-less_than-m]
                                                       @conclusion-n-at-most-m |
                                                         at_most(n, m)
-                                                        [by specialize lessThanToLessOrEqual(n, m) n-less_than-m]
+                                                        [using specialize lessThanToLessOrEqual(n, m) n-less_than-m]
                                                     }
                                                   @when-n-equals-m |
                                                     assume n = m {
@@ -2042,7 +2042,7 @@ proof
                                                         [by hypothesis when-n-equals-m]
                                                       @n-at-most-n |
                                                         at_most(n, n)
-                                                        [by specialize lessOrEqualRefl(n)]
+                                                        [using specialize lessOrEqualRefl(n)]
                                                       @conclusion-n-at-most-m |
                                                         at_most(n, m)
                                                         [by rewrite n-equals-m n-at-most-n]
@@ -2057,7 +2057,7 @@ proof
                                                         [by forall_elim(m) all-less_than-fail]
                                                       @m-is-not-member |
                                                         not (exists k: Int; m = sub(a, mul(b, k)))
-                                                        [by tautology m-fails-if-nonneg-less_than-n m-nonneg m-less_than-n]
+                                                        [using tautology m-fails-if-nonneg-less_than-n m-nonneg m-less_than-n]
                                                       @conclusion-n-at-most-m |
                                                         at_most(n, m)
                                                         [by absurd m-is-member m-is-not-member]
@@ -2093,7 +2093,7 @@ proof
                                 [by implies_intro given-n-is-member]
                               @n-is-not-member |
                                 not (exists k: Int; n = sub(a, mul(b, k)))
-                                [by tautology n-member-implies-not-member]
+                                [using tautology n-member-implies-not-member]
                             }
                           @all-less_than-fail-implies-n-fails |
                             (forall m: Int; is_nonneg(m) -> less_than(m, n) -> (not (exists k: Int; m = sub(a, mul(b, k))))) -> (not (exists k: Int; n = sub(a, mul(b, k))))
@@ -2108,7 +2108,7 @@ proof
                     [by forall_intro strong-step]
                   @nothing-nonneg-is-member |
                     forall n: Int; is_nonneg(n) -> (not (exists k: Int; n = sub(a, mul(b, k))))
-                    [by instantiate nonnegStrongInduction((fun j: Int => not (exists k: Int; j = sub(a, mul(b, k))))) strong-step-forall]
+                    [using instantiation nonnegStrongInduction((fun j: Int => not (exists k: Int; j = sub(a, mul(b, k))))) strong-step-forall]
                   @with-witness |
                     unpack w: Int from some-nonneg-element-is-a-member {
                       @witness-nonneg-and-member |
@@ -2122,7 +2122,7 @@ proof
                         [by and_elim_right witness-nonneg-and-member]
                       @witness-not-member |
                         not (exists k: Int; w = sub(a, mul(b, k)))
-                        [by specialize nothing-nonneg-is-member(w) witness-nonneg]
+                        [using specialize nothing-nonneg-is-member(w) witness-nonneg]
                       @contradiction |
                         exists least: Int; is_nonneg(least) and (exists k: Int; least = sub(a, mul(b, k))) and (forall m: Int; is_nonneg(m) -> (exists k: Int; m = sub(a, mul(b, k))) -> at_most(least, m))
                         [by absurd witness-is-member witness-not-member]
@@ -2161,7 +2161,7 @@ proof
           // a·(2·b) = a·(b·2) = (a·b)·2
           @two-b-is-b-two |
             mul(TWO, b) = mul(b, TWO)
-            [by specialize mulIsCommutative(TWO, b)]
+            [using specialize mulIsCommutative(TWO, b)]
           @left-reflexive |
             mul(a, mul(TWO, b)) = mul(a, mul(TWO, b))
             [by reflexivity]
@@ -2170,14 +2170,14 @@ proof
             [by rewrite two-b-is-b-two left-reflexive]
           @a-b-two-reassociated |
             mul(mul(a, b), TWO) = mul(a, mul(b, TWO))
-            [by specialize mulIsAssociative(a, b, TWO)]
+            [using specialize mulIsAssociative(a, b, TWO)]
           @left-is-ab-times-two |
             mul(a, mul(TWO, b)) = mul(mul(a, b), TWO)
             [by rewrite a-b-two-reassociated left-inner-swapped]
           // b·(2·a) = b·(a·2) = (b·a)·2 = (a·b)·2
           @two-a-is-a-two |
             mul(TWO, a) = mul(a, TWO)
-            [by specialize mulIsCommutative(TWO, a)]
+            [using specialize mulIsCommutative(TWO, a)]
           @right-reflexive |
             mul(b, mul(TWO, a)) = mul(b, mul(TWO, a))
             [by reflexivity]
@@ -2186,13 +2186,13 @@ proof
             [by rewrite two-a-is-a-two right-reflexive]
           @b-a-two-reassociated |
             mul(mul(b, a), TWO) = mul(b, mul(a, TWO))
-            [by specialize mulIsAssociative(b, a, TWO)]
+            [using specialize mulIsAssociative(b, a, TWO)]
           @right-is-ba-times-two |
             mul(b, mul(TWO, a)) = mul(mul(b, a), TWO)
             [by rewrite b-a-two-reassociated right-inner-swapped]
           @b-a-is-a-b |
             mul(b, a) = mul(a, b)
-            [by specialize mulIsCommutative(b, a)]
+            [using specialize mulIsCommutative(b, a)]
           @right-is-ab-times-two |
             mul(b, mul(TWO, a)) = mul(mul(a, b), TWO)
             [by rewrite b-a-is-a-b right-is-ba-times-two]
@@ -2216,14 +2216,14 @@ proof
     fix n: Int {
       @two-n-is-n-two |
         mul(TWO, n) = mul(n, TWO)
-        [by specialize mulIsCommutative(TWO, n)]
+        [using specialize mulIsCommutative(TWO, n)]
       // n·2 = n·succ(ONE) = add(n·ONE, n) = add(n, n)
       @n-times-two-unfolds |
         mul(n, TWO) = add(mul(n, ONE), n)
-        [by specialize mulSuccRight(n, ONE)]
+        [using specialize mulSuccRight(n, ONE)]
       @n-times-one-is-n |
         mul(n, ONE) = n
-        [by specialize mulOneRight(n)]
+        [using specialize mulOneRight(n)]
       @n-times-two-is-n-plus-n |
         mul(n, TWO) = add(n, n)
         [by rewrite n-times-one-is-n n-times-two-unfolds]
@@ -2244,7 +2244,7 @@ proof
     fix n: Int {
       @zero-prefix-identity |
         forall m: Int; add(ZERO, m) = m
-        [by axiom addZeroLeft]
+        [by cite addZeroLeft]
       @given-zero-less_than-n |
         assume less_than(ZERO, n) {
           @zero-less_than-n |
@@ -2252,7 +2252,7 @@ proof
             [by hypothesis given-zero-less_than-n]
           @gap-exists |
             exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = n
-            [by specialize lessThanElim(ZERO, n) zero-less_than-n]
+            [using specialize lessThanElim(ZERO, n) zero-less_than-n]
           @with-gap-d |
             unpack gap: Int from gap-exists {
               @gap-nonneg-and-witnesses-n |
@@ -2267,7 +2267,7 @@ proof
               // add(ONE, gap) = add(succ ZERO, gap) = succ(add(ZERO,gap)) = succ(gap) = add(ZERO, succ gap) = n.
               @one-plus-gap-is-succ-gap |
                 add(ONE, gap) = succ(gap)
-                [by simplify oneIsSuccZero addSuccLeft addZeroLeft]
+                [using simplify oneIsSuccZero addSuccLeft addZeroLeft]
               @zero-prefix-succ-gap |
                 add(ZERO, succ(gap)) = succ(gap)
                 [by forall_elim(succ(gap)) zero-prefix-identity]
@@ -2285,7 +2285,7 @@ proof
                 [by exists_intro(gap) gap-witnesses-one-at-most-n]
               @one-at-most-n-iff-gap |
                 at_most(ONE, n) iff (exists d: Int; is_nonneg(d) and add(ONE, d) = n)
-                [by specialize lessOrEqualIsGapExistential(ONE, n)]
+                [using specialize lessOrEqualIsGapExistential(ONE, n)]
               @one-at-most-n-if-gap |
                 (exists d: Int; is_nonneg(d) and add(ONE, d) = n) -> at_most(ONE, n)
                 [by iff_elim_backward one-at-most-n-iff-gap]
@@ -2317,15 +2317,15 @@ proof
           // left side: neg(sub(x,y)) = add(neg(x), y)
           @left-unfolds |
             neg(sub(x, y)) = add(neg(x), y)
-            [by simplify definitionOfSubtraction negAdd negNeg]
+            [using simplify definitionOfSubtraction negAdd negNeg]
           // right side: sub(y, x) = add(y, neg(x))
           @right-unfolds |
             sub(y, x) = add(y, neg(x))
-            [by specialize definitionOfSubtraction(y, x)]
+            [using specialize definitionOfSubtraction(y, x)]
           // the two sums are equal by commutativity.
           @add-commutative |
             forall p, q: Int; add(p, q) = add(q, p)
-            [by theorem addIsCommutative]
+            [by cite addIsCommutative]
           @sums-commute |
             add(neg(x), y) = add(y, neg(x))
             [by forall_elim(neg(x), y) add-commutative]
@@ -2359,16 +2359,16 @@ proof
                 [by hypothesis given-b-positive]
               @negation-of-zero |
                 neg(ZERO) = ZERO
-                [by axiom negZero]
+                [by cite negZero]
               @zero-prefix-is-identity |
                 forall n: Int; add(ZERO, n) = n
-                [by axiom addZeroLeft]
+                [by cite addZeroLeft]
               // S is nonempty.  Judson splits on the sign of a.  Trichotomy
               // gives a >= 0 (0 < a or a = 0) or a < 0; we produce a member
               // of S in each branch.
               @a-sign |
                 less_than(ZERO, a) or ZERO = a or less_than(a, ZERO)
-                [by specialize trichotomy(ZERO, a)]
+                [using specialize trichotomy(ZERO, a)]
               @set-is-nonempty |
                 exists n: Int; is_nonneg(n) and (exists k: Int; n = sub(a, mul(b, k)))
                 case a-sign {
@@ -2389,7 +2389,7 @@ proof
                               // 0 < a means a = succ(d) for nonneg d, hence nonneg.
                               @gap-exists |
                                 exists d: Int; is_nonneg(d) and add(ZERO, succ(d)) = a
-                                [by specialize lessThanElim(ZERO, a) zero-less_than-a]
+                                [using specialize lessThanElim(ZERO, a) zero-less_than-a]
                               @with-gap-d |
                                 unpack gap: Int from gap-exists {
                                   @gap-nonneg-and-witnesses-a |
@@ -2409,7 +2409,7 @@ proof
                                     [by rewrite zero-prefix-succ-gap gap-witnesses-a]
                                   @successor-gap-nonneg-if |
                                     is_nonneg(gap) -> is_nonneg(succ(gap))
-                                    [by specialize nonnegSucc(gap)]
+                                    [using specialize nonnegSucc(gap)]
                                   @successor-gap-nonneg |
                                     is_nonneg(succ(gap))
                                     [by modus_ponens successor-gap-nonneg-if gap-nonneg]
@@ -2428,7 +2428,7 @@ proof
                                 [by hypothesis when-a-is-zero]
                               @zero-is-nonneg |
                                 is_nonneg(ZERO)
-                                [by axiom nonnegZero]
+                                [by cite nonnegZero]
                               @conclusion-a-nonneg |
                                 is_nonneg(a)
                                 [by rewrite zero-is-a zero-is-nonneg]
@@ -2437,7 +2437,7 @@ proof
                       // a = a - b*0, so a is a member; witness k = ZERO.
                       @b-times-zero-is-zero |
                         mul(b, ZERO) = ZERO
-                        [by specialize mulZeroRight(b)]
+                        [using specialize mulZeroRight(b)]
                       @a-minus-product-reflexive |
                         sub(a, mul(b, ZERO)) = sub(a, mul(b, ZERO))
                         [by reflexivity]
@@ -2446,13 +2446,13 @@ proof
                         [by rewrite b-times-zero-is-zero a-minus-product-reflexive]
                       @a-minus-zero-unfolds |
                         sub(a, ZERO) = add(a, neg(ZERO))
-                        [by specialize definitionOfSubtraction(a, ZERO)]
+                        [using specialize definitionOfSubtraction(a, ZERO)]
                       @a-minus-zero-is-a-plus-zero |
                         sub(a, ZERO) = add(a, ZERO)
                         [by rewrite negation-of-zero a-minus-zero-unfolds]
                       @a-plus-zero-is-a |
                         add(a, ZERO) = a
-                        [by specialize addZeroRight(a)]
+                        [using specialize addZeroRight(a)]
                       @a-minus-zero-is-a |
                         sub(a, ZERO) = a
                         [by rewrite a-plus-zero-is-a a-minus-zero-is-a-plus-zero]
@@ -2481,7 +2481,7 @@ proof
                       // Ring identity: a - b(2a) = a(1 - 2b) (the only elided algebra).
                       @b-two-a-is-a-two-b |
                         mul(b, mul(TWO, a)) = mul(a, mul(TWO, b))
-                        [by specialize mulProductSwapThroughTwo(b, a)]
+                        [using specialize mulProductSwapThroughTwo(b, a)]
                       @member-reflexive |
                         sub(a, mul(b, mul(TWO, a))) = sub(a, mul(b, mul(TWO, a)))
                         [by reflexivity]
@@ -2490,51 +2490,51 @@ proof
                         [by rewrite b-two-a-is-a-two-b member-reflexive]
                       @factored-member-expands |
                         sub(a, mul(a, mul(TWO, b))) = mul(a, sub(ONE, mul(TWO, b)))
-                        [by simplify definitionOfSubtraction mulAddDistribLeft mulNegRight mulOneRight]
+                        [using simplify definitionOfSubtraction mulAddDistribLeft mulNegRight mulOneRight]
                       @member-is-product |
                         sub(a, mul(b, mul(TWO, a))) = mul(a, sub(ONE, mul(TWO, b)))
                         [by rewrite factored-member-expands member-with-a-factored]
                       // First factor a is nonpositive: -a >= 0 since a < 0.
                       @neg-a-nonneg |
                         is_nonneg(neg(a))
-                        [by specialize negLessThanZero(a) a-negative]
+                        [using specialize negLessThanZero(a) a-negative]
                       // Second factor 1 - 2b is nonpositive: 1 < 2b because b > 0.
                       // 1 <= b (b positive) and b < 2b (b positive) give 1 < 2b.
                       @one-at-most-b |
                         at_most(ONE, b)
-                        [by specialize oneAtMostPositive(b) b-positive]
+                        [using specialize oneAtMostPositive(b) b-positive]
                       @two-b-is-b-plus-b |
                         mul(TWO, b) = add(b, b)
-                        [by specialize twoTimesIsSelfPlusSelf(b)]
+                        [using specialize twoTimesIsSelfPlusSelf(b)]
                       @b-less_than-b-plus-b |
                         less_than(b, add(b, b))
-                        [by specialize lessThanSelfPlusPositive(b, b) b-positive]
+                        [using specialize lessThanSelfPlusPositive(b, b) b-positive]
                       @b-less_than-two-b |
                         less_than(b, mul(TWO, b))
                         [by rewrite two-b-is-b-plus-b b-less_than-b-plus-b]
                       @one-less_than-two-b |
                         less_than(ONE, mul(TWO, b))
-                        [by specialize atMostThenLessThan(ONE, b, mul(TWO, b)) one-at-most-b b-less_than-two-b]
+                        [using specialize atMostThenLessThan(ONE, b, mul(TWO, b)) one-at-most-b b-less_than-two-b]
                       // 1 < 2b makes 2b - 1 = -(1 - 2b) nonneg.
                       @two-b-minus-one-nonneg |
                         is_nonneg(sub(mul(TWO, b), ONE))
-                        [by specialize lessThanGivesNonnegDifference(ONE, mul(TWO, b)) one-less_than-two-b]
+                        [using specialize lessThanGivesNonnegDifference(ONE, mul(TWO, b)) one-less_than-two-b]
                       @neg-of-one-minus-two-b-is-two-b-minus-one |
                         neg(sub(ONE, mul(TWO, b))) = sub(mul(TWO, b), ONE)
-                        [by specialize negOfDifferenceSwaps(ONE, mul(TWO, b))]
+                        [using specialize negOfDifferenceSwaps(ONE, mul(TWO, b))]
                       @neg-one-minus-two-b-nonneg |
                         is_nonneg(neg(sub(ONE, mul(TWO, b))))
                         [by rewrite neg-of-one-minus-two-b-is-two-b-minus-one two-b-minus-one-nonneg]
                       // product of the two nonpositive factors is nonneg.
                       @nonpositive-factors-give-nonneg-product |
                         forall x, y: Int; is_nonneg(neg(x)) -> is_nonneg(neg(y)) -> is_nonneg(mul(x, y))
-                        [by theorem productOfNonpositiveFactorsIsNonneg]
+                        [by cite productOfNonpositiveFactorsIsNonneg]
                       @product-nonneg-if |
                         is_nonneg(neg(a)) -> is_nonneg(neg(sub(ONE, mul(TWO, b)))) -> is_nonneg(mul(a, sub(ONE, mul(TWO, b))))
                         [by forall_elim(a, sub(ONE, mul(TWO, b))) nonpositive-factors-give-nonneg-product]
                       @product-nonneg |
                         is_nonneg(mul(a, sub(ONE, mul(TWO, b))))
-                        [by tautology product-nonneg-if neg-a-nonneg neg-one-minus-two-b-nonneg]
+                        [using tautology product-nonneg-if neg-a-nonneg neg-one-minus-two-b-nonneg]
                       @member-nonneg |
                         is_nonneg(sub(a, mul(b, mul(TWO, a))))
                         [by rewrite member-is-product product-nonneg]
@@ -2557,7 +2557,7 @@ proof
               // member r = a - bq.
               @least-member |
                 exists least: Int; is_nonneg(least) and (exists k: Int; least = sub(a, mul(b, k))) and (forall m: Int; is_nonneg(m) -> (exists k: Int; m = sub(a, mul(b, k))) -> at_most(least, m))
-                [by specialize remainderSetHasLeast(a, b) set-is-nonempty]
+                [using specialize remainderSetHasLeast(a, b) set-is-nonempty]
               @conclusion-decomposition-exists |
                 unpack rem: Int from least-member {
                   @least-properties |
@@ -2583,7 +2583,7 @@ proof
                       // a = bq + rem, since bq + (a - bq) = a.
                       @bq-plus-difference-is-a |
                         add(mul(b, quot), sub(a, mul(b, quot))) = a
-                        [by arithmetic]
+                        [using arithmetic]
                       @bq-plus-remainder-is-a |
                         add(mul(b, quot), rem) = a
                         [by rewrite remainder-is-a-minus-bq bq-plus-difference-is-a]
@@ -2598,7 +2598,7 @@ proof
                             [by hypothesis suppose-not-less_than]
                           @rem-b-trichotomy |
                             less_than(rem, b) or rem = b or less_than(b, rem)
-                            [by specialize trichotomy(rem, b)]
+                            [using specialize trichotomy(rem, b)]
                           // not less_than(rem,b) leaves rem = b or less_than(b, rem); both give b <= rem.
                           @b-at-most-rem |
                             at_most(b, rem)
@@ -2619,7 +2619,7 @@ proof
                                     [by hypothesis when-rem-equals-b]
                                   @b-at-most-b |
                                     at_most(b, b)
-                                    [by specialize lessOrEqualRefl(b)]
+                                    [using specialize lessOrEqualRefl(b)]
                                   @conclusion-b-at-most-rem |
                                     at_most(b, rem)
                                     [by rewrite rem-equals-b b-at-most-b]
@@ -2631,13 +2631,13 @@ proof
                                     [by hypothesis when-b-less_than-rem]
                                   @conclusion-b-at-most-rem |
                                     at_most(b, rem)
-                                    [by specialize lessThanToLessOrEqual(b, rem) b-less_than-rem]
+                                    [using specialize lessThanToLessOrEqual(b, rem) b-less_than-rem]
                                 }
                             }
                           // candidate = sub(rem, b) = sub(a, mul(b, succ quot)); it is in S.
                           @b-times-successor-quot |
                             mul(b, succ(quot)) = add(mul(b, quot), b)
-                            [by specialize mulSuccRight(b, quot)]
+                            [using specialize mulSuccRight(b, quot)]
                           @a-minus-b-succ-quot-reflexive |
                             sub(a, mul(b, succ(quot))) = sub(a, mul(b, succ(quot)))
                             [by reflexivity]
@@ -2649,7 +2649,7 @@ proof
                             [by rewrite decomposition-holds a-minus-b-succ-quot-expands]
                           @common-prefix-cancels |
                             forall p, x, y: Int; sub(add(p, x), add(p, y)) = sub(x, y)
-                            [by theorem subCommonPrefix]
+                            [by cite subCommonPrefix]
                           @cancelled-difference |
                             sub(add(mul(b, quot), rem), add(mul(b, quot), b)) = sub(rem, b)
                             [by forall_elim(mul(b, quot), rem, b) common-prefix-cancels]
@@ -2665,14 +2665,14 @@ proof
                           // candidate is nonneg (b <= rem).
                           @candidate-nonneg |
                             is_nonneg(sub(rem, b))
-                            [by specialize atMostGivesNonnegDifference(b, rem) b-at-most-rem]
+                            [using specialize atMostGivesNonnegDifference(b, rem) b-at-most-rem]
                           // candidate < rem, since b > 0.
                           @candidate-plus-b-is-rem |
                             add(sub(rem, b), b) = rem
-                            [by arithmetic]
+                            [using arithmetic]
                           @self-less_than-self-plus-positive |
                             forall x, c: Int; less_than(ZERO, c) -> less_than(x, add(x, c))
-                            [by theorem lessThanSelfPlusPositive]
+                            [by cite lessThanSelfPlusPositive]
                           @candidate-less_than-candidate-plus-b-if |
                             less_than(ZERO, b) -> less_than(sub(rem, b), add(sub(rem, b), b))
                             [by forall_elim(sub(rem, b), b) self-less_than-self-plus-positive]
@@ -2688,19 +2688,19 @@ proof
                             [by forall_elim(sub(rem, b)) remainder-is-least]
                           @remainder-at-most-candidate |
                             at_most(rem, sub(rem, b))
-                            [by tautology remainder-at-most-candidate-if candidate-nonneg candidate-is-member]
+                            [using tautology remainder-at-most-candidate-if candidate-nonneg candidate-is-member]
                           @at-most-then-less_than |
                             forall x, y, z: Int; at_most(x, y) -> less_than(y, z) -> less_than(x, z)
-                            [by theorem atMostThenLessThan]
+                            [by cite atMostThenLessThan]
                           @remainder-less_than-itself-if |
                             at_most(rem, sub(rem, b)) -> less_than(sub(rem, b), rem) -> less_than(rem, rem)
                             [by forall_elim(rem, sub(rem, b), rem) at-most-then-less_than]
                           @remainder-less_than-itself |
                             less_than(rem, rem)
-                            [by tautology remainder-less_than-itself-if remainder-at-most-candidate candidate-less_than-rem]
+                            [using tautology remainder-less_than-itself-if remainder-at-most-candidate candidate-less_than-rem]
                           @remainder-not-less_than-itself |
                             not less_than(rem, rem)
-                            [by specialize lessThanIrreflexive(rem)]
+                            [using specialize lessThanIrreflexive(rem)]
                         }
                       @remainder-less_than-b-not-absent |
                         not not less_than(rem, b)
@@ -2784,20 +2784,20 @@ proof
                       // d | neg(b): neg(b) = mul(b, neg(ONE)) is a multiple of b.
                       @d-divides-b-times-neg-one-fact |
                         divides(d, mul(b, neg(ONE)))
-                        [by specialize dividesMul(d, b, neg(ONE)) d-divides-b]
+                        [using specialize dividesMul(d, b, neg(ONE)) d-divides-b]
                       @b-times-neg-one-is-neg-b |
                         mul(b, neg(ONE)) = neg(b)
-                        [by simplify mulNegRight mulOneRight]
+                        [using simplify mulNegRight mulOneRight]
                       @d-divides-neg-b |
                         divides(d, neg(b))
                         [by rewrite b-times-neg-one-is-neg-b d-divides-b-times-neg-one-fact]
                       // d | add(a, neg(b)) = a − b.
                       @d-divides-a-plus-neg-b |
                         divides(d, add(a, neg(b)))
-                        [by specialize dividesAdd(d, a, neg(b)) d-divides-a d-divides-neg-b]
+                        [using specialize dividesAdd(d, a, neg(b)) d-divides-a d-divides-neg-b]
                       @a-minus-b-is-a-plus-neg-b |
                         sub(a, b) = add(a, neg(b))
-                        [by specialize definitionOfSubtraction(a, b)]
+                        [using specialize definitionOfSubtraction(a, b)]
                       @d-divides-a-minus-b |
                         divides(d, sub(a, b))
                         [by rewrite a-minus-b-is-a-plus-neg-b d-divides-a-plus-neg-b]
@@ -2856,11 +2856,11 @@ proof
                             [by hypothesis with-quotient-k]
                           @d-nonneg |
                             is_nonneg(d)
-                            [by specialize positiveIsNonneg(d) d-positive]
+                            [using specialize positiveIsNonneg(d) d-positive]
                           // the quotient k is positive.
                           @k-sign |
                             less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)
-                            [by specialize signTrichotomy(k)]
+                            [using specialize signTrichotomy(k)]
                           @k-positive |
                             less_than(ZERO, k)
                             case k-sign {
@@ -2877,17 +2877,17 @@ proof
                                     [by hypothesis when-k-zero]
                                   @d-times-zero-is-zero |
                                     mul(d, ZERO) = ZERO
-                                    [by specialize mulZeroRight(d)]
+                                    [using specialize mulZeroRight(d)]
                                   // n = d·k = d·0 = 0
                                   @n-is-zero |
                                     n = ZERO
-                                    [by chain n-is-d-times-k k-is-zero d-times-zero-is-zero]
+                                    [using chain n-is-d-times-k k-is-zero d-times-zero-is-zero]
                                   @zero-less_than-zero |
                                     less_than(ZERO, ZERO)
                                     [by rewrite n-is-zero n-positive]
                                   @zero-not-less_than-zero |
                                     not less_than(ZERO, ZERO)
-                                    [by specialize lessThanIrreflexive(ZERO)]
+                                    [using specialize lessThanIrreflexive(ZERO)]
                                   @conclusion-k-positive |
                                     less_than(ZERO, k)
                                     [by absurd zero-less_than-zero zero-not-less_than-zero]
@@ -2900,29 +2900,29 @@ proof
                                   // n = d·k = −(d·(−k)), and d·(−k) is nonneg, so n ≤ 0.
                                   @neg-k-nonneg |
                                     is_nonneg(neg(k))
-                                    [by specialize negLessThanZero(k) k-negative]
+                                    [using specialize negLessThanZero(k) k-negative]
                                   @d-times-neg-k-nonneg |
                                     is_nonneg(mul(d, neg(k)))
-                                    [by specialize nonnegMul(d, neg(k)) d-nonneg neg-k-nonneg]
+                                    [using specialize nonnegMul(d, neg(k)) d-nonneg neg-k-nonneg]
                                   @d-times-neg-k-is-neg-product |
                                     mul(d, neg(k)) = neg(mul(d, k))
-                                    [by specialize mulNegRight(d, k)]
+                                    [using specialize mulNegRight(d, k)]
                                   // d·(−k) = −(d·k) = −n
                                   @d-times-neg-k-is-neg-n |
                                     mul(d, neg(k)) = neg(n)
-                                    [by chain d-times-neg-k-is-neg-product n-is-d-times-k]
+                                    [using chain d-times-neg-k-is-neg-product n-is-d-times-k]
                                   @neg-n-nonneg |
                                     is_nonneg(neg(n))
                                     [by rewrite d-times-neg-k-is-neg-n d-times-neg-k-nonneg]
                                   @add-n-neg-n-is-zero |
                                     add(n, neg(n)) = ZERO
-                                    [by specialize addNegRight(n)]
+                                    [using specialize addNegRight(n)]
                                   @n-plus-neg-n-witnesses |
                                     is_nonneg(neg(n)) and add(n, neg(n)) = ZERO
                                     [by and_intro neg-n-nonneg add-n-neg-n-is-zero]
                                   @n-at-most-zero-iff-gap |
                                     at_most(n, ZERO) iff (exists g: Int; is_nonneg(g) and add(n, g) = ZERO)
-                                    [by specialize lessOrEqualIsGapExistential(n, ZERO)]
+                                    [using specialize lessOrEqualIsGapExistential(n, ZERO)]
                                   @gap-gives-n-at-most-zero |
                                     (exists g: Int; is_nonneg(g) and add(n, g) = ZERO) -> at_most(n, ZERO)
                                     [by iff_elim_backward n-at-most-zero-iff-gap]
@@ -2934,16 +2934,16 @@ proof
                                     [by modus_ponens gap-gives-n-at-most-zero n-reaches-zero-gap-exists]
                                   @zero-at-most-n |
                                     at_most(ZERO, n)
-                                    [by specialize lessThanToLessOrEqual(ZERO, n) n-positive]
+                                    [using specialize lessThanToLessOrEqual(ZERO, n) n-positive]
                                   @n-is-zero |
                                     n = ZERO
-                                    [by specialize lessOrEqualAntisymmetric(n, ZERO) n-at-most-zero zero-at-most-n]
+                                    [using specialize lessOrEqualAntisymmetric(n, ZERO) n-at-most-zero zero-at-most-n]
                                   @zero-less_than-zero |
                                     less_than(ZERO, ZERO)
                                     [by rewrite n-is-zero n-positive]
                                   @zero-not-less_than-zero |
                                     not less_than(ZERO, ZERO)
-                                    [by specialize lessThanIrreflexive(ZERO)]
+                                    [using specialize lessThanIrreflexive(ZERO)]
                                   @conclusion-k-positive |
                                     less_than(ZERO, k)
                                     [by absurd zero-less_than-zero zero-not-less_than-zero]
@@ -2952,23 +2952,23 @@ proof
                           // k ≥ 1, so k − 1 is nonneg and g = d·(k−1) is the gap.
                           @one-at-most-k |
                             at_most(ONE, k)
-                            [by specialize oneAtMostPositive(k) k-positive]
+                            [using specialize oneAtMostPositive(k) k-positive]
                           @k-minus-one-nonneg |
                             is_nonneg(sub(k, ONE))
-                            [by specialize atMostGivesNonnegDifference(ONE, k) one-at-most-k]
+                            [using specialize atMostGivesNonnegDifference(ONE, k) one-at-most-k]
                           @gap-nonneg |
                             is_nonneg(mul(d, sub(k, ONE)))
-                            [by specialize nonnegMul(d, sub(k, ONE)) d-nonneg k-minus-one-nonneg]
+                            [using specialize nonnegMul(d, sub(k, ONE)) d-nonneg k-minus-one-nonneg]
                           // add(d, d·(k−1)) = d·(1 + (k−1)) = d·k = n.
                           @one-plus-k-minus-one-is-k |
                             add(ONE, sub(k, ONE)) = k
-                            [by arithmetic]
+                            [using arithmetic]
                           @d-times-one-plus-diff |
                             mul(d, add(ONE, sub(k, ONE))) = add(mul(d, ONE), mul(d, sub(k, ONE)))
-                            [by specialize mulAddDistribLeft(d, ONE, sub(k, ONE))]
+                            [using specialize mulAddDistribLeft(d, ONE, sub(k, ONE))]
                           @d-times-one-is-d |
                             mul(d, ONE) = d
-                            [by specialize mulOneRight(d)]
+                            [using specialize mulOneRight(d)]
                           @d-times-one-plus-diff-collects |
                             mul(d, add(ONE, sub(k, ONE))) = add(d, mul(d, sub(k, ONE)))
                             [by rewrite d-times-one-is-d d-times-one-plus-diff]
@@ -2986,7 +2986,7 @@ proof
                             [by and_intro gap-nonneg d-plus-gap-is-n]
                           @d-at-most-n-iff-gap |
                             at_most(d, n) iff (exists g: Int; is_nonneg(g) and add(d, g) = n)
-                            [by specialize lessOrEqualIsGapExistential(d, n)]
+                            [using specialize lessOrEqualIsGapExistential(d, n)]
                           @gap-gives-d-at-most-n |
                             (exists g: Int; is_nonneg(g) and add(d, g) = n) -> at_most(d, n)
                             [by iff_elim_backward d-at-most-n-iff-gap]
@@ -3079,7 +3079,7 @@ proof
     fix n: Int {
       @sign-cases |
         less_than(ZERO, n) or n = ZERO or less_than(n, ZERO)
-        [by specialize signTrichotomy(n)]
+        [using specialize signTrichotomy(n)]
       @abs-is-nonneg |
         is_nonneg(abs(n))
         case sign-cases {
@@ -3090,10 +3090,10 @@ proof
                 [by hypothesis when-positive]
               @n-nonneg |
                 is_nonneg(n)
-                [by specialize positiveIsNonneg(n) n-positive]
+                [using specialize positiveIsNonneg(n) n-positive]
               @abs-is-n |
                 abs(n) = n
-                [by specialize absOfNonneg(n) n-nonneg]
+                [using specialize absOfNonneg(n) n-nonneg]
               @abs-nonneg-positive |
                 is_nonneg(abs(n))
                 [by rewrite abs-is-n n-nonneg]
@@ -3105,13 +3105,13 @@ proof
                 [by hypothesis when-zero]
               @zero-nonneg |
                 is_nonneg(ZERO)
-                [by axiom nonnegZero]
+                [by cite nonnegZero]
               @n-nonneg |
                 is_nonneg(n)
                 [by rewrite n-is-zero zero-nonneg]
               @abs-is-n |
                 abs(n) = n
-                [by specialize absOfNonneg(n) n-nonneg]
+                [using specialize absOfNonneg(n) n-nonneg]
               @abs-nonneg-zero |
                 is_nonneg(abs(n))
                 [by rewrite abs-is-n n-nonneg]
@@ -3123,10 +3123,10 @@ proof
                 [by hypothesis when-negative]
               @neg-n-nonneg |
                 is_nonneg(neg(n))
-                [by specialize negLessThanZero(n) n-negative]
+                [using specialize negLessThanZero(n) n-negative]
               @abs-is-neg-n |
                 abs(n) = neg(n)
-                [by specialize absOfNegative(n) n-negative]
+                [using specialize absOfNegative(n) n-negative]
               @abs-nonneg-negative |
                 is_nonneg(abs(n))
                 [by rewrite abs-is-neg-n neg-n-nonneg]
@@ -3151,16 +3151,16 @@ proof
             [by hypothesis given-m-nonneg]
           @zero-prefix-is-succ |
             add(ZERO, succ(m)) = succ(m)
-            [by specialize integer.addZeroLeft(succ(m))]
+            [using specialize integer.addZeroLeft(succ(m))]
           @strict-gap-witnesses-order |
             forall a, d, b: Int; is_nonneg(d) -> add(a, succ(d)) = b -> less_than(a, b)
-            [by axiom lessThanIntro]
+            [by cite lessThanIntro]
           @gap-gives-order |
             is_nonneg(m) -> add(ZERO, succ(m)) = succ(m) -> less_than(ZERO, succ(m))
             [by forall_elim(ZERO, m, succ(m)) strict-gap-witnesses-order]
           @zero-less-than-succ |
             less_than(ZERO, succ(m))
-            [by tautology gap-gives-order m-nonneg zero-prefix-is-succ]
+            [using tautology gap-gives-order m-nonneg zero-prefix-is-succ]
         }
       @nonneg-implies-succ-positive |
         is_nonneg(m) -> less_than(ZERO, succ(m))
@@ -3178,13 +3178,13 @@ proof
     fix d: Int {
       @d-times-zero-is-zero |
         mul(d, ZERO) = ZERO
-        [by specialize mulZeroRight(d)]
+        [using specialize mulZeroRight(d)]
       @zero-is-d-times-zero |
         ZERO = mul(d, ZERO)
         [by symmetry d-times-zero-is-zero]
       @d-divides-zero |
         divides(d, ZERO)
-        [by specialize dividesIntro(ZERO, d, ZERO) zero-is-d-times-zero]
+        [using specialize dividesIntro(ZERO, d, ZERO) zero-is-d-times-zero]
     }
   @conclusion |
     forall d: Int; divides(d, ZERO)
@@ -3214,16 +3214,16 @@ proof
                   // rewrite the multiple in for n.
                   @d-times-neg-k |
                     mul(d, neg(k)) = neg(mul(d, k))
-                    [by specialize mulNegRight(d, k)]
+                    [using specialize mulNegRight(d, k)]
                   @neg-multiple-is-d-times-neg-k |
                     neg(mul(d, k)) = mul(d, neg(k))
                     [by symmetry d-times-neg-k]
                   @neg-n-is-d-times-neg-k |
                     neg(n) = mul(d, neg(k))
-                    [by simplify n-is-multiple neg-multiple-is-d-times-neg-k]
+                    [using simplify n-is-multiple neg-multiple-is-d-times-neg-k]
                   @d-divides-neg-n |
                     divides(d, neg(n))
-                    [by specialize dividesIntro(neg(n), d, neg(k)) neg-n-is-d-times-neg-k]
+                    [using specialize dividesIntro(neg(n), d, neg(k)) neg-n-is-d-times-neg-k]
                 }
               @d-divides-neg-n-discharged |
                 divides(d, neg(n))
@@ -3244,27 +3244,27 @@ proof
                     [by hypothesis with-quotient-j]
                   @neg-neg-n-is-n |
                     neg(neg(n)) = n
-                    [by specialize negNeg(n)]
+                    [using specialize negNeg(n)]
                   @n-is-neg-neg-n |
                     n = neg(neg(n))
                     [by symmetry neg-neg-n-is-n]
                   // neg(neg n) = neg(d·j) since neg(n) = d·j (congruence under neg).
                   @neg-neg-n-is-neg-multiple |
                     neg(neg(n)) = neg(mul(d, j))
-                    [by chain neg-n-is-multiple]
+                    [using chain neg-n-is-multiple]
                   @d-times-neg-j |
                     mul(d, neg(j)) = neg(mul(d, j))
-                    [by specialize mulNegRight(d, j)]
+                    [using specialize mulNegRight(d, j)]
                   @neg-multiple-is-d-times-neg-j |
                     neg(mul(d, j)) = mul(d, neg(j))
                     [by symmetry d-times-neg-j]
                   // n = neg(neg n) = neg(d·j) = d·(neg j).
                   @n-is-d-times-neg-j |
                     n = mul(d, neg(j))
-                    [by chain n-is-neg-neg-n neg-neg-n-is-neg-multiple neg-multiple-is-d-times-neg-j]
+                    [using chain n-is-neg-neg-n neg-neg-n-is-neg-multiple neg-multiple-is-d-times-neg-j]
                   @d-divides-n |
                     divides(d, n)
-                    [by specialize dividesIntro(n, d, neg(j)) n-is-d-times-neg-j]
+                    [using specialize dividesIntro(n, d, neg(j)) n-is-d-times-neg-j]
                 }
               @d-divides-n-discharged |
                 divides(d, n)
@@ -3296,7 +3296,7 @@ proof
         fix n: Int {
           @sign-cases |
             less_than(ZERO, n) or n = ZERO or less_than(n, ZERO)
-            [by specialize signTrichotomy(n)]
+            [using specialize signTrichotomy(n)]
           @divides-abs-both-ways |
             divides(d, n) iff divides(d, abs(n))
             case sign-cases {
@@ -3307,13 +3307,13 @@ proof
                     [by hypothesis when-positive]
                   @n-nonneg |
                     is_nonneg(n)
-                    [by specialize positiveIsNonneg(n) n-positive]
+                    [using specialize positiveIsNonneg(n) n-positive]
                   @abs-is-n |
                     abs(n) = n
-                    [by specialize absOfNonneg(n) n-nonneg]
+                    [using specialize absOfNonneg(n) n-nonneg]
                   @divides-n-iff-n |
                     divides(d, n) iff divides(d, n)
-                    [by tautology]
+                    [using tautology]
                   @divides-abs-positive |
                     divides(d, n) iff divides(d, abs(n))
                     [by rewrite abs-is-n divides-n-iff-n]
@@ -3325,16 +3325,16 @@ proof
                     [by hypothesis when-zero]
                   @zero-nonneg |
                     is_nonneg(ZERO)
-                    [by axiom nonnegZero]
+                    [by cite nonnegZero]
                   @n-nonneg |
                     is_nonneg(n)
                     [by rewrite n-is-zero zero-nonneg]
                   @abs-is-n |
                     abs(n) = n
-                    [by specialize absOfNonneg(n) n-nonneg]
+                    [using specialize absOfNonneg(n) n-nonneg]
                   @divides-n-iff-n |
                     divides(d, n) iff divides(d, n)
-                    [by tautology]
+                    [using tautology]
                   @divides-abs-zero |
                     divides(d, n) iff divides(d, abs(n))
                     [by rewrite abs-is-n divides-n-iff-n]
@@ -3346,10 +3346,10 @@ proof
                     [by hypothesis when-negative]
                   @abs-is-neg-n |
                     abs(n) = neg(n)
-                    [by specialize absOfNegative(n) n-negative]
+                    [using specialize absOfNegative(n) n-negative]
                   @divides-n-iff-neg-n |
                     divides(d, n) iff divides(d, neg(n))
-                    [by specialize dividesNeg(d, n)]
+                    [using specialize dividesNeg(d, n)]
                   @divides-abs-negative |
                     divides(d, n) iff divides(d, abs(n))
                     [by rewrite abs-is-neg-n divides-n-iff-neg-n]
@@ -3382,10 +3382,10 @@ proof
             [by hypothesis given-e-divides-one]
           @one-positive |
             less_than(ZERO, ONE)
-            [by theorem zeroLessThanOne]
+            [by cite zeroLessThanOne]
           @sign-cases |
             less_than(ZERO, e) or e = ZERO or less_than(e, ZERO)
-            [by specialize signTrichotomy(e)]
+            [using specialize signTrichotomy(e)]
           @e-is-unit |
             e = ONE or e = neg(ONE)
             case sign-cases {
@@ -3397,13 +3397,13 @@ proof
                     [by hypothesis when-positive]
                   @e-at-most-one |
                     at_most(e, ONE)
-                    [by specialize divisorAtMost(e, ONE) e-positive one-positive e-divides-one]
+                    [using specialize divisorAtMost(e, ONE) e-positive one-positive e-divides-one]
                   @one-at-most-e |
                     at_most(ONE, e)
-                    [by specialize oneAtMostPositive(e) e-positive]
+                    [using specialize oneAtMostPositive(e) e-positive]
                   @e-is-one |
                     e = ONE
-                    [by specialize lessOrEqualAntisymmetric(e, ONE) e-at-most-one one-at-most-e]
+                    [using specialize lessOrEqualAntisymmetric(e, ONE) e-at-most-one one-at-most-e]
                   @conclusion-e-is-unit |
                     e = ONE or e = neg(ONE)
                     [by or_intro_left e-is-one]
@@ -3424,10 +3424,10 @@ proof
                         [by hypothesis with-quotient-k]
                       @zero-times-k-is-zero |
                         mul(ZERO, k) = ZERO
-                        [by specialize mulZeroLeft(k)]
+                        [using specialize mulZeroLeft(k)]
                       @conclusion-one-is-zero |
                         ONE = ZERO
-                        [by chain one-is-zero-times-k zero-times-k-is-zero]
+                        [using chain one-is-zero-times-k zero-times-k-is-zero]
                     }
                   @one-is-zero |
                     ONE = ZERO
@@ -3437,7 +3437,7 @@ proof
                     [by rewrite one-is-zero one-positive]
                   @zero-not-less_than-zero |
                     not less_than(ZERO, ZERO)
-                    [by specialize lessThanIrreflexive(ZERO)]
+                    [using specialize lessThanIrreflexive(ZERO)]
                   @conclusion-e-is-unit |
                     e = ONE or e = neg(ONE)
                     [by absurd zero-less_than-zero zero-not-less_than-zero]
@@ -3450,7 +3450,7 @@ proof
                     [by hypothesis when-negative]
                   @neg-e-positive |
                     less_than(ZERO, neg(e))
-                    [by specialize negativeNegIsPositive(e) e-negative]
+                    [using specialize negativeNegIsPositive(e) e-negative]
                   // neg(e) | 1: from 1 = e·k, 1 = mul(neg e, neg k) since the two
                   // sign flips cancel.
                   @with-quotient-k |
@@ -3460,32 +3460,32 @@ proof
                         [by hypothesis with-quotient-k]
                       @neg-e-times-neg-k-is-e-times-k |
                         mul(neg(e), neg(k)) = mul(e, k)
-                        [by simplify mulNegLeft mulNegRight negNeg]
+                        [using simplify mulNegLeft mulNegRight negNeg]
                       @e-times-k-is-neg-e-times-neg-k |
                         mul(e, k) = mul(neg(e), neg(k))
                         [by symmetry neg-e-times-neg-k-is-e-times-k]
                       @one-is-neg-e-times-neg-k |
                         ONE = mul(neg(e), neg(k))
-                        [by chain one-is-e-times-k e-times-k-is-neg-e-times-neg-k]
+                        [using chain one-is-e-times-k e-times-k-is-neg-e-times-neg-k]
                       @conclusion-neg-e-divides-one |
                         divides(neg(e), ONE)
-                        [by specialize dividesIntro(ONE, neg(e), neg(k)) one-is-neg-e-times-neg-k]
+                        [using specialize dividesIntro(ONE, neg(e), neg(k)) one-is-neg-e-times-neg-k]
                     }
                   @neg-e-divides-one |
                     divides(neg(e), ONE)
                     [by exists_elim with-quotient-k]
                   @neg-e-at-most-one |
                     at_most(neg(e), ONE)
-                    [by specialize divisorAtMost(neg(e), ONE) neg-e-positive one-positive neg-e-divides-one]
+                    [using specialize divisorAtMost(neg(e), ONE) neg-e-positive one-positive neg-e-divides-one]
                   @one-at-most-neg-e |
                     at_most(ONE, neg(e))
-                    [by specialize oneAtMostPositive(neg(e)) neg-e-positive]
+                    [using specialize oneAtMostPositive(neg(e)) neg-e-positive]
                   @neg-e-is-one |
                     neg(e) = ONE
-                    [by specialize lessOrEqualAntisymmetric(neg(e), ONE) neg-e-at-most-one one-at-most-neg-e]
+                    [using specialize lessOrEqualAntisymmetric(neg(e), ONE) neg-e-at-most-one one-at-most-neg-e]
                   @neg-neg-e-is-e |
                     neg(neg(e)) = e
-                    [by specialize negNeg(e)]
+                    [using specialize negNeg(e)]
                   // rewrite neg(e) = 1 into neg(neg(e)) = e to get neg(1) = e.
                   @neg-one-is-e |
                     neg(ONE) = e
@@ -3535,13 +3535,13 @@ proof
                         [by hypothesis given-d-divides-b]
                       @a-decomposes |
                         add(mul(b, div(a, b)), mod(a, b)) = a
-                        [by specialize divModProperty(b, a) b-positive]
+                        [using specialize divModProperty(b, a) b-positive]
                       @d-divides-b-times-quotient |
                         divides(d, mul(b, div(a, b)))
-                        [by specialize dividesMul(d, b, div(a, b)) d-divides-b]
+                        [using specialize dividesMul(d, b, div(a, b)) d-divides-b]
                       @decomposition-commutes |
                         add(mul(b, div(a, b)), mod(a, b)) = add(mod(a, b), mul(b, div(a, b)))
-                        [by specialize addIsCommutative(mul(b, div(a, b)), mod(a, b))]
+                        [using specialize addIsCommutative(mul(b, div(a, b)), mod(a, b))]
                       @a-is-decomposition |
                         a = add(mul(b, div(a, b)), mod(a, b))
                         [by symmetry a-decomposes]
@@ -3553,7 +3553,7 @@ proof
                       // opaque atoms to the linear certifier).
                       @cancel-multiple |
                         sub(add(mod(a, b), mul(b, div(a, b))), mul(b, div(a, b))) = mod(a, b)
-                        [by arithmetic]
+                        [using arithmetic]
                       @remainder-is-a-minus-multiple |
                         sub(a, mul(b, div(a, b))) = mod(a, b)
                         [by rewrite a-is-remainder-plus-multiple cancel-multiple]
@@ -3566,7 +3566,7 @@ proof
                             [by hypothesis when-d-divides-a]
                           @d-divides-a-minus-multiple |
                             divides(d, sub(a, mul(b, div(a, b))))
-                            [by specialize dividesSubtracts(d, a, mul(b, div(a, b))) d-divides-a d-divides-b-times-quotient]
+                            [using specialize dividesSubtracts(d, a, mul(b, div(a, b))) d-divides-a d-divides-b-times-quotient]
                           @d-divides-remainder |
                             divides(d, mod(a, b))
                             [by rewrite remainder-is-a-minus-multiple d-divides-a-minus-multiple]
@@ -3583,7 +3583,7 @@ proof
                             [by hypothesis when-d-divides-remainder]
                           @d-divides-multiple-plus-remainder |
                             divides(d, add(mul(b, div(a, b)), mod(a, b)))
-                            [by specialize dividesAdd(d, mul(b, div(a, b)), mod(a, b)) d-divides-b-times-quotient d-divides-remainder]
+                            [using specialize dividesAdd(d, mul(b, div(a, b)), mod(a, b)) d-divides-b-times-quotient d-divides-remainder]
                           @d-divides-a |
                             divides(d, a)
                             [by rewrite a-decomposes d-divides-multiple-plus-remainder]
@@ -3660,7 +3660,7 @@ proof
                                             [by hypothesis given-b-positive]
                                           @b-nonneg |
                                             is_nonneg(b)
-                                            [by specialize positiveIsNonneg(b) b-positive]
+                                            [using specialize positiveIsNonneg(b) b-positive]
                                           @r1-below-b-restated |
                                             less_than(r1, b)
                                             [by hypothesis given-r1-below-b]
@@ -3670,7 +3670,7 @@ proof
                                           // q1 < q2 -> exists k: nonneg(k) and add(q1, succ(k)) = q2
                                           @gap-exists |
                                             exists w: Int; is_nonneg(w) and add(q1, succ(w)) = q2
-                                            [by specialize lessThanElim(q1, q2) q1-below-q2]
+                                            [using specialize lessThanElim(q1, q2) q1-below-q2]
                                           @with-gap-k |
                                             unpack k: Int from gap-exists {
                                               @gap-facts |
@@ -3688,7 +3688,7 @@ proof
                                               // expand mul(b, q2) over the gap: distribute, then mulSuccRight.
                                               @b-times-q2-includes-a-full-b |
                                                 mul(b, q2) = add(mul(b, q1), add(mul(b, k), b))
-                                                [by simplify q2-as-gap-sum mulAddDistribLeft mulSuccRight]
+                                                [using simplify q2-as-gap-sum mulAddDistribLeft mulSuccRight]
                                               // b·q1 + r1 = b·q2 + r2 = (b·q1 + (b·k + b)) + r2.
                                               // Reassociate to pull out the common b·q1 prefix, then
                                               // cancel it: r1 = (b·k + b) + r2.
@@ -3700,13 +3700,13 @@ proof
                                                 [by reflexivity]
                                               @rhs-reassociates |
                                                 add(add(mul(b, q1), add(mul(b, k), b)), r2) = add(mul(b, q1), add(add(mul(b, k), b), r2))
-                                                [by specialize addIsAssociative(mul(b, q1), add(mul(b, k), b), r2)]
+                                                [using specialize addIsAssociative(mul(b, q1), add(mul(b, k), b), r2)]
                                               @common-prefix |
                                                 add(mul(b, q1), r1) = add(mul(b, q1), add(add(mul(b, k), b), r2))
-                                                [by chain decompositions-equal rhs-with-full-b rhs-reassociates]
+                                                [using chain decompositions-equal rhs-with-full-b rhs-reassociates]
                                               @cancel-prefix |
                                                 add(mul(b, q1), r1) = add(mul(b, q1), add(add(mul(b, k), b), r2)) -> r1 = add(add(mul(b, k), b), r2)
-                                                [by specialize addCancelLeft(mul(b, q1), r1, add(add(mul(b, k), b), r2))]
+                                                [using specialize addCancelLeft(mul(b, q1), r1, add(add(mul(b, k), b), r2))]
                                               @r1-equals-gap-plus-r2 |
                                                 r1 = add(add(mul(b, k), b), r2)
                                                 [by modus_ponens cancel-prefix common-prefix]
@@ -3714,13 +3714,13 @@ proof
                                               // (b·k + b) = (b + b·k) [comm], reassociate with r2.
                                               @gap-base-commutes |
                                                 add(mul(b, k), b) = add(b, mul(b, k))
-                                                [by specialize addIsCommutative(mul(b, k), b)]
+                                                [using specialize addIsCommutative(mul(b, k), b)]
                                               @gap-base-reassociates |
                                                 add(add(b, mul(b, k)), r2) = add(b, add(mul(b, k), r2))
-                                                [by specialize addIsAssociative(b, mul(b, k), r2)]
+                                                [using specialize addIsAssociative(b, mul(b, k), r2)]
                                               @r1-is-b-plus-remainder |
                                                 r1 = add(b, add(mul(b, k), r2))
-                                                [by chain r1-equals-gap-plus-r2 gap-base-commutes gap-base-reassociates]
+                                                [using chain r1-equals-gap-plus-r2 gap-base-commutes gap-base-reassociates]
                                               // less_than(r1, b) with r1 = b + Y: rewrite b as b + 0
                                               // on the right, then cancel the b, giving Y < 0.
                                               @b-plus-remainder-below-b |
@@ -3728,23 +3728,23 @@ proof
                                                 [by rewrite r1-is-b-plus-remainder r1-below-b-restated]
                                               @b-equals-b-plus-zero |
                                                 add(b, ZERO) = b
-                                                [by specialize addZeroRight(b)]
+                                                [using specialize addZeroRight(b)]
                                               @b-plus-remainder-below-b-plus-zero |
                                                 less_than(add(b, add(mul(b, k), r2)), add(b, ZERO))
                                                 [by rewrite b-equals-b-plus-zero b-plus-remainder-below-b]
                                               @remainder-below-zero |
                                                 less_than(add(mul(b, k), r2), ZERO)
-                                                [by specialize lessThanAddCancelLeft(b, add(mul(b, k), r2), ZERO) b-plus-remainder-below-b-plus-zero]
+                                                [using specialize lessThanAddCancelLeft(b, add(mul(b, k), r2), ZERO) b-plus-remainder-below-b-plus-zero]
                                               // but b·k + r2 ≥ 0: b>0 and k≥0 give b·k≥0, plus r2≥0.
                                               @b-times-k-nonneg |
                                                 is_nonneg(mul(b, k))
-                                                [by specialize productOfNonnegativesIsNonneg(b, k) b-nonneg k-nonneg]
+                                                [using specialize productOfNonnegativesIsNonneg(b, k) b-nonneg k-nonneg]
                                               @remainder-nonneg |
                                                 is_nonneg(add(mul(b, k), r2))
-                                                [by specialize nonnegAdd(mul(b, k), r2) b-times-k-nonneg r2-nonneg]
+                                                [using specialize nonnegAdd(mul(b, k), r2) b-times-k-nonneg r2-nonneg]
                                               @remainder-not-below-zero |
                                                 not less_than(add(mul(b, k), r2), ZERO)
-                                                [by specialize nonnegNotLessThanZero(add(mul(b, k), r2)) remainder-nonneg]
+                                                [using specialize nonnegNotLessThanZero(add(mul(b, k), r2)) remainder-nonneg]
                                               @contradiction |
                                                 not less_than(q1, q2)
                                                 [by absurd remainder-below-zero remainder-not-below-zero]
@@ -3848,16 +3848,16 @@ proof
                                               // neither quotient can be strictly below the other.
                                               @q1-not-below-q2 |
                                                 not less_than(q1, q2)
-                                                [by specialize quotientCannotBeLess(b, r1, q1, q2, r2) b-positive r1-below-b r2-nonneg decompositions-equal]
+                                                [using specialize quotientCannotBeLess(b, r1, q1, q2, r2) b-positive r1-below-b r2-nonneg decompositions-equal]
                                               @decompositions-equal-flipped |
                                                 add(mul(b, q2), r2) = add(mul(b, q1), r1)
                                                 [by symmetry decompositions-equal]
                                               @q2-not-below-q1 |
                                                 not less_than(q2, q1)
-                                                [by specialize quotientCannotBeLess(b, r2, q2, q1, r1) b-positive r2-below-b r1-nonneg decompositions-equal-flipped]
+                                                [using specialize quotientCannotBeLess(b, r2, q2, q1, r1) b-positive r2-below-b r1-nonneg decompositions-equal-flipped]
                                               @q1-q2-trichotomy |
                                                 less_than(q1, q2) or q1 = q2 or less_than(q2, q1)
-                                                [by specialize trichotomy(q1, q2)]
+                                                [using specialize trichotomy(q1, q2)]
                                               @quotients-are-equal |
                                                 q1 = q2
                                                 case q1-q2-trichotomy {
@@ -3969,28 +3969,28 @@ proof
                                   // the canonical decomposition: b·div(a,b) + mod(a,b) = a
                                   @a-canonically-decomposes |
                                     add(mul(b, div(a, b)), mod(a, b)) = a
-                                    [by specialize divModProperty(b, a) b-positive]
+                                    [using specialize divModProperty(b, a) b-positive]
                                   @canonical-remainder-below-b |
                                     less_than(mod(a, b), b)
-                                    [by specialize modBound(b, a) b-positive]
+                                    [using specialize modBound(b, a) b-positive]
                                   @canonical-remainder-nonneg |
                                     is_nonneg(mod(a, b))
-                                    [by specialize modNonneg(b, a) b-positive]
+                                    [using specialize modNonneg(b, a) b-positive]
                                   // equate the two decompositions.
                                   @decompositions-agree |
                                     add(mul(b, q), r) = add(mul(b, div(a, b)), mod(a, b))
-                                    [by chain decomposition-equals-a a-canonically-decomposes]
+                                    [using chain decomposition-equals-a a-canonically-decomposes]
                                   // quotientUnique gives q = div(a, b).
                                   @quotient-equals-canonical |
                                     q = div(a, b)
-                                    [by specialize quotientUnique(b, r, mod(a, b), q, div(a, b)) b-positive r-below-b canonical-remainder-below-b r-nonneg canonical-remainder-nonneg decompositions-agree]
+                                    [using specialize quotientUnique(b, r, mod(a, b), q, div(a, b)) b-positive r-below-b canonical-remainder-below-b r-nonneg canonical-remainder-nonneg decompositions-agree]
                                   // b·q + r = b·q + mod, cancel to r = mod.
                                   @decompositions-share-multiple |
                                     add(mul(b, q), r) = add(mul(b, q), mod(a, b))
-                                    [by chain decompositions-agree quotient-equals-canonical]
+                                    [using chain decompositions-agree quotient-equals-canonical]
                                   @cancel-multiple |
                                     add(mul(b, q), r) = add(mul(b, q), mod(a, b)) -> r = mod(a, b)
-                                    [by specialize addCancelLeft(mul(b, q), r, mod(a, b))]
+                                    [using specialize addCancelLeft(mul(b, q), r, mod(a, b))]
                                   @r-equals-remainder |
                                     r = mod(a, b)
                                     [by modus_ponens cancel-multiple decompositions-share-multiple]
@@ -4068,7 +4068,7 @@ proof
                 fix a: Int {
                   @b-is-zero-or-successor |
                     b = ZERO or (exists mm: Int; is_nonneg(mm) and b = succ(mm))
-                    [by specialize nonnegCases(b) b-nonneg]
+                    [using specialize nonnegCases(b) b-nonneg]
                   @when-b-is-zero |
                     assume b = ZERO {
                       @b-is-zero |
@@ -4076,16 +4076,16 @@ proof
                         [by hypothesis when-b-is-zero]
                       @gcd-with-zero-is-itself |
                         gcd(a, ZERO) = a
-                        [by specialize gcdZero(a)]
+                        [using specialize gcdZero(a)]
                       @a-divides-a |
                         divides(a, a)
-                        [by specialize dividesRefl(a)]
+                        [using specialize dividesRefl(a)]
                       @gcd-divides-a |
                         divides(gcd(a, ZERO), a)
                         [by rewrite gcd-with-zero-is-itself a-divides-a]
                       @gcd-divides-zero |
                         divides(gcd(a, ZERO), ZERO)
-                        [by specialize dividesZero(gcd(a, ZERO))]
+                        [using specialize dividesZero(gcd(a, ZERO))]
                       @gcd-divides-a-at-b |
                         divides(gcd(a, b), a)
                         [by rewrite b-is-zero gcd-divides-a]
@@ -4114,25 +4114,25 @@ proof
                             [by and_elim_right predecessor-facts]
                           @successor-bp-positive |
                             less_than(ZERO, succ(bp))
-                            [by specialize succOfNonnegIsPositive(bp) bp-nonneg]
+                            [using specialize succOfNonnegIsPositive(bp) bp-nonneg]
                           @b-is-positive |
                             less_than(ZERO, b)
                             [by rewrite b-is-successor-of-bp successor-bp-positive]
                           @gcd-recurses |
                             gcd(a, b) = gcd(b, mod(a, b))
-                            [by specialize gcdStep(b, a) b-is-positive]
+                            [using specialize gcdStep(b, a) b-is-positive]
                           @mod-is-below-b |
                             less_than(mod(a, b), b)
-                            [by specialize modBound(b, a) b-is-positive]
+                            [using specialize modBound(b, a) b-is-positive]
                           @mod-is-nonneg |
                             is_nonneg(mod(a, b))
-                            [by specialize modNonneg(b, a) b-is-positive]
+                            [using specialize modNonneg(b, a) b-is-positive]
                           @inductive-hypothesis-at-mod |
                             is_nonneg(mod(a, b)) -> less_than(mod(a, b), b) -> (forall aa: Int; divides(gcd(aa, mod(a, b)), aa) and divides(gcd(aa, mod(a, b)), mod(a, b)))
                             [by forall_elim(mod(a, b)) strong-inductive-hypothesis]
                           @gcd-divides-both-at-mod |
                             forall aa: Int; divides(gcd(aa, mod(a, b)), aa) and divides(gcd(aa, mod(a, b)), mod(a, b))
-                            [by tautology inductive-hypothesis-at-mod mod-is-nonneg mod-is-below-b]
+                            [using tautology inductive-hypothesis-at-mod mod-is-nonneg mod-is-below-b]
                           @gcd-b-mod-divides-both |
                             divides(gcd(b, mod(a, b)), b) and divides(gcd(b, mod(a, b)), mod(a, b))
                             [by forall_elim(b) gcd-divides-both-at-mod]
@@ -4150,7 +4150,7 @@ proof
                             [by rewrite gcd-recurses gcd-b-mod-divides-mod]
                           @mod-crossing-holds-if-divides-b |
                             divides(gcd(a, b), b) -> (divides(gcd(a, b), a) iff divides(gcd(a, b), mod(a, b)))
-                            [by specialize dividesModStep(b, gcd(a, b), a) b-is-positive]
+                            [using specialize dividesModStep(b, gcd(a, b), a) b-is-positive]
                           @mod-crossing-holds |
                             divides(gcd(a, b), a) iff divides(gcd(a, b), mod(a, b))
                             [by modus_ponens mod-crossing-holds-if-divides-b gcd-divides-b]
@@ -4189,7 +4189,7 @@ proof
     [by forall_intro induction-step]
   @gcd-divides-both-swapped |
     forall b: Int; is_nonneg(b) -> forall a: Int; divides(gcd(a, b), a) and divides(gcd(a, b), b)
-    [by instantiate nonnegStrongInduction((fun n: Int => forall a: Int; divides(gcd(a, n), a) and divides(gcd(a, n), n))) induction-step-for-all-k]
+    [using instantiation nonnegStrongInduction((fun n: Int => forall a: Int; divides(gcd(a, n), a) and divides(gcd(a, n), n))) induction-step-for-all-k]
   // re-quantify in first-appearance order (a before b). The swapped form is
   // forall b; nonneg(b) -> forall a; …, so peel b (+ discharge nonneg) then a.
   @reorder-a |
@@ -4203,7 +4203,7 @@ proof
                 [by hypothesis given-b-nonneg-reorder]
               @gcd-divides-both-reordered |
                 divides(gcd(a, b), a) and divides(gcd(a, b), b)
-                [by specialize gcd-divides-both-swapped(b, a) b-nonneg-reorder]
+                [using specialize gcd-divides-both-swapped(b, a) b-nonneg-reorder]
             }
           @gcd-divides-both-if-nonneg |
             is_nonneg(b) -> (divides(gcd(a, b), a) and divides(gcd(a, b), b))
@@ -4252,7 +4252,7 @@ proof
                                 [by hypothesis given-d-divides-b]
                               @b-is-zero-or-successor |
                                 b = ZERO or (exists mm: Int; is_nonneg(mm) and b = succ(mm))
-                                [by specialize nonnegCases(b) b-nonneg]
+                                [using specialize nonnegCases(b) b-nonneg]
                               @when-b-is-zero |
                                 assume b = ZERO {
                                   @b-is-zero |
@@ -4260,7 +4260,7 @@ proof
                                     [by hypothesis when-b-is-zero]
                                   @gcd-with-zero-is-itself |
                                     gcd(a, ZERO) = a
-                                    [by specialize gcdZero(a)]
+                                    [using specialize gcdZero(a)]
                                   @d-divides-gcd-with-zero |
                                     divides(d, gcd(a, ZERO))
                                     [by rewrite gcd-with-zero-is-itself d-divides-a]
@@ -4286,16 +4286,16 @@ proof
                                         [by and_elim_right predecessor-facts]
                                       @successor-bp-positive |
                                         less_than(ZERO, succ(bp))
-                                        [by specialize succOfNonnegIsPositive(bp) bp-nonneg]
+                                        [using specialize succOfNonnegIsPositive(bp) bp-nonneg]
                                       @b-is-positive |
                                         less_than(ZERO, b)
                                         [by rewrite b-is-successor-of-bp successor-bp-positive]
                                       @gcd-recurses |
                                         gcd(a, b) = gcd(b, mod(a, b))
-                                        [by specialize gcdStep(b, a) b-is-positive]
+                                        [using specialize gcdStep(b, a) b-is-positive]
                                       @mod-crossing-holds-if-divides-b |
                                         divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
-                                        [by specialize dividesModStep(b, d, a) b-is-positive]
+                                        [using specialize dividesModStep(b, d, a) b-is-positive]
                                       @mod-crossing-holds |
                                         divides(d, a) iff divides(d, mod(a, b))
                                         [by modus_ponens mod-crossing-holds-if-divides-b d-divides-b]
@@ -4307,19 +4307,19 @@ proof
                                         [by modus_ponens divides-a-implies-divides-mod d-divides-a]
                                       @mod-is-below-b |
                                         less_than(mod(a, b), b)
-                                        [by specialize modBound(b, a) b-is-positive]
+                                        [using specialize modBound(b, a) b-is-positive]
                                       @mod-is-nonneg |
                                         is_nonneg(mod(a, b))
-                                        [by specialize modNonneg(b, a) b-is-positive]
+                                        [using specialize modNonneg(b, a) b-is-positive]
                                       @inductive-hypothesis-at-mod |
                                         is_nonneg(mod(a, b)) -> less_than(mod(a, b), b) -> (forall aa, dd: Int; divides(dd, aa) -> divides(dd, mod(a, b)) -> divides(dd, gcd(aa, mod(a, b))))
                                         [by forall_elim(mod(a, b)) strong-inductive-hypothesis]
                                       @greatest-at-mod |
                                         forall aa, dd: Int; divides(dd, aa) -> divides(dd, mod(a, b)) -> divides(dd, gcd(aa, mod(a, b)))
-                                        [by tautology inductive-hypothesis-at-mod mod-is-nonneg mod-is-below-b]
+                                        [using tautology inductive-hypothesis-at-mod mod-is-nonneg mod-is-below-b]
                                       @d-divides-gcd-b-mod |
                                         divides(d, gcd(b, mod(a, b)))
-                                        [by specialize greatest-at-mod(b, d) d-divides-b d-divides-mod]
+                                        [using specialize greatest-at-mod(b, d) d-divides-b d-divides-mod]
                                       @d-divides-gcd-when-successor |
                                         divides(d, gcd(a, b))
                                         [by rewrite gcd-recurses d-divides-gcd-b-mod]
@@ -4361,7 +4361,7 @@ proof
     [by forall_intro induction-step]
   @gcd-greatest-swapped |
     forall b: Int; is_nonneg(b) -> forall a, d: Int; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
-    [by instantiate nonnegStrongInduction((fun n: Int => forall a, d: Int; divides(d, a) -> divides(d, n) -> divides(d, gcd(a, n)))) induction-step-for-all-k]
+    [using instantiation nonnegStrongInduction((fun n: Int => forall a, d: Int; divides(d, a) -> divides(d, n) -> divides(d, gcd(a, n)))) induction-step-for-all-k]
   // re-quantify in first-appearance order (d before a before b).
   @reorder-d |
     fix d: Int {
@@ -4376,7 +4376,7 @@ proof
                     [by hypothesis given-b-nonneg-reorder]
                   @greatest-at-a-d |
                     divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
-                    [by specialize gcd-greatest-swapped(b, a, d) b-nonneg-reorder]
+                    [using specialize gcd-greatest-swapped(b, a, d) b-nonneg-reorder]
                 }
               @greatest-if-nonneg |
                 is_nonneg(b) -> (divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b)))
@@ -4406,13 +4406,13 @@ proof
         fix b: Int {
           @abs-b-nonneg |
             is_nonneg(abs(b))
-            [by specialize absNonneg(b)]
+            [using specialize absNonneg(b)]
           @gcd-abs-divides-both |
             divides(gcd(a, abs(b)), a) and divides(gcd(a, abs(b)), abs(b))
-            [by specialize gcdDividesBothNonneg(a, abs(b)) abs-b-nonneg]
+            [using specialize gcdDividesBothNonneg(a, abs(b)) abs-b-nonneg]
           @gcd-is-gcd-abs |
             gcd(a, b) = gcd(a, abs(b))
-            [by specialize gcdAbs(b, a)]
+            [using specialize gcdAbs(b, a)]
           // rewrite gcd(a, abs b) back to gcd(a, b) in both conjuncts.
           @gcd-divides-both-abs |
             divides(gcd(a, b), a) and divides(gcd(a, b), abs(b))
@@ -4426,7 +4426,7 @@ proof
           // divides(·, abs b) -> divides(·, b) via dividesAbs backward.
           @divides-abs-iff |
             divides(gcd(a, b), b) iff divides(gcd(a, b), abs(b))
-            [by specialize dividesAbs(gcd(a, b), b)]
+            [using specialize dividesAbs(gcd(a, b), b)]
           @divides-abs-implies-divides-b |
             divides(gcd(a, b), abs(b)) -> divides(gcd(a, b), b)
             [by iff_elim_backward divides-abs-iff]
@@ -4469,10 +4469,10 @@ proof
                         [by hypothesis given-d-divides-b]
                       @abs-b-nonneg |
                         is_nonneg(abs(b))
-                        [by specialize absNonneg(b)]
+                        [using specialize absNonneg(b)]
                       @divides-abs-iff |
                         divides(d, b) iff divides(d, abs(b))
-                        [by specialize dividesAbs(d, b)]
+                        [using specialize dividesAbs(d, b)]
                       @divides-b-implies-divides-abs |
                         divides(d, b) -> divides(d, abs(b))
                         [by iff_elim_forward divides-abs-iff]
@@ -4481,10 +4481,10 @@ proof
                         [by modus_ponens divides-b-implies-divides-abs d-divides-b]
                       @d-divides-gcd-abs |
                         divides(d, gcd(a, abs(b)))
-                        [by specialize gcdGreatestNonneg(d, a, abs(b)) abs-b-nonneg d-divides-a d-divides-abs-b]
+                        [using specialize gcdGreatestNonneg(d, a, abs(b)) abs-b-nonneg d-divides-a d-divides-abs-b]
                       @gcd-is-gcd-abs |
                         gcd(a, b) = gcd(a, abs(b))
-                        [by specialize gcdAbs(b, a)]
+                        [using specialize gcdAbs(b, a)]
                       @d-divides-gcd |
                         divides(d, gcd(a, b))
                         [by rewrite gcd-is-gcd-abs d-divides-gcd-abs]
@@ -4553,13 +4553,13 @@ proof
                                         [by hypothesis given-d-value]
                                       @dq-plus-difference-is-a |
                                         add(mul(d, q), sub(a, mul(d, q))) = a
-                                        [by arithmetic]
+                                        [using arithmetic]
                                       @dq-plus-difference-is-decomposition |
                                         add(mul(d, q), sub(a, mul(d, q))) = add(mul(d, q), remainder)
                                         [by rewrite a-decomposes dq-plus-difference-is-a]
                                       @cancel-left |
                                         forall c, x, y: Int; add(c, x) = add(c, y) -> x = y
-                                        [by theorem addCancelLeft]
+                                        [by cite addCancelLeft]
                                       @cancel-the-quotient-term |
                                         add(mul(d, q), sub(a, mul(d, q))) = add(mul(d, q), remainder) -> sub(a, mul(d, q)) = remainder
                                         [by forall_elim(mul(d, q), sub(a, mul(d, q)), remainder) cancel-left]
@@ -4568,10 +4568,10 @@ proof
                                         [by modus_ponens cancel-the-quotient-term dq-plus-difference-is-decomposition]
                                       @difference-collects-coefficients |
                                         sub(a, mul(add(mul(a, r), mul(b, s)), q)) = add(mul(a, sub(ONE, mul(r, q))), mul(b, neg(mul(s, q))))
-                                        [by simplify definitionOfSubtraction mulAddDistribLeft mulAddDistribRight mulNegRight mulOneRight mulIsAssociative addIsAssociative negAdd]
+                                        [using simplify definitionOfSubtraction mulAddDistribLeft mulAddDistribRight mulNegRight mulOneRight mulIsAssociative addIsAssociative negAdd]
                                       @conclusion-remainder-is-member |
                                         remainder = add(mul(a, sub(ONE, mul(r, q))), mul(b, neg(mul(s, q))))
-                                        [by chain difference-is-remainder d-value difference-collects-coefficients]
+                                        [using chain difference-is-remainder d-value difference-collects-coefficients]
                                     }
                                   @d-value-implies-member |
                                     d = add(mul(a, r), mul(b, s)) -> remainder = add(mul(a, sub(ONE, mul(r, q))), mul(b, neg(mul(s, q))))
@@ -4627,7 +4627,7 @@ proof
         [by hypothesis given-a-nonzero]
       @a-sign-split |
         less_than(a, ZERO) or a = ZERO or less_than(ZERO, a)
-        [by specialize trichotomy(a, ZERO)]
+        [using specialize trichotomy(a, ZERO)]
       @conclusion-set-nonempty |
         exists n: Int; is_nonneg(n) and (less_than(ZERO, n) and (exists mm: Int; exists nn: Int; n = add(mul(a, mm), mul(b, nn))))
         case a-sign-split {
@@ -4638,13 +4638,13 @@ proof
                 [by hypothesis when-a-negative]
               @neg-a-positive |
                 less_than(ZERO, neg(a))
-                [by specialize negativeNegIsPositive(a) a-negative]
+                [using specialize negativeNegIsPositive(a) a-negative]
               @neg-a-nonneg |
                 is_nonneg(neg(a))
-                [by specialize positiveIsNonneg(neg(a)) neg-a-positive]
+                [using specialize positiveIsNonneg(neg(a)) neg-a-positive]
               @neg-a-is-combination |
                 neg(a) = add(mul(a, neg(ONE)), mul(b, ZERO))
-                [by simplify mulNegRight mulOneRight mulZeroRight addZeroRight]
+                [using simplify mulNegRight mulOneRight mulZeroRight addZeroRight]
               @neg-a-is-some-combination-in-nn |
                 exists nn: Int; neg(a) = add(mul(a, neg(ONE)), mul(b, nn))
                 [by exists_intro(ZERO) neg-a-is-combination]
@@ -4677,10 +4677,10 @@ proof
                 [by hypothesis when-a-positive]
               @a-nonneg |
                 is_nonneg(a)
-                [by specialize positiveIsNonneg(a) a-positive]
+                [using specialize positiveIsNonneg(a) a-positive]
               @a-is-combination |
                 a = add(mul(a, ONE), mul(b, ZERO))
-                [by simplify mulOneRight mulZeroRight addZeroRight]
+                [using simplify mulOneRight mulZeroRight addZeroRight]
               @a-is-some-combination-in-nn |
                 exists nn: Int; a = add(mul(a, ONE), mul(b, nn))
                 [by exists_intro(ZERO) a-is-combination]
@@ -4733,7 +4733,7 @@ proof
                   @set-nonempty-if-a-nonzero |
                     a != ZERO
                       -> exists n: Int; is_nonneg(n) and (less_than(ZERO, n) and (exists mm: Int; exists nn: Int; n = add(mul(a, mm), mul(b, nn))))
-                    [by instantiate combinationSetNonempty(a, b)]
+                    [using instantiation combinationSetNonempty(a, b)]
                   @set-is-nonempty |
                     exists n: Int; is_nonneg(n) and (less_than(ZERO, n) and (exists mm: Int; exists nn: Int; n = add(mul(a, mm), mul(b, nn))))
                     [by modus_ponens set-nonempty-if-a-nonzero a-nonzero]
@@ -4741,7 +4741,7 @@ proof
                   @well-ordering-on-set |
                     (exists n: Int; is_nonneg(n) and (less_than(ZERO, n) and (exists mm: Int; exists nn: Int; n = add(mul(a, mm), mul(b, nn)))))
                       -> exists least: Int; is_nonneg(least) and (less_than(ZERO, least) and (exists mm: Int; exists nn: Int; least = add(mul(a, mm), mul(b, nn)))) and (forall m: Int; is_nonneg(m) -> (less_than(ZERO, m) and (exists mm: Int; exists nn: Int; m = add(mul(a, mm), mul(b, nn)))) -> at_most(least, m))
-                    [by instantiate nonnegWellOrdering((fun x: Int => less_than(ZERO, x) and (exists mm: Int; exists nn: Int; x = add(mul(a, mm), mul(b, nn)))))]
+                    [using instantiation nonnegWellOrdering((fun x: Int => less_than(ZERO, x) and (exists mm: Int; exists nn: Int; x = add(mul(a, mm), mul(b, nn)))))]
                   @least-member-exists |
                     exists least: Int; is_nonneg(least) and (less_than(ZERO, least) and (exists mm: Int; exists nn: Int; least = add(mul(a, mm), mul(b, nn)))) and (forall m: Int; is_nonneg(m) -> (less_than(ZERO, m) and (exists mm: Int; exists nn: Int; m = add(mul(a, mm), mul(b, nn)))) -> at_most(least, m))
                     [by modus_ponens well-ordering-on-set set-is-nonempty]
@@ -4752,13 +4752,13 @@ proof
                         [by hypothesis with-least-member-d]
                       @d-is-positive |
                         less_than(ZERO, d)
-                        [by tautology d-is-least-member]
+                        [using tautology d-is-least-member]
                       @d-is-a-combination |
                         exists mm: Int; exists nn: Int; d = add(mul(a, mm), mul(b, nn))
-                        [by tautology d-is-least-member]
+                        [using tautology d-is-least-member]
                       @d-is-least |
                         forall m: Int; is_nonneg(m) -> (less_than(ZERO, m) and (exists mm: Int; exists nn: Int; m = add(mul(a, mm), mul(b, nn)))) -> at_most(d, m)
-                        [by tautology d-is-least-member]
+                        [using tautology d-is-least-member]
                       @with-coefficient-r |
                         unpack r: Int from d-is-a-combination {
                           @d-is-combination-in-r |
@@ -4772,7 +4772,7 @@ proof
                               // d | a: run the Division Algorithm a = dq + rem.
                               @a-divided-by-d |
                                 exists q: Int; exists rem: Int; a = add(mul(d, q), rem) and is_nonneg(rem) and less_than(rem, d)
-                                [by specialize divisionAlgorithmExists(a, d) d-is-positive]
+                                [using specialize divisionAlgorithmExists(a, d) d-is-positive]
                               @with-quotient-q |
                                 unpack q: Int from a-divided-by-d {
                                   @a-remainder-exists |
@@ -4785,16 +4785,16 @@ proof
                                         [by hypothesis with-remainder]
                                       @a-decomposes |
                                         a = add(mul(d, q), rem)
-                                        [by tautology a-decomposes-and-remainder-bounded]
+                                        [using tautology a-decomposes-and-remainder-bounded]
                                       @remainder-nonneg |
                                         is_nonneg(rem)
-                                        [by tautology a-decomposes-and-remainder-bounded]
+                                        [using tautology a-decomposes-and-remainder-bounded]
                                       @remainder-less_than-d |
                                         less_than(rem, d)
-                                        [by tautology a-decomposes-and-remainder-bounded]
+                                        [using tautology a-decomposes-and-remainder-bounded]
                                       @d-not-less_than-itself |
                                         not less_than(d, d)
-                                        [by specialize lessThanIrreflexive(d)]
+                                        [using specialize lessThanIrreflexive(d)]
                                       @suppose-remainder-positive |
                                         assume less_than(ZERO, rem) {
                                           @remainder-positive |
@@ -4802,10 +4802,10 @@ proof
                                             [by hypothesis suppose-remainder-positive]
                                           @remainder-is-member-identity |
                                             a = add(mul(d, q), rem) -> d = add(mul(a, r), mul(b, s)) -> rem = add(mul(a, sub(ONE, mul(r, q))), mul(b, neg(mul(s, q))))
-                                            [by specialize remainderIsMember(a, b, d, r, s, q, rem)]
+                                            [using specialize remainderIsMember(a, b, d, r, s, q, rem)]
                                           @remainder-is-member-form |
                                             rem = add(mul(a, sub(ONE, mul(r, q))), mul(b, neg(mul(s, q))))
-                                            [by tautology remainder-is-member-identity a-decomposes d-equals-combination]
+                                            [using tautology remainder-is-member-identity a-decomposes d-equals-combination]
                                           @remainder-is-some-combination-in-nn |
                                             exists nn: Int; rem = add(mul(a, sub(ONE, mul(r, q))), mul(b, nn))
                                             [by exists_intro(neg(mul(s, q))) remainder-is-member-form]
@@ -4820,10 +4820,10 @@ proof
                                             [by forall_elim(rem) d-is-least]
                                           @d-at-most-remainder |
                                             at_most(d, rem)
-                                            [by tautology remainder-least-comparison remainder-nonneg remainder-is-positive-combination]
+                                            [using tautology remainder-least-comparison remainder-nonneg remainder-is-positive-combination]
                                           @d-less_than-or-equal-remainder |
                                             less_than(d, rem) or d = rem
-                                            [by specialize lessOrEqualSplit(d, rem) d-at-most-remainder]
+                                            [using specialize lessOrEqualSplit(d, rem) d-at-most-remainder]
                                           @remainder-would-be-a-smaller-member |
                                             less_than(d, d)
                                             case d-less_than-or-equal-remainder {
@@ -4834,10 +4834,10 @@ proof
                                                     [by hypothesis when-d-less_than-remainder]
                                                   @transitive-at-d-remainder-d |
                                                     less_than(d, rem) -> less_than(rem, d) -> less_than(d, d)
-                                                    [by specialize lessThanTransitive(d, rem, d)]
+                                                    [using specialize lessThanTransitive(d, rem, d)]
                                                   @conclusion-d-less_than-itself |
                                                     less_than(d, d)
-                                                    [by tautology transitive-at-d-remainder-d d-less_than-remainder remainder-less_than-d]
+                                                    [using tautology transitive-at-d-remainder-d d-less_than-remainder remainder-less_than-d]
                                                 }
                                               @when-d-equals-remainder |
                                                 assume d = rem {
@@ -4855,22 +4855,22 @@ proof
                                         [by not_intro suppose-remainder-positive remainder-would-be-a-smaller-member d-not-less_than-itself]
                                       @nonneg-not-positive-is-zero |
                                         is_nonneg(rem) -> (not less_than(ZERO, rem)) -> rem = ZERO
-                                        [by specialize nonnegNotPositiveIsZero(rem)]
+                                        [using specialize nonnegNotPositiveIsZero(rem)]
                                       @remainder-is-zero |
                                         rem = ZERO
-                                        [by tautology nonneg-not-positive-is-zero remainder-nonneg remainder-not-positive]
+                                        [using tautology nonneg-not-positive-is-zero remainder-nonneg remainder-not-positive]
                                       @add-zero-right |
                                         forall n: Int; add(n, ZERO) = n
-                                        [by theorem addZeroRight]
+                                        [by cite addZeroRight]
                                       @dq-plus-zero-is-dq |
                                         add(mul(d, q), ZERO) = mul(d, q)
                                         [by forall_elim(mul(d, q)) add-zero-right]
                                       @a-is-dq |
                                         a = mul(d, q)
-                                        [by chain a-decomposes remainder-is-zero dq-plus-zero-is-dq]
+                                        [using chain a-decomposes remainder-is-zero dq-plus-zero-is-dq]
                                       @conclusion-d-divides-a |
                                         divides(d, a)
-                                        [by specialize dividesIntro(a, d, q) a-is-dq]
+                                        [using specialize dividesIntro(a, d, q) a-is-dq]
                                     }
                                   @conclusion-d-divides-a |
                                     divides(d, a)
@@ -4882,13 +4882,13 @@ proof
                               // d | b: symmetric, dividing b by d.
                               @combination-commutes |
                                 add(mul(a, r), mul(b, s)) = add(mul(b, s), mul(a, r))
-                                [by specialize addIsCommutative(mul(a, r), mul(b, s))]
+                                [using specialize addIsCommutative(mul(a, r), mul(b, s))]
                               @d-equals-combination-swapped |
                                 d = add(mul(b, s), mul(a, r))
                                 [by rewrite combination-commutes d-equals-combination]
                               @b-divided-by-d |
                                 exists q: Int; exists rem: Int; b = add(mul(d, q), rem) and is_nonneg(rem) and less_than(rem, d)
-                                [by specialize divisionAlgorithmExists(b, d) d-is-positive]
+                                [using specialize divisionAlgorithmExists(b, d) d-is-positive]
                               @with-quotient-q2 |
                                 unpack q2: Int from b-divided-by-d {
                                   @b-remainder-exists |
@@ -4901,16 +4901,16 @@ proof
                                         [by hypothesis with-remainder-of-b]
                                       @b-decomposes |
                                         b = add(mul(d, q2), rem2)
-                                        [by tautology b-decomposes-and-remainder-bounded]
+                                        [using tautology b-decomposes-and-remainder-bounded]
                                       @remainder-nonneg |
                                         is_nonneg(rem2)
-                                        [by tautology b-decomposes-and-remainder-bounded]
+                                        [using tautology b-decomposes-and-remainder-bounded]
                                       @remainder-less_than-d |
                                         less_than(rem2, d)
-                                        [by tautology b-decomposes-and-remainder-bounded]
+                                        [using tautology b-decomposes-and-remainder-bounded]
                                       @d-not-less_than-itself |
                                         not less_than(d, d)
-                                        [by specialize lessThanIrreflexive(d)]
+                                        [using specialize lessThanIrreflexive(d)]
                                       @suppose-remainder-positive |
                                         assume less_than(ZERO, rem2) {
                                           @remainder-positive |
@@ -4918,13 +4918,13 @@ proof
                                             [by hypothesis suppose-remainder-positive]
                                           @remainder-is-member-identity |
                                             b = add(mul(d, q2), rem2) -> d = add(mul(b, s), mul(a, r)) -> rem2 = add(mul(b, sub(ONE, mul(s, q2))), mul(a, neg(mul(r, q2))))
-                                            [by specialize remainderIsMember(b, a, d, s, r, q2, rem2)]
+                                            [using specialize remainderIsMember(b, a, d, s, r, q2, rem2)]
                                           @remainder-is-member-form-swapped |
                                             rem2 = add(mul(b, sub(ONE, mul(s, q2))), mul(a, neg(mul(r, q2))))
-                                            [by tautology remainder-is-member-identity b-decomposes d-equals-combination-swapped]
+                                            [using tautology remainder-is-member-identity b-decomposes d-equals-combination-swapped]
                                           @member-form-commutes |
                                             add(mul(b, sub(ONE, mul(s, q2))), mul(a, neg(mul(r, q2)))) = add(mul(a, neg(mul(r, q2))), mul(b, sub(ONE, mul(s, q2))))
-                                            [by specialize addIsCommutative(mul(b, sub(ONE, mul(s, q2))), mul(a, neg(mul(r, q2))))]
+                                            [using specialize addIsCommutative(mul(b, sub(ONE, mul(s, q2))), mul(a, neg(mul(r, q2))))]
                                           @remainder-is-member-form |
                                             rem2 = add(mul(a, neg(mul(r, q2))), mul(b, sub(ONE, mul(s, q2))))
                                             [by rewrite member-form-commutes remainder-is-member-form-swapped]
@@ -4942,10 +4942,10 @@ proof
                                             [by forall_elim(rem2) d-is-least]
                                           @d-at-most-remainder |
                                             at_most(d, rem2)
-                                            [by tautology remainder-least-comparison remainder-nonneg remainder-is-positive-combination]
+                                            [using tautology remainder-least-comparison remainder-nonneg remainder-is-positive-combination]
                                           @d-less_than-or-equal-remainder |
                                             less_than(d, rem2) or d = rem2
-                                            [by specialize lessOrEqualSplit(d, rem2) d-at-most-remainder]
+                                            [using specialize lessOrEqualSplit(d, rem2) d-at-most-remainder]
                                           @remainder-would-be-a-smaller-member |
                                             less_than(d, d)
                                             case d-less_than-or-equal-remainder {
@@ -4956,10 +4956,10 @@ proof
                                                     [by hypothesis when-d-less_than-remainder]
                                                   @transitive-at-d-remainder-d |
                                                     less_than(d, rem2) -> less_than(rem2, d) -> less_than(d, d)
-                                                    [by specialize lessThanTransitive(d, rem2, d)]
+                                                    [using specialize lessThanTransitive(d, rem2, d)]
                                                   @conclusion-d-less_than-itself |
                                                     less_than(d, d)
-                                                    [by tautology transitive-at-d-remainder-d d-less_than-remainder remainder-less_than-d]
+                                                    [using tautology transitive-at-d-remainder-d d-less_than-remainder remainder-less_than-d]
                                                 }
                                               @when-d-equals-remainder |
                                                 assume d = rem2 {
@@ -4977,22 +4977,22 @@ proof
                                         [by not_intro suppose-remainder-positive remainder-would-be-a-smaller-member d-not-less_than-itself]
                                       @nonneg-not-positive-is-zero |
                                         is_nonneg(rem2) -> (not less_than(ZERO, rem2)) -> rem2 = ZERO
-                                        [by specialize nonnegNotPositiveIsZero(rem2)]
+                                        [using specialize nonnegNotPositiveIsZero(rem2)]
                                       @remainder-is-zero |
                                         rem2 = ZERO
-                                        [by tautology nonneg-not-positive-is-zero remainder-nonneg remainder-not-positive]
+                                        [using tautology nonneg-not-positive-is-zero remainder-nonneg remainder-not-positive]
                                       @add-zero-right |
                                         forall n: Int; add(n, ZERO) = n
-                                        [by theorem addZeroRight]
+                                        [by cite addZeroRight]
                                       @dq-plus-zero-is-dq |
                                         add(mul(d, q2), ZERO) = mul(d, q2)
                                         [by forall_elim(mul(d, q2)) add-zero-right]
                                       @b-is-dq |
                                         b = mul(d, q2)
-                                        [by chain b-decomposes remainder-is-zero dq-plus-zero-is-dq]
+                                        [using chain b-decomposes remainder-is-zero dq-plus-zero-is-dq]
                                       @conclusion-d-divides-b |
                                         divides(d, b)
-                                        [by specialize dividesIntro(b, d, q2) b-is-dq]
+                                        [using specialize dividesIntro(b, d, q2) b-is-dq]
                                     }
                                   @conclusion-d-divides-b |
                                     divides(d, b)
@@ -5016,13 +5016,13 @@ proof
                                             [by hypothesis given-e-divides-b]
                                           @e-divides-ar |
                                             divides(e, mul(a, r))
-                                            [by specialize dividesMul(e, a, r) e-divides-a]
+                                            [using specialize dividesMul(e, a, r) e-divides-a]
                                           @e-divides-bs |
                                             divides(e, mul(b, s))
-                                            [by specialize dividesMul(e, b, s) e-divides-b]
+                                            [using specialize dividesMul(e, b, s) e-divides-b]
                                           @e-divides-combination |
                                             divides(e, add(mul(a, r), mul(b, s)))
-                                            [by specialize dividesAdd(e, mul(a, r), mul(b, s)) e-divides-ar e-divides-bs]
+                                            [using specialize dividesAdd(e, mul(a, r), mul(b, s)) e-divides-ar e-divides-bs]
                                           @conclusion-e-divides-d |
                                             divides(e, d)
                                             [by rewrite d-equals-combination e-divides-combination]
@@ -5122,7 +5122,7 @@ proof
                       // Bézout supplies a positive gcd d = ar + bs dividing a, b.
                       @gcd-exists |
                         exists d: Int; less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)) and (exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s)))
-                        [by specialize bezout(a, b) a-nonzero b-nonzero]
+                        [using specialize bezout(a, b) a-nonzero b-nonzero]
                       @with-gcd-d |
                         unpack d: Int from gcd-exists {
                           @d-has-all-gcd-properties |
@@ -5130,23 +5130,23 @@ proof
                             [by hypothesis with-gcd-d]
                           @d-is-positive |
                             less_than(ZERO, d)
-                            [by tautology d-has-all-gcd-properties]
+                            [using tautology d-has-all-gcd-properties]
                           @d-divides-a |
                             divides(d, a)
-                            [by tautology d-has-all-gcd-properties]
+                            [using tautology d-has-all-gcd-properties]
                           @d-divides-b |
                             divides(d, b)
-                            [by tautology d-has-all-gcd-properties]
+                            [using tautology d-has-all-gcd-properties]
                           @d-is-a-combination |
                             exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s))
-                            [by tautology d-has-all-gcd-properties]
+                            [using tautology d-has-all-gcd-properties]
                           // coprimality forces the gcd to be 1 or -1.
                           @coprime-at-d |
                             divides(d, a) -> divides(d, b) -> (d = ONE or d = neg(ONE))
                             [by forall_elim(d) coprime]
                           @d-is-one-or-neg-one |
                             d = ONE or d = neg(ONE)
-                            [by tautology coprime-at-d d-divides-a d-divides-b]
+                            [using tautology coprime-at-d d-divides-a d-divides-b]
                           @conclusion-bezout-identity |
                             exists r: Int; exists s: Int; add(mul(a, r), mul(b, s)) = ONE
                             case d-is-one-or-neg-one {
@@ -5167,7 +5167,7 @@ proof
                                             [by hypothesis with-coefficient-s]
                                           @combination-equals-one |
                                             add(mul(a, r), mul(b, s)) = ONE
-                                            [by chain d-equals-combination d-is-one]
+                                            [using chain d-equals-combination d-is-one]
                                           @combination-in-s-is-one |
                                             exists s2: Int; add(mul(a, r), mul(b, s2)) = ONE
                                             [by exists_intro(s) combination-equals-one]
@@ -5194,16 +5194,16 @@ proof
                                     [by rewrite d-is-neg-one d-is-positive]
                                   @neg-one-is-negative |
                                     less_than(neg(ONE), ZERO)
-                                    [by theorem negOneLessThanZero]
+                                    [by cite negOneLessThanZero]
                                   @transitive-through-neg-one |
                                     less_than(ZERO, neg(ONE)) -> less_than(neg(ONE), ZERO) -> less_than(ZERO, ZERO)
-                                    [by specialize lessThanTransitive(ZERO, neg(ONE), ZERO)]
+                                    [using specialize lessThanTransitive(ZERO, neg(ONE), ZERO)]
                                   @zero-less_than-itself |
                                     less_than(ZERO, ZERO)
-                                    [by tautology transitive-through-neg-one neg-one-is-positive neg-one-is-negative]
+                                    [using tautology transitive-through-neg-one neg-one-is-positive neg-one-is-negative]
                                   @zero-not-less_than-itself |
                                     not less_than(ZERO, ZERO)
-                                    [by specialize lessThanIrreflexive(ZERO)]
+                                    [using specialize lessThanIrreflexive(ZERO)]
                                   @conclusion-bezout-identity |
                                     exists r2: Int; exists s2: Int; add(mul(a, r2), mul(b, s2)) = ONE
                                     [by absurd zero-less_than-itself zero-not-less_than-itself]
@@ -5301,30 +5301,30 @@ proof
                                   // lcm divides m (lcm is least; m is a common multiple).
                                   @lcm-divides-m |
                                     divides(lcm(a, b), m)
-                                    [by specialize lcmLeast(a, b, m) m-multiple-of-a m-multiple-of-b]
+                                    [using specialize lcmLeast(a, b, m) m-multiple-of-a m-multiple-of-b]
                                   // m divides lcm (m is least; lcm is a common multiple).
                                   @a-divides-lcm |
                                     divides(a, lcm(a, b))
-                                    [by specialize lcmCommonMultipleLeft(a, b)]
+                                    [using specialize lcmCommonMultipleLeft(a, b)]
                                   @b-divides-lcm |
                                     divides(b, lcm(a, b))
-                                    [by specialize lcmCommonMultipleRight(a, b)]
+                                    [using specialize lcmCommonMultipleRight(a, b)]
                                   @m-least-at-lcm |
                                     divides(a, lcm(a, b)) -> divides(b, lcm(a, b)) -> divides(m, lcm(a, b))
                                     [by forall_elim(lcm(a, b)) m-divides-common-multiples]
                                   @m-divides-lcm |
                                     divides(m, lcm(a, b))
-                                    [by tautology m-least-at-lcm a-divides-lcm b-divides-lcm]
+                                    [using tautology m-least-at-lcm a-divides-lcm b-divides-lcm]
                                   // two positive mutual divisors are equal.
                                   @lcm-at-most-m |
                                     at_most(lcm(a, b), m)
-                                    [by specialize divisorAtMost(lcm(a, b), m) lcm-positive m-positive lcm-divides-m]
+                                    [using specialize divisorAtMost(lcm(a, b), m) lcm-positive m-positive lcm-divides-m]
                                   @m-at-most-lcm |
                                     at_most(m, lcm(a, b))
-                                    [by specialize divisorAtMost(m, lcm(a, b)) m-positive lcm-positive m-divides-lcm]
+                                    [using specialize divisorAtMost(m, lcm(a, b)) m-positive lcm-positive m-divides-lcm]
                                   @conclusion-m-equals-lcm |
                                     m = lcm(a, b)
-                                    [by specialize lessOrEqualAntisymmetric(m, lcm(a, b)) m-at-most-lcm lcm-at-most-m]
+                                    [using specialize lessOrEqualAntisymmetric(m, lcm(a, b)) m-at-most-lcm lcm-at-most-m]
                                 }
                               @m-least-implies-equal |
                                 (forall n: Int; divides(a, n) -> divides(b, n) -> divides(m, n)) -> m = lcm(a, b)
@@ -5389,7 +5389,7 @@ proof
                               // w = w·1 = w·(ur + vs) = wur + wvs.
                               @mulOneRight-at-w |
                                 mul(w, ONE) = w
-                                [by specialize mulOneRight(w)]
+                                [using specialize mulOneRight(w)]
                               @w-is-mul-one |
                                 w = mul(w, ONE)
                                 [by symmetry mulOneRight-at-w]
@@ -5401,37 +5401,37 @@ proof
                                 [by rewrite one-is-bezout w-is-mul-one]
                               @w-distributes |
                                 mul(w, add(mul(u, r), mul(v, s))) = add(mul(w, mul(u, r)), mul(w, mul(v, s)))
-                                [by polynomial]
+                                [using polynomial]
                               @w-expands |
                                 w = add(mul(w, mul(u, r)), mul(w, mul(v, s)))
-                                [by chain w-times-bezout w-distributes]
+                                [using chain w-times-bezout w-distributes]
                               // u | w·u·r: it is u · (w·r).
                               @first-summand-is-u-multiple |
                                 mul(w, mul(u, r)) = mul(u, mul(w, r))
-                                [by polynomial]
+                                [using polynomial]
                               @u-divides-u |
                                 divides(u, u)
-                                [by specialize dividesRefl(u)]
+                                [using specialize dividesRefl(u)]
                               @u-divides-u-wr |
                                 divides(u, mul(u, mul(w, r)))
-                                [by specialize dividesMul(u, u, mul(w, r)) u-divides-u]
+                                [using specialize dividesMul(u, u, mul(w, r)) u-divides-u]
                               @u-divides-first |
                                 divides(u, mul(w, mul(u, r)))
                                 [by rewrite first-summand-is-u-multiple u-divides-u-wr]
                               // u | w·v·s: it is (v·w)·s and u | v·w.
                               @second-summand-is-vw-multiple |
                                 mul(w, mul(v, s)) = mul(mul(v, w), s)
-                                [by polynomial]
+                                [using polynomial]
                               @u-divides-vw-s |
                                 divides(u, mul(mul(v, w), s))
-                                [by specialize dividesMul(u, mul(v, w), s) u-divides-vw]
+                                [using specialize dividesMul(u, mul(v, w), s) u-divides-vw]
                               @u-divides-second |
                                 divides(u, mul(w, mul(v, s)))
                                 [by rewrite second-summand-is-vw-multiple u-divides-vw-s]
                               // u | (first + second) = w.
                               @u-divides-sum |
                                 divides(u, add(mul(w, mul(u, r)), mul(w, mul(v, s))))
-                                [by specialize dividesAdd(u, mul(w, mul(u, r)), mul(w, mul(v, s))) u-divides-first u-divides-second]
+                                [using specialize dividesAdd(u, mul(w, mul(u, r)), mul(w, mul(v, s))) u-divides-first u-divides-second]
                               @conclusion-u-divides-w |
                                 divides(u, w)
                                 [by rewrite w-expands u-divides-sum]

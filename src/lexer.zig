@@ -2,11 +2,21 @@
 //! source (style of std/zig/tokenizer.zig). `//` comments are skipped.
 
 const std = @import("std");
+const InternPool = @import("InternPool.zig");
 
 pub const Token = struct {
     tag: Tag,
     start: u32,
     end: u32,
+    /// Interned name for the stringy (non-reserved) tags, stamped by the PARSER
+    /// as it consumes tokens — the lexer itself stays pure and leaves it `.none`.
+    /// identifier/kebab_identifier: the name (for a `ns.`-qualified token, the
+    /// part AFTER the dot); at_label: the label sans `@`; string: the contents
+    /// sans quotes. Past parsing, engine code compares these ids — never text.
+    name: InternPool.StrId = .none,
+    /// The `ns` of a dot-qualified identifier/at_label (`peano.Nat` — one token;
+    /// `qualifier` = `peano`, `name` = `Nat`). `.none` when unqualified.
+    qualifier: InternPool.StrId = .none,
 
     pub const Tag = enum {
         identifier,
@@ -18,6 +28,14 @@ pub const Token = struct {
         /// `@` immediately followed by a (kebab-capable) name, no space. Marks a
         /// step DEFINITION; citations of the label stay bare (no `@`).
         at_label,
+        /// A SYNTHETIC token (never lexed) whose `.name` is a resolved SYMBOL's InternPool
+        /// Index — a sort/const/func/pred IDENTITY, not a name to look up. Delaboration
+        /// (kernel term → AST) emits these so a term's symbols survive re-elaboration in any
+        /// namespace — a schema instantiated at another file's symbols has synthetics
+        /// mentioning names that file never declared. Elab applies the ambient model to it
+        /// like any resolved name; `.qualifier == .universe` marks an EXACT identity (the
+        /// parent/universe space, no model — a refined target sort's guard predicate).
+        symbol,
         // declaration keywords
         keyword_import,
         keyword_forward,
@@ -40,6 +58,10 @@ pub const Token = struct {
         keyword_unpack,
         keyword_from,
         keyword_by,
+        /// `using` — the justification keyword for ACCELERANT steps (engine
+        /// proof-generation: accelerants + `using instantiation` + `using model`),
+        /// as opposed to `by` for the pure kernel primitives.
+        keyword_using,
         keyword_case,
         // formula keywords
         keyword_forall,
@@ -69,6 +91,7 @@ pub const Token = struct {
         string,
         import_arrow, // <<<
         obligation_arrow, // <- (model axiom-obligation discharge)
+        closure_turnstile, // -| (model func closure-discharge: `op -| closureFact`)
         /// only emitted when `keep_comments` is set (used by `bpa fmt`)
         comment,
         invalid,
@@ -80,6 +103,7 @@ pub const Token = struct {
                 .identifier => "identifier",
                 .kebab_identifier => "identifier",
                 .at_label => "@label",
+                .symbol => "symbol",
                 .keyword_import => "import",
                 .keyword_forward => "intheory",
                 .keyword_sort => "sort",
@@ -100,6 +124,7 @@ pub const Token = struct {
                 .keyword_unpack => "unpack",
                 .keyword_from => "from",
                 .keyword_by => "by",
+                .keyword_using => "using",
                 .keyword_case => "case",
                 .keyword_forall => "forall",
                 .keyword_exists => "exists",
@@ -126,6 +151,7 @@ pub const Token = struct {
                 .string => "string",
                 .import_arrow => "<<<",
                 .obligation_arrow => "<-",
+                .closure_turnstile => "-|",
                 .comment => "comment",
                 .invalid => "invalid token",
                 .eof => "end of file",
@@ -155,6 +181,7 @@ const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
     .{ "unpack", .keyword_unpack },
     .{ "from", .keyword_from },
     .{ "by", .keyword_by },
+    .{ "using", .keyword_using },
     .{ "case", .keyword_case },
     .{ "forall", .keyword_forall },
     .{ "exists", .keyword_exists },
@@ -269,7 +296,18 @@ pub const Lexer = struct {
             ')' => .r_paren,
             '{' => .l_brace,
             '}' => .r_brace,
-            '-' => self.ifNext('>', .arrow, .invalid),
+            '-' => blk: {
+                // `->` arrow, `-|` reverse turnstile (model closure-discharge), else invalid.
+                if (self.index < src.len and src[self.index] == '>') {
+                    self.index += 1;
+                    break :blk .arrow;
+                }
+                if (self.index < src.len and src[self.index] == '|') {
+                    self.index += 1;
+                    break :blk .closure_turnstile;
+                }
+                break :blk .invalid;
+            },
             '=' => self.ifNext('>', .fat_arrow, .equal),
             '!' => self.ifNext('=', .bang_equal, .invalid),
             '<' => blk: {

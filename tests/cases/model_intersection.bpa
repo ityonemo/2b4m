@@ -1,0 +1,84 @@
+// H ∩ K ≤ G — the INTERSECTION of two subgroups is a subgroup, via a MULTI-GUARD model
+// (the 13e acceptance stress test). The intersection is the refined sort
+// `Grp where inH and inK` (TWO qualifiers); mapping the source group onto it exercises:
+//   - multi-guard base discharge at a const witness (E needs BOTH identityInH and identityInK
+//     — the parens witness list);
+//   - multi-guard closure discharge at a composite witness (inverse(a) needs BOTH
+//     hClosedInverse and kClosedInverse — the `-|` comma list);
+//   - auto-weakening of the unconditional source axiom mapped to itself, relativized over
+//     the two-guard chain.
+sort Grp
+const E: Grp
+func op(a: Grp, b: Grp): Grp
+func inverse(a: Grp): Grp
+
+axiom opIdentityLeft: forall a: Grp; op(E, a) = a
+
+// a GROUND source theorem: forall_elim at the const E (owes both guards at E).
+theorem opFixesIdentity: op(E, E) = E
+proof
+  @identity-law |
+    forall a: Grp; op(E, a) = a
+    [by cite opIdentityLeft]
+  @conclusion |
+    op(E, E) = E
+    [by forall_elim(E) identity-law]
+qed
+
+// two subgroups H and K on the same carrier, with base + closure facts.
+pred inH(g: Grp)
+pred inK(g: Grp)
+
+axiom identityInH: inH(E)
+axiom identityInK: inK(E)
+axiom hClosedInverse: forall a: Grp; inH(a) -> inH(inverse(a))
+axiom kClosedInverse: forall a: Grp; inK(a) -> inK(inverse(a))
+
+// the INTERSECTION as a multi-guard refined sort.
+sort HK = Grp where inH and inK
+
+model IntersectionIsGroup {
+  Grp: HK
+  E: E(identityInH, identityInK)
+  inverse: inverse -| hClosedInverse, kClosedInverse
+  opIdentityLeft <- opIdentityLeft
+}
+
+// the ground theorem transfers: op(E, E) = E holds on H ∩ K (both base memberships
+// discharged at the elim).
+theorem hkIdentity: op(E, E) = E
+proof
+  @conclusion |
+    op(E, E) = E
+    [using model(IntersectionIsGroup) opFixesIdentity]
+qed
+
+// a source theorem whose proof instantiates at a COMPOSITE witness (inverse of the
+// fixed element) — the transfer owes inH(inverse(a)) AND inK(inverse(a)), each
+// discharged via its `-|` closure fact recursing to the fix-guards.
+theorem opFixesInverse: forall a: Grp; op(E, inverse(a)) = inverse(a)
+proof
+  @generalize-a |
+    fix a: Grp {
+      @identity-law |
+        forall b: Grp; op(E, b) = b
+        [by cite opIdentityLeft]
+      @at-inverse |
+        op(E, inverse(a)) = inverse(a)
+        [by forall_elim(inverse(a)) identity-law]
+    }
+  @conclusion |
+    forall a: Grp; op(E, inverse(a)) = inverse(a)
+    [by forall_intro generalize-a]
+qed
+
+// transferred, relativized over the CONJOINED guard (the canonical multi-qualifier
+// shape): for every a in H ∩ K, the identity fixes inverse(a) — whose membership in
+// BOTH subgroups is derived from the two closure facts, recursing to the fix guard's
+// conjuncts.
+theorem hkFixesInverse: forall a: Grp; (inH(a) and inK(a)) -> op(E, inverse(a)) = inverse(a)
+proof
+  @conclusion |
+    forall a: Grp; (inH(a) and inK(a)) -> op(E, inverse(a)) = inverse(a)
+    [using model(IntersectionIsGroup) opFixesInverse]
+qed

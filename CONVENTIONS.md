@@ -90,7 +90,7 @@ Every category has a distinct look:
 | Category                | Style           | Example                        |
 |-------------------------|-----------------|--------------------------------|
 | Sorts                   | ProudCamelCase  | `Nat`, `Prop`, `Word32`        |
-| Constants               | ALLCAPS         | `ZERO`, `ONE`                  |
+| Constants               | ALLCAPS         | `ZERO`, `ONE`, `E` (identity)  |
 | Functions / predicates  | snake_case word | `succ`, `add`, `even`          |
 | Axioms/theorems         | camelCase       | `addZeroLeft`, `induction`     |
 | Labels                  | kebab-case      | `induction-step`, `given-inductive-hypothesis`   |
@@ -99,6 +99,13 @@ Every category has a distinct look:
 - Functions and predicates should not be **one letter**: `succ` not `S`. The same
   applies to schema parameters (`prop: Nat -> Prop`, not `P`) — they are
   function-shaped.
+- **Named mathematical constants keep their conventional lowercase spelling**:
+  the circle constant `pi`, Euler's number `e`, and the imaginary unit `i` are
+  written **lowercase**, not `PI`/`E`/`I` — their standard notation *is*
+  lowercase, and forcing ALLCAPS reads wrong (`i*i = neg(one)` is `i·i = −1`).
+  This is the same "notation is the point" exception the literate files invoke.
+  (The group-identity `E` is a different constant — an abstract unit, ALLCAPS by
+  the default rule — and stays uppercase; the exception is only for π, e, i.)
 - Statement names are **spelled out**: `addZeroLeft`, not `addZ`; properties in
   full: `addIsCommutative`, not `addComm`.
   - Equation-shaped facts encode which argument position they describe:
@@ -194,7 +201,7 @@ skeleton.
   `@remainder-is-unique-nine-six`. Long names are fine — noise is
   meaninglessness, not length.
 - **Provenance is not content.** The justification line already says
-  `[by theorem modIntro]`; the label says what the step *asserts*
+  `[by cite modIntro]`; the label says what the step *asserts*
   (`@remainder-is-unique`), not what was cited. Exception that proves the
   rule: when a lemma's own name is already an assertion
   (`addIsCommutative`), its kebab form is a fine content name
@@ -235,7 +242,7 @@ words — the role IS the content for these):
 | a flipped equation (`[by symmetry x]`) | `@<content>-flipped` |
 
 The induction payoff line reads
-`[by instantiate induction((fun ...)) base-case induction-step-for-all-k]`.
+`[using instantiation induction((fun ...)) base-case induction-step-for-all-k]`.
 
 **The apply-a-lemma idiom** — cite, specialize, discharge; three nameable
 steps, no filler:
@@ -243,13 +250,13 @@ steps, no filler:
   ```
   @remainder-is-unique |
     forall a, b, q, r: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
-    [by theorem modIntro]
+    [by cite modIntro]
   @remainder-is-determined-nine-six |
     SIX != ZERO -> less_than(THREE, SIX) -> add(mul(SIX, ONE), THREE) = NINE -> mod(NINE, SIX) = THREE
     [by forall_elim(NINE, SIX, ONE, THREE) remainder-is-unique]
   @conclusion |
     mod(NINE, SIX) = THREE
-    [by tautology remainder-is-determined-nine-six six-is-nonzero three-is-below-six sum-is-nine]
+    [using tautology remainder-is-determined-nine-six six-is-nonzero three-is-below-six sum-is-nine]
   ```
 
   (`tautology` replays as a kernel-checked certificate here — a Horn-shaped discharge
@@ -278,7 +285,7 @@ steps, no filler:
 - `import peano <<< "peano.bpa"` binds a namespace to a file (path relative to
   the importing file). Imports come first in the file.
 - Everything imported is referenced **qualified** (`peano.Nat`,
-  `[by theorem peano.addIsCommutative]`) or via an **explicit alias**:
+  `[by cite peano.addIsCommutative]`) or via an **explicit alias**:
   `sort Nat = peano.Nat`, `const ZERO = peano.ZERO`, `func succ = peano.succ`.
   Aliases are kind-checked views of the same entity — both spellings denote
   the same thing, and there is no wildcard `open`.
@@ -298,12 +305,13 @@ steps, no filler:
   the local namespace. `std/peano-ordering.bpa` is the canonical theory module
   (it carries the full order + Farkas lemma set). A named theory must supply
   every symbol the goal uses, or the check hard-errors naming the gap.
-- **Trust model**: `bpa check` verifies everything by default — arithmetic
-  must certify, imported proofs are re-checked, schemas re-instantiate. The
-  speed flags defer layers for iteration (`--fast` accepts arithmetic
-  accelerated verdicts; `--faster` also trusts imported proofs, reporting them
-  as trusted; `--reckless` also trusts imported schemas), always with a loud
-  accelerated banner. Re-run plain `bpa check` before finalizing.
+- **Trust model**: `bpa check` verifies everything by default — every `using`
+  step (accelerant / model / import) produces a kernel-checked certificate.
+  `--fast` defers that per `using` WORD for iteration, admitting the trusted
+  words (`--fast` = all, `--fast-only W…` = allowlist, `--fast-except W…` =
+  denylist), always with a loud accelerated banner. `instantiation` is never
+  trustable (the per-instance proof is the only soundness gate). Re-run plain
+  `bpa check` before finalizing.
 
 ## Layout of steps
 
@@ -314,7 +322,7 @@ steps, no filler:
   ```
   @conclusion |
     forall n: Nat; add(n, ZERO) = n
-    [by instantiate induction((fun k: Nat => add(k, ZERO) = k)) base step]
+    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base step]
   ```
 
   The `@` marks a definition and sits at the left margin, so labels form a

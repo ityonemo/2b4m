@@ -36,7 +36,7 @@ NOT claiming to do something they cannot. The distinctiveness is in the SHAPE:
 > concepts.** Same expressive target; opposite implementation values.
 
 - **Explicit over implicit — no resolution engine.** Lean *searches* for the
-  instance; `model` is NAMED at the cite site (`[by model(AdditiveGroup)
+  instance; `model` is NAMED at the cite site (`[using model(AdditiveGroup)
   group.cancelLeft]`). Zig has no trait search; you pass/name the thing. The named
   cite IS the Zig answer to instance resolution: refuse action-at-a-distance.
 - **Structural over nominal.** `Rat` does not *declare conformance* to `Grp`; you
@@ -143,12 +143,12 @@ theorem addCancelLeft: forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
 proof
   @conclusion |
     forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
-    [by model(<InstanceName>) <source.theorem>]
+    [using model(<InstanceName>) <source.theorem>]
 qed
 ```
 
 `model` is a **built-in justification-verb** (like `axiom`, `rewrite`) — NOT a
-user-defined tactic (bpa has none). `[by model(AdditiveGroup) group.cancelLeft]`
+user-defined tactic (bpa has none). `[using model(AdditiveGroup) group.cancelLeft]`
 remaps `group.cancelLeft`'s formula through the `AdditiveGroup` mapping and checks
 it equals the step goal. The cite names BOTH the instance (which mapping) and the
 source theorem (what to transfer) — necessary because a sort has multiple models.
@@ -196,7 +196,7 @@ Classified with `assoc`/`arithmetic`/Cooper-replay. (Vocabulary per
 `accelerated-elaborated-vocab`: kernel-checked vs. accelerated/disclosed; flag is
 `--fast` vs. default. There is NO `--pure`.)
 
-- `[by model(…) …]` **taints** the citing theorem — `accelerated` gains
+- `[using model(…) …]` **taints** the citing theorem — `accelerated` gains
   `"model"` — **disclosed in the summary**.
 - **`--fast`**: trust the transfer wholesale — remap only the source theorem's
   STATEMENT, α-match the goal, taint `accelerated: model`. Assume-true; check
@@ -209,7 +209,7 @@ Classified with `assoc`/`arithmetic`/Cooper-replay. (Vocabulary per
 A `model` transfer is *strictly a lexical (AST) remapping* — including the PROOF
 AST, not just the statement. So strict mode does exactly this:
 
-1. `[by model(MyModel) sometheorem]` loads `MyModel`'s remap list and rewrites
+1. `[using model(MyModel) sometheorem]` loads `MyModel`'s remap list and rewrites
    `sometheorem`'s ENTIRE PROOF through it, emitting a synthetic local theorem
    `MyModel$sometheorem` (name-mangled to avoid collision).
 2. That remapped proof cites other things — `someothertheorem`, axioms. **Walk the
@@ -275,7 +275,7 @@ consequence.
 The two modes make the risk asymmetric — and this asymmetry IS the feature:
 
 - **`--fast`**: the transfer is trusted wholesale and NEVER inspects which source
-  axioms the transferred theorem's proof depended on. So if you `[by model(M) …]`
+  axioms the transferred theorem's proof depended on. So if you `[using model(M) …]`
   a theorem whose `group`-proof used `opInverseLeft`, and `M` never mapped
   `opInverseLeft`, **it PASSES.** The gap is invisible to `--fast` by construction
   (it checks nothing). Disclosed only as accelerated-by-`model` in the summary.
@@ -418,7 +418,7 @@ UNIFORMLY in both directions:
 
 - Do transferred theorems ALSO materialize as citable namespaced facts
   (`AdditiveGroup.cancelLeft`) at declaration time, or ONLY reachable via the
-  `[by model(…) …]` cite? (Namespace-shadowing was raised then set aside; the
+  `[using model(…) …]` cite? (Namespace-shadowing was raised then set aside; the
   cite-verb form is what's settled. Materializing would let other tactics see them.)
 - Predicated-sort guards that aren't a single unary pred (e.g. a conjunction) —
   the guard is inferred from the mapped target sort's qualifier, so this needs a

@@ -68,11 +68,11 @@ const Proof = struct { kind: []const u8, name: Token, steps: []const ast.Step };
 
 fn asProof(decl: ast.Decl) ?Proof {
     return switch (decl) {
-        .theorem => |t| .{ .kind = "theorem", .name = t.name, .steps = t.steps },
-        .schema => |s| if (s.steps) |steps|
-            .{ .kind = "schema", .name = s.name, .steps = steps }
-        else
-            null,
+        // a theorem carries a proof; a proof-carrying schema is just a theorem with params.
+        .theorem => |t| switch (t) {
+            .local => |l| .{ .kind = if (l.fact.params != null) "schema" else "theorem", .name = l.fact.name, .steps = l.steps },
+            .alias => null,
+        },
         else => null,
     };
 }
@@ -109,40 +109,74 @@ fn renderProof(arena: Allocator, w: *std.Io.Writer, source: []const u8, proof: P
     for (proof.steps) |step| try renderStep(arena, w, source, step, 1);
 }
 
+/// One deferred rendering action. `step` renders an ast.Step at `depth`;
+/// `arm_header` emits a case-arm's indented `<label>  assume <F>` line before
+/// its steps.
+const Act = union(enum) {
+    step: struct { s: ast.Step, depth: u32 },
+    arm_header: struct { label: Token, assumption: *const ast.Expr, depth: u32 },
+};
+
+/// Iterative renderStep: an explicit action-stack (LIFO), children pushed in
+/// REVERSE so they pop in source order. Output is byte-identical to the
+/// recursive form.
 fn renderStep(arena: Allocator, w: *std.Io.Writer, source: []const u8, step: ast.Step, depth: u32) !void {
-    try w.splatByteAll(' ', depth * 2);
-    try w.writeAll(tokenText(source, step.label));
-    switch (step.body) {
-        .claim => {
-            // a bare label — no rule, refs, or formula
-            try w.writeAll("\n");
-        },
-        .fix => |b| {
-            try w.print("  fix {s}\n", .{tokenText(source, b.name)});
-            for (b.steps) |s| try renderStep(arena, w, source, s, depth + 1);
-        },
-        .assume => |b| {
-            try w.print("  assume {s}\n", .{try formulaText(arena, source, b.formula)});
-            for (b.steps) |s| try renderStep(arena, w, source, s, depth + 1);
-        },
-        .unpack => |b| {
-            try w.print("  unpack {s} from {s}\n", .{
-                tokenText(source, b.name), tokenText(source, b.from),
+    var stack: std.ArrayList(Act) = .empty;
+    try stack.append(arena, .{ .step = .{ .s = step, .depth = depth } });
+    while (stack.pop()) |act| switch (act) {
+        .arm_header => |h| {
+            try w.splatByteAll(' ', h.depth * 2);
+            try w.print("{s}  assume {s}\n", .{
+                tokenText(source, h.label), try formulaText(arena, source, h.assumption),
             });
-            for (b.steps) |s| try renderStep(arena, w, source, s, depth + 1);
         },
-        .case => |b| {
-            try w.print("  case {s}\n", .{tokenText(source, b.disj)});
-            // each arm is its own scope: a header line + its own steps, so a
-            // multi-statement arm (or a nested block inside one) stays legible.
-            for (b.arms) |arm| {
-                try w.splatByteAll(' ', (depth + 1) * 2);
-                try w.print("{s}  assume {s}\n", .{
-                    tokenText(source, arm.label), try formulaText(arena, source, arm.assumption),
-                });
-                for (arm.steps) |s| try renderStep(arena, w, source, s, depth + 2);
+        .step => |it| {
+            const d = it.depth;
+            try w.splatByteAll(' ', d * 2);
+            try w.writeAll(tokenText(source, it.s.label));
+            switch (it.s.body) {
+                .claim => {
+                    // a bare label — no rule, refs, or formula
+                    try w.writeAll("\n");
+                },
+                .fix => |b| {
+                    try w.print("  fix {s}\n", .{tokenText(source, b.name)});
+                    pushStepsReversed(arena, &stack, b.steps, d + 1) catch return error.OutOfMemory;
+                },
+                .assume => |b| {
+                    try w.print("  assume {s}\n", .{try formulaText(arena, source, b.formula)});
+                    pushStepsReversed(arena, &stack, b.steps, d + 1) catch return error.OutOfMemory;
+                },
+                .unpack => |b| {
+                    try w.print("  unpack {s} from {s}\n", .{
+                        tokenText(source, b.name), tokenText(source, b.from),
+                    });
+                    pushStepsReversed(arena, &stack, b.steps, d + 1) catch return error.OutOfMemory;
+                },
+                .case => |b| {
+                    try w.print("  case {s}\n", .{tokenText(source, b.disj)});
+                    // each arm is its own scope: a header line + its own steps.
+                    // Push arms in reverse; within an arm, steps (depth d+2) must
+                    // follow the header (depth d+1) — push steps first, header on top.
+                    var i: usize = b.arms.len;
+                    while (i > 0) {
+                        i -= 1;
+                        const arm = b.arms[i];
+                        pushStepsReversed(arena, &stack, arm.steps, d + 2) catch return error.OutOfMemory;
+                        try stack.append(arena, .{ .arm_header = .{ .label = arm.label, .assumption = arm.assumption, .depth = d + 1 } });
+                    }
+                },
             }
         },
+    };
+}
+
+/// Push `steps` onto the action-stack in reverse order (so they pop front-to-back).
+fn pushStepsReversed(arena: Allocator, stack: *std.ArrayList(Act), steps: []const ast.Step, depth: u32) !void {
+    var i: usize = steps.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(arena, .{ .step = .{ .s = steps[i], .depth = depth } });
     }
 }
 
@@ -164,7 +198,7 @@ fn tokenText(source: []const u8, t: Token) []const u8 {
 fn formulaText(arena: Allocator, source: []const u8, e: *const ast.Expr) ![]const u8 {
     var lo: u32 = std.math.maxInt(u32);
     var hi: u32 = 0;
-    spanExpr(e, &lo, &hi);
+    spanExpr(arena, e, &lo, &hi);
 
     var opens: i32 = 0;
     for (source[lo..hi]) |c| {
@@ -188,38 +222,44 @@ fn spanTok(t: Token, lo: *u32, hi: *u32) void {
     if (t.end > hi.*) hi.* = t.end;
 }
 
-fn spanExpr(e: *const ast.Expr, lo: *u32, hi: *u32) void {
-    switch (e.*) {
-        .name => |t| spanTok(t, lo, hi),
-        .call => |c| {
-            spanTok(c.callee, lo, hi);
-            for (c.args) |a| spanExpr(a, lo, hi);
-        },
-        .binary => |b| {
-            spanTok(b.tok, lo, hi);
-            spanExpr(b.lhs, lo, hi);
-            spanExpr(b.rhs, lo, hi);
-        },
-        .not => |n| {
-            spanTok(n.tok, lo, hi);
-            spanExpr(n.operand, lo, hi);
-        },
-        .quant => |q| {
-            spanTok(q.tok, lo, hi);
-            for (q.binders) |b| {
-                spanTok(b.name, lo, hi);
-                spanTok(b.sort, lo, hi);
-            }
-            spanExpr(q.body, lo, hi);
-        },
-        .lambda => |l| {
-            spanTok(l.tok, lo, hi);
-            for (l.binders) |b| {
-                spanTok(b.name, lo, hi);
-                spanTok(b.sort, lo, hi);
-            }
-            spanExpr(l.body, lo, hi);
-        },
+/// Fold over the expr tree accumulating the min/max token offsets. Iterative
+/// work-stack (span is order-independent, so no ordering constraint on the walk).
+fn spanExpr(arena: Allocator, root: *const ast.Expr, lo: *u32, hi: *u32) void {
+    var stack: std.ArrayList(*const ast.Expr) = .empty;
+    stack.append(arena, root) catch return;
+    while (stack.pop()) |e| {
+        switch (e.*) {
+            .name => |t| spanTok(t, lo, hi),
+            .call => |c| {
+                spanTok(c.callee, lo, hi);
+                for (c.args) |a| stack.append(arena, a) catch return;
+            },
+            .binary => |b| {
+                spanTok(b.tok, lo, hi);
+                stack.append(arena, b.lhs) catch return;
+                stack.append(arena, b.rhs) catch return;
+            },
+            .not => |n| {
+                spanTok(n.tok, lo, hi);
+                stack.append(arena, n.operand) catch return;
+            },
+            .quant => |q| {
+                spanTok(q.tok, lo, hi);
+                for (q.binders) |b| {
+                    spanTok(b.name, lo, hi);
+                    spanTok(b.sort, lo, hi);
+                }
+                stack.append(arena, q.body) catch return;
+            },
+            .lambda => |l| {
+                spanTok(l.tok, lo, hi);
+                for (l.binders) |b| {
+                    spanTok(b.name, lo, hi);
+                    spanTok(b.sort, lo, hi);
+                }
+                stack.append(arena, l.body) catch return;
+            },
+        }
     }
 }
 

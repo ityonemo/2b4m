@@ -68,7 +68,7 @@ pub fn addTests(
     // exercises discharged in one line each by the `ext` tactic).
     ctx.okSilent(&.{ "check", "aata/1.2.1-sets.md" });
     // §1.2.1 exercises migrated out: the five set-identity element-chases
-    // (symmetric difference &c.), each one line of `ext_quantified`.
+    // (symmetric difference &c.), each one line of `extensionality_quantified`.
     ctx.okSilent(&.{ "check", "aata/1.2.1-sets-exercises.md" });
 
     // AATA functions: the literate transliteration of Chapter 1 §1.2.2

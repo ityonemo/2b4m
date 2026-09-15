@@ -34,12 +34,25 @@ pub const Sink = struct {
         try self.list.append(self.arena, .{ .file = self.current_file, .offset = offset, .message = msg });
     }
 
-    /// Render all diagnostics, ordered by (file, byte offset).
+    /// Render all diagnostics, ordered by (file, byte offset). Identical duplicates collapse:
+    /// the demand model re-runs a step's read pass and its process pass, so a diagnostic keyed
+    /// to the same (file, offset, message) can be recorded twice (e.g. an accelerant producer
+    /// diagnosing on both passes) — the user should see it once.
     pub fn render(self: *Sink, w: *std.Io.Writer, files: []const FileSrc) !void {
         std.mem.sort(Diagnostic, self.list.items, {}, lessThan);
+        var prev: ?Diagnostic = null;
         for (self.list.items) |d| {
+            if (prev) |p| {
+                if (p.file == d.file and p.offset == d.offset and std.mem.eql(u8, p.message, d.message)) continue;
+            }
+            prev = d;
             const f = files[d.file];
-            const loc = std.zig.findLineColumn(f.source, d.offset);
+            // CLAMP: an offset is only meaningful against the file it was recorded for, and a
+            // demand-engine bug can pair one with another (shorter) file — `findLineColumn`
+            // would then index out of bounds and PANIC, turning a diagnosable defect into a
+            // crash. Clamping degrades such a bug to a merely mislocated message.
+            const off = @min(d.offset, @as(u32, @intCast(f.source.len)));
+            const loc = std.zig.findLineColumn(f.source, off);
             try w.print("{s}:{d}:{d}: error: {s}\n", .{ f.path, loc.line + 1, loc.column + 1, d.message });
         }
     }
@@ -49,3 +62,34 @@ pub const Sink = struct {
         return a.offset < b.offset;
     }
 };
+
+// --- tests ----------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "render: an offset past its file's end is CLAMPED, not a panic" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var sink: Sink = .init(arena);
+    // an offset from a LONGER file, recorded against a short one (a demand-engine mispairing).
+    const files = [_]FileSrc{.{ .path = "/t/short.bpa", .source = "sort Nat\n" }};
+    try sink.add(9_999, "stale offset", .{});
+    var out: std.Io.Writer.Allocating = .init(arena);
+    try sink.render(&out.writer, &files);
+    // renders (no crash) and names the right file.
+    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/short.bpa") != null);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "stale offset") != null);
+}
+
+test "render: an in-range offset still reports its true line and column" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var sink: Sink = .init(arena);
+    const files = [_]FileSrc{.{ .path = "/t/a.bpa", .source = "sort Nat\nconst Z: Nat\n" }};
+    try sink.add(9, "second line", .{}); // the 'c' of `const`
+    var out: std.Io.Writer.Allocating = .init(arena);
+    try sink.render(&out.writer, &files);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/a.bpa:2:1:") != null);
+}

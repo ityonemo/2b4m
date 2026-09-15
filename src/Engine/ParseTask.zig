@@ -6,18 +6,26 @@
 //! self-contained: `new()` packages a payload into a rack-ready `Engine.Task` (bundling
 //! the run-fn), and `run` IS that run-fn — the parse-task body.
 //!
-//! FileId + source are assigned/read at discovery time (so a child's id exists before
-//! its parse runs — cyclic-import safe); parse is the ONE task type that never suspends.
+//! FileId + source are assigned/read at DISCOVERY time (so a child's id exists before its
+//! parse runs — cyclic-import safe); parse is the ONE task type that never suspends.
+//!
+//! LAZY PARSING (Step 11): a ParseTask parses ONE file. It discovers + resolves that
+//! file's imports (populating `import_maps` so a qualified `ns.name` can find the child's
+//! FileId) but does NOT rack the children's ParseTasks — a child is parsed only when a
+//! Fetch/Prove task first cites into it (via `Context.demandParse`, which racks the
+//! ParseTask and suspends on it). At completion this task marks its file `parsed`
+//! (waking anyone suspended on it). The ROOT ParseTask additionally scans its theorems
+//! and racks the ProveTasks that seed demand.
 
 const std = @import("std");
-const env = @import("../env.zig");
 const parser = @import("../parser.zig");
+const ast = @import("../ast.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 
 const ParseTask = @This();
 
-file_id: env.FileId,
+file_id: Context.FileId,
 source: []const u8,
 path: []const u8,
 
@@ -36,58 +44,136 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
     return run(self, task.*, h);
 }
 
-/// The parse-task body: parse the file, resolve its imports (discovering + racking
-/// child parse tasks), and record its import map. TRANSITIONAL: parse follows imports
-/// here only because the eager elaborator back-end (Context phase B) needs the whole
-/// transitive file set present. In the target demand-driven design, the PROVER pulls a
-/// file in when it cites into it; this import-following goes away then.
+/// The parse-task body: parse ONE file, resolve its imports (DISCOVER each child + record
+/// the raw-path -> child-FileId map, so citations can find it — but do NOT rack the
+/// child's ParseTask; that happens on demand when something cites into it). Mark the file
+/// `parsed` at the end (the completion wakes anyone suspended in `demandParse`). If this
+/// is the root file, scan its theorems and rack the seed ProveTasks.
 pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     self.sink.current_file = idx;
-    var p: parser.Parser = .init(self.arena, task.source, self.sink);
+    var p: parser.Parser = .initInterning(self.arena, task.source, self.sink, self.interner);
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
     self.declarations += parsed.decls.len;
+    // register each decl by name for O(1) by-name resolution (the demand tasks look up
+    // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
+    // This is the AUTHORITATIVE first pass: a name already registered here is a genuine
+    // intra-file duplicate declaration — diagnosed at the later decl's name token (the
+    // demand engine would otherwise silently keep the first and never notice, since a file
+    // is only elaborated on demand). `forward` (intheory) decls register nothing and never
+    // collide (registerDecl returns true for them).
+    for (self.parsed.items[idx].decls) |*decl| {
+        const fresh = try self.registerDecl(task.file_id, decl);
+        if (!fresh) {
+            self.sink.current_file = idx;
+            const nt = ast.declName(decl);
+            try self.sink.add(nt.start, "duplicate declaration of '{s}'", .{self.interner.stringBytes(nt.name)});
+        }
+    }
 
+    // FORWARD (`intheory name`) is a manifest PROMISE that `name` is defined later in this file
+    // as a THEOREM. It lands NOWHERE durable (not the registry, not the pool); ParseTask just
+    // checks the promise holds (the real theorem registered above) and drops it. A missing name
+    // or a name defined as something OTHER than a theorem (an axiom, etc.) is diagnosed.
+    for (self.parsed.items[idx].decls) |decl| {
+        if (decl != .forward) continue;
+        const promised = decl.forward.name;
+        self.sink.current_file = idx;
+        const target = self.declOf(task.file_id, promised.name) orelse {
+            try self.sink.add(promised.start, "forwarded theorem '{s}' is never defined", .{self.interner.stringBytes(promised.name)});
+            continue;
+        };
+        if (target.* != .theorem) {
+            const kind: []const u8 = switch (target.*) {
+                .axiom => "an axiom",
+                .hole => "a hole",
+                else => "a non-theorem",
+            };
+            try self.sink.add(promised.start, "'{s}' is forwarded as a theorem but defined as {s}", .{ self.interner.stringBytes(promised.name), kind });
+        }
+    }
+
+    // resolved import-path strings are TRANSIENT — used only to look the child file up / discover
+    // it, then dropped (the common re-reference / std-hit case retains nothing). Resolve them into
+    // a GPA-backed scratch arena (reclaimed at the end of the loop) instead of leaking every path
+    // into the never-reset main arena. TRAP: `discover` RETAINS the path (stores it in
+    // `files[].path`, read later by diagnostics), so on the discover branch we DUPE it onto the
+    // main arena; the scratch string stays purely transient otherwise.
+    var path_scratch: std.heap.ArenaAllocator = .init(self.gpa);
+    defer path_scratch.deinit();
+    const scratch = path_scratch.allocator();
     for (parsed.decls) |decl| {
         if (decl != .import) continue;
         const d = decl.import;
-        const raw_quoted = task.source[d.path.start..d.path.end];
-        const raw = raw_quoted[1 .. raw_quoted.len - 1];
+        // the parser stamped the quote-stripped path string; path RESOLUTION (fs joins)
+        // works on its bytes — that's I/O, not name comparison.
+        const raw = self.interner.stringBytes(d.path.name);
         const resolved = if (std.mem.startsWith(u8, raw, "std/"))
-            try std.fs.path.resolve(self.arena, &.{ self.std_root, raw["std/".len..] })
+            try std.fs.path.resolve(scratch, &.{ self.std_root, raw["std/".len..] })
         else
-            try std.fs.path.resolve(self.arena, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
+            try std.fs.path.resolve(scratch, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
 
-        const child: env.FileId = if (try self.lookupFile(resolved)) |existing|
+        const child: Context.FileId = if (try self.lookupFile(resolved)) |existing|
             existing // already discovered (incl. a cyclic re-reference) — reuse id
         else child: {
+            // DISCOVER the child (read its source, reserve its FileId + table slots) so
+            // the import resolves — but leave it `unparsed`; a citation triggers its
+            // parse lazily. Import resolution only needs the child's identity, not its AST.
             const src = self.read_fn(self.read_ctx, self.arena, resolved) catch {
                 self.sink.current_file = idx;
                 try self.sink.add(d.path.start, "cannot open '{s}': file not found", .{resolved});
                 continue;
             };
-            const cid = try self.discover(resolved, src);
-            try h.rack(try new(self.arena, .{ .file_id = cid, .source = src, .path = resolved }));
-            break :child cid;
+            // discover RETAINS the path → dupe it durably (the scratch copy is freed below).
+            break :child try self.discover(try self.arena.dupe(u8, resolved), src);
         };
-        const raw_id = try self.interner.internString(raw);
-        try self.import_maps.items[idx].put(self.arena, raw_id, child);
+        try self.import_maps.items[idx].put(self.arena, d.path.name, child);
     }
 
-    // SCAN (tail of parse): the requested (root) file's theorems are the roots of demand.
-    // Rack a ProveTask per theorem. Whole-file request => all theorems (the only filter
-    // today). Only the root file is scanned — imported files' theorems are demanded by
-    // citations later, not proved just for being imported. ProveTask is a NO-OP for now,
-    // so this is behavior-neutral wiring: it proves scan -> rack -> prove runs to
-    // quiescence alongside the still-authoritative eager back-end.
+    // this file's AST is now populated — mark it parsed so `demandParse` waiters wake.
+    self.parse_state.items[idx] = .parsed;
+
+    // the ROOT file's theorems are the roots of demand: scan + rack a ProveTask each.
+    // (Only the root — imported files' theorems are demanded by citations, not proved
+    // just for being imported.)
     if (task.file_id == self.root_file) {
-        const file_index = try self.fileIndex(task.path); // the pool .file identity
+        const file_index = try self.fileIndex(task.path);
         for (parsed.decls) |decl| {
-            if (decl != .theorem) continue;
-            const name = decl.theorem.name;
-            const name_id = try self.interner.internString(task.source[name.start..name.end]);
-            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = name_id }));
+            switch (decl) {
+                // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a
+                // theorem-SCHEMA (params != null) is a template, NOT proved as a root (it is
+                // instantiated on demand). A schema is NOT checked at its decl: soundness comes
+                // from the PER-INSTANCE proof at each `[using instantiation …]` (which the kernel
+                // always runs). A schema need not be a true universal — a narrow one is bad form,
+                // not wrong, and a bad instantiation fails at its use site (#93). An alias theorem
+                // proves nothing new.
+                .theorem => |t| switch (t) {
+                    .local => |l| {
+                        if (l.fact.params == null) {
+                            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = l.fact.name.name }));
+                        }
+                    },
+                    .alias => {},
+                },
+                // a root-file AXIOM is not "proved", but its ProveTask still ELABORATES its
+                // stated formula — which discharges any guarded/refined-application obligation
+                // in the statement (an axiom asserting `div(ZERO, ZERO) = …` owes `ZERO != ZERO`,
+                // else it smuggles a partial function outside its domain). A ground axiom's task
+                // is a leaf publish; a schema-axiom (params) stays an on-demand template.
+                .axiom => |a| switch (a) {
+                    .local => |f| {
+                        if (f.params == null) {
+                            try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = f.name.name }));
+                        }
+                    },
+                    .alias => {},
+                },
+                // a `model` decl is NOT built eagerly — a model is validated only when it is
+                // actually CITED (`[by model(M) …]` racks its ModelTask). An unused model,
+                // even a malformed one, is inert: nothing depends on it, so nothing is wrong.
+                else => {},
+            }
         }
     }
 }

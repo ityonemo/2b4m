@@ -1,0 +1,67 @@
+// A DEFINE'D guard and a SPELLED-OUT one are the SAME guard. `divisible` is a define; sort
+// `D` refines `Int` by it, and `g` spells the same body out as a `requires`. Either use
+// requires the one proposition `exists k: Int; UNIT = mul(d, k)`, and a teaching written
+// either way — through the define (expanded before elaboration) or spelled out — is that
+// same proposition by identity. All four combinations.
+sort Int
+const d: Int
+const UNIT: Int
+func mul(a: Int, b: Int): Int
+
+define divisible(n) = exists k: Int; n = mul(d, k)
+sort D = Int where divisible
+func f(n: D): Int
+func g(n: Int): Int requires exists k: Int; n = mul(d, k)
+
+axiom unitDivisible: exists k: Int; UNIT = mul(d, k)
+
+// define'd guard, taught SPELLED OUT.
+theorem defineGuardSpelledStep: f(UNIT) = f(UNIT)
+proof
+  @wf |
+    exists k: Int; UNIT = mul(d, k)
+    [by cite unitDivisible]
+  @conclusion |
+    f(UNIT) = f(UNIT)
+    [by reflexivity]
+qed
+
+// define'd guard, taught THROUGH THE DEFINE.
+theorem defineGuardDefineStep: f(UNIT) = f(UNIT)
+proof
+  @wf |
+    divisible(UNIT)
+    [by cite unitDivisible]
+  @conclusion |
+    f(UNIT) = f(UNIT)
+    [by reflexivity]
+qed
+
+// spelled-out `requires`, taught THROUGH THE DEFINE (a `requires` is owed in the statement
+// too, so the antecedent teaches it there and the assume teaches it in the proof).
+theorem requiresDefineAntecedent: divisible(UNIT) -> g(UNIT) = g(UNIT)
+proof
+  @given |
+    assume divisible(UNIT) {
+      @inner |
+        g(UNIT) = g(UNIT)
+        [by reflexivity]
+    }
+  @conclusion |
+    divisible(UNIT) -> g(UNIT) = g(UNIT)
+    [by implies_intro given]
+qed
+
+// spelled-out `requires`, taught SPELLED OUT.
+theorem requiresSpelledAntecedent: (exists k: Int; UNIT = mul(d, k)) -> g(UNIT) = g(UNIT)
+proof
+  @given |
+    assume exists k: Int; UNIT = mul(d, k) {
+      @inner |
+        g(UNIT) = g(UNIT)
+        [by reflexivity]
+    }
+  @conclusion |
+    (exists k: Int; UNIT = mul(d, k)) -> g(UNIT) = g(UNIT)
+    [by implies_intro given]
+qed

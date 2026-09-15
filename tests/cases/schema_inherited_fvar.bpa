@@ -1,0 +1,28 @@
+// Instantiating a schema at a lambda capturing an enclosing `fix b`: the schema's own
+// `tautology` steps then run over a body mentioning a free `b` that belongs to THIS file.
+// Every accelerant that abstracts free fvars must carry the caller-scope binding, or the
+// re-elaborated synthetic fails with "unknown identifier 'b'" pointing into the SCHEMA's
+// file. (Only `specialize` carried it; the leak family memory records the '' diagnostic.)
+import src <<< "schema_inherited_fvar_src.bpa"
+sort Int = src.Int
+pred nonneg = src.nonneg
+axiom assumeIt: forall b2: Int; forall n: Int; nonneg(n) -> nonneg(f(n, b2))
+func f(a: Int, b: Int): Int
+theorem instantiateWithCapturedB: forall b: Int; forall n: Int; nonneg(n) -> nonneg(f(n, b))
+proof
+  @generalize-b |
+    fix b: Int {
+      @assume-all |
+        forall b2: Int; forall n: Int; nonneg(n) -> nonneg(f(n, b2))
+        [by cite assumeIt]
+      @premise |
+        forall n: Int; nonneg(n) -> nonneg(f(n, b))
+        [by forall_elim(b) assume-all]
+      @conclusion-inner |
+        forall n: Int; nonneg(n) -> nonneg(f(n, b))
+        [using instantiation src.schemaWithTautology((fun j: Int => nonneg(f(j, b)))) premise]
+    }
+  @conclusion |
+    forall b: Int; forall n: Int; nonneg(n) -> nonneg(f(n, b))
+    [by forall_intro generalize-b]
+qed
