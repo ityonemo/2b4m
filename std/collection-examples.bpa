@@ -1,0 +1,161 @@
+// Worked examples for `std/collection.bpa`'s cross-level operations.
+//
+// Why this file exists: `bigUnion`, `bigIntersection` and `universe` collapse a collection
+// of sets down to a single set, and each is pinned down by a membership axiom stated for
+// the partition apparatus that builds on them. Nothing in `collection.bpa` itself derives
+// from those three, so nothing exercises them — and a membership biconditional no proof
+// ever eliminates is one whose direction has never been checked. Each theorem below uses
+// one direction of one axiom, at the smallest scale that needs it.
+import collection <<< "std/collection.bpa"
+import set <<< "std/set.bpa"
+
+sort Element = set.Element
+sort Set = set.Set
+sort Collection = collection.Collection
+const universe = collection.universe
+func bigUnion = collection.bigUnion
+func bigIntersection = collection.bigIntersection
+pred member = set.member
+pred contains = collection.contains
+
+axiom bigUnionMember = collection.bigUnionMember
+axiom bigIntersectionMember = collection.bigIntersectionMember
+axiom universeMember = collection.universeMember
+
+// -- the universe ------------------------------------------------------------
+
+// every element is in the universe, so the universe is nonempty from any element you
+// have in hand. The axiom's only content, used the only way it can be.
+theorem universeContainsEverything: forall x: Element; exists s: Set; member(x, s)
+proof
+  @generalize-x |
+    fix x: Element {
+      @x-is-in-the-universe |
+        member(x, universe)
+        [using specialize universeMember(x)]
+      @conclusion-some-set-contains-x |
+        exists s: Set; member(x, s)
+        [by exists_intro(universe) x-is-in-the-universe]
+    }
+  @conclusion |
+    forall x: Element; exists s: Set; member(x, s)
+    [by forall_intro generalize-x]
+qed
+
+// -- bigUnion: membership is witnessed by SOME member set --------------------
+
+// if x is in some set of the collection, x is in the collection's union — the
+// right-to-left direction of the membership biconditional.
+theorem memberOfSomeSetIsInBigUnion: forall c: Collection; forall x: Element; forall s: Set; contains(s, c) -> member(x, s) -> member(x, bigUnion(c))
+proof
+  @generalize-c |
+    fix c: Collection {
+      @generalize-x |
+        fix x: Element {
+          @generalize-s |
+            fix s: Set {
+              @given-collection-contains-s |
+                assume contains(s, c) {
+                  @given-x-in-s |
+                    assume member(x, s) {
+                      @collection-contains-s |
+                        contains(s, c)
+                        [by hypothesis given-collection-contains-s]
+                      @x-is-in-s |
+                        member(x, s)
+                        [by hypothesis given-x-in-s]
+                      @witness-clauses |
+                        contains(s, c) and member(x, s)
+                        [by and_intro collection-contains-s x-is-in-s]
+                      @some-set-witnesses-x |
+                        exists t: Set; contains(t, c) and member(x, t)
+                        [by exists_intro(s) witness-clauses]
+                      @big-union-membership |
+                        member(x, bigUnion(c)) iff (exists t: Set; contains(t, c) and member(x, t))
+                        [using specialize bigUnionMember(c, x)]
+                      @witness-implies-membership |
+                        (exists t: Set; contains(t, c) and member(x, t)) -> member(x, bigUnion(c))
+                        [by iff_elim_backward big-union-membership]
+                      @conclusion-x-in-big-union |
+                        member(x, bigUnion(c))
+                        [by modus_ponens witness-implies-membership some-set-witnesses-x]
+                    }
+                  @x-in-s-implies |
+                    member(x, s) -> member(x, bigUnion(c))
+                    [by implies_intro given-x-in-s]
+                }
+              @conclusion-both-hypotheses |
+                contains(s, c) -> member(x, s) -> member(x, bigUnion(c))
+                [by implies_intro given-collection-contains-s]
+            }
+          @discharge-s |
+            forall s: Set; contains(s, c) -> member(x, s) -> member(x, bigUnion(c))
+            [by forall_intro generalize-s]
+        }
+      @discharge-x |
+        forall x: Element; forall s: Set; contains(s, c) -> member(x, s) -> member(x, bigUnion(c))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall c: Collection; forall x: Element; forall s: Set; contains(s, c) -> member(x, s) -> member(x, bigUnion(c))
+    [by forall_intro generalize-c]
+qed
+
+// -- bigIntersection: membership gives you EVERY member set ------------------
+
+// if x is in the collection's intersection, x is in each of its member sets — the
+// left-to-right direction, eliminated at one particular set.
+theorem memberOfBigIntersectionIsInEach: forall c: Collection; forall x: Element; forall s: Set; member(x, bigIntersection(c)) -> contains(s, c) -> member(x, s)
+proof
+  @generalize-c |
+    fix c: Collection {
+      @generalize-x |
+        fix x: Element {
+          @generalize-s |
+            fix s: Set {
+              @given-x-in-intersection |
+                assume member(x, bigIntersection(c)) {
+                  @given-collection-contains-s |
+                    assume contains(s, c) {
+                      @x-is-in-intersection |
+                        member(x, bigIntersection(c))
+                        [by hypothesis given-x-in-intersection]
+                      @collection-contains-s |
+                        contains(s, c)
+                        [by hypothesis given-collection-contains-s]
+                      @big-intersection-membership |
+                        member(x, bigIntersection(c)) iff (forall t: Set; contains(t, c) -> member(x, t))
+                        [using specialize bigIntersectionMember(c, x)]
+                      @membership-implies-all |
+                        member(x, bigIntersection(c)) -> (forall t: Set; contains(t, c) -> member(x, t))
+                        [by iff_elim_forward big-intersection-membership]
+                      @x-is-in-every-member |
+                        forall t: Set; contains(t, c) -> member(x, t)
+                        [by modus_ponens membership-implies-all x-is-in-intersection]
+                      @x-in-s-if-contained |
+                        contains(s, c) -> member(x, s)
+                        [by forall_elim(s) x-is-in-every-member]
+                      @conclusion-x-in-s |
+                        member(x, s)
+                        [by modus_ponens x-in-s-if-contained collection-contains-s]
+                    }
+                  @contains-implies |
+                    contains(s, c) -> member(x, s)
+                    [by implies_intro given-collection-contains-s]
+                }
+              @conclusion-both-hypotheses |
+                member(x, bigIntersection(c)) -> contains(s, c) -> member(x, s)
+                [by implies_intro given-x-in-intersection]
+            }
+          @discharge-s |
+            forall s: Set; member(x, bigIntersection(c)) -> contains(s, c) -> member(x, s)
+            [by forall_intro generalize-s]
+        }
+      @discharge-x |
+        forall x: Element; forall s: Set; member(x, bigIntersection(c)) -> contains(s, c) -> member(x, s)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall c: Collection; forall x: Element; forall s: Set; member(x, bigIntersection(c)) -> contains(s, c) -> member(x, s)
+    [by forall_intro generalize-c]
+qed

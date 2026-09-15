@@ -89,6 +89,22 @@ pub fn addTests(
     // witness/splice/cancel factorization sequences.
     ctx.okSilent(&.{ "check", "std/integer-sequence.bpa" });
 
+    // WORKED EXAMPLES (`<theory>-examples.bpa`): a theory's axioms are demonstrated by the
+    // library itself, not left for callers to be the first to exercise. `--library` over
+    // std/ is what makes this an obligation rather than a nicety — an axiom no derivation
+    // touches has never had its binders, guards or direction checked.
+    ctx.okSilent(&.{ "check", "std/sequence-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/real-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/rational-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/collection-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/equivalence-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/function-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/complex-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/ring-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/field-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/peano-examples.bpa" });
+
     // the reusable ℤ PRIME THEORY (std/primes.bpa): primality packaged once as a
     // transparent `define is_prime`, then Euclid's Lemma (via coprimeBezout),
     // primeDividesProductImpliesMember (FTA-uniqueness crux), and the infinitude

@@ -17,7 +17,7 @@ pub fn addTests(
     const no_args = b.addRunArtifact(exe);
     no_args.has_side_effects = true;
     no_args.expectStdErrEqual(
-        "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] <file.bpa> [theorem]\n" ++
+        "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | dir> [theorem]\n" ++
             "       bpa fmt [--check] <file.bpa|.md>\n" ++
             "       bpa lint <file.bpa|.md>\n" ++
             "       bpa debug accelerant <file> <line | theorem step-label>\n" ++
@@ -35,7 +35,7 @@ pub fn addTests(
     // fmt --check: the exemplars are canonically formatted. The `.md` entries
     // exercise the literate path (formatLiterate reflows the ```bpa blocks and
     // leaves prose verbatim); the rest are plain `.bpa` sources.
-    for ([_][]const u8{ "examples/peano.bpa", "examples/peano-pure.bpa", "examples/peano-imports.bpa", "examples/gauss.bpa", "examples/gauss-pure.bpa", "examples/euclid.bpa", "examples/euclid-compute.bpa", "examples/incorrect.bpa", "examples/sqrt2.bpa", "std/peano.bpa", "std/peano-order.bpa", "std/peano-subtraction.bpa", "std/peano-divides.bpa", "std/peano-parity.bpa", "std/group.bpa", "std/group-power.bpa", "std/group-sequence.bpa", "std/ring.bpa", "std/field.bpa", "std/field-order.bpa", "std/rational.bpa", "std/real.bpa", "std/complex.bpa", "std/set.bpa", "std/collection.bpa", "std/function.bpa", "std/function-invertible.bpa", "std/integer.bpa", "std/integer-order.bpa", "std/integer-wellordering.bpa", "std/integer-divides.bpa", "std/sequence.bpa", "std/integer-sequence.bpa", "std/integer-sum.bpa", "std/primes.bpa", "std/divisibility.bpa", "std/element.bpa", "std/relation.bpa", "std/equivalence.bpa", "aata/3.1-integers-mod-n.md", "aata/3.1-integers-mod-n-exercises.md", "aata/3.2-groups.md", "aata/3.2-groups-exercises.md", "aata/3.3-subgroups.md", "aata/3.3-subgroups-exercises.md", "aata/1.2.1-sets.md", "aata/1.2.1-sets-exercises.md", "aata/1.2.2-functions.md", "aata/1.2.2-functions-exercises.md", "aata/1.2.3-relations.md", "aata/1.2.3-relations-exercises.md", "aata/1.2.3-partitions.md", "aata/2.1-induction.md", "aata/2.1-induction-exercises.md", "aata/2.2-division-algorithm.md", "aata/2.2-division-algorithm-exercises.md", "aata/2.3-primes.md", "aata/2.3-primes-exercises.md", "tests/cases/kebab_label_ok.bpa", "tests/cases/schema_eta.bpa", "tests/cases/schema_binary_param.bpa", "tests/cases/schema_wellformed_ok.bpa", "tests/cases/schema_wellformed_bad.bpa", "tests/cases/choice_description.bpa", "tests/cases/model_accel_simplify.bpa", "tests/cases/model_accel_assoc.bpa", "tests/cases/model_accel_assoc_commut.bpa", "tests/cases/model_accel_tautology.bpa", "tests/cases/model_accel_polynomial.bpa", "tests/cases/model_accel_arithmetic.bpa", "tests/cases/model_accel_extensionality.bpa", "tests/cases/model_schema_source.bpa", "tests/cases/model_schema.bpa", "tests/cases/model_schema_bad.bpa", "tests/cases/model_schema_claim_bad.bpa", "tests/cases/case_split.bpa", "tests/cases/fix_sibling_reuse.bpa", "tests/cases/outline.bpa", "tests/cases/query_claims_schema.bpa", "tests/cases/model_obligation_arrow.bpa", "tests/cases/model_axiom_colon_bad.bpa", "tests/cases/model_symbol_arrow_bad.bpa", "tests/cases/schema_accelerant_polynomial.bpa", "tests/cases/arithmetic_fallback_redundant_bad.bpa", "tests/cases/arithmetic_fallback_specialize.bpa", "tests/cases/arithmetic_linear_equation_premise.bpa", "tests/cases/specialize_local.bpa", "tests/cases/specialize_local_bad.bpa", "tests/cases/schema_arithmetic_fallback_bad.bpa", "tests/cases/schema_arithmetic_param_bad.bpa", "tests/cases/assoc_commut_custom.bpa", "tests/cases/assoc_commut_bad_arity.bpa", "tests/cases/assoc_commut_oracle.bpa", "tests/cases/polynomial_oracle.bpa", "tests/cases/polynomial_neg.bpa", "tests/cases/polynomial_inverse.bpa", "tests/cases/polynomial_coeff.bpa", "tests/cases/polynomial_coeff_bad.bpa", "tests/cases/polynomial_field.bpa", "tests/cases/search_target.bpa", "tests/cases/assoc.bpa", "tests/cases/assoc_bad.bpa", "tests/cases/assoc_missing_arg.bpa", "tests/cases/assoc_oracle.bpa", "tests/cases/axiom_as_step_bad.bpa", "tests/cases/single_theorem.bpa", "tests/cases/axioms_report.bpa" }) |path| {
+    for ([_][]const u8{ "examples/peano.bpa", "examples/peano-pure.bpa", "examples/peano-imports.bpa", "examples/gauss.bpa", "examples/gauss-pure.bpa", "examples/euclid.bpa", "examples/euclid-compute.bpa", "examples/incorrect.bpa", "examples/sqrt2.bpa", "std/peano.bpa", "std/peano-order.bpa", "std/peano-subtraction.bpa", "std/peano-divides.bpa", "std/peano-parity.bpa", "std/group.bpa", "std/group-power.bpa", "std/group-sequence.bpa", "std/ring.bpa", "std/field.bpa", "std/field-order.bpa", "std/rational.bpa", "std/real.bpa", "std/complex.bpa", "std/set.bpa", "std/collection.bpa", "std/function.bpa", "std/function-invertible.bpa", "std/integer.bpa", "std/integer-order.bpa", "std/integer-wellordering.bpa", "std/integer-divides.bpa", "std/sequence.bpa", "std/integer-sequence.bpa", "std/integer-sum.bpa", "std/primes.bpa", "std/integer-examples.bpa", "std/real-examples.bpa", "std/rational-examples.bpa", "std/sequence-examples.bpa", "std/collection-examples.bpa", "std/equivalence-examples.bpa", "std/function-examples.bpa", "std/complex-examples.bpa", "std/ring-examples.bpa", "std/field-examples.bpa", "std/peano-examples.bpa", "std/divisibility.bpa", "std/element.bpa", "std/relation.bpa", "std/equivalence.bpa", "aata/3.1-integers-mod-n.md", "aata/3.1-integers-mod-n-exercises.md", "aata/3.2-groups.md", "aata/3.2-groups-exercises.md", "aata/3.3-subgroups.md", "aata/3.3-subgroups-exercises.md", "aata/1.2.1-sets.md", "aata/1.2.1-sets-exercises.md", "aata/1.2.2-functions.md", "aata/1.2.2-functions-exercises.md", "aata/1.2.3-relations.md", "aata/1.2.3-relations-exercises.md", "aata/1.2.3-partitions.md", "aata/2.1-induction.md", "aata/2.1-induction-exercises.md", "aata/2.2-division-algorithm.md", "aata/2.2-division-algorithm-exercises.md", "aata/2.3-primes.md", "aata/2.3-primes-exercises.md", "tests/cases/kebab_label_ok.bpa", "tests/cases/schema_eta.bpa", "tests/cases/schema_binary_param.bpa", "tests/cases/schema_wellformed_ok.bpa", "tests/cases/schema_wellformed_bad.bpa", "tests/cases/choice_description.bpa", "tests/cases/model_accel_simplify.bpa", "tests/cases/model_accel_assoc.bpa", "tests/cases/model_accel_assoc_commut.bpa", "tests/cases/model_accel_tautology.bpa", "tests/cases/model_accel_polynomial.bpa", "tests/cases/model_accel_arithmetic.bpa", "tests/cases/model_accel_extensionality.bpa", "tests/cases/model_schema_source.bpa", "tests/cases/model_schema.bpa", "tests/cases/model_schema_bad.bpa", "tests/cases/model_schema_claim_bad.bpa", "tests/cases/case_split.bpa", "tests/cases/fix_sibling_reuse.bpa", "tests/cases/outline.bpa", "tests/cases/query_claims_schema.bpa", "tests/cases/model_obligation_arrow.bpa", "tests/cases/model_axiom_colon_bad.bpa", "tests/cases/model_symbol_arrow_bad.bpa", "tests/cases/schema_accelerant_polynomial.bpa", "tests/cases/arithmetic_fallback_redundant_bad.bpa", "tests/cases/arithmetic_fallback_specialize.bpa", "tests/cases/arithmetic_linear_equation_premise.bpa", "tests/cases/specialize_local.bpa", "tests/cases/specialize_local_bad.bpa", "tests/cases/schema_arithmetic_fallback_bad.bpa", "tests/cases/schema_arithmetic_param_bad.bpa", "tests/cases/assoc_commut_custom.bpa", "tests/cases/assoc_commut_bad_arity.bpa", "tests/cases/assoc_commut_oracle.bpa", "tests/cases/polynomial_oracle.bpa", "tests/cases/polynomial_neg.bpa", "tests/cases/polynomial_inverse.bpa", "tests/cases/polynomial_coeff.bpa", "tests/cases/polynomial_coeff_bad.bpa", "tests/cases/polynomial_field.bpa", "tests/cases/search_target.bpa", "tests/cases/assoc.bpa", "tests/cases/assoc_bad.bpa", "tests/cases/assoc_missing_arg.bpa", "tests/cases/assoc_oracle.bpa", "tests/cases/axiom_as_step_bad.bpa", "tests/cases/single_theorem.bpa", "tests/cases/axioms_report.bpa", "tests/cases/dir_ok/base.bpa", "tests/cases/dir_ok/sub/uses_base.bpa", "tests/cases/dir_ok/literate.md", "tests/cases/dir_bad/fine.bpa", "tests/cases/dir_bad/broken.bpa", "tests/cases/dir_library_bad/spare.bpa" }) |path| {
         const fmt_check = b.addRunArtifact(exe);
         fmt_check.has_side_effects = true;
         fmt_check.setCwd(b.path("."));
@@ -377,13 +377,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/schema_lambda_capture.bpa" });
     // SINGLE-THEOREM CHECK: `bpa check <file> <theorem>` proves only the named theorem (and
     // what it cites) — `good` alone is clean while `broken` (and so the whole file) fails;
-    // the theorem follows the file, after any trust words; a wrong name / an axiom / an
-    // extra positional are diagnosed.
+    // the theorem follows the file, after any trust words. The entry racks the ParseTask and
+    // ONE ProveTask for the name, so a wrong name is that task's own diagnostic.
     ctx.ok(&.{ "check", "tests/cases/single_theorem.bpa", "good" }, "OK: 5 declarations, 1 theorems proven\n");
     ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "broken" }, "tests/cases/single_theorem.bpa:16:4: error: step claims 'q' but the axiom derives 'p'\n");
     ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa" }, "tests/cases/single_theorem.bpa:16:4: error: step claims 'q' but the axiom derives 'p'\n");
-    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "nosuch" }, "tests/cases/single_theorem.bpa:1:1: error: no theorem 'nosuch' in this file\n");
-    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "pq" }, "tests/cases/single_theorem.bpa:5:7: error: 'pq' is an axiom, not a theorem\n");
+    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "nosuch" }, "tests/cases/single_theorem.bpa:1:1: error: reference not found: 'nosuch'\n");
+    // naming an AXIOM racks its (statement-elaborating) task: nothing is proved, nothing fails.
+    ctx.ok(&.{ "check", "tests/cases/single_theorem.bpa", "pq" }, "OK: 5 declarations, 0 theorems proven\n");
     ctx.ok(&.{ "check", "--fast-only", "tautology", "tests/cases/single_theorem.bpa", "good" },
         \\OK: 5 declarations, 1 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
@@ -419,6 +420,29 @@ pub fn addTests(
         \\  — DRAFT — 1 hole(s) unfilled (aspirational; the result is conditional on them): zeroIsEven; re-run `bpa check` (no --draft) once filled.
         \\
     );
+    // DIRECTORY CHECK: every .bpa and .md under the directory, recursively, in ONE engine pass
+    // (base.bpa is both a root and sub/uses_base.bpa's import — proved once); a prose .md is a
+    // root that parses to nothing; a literate .md counts like any file; one aggregate line.
+    ctx.ok(&.{ "check", "tests/cases/dir_ok" }, "OK: 4 files, 13 declarations, 3 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/dir_ok", "--axioms" },
+        \\OK: 4 files, 13 declarations, 3 theorems proven
+        \\  — rests on 2 axiom(s):
+        \\      zeroEven  (tests/cases/dir_ok/base.bpa:5)
+        \\      pHolds  (tests/cases/dir_ok/literate.md:7)
+        \\
+    );
+    ctx.fail(&.{ "check", "tests/cases/dir_bad" }, "tests/cases/dir_bad/broken.bpa:7:4: error: step claims 'q' but the axiom derives 'p'\n");
+    ctx.fail(&.{ "check", "tests/cases/dir_ok", "zeroIsEven" }, "error: a theorem selects within one file; 'tests/cases/dir_ok' is a directory\n");
+    // `--library` (a directory): an axiom declared in the directory that no theorem in it
+    // rests on FAILS the check; a directory whose every axiom is reached passes; a file is
+    // not a library.
+    ctx.ok(&.{ "check", "tests/cases/dir_ok", "--library" }, "OK: 4 files, 13 declarations, 3 theorems proven\n");
+    ctx.fail(&.{ "check", "tests/cases/dir_library_bad", "--library" },
+        \\error: 1 unused axiom(s) — no theorem in the library rests on them:
+        \\  - spare  (tests/cases/dir_library_bad/spare.bpa:6)
+        \\
+    );
+    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "--library" }, "error: --library checks a directory (a library is its whole file set); 'tests/cases/single_theorem.bpa' is a file\n");
     // an UNCITED axiom never discharges — the author states it as a step first.
     ctx.fail(&.{ "check", "tests/cases/tcc_uncited_bad.bpa" },
         \\tests/cases/tcc_uncited_bad.bpa:15:11: error: unproved obligation: 'inH(UNIT)'

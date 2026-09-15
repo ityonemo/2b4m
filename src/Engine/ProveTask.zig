@@ -227,10 +227,16 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             if (i.steps) |steps| return proveSteps(self, task, h, st, key, steps);
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
-            // an axiom-schema's instance rests on whatever its STATEMENT's read pass cited
-            // (the schema axiom itself, typically) — carry that through to the citer.
-            if (st.prove.axioms_used.items.len > 0)
-                try self.axiom_taint.put(self.arena, fact, st.prove.axioms_used.items);
+            // an AXIOM-schema's instance is a trusted monomorphization: it rests on the schema
+            // itself. Seed the axiom taint with the schema's LOCATOR (what `--axioms` reports
+            // and `--library` counts as used), plus whatever the statement's read pass cited.
+            var axs: std.ArrayList(InternPool.Index) = .empty;
+            const sns = try self.interner.namespace(.universe, task.file);
+            if (self.facts.lookup(self.io, .{ .namespace = sns, .name = task.instance.?.schema_name })) |sst| if (sst == .proven) {
+                try axs.append(self.arena, sst.proven);
+            };
+            try axs.appendSlice(self.arena, st.prove.axioms_used.items);
+            if (axs.items.len > 0) try self.axiom_taint.put(self.arena, fact, axs.items);
         },
         .hole => |hh| {
             // a hole is treated as an AXIOM everywhere except HERE: publish the leaf (its

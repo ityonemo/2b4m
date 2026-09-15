@@ -67,6 +67,10 @@ facts: FactKV,
 /// by FetchTask on demand.
 idents: IdentKV,
 files: std.ArrayList(diagnostics.FileSrc) = .empty,
+/// Per file: WHERE it was discovered from — the `import` token in the parent that named it —
+/// or null for a root. A file's ParseTask READS the file; when the read fails, this is where
+/// "cannot open" is reported (the parent's import site), the way an eager reader would have.
+origins: std.ArrayList(?Origin) = .empty,
 /// pool `.file` entity Index -> the dense FileId cursoring the per-file tables. The
 /// InternPool does the path dedup (same resolved path -> same file Index); this maps that
 /// interned identity onto the FileId used to index files/parsed/import_maps. A second
@@ -110,10 +114,11 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
-/// A SINGLE-THEOREM check (`bpa check <file> <theorem>`): only this root-file theorem is a
-/// root of demand — what it cites is demanded from there; the file's other theorems and
-/// axioms are not proved. Null = every root theorem (and axiom statement) is a root.
-root_theorem: ?InternPool.StrId = null,
+/// The files this run was ASKED ABOUT — one for a single-file check, N for a directory. Set
+/// by whoever racks the roots; the ENGINE never consults it (a file's tasks say what to do).
+/// It exists for REPORTING: the summary counts, the axiom report and the hole blast-radius all
+/// walk "the files the user named". `root_file` is the first entry.
+root_files: std.ArrayList(FileId) = .empty,
 /// ACCELERATED facts (`--fast`): a published fact Index -> the set of `using` words its proof
 /// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
 /// read by the summary to disclose which theorems accelerated + under which words.
@@ -128,6 +133,12 @@ holes_reached: std.ArrayList(HoleDecl) = .empty,
 /// axiom's file:line. A `hole` publishes as an axiom and is recorded here too — the report
 /// separates them by asking `holes_reached`.
 axiom_origin: std.AutoHashMapUnmanaged(InternPool.Index, HoleDecl) = .empty,
+/// MODEL-DISCHARGED facts: every LOCAL fact a `model` names as the thing that discharges a
+/// source obligation (`src <- local`, a `@`-projection, or a guard witness on a `:` map).
+/// Such a fact is USED — by the model machinery rather than by a proof's citation closure, so
+/// it never enters `axiom_taint` — and `--library` must not call it unused. Recorded by
+/// ModelTask as each mapping resolves.
+model_discharged: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty,
 /// AXIOM TAINT (the `--axioms` report): a published fact Index -> the AXIOM fact Indexes its
 /// proof transitively rests on. An axiom maps to `&.{itself}`; a theorem citing it INHERITS
 /// that list (via `resolveFactRef`, accumulated in `Prove.axioms_used`) — the same side-channel
@@ -156,6 +167,9 @@ pub const ModelDefineKey = struct { model: InternPool.Index, src: InternPool.Ind
 
 pub const HoleDecl = struct { name: InternPool.StrId, file: InternPool.Index, loc: u32 };
 
+/// Where a file was discovered from: the import token (`loc`, in `file`) that named it.
+pub const Origin = struct { file: FileId, loc: u32 };
+
 /// A define's identity (its home file + name) — the key of the expansion pass's per-define
 /// "alias written as a macro" lint (diagnosed once, at the first use).
 pub const DefineKey = struct { file: InternPool.Index, name: InternPool.StrId };
@@ -183,17 +197,29 @@ pub fn lookupFile(self: *Context, resolved_path: []const u8) !?FileId {
 /// reserve its table slots. IDEMPOTENT — a repeat path returns the existing FileId
 /// (the pool dedups the path to one file Index, and pool_file maps it to one FileId).
 /// Pub: the parse task (Engine/ParseTask.zig) discovers a file's imports.
-pub fn discover(self: *Context, resolved_path: []const u8, source: []const u8) !FileId {
+pub fn discover(self: *Context, resolved_path: []const u8, origin: ?Origin) !FileId {
     const file_index = try self.fileIndex(resolved_path);
     if (self.pool_file.get(file_index)) |existing| return existing;
 
     const file_id: FileId = @enumFromInt(self.files.items.len);
-    try self.files.append(self.arena, .{ .path = resolved_path, .source = source });
+    // the SOURCE is not read here: the file's ParseTask reads it (and extracts a literate
+    // document's bpa blocks) when the file is actually parsed. Until then it is empty.
+    try self.files.append(self.arena, .{ .path = resolved_path, .source = "" });
+    try self.origins.append(self.arena, origin);
     try self.parsed.append(self.arena, .{ .decls = &.{} });
     try self.import_maps.append(self.arena, .{});
     try self.parse_state.append(self.arena, .unparsed);
     try self.pool_file.put(self.arena, file_index, file_id);
     return file_id;
+}
+
+/// TEST RIG entry: discover `path` with its source ALREADY IN HAND (an in-memory fixture that
+/// parses + registers the file itself, bypassing ParseTask). Production never preloads — a
+/// ParseTask reads its own file.
+pub fn preload(self: *Context, path: []const u8, source: []const u8) !FileId {
+    const fid = try self.discover(path, null);
+    self.files.items[@intFromEnum(fid)].source = source;
+    return fid;
 }
 
 /// Register one decl in the by-name AST registry under (file, its stamped name). A
@@ -276,9 +302,7 @@ pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) st
         .parsed => return .parsed,
         .parsing => |t| return .{ .parsing = t },
         .unparsed => {
-            const src = self.files.items[idx].source;
-            const path = self.files.items[idx].path;
-            const t = try h.rackIndexed(try Engine.ParseTask.new(self.arena, .{ .file_id = fid, .source = src, .path = path }));
+            const t = try h.rackIndexed(try Engine.ParseTask.new(self.arena, .{ .file_id = fid }));
             self.parse_state.items[idx] = .{ .parsing = t };
             return .{ .parsing = t };
         },
@@ -291,11 +315,41 @@ pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) st
 /// that needs a not-yet-parsed cited file racks that file's ParseTask (`demandParse`) and
 /// suspends until it completes. Imported files are parsed only when cited into — no eager
 /// transitive parse. (Loading is a thing you DO with a context.)
-pub fn loadProject(self: *Context, root_path: []const u8, root_source: []const u8) !FileId {
-    self.root_file = try self.discover(root_path, root_source);
+pub fn loadProject(self: *Context, root_path: []const u8) !FileId {
+    return self.loadRoots(&.{.{ .path = root_path }});
+}
+
+/// A root of the run: a file the user asked to check — a PATH; its ParseTask reads it. With
+/// `theorem` null, EVERY local theorem (and axiom statement) in it is a proof obligation; with a
+/// name, only that theorem is.
+pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
+
+/// THE ENTRY: rack the tasks the request names, then run the engine once to quiescence.
+///   - `check <file>`           → a ParseTask that SEEDS proofs (racks a ProveTask per theorem).
+///   - `check <file> <theorem>` → a ParseTask that seeds nothing + the ONE ProveTask, racked
+///                                here; it suspends on the parse and resolves the name itself
+///                                (a missing/misused name is that task's diagnostic).
+///   - `check <dir>`            → a seeding ParseTask per file.
+/// The entry only racks; from there DEMAND drives everything (an import is parsed when cited
+/// into, a fact proved when cited). Sharing the pass is why a directory is N roots and not N
+/// runs: a fact two roots cite is proved once. Returns the first root (`self.root_file`).
+pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
+    std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
-    const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = self.root_file, .source = root_source, .path = root_path }));
-    self.parse_state.items[@intFromEnum(self.root_file)] = .{ .parsing = t };
+    for (roots) |r| {
+        const fid = try self.discover(r.path, null);
+        try self.root_files.append(self.arena, fid);
+        // a path listed twice (or already discovered as another root's import) parses once —
+        // `parse_state` is the guard.
+        if (self.parse_state.items[@intFromEnum(fid)] == .unparsed) {
+            const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = fid, .seed_proofs = r.theorem == null }));
+            self.parse_state.items[@intFromEnum(fid)] = .{ .parsing = t };
+        }
+        if (r.theorem) |name| {
+            _ = try eng.rack(try Engine.ProveTask.new(self.arena, .{ .file = try self.fileIndex(r.path), .name = try self.interner.internString(name) }));
+        }
+    }
+    self.root_file = self.root_files.items[0];
     try eng.run();
     return self.root_file;
 }

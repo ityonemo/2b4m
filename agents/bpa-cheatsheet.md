@@ -32,7 +32,9 @@ While iterating on ONE proof in a long file, add its name — **`bpa check --fas
 file's other proofs (a wrong name, an axiom, or a schema is diagnosed).
 
 Then, ONCE, before you declare the file done (and before it hits a gate), run
-plain **`bpa check <file>`** over the WHOLE file (strict — full kernel verification). This is the real
+plain **`bpa check <file>`** over the WHOLE file (strict — full kernel verification).
+**`bpa check <dir>`** checks every `.bpa` and `.md` under a directory in one pass
+(a fact two files cite is proved once) and prints one aggregate line. This is the real
 guarantee. A proof can pass `--fast` but FAIL strict (an accelerant couldn't
 produce a kernel certificate) — the final strict pass catches that. A file is not
 "done" until plain `bpa check` is green with NO `NOT FULLY VERIFIED` banner.
@@ -40,6 +42,17 @@ produce a kernel certificate) — the final strict pass catches that. A file is 
 (Flags: `--fast` trusts ALL `using` words; `--fast-only W…` only the listed;
 `--fast-except W…` all but the listed; `--draft` allows `hole`s. `instantiation`
 is never trustable. Use `--fast` for the loop; plain check to finalize.)
+
+**`--axioms`** reports what a proof bottoms out in — every axiom it transitively
+rests on, with the site each was declared at. It follows the demand graph, so it
+sees what `query uses` cannot: axioms pulled in by an accelerant's certificate, an
+`instantiation`, or a model transfer. A `hole` is an axiom to the kernel, so it is
+listed and marked `— HOLE` (visible only under `--draft`, since default mode
+rejects holes first). **`--library`** (on a directory) additionally FAILS on any
+axiom declared there that no theorem there rests on — which is why `std/` carries a
+`<namespace>-examples.bpa` per theory: a library demonstrates its own axioms rather
+than leaving a caller to be the first to exercise one. If you add an axiom to
+`std/`, add the example that uses it.
 
 ## Proof skeleton
 

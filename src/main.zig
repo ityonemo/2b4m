@@ -94,7 +94,7 @@ fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
         };
-        const result = try bpa.debug.accelerant.accelerant(io, arena, p, source, selector, null, queryReadFile, std_root);
+        const result = try bpa.debug.accelerant.accelerant(io, arena, p, source, selector, null, readRaw, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "taint")) {
@@ -236,6 +236,29 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
     return fail(query_usage, .{});
 }
 
+/// Every `.bpa` and `.md` under `dir`, recursively, as paths joined onto `dir` (so diagnostics
+/// print the path the user would type), sorted for a stable run order.
+fn collectCheckFiles(arena: std.mem.Allocator, dir_path: []const u8) ![]const []const u8 {
+    var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
+    defer dir.close(io);
+    var walker = try dir.walk(arena);
+    defer walker.deinit();
+    var paths: std.ArrayList([]const u8) = .empty;
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        const is_bpa = std.mem.endsWith(u8, entry.path, ".bpa");
+        const is_md = std.mem.endsWith(u8, entry.path, ".md");
+        if (!(is_bpa or is_md)) continue;
+        try paths.append(arena, try std.fs.path.join(arena, &.{ dir_path, entry.path }));
+    }
+    std.mem.sort([]const u8, paths.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    return paths.items;
+}
+
 /// Build the `{path, source}` set `query search` runs over. A DIRECTORY yields
 /// its top-level `.bpa` files (corpus discovery); a FILE yields that file plus
 /// everything it transitively imports (scope-aware).
@@ -318,7 +341,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] <file.bpa> [theorem]
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | dir> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -332,6 +355,11 @@ pub fn main(init: std.process.Init) !u8 {
             \\
             \\check proves every theorem of the file; with a theorem name it proves
             \\only that one (and what it cites) — the rest of the file is not run.
+            \\A DIRECTORY checks every .bpa and .md under it (recursively) in one
+            \\pass — a fact two files cite is proved once — and prints one line.
+            \\--library (a directory) additionally FAILS on any axiom declared in the
+            \\directory that no theorem in it rests on: a library ships no unused
+            \\assumptions.
             \\--axioms additionally reports what the proof BOTTOMS OUT IN: every
             \\axiom it transitively rests on, with the site each was declared at.
             \\A `hole` is an axiom as far as the kernel is concerned, so it is
@@ -404,7 +432,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] <file.bpa> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -421,6 +449,7 @@ pub fn main(init: std.process.Init) !u8 {
     var verify: bpa.Verify = .{};
     var draft = false;
     var axioms = false;
+    var library = false;
     var mode: Mode = .none;
     var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
     // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except), the
@@ -436,6 +465,8 @@ pub fn main(init: std.process.Init) !u8 {
             draft = true;
         } else if (std.mem.eql(u8, arg, "--axioms")) {
             axioms = true;
+        } else if (std.mem.eql(u8, arg, "--library")) {
+            library = true;
         } else if (std.mem.startsWith(u8, arg, "--")) {
             return fail("error: unknown flag '{s}'\n{s}", .{ arg, usage });
         } else {
@@ -466,12 +497,27 @@ pub fn main(init: std.process.Init) !u8 {
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
     verify.draft = draft;
 
-    const source = readSource(arena, root_path) catch |e| switch (e) {
+    // the root must EXIST (a typo'd path is a usage-level error, said plainly); its bytes are
+    // the engine's business — each root's ParseTask reads them, like any file's.
+    const root_stat = Io.Dir.cwd().statFile(io, root_path, .{}) catch |e| switch (e) {
         error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{root_path}),
         else => return fail("error: cannot open '{s}': {t}\n", .{ root_path, e }),
     };
+    // A DIRECTORY is every `.bpa` and `.md` under it, recursively, each a root of the same
+    // engine pass (a fact two of them cite is proved once). A `.md` with no bpa is a root
+    // that parses to nothing. A theorem selector needs one file.
+    const is_dir = root_stat.kind == .directory;
+    if (library and !is_dir) return fail("error: --library checks a directory (a library is its whole file set); '{s}' is a file\n", .{root_path});
+    const roots: []const bpa.Context.Root = if (is_dir) blk: {
+        if (split.theorem != null) return fail("error: a theorem selects within one file; '{s}' is a directory\n", .{root_path});
+        const paths = try collectCheckFiles(arena, root_path);
+        if (paths.len == 0) return fail("error: no .bpa or .md files under '{s}'\n", .{root_path});
+        const rs = try arena.alloc(bpa.Context.Root, paths.len);
+        for (paths, rs) |pth, *r| r.* = .{ .path = pth };
+        break :blk rs;
+    } else &.{.{ .path = root_path, .theorem = split.theorem }};
 
-    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root, split.theorem, axioms);
+    var result = try bpa.checkProject(io, arena, roots, null, readRaw, verify, std_root, axioms, library);
     if (!result.ok()) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);
@@ -502,12 +548,26 @@ pub fn main(init: std.process.Init) !u8 {
         try err.flush();
         return 1;
     }
+    // `--library`: a library must not ship assumptions nothing rests on. Every root-file
+    // axiom no root theorem's proof reaches is an error (each named at its declaration).
+    if (result.unused_axioms.len > 0) {
+        var ebuf: [4096]u8 = undefined;
+        var efw: Io.File.Writer = .init(.stderr(), io, &ebuf);
+        const err = &efw.interface;
+        try err.print("error: {d} unused axiom(s) — no theorem in the library rests on them:\n", .{result.unused_axioms.len});
+        for (result.unused_axioms) |a| try err.print("  - {s}  ({s}:{d})\n", .{ a.name, a.path, a.line });
+        try err.flush();
+        return 1;
+    }
     var buf: [256]u8 = undefined;
     var fw: Io.File.Writer = .init(.stdout(), io, &buf);
     const out = &fw.interface;
-    try out.print("OK: {d} declarations, {d} theorems proven", .{
-        result.declarations, result.theorems_proven,
-    });
+    // ONE aggregate line: a directory adds its file count.
+    if (is_dir) {
+        try out.print("OK: {d} files, {d} declarations, {d} theorems proven", .{ result.files_checked, result.declarations, result.theorems_proven });
+    } else {
+        try out.print("OK: {d} declarations, {d} theorems proven", .{ result.declarations, result.theorems_proven });
+    }
     // --fast trust disclosure. When at least one step was ACTUALLY ADMITTED (a trusted `using`
     // word accepted it without a kernel-checked proof), the result is NOT fully verified — say so
     // loudly, listing HOW MANY theorems accelerated and under WHICH words (the words actually
@@ -554,7 +614,10 @@ pub fn main(init: std.process.Init) !u8 {
     return 0;
 }
 
-fn readImport(ctx: ?*anyopaque, arena: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+/// The ENGINE's file reader: raw bytes. The engine's ParseTask does the literate extraction
+/// itself (a `.md` root and a `.md` import are the same to it), so the CLI must NOT extract
+/// here — extracting twice would blank an already-extracted source.
+fn readRaw(ctx: ?*anyopaque, arena: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
     _ = ctx;
-    return readSource(arena, path);
+    return readFile(arena, path);
 }

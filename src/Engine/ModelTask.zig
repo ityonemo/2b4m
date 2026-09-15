@@ -163,12 +163,14 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
             const tgt = try resolveProjection(self, h, task.file, source, mapping.target, proj, &blocker);
             if (src) |s| if (tgt) |t| {
                 try overlay.append(self.arena, .{ .src = s, .tgt = t });
+                try self.model_discharged.put(self.arena, t, {});
             };
             continue;
         }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
         if (src) |s| if (tgt) |t| {
             try overlay.append(self.arena, .{ .src = s, .tgt = t });
+            try self.model_discharged.put(self.arena, t, {}); // the local fact is USED
         };
     }
     if (blocker) |b| return h.suspendOn(b);
@@ -271,8 +273,10 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
                 return true;
             }
             for (r.dischargers) |d| {
-                if (try resolveEntity(self, h, task.file, source, d, .fact, blocker)) |fact|
+                if (try resolveEntity(self, h, task.file, source, d, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
+                    try self.model_discharged.put(self.arena, fact, {});
+                }
             }
             return false;
         },
@@ -284,8 +288,10 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
                 return true;
             }
             for (c.closure_facts) |cf| {
-                if (try resolveEntity(self, h, task.file, source, cf, .fact, blocker)) |fact|
+                if (try resolveEntity(self, h, task.file, source, cf, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
+                    try self.model_discharged.put(self.arena, fact, {});
+                }
             }
             return false;
         },
@@ -441,7 +447,7 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
         .verify = .{},
         .std_root = "",
     };
-    const fid = try ctx.discover(path, src);
+    const fid = try ctx.preload(path, src);
     var p: parser.Parser = .initInterning(arena, src, sink, interner);
     ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
     for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
