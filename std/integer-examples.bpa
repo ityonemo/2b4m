@@ -1,41 +1,186 @@
-// Worked examples for `std/integer-sequence.bpa`'s reification-existence axioms.
+// Worked examples for the `std/integer-*` theories' otherwise-unexercised axioms:
+// powers and lcm nonnegativity (integer-divides), the modulus / quotient identification /
+// unit characterization (integer-mod-n), and the five sequence CONSTRUCTORS
+// (integer-sequence).
 //
-// Why this file exists: `Seq` is observe-only — `at` and `productUpTo` READ a sequence
-// but nothing constructs one, so the five existence axioms ARE the constructors, stated
-// for callers (the FTA factorization builds singletons; its uniqueness index map builds
-// prepends and shifts). Nothing in `integer-sequence.bpa` builds on them, so nothing
-// exercises them — and these carry nonneg guards on a refined index sort, exactly the
-// kind of obligation that goes unchecked when no derivation ever discharges it. Each
-// theorem below unpacks a constructed witness and derives the smallest consequence that
-// needs the clause it names.
+// Why this file exists: each of these axioms is stated for callers — `pow`'s recursion is
+// unfolded in aata's exponent arguments, the sequence constructors are what the FTA
+// factorization builds with, the ℤ_n axioms are consumed by model transfers — so no
+// derivation inside std/ ever rests on them. An axiom no proof touches is one whose
+// binders, guards and direction have never been checked. Each theorem below is the
+// smallest derivation that genuinely needs the axiom it names.
+//
+// (aata/2.3-primes.md exercises the sequence constructors far harder: its
+// `factorizationPermutationExists` rests on four of the five at once. These are the
+// library's own smoke tests, not a replacement for that.)
+import int_divides <<< "std/integer-divides.bpa"
+import mod_n <<< "std/integer-mod-n.bpa"
 import sequence <<< "std/integer-sequence.bpa"
 import integer <<< "std/integer.bpa"
 import order <<< "std/integer-order.bpa"
 
 sort Int = integer.Int
 sort NonNegZ = integer.NonNeg
+sort Zn = mod_n.Zn
 sort Seq = sequence.Seq
 const ZERO = integer.ZERO
 const ONE = integer.ONE
+const N = mod_n.N
+const IZERO = integer.ZERO
+const ZnONE = mod_n.ONE
 func succ = integer.succ
 func add = integer.add
 func mul = integer.mul
+func isub = integer.sub
+func pow = int_divides.pow
+func lcm = int_divides.lcm
+func cls = mod_n.cls
+func znmul = mod_n.mul
 func at = sequence.at
 func productUpTo = sequence.productUpTo
 pred is_nonneg = order.nonneg
 pred less_than = order.less_than
+pred isUnit = mod_n.isUnit
 
 define at_most(a, b) = order.less_or_equal(a, b)
+define divides(d, k) = exists j: Int; k = integer.mul(d, j)
 
 axiom nonnegZero = order.nonnegZero
 axiom nonnegSucc = order.nonnegSucc
 theorem nonnegOne = sequence.nonnegOne
+axiom powZero = int_divides.powZero
+axiom powSucc = int_divides.powSucc
+axiom lcmNonneg = int_divides.lcmNonneg
+axiom nPositive = mod_n.nPositive
+axiom clsCongruent = mod_n.clsCongruent
+axiom isUnitCharacterization = mod_n.isUnitCharacterization
+axiom oneIsUnit = mod_n.oneIsUnit
 axiom productUpToZero = sequence.productUpToZero
 axiom seqSingletonExists = sequence.seqSingletonExists
 axiom seqPrependExists = sequence.seqPrependExists
 axiom seqConcatExists = sequence.seqConcatExists
 axiom seqShiftPastExists = sequence.seqShiftPastExists
 axiom seqRemoveExists = sequence.seqRemoveExists
+
+// ===========================================================================
+// integer-divides: powers and lcm
+// ===========================================================================
+
+// b¹ = b: unfold the successor case once, then the base case. Both recursion axioms in
+// sequence — the smallest computation that needs each of them exactly once.
+theorem powerOfOneIsTheBase: forall b: Int; pow(b, succ(ZERO)) = mul(ONE, b)
+proof
+  @generalize-b |
+    fix b: Int {
+      @successor-unfolds |
+        pow(b, succ(ZERO)) = mul(pow(b, ZERO), b)
+        [using specialize powSucc(b, ZERO)]
+      @base-case-is-one |
+        pow(b, ZERO) = ONE
+        [using specialize powZero(b)]
+      @conclusion-power-of-one |
+        pow(b, succ(ZERO)) = mul(ONE, b)
+        [by rewrite base-case-is-one successor-unfolds]
+    }
+  @conclusion |
+    forall b: Int; pow(b, succ(ZERO)) = mul(ONE, b)
+    [by forall_intro generalize-b]
+qed
+
+// the lcm is never negative — including of a pair that is itself an lcm. The axiom is
+// what lets an lcm be used as a nonneg-guarded index or bound.
+theorem nestedLeastCommonMultipleIsNonneg: forall a, b, c: Int; is_nonneg(lcm(lcm(a, b), c))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-c |
+            fix c: Int {
+              @conclusion-nested-lcm-is-nonneg |
+                is_nonneg(lcm(lcm(a, b), c))
+                [using specialize lcmNonneg(lcm(a, b), c)]
+            }
+          @discharge-c |
+            forall c: Int; is_nonneg(lcm(lcm(a, b), c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Int; is_nonneg(lcm(lcm(a, b), c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Int; is_nonneg(lcm(lcm(a, b), c))
+    [by forall_intro generalize-a]
+qed
+
+// ===========================================================================
+// integer-mod-n: the modulus, the quotient, the units
+// ===========================================================================
+
+// -- the modulus is positive -------------------------------------------------
+
+// n > 0, so the modulus is a legitimate strictly-positive bound — the fact every
+// well-ordering or division argument over ℤ_n starts from.
+theorem theModulusIsPositive: exists m: Int; less_than(IZERO, m)
+proof
+  @modulus-is-positive |
+    less_than(IZERO, N)
+    [by cite nPositive]
+  @conclusion |
+    exists m: Int; less_than(IZERO, m)
+    [by exists_intro(N) modulus-is-positive]
+qed
+
+// -- the quotient identification ---------------------------------------------
+
+// classes agreeing means the modulus divides the difference: the forward direction of
+// the identification, which is what turns an equation in ℤ_n into one in ℤ.
+theorem equalClassesDivideTheirDifference: forall a, b: Int; cls(a) = cls(b) -> divides(N, isub(a, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @class-identification |
+            cls(a) = cls(b) iff divides(N, isub(a, b))
+            [using specialize clsCongruent(a, b)]
+          @conclusion-equal-classes-divide |
+            cls(a) = cls(b) -> divides(N, isub(a, b))
+            [by iff_elim_forward class-identification]
+        }
+      @discharge-b |
+        forall b: Int; cls(a) = cls(b) -> divides(N, isub(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; cls(a) = cls(b) -> divides(N, isub(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// -- the unit characterization -----------------------------------------------
+
+// 1 is a unit, so unfolding the characterization at 1 produces its two-sided inverse —
+// the backward direction of the opaque predicate's defining biconditional.
+theorem theIdentityHasATwoSidedInverse: exists y: Zn; znmul(ZnONE, y) = ZnONE and znmul(y, ZnONE) = ZnONE
+proof
+  @one-is-a-unit |
+    isUnit(ZnONE)
+    [by cite oneIsUnit]
+  @unit-characterization |
+    isUnit(ZnONE) iff (exists y: Zn; znmul(ZnONE, y) = ZnONE and znmul(y, ZnONE) = ZnONE)
+    [using specialize isUnitCharacterization(ZnONE)]
+  @unit-implies-inverse |
+    isUnit(ZnONE) -> (exists y: Zn; znmul(ZnONE, y) = ZnONE and znmul(y, ZnONE) = ZnONE)
+    [by iff_elim_forward unit-characterization]
+  @conclusion |
+    exists y: Zn; znmul(ZnONE, y) = ZnONE and znmul(y, ZnONE) = ZnONE
+    [by modus_ponens unit-implies-inverse one-is-a-unit]
+qed
+
+// ===========================================================================
+// integer-sequence: the reification-existence constructors
+// ===========================================================================
 
 // -- the singleton constructor ----------------------------------------------
 
