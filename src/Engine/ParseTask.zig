@@ -6,8 +6,10 @@
 //! self-contained: `new()` packages a payload into a rack-ready `Engine.Task` (bundling
 //! the run-fn), and `run` IS that run-fn — the parse-task body.
 //!
-//! FileId + source are assigned/read at DISCOVERY time (so a child's id exists before its
-//! parse runs — cyclic-import safe); parse is the ONE task type that never suspends.
+//! A FileId is assigned at DISCOVERY time (so a child's id exists before its parse runs —
+//! cyclic-import safe); the SOURCE is read HERE, by the file's own ParseTask — nobody hands
+//! it in (a `.md` is a literate document: its ```bpa blocks are extracted here too). Parse is
+//! the ONE task type that never suspends.
 //!
 //! LAZY PARSING (Step 11): a ParseTask parses ONE file. It discovers + resolves that
 //! file's imports (populating `import_maps` so a qualified `ns.name` can find the child's
@@ -22,12 +24,12 @@ const parser = @import("../parser.zig");
 const ast = @import("../ast.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
+const literate = @import("../literate.zig");
 
 const ParseTask = @This();
 
+/// The file to parse. Its path is on the Context (`files[file_id].path`); the task reads it.
 file_id: Context.FileId,
-source: []const u8,
-path: []const u8,
 /// Does this parse SEED PROOFS? True when something asked for this file to be CHECKED (the
 /// entry point racked it) — the task scans the parsed decls and racks a ProveTask per local
 /// theorem + axiom statement. False when the file is merely being read because something cited
@@ -58,8 +60,27 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 /// is the root file, scan its theorems and rack the seed ProveTasks.
 pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
+    const path = self.files.items[idx].path;
+    // READ the file (the one place source enters the engine); a literate `.md` yields its
+    // ```bpa blocks with every other line blanked, so offsets index the document as written.
+    // A file that cannot be read is diagnosed where it was NAMED — the parent's import token
+    // — or at the top of the file itself for a root; it then counts as parsed-and-empty so
+    // whatever cited into it proceeds to its own "reference not found".
+    const bytes = self.read_fn(self.read_ctx, self.arena, path) catch {
+        if (self.origins.items[idx]) |o| {
+            self.sink.current_file = @intFromEnum(o.file);
+            try self.sink.add(o.loc, "cannot open '{s}': file not found", .{path});
+        } else {
+            self.sink.current_file = idx;
+            try self.sink.add(0, "cannot open '{s}': file not found", .{path});
+        }
+        self.parse_state.items[idx] = .parsed;
+        return;
+    };
+    const source = if (std.mem.endsWith(u8, path, ".md")) try literate.extract(self.arena, bytes) else bytes;
+    self.files.items[idx].source = source;
     self.sink.current_file = idx;
-    var p: parser.Parser = .initInterning(self.arena, task.source, self.sink, self.interner);
+    var p: parser.Parser = .initInterning(self.arena, source, self.sink, self.interner);
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
     self.declarations += parsed.decls.len;
@@ -119,22 +140,17 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         const resolved = if (std.mem.startsWith(u8, raw, "std/"))
             try std.fs.path.resolve(scratch, &.{ self.std_root, raw["std/".len..] })
         else
-            try std.fs.path.resolve(scratch, &.{ std.fs.path.dirname(task.path) orelse ".", raw });
+            try std.fs.path.resolve(scratch, &.{ std.fs.path.dirname(path) orelse ".", raw });
 
         const child: Context.FileId = if (try self.lookupFile(resolved)) |existing|
             existing // already discovered (incl. a cyclic re-reference) — reuse id
-        else child: {
-            // DISCOVER the child (read its source, reserve its FileId + table slots) so
-            // the import resolves — but leave it `unparsed`; a citation triggers its
-            // parse lazily. Import resolution only needs the child's identity, not its AST.
-            const src = self.read_fn(self.read_ctx, self.arena, resolved) catch {
-                self.sink.current_file = idx;
-                try self.sink.add(d.path.start, "cannot open '{s}': file not found", .{resolved});
-                continue;
-            };
-            // discover RETAINS the path → dupe it durably (the scratch copy is freed below).
-            break :child try self.discover(try self.arena.dupe(u8, resolved), src);
-        };
+        else
+            // DISCOVER the child (reserve its FileId + table slots) so the import resolves —
+            // nothing is READ: a citation into it racks its ParseTask, which reads it (and
+            // reports a missing file at THIS import token). Import resolution only needs the
+            // child's identity. discover RETAINS the path → dupe it durably (the scratch copy
+            // is freed below).
+            try self.discover(try self.arena.dupe(u8, resolved), .{ .file = task.file_id, .loc = d.path.start });
         try self.import_maps.items[idx].put(self.arena, d.path.name, child);
     }
 
@@ -145,7 +161,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // (Only the root — imported files' theorems are demanded by citations, not proved
     // just for being imported.)
     if (task.seed_proofs) {
-        const file_index = try self.fileIndex(task.path);
+        const file_index = try self.fileIndex(path);
         for (parsed.decls) |decl| {
             switch (decl) {
                 // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a
