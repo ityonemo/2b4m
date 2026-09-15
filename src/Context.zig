@@ -110,6 +110,10 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
+/// A SINGLE-THEOREM check (`bpa check <file> <theorem>`): only this root-file theorem is a
+/// root of demand — what it cites is demanded from there; the file's other theorems and
+/// axioms are not proved. Null = every root theorem (and axiom statement) is a root.
+root_theorem: ?InternPool.StrId = null,
 /// ACCELERATED facts (`--fast`): a published fact Index -> the set of `using` words its proof
 /// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
 /// read by the summary to disclose which theorems accelerated + under which words.

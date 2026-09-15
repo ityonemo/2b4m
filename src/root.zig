@@ -111,6 +111,7 @@ fn countRoot(context: *Context) !Counts {
         if (decl.theorem != .local) continue;
         const name_tok = ast.theoremName(decl.theorem);
         const name = try context.interner.internString(root_source[name_tok.start..name_tok.end]);
+        if (context.root_theorem) |want| if (name != want) continue; // a single-theorem check
         if (context.facts.lookup(context.io, .{ .namespace = ns, .name = name })) |state| {
             if (state == .proven) {
                 proven += 1;
@@ -147,9 +148,16 @@ fn readNone(_: ?*anyopaque, _: std.mem.Allocator, _: []const u8) anyerror![]cons
 /// Check a .bpa source (single file; imports unresolvable). All allocations go into
 /// `arena`; diagnostics are collected in the result's sink (rendered by the caller).
 pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
+    return checkSourceTheorem(arena, source, null);
+}
+
+/// `checkSource` restricted to ONE root theorem (`theorem` = its name), or every root
+/// theorem when null.
+pub fn checkSourceTheorem(arena: std.mem.Allocator, source: []const u8, theorem: ?[]const u8) !CheckResult {
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
     const context = try newContext(io, arena, null, &readNone, .{}, "");
+    if (theorem) |t| context.root_theorem = try context.interner.internString(t);
     _ = try context.loadProject("/check/source.bpa", source);
     const counts = try countRoot(context);
     return .{
@@ -210,8 +218,10 @@ pub fn loadProject(
     read_fn: ReadFileFn,
     verify: Verify,
     std_root: []const u8,
+    theorem: ?[]const u8,
 ) !LoadedProject {
     const context = try newContext(io, arena, read_ctx, read_fn, verify, std_root);
+    if (theorem) |t| context.root_theorem = try context.interner.internString(t);
     const canonical_root = try std.fs.path.resolve(arena, &.{root_path});
     const root_file = try context.loadProject(canonical_root, root_source);
     return .{
@@ -233,8 +243,9 @@ pub fn checkProject(
     read_fn: ReadFileFn,
     verify: Verify,
     std_root: []const u8,
+    theorem: ?[]const u8,
 ) !ProjectResult {
-    const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root);
+    const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root, theorem);
     const counts = try countRoot(loaded.context);
     // resolve every REACHED hole (a `hole` decl whose ProveTask published) to a reportable
     // {name, path, line, dependents}. The summary discloses all sites (default rejects; --draft
@@ -289,6 +300,91 @@ pub fn checkProject(
         .accelerated_names = counts.accelerated_names,
         .holes = holes.items,
     };
+}
+
+/// `bpa check`'s non-flag positionals: `[trust words…] <file> [theorem]`. The file is the first
+/// positional that names a `.bpa`/`.md` source (trust words never do); at most one positional
+/// may follow it — the theorem to check alone. Null = the shape is wrong (usage).
+pub const CheckArgs = struct { words: []const []const u8, path: []const u8, theorem: ?[]const u8 };
+pub fn splitCheckArgs(positionals: []const []const u8) ?CheckArgs {
+    if (positionals.len == 0) return null;
+    var at: ?usize = null;
+    for (positionals, 0..) |a, i| {
+        if (std.mem.endsWith(u8, a, ".bpa") or std.mem.endsWith(u8, a, ".md")) {
+            at = i;
+            break;
+        }
+    }
+    const i = at orelse positionals.len - 1; // no source-looking positional: the last one is the path
+    const rest = positionals[i + 1 ..];
+    if (rest.len > 1) return null;
+    return .{ .words = positionals[0..i], .path = positionals[i], .theorem = if (rest.len == 1) rest[0] else null };
+}
+
+test "splitCheckArgs: words before the file, an optional theorem after it" {
+    const one = splitCheckArgs(&.{"a.bpa"}).?;
+    try std.testing.expectEqualStrings("a.bpa", one.path);
+    try std.testing.expectEqual(@as(usize, 0), one.words.len);
+    try std.testing.expect(one.theorem == null);
+    const thm = splitCheckArgs(&.{ "a.bpa", "foo" }).?;
+    try std.testing.expectEqualStrings("foo", thm.theorem.?);
+    const words = splitCheckArgs(&.{ "tautology", "model", "lit.md", "foo" }).?;
+    try std.testing.expectEqual(@as(usize, 2), words.words.len);
+    try std.testing.expectEqualStrings("lit.md", words.path);
+    try std.testing.expectEqualStrings("foo", words.theorem.?);
+    try std.testing.expect(splitCheckArgs(&.{ "a.bpa", "foo", "bar" }) == null);
+    try std.testing.expect(splitCheckArgs(&.{}) == null);
+    // no source-looking positional at all: the last one is taken as the path (usage error later)
+    try std.testing.expectEqualStrings("nope", splitCheckArgs(&.{ "x", "nope" }).?.path);
+}
+
+const single_theorem_source =
+    \\pred p
+    \\pred q
+    \\axiom pq: p
+    \\theorem good: p
+    \\proof
+    \\  @conclusion |
+    \\    p
+    \\    [by cite pq]
+    \\qed
+    \\theorem broken: q
+    \\proof
+    \\  @conclusion |
+    \\    q
+    \\    [by cite pq]
+    \\qed
+    \\
+;
+
+test "a single-theorem check proves only the named theorem; the file's other proofs are not run" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // the whole file: the broken proof is diagnosed.
+    const whole = try checkSource(arena, single_theorem_source);
+    try std.testing.expect(!whole.ok());
+    // just `good`: clean, one theorem proven — `broken` is never run.
+    const good = try checkSourceTheorem(arena, single_theorem_source, "good");
+    try std.testing.expect(good.ok());
+    try std.testing.expectEqual(@as(usize, 1), good.theorems_proven);
+    // just `broken`: its diagnosis, nothing else.
+    const broken = try checkSourceTheorem(arena, single_theorem_source, "broken");
+    try std.testing.expect(!broken.ok());
+    try std.testing.expectEqual(@as(usize, 0), broken.theorems_proven);
+}
+
+test "a single-theorem check names a missing theorem, an axiom, a schema" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const missing = try checkSourceTheorem(arena, single_theorem_source, "nosuch");
+    try std.testing.expectEqual(@as(usize, 1), missing.sink.list.items.len);
+    try std.testing.expectEqualStrings("no theorem 'nosuch' in this file", missing.sink.list.items[0].message);
+    const axiom = try checkSourceTheorem(arena, single_theorem_source, "pq");
+    try std.testing.expectEqualStrings("'pq' is an axiom, not a theorem", axiom.sink.list.items[0].message);
+    const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop: T -> Prop): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
+    try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations", schema.sink.list.items[0].message);
 }
 
 test {

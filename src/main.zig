@@ -318,7 +318,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -330,6 +330,8 @@ pub fn main(init: std.process.Init) !u8 {
             \\       bpa query search <file.bpa|dir> <query>
             \\       bpa query uses <file.bpa> [theorem]
             \\
+            \\check proves every theorem of the file; with a theorem name it proves
+            \\only that one (and what it cites) — the rest of the file is not run.
             \\check reports every failure as
             \\  file:line:col: error: <message>
             \\on stderr (exit 1), or a summary line on stdout (exit 0).
@@ -397,7 +399,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -415,8 +417,9 @@ pub fn main(init: std.process.Init) !u8 {
     var draft = false;
     var mode: Mode = .none;
     var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
-    // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except) followed
-    // by the PATH. The path is the LAST positional; every earlier positional is a trust word.
+    // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except), the
+    // PATH (the first positional naming a .bpa/.md source), then an optional THEOREM name —
+    // see `splitCheckArgs`.
     var positionals: std.ArrayList([]const u8) = .empty;
     for (args[2..]) |arg| {
         const flag: ?Mode = if (std.mem.eql(u8, arg, "--fast")) .all else if (std.mem.eql(u8, arg, "--fast-only")) .only else if (std.mem.eql(u8, arg, "--fast-except")) .except else null;
@@ -431,9 +434,9 @@ pub fn main(init: std.process.Init) !u8 {
             try positionals.append(arena, arg);
         }
     }
-    if (positionals.items.len == 0) return fail(usage, .{});
-    const root_path = positionals.items[positionals.items.len - 1];
-    const words = positionals.items[0 .. positionals.items.len - 1];
+    const split = bpa.splitCheckArgs(positionals.items) orelse return fail(usage, .{});
+    const root_path = split.path;
+    const words = split.words;
     // bare --fast (and no-fast) take no trust words; --fast-only/--fast-except require them.
     switch (mode) {
         .none, .all => if (words.len > 0) return fail(usage, .{}),
@@ -460,7 +463,7 @@ pub fn main(init: std.process.Init) !u8 {
         else => return fail("error: cannot open '{s}': {t}\n", .{ root_path, e }),
     };
 
-    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root);
+    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root, split.theorem);
     if (!result.ok()) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);

@@ -107,7 +107,7 @@ examples/incorrect.bpa:39:41: error: modus_ponens: expected antecedent 'raining'
 ## Commands
 
 ```
-bpa check [--fast | --fast-only W… | --fast-except W…] <file.bpa | file.md>
+bpa check [--fast | --fast-only W… | --fast-except W…] <file.bpa | file.md> [theorem]
 bpa fmt [--check] <file.bpa>
 bpa lint <file.bpa | file.md>
 bpa debug accelerant <file> <line | theorem step-label>

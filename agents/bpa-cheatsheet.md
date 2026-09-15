@@ -27,8 +27,12 @@ it trusts accelerated verdicts and skips kernel-certificate generation, so it's
 much faster feedback for the write-check-fix loop. It gives you the same
 pass/fail signal for your proof structure.
 
+While iterating on ONE proof in a long file, add its name — **`bpa check --fast <file>
+<theorem>`** proves only that theorem and what it cites, so you are not waiting on the
+file's other proofs (a wrong name, an axiom, or a schema is diagnosed).
+
 Then, ONCE, before you declare the file done (and before it hits a gate), run
-plain **`bpa check <file>`** (strict — full kernel verification). This is the real
+plain **`bpa check <file>`** over the WHOLE file (strict — full kernel verification). This is the real
 guarantee. A proof can pass `--fast` but FAIL strict (an accelerant couldn't
 produce a kernel certificate) — the final strict pass catches that. A file is not
 "done" until plain `bpa check` is green with NO `NOT FULLY VERIFIED` banner.
