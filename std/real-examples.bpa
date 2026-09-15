@@ -1,0 +1,339 @@
+// Worked examples for `std/real.bpa`'s subring/subfield CUTS and its postulated
+// induction and completeness principles.
+//
+// Why this file exists: the closure axioms (`isRationalAdd`, `isIntegerMul`, …), the
+// discrete-step definitions and the two schemas are stated so that a future
+// `Real where isInteger` carve and its ℤ/ℕ model transfers have something to stand on.
+// Nothing in `real.bpa` itself builds on them, so nothing exercises them — and an axiom
+// no derivation ever touches is one whose binders, guards and direction have never been
+// checked. Each theorem below is the smallest derivation that genuinely needs the axiom
+// it names.
+import real <<< "std/real.bpa"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+func neg = real.neg
+func succ = real.succ
+func prev = real.prev
+func sub = real.sub
+pred less_than = real.less_than
+pred isRational = real.isRational
+pred isInteger = real.isInteger
+pred isNatural = real.isNatural
+
+define less_or_equal(a, b) = less_than(a, b) or a = b
+
+axiom isRationalZero = real.isRationalZero
+axiom isRationalOne = real.isRationalOne
+axiom isRationalAdd = real.isRationalAdd
+axiom isRationalMul = real.isRationalMul
+axiom isRationalNeg = real.isRationalNeg
+axiom isIntegerZero = real.isIntegerZero
+axiom isIntegerOne = real.isIntegerOne
+axiom isIntegerAdd = real.isIntegerAdd
+axiom isIntegerMul = real.isIntegerMul
+axiom isIntegerNeg = real.isIntegerNeg
+axiom isIntegerSucc = real.isIntegerSucc
+axiom isIntegerPrev = real.isIntegerPrev
+axiom isNaturalZero = real.isNaturalZero
+axiom isNaturalSucc = real.isNaturalSucc
+axiom isNaturalIsInteger = real.isNaturalIsInteger
+axiom isNaturalSuccNotZero = real.isNaturalSuccNotZero
+axiom integerCases = real.integerCases
+axiom subDefinition = real.subDefinition
+axiom naturalInduction = real.naturalInduction
+axiom completeness = real.completeness
+
+// -- the rational cut is closed under the field operations -------------------
+
+// 1 + 1 is rational: additive closure at two known-rational arguments.
+theorem twoIsRational: isRational(add(ONE, ONE))
+proof
+  @one-is-rational |
+    isRational(ONE)
+    [by cite isRationalOne]
+  @conclusion |
+    isRational(add(ONE, ONE))
+    [using specialize isRationalAdd(ONE, ONE) one-is-rational one-is-rational]
+qed
+
+// 0 + 0 stays in the cut — the base-case axiom feeding closure.
+theorem zeroSumIsRational: isRational(add(ZERO, ZERO))
+proof
+  @zero-is-rational |
+    isRational(ZERO)
+    [by cite isRationalZero]
+  @conclusion |
+    isRational(add(ZERO, ZERO))
+    [using specialize isRationalAdd(ZERO, ZERO) zero-is-rational zero-is-rational]
+qed
+
+// the cut holds its products and their negations: multiplicative closure feeding
+// negation closure, at arbitrary rational arguments.
+theorem negProductIsRational: forall q, r: Real; isRational(q) -> isRational(r) -> isRational(neg(mul(q, r)))
+proof
+  @generalize-q |
+    fix q: Real {
+      @generalize-r |
+        fix r: Real {
+          @given-q-rational |
+            assume isRational(q) {
+              @given-r-rational |
+                assume isRational(r) {
+                  @q-is-rational |
+                    isRational(q)
+                    [by hypothesis given-q-rational]
+                  @r-is-rational |
+                    isRational(r)
+                    [by hypothesis given-r-rational]
+                  @product-is-rational |
+                    isRational(mul(q, r))
+                    [using specialize isRationalMul(q, r) q-is-rational r-is-rational]
+                  @conclusion-negated-product |
+                    isRational(neg(mul(q, r)))
+                    [using specialize isRationalNeg(mul(q, r)) product-is-rational]
+                }
+              @r-rational-implies-negated-product |
+                isRational(r) -> isRational(neg(mul(q, r)))
+                [by implies_intro given-r-rational]
+            }
+          @conclusion-both-rational |
+            isRational(q) -> isRational(r) -> isRational(neg(mul(q, r)))
+            [by implies_intro given-q-rational]
+        }
+      @discharge-r |
+        forall r: Real; isRational(q) -> isRational(r) -> isRational(neg(mul(q, r)))
+        [by forall_intro generalize-r]
+    }
+  @conclusion |
+    forall q, r: Real; isRational(q) -> isRational(r) -> isRational(neg(mul(q, r)))
+    [by forall_intro generalize-q]
+qed
+
+// -- the integer cut: a subRING (closed under +, ×, neg — never recip) -------
+
+// −(1·1) is an integer: the ring operations only. The cut is deliberately NOT closed
+// under recip, which is what separates it from the rational cut above.
+theorem negOneIsInteger: isInteger(neg(mul(ONE, ONE)))
+proof
+  @one-is-integer |
+    isInteger(ONE)
+    [by cite isIntegerOne]
+  @product-is-integer |
+    isInteger(mul(ONE, ONE))
+    [using specialize isIntegerMul(ONE, ONE) one-is-integer one-is-integer]
+  @conclusion |
+    isInteger(neg(mul(ONE, ONE)))
+    [using specialize isIntegerNeg(mul(ONE, ONE)) product-is-integer]
+qed
+
+// 0 + 1 is an integer: both base cases feeding additive closure.
+theorem zeroPlusOneIsInteger: isInteger(add(ZERO, ONE))
+proof
+  @zero-is-integer |
+    isInteger(ZERO)
+    [by cite isIntegerZero]
+  @one-is-integer |
+    isInteger(ONE)
+    [by cite isIntegerOne]
+  @conclusion |
+    isInteger(add(ZERO, ONE))
+    [using specialize isIntegerAdd(ZERO, ONE) zero-is-integer one-is-integer]
+qed
+
+// the discrete step keeps you in the cut, in both directions.
+theorem stepsStayInteger: forall q: Real; isInteger(q) -> isInteger(prev(succ(q)))
+proof
+  @generalize-q |
+    fix q: Real {
+      @given-q-integer |
+        assume isInteger(q) {
+          @q-is-integer |
+            isInteger(q)
+            [by hypothesis given-q-integer]
+          @successor-is-integer |
+            isInteger(succ(q))
+            [using specialize isIntegerSucc(q) q-is-integer]
+          @conclusion-predecessor-of-successor |
+            isInteger(prev(succ(q)))
+            [using specialize isIntegerPrev(succ(q)) successor-is-integer]
+        }
+      @conclusion-integer-implies |
+        isInteger(q) -> isInteger(prev(succ(q)))
+        [by implies_intro given-q-integer]
+    }
+  @conclusion |
+    forall q: Real; isInteger(q) -> isInteger(prev(succ(q)))
+    [by forall_intro generalize-q]
+qed
+
+// a difference of integers is an integer: `sub` unfolds to add-of-neg, so the ring
+// closure axioms carry it — the definition axiom is what makes the unfolding available.
+theorem differenceIsInteger: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @given-a-integer |
+            assume isInteger(a) {
+              @given-b-integer |
+                assume isInteger(b) {
+                  @a-is-integer |
+                    isInteger(a)
+                    [by hypothesis given-a-integer]
+                  @b-is-integer |
+                    isInteger(b)
+                    [by hypothesis given-b-integer]
+                  @negated-b-is-integer |
+                    isInteger(neg(b))
+                    [using specialize isIntegerNeg(b) b-is-integer]
+                  @sum-with-negation-is-integer |
+                    isInteger(add(a, neg(b)))
+                    [using specialize isIntegerAdd(a, neg(b)) a-is-integer negated-b-is-integer]
+                  @difference-unfolds |
+                    sub(a, b) = add(a, neg(b))
+                    [using specialize subDefinition(a, b)]
+                  @conclusion-difference-is-integer |
+                    isInteger(sub(a, b))
+                    [by rewrite difference-unfolds sum-with-negation-is-integer]
+                }
+              @b-integer-implies-difference |
+                isInteger(b) -> isInteger(sub(a, b))
+                [by implies_intro given-b-integer]
+            }
+          @conclusion-both-integers |
+            isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+            [by implies_intro given-a-integer]
+        }
+      @discharge-b |
+        forall b: Real; isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// -- the natural cut: ℕ inside ℤ inside ℝ ------------------------------------
+
+// succ(0) is a natural, hence an integer: the ℕ base case, its closure step, and the
+// inclusion that ties the two cuts together.
+theorem oneIsNaturalAndInteger: isNatural(succ(ZERO)) and isInteger(succ(ZERO))
+proof
+  @zero-is-natural |
+    isNatural(ZERO)
+    [by cite isNaturalZero]
+  @successor-of-zero-is-natural |
+    isNatural(succ(ZERO))
+    [using specialize isNaturalSucc(ZERO) zero-is-natural]
+  @successor-of-zero-is-integer |
+    isInteger(succ(ZERO))
+    [using specialize isNaturalIsInteger(succ(ZERO)) successor-of-zero-is-natural]
+  @conclusion |
+    isNatural(succ(ZERO)) and isInteger(succ(ZERO))
+    [by and_intro successor-of-zero-is-natural successor-of-zero-is-integer]
+qed
+
+// no natural steps back to zero — the cut's discreteness at the bottom.
+theorem successorOfZeroIsNonzero: succ(ZERO) != ZERO
+proof
+  @zero-is-natural |
+    isNatural(ZERO)
+    [by cite isNaturalZero]
+  @conclusion |
+    succ(ZERO) != ZERO
+    [using specialize isNaturalSuccNotZero(ZERO) zero-is-natural]
+qed
+
+// ℤ = ℕ ∪ −ℕ: every integer is a natural or negates one. At 0 the disjunction is what
+// the integer model's case analysis rests on.
+theorem zeroIsNaturalOrNegatesOne: isNatural(ZERO) or isNatural(neg(ZERO))
+proof
+  @zero-is-integer |
+    isInteger(ZERO)
+    [by cite isIntegerZero]
+  @conclusion |
+    isNatural(ZERO) or isNatural(neg(ZERO))
+    [using specialize integerCases(ZERO) zero-is-integer]
+qed
+
+// -- the postulated minimality principle -------------------------------------
+
+// natural induction instantiated at `isInteger`: every natural is an integer, derived by
+// induction rather than by citing the inclusion axiom. The schema's smallest honest use —
+// base case and step both discharged from the closure axioms.
+theorem naturalsAreIntegersByInduction: forall n: Real; isNatural(n) -> isInteger(n)
+proof
+  @base-case |
+    isInteger(ZERO)
+    [by cite isIntegerZero]
+  @induction-step |
+    fix k: Real {
+      @given-k-natural |
+        assume isNatural(k) {
+          @given-inductive-hypothesis |
+            assume isInteger(k) {
+              @inductive-hypothesis |
+                isInteger(k)
+                [by hypothesis given-inductive-hypothesis]
+              @conclusion-successor-is-integer |
+                isInteger(succ(k))
+                [using specialize isIntegerSucc(k) inductive-hypothesis]
+            }
+          @conclusion-induction-step-at-k |
+            isInteger(k) -> isInteger(succ(k))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @conclusion-step-guarded |
+        isNatural(k) -> isInteger(k) -> isInteger(succ(k))
+        [by implies_intro given-k-natural]
+    }
+  @induction-step-for-all-k |
+    forall k: Real; isNatural(k) -> isInteger(k) -> isInteger(succ(k))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Real; isNatural(n) -> isInteger(n)
+    [using instantiation naturalInduction(fun q: Real => isInteger(q)) base-case induction-step-for-all-k]
+qed
+
+// -- completeness: the least-upper-bound property ----------------------------
+
+// The set {x | x <= 0} is nonempty (0 is in it) and bounded above (by 0), so completeness
+// hands back a least upper bound. The schema's smallest honest use: both antecedents are
+// discharged from the order axioms, and the supremum comes back usable.
+theorem setBoundedByZeroHasSupremum:
+  exists m: Real;
+  (forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, m))
+  and (forall b: Real; (forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, b)) -> less_or_equal(m, b))
+proof
+  @zero-equals-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  @zero-is-at-most-zero |
+    less_or_equal(ZERO, ZERO)
+    [using tautology zero-equals-itself]
+  @set-is-nonempty |
+    exists x: Real; less_or_equal(x, ZERO)
+    [by exists_intro(ZERO) zero-is-at-most-zero]
+  @generalize-x |
+    fix x: Real {
+      @conclusion-membership-implies-bound |
+        less_or_equal(x, ZERO) -> less_or_equal(x, ZERO)
+        [using tautology]
+    }
+  @zero-bounds-the-set |
+    forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, ZERO)
+    [by forall_intro generalize-x]
+  @set-is-bounded-above |
+    exists m: Real; forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, m)
+    [by exists_intro(ZERO) zero-bounds-the-set]
+  @conclusion |
+    exists m: Real;
+      (forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, m))
+      and (forall b: Real; (forall x: Real; less_or_equal(x, ZERO) -> less_or_equal(x, b)) -> less_or_equal(m, b))
+    [using instantiation completeness(fun x: Real => less_or_equal(x, ZERO)) set-is-nonempty set-is-bounded-above]
+qed
