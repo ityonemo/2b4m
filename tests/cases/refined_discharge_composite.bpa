@@ -1,0 +1,38 @@
+// REFINED-SORT elim at a COMPOSITE witness — the guard is discharged EXPLICITLY, and its
+// OWN elim recurses. `forall_elim(op(c,a))` over `forall h: H` owes `good(op(c,a))`. The
+// author establishes it from a closure axiom `opClosed: forall x: H; good(op(c,x))` — but
+// that is ITSELF a refined universal, so `forall_elim(a) opClosed` owes `good(a)`, which the
+// fix block guard auto-discharges. So the explicit closure step `@op-good` folds ITS guard
+// locally; then the main elim folds `good(op(c,a))` from `@op-good`. Recursion via ordinary
+// explicit steps + the local auto-discharge — no global search.
+sort G
+pred good(x: G)
+sort H = G where good
+const c: G
+func op(x: G, y: G): G
+func f(x: G): G
+
+axiom fLaw: forall h: H; f(h) = h
+axiom opClosed: forall x: H; good(op(c, x))
+
+theorem fAtComposite: forall a: H; f(op(c, a)) = op(c, a)
+proof
+  @generalize-a |
+    fix a: H {
+      @closure |
+        forall x: H; good(op(c, x))
+        [by cite opClosed]
+      @op-good |
+        good(op(c, a))
+        [by forall_elim(a) closure]
+      @the-law |
+        forall h: H; f(h) = h
+        [by cite fLaw]
+      @at-composite |
+        f(op(c, a)) = op(c, a)
+        [by forall_elim(op(c, a)) the-law]
+    }
+  @conclusion |
+    forall a: H; f(op(c, a)) = op(c, a)
+    [by forall_intro generalize-a]
+qed

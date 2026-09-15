@@ -77,19 +77,17 @@ const Query = struct {
         // real thing (print it). An `axiom` has no proof — print its statement
         // marked "axiomatic". An `alias` points elsewhere (follow it).
         for (file.decls) |decl| switch (decl) {
-            .theorem => |t| if (nameEql(source, t.name, name)) {
-                return self.printSpan(source, name);
+            // a theorem (incl. proof-carrying schema = theorem with params) prints its proof;
+            // a theorem alias follows to its target.
+            .theorem => |t| switch (t) {
+                .local => |l| if (nameEql(source, l.fact.name, name)) return self.printSpan(source, name),
+                .alias => |a| if (nameEql(source, a.name, name)) return self.follow(path, source, tokenText(source, a.target), hop),
             },
-            .schema => |s| if (nameEql(source, s.name, name)) {
-                // a proof-carrying schema prints its proof; a parameterized
-                // axiom (schema with no steps) is an assumption family.
-                return if (s.steps != null) self.printSpan(source, name) else self.printAxiom(source, name);
-            },
-            .axiom => |ax| if (nameEql(source, ax.name, name)) {
-                return self.printAxiom(source, name);
-            },
-            .alias => |a| if ((a.kind == .theorem or a.kind == .axiom) and nameEql(source, a.name, name)) {
-                return self.follow(path, source, tokenText(source, a.target), hop);
+            // an axiom (incl. axiom-schema = axiom with params) is an assumption family; an
+            // axiom alias follows to its target.
+            .axiom => |ax| switch (ax) {
+                .local => |f| if (nameEql(source, f.name, name)) return self.printAxiom(source, name),
+                .alias => |a| if (nameEql(source, a.name, name)) return self.follow(path, source, tokenText(source, a.target), hop),
             },
             else => {},
         };

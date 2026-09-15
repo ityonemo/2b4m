@@ -60,7 +60,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: symmetry` | from `x = y`, conclude `y = x` |
 | `RULE: rewrite` | replace an equation's LHS by its RHS in a target |
 | `RULE: iff_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
-| `RULE: instantiate` | monomorphize a schema |
+| `TACTIC: instantiation` | monomorphize a schema (`using`) |
 | `RULE: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
 | `RULE: chain` | prove A = Z from equations used any direction + congruence |
 | `RULE: model` | transfer a theory's theorem through a named model |
@@ -68,12 +68,12 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `TACTIC: assoc_commut` | associative-commutative reordering of a sum |
 | `TACTIC: assoc` | associativity-only reordering (non-commutative) |
 | `TACTIC: polynomial` | nonlinear `add`/`mul` polynomial identities |
-| `TACTIC: ext` | extensionality-reduction (sets/functions) |
+| `TACTIC: extensionality` | extensionality-reduction (sets/functions) |
 | `TACTIC: tautology` | propositional consequence |
 | `TACTIC: arithmetic` | linear arithmetic over Nat |
 
 (The `_quantified` variant of a tactic — `simplify_quantified`, `assoc_commut_quantified`,
-`assoc_quantified`, `polynomial_quantified`, `ext_quantified` — is documented inside its
+`assoc_quantified`, `polynomial_quantified`, `extensionality_quantified` — is documented inside its
 base tactic's leaf; it peels a leading `forall` prefix without a hand `fix`.)
 
 ## Files and checking
@@ -88,12 +88,16 @@ OK: 18 declarations, 6 theorems proven (1 accelerated: arithmetic)
 
 By default `bpa check` **verifies everything**: `by arithmetic`/`by
 tautology` must produce a checkable certificate (an accelerated fallback is a hard
-error), imported proofs are re-checked, and imported schemas are
-re-instantiated. Speed flags defer that work during development, one layer
-each, and say so loudly in the summary:
-- `--fast` — accept accelerated verdicts for arithmetic/tautology
-- `--faster` — also trust imported theorem proofs (skip re-check)
-- `--reckless` — also trust imported schemas (skip re-instantiation)
+error), and every `using` step (accelerant / model / import) is verified.
+`--fast` defers that verification per `using` WORD during development and says
+so loudly in the summary — a trusted word's step is *admitted* (accepted by
+its own cheap check / statement match) rather than kernel-checked:
+- `--fast` — trust ALL `using` words
+- `--fast-only W…` — trust ONLY the listed words (allowlist)
+- `--fast-except W…` — trust all words EXCEPT the listed (denylist)
+  Words are accelerant tactics (`arithmetic`, `tautology`, `polynomial`,
+  `simplify`, … + their `_quantified` variants) and the engine words `model` /
+  `import` (group word `engine`). `instantiation` is never trustable.
 - `--draft` — allow `hole`s (aspirational placeholders); orthogonal to the
   above. Default mode rejects any file with holes and lists them.
 
@@ -124,7 +128,12 @@ kernel-checked.
 ```bpa
 pred inH(g: G)
 sort H = G where inH          // H is "G where inH holds"
+sort HK = G where inH and inK // several qualifiers: the guard is their CONJUNCTION
 ```
+
+Chained `and` qualifiers (or a refined sort refining another refined sort) accumulate
+into one CONJOINED guard `(inH(x) and inK(x)) ->` — the canonical shape the kernel's
+guarded `forall_intro` derives, so statements, `fix` blocks, and model transfers all agree.
 
 The guard appears at each position `H` is used:
 
@@ -165,15 +174,41 @@ const ZERO: Nat
 
 ### KEYWORD: define
 
-Names a term.  Expansion is performed transparently at elaboration — the
-kernel only ever sees the underlying term, so definitions add nothing to
-the trusted surface and work everywhere a term does, including inside automation.
-Definitions may build on each other. The sort is inferred.
+Names a term or a proposition.  Expansion is performed transparently at
+elaboration — the kernel only ever sees the underlying term, so definitions add
+nothing to the trusted surface and work everywhere a term does, including inside
+automation. Definitions may build on each other. The sort is inferred.
 
 ```bpa
 define TWO = succ(succ(ZERO))
 define FOUR = succ(succ(TWO))
 ```
+
+A define may take PARAMETERS, making it a macro function or predicate. **Parameters
+take no sort** — a define is not a declaration, it is an expansion: the arguments
+arrive already elaborated at each use, and the body's own elaboration types every
+use of them. A declared param sort would be a second source of the same fact, able
+only to agree (noise) or to disagree (a spurious error). Writing one is an error.
+
+```bpa
+define divides(d, n) = exists k: Int; n = mul(d, k)   // parameters are bare names
+define even(n) = divides(TWO, n)                      // defines build on defines
+```
+
+A define is a MACRO, not a declaration: it is substituted wherever it appears, before
+anything else looks at the text (imports resolved, body substituted, repeated until
+nothing changes). So a define can stand anywhere an expression can — including as a
+`where` guard (`sort Big = Nat where isBig`, `forall x: Nat where isBig; …`) and as a
+model mapping's target (`model M { src.UNIT: DOUBLED }`) — and can be re-exported by an
+alias (`pred does_divide = int_divides.divides`). It has no identity of its own, so it
+cannot be *named* where a symbol is required (a model mapping's SOURCE, a citation).
+
+A define that merely FORWARDS an opaque symbol in the same argument order —
+`define lt(a, b) = ordering.less_than(a, b)` — is an ALIAS written as a macro, and
+is rejected (`--draft` allows it). Write the alias form `pred lt = ordering.less_than`
+instead: an alias binds the name to the target's identity, so it keeps its KIND and
+downstream files can alias it in turn. A PERMUTED forward (`define gt(a, b) =
+ordering.less_than(b, a)`) is a genuine macro and is fine.
 
 ### KEYWORD: func
 
@@ -199,8 +234,8 @@ pred raining
 
 ### KEYWORD: axiom
 
-Asserts a formula without proof. Axioms are the file's assumptions;
-`grep 'by axiom'` audits exactly where they are used.
+Asserts a formula without proof. Axioms are the file's assumptions; a proof cites
+one with `[by cite NAME]`, and `bpa query uses` lists every fact a proof cites.
 
 ```bpa
 axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
@@ -223,7 +258,7 @@ An **aspirational placeholder** — a claim stated up front, accepted mechanical
 like an `axiom`, but tracked as a hole. Use it to **scaffold** (state a lemma,
 build the proof that needs it, fill it in later) or to **reason conditionally**
 ("suppose an odd perfect number exists; here is what follows"). Cited exactly
-like an axiom: `[by axiom myHole]`.
+like an axiom: `[by cite myHole]`.
 
 ```bpa
 hole zeroIsEven: even(ZERO)
@@ -255,41 +290,28 @@ proof
 qed
 ```
 
-**Schema well-formedness (strict vs `--fast`).**
-A theorem schema's proof body is verified in **two** places, and the policy
-differs by mode:
+**Schema well-formedness (the per-instance gate).**
+A theorem schema's proof body is verified **once per instantiation site**: at
+each `[using instantiation NAME(args) …]`, the body is elaborated at the real
+arguments and kernel-checked. That per-instance proof is the *only* soundness
+gate, and it always runs — `instantiation` is never `--fast`-trustable (admitting
+it shape-only would skip exactly this proof; see #93).
 
-- **Strict mode (default `bpa check`)** verifies the body **once at declaration**,
-  by instantiating the schema at *opaque parameters* — each `prop`/value parameter
-  becomes a fresh uninterpreted symbol of its signature, and the proof is
-  kernel-checked generically. This catches structural defects (rule arity, unknown
-  references, malformed blocks — e.g. a 4-reference `or_elim`, which is binary) and
-  most logical errors **up front**, at the schema's own line, rather than letting
-  them lie dormant until some caller happens to instantiate it. It is then also
-  re-checked at each concrete `instantiate` (the parameters are real there).
+A schema need **not** be a true universal. A narrow schema whose body only holds
+for some arguments is bad form, not an error — it simply declares fine and fails
+at the first instantiation whose arguments make the body unprovable (the prover
+catches you there). There is no declaration-time check: an *uninstantiated*
+schema is never verified (nothing demands its body).
 
-- **`--fast` (and `--faster`/`--reckless`)** skips the declaration-time check: the
-  body stays lazy, verified only at real instantiation sites (today's older
-  behavior). A schema that is never instantiated is never checked under `--fast`.
-
-The rule of thumb: **strict `check` treats a schema like a theorem** — its proof
-must be well-formed and verifiable to pass, even with no instantiation in the file.
-`--fast` treats a bare schema more like an axiom (unproven until used). A green
-strict `check` therefore means every schema body is genuinely verified; a green
-`--fast` run does not (and says so in its "NOT FULLY VERIFIED" disclosure).
-
-Because full logical verification of an *abstract* body isn't always well-defined
-(an accelerant step may need the concrete parameter to certify), the opaque-
-parameter check is the pragmatic maximum: it is exactly a self-instantiation at
-uninterpreted symbols, so anything that would fail for *every* instantiation fails
-here, while parameter-specific facts are still deferred to the real use site.
+The rule of thumb: **a schema is checked where it is used**, like a macro whose
+expansion must prove out at each call. If you want a schema treated like a
+theorem (proved standalone), instantiate it — or wrap it in a named theorem.
 
 Instantiations are **not cached**: a plain theorem is checked once and cited
 by reference thereafter, but a schema's proof is re-run at every instantiation
-site (the parameters differ, so there is no single fixed result to cache) — plus
-the strict declaration-time opaque check described above. If
+site (the parameters differ, so there is no single fixed result to cache). If
 an expensive instance is reused, **realize it into a named theorem** — write a
-plain `theorem` whose one step is `[by instantiate NAME(args) ...]`, and cite
+plain `theorem` whose one step is `[using instantiation NAME(args) ...]`, and cite
 that theorem from then on. Naming pays the instantiation cost once and reuses
 it through the ordinary `proven`-flag mechanism; it also keeps the reuse
 explicit and greppable rather than hidden in a kernel memo table.
@@ -322,10 +344,13 @@ other paths resolve relative to the importing file.
 import peano <<< "std/peano.bpa"
 ```
 
-By default imported theorems are re-checked. Under `--faster`/`--reckless`
-they are trusted (proofs not re-checked) and counted separately in the
-summary. Schematic theorems are re-checked at each instantiation (in the
-instantiating file) by default, and trusted only under `--reckless`.
+A cross-file citation is an `import` `using` step. By default it is fully
+verified; under `--fast` (or `--fast-only import`) it is *admitted* — accepted
+by matching the cited statement — and disclosed in the summary. Admitting the
+word trusts the citation SHAPE, not the imported proof: a demanded imported
+theorem is still re-checked in its own file, so a broken import is caught
+regardless of the flag. Imported schematic theorems are always re-checked at
+each instantiation (`instantiation` is never trustable).
 
 ### KEYWORD: alias
 
@@ -347,7 +372,7 @@ that theory's whole proven corpus transfers to the local sort — a working
 feature used throughout `std/`. A `model NAME { … }` block interprets the
 abstract theory's primitives as local symbols (with `:`) and discharges its
 axiom obligations with local facts (with `<-`), and in exchange every theorem the
-theory proves becomes citable at your sort via `[by model(NAME) source.thm]`.
+theory proves becomes citable at your sort via `[using model(NAME) source.thm]`.
 Where an alias
 identifies one entity with another, a `model` is a **named namespace of overloads** —
 you map each of the theory's primitives (its sorts, operations, constants) and
@@ -380,18 +405,57 @@ mean. A source *theorem* is not mappable at all (it materializes through the
 mapped axioms). The `@`-projection value (`src.ax <- OtherModel@src.thm`,
 discharging via a theorem transferred through another model) is a `<-` form only.
 
+**Guarded models — mapping onto a refined (subset) sort.**
 A model is **GUARDED** (relativized to a subset) exactly when a sort-mapping's
 target is a **predicated sort** — e.g. `group.Grp: GrpH` where
-`sort GrpH = Grp where inH`. That mapping supplies the guard: the transferred
-theorems gain an `inH(x) ->` at each binder over the mapped sort, and each closure
-obligation is discharged from the mapped facts.
+`sort GrpH = Grp where inH`. Each transferred theorem is then RELATIVIZED — a
+`inH(x) ->` guard is injected at every binder over the mapped sort (a
+multi-qualifier sort `Grp where inH and inK` injects the **conjunction**
+`(inH(x) and inK(x)) ->`). Re-running the source proof, an instantiation at a
+witness `t` owes `inH(t)`; the model must supply the fact that establishes it. It
+does so by NOMINATING dischargers, right on the `:` symbol-map that introduces the
+obligation — with a spelling that differs by symbol kind:
 
-A model **may leave some axioms unmapped** — at the prover's risk. In default
-(strict) mode, citing a transferred theorem whose proof depends on an unmapped
-axiom is **rejected**, naming the missing obligation. Under `--fast` the same cite
-**passes** (the transfer is trusted without checking which axioms it needed) —
-disclosed as accelerated, but a loaded gun: treat a `--fast` pass over a partial
-model as provisional until it also passes strict mode.
+- **`src.C: TGT(fact, …)`** — a CONST mapped to `TGT` nominates the GROUND base
+  fact(s) proving `TGT`'s membership, one per guard predicate of the target sort
+  (parens form). E.g. `group.E: ZERO(zeroInH)` where `axiom zeroInH: inH(ZERO)`.
+- **`src.op: F -| closure, …`** — a FUNC mapped to `F` nominates the CLOSURE
+  fact(s): `F` preserves membership. E.g. `group.op: add -| addClosed` where
+  `axiom addClosed: forall a, b; inH(a) -> inH(b) -> inH(add(a, b))`. The `-|`
+  reverse-turnstile reads like `<-`: the obligation-bearer on the left, the
+  discharging fact on the right. A comma list gives one closure per guard predicate.
+
+Using the parens form on a func (or `-|` on a const) is a hard error. At each
+membership obligation the transfer walks the witness term: a const cites its base
+fact, a `fix`-bound variable uses its block guard, a composite `op(a, b)` applies
+`op`'s nominated closure and RECURSES on the guarded arguments. An UNCONDITIONAL
+source axiom mapped to itself is auto-WEAKENED (`∀a; P ⊢ ∀a; inH(a) -> P`), no
+hand-written relativized copy needed.
+
+```bpa
+// the subgroup H ⊆ G is a group: map group's sort onto `Grp where inH`, nominate
+// the membership facts, and the whole group corpus transfers relativized to H.
+sort GrpH = Grp where inH
+axiom identityInH: inH(E)
+axiom invClosed:   forall a: Grp; inH(a) -> inH(inverse(a))
+
+model SubgroupIsGroup {
+  group.Grp:     GrpH
+  group.E:       E(identityInH)          // const → base fact
+  group.op:      op -| opClosed           // func → closure fact
+  group.inverse: inverse -| invClosed
+  group.opAssoc  <- group.opAssoc         // unconditional axiom, auto-weakened
+}
+```
+
+A `<- OtherModel@src.thm` projection discharges an obligation by transferring a
+theorem THROUGH another model — the composition that layers `subgroup`-is-a-group
+onto `group`-is-a-group (see `tests/cases/model_subgroup_transfer.bpa`).
+
+A model **may leave some axioms unmapped**. Citing a transferred theorem whose
+proof depends on an unmapped axiom is **rejected**: under the transfer the unmapped
+source axiom stays the source axiom, so its formula fails to match the transferred
+step's (relativized) claim, and the step doesn't check.
 
 The head is just `model NAME {` — there is NO `=` header or `where` on the head.
 No mapping is distinguished: the sort a source theory reasons over is mapped by an
@@ -430,11 +494,11 @@ theorem addCancelLeft: forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
 proof
   @conclusion |
     forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
-    [by model(AdditiveGroup) group.cancelLeft]
+    [using model(AdditiveGroup) group.cancelLeft]
 qed
 ```
 
-`[by model(AdditiveGroup) group.cancelLeft]` takes `group`'s abstract
+`[using model(AdditiveGroup) group.cancelLeft]` takes `group`'s abstract
 theorem, rewrites it through the `AdditiveGroup` mapping (relativizing by the
 guard if any), and checks the result equals the goal. It is an **accelerant**:
 under `--fast` the transfer is trusted wholesale and marks the theorem
@@ -461,7 +525,7 @@ model NonNegInt {
 The discharge target (`nonnegInduction`) must itself be a schema; its statement
 must be the **guard-relativized remap** of the source's body (every `∀` over the
 sort gains `non_neg(x) ->`). That match is verified once, at the model declaration
-(even if the schema is never cited). Then `[by model(NonNegInt) peano.induction]`
+(even if the schema is never cited). Then `[using model(NonNegInt) peano.induction]`
 inside a schema body instantiates the discharge at the caller's predicate
 parameter — kernel-checked, untainted. (A schema transfer is only cited *inside a
 schema body*, where a predicate parameter exists to instantiate.)
@@ -522,7 +586,7 @@ justification:
 ```bpa
 @have-imp |
   p -> q
-  [by axiom pImpliesQ]
+  [by cite pImpliesQ]
 @conclusion |
   q
   [by modus_ponens have-imp have-p]
@@ -625,16 +689,40 @@ Nothing inside a closed subproof leaks out except through its discharge rule.
 
 ### Justification rules (overview table)
 
-`[by <rule> <refs>]`, where refs are step or block labels (and statement
-names for citations). Rules taking a term argument write it in parens:
-`[by forall_elim(succ(b)) some-step]`. This table is the at-a-glance index; the
-gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>`
-leaf below it (see the Index for the full anchor list).
+Every step ends with a bracketed justification whose FIRST word is one of **two
+keywords** — the parser enforces the split:
+
+- **`[by <rule> <refs>]`** — a KERNEL PRIMITIVE: pure inference the kernel checks
+  directly (everything in this table down to `iff_rewrite`, plus `cite`). Refs are
+  step or block labels (and fact names for `cite`). Term arguments go in parens:
+  `[by forall_elim(succ(b)) some-step]`.
+- **`[using <name> <refs>]`** — ENGINE PROOF-GENERATION: an ACCELERANT (the tactics
+  below — `simplify`, `assoc_commut`, `polynomial`, `tautology`, `arithmetic`,
+  `specialize`, …) or `instantiation` / `model`. These generate a kernel-checked
+  certificate; `using` marks exactly the steps a future `--fast` could trust, so a
+  `by`-only proof means the same under every mode.
+
+Writing `using` on a kernel primitive, or `by` on an accelerant, is a hard parse
+error (with an actionable message). This table is the at-a-glance index; the
+gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>` leaf
+below it (see the Index for the full anchor list).
+
+**The complete partition** (every rule word is on exactly one side):
+
+- **`by`** (kernel primitives): `cite`, `hypothesis`, `predicate`, `modus_ponens`,
+  `implies_intro`, `forall_intro`, `forall_elim`, `exists_intro`, `exists_elim`,
+  `and_intro`, `and_elim_left`, `and_elim_right`, `iff_intro`, `iff_elim_forward`,
+  `iff_elim_backward`, `or_intro_left`, `or_intro_right`, `or_elim`, `not_intro`,
+  `absurd`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `iff_rewrite`.
+- **`using`** (engine proof-generation): `instantiation`, `model`, `import`, and the
+  accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
+  `assoc_commut_quantified`, `assoc`, `assoc_quantified`, `polynomial`,
+  `polynomial_quantified`, `tautology`, `arithmetic`, `arithmetic_quantified`,
+  `specialize`, `chain`, `extensionality`, `extensionality_quantified`.
 
 | Rule | Meaning |
 |---|---|
-| `axiom NAME` | cite an axiom verbatim |
-| `theorem NAME` | cite a proven theorem verbatim |
+| `cite NAME` | cite a fact (axiom OR theorem) verbatim — kind-agnostic; the kernel picks its arm by the resolved fact's kind |
 | `hypothesis BLOCK` | restate an enclosing block's assumption (or unpacked witness fact) |
 | `predicate FIXBLOCK` | surface the guard of a predicated `fix h: H` binder — the fact `inH(h)` its refined sort provides |
 | `modus_ponens IMP ANT` | from `P -> Q` and `P`, conclude `Q` |
@@ -656,7 +744,7 @@ leaf below it (see the Index for the full anchor list).
 | `symmetry STEP` | from a proven `x = y`, conclude `y = x` |
 | `rewrite EQ TARGET` | replace occurrences of the equation's left side with its right side in `TARGET` |
 | `iff_rewrite BICOND TARGET` | the propositional analogue of `rewrite`: from `P iff Q`, replace the sub-proposition `P` by `Q` at any position in `TARGET` (under connectives and quantifiers). A kernel-checked rule, no accelerant taint |
-| `instantiate NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
+| `using instantiation NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
 | `simplify refs...` | tactic: join both sides of an equation by rewriting (see Automation) |
 | `simplify_quantified refs...` | tactic: `simplify` under a `forall` prefix, without a hand `fix` (see Automation) |
 | `assoc_commut [(assoc, comm, swap)] [refs...]` | tactic: reorder an associative-commutative sum by its A/C laws — bare uses well-known `add`/`mul`; `(assoc, comm, swap)` supplies the triple for a custom operator; cited refs (e.g. distributivity) pre-normalize first (see Automation) |
@@ -668,19 +756,18 @@ leaf below it (see the Index for the full anchor list).
 | `tautology refs...` | tactic: propositional consequence (see Automation) |
 | `arithmetic refs...` | tactic: linear arithmetic over Nat (see Automation) |
 | `model(INSTANCE) source.theorem` | transfer an abstract theory's theorem to a sort that models it, remapped through the named model (see `KEYWORD: model` and `RULE: model`) |
+| `import(I) thm` | cite a fact (axiom or theorem) from import `I`'s file across the file boundary (see `RULE: import`) |
 
 The leaves below cover each rule that has a gotcha or a non-obvious ref count;
 the simple rules get a one-line leaf too, so every rule name is greppable.
 
-### RULE: axiom
+### RULE: cite
 
-`[by axiom NAME]` — cite an axiom (or a `hole`) verbatim; no refs. The goal must be
-the axiom's formula exactly.
-
-### RULE: theorem
-
-`[by theorem NAME]` — cite an already-proven theorem verbatim; no refs. The goal
-must be the theorem's formula exactly (up to α-equivalence).
+`[by cite NAME]` — cite a fact (an `axiom`, a proven `theorem`, or a `hole`)
+verbatim; no refs. The goal must be the cited fact's formula exactly (up to
+α-equivalence). KIND-AGNOSTIC: you don't name axiom-vs-theorem — the kernel picks
+its arm by the resolved fact's kind. (`by axiom NAME` / `by theorem NAME` were the
+old forms; they are no longer rule words — use `cite`.)
 
 ### RULE: hypothesis
 
@@ -884,9 +971,9 @@ term-equation rule) cannot reach. A kernel-checked rule with **no accelerant tai
   [by iff_rewrite bicond-P-Q target-R-of-P]
 ```
 
-### RULE: instantiate
+### TACTIC: instantiation
 
-`[by instantiate NAME(args) refs...]` — monomorphize the schema `NAME` at the
+`[using instantiation NAME(args) refs...]` — monomorphize the schema `NAME` at the
 written-out `args` (formula params supplied as `fun … => …` lambdas). Trailing refs
 discharge the instance's **leading antecedents** (its `->` premises), left to right.
 The proof body is re-checked at this instance (see `KEYWORD: schematic`). Reusing an
@@ -895,12 +982,12 @@ expensive instance? Realize it into a named theorem and cite that instead.
 ```bpa
 @applied |
   (not q) -> (not p)
-  [by instantiate contrapositive(fun => p, fun => q) have-p-imp-q]
+  [using instantiation contrapositive(fun => p, fun => q) have-p-imp-q]
 ```
 
 ### RULE: specialize
 
-`[by specialize HEAD(args) hyps...]` — apply a `forall`-quantified fact `HEAD` in
+`[using specialize HEAD(args) hyps...]` — apply a `forall`-quantified fact `HEAD` in
 ONE step: it ∀-elims `HEAD` at each written-out `args` (peeling the universal
 prefix), then modus_ponens each trailing hyp ref against a leading `->` antecedent,
 left to right. The result must be the goal. **`HEAD` may be a declared THEOREM/AXIOM
@@ -911,7 +998,7 @@ one-liner as a named lemma (no need to hand-roll `forall_elim` + `modus_ponens`)
 This is pure sugar over `forall_elim` + `modus_ponens` — it EMITS those kernel
 steps as a certificate the kernel re-checks, so it is fully verified and carries no
 `--fast` taint. It exists to collapse the ubiquitous three-step "apply a lemma"
-ritual (`@rule | ∀…; P->Q [by theorem L]` / `@at-a | P(a)->Q(a) [by forall_elim(a)
+ritual (`@rule | ∀…; P->Q [by cite L]` / `@at-a | P(a)->Q(a) [by forall_elim(a)
 rule]` / `@got | Q(a) [by modus_ponens at-a hyp]`) into a single step with no
 throwaway `-rule`/`-at-args` labels.
 
@@ -919,17 +1006,17 @@ throwaway `-rule`/`-at-args` labels.
 // forall a, d; d>0 -> exists q,r; a = dq+r ∧ 0≤r<d, applied at (a, d):
 @decomposed |
   exists q: Int; exists r: Int; a = add(mul(d, q), r) and (is_nonneg(r) and less_than(r, d))
-  [by specialize divisionAlgorithmExists(a, d) d-is-positive]
+  [using specialize divisionAlgorithmExists(a, d) d-is-positive]
 ```
 
 Multi-arg peels several binders; multiple hyps discharge several antecedents in
 order. With NO hyps it is a bare specialization (just the ∀-elim chain). For a
-parameterized SCHEMA (a `prop`-parameter), use `instantiate` instead — `specialize`
+parameterized SCHEMA (a `prop`-parameter), use `instantiation` instead — `specialize`
 is for ordinary quantified theorems.
 
 ### RULE: chain
 
-`[by chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited
+`[using chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited
 equations, used in ANY direction and closed under congruence. Each `eqN` is a
 proven step / axiom / theorem of the form `X = Y`; `chain` searches (BFS) for
 a rewrite path connecting `A` to `Z`, using each equation forward OR backward, and
@@ -946,7 +1033,7 @@ chain (`A = B`, `C = B`, `D = C` ⊢ `A = D`). It emits a `reflexivity` +
 // A = B, C = B (backwards), D = C ⊢ A = D, plus a congruence in one:
 @a-equals-d |
   mul(pu(s, k), at(s, k)) = mul(pu(t2, lprev), at(s, k))
-  [by chain s-succ-product-splits equal-products t2-product-is-l-product tm-equals-sk]
+  [using chain s-succ-product-splits equal-products t2-product-is-l-product tm-equals-sk]
 ```
 
 Use `simplify` for oriented normal-form equalities (ring identities), `chain`
@@ -963,12 +1050,12 @@ antecedents automatically:
 // forall k; is_nonneg(k) -> forall s,t,l; is_nonneg(l) -> … -> k = l
 @k-equals-l |
   k = l
-  [by specialize factorizationLengthUnique(k, s, t, l) k-nonneg l-nonneg s-primes t-primes eq]
+  [using specialize factorizationLengthUnique(k, s, t, l) k-nonneg l-nonneg s-primes t-primes eq]
 ```
 
 ### RULE: model
 
-`[by model(INSTANCE) source.theorem]` — transfer an abstract theory's proven theorem
+`[using model(INSTANCE) source.theorem]` — transfer an abstract theory's proven theorem
 to a sort that models it. It takes the source theorem, rewrites it through the named
 model's mapping (relativizing by the guard if the model is guarded), and checks the
 result equals the goal. See `KEYWORD: model` for the mapping block.
@@ -976,7 +1063,7 @@ result equals the goal. See `KEYWORD: model` for the mapping block.
 ```bpa
 @conclusion |
   forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
-  [by model(AdditiveGroup) group.cancelLeft]
+  [using model(AdditiveGroup) group.cancelLeft]
 ```
 
 It is an **accelerant**: in default (strict) mode it is legitimate because the
@@ -985,6 +1072,28 @@ nothing untrusted enters — but under `--fast` the transfer is trusted wholesal
 marks the theorem accelerated. A model that leaves some source axioms unmapped is
 **rejected** in strict mode when a cited transferred theorem depends on a missing
 obligation (named in the error); `--fast` passes it provisionally.
+
+### RULE: import
+
+`[using import(I) thm]` — cite a theorem `thm` from import `I`'s file across the file
+boundary. `I` names an `import` in scope; `thm` is a theorem (or axiom) that file
+proves; the goal must equal its formula (up to α-equivalence).
+
+```bpa
+import lib <<< "std/lib.bpa"
+// ...
+@conclusion |
+  forall n: Nat; succ(n) = succ(n)
+  [using import(lib) congThm]
+```
+
+This is the explicit cross-file-citation **accelerant** — the file-boundary trust
+seam, mirroring `model`, and the PREFERRED way to cite an imported theorem: a
+cross-file citation is an accelerated step a future `--fast` can trust as a unit.
+(A qualified `[by cite lib.thm]` also works and is mechanically identical today —
+both resolve the imported fact and the kernel re-matches its formula — but it is a
+re-checked obligation with no accelerant seam; use `using import(I) thm` for cross-
+file citation, and `by cite` for a SAME-file fact.)
 
 ## The kernel
 
@@ -1040,7 +1149,7 @@ countermodels, concrete arithmetic counterexamples).
 
 Equational rewriting (always emits kernel steps).
 
-`[by simplify f1 f2 ...]` proves an equation by rewriting both sides to a
+`[using simplify f1 f2 ...]` proves an equation by rewriting both sides to a
 common normal form using the cited facts (universally quantified equations
 or equation steps) as left-to-right rules. The certificate *is* the
 rewrite chain; there is no accelerated path. Cycling rule sets hit a hard rewrite cap
@@ -1049,7 +1158,7 @@ instead of hanging.
 ```bpa
 @succ-case |
   add(succ(k), ZERO) = succ(k)
-  [by simplify addSuccLeft inductive-hypothesis]
+  [using simplify addSuccLeft inductive-hypothesis]
 ```
 
 `simplify` proves a bare equation; on a `forall x…; s = t` goal use
@@ -1061,7 +1170,7 @@ suggests the other if you pick the wrong one for the goal shape.
 
 Associative-commutative reordering.
 
-`[by assoc_commut]` proves `s = t` when both are sums over an associative-
+`[using assoc_commut]` proves `s = t` when both are sums over an associative-
 commutative operator with the same multiset of summands, differing only by
 associativity and commutativity — including sums whose summands are **arbitrary
 opaque terms** (`sumTo(k)`, `mul(k, k)`), which `simplify` cannot reorder (a
@@ -1073,7 +1182,7 @@ have different summands` error.
 ```bpa
 @swapped |
   add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
-  [by assoc_commut]
+  [using assoc_commut]
 ```
 
 **Two forms, no partials** — you either supply the whole AC triple or rely on
@@ -1092,7 +1201,7 @@ the well-known one:
 // a custom operator `join` with its own (non-conventionally-named) AC laws
 @reorder |
   join(join(a, b), join(c, d)) = join(join(a, c), join(b, d))
-  [by assoc_commut(joinAssoc, joinComm, joinSwap)]
+  [using assoc_commut(joinAssoc, joinComm, joinSwap)]
 ```
 
 **Under a `forall` prefix**, use `assoc_commut_quantified` (peels the binders,
@@ -1106,7 +1215,7 @@ certifies in one step (distribute, then AC-sort the resulting sum of products):
 ```bpa
 @conclusion |
   forall a, b, c: Nat; mul(add(a, b), c) = add(mul(b, c), mul(a, c))
-  [by assoc_commut_quantified mulAddDistribRight]
+  [using assoc_commut_quantified mulAddDistribRight]
 ```
 
 **The `--fast` accelerated path** (bare form only): a theory that declares an operator
@@ -1122,7 +1231,7 @@ certifies (the triple is checkable), so it has no accelerated path.
 
 Associativity-only reordering.
 
-`[by assoc(assocLemma)]` proves `s = t` when both are equal by **associativity
+`[using assoc(assocLemma)]` proves `s = t` when both are equal by **associativity
 alone** of a single operator — the non-commutative sibling of `assoc_commut`.
 It right-nests each side (associativity is confluent and terminating, so
 right-nesting is a canonical form) and compares; no reordering, no
@@ -1133,14 +1242,14 @@ theory: rearranging `(ab)c` ↔ `a(bc)`), where `assoc_commut` does not apply.
 // a custom group operator `op` with its associativity axiom `opAssoc`
 @rearrange |
   op(op(op(a, b), c), d) = op(a, op(b, op(c, d)))
-  [by assoc(opAssoc)]
+  [using assoc(opAssoc)]
 ```
 
 **The associativity lemma is REQUIRED** — there is no bare form and no
 assumption the operator is `add`/`mul`. `assoc` takes exactly one argument, the
 lemma of shape `f(f(a,b),c) = f(a,f(b,c))`, and recovers the operator `f` from
 it. This keeps `assoc` fully parameterized by its cited axiom (zero dependence
-on ambient scope or well-known names). Bare `[by assoc]` is a located error;
+on ambient scope or well-known names). Bare `[using assoc]` is a located error;
 sides that differ by more than associativity report `assoc: sides differ by more
 than associativity`. **Under a `forall` prefix**, use `assoc_quantified`.
 
@@ -1153,7 +1262,7 @@ operator is associative without kernel-checking the rearrangement — and is mar
 
 Nonlinear identities.
 
-`[by polynomial(theory)]` proves an `add`/`mul` polynomial identity `s = t`
+`[using polynomial(theory)]` proves an `add`/`mul` polynomial identity `s = t`
 when both sides expand to the same polynomial — the nonlinear analogue of
 `assoc_commut`. It canonicalizes each side to a **sorted sum of sorted
 monomials**: distribute `mul` over `add`, sort each monomial's factors, sort the
@@ -1169,7 +1278,7 @@ differently: '<nf(s)>' vs '<nf(t)>'` error.
 @square |
   forall a, b: Nat;
     mul(add(a, b), add(a, b)) = add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))
-  [by polynomial_quantified(peano)]
+  [using polynomial_quantified(peano)]
 ```
 
 Like `arithmetic`, it is **theory-parameterized**: `polynomial(peano)` resolves
@@ -1203,44 +1312,46 @@ laws are never checked is why the result is **accelerated** (`accelerated:
 polynomial`). A false identity is still rejected (the accelerated tactic *decides*); the
 acceleration is for the unproven ring-structure assumption, not for the comparison.
 
-### TACTIC: ext
+### TACTIC: extensionality
 
 Extensionality-reduction.
 
-`[by ext(theory)]` proves an equation `LHS = RHS` between extensional objects
-by the *element-chase*: reduce `LHS = RHS`, through the theory's extensionality
-lemma, to its pointwise obligation; fix an element; unfold the operators; and
-close the residue. It is the mapping/set analogue of `polynomial` — a
-**structure tactic, model-parameterized**: the SAME tactic proves set equations
-and function equations (and any future extensional theory), selected by the
-theory argument. (Prior art: Lean's `ext`.)
+`[using extensionality(<extLemma>) <unfold lemmas…>]` proves an equation `LHS = RHS`
+between extensional objects by the *element-chase*: reduce `LHS = RHS`, through the
+cited extensionality lemma, to its pointwise obligation; fix an element; unfold the
+operators with the cited characterization lemmas; and close the residue. It is the
+mapping/set analogue of `polynomial` — a **structure tactic**: the SAME tactic proves
+set equations and function equations (and any extensional theory), selected by the
+lemmas you cite. Under a `forall` prefix, use `extensionality_quantified`.
+(Prior art: Lean's `ext`.)
 
 ```bpa
 @intersection-commutes |
   forall a, b: Set; intersection(a, b) = intersection(b, a)
-  [by ext_quantified(set)]
+  [using extensionality_quantified(extensionality) intersectionMember]
 
 @compose-associates |
   forall h, g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
-  [by ext_quantified(function)]
+  [using extensionality_quantified(funcExtensionality) composeApply]
 ```
 
-It reads the residue's shape to pick its closer: a **set** equation unfolds
-`member(x, ·)` via the `<op>Member` lemmas and closes the propositional residue
-with `tautology`; a **function** equation unfolds `apply(·, x)` via the
-`<op>Apply` lemmas and closes the equational residue with the rewrite join. One
-`[by ext…]` line replaces the ~85-line hand element-chase. Like `arithmetic`, it
-is **theory-parameterized** (`ext(set)` / `ext(function)` resolve the
-extensionality lemma, the `Universe` sort, and the operator lemmas against the
-named module); **under a `forall` prefix**, use `ext_quantified`. A false
-identity is rejected — the pointwise residue reports a countermodel or the
-values differ. It emits kernel steps (its closers do), so uses are kernel-checked.
+The parenthesized argument is the theory's extensionality lemma (`set.extensionality`,
+`function.funcExtensionality`, or a local alias of either); the element sort is read
+off that lemma's pointwise binder, so nothing is looked up by name. The remaining
+refs are the unfold lemmas for the operators the equation mentions (`unionMember`,
+`differenceMember`, `composeApply`, `identityApply`, …) — cite exactly the ones the
+sides use. The tactic reads the residue's shape to pick its closer: a **set** equation
+unfolds `member(x, ·)` and closes the propositional residue with `tautology`; a
+**function** equation unfolds `apply(·, x)` and closes the equational residue with the
+rewrite join. One line replaces the ~85-line hand element-chase; every emitted step is
+a kernel tactic. A false identity is rejected — the pointwise residue reports a
+countermodel or the rewrite join fails to meet.
 
 ### TACTIC: tautology
 
 Propositional consequence.
 
-`[by tautology refs...]` proves any goal that follows propositionally from
+`[using tautology refs...]` proves any goal that follows propositionally from
 the cited premises, treating non-propositional subformulas as opaque
 atoms. Valid goals replay as certificates (case splits via an inline
 excluded middle); non-consequences report a countermodel
@@ -1250,7 +1361,7 @@ excluded middle); non-consequences report a countermodel
 
 Linear arithmetic over Nat.
 
-`[by arithmetic refs...]` decides goals over `ZERO`, `ONE`, `succ`, `add`,
+`[using arithmetic refs...]` decides goals over `ZERO`, `ONE`, `succ`, `add`,
 `mul`-by-literal, `=`, `!=`, and `less_than`, with full propositional
 structure and quantifiers over Nat; anything else becomes an opaque
 propositional atom in an SMT-style combination. The vocabulary is
@@ -1269,7 +1380,7 @@ reports `'mul(a, b)' is outside linear arithmetic` rather than a countermodel.
 ```bpa
 @conc-in |
   less_than(a, succ(b))
-  [by arithmetic have]
+  [using arithmetic have]
 ```
 
 > [!WARNING]
@@ -1284,7 +1395,7 @@ certificate coverage — lives in `ACCELERATION.md`.
 `bpa query <op>` inspects `.bpa` files (and `.md` literate documents — the
 `bpa` blocks are extracted the same way `check` does) without checking them,
 for navigating a proof corpus. grep is the right tool for most searches (label
-audits, "who uses `[by arithmetic]`", counting); these cover the cases grep
+audits, "who uses `[using arithmetic]`", counting); these cover the cases grep
 can't do cleanly.
 
 | Command | What it does |
@@ -1343,7 +1454,7 @@ Lean/Isabelle/Rocq export would consume.
 
 `bpa debug taint <file> [theorem]` is the companion trust-entry audit: per proof,
 every step whose rule can fall back to an accelerated verdict (`arithmetic`,
-`tautology`, `polynomial`, `assoc_commut`, `assoc`, `ext`, and quantified
+`tautology`, `polynomial`, `assoc_commut`, `assoc`, `extensionality`, and quantified
 variants), at its `file:line:col`. A syntactic upper bound — a flagged step may
 still certify — so a clean report guarantees every step is kernel-checked. Pure
 over the AST (no elaboration), like the `query` commands.

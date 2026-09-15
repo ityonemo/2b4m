@@ -3,15 +3,17 @@
 // A source theorem proved with `polynomial` (a commutative-semiring identity) is
 // transferred through a GUARDED model (sort restricted to `good`). The
 // transfer must materialize a MODEL-MANGLED, relativized synthetic ring-rewrite
-// certificate for the step — but today the accelerant builds its synthetic
-// theorem at elaboration in the SOURCE space, blind to the model, so the guarded
-// re-emission escapes an eigenvariable.
+// certificate for the step.
 //
 // The source is a self-contained semiring: `polynomial` resolves add/mul and the
 // ring lemmas (distribution, identities, assoc/comm/swap) by their well-known
 // names from local scope, no theory arg needed.
 //
-// RED: this is the characterization test for making accelerants model-aware.
+// The accelerant builds its synthetic in SOURCE space; the instance ProveTask adopts the
+// model and injects the target sort's guard on each value param (the parent model's `good`),
+// the call site discharges it. The transferred cert is a source proof relativized under the
+// model, so — exactly like a hand-written transfer — the model must NOMINATE closure
+// dischargers (`C: TC(baseFact)`, `f: tf -| closureFact`) for the guard to close.
 
 sort Src
 const ZERO: Src
@@ -39,7 +41,7 @@ theorem distributeAndReorder: forall a, b, c: Src;
 proof
   @conclusion |
     forall a, b, c: Src; mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
-    [by polynomial_quantified]
+    [using polynomial_quantified]
 qed
 
 // a concrete sort with a membership guard `good`.
@@ -72,10 +74,10 @@ axiom tmulOneRight: forall n: Tgt; tmul(n, TONE) = n
 
 model SrcIsGood {
   Src: GoodTgt
-  ZERO: TZERO
-  ONE: TONE
-  add: tadd
-  mul: tmul
+  ZERO: TZERO(goodZero)
+  ONE: TONE(goodOne)
+  add: tadd -| goodAddClosed
+  mul: tmul -| goodMulClosed
   addIsAssociative <- taddIsAssociative
   addIsCommutative <- taddIsCommutative
   addLeftSwap <- taddLeftSwap
@@ -97,5 +99,5 @@ theorem transferred: forall a, b, c: GoodTgt;
 proof
   @conclusion |
     forall a, b, c: GoodTgt; tmul(a, tadd(b, c)) = tadd(tmul(c, a), tmul(b, a))
-    [by model(SrcIsGood) distributeAndReorder]
+    [using model(SrcIsGood) distributeAndReorder]
 qed

@@ -3,7 +3,7 @@
 // This is the by-hand version: the one sum-reordering that commutes past the
 // opaque term sumTo(k) is proved as an explicit exchange lemma up front. The
 // automation-assisted twin, examples/gauss.bpa, replaces that lemma with a
-// single `[by assoc_commut]` step — diff them to see what the AC tactic buys.
+// single `[using assoc_commut]` step — diff them to see what the AC tactic buys.
 //
 // Nat has no division, so we prove the equivalent DOUBLED form
 //   2 * sumTo(n) = n * (n + 1)
@@ -64,11 +64,11 @@ proof
                   // right-nest the left side: (a+b)+(c+d) = a+(b+(c+d))
                   @lhs-right-nested |
                     add(add(a, b), add(c, d)) = add(a, add(b, add(c, d)))
-                    [by simplify addIsAssociative]
+                    [using simplify addIsAssociative]
                   // swap b past c inside the inner triple
                   @b-swaps-past-c |
                     add(b, add(c, d)) = add(c, add(b, d))
-                    [by specialize addLeftSwap(b, c, d)]
+                    [using specialize addLeftSwap(b, c, d)]
                   @lhs-with-b-c-swapped |
                     add(add(a, b), add(c, d)) = add(a, add(c, add(b, d)))
                     [by rewrite b-swaps-past-c lhs-right-nested]
@@ -76,7 +76,7 @@ proof
                   // the shared form a+(c+(b+d)) can be rewritten back
                   @rhs-right-nested |
                     add(add(a, c), add(b, d)) = add(a, add(c, add(b, d)))
-                    [by simplify addIsAssociative]
+                    [using simplify addIsAssociative]
                   @rhs-refl |
                     add(add(a, c), add(b, d)) = add(add(a, c), add(b, d))
                     [by reflexivity]
@@ -125,7 +125,7 @@ proof
   // base case: 2 * sumTo(0) = 0 = 0 * succ(0)
   @base-case |
     add(sumTo(ZERO), sumTo(ZERO)) = mul(ZERO, succ(ZERO))
-    [by simplify sumToZero addZeroLeft mulZeroLeft]
+    [using simplify sumToZero addZeroLeft mulZeroLeft]
 
   @induction-step |
     fix k: Nat {
@@ -138,14 +138,14 @@ proof
           // unfold both copies of sumTo(succ k) = sumTo(k) + succ(k)
           @both-copies-unfolded |
             add(sumTo(succ(k)), sumTo(succ(k))) = add(add(sumTo(k), succ(k)), add(sumTo(k), succ(k)))
-            [by simplify sumToSucc]
+            [using simplify sumToSucc]
 
           // regroup (s+c)+(s+c) into (s+s)+(c+c) via the exchange lemma,
           // instantiated at a = c' = sumTo(k), b = d' = succ(k)
           // (binders bind a, b, c, d outermost-first)
           @exchange-groups-the-sums |
             add(add(sumTo(k), succ(k)), add(sumTo(k), succ(k))) = add(add(sumTo(k), sumTo(k)), add(succ(k), succ(k)))
-            [by specialize sumSwap(sumTo(k), succ(k), sumTo(k), succ(k))]
+            [using specialize sumSwap(sumTo(k), succ(k), sumTo(k), succ(k))]
           @regrouped-into-sums-and-successors |
             add(sumTo(succ(k)), sumTo(succ(k))) = add(add(sumTo(k), sumTo(k)), add(succ(k), succ(k)))
             [by rewrite exchange-groups-the-sums both-copies-unfolded]
@@ -159,7 +159,7 @@ proof
           // the additive residue; both sides normalize to succ(succ(k*k + 3k))
           @arithmetic-closes-the-product |
             add(mul(k, succ(k)), add(succ(k), succ(k))) = mul(succ(k), succ(succ(k)))
-            [by simplify mulSuccLeft mulSuccRight addSuccLeft addSuccRight addZeroLeft addZeroRight mulZeroLeft mulZeroRight addIsAssociative]
+            [using simplify mulSuccLeft mulSuccRight addSuccLeft addSuccRight addZeroLeft addZeroRight mulZeroLeft mulZeroRight addIsAssociative]
 
           @succ-case |
             add(sumTo(succ(k)), sumTo(succ(k))) = mul(succ(k), succ(succ(k)))
@@ -175,5 +175,5 @@ proof
 
   @conclusion |
     forall n: Nat; add(sumTo(n), sumTo(n)) = mul(n, succ(n))
-    [by instantiate induction((fun k: Nat => add(sumTo(k), sumTo(k)) = mul(k, succ(k)))) base-case induction-step-for-all-k]
+    [using instantiation induction((fun k: Nat => add(sumTo(k), sumTo(k)) = mul(k, succ(k)))) base-case induction-step-for-all-k]
 qed

@@ -69,9 +69,9 @@ fn lintCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     return emitQuery(result.text, result.ok);
 }
 
-/// `bpa debug accelerant <file> <line>` | `<file> <theorem> <step-label>`:
-/// reprint the synthetic theorem the named accelerant step produced, as bpa
-/// source. Reads `.md` through the literate extractor.
+/// `bpa debug accelerant <file> <line>` | `<file> <theorem> <step-label>`: reprint the
+/// synthetic theorem the named accelerant step produced, as re-parseable bpa source. Reads
+/// `.md` through the literate extractor.
 const debug_usage =
     "usage: bpa debug accelerant <file> <line>\n" ++
     "       bpa debug accelerant <file> <theorem> <step-label>\n" ++
@@ -318,7 +318,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --faster | --reckless] [--draft] <file.bpa>
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -336,16 +336,18 @@ pub fn main(init: std.process.Init) !u8 {
             \\Import paths beginning "std/" resolve in the standard library
             \\($BPA_STD_DIR, default ./std).
             \\
-            \\By default check VERIFIES EVERYTHING: `by arithmetic`/`by
-            \\tautology` must produce a checkable certificate (elaborated to
-            \\kernel steps; an accelerated fallback is a hard error), imported
-            \\proofs are re-checked, and imported schemas are re-instantiated.
-            \\The speed flags defer that work to speed up iteration while
-            \\developing (each run says so loudly):
-            \\  --fast      accept accelerated verdicts for arithmetic/tautology
-            \\  --faster    also trust imported theorem proofs (skip re-check)
-            \\  --reckless  also trust imported schemas (skip re-instantiation)
-            \\Re-run plain `bpa check` to fully verify before finalizing.
+            \\By default check VERIFIES EVERYTHING: every `using` step (an
+            \\accelerant, or a model/import citation) produces a checkable
+            \\certificate the kernel re-checks; `by` primitives always are.
+            \\`--fast` defers that work per `using` WORD to speed up iteration
+            \\(the run discloses exactly which words it admitted):
+            \\  --fast            trust ALL `using` words
+            \\  --fast-only W…    trust ONLY the listed words (allowlist)
+            \\  --fast-except W…  trust all words EXCEPT the listed (denylist)
+            \\Words are accelerant tactics (arithmetic, tautology, polynomial,
+            \\simplify, …, plus their `_quantified` variants) and the engine
+            \\words model / import (group word `engine`); `instantiation` is
+            \\never trustable. Re-run plain `bpa check` to fully verify.
             \\
             \\fmt normalizes whitespace and indentation in place; --check
             \\reports instead of rewriting. On a literate `.md` it reformats
@@ -361,7 +363,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\step-label.
             \\debug taint flags, per proof, every step whose rule can fall back to
             \\an accelerated verdict (arithmetic/tautology/polynomial/assoc_commut/
-            \\assoc/ext), at its file:line:col — where trust enters the proof; a
+            \\assoc/extensionality), at its file:line:col — where trust enters the proof; a
             \\clean report means every step is kernel-checked.
             \\
             \\query outline prints a proof's structural skeleton: one line per
@@ -395,32 +397,60 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --faster | --reckless] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa>\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
-    // Speed presets over the verification knobs (default = verify everything).
-    // Each preset turns off one more layer; at most one may be given.
+    // --fast TRUST FLAGS: a `using` step whose WORD is trusted is accelerated (its proof is not
+    // generated/checked — the word ADMITS it via its own fast check). `by` primitives are ALWAYS
+    // kernel-checked. Grammar (the three modes are mutually exclusive):
+    //   --fast                 trust ALL `using` words
+    //   --fast-only W…         trust ONLY the listed words (allowlist)
+    //   --fast-except W…       trust all words EXCEPT the listed (denylist)
+    // Words are the 17 individual `using` words plus group words `engine` and `<tactic>_all`
+    // (the six tactics that have a `_quantified` variant). See src/Verify.zig `Word.parse`.
+    // `--draft` (allows holes / relaxes author-hygiene; NOT a trust bypass) is orthogonal.
+    const Mode = enum { none, all, only, except };
     var verify: bpa.Verify = .{};
-    var speed_flag = false;
-    var draft = false; // --draft: allow holes (orthogonal to the speed flags)
-    var path: ?[]const u8 = null;
+    var draft = false;
+    var mode: Mode = .none;
+    var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
+    // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except) followed
+    // by the PATH. The path is the LAST positional; every earlier positional is a trust word.
+    var positionals: std.ArrayList([]const u8) = .empty;
     for (args[2..]) |arg| {
-        const preset: ?bpa.Verify =
-            if (std.mem.eql(u8, arg, "--fast")) .{ .certify_arithmetic = false } else if (std.mem.eql(u8, arg, "--faster")) .{ .certify_arithmetic = false, .recheck_imports = false } else if (std.mem.eql(u8, arg, "--reckless")) .{ .certify_arithmetic = false, .recheck_imports = false, .recheck_schemas = false } else null;
-        if (preset) |p| {
-            if (speed_flag) return fail("error: at most one of --fast / --faster / --reckless\n", .{});
-            verify = p;
-            speed_flag = true;
+        const flag: ?Mode = if (std.mem.eql(u8, arg, "--fast")) .all else if (std.mem.eql(u8, arg, "--fast-only")) .only else if (std.mem.eql(u8, arg, "--fast-except")) .except else null;
+        if (flag) |m| {
+            if (mode != .none) return fail("error: at most one of --fast / --fast-only / --fast-except\n", .{});
+            mode = m;
         } else if (std.mem.eql(u8, arg, "--draft")) {
             draft = true;
-        } else if (path == null) {
-            path = arg;
+        } else if (std.mem.startsWith(u8, arg, "--")) {
+            return fail("error: unknown flag '{s}'\n{s}", .{ arg, usage });
         } else {
-            return fail(usage, .{});
+            try positionals.append(arena, arg);
         }
     }
-    const root_path = path orelse return fail(usage, .{});
+    if (positionals.items.len == 0) return fail(usage, .{});
+    const root_path = positionals.items[positionals.items.len - 1];
+    const words = positionals.items[0 .. positionals.items.len - 1];
+    // bare --fast (and no-fast) take no trust words; --fast-only/--fast-except require them.
+    switch (mode) {
+        .none, .all => if (words.len > 0) return fail(usage, .{}),
+        .only, .except => if (words.len == 0) return fail("error: {s} needs at least one word (e.g. `--fast-only tautology`)\n", .{if (mode == .only) "--fast-only" else "--fast-except"}),
+    }
+    for (words) |wtext| {
+        const set = bpa.Verify.Word.parse(wtext) orelse
+            return fail("error: unknown trust word '{s}' (see `bpa check` help)\n", .{wtext});
+        listed = listed.unionWith(set);
+    }
+    // resolve the trusted set from the mode.
+    verify.trusted = switch (mode) {
+        .none => bpa.Verify.Word.Set.initEmpty(),
+        .all => bpa.Verify.Word.all(),
+        .only => listed, // allowlist
+        .except => bpa.Verify.Word.all().differenceWith(listed), // denylist
+    };
     // --draft is for WIP proofs: allow holes AND relax author-hygiene checks
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
     verify.draft = draft;
@@ -467,31 +497,23 @@ pub fn main(init: std.process.Init) !u8 {
     try out.print("OK: {d} declarations, {d} theorems proven", .{
         result.declarations, result.theorems_proven,
     });
-    // Disclose only the theorems that ACCELERATED (leaned on a trusted
-    // procedure). A theorem proved with no accelerated tactic is just proven —
-    // it belongs to no bucket, so it is not reported. (In default mode nothing
-    // can accelerate, so this parenthetical never appears there.)
+    // --fast trust disclosure. When at least one step was ACTUALLY ADMITTED (a trusted `using`
+    // word accepted it without a kernel-checked proof), the result is NOT fully verified — say so
+    // loudly, listing HOW MANY theorems accelerated and under WHICH words (the words actually
+    // admitted, not the whole trusted set). If a `--fast` set was given but NOTHING used it, the
+    // run is fully verified in practice; note that so the trust flag isn't silently ignored.
+    // Strict runs (no trusted set) say nothing.
     if (result.theorems_accelerated > 0) {
-        try out.print(" ({d} accelerated: ", .{result.theorems_accelerated});
+        try out.print("\n  \u{2014} NOT FULLY VERIFIED: {d} theorem(s) accelerated (admitted, not proved): ", .{result.theorems_accelerated});
         for (result.accelerated_names, 0..) |name, i| {
             if (i > 0) try out.writeAll(", ");
             try out.writeAll(name);
         }
-        try out.writeAll(")");
+    } else if (verify.trusted.count() > 0) {
+        try out.print("\n  \u{2014} (--fast set given, but no step used a trusted word — fully verified)", .{});
     }
     if (result.theorems_trusted > 0) {
         try out.print(" ({d} via trusted imports)", .{result.theorems_trusted});
-    }
-    // loud disclosure: a speed flag skipped verification work. The two axes are
-    // separate — --fast accelerates (accepts a procedure's verdict without a
-    // kernel chain); --faster/--reckless trust imports (skip re-checking imported
-    // proofs/schemas). Name whichever applies and how to fully verify.
-    if (speed_flag) {
-        try out.writeAll("\n  \u{2014} NOT FULLY VERIFIED:");
-        if (!verify.certify_arithmetic) try out.writeAll(" accelerated (a procedure's verdict was trusted without a kernel derivation);");
-        if (!verify.recheck_imports) try out.writeAll(" imported proofs were trusted, not re-checked;");
-        if (!verify.recheck_schemas) try out.writeAll(" imported schemas were trusted, not re-instantiated;");
-        try out.writeAll(" re-run `bpa check` to fully verify.");
     }
     // --draft with holes: loud disclosure that the result rests on aspirational
     // placeholders, listing them (like the --fast banner). Exit stays 0.
@@ -503,24 +525,6 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll("; re-run `bpa check` (no --draft) once filled.");
     }
     try out.writeAll("\n");
-    // A run that proved NO theorems splits into two cases, distinguished by
-    // whether the TARGET file even declared any theorems:
-    //   • zero theorem declarations → a legitimately declarations-only file (a
-    //     dependency: axioms/defs/schemas whose job is to be imported). Nothing
-    //     to check is the CORRECT outcome — an informational note, exit 0.
-    //   • theorem declarations present but none proved → the real footgun (a
-    //     proof file that verified nothing). Warn loudly and exit nonzero so it
-    //     can't pass silently in a script or CI gate.
-    if (result.theorems_proven == 0) {
-        if (result.target_theorem_decls == 0) {
-            try out.writeAll("  \u{2014} note: no theorems to check (a declarations-only file: axioms/defs/schemas — a dependency, not a proof file).\n");
-            try out.flush();
-            return 0;
-        }
-        try out.writeAll("  \u{2014} WARNING: 0 of the file's theorems were proven — nothing was checked.\n");
-        try out.flush();
-        return 1;
-    }
     try out.flush();
     return 0;
 }

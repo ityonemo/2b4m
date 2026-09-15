@@ -1,0 +1,30 @@
+// deliberately broken: a define that only forwards an opaque predicate is an
+// ALIAS written as a macro — the name gets the wrong kind (a define, not a pred),
+// so downstream `pred lt = this.lt` aliases refuse it. Write `pred lt = ordering.less_than`.
+import ordering <<< "../../std/peano-order.bpa"
+sort Nat = ordering.Nat
+define lt(a, b) = ordering.less_than(a, b)
+theorem usesIt: forall a, b: Nat; lt(a, b) -> lt(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-lt |
+            assume lt(a, b) {
+              @lt-holds |
+                lt(a, b)
+                [by hypothesis given-lt]
+            }
+          @conclusion-lt-implies-lt |
+            lt(a, b) -> lt(a, b)
+            [by implies_intro given-lt]
+        }
+      @discharge-b |
+        forall b: Nat; lt(a, b) -> lt(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; lt(a, b) -> lt(a, b)
+    [by forall_intro generalize-a]
+qed

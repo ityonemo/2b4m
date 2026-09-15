@@ -67,25 +67,33 @@ const Query = struct {
         }) catch return error.OutOfMemory;
     }
 
-    fn trace(self: *Query, path: []const u8, source: []const u8, name: []const u8, depth: u32) Allocator.Error!bool {
-        if (depth > max_hops) return self.err("alias chain too deep", .{});
+    /// Follow the alias/import chain to its origin. Each hop advances at most one
+    /// link, so this is LINEAR (tail) recursion — expressed here as a loop over
+    /// the mutable (path, source, name) cursor, bounded by `max_hops`.
+    fn trace(self: *Query, path_in: []const u8, source_in: []const u8, name_in: []const u8, depth_in: u32) Allocator.Error!bool {
+        var path = path_in;
+        var source = source_in;
+        var name = name_in;
+        var depth = depth_in;
+        while (true) {
+            if (depth > max_hops) return self.err("alias chain too deep", .{});
 
-        const sink = try self.arena.create(diagnostics.Sink);
-        sink.* = .init(self.arena);
-        var p: parser.Parser = .init(self.arena, source, sink);
-        const file = try p.parseFile();
-        if (sink.list.items.len > 0) {
-            const files = [_]diagnostics.FileSrc{.{ .path = path, .source = source }};
-            sink.render(self.out, &files) catch return error.OutOfMemory;
-            return false;
-        }
+            const sink = try self.arena.create(diagnostics.Sink);
+            sink.* = .init(self.arena);
+            var p: parser.Parser = .init(self.arena, source, sink);
+            const file = try p.parseFile();
+            if (sink.list.items.len > 0) {
+                const files = [_]diagnostics.FileSrc{.{ .path = path, .source = source }};
+                sink.render(self.out, &files) catch return error.OutOfMemory;
+                return false;
+            }
 
-        for (file.decls) |decl| {
-            const d = declName(source, decl);
-            if (d == null or !std.mem.eql(u8, d.?.name, name)) continue;
-            switch (decl) {
-                // an alias points onward: print this hop, then follow the target.
-                .alias => |a| {
+            var advanced = false;
+            for (file.decls) |decl| {
+                const d = declName(source, decl);
+                if (d == null or !std.mem.eql(u8, d.?.name, name)) continue;
+                // an alias (any kind) points onward: print this hop, then follow the target.
+                if (ast.aliasOf(&decl)) |a| {
                     try self.hop(path, source, a.name, false);
                     const target = tokenText(source, a.target);
                     if (std.mem.lastIndexOfScalar(u8, target, '.')) |dot| {
@@ -96,28 +104,36 @@ const Query = struct {
                             return self.err("alias target namespace '{s}' is not imported", .{ns});
                         const src = self.read_fn(self.read_ctx, self.arena, next) catch
                             return self.err("cannot open '{s}'", .{next});
-                        return self.trace(next, src, local, depth + 1);
+                        path = next;
+                        source = src;
+                        name = local;
+                    } else {
+                        // bare target: a forward/local name in this same file.
+                        name = target;
                     }
-                    // bare target: a forward/local name in this same file.
-                    return self.trace(path, source, target, depth + 1);
-                },
-                // an import namespace: the origin IS the imported file.
-                .import => |im| {
-                    const raw_quoted = tokenText(source, im.path);
-                    const raw = raw_quoted[1 .. raw_quoted.len - 1];
-                    const resolved = findImportPath(source, path, name, self.std_root, self.arena) catch return error.OutOfMemory;
-                    try self.hop(path, source, im.ns, false);
-                    self.out.print("  {s}  [origin: imported file]\n", .{resolved orelse raw}) catch return error.OutOfMemory;
-                    return true;
-                },
-                // any real definition: this is the origin.
-                else => {
-                    try self.hop(path, source, d.?.token, true);
-                    return true;
-                },
+                    depth += 1;
+                    advanced = true;
+                    break;
+                }
+                switch (decl) {
+                    // an import namespace: the origin IS the imported file.
+                    .import => |im| {
+                        const raw_quoted = tokenText(source, im.path);
+                        const raw = raw_quoted[1 .. raw_quoted.len - 1];
+                        const resolved = findImportPath(source, path, name, self.std_root, self.arena) catch return error.OutOfMemory;
+                        try self.hop(path, source, im.ns, false);
+                        self.out.print("  {s}  [origin: imported file]\n", .{resolved orelse raw}) catch return error.OutOfMemory;
+                        return true;
+                    },
+                    // any real definition: this is the origin.
+                    else => {
+                        try self.hop(path, source, d.?.token, true);
+                        return true;
+                    },
+                }
             }
+            if (!advanced) return self.err("no declaration named '{s}' in {s}", .{ name, path });
         }
-        return self.err("no declaration named '{s}' in {s}", .{ name, path });
     }
 };
 
@@ -126,21 +142,8 @@ const Named = struct { name: []const u8, token: Token };
 /// The declared name + its token for any named decl (null for `forward`, which
 /// is a manifest entry, not a definition — its real def appears elsewhere).
 fn declName(source: []const u8, decl: ast.Decl) ?Named {
-    const t: Token = switch (decl) {
-        .import => |d| d.ns,
-        .alias => |d| d.name,
-        .sort => |d| d.name,
-        .constant => |d| d.name,
-        .define => |d| d.name,
-        .func => |d| d.name,
-        .pred => |d| d.name,
-        .axiom => |d| d.name,
-        .hole => |d| d.name,
-        .schema => |d| d.name,
-        .theorem => |d| d.name,
-        .model => |d| d.name,
-        .forward => return null,
-    };
+    if (decl == .forward) return null; // a manifest entry, not a definition
+    const t = ast.declName(&decl);
     return .{ .name = source[t.start..t.end], .token = t };
 }
 

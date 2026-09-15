@@ -39,11 +39,11 @@ pub const Result = struct {
 /// these is a potential acceleration site; every other rule is always
 /// kernel-checked.
 const accelerated_rules = [_][]const u8{
-    "arithmetic",  "tautology",
-    "polynomial",  "assoc_commut",
-    "assoc",       "assoc_commut_quantified",
-    "assoc_quantified", "ext",
-    "ext_quantified",
+    "arithmetic",                "tautology",
+    "polynomial",                "assoc_commut",
+    "assoc",                     "assoc_commut_quantified",
+    "assoc_quantified",          "extensionality",
+    "extensionality_quantified",
 };
 
 fn isAcceleratedRule(name: []const u8) bool {
@@ -86,11 +86,10 @@ const Proof = struct { kind: []const u8, name: Token, steps: []const ast.Step };
 
 fn asProof(decl: ast.Decl) ?Proof {
     return switch (decl) {
-        .theorem => |t| .{ .kind = "theorem", .name = t.name, .steps = t.steps },
-        .schema => |s| if (s.steps) |steps|
-            .{ .kind = "schema", .name = s.name, .steps = steps }
-        else
-            null,
+        .theorem => |t| switch (t) {
+            .local => |l| .{ .kind = if (l.fact.params != null) "schema" else "theorem", .name = l.fact.name, .steps = l.steps },
+            .alias => null,
+        },
         else => null,
     };
 }
@@ -138,7 +137,12 @@ fn renderProof(w: *std.Io.Writer, path: []const u8, source: []const u8, proof: P
 }
 
 fn collect(arena: Allocator, source: []const u8, steps: []const ast.Step, hits: *std.ArrayList(Hit)) !void {
-    for (steps) |step| {
+    // Explicit DFS pre-order (hits are rendered in first-encountered order): a
+    // LIFO of single steps; a block's children pushed REVERSED so they pop
+    // front-to-back, right after their parent.
+    var stack: std.ArrayList(ast.Step) = .empty;
+    try pushReversed(arena, &stack, steps);
+    while (stack.pop()) |step| {
         switch (step.body) {
             .claim => |c| {
                 const rule = tokenText(source, c.rule);
@@ -147,11 +151,26 @@ fn collect(arena: Allocator, source: []const u8, steps: []const ast.Step, hits: 
                     try hits.append(arena, .{ .rule = rule, .line = lc.line, .col = lc.col });
                 }
             },
-            .assume => |b| try collect(arena, source, b.steps, hits),
-            .fix => |b| try collect(arena, source, b.steps, hits),
-            .unpack => |b| try collect(arena, source, b.steps, hits),
-            .case => |b| for (b.arms) |arm| try collect(arena, source, arm.steps, hits),
+            .assume => |b| try pushReversed(arena, &stack, b.steps),
+            .fix => |b| try pushReversed(arena, &stack, b.steps),
+            .unpack => |b| try pushReversed(arena, &stack, b.steps),
+            .case => |b| {
+                var i: usize = b.arms.len;
+                while (i > 0) {
+                    i -= 1;
+                    try pushReversed(arena, &stack, b.arms[i].steps);
+                }
+            },
         }
+    }
+}
+
+/// Push `steps` onto the DFS stack in reverse, so they pop front-to-back.
+fn pushReversed(arena: Allocator, stack: *std.ArrayList(ast.Step), steps: []const ast.Step) !void {
+    var i: usize = steps.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(arena, steps[i]);
     }
 }
 

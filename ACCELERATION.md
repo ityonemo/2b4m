@@ -20,9 +20,11 @@ The trust is disclosed, never silent:
   error** — the goal must be kernel-checked. The accelerated verdict is accepted only
   under `--fast` (which then discloses it under a loud accelerated banner).
 
-Under `--faster`/`--reckless`, imported theorems are *trusted* (their proofs
-are not re-checked), which supersedes any acceleration disclosure; the summary
-reports those separately.
+A cross-file `import` citation is itself a `using` word: under `--fast` (or
+`--fast-only import`) the citation is *admitted* by matching the cited
+statement, disclosed alongside any accelerant admissions. This trusts the
+citation shape only — a demanded imported theorem is still re-checked in its
+own file.
 
 Tactics are **certificate-first**: an invocation that can emit ordinary
 kernel steps does so and stays kernel-checked. Certificates are produced by an
@@ -46,11 +48,12 @@ pins it to a vetted theory.
 
 ## Naming couplings — hardcoded defaults are fine, but MUST be overridable
 
-Accelerators routinely *expect* conventional names: `ext` looks for a lemma
-called `extensionality`/`funcExtensionality`; `arithmetic`/`polynomial` presume
-a well-known `add`/`mul`/`succ`/`ZERO` vocabulary; a schema-driven tactic may
-expect an `induction`. **Hardcoding such a default name is fine** — it keeps the
-common case terse. The invariant is not "no hardcoded strings"; it is:
+Accelerators routinely *expect* conventional names: `arithmetic`/`polynomial`
+presume a well-known `add`/`mul`/`succ`/`ZERO` vocabulary; a schema-driven tactic
+may expect an `induction`. (`extensionality` sidesteps this entirely — its
+lemmas are named EXPLICITLY as args, so there is no expected name to couple on.)
+**Hardcoding such a default name is fine** — it keeps the common case terse. The
+invariant is not "no hardcoded strings"; it is:
 
 > **Every name an accelerator expects MUST be overridable — the user must be
 > able to satisfy the expectation from a bpa file, never from editing the
@@ -61,34 +64,38 @@ The override mechanism is **the language's own remapping**, not a bespoke
 argument on each tactic:
 
 - **`alias`** overrides a single name. Your theory proves set-equality as `setEq`?
-  `axiom extensionality = mytheory.setEq` and `ext` finds it. (This is exactly
+  `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
   what the `aata/*.md` files do — aliasing the book's notation onto the std
   names — and what `set.bpa` did aliasing the element sort.)
 - **`model`** overrides a whole signature at once — the industrial-strength
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
   everything its own way can satisfy an accelerator's expectations wholesale.
-- The **theory argument** (`arithmetic(peano)`, `ext(set)`) already pins *which*
-  vetted theory's names to use — itself a form of override/selection.
+- The **theory argument** (`arithmetic(peano)`) already pins *which* vetted
+  theory's names to use — itself a form of override/selection.
 
 **Prefer structural derivation when the entity is recoverable from a cited
-lemma's shape.** `ext` reads its element sort off the extensionality lemma's
-obligation binder (`forall x: <elementSort>; …`) rather than demanding a sort
-named `Universe` — so there is no name to override at all. This is the strongest
-form (zero coupling), and is preferred where the shape makes it available; it is
-a *preference*, not a mandate (a hardcoded-but-overridable default is acceptable).
+lemma's shape**, and prefer **explicit citation** when the entity is a lemma the
+proof can name. `extensionality` takes its extensionality lemma + per-operator
+unfold lemmas as EXPLICIT args, and reads the element sort off the cited lemma's
+obligation binder — so there is no expected name to override at all (the
+strongest form: zero coupling). This is preferred where available; a
+hardcoded-but-overridable default is the acceptable fallback.
 
-Historical note: `ext` once looked the element sort up by the literal name
-`"Universe"`. Renaming that sort to `Element` broke the tactic — the coupling was
-invisible until it fired. The fix derived the sort structurally, which is why the
-tactic is now name-agnostic. That episode is the canonical example of this rule.
+Historical note: `ext` (now `extensionality`) once looked the element sort up by
+the literal name `"Universe"`, and once ENUMERATED the theory scope to find its
+`<op>Member`/`<op>Apply` unfold lemmas by shape. Renaming the sort broke it; the
+scope-scan couldn't survive the fetch-only demand engine and mis-derived
+irregular names (`identityFn` → `identityApply`, not `identityFnApply`). Both were
+fixed by making the couplings explicit/structural — the canonical example of this
+rule.
 
 ## Registered accelerated tactics
 
 ### `tautology` — propositional consequence
 
 - **Module**: `src/smt.zig`
-- **Surface rule**: `[by tautology ref1 ... refN]` (refs are premise steps or
+- **Surface rule**: `[using tautology ref1 ... refN]` (refs are premise steps or
   statements; the goal must follow propositionally)
 - **Verdict semantics**: atoms are the maximal subformulas that are not
   `and`/`or`/`not`/`->` (predicates, equations, quantified formulas — all
@@ -107,8 +114,8 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
 
 - **Module**: `src/presburger.zig` (decision), `src/farkas.zig` (refutation
   search for the Farkas link)
-- **Surface rule**: `[by arithmetic ref1 ... refN]`, or
-  `[by arithmetic(<theory>) ref...]` naming a theory module. Refs are premise
+- **Surface rule**: `[using arithmetic ref1 ... refN]`, or
+  `[using arithmetic(<theory>) ref...]` naming a theory module. Refs are premise
   steps or statements. **Theory resolution**: bare `arithmetic` resolves the
   vocabulary + certificate lemmas by well-known name in **local scope** (the
   self-contained case). `arithmetic(<theory>)` resolves them against an
@@ -117,7 +124,7 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
   namespace. A **named** theory must provide every symbol the goal uses (a gap
   is a hard error naming it); a missing certificate *lemma* makes the relevant
   certifier decline (soft), surfaced at the terminal.
-- **Fallback**: `[by arithmetic ... fallback(<thm>)]` names a manually-proven
+- **Fallback**: `[using arithmetic ... fallback(<thm>)]` names a manually-proven
   theorem to cite when the certifier chain declines a valid goal — instead of
   the hard error (default) or the accelerated verdict (`--fast`). The step stays
   **kernel-checked** (not accelerated), and any accelerated-tactic names `<thm>`
@@ -194,7 +201,7 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
   bounds scaled via `multiplicationPreservesOrder`), and SUMS of distinct-
   variable bounds (`a<b ∧ c<d -> add(a,c)<add(b,d)`, via
   `additionPreservesOrder` + `addIsCommutative` + transitivity). *Cooper-replay*
-  (the `cooper` link, `src/presburger.zig` trace + `src/elaborate.zig`
+  (the `cooper` link, `src/Engine/ProveTask/presburger.zig` trace + `src/Engine/ProveTask/Prove.zig`
   `cooperInduction`) closes the **quantifier-alternation tail**: a
   `forall x…; exists y; body` goal replays its Cooper elimination as
   kernel steps — for a period-1 trace, a boundary witness under an `or_intro`;
@@ -209,9 +216,9 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
 
 ### `polynomial` — nonlinear ring identities
 
-- **Module**: `src/elaborate.zig` (`polynomialEquation` / `polyCanon` for the
+- **Module**: `src/Engine/ProveTask/Polynomial.zig` + `Prove.zig` (`producePolynomial`) for the
   kernel-checked path; `polyNormForm` for the accelerated path)
-- **Surface rule**: `[by polynomial(<theory>)]` / `[by
+- **Surface rule**: `[using polynomial(<theory>)]` / `[using
   polynomial_quantified(<theory>)]`. Theory-parameterized exactly like
   `arithmetic` (bare = local scope; `(theory)` = that imported module).
 - **Elaborated path is the DEFAULT and is NOT accelerated.** Under the default,
@@ -248,54 +255,37 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
   surfaced — and fixed — a stale-slice OOB crash in the accelerated normalizer
   on large expansions: `tests/cases/polynomial_oob.bpa`.)
 
-### `ext` — extensionality-reduction
+### `extensionality` — extensionality-reduction
 
-- **Module**: `src/elaborate.zig` (`extJustification` / `extEquation` /
-  `extObligation`).
-- **Surface rule**: `[by ext(<theory>)]` for a bare `LHS = RHS`, or
-  `[by ext_quantified(<theory>)]` for `forall …; LHS = RHS`. Theory-parameterized
-  exactly like `arithmetic`/`polynomial`.
-- **A STRUCTURE tactic, MODEL-parameterized** (like `polynomial` is over any
-  ring): the structure is *extensionality*, the model is the named theory. NOT
-  domain-specific — the SAME tactic proves set equations (`ext(set)`) and
-  function equations (`ext(function)`), and any future extensional theory.
-  Prior art: Lean's `ext`.
-- **What it does (emits kernel steps by default)**: resolves the theory's
-  extensionality lemma (`extensionality` / `funcExtensionality`) and reads the
-  element sort **structurally** off that lemma's first obligation binder
-  (`forall x: <elementSort>; …`) — NOT by a hardcoded sort name (see *Naming
-  couplings* below); instantiates the lemma at (LHS, RHS) to reduce `LHS = RHS`
-  to its pointwise obligation(s); for each obligation `fix x: <elementSort>`, unfolds the
-  operators appearing in the goal via their characterization lemmas
-  (`<op>Member` for sets, `<op>Apply` for functions, resolved by well-known
-  name), and closes the residue — dispatching on its shape:
+- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceExtensionality` /
+  `produceExtensionalityQuantified`).
+- **Surface rule**: `[using extensionality(<extLemma>) <unfold lemmas…>]` for a bare
+  `LHS = RHS`, or `[using extensionality_quantified(<extLemma>) …]` for
+  `forall …; LHS = RHS`. The extensionality lemma and the per-operator unfold lemmas
+  are EXPLICIT citations (no theory scan, no well-known names).
+- **A STRUCTURE tactic**: the structure is *extensionality*; the SAME tactic proves
+  set equations (`extensionality(extensionality) unionMember …`) and function
+  equations (`extensionality(funcExtensionality) composeApply …`), and any future
+  extensional theory. Prior art: Lean's `ext`.
+- **What it does (emits kernel steps)**: reads the element sort **structurally** off
+  the cited extensionality lemma's pointwise binder (`forall x: <elementSort>; …`);
+  instantiates the lemma at (LHS, RHS) to reduce `LHS = RHS` to its pointwise
+  obligation(s); for each obligation `fix x: <elementSort>`, unfolds the operators
+  with the cited characterization lemmas, and closes the residue by its shape:
   - **set / predicate model**: the residue is propositional over `member(x, ·)`
     atoms → closed by `tautology`'s certificate (replayed as kernel steps).
   - **function / equational model**: the residue is an equation
-    `apply(f,x) = apply(g,x)` → closed by the rewrite join (the `simplify`
-    machinery over the `<op>Apply` lemmas).
-  Then `forall_intro` each obligation and `modus_ponens` the chain to the
-  equation. Every step is a kernel tactic, so `ext` emits (kernel-checked).
-- **Declines** (accelerated-tactic contract): goal not an equation
-  (`out_of_scope`); no extensionality lemma with an element-sort obligation in
-  scope; an operator without a characterization lemma; a residue with a countermodel (the
-  identity is likely FALSE) → the closer's own located diagnostic.
-- **Why an accelerated tactic**: it presumes the theory's extensionality
-  principle + operator characterizations (resolved by well-known name), the same
-  shape of presumption as `arithmetic`/`polynomial`. In practice it essentially
-  always emits (like `simplify`/`polynomial`), since its closers (`tautology`,
-  rewrite) themselves emit; `--fast` is rarely needed.
-- **Fixtures**: `tests/cases/ext_set.bpa` (set identities), `ext_function.bpa`
-  (composition associativity), `ext_bad.bpa` (a false identity declines).
-- **Payoff**: collapses the ~50-85-line hand element-chase proofs in
-  `aata/1.2.1-sets.md` / `aata/1.2.2-functions.md` to one line each, matching
-  the textbook's `x ∈ LHS ⟺ x ∈ RHS` argument.
+    `apply(f, x) = apply(g, x)` → closed by the rewrite join (the `simplify`
+    machinery over the cited `<op>Apply` lemmas).
+  Then `forall_intro` each obligation and `modus_ponens` the chain to the equation.
+  Like every accelerant it is a generated schema the kernel re-checks; `bpa debug
+  accelerant` prints it.
 
 ### `assoc_commut` — associative-commutative reordering
 
-- **Module**: `src/elaborate.zig` (`acEquation`)
-- **Surface rule**: bare `[by assoc_commut]` / `[by assoc_commut_quantified]`
-  (well-known `add`/`mul` triple), or the explicit form `[by
+- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceAssocCommut` / `acPlan`)
+- **Surface rule**: bare `[using assoc_commut]` / `[using assoc_commut_quantified]`
+  (well-known `add`/`mul` triple), or the explicit form `[using
   assoc_commut(assoc, comm, swap)]` supplying the AC lemmas for a **custom
   operator** (operator recovered from the commutativity lemma's shape). Trailing
   refs are distributivity/pre-normalization lemmas. Exactly 0 or 3 args.
@@ -317,8 +307,8 @@ tactic is now name-agnostic. That episode is the canonical example of this rule.
 
 ### `assoc` — associativity-only reordering
 
-- **Module**: `src/elaborate.zig` (`assocEquation`)
-- **Surface rule**: `[by assoc(assocLemma)]` / `[by assoc_quantified(assocLemma)]`.
+- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceAssoc`)
+- **Surface rule**: `[using assoc(assocLemma)]` / `[using assoc_quantified(assocLemma)]`.
   The associativity lemma is **REQUIRED** (exactly one arg — no bare form, no
   `add`/`mul` assumption); the operator is recovered from the lemma's shape
   `f(f(a,b),c) = f(a,f(b,c))`. The non-commutative sibling of `assoc_commut`

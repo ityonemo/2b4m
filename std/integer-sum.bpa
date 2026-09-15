@@ -85,8 +85,8 @@ axiom sumUpToSucc: forall s: Seq; forall k: NonNegZ; sumUpTo(s, succ(k)) = add(s
 
 model IntSum {
   sequence.Nat: NonNegZ
-  sequence.ZERO: ZERO
-  sequence.succ: succ
+  sequence.ZERO: ZERO(nonnegZero)
+  sequence.succ: succ -| nonnegSucc
   sequence.Value: Int
   sequence.Seq: Seq
   sequence.at: at
@@ -102,19 +102,26 @@ theorem nonnegSuccZero: is_nonneg(succ(ZERO))
 proof
   @zero-nonneg |
     is_nonneg(ZERO)
-    [by axiom nonnegZero]
+    [by cite nonnegZero]
   @conclusion |
     is_nonneg(succ(ZERO))
-    [by specialize nonnegSucc(ZERO) zero-nonneg]
+    [using specialize nonnegSucc(ZERO) zero-nonneg]
 qed
 
 // the length-one sum combines the identity with the sole entry: sumUpTo(s, 1) =
 // add(ZERO, at(s, 0)). Transferred from the abstract fold through IntSum.
 theorem sumOneCombinesIdentity: forall s: Seq; sumUpTo(s, succ(ZERO)) = add(ZERO, at(s, ZERO))
 proof
+  // the concrete indices succ(ZERO) and ZERO are stated nonneg before the step that uses them.
+  @zero-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @succ-zero-nonneg |
+    is_nonneg(succ(ZERO))
+    [by cite nonnegSuccZero]
   @conclusion |
     forall s: Seq; sumUpTo(s, succ(ZERO)) = add(ZERO, at(s, ZERO))
-    [by model(IntSum) sequence.foldOneCombinesIdentity]
+    [using model(IntSum) sequence.foldOneCombinesIdentity]
 qed
 
 // numerals used as division-free multipliers (2, 4, 6). Spelled as succ-towers
@@ -139,7 +146,7 @@ axiom idSeqEntry: forall i: NonNegZ; at(idSeq, i) = i
 // on n with the guard folded into the predicate.
 //   base n=0:  2·0 = 0 = 0·(0-1).
 //   step:      2·Σ_{i<k+1} = 2·(Σ_{i<k} + k) = k(k-1) + 2k = k(k+1) = (k+1)·k,
-//              and (k+1)-1 = k, so the RHS is (k+1)·((k+1)-1).  [by arithmetic]
+//              and (k+1)-1 = k, so the RHS is (k+1)·((k+1)-1).  [using arithmetic]
 theorem gaussSum: forall n: NonNegZ;
   is_nonneg(n) -> mul(succ(ONE), sumUpTo(idSeq, n)) = mul(n, prev(n))
 proof
@@ -147,17 +154,17 @@ proof
     assume is_nonneg(ZERO) {
       @sum-at-zero-is-zero |
         sumUpTo(idSeq, ZERO) = ZERO
-        [by specialize sumUpToZero(idSeq)]
+        [using specialize sumUpToZero(idSeq)]
       // 2·Σ_0 = 2·0 = 0, and 0·(0-1) = 0, so both sides are ZERO.
       @two-times-empty-sum |
         mul(succ(ONE), sumUpTo(idSeq, ZERO)) = ZERO
-        [by simplify sum-at-zero-is-zero mulZeroRight]
+        [using simplify sum-at-zero-is-zero mulZeroRight]
       @zero-times-anything |
         mul(ZERO, prev(ZERO)) = ZERO
-        [by specialize mulZeroLeft(prev(ZERO))]
+        [using specialize mulZeroLeft(prev(ZERO))]
       @gauss-at-zero |
         mul(succ(ONE), sumUpTo(idSeq, ZERO)) = mul(ZERO, prev(ZERO))
-        [by chain two-times-empty-sum zero-times-anything]
+        [using chain two-times-empty-sum zero-times-anything]
     }
   @base-case |
     is_nonneg(ZERO) -> mul(succ(ONE), sumUpTo(idSeq, ZERO)) = mul(ZERO, prev(ZERO))
@@ -176,16 +183,16 @@ proof
                 [by hypothesis given-inductive-hypothesis]
               @inductive-hypothesis |
                 mul(succ(ONE), sumUpTo(idSeq, k)) = mul(k, prev(k))
-                [by specialize guarded-inductive-hypothesis k-nonneg]
+                [using specialize guarded-inductive-hypothesis k-nonneg]
               @successor-nonneg |
                 is_nonneg(succ(k))
-                [by specialize nonnegSucc(k) k-nonneg]
+                [using specialize nonnegSucc(k) k-nonneg]
               @sum-at-successor |
                 sumUpTo(idSeq, succ(k)) = add(sumUpTo(idSeq, k), at(idSeq, k))
-                [by specialize sumUpToSucc(idSeq, k) k-nonneg]
+                [using specialize sumUpToSucc(idSeq, k) k-nonneg]
               @entry-at-k-is-k |
                 at(idSeq, k) = k
-                [by specialize idSeqEntry(k) k-nonneg]
+                [using specialize idSeqEntry(k) k-nonneg]
               @sum-at-successor-adds-k |
                 sumUpTo(idSeq, succ(k)) = add(sumUpTo(idSeq, k), k)
                 [by rewrite entry-at-k-is-k sum-at-successor]
@@ -193,7 +200,7 @@ proof
               // can substitute k·(k-1) for it.
               @two-times-sum-successor |
                 mul(succ(ONE), sumUpTo(idSeq, succ(k))) = add(mul(succ(ONE), sumUpTo(idSeq, k)), mul(succ(ONE), k))
-                [by arithmetic sum-at-successor-adds-k]
+                [using arithmetic sum-at-successor-adds-k]
               // substitute the IH 2·Σ_k = k·(k-1): now 2·Σ_{k+1} = k·(k-1) + 2·k.
               @two-times-sum-successor-with-ih |
                 mul(succ(ONE), sumUpTo(idSeq, succ(k))) = add(mul(k, prev(k)), mul(succ(ONE), k))
@@ -202,21 +209,21 @@ proof
               // k·(k-1) + 2·k = (k+1)·k with prev normalized to a successor offset.
               @prev-of-successor-is-k |
                 prev(succ(k)) = k
-                [by specialize prevSucc(k)]
+                [using specialize prevSucc(k)]
               // expand k·(k-1) = k·k + (-k) so the identity is pure add/mul/neg/succ.
               @k-times-prev-k |
                 mul(k, prev(k)) = add(mul(k, k), neg(k))
-                [by specialize mulPrevRight(k, k)]
+                [using specialize mulPrevRight(k, k)]
               @ring-identity-expanded |
                 add(add(mul(k, k), neg(k)), mul(succ(ONE), k)) = mul(succ(k), k)
-                [by polynomial]
+                [using polynomial]
               // k·(k-1) + 2k = k² + k = (k+1)·k, folding the expanded prev term.
               @ring-identity |
                 add(mul(k, prev(k)), mul(succ(ONE), k)) = mul(succ(k), k)
                 [by rewrite k-times-prev-k ring-identity-expanded]
               @gauss-at-successor-in-k |
                 mul(succ(ONE), sumUpTo(idSeq, succ(k))) = mul(succ(k), k)
-                [by chain two-times-sum-successor-with-ih ring-identity]
+                [using chain two-times-sum-successor-with-ih ring-identity]
               // wrap the body under is_nonneg(succ(k)) to match the predicate
               // shape P(succ k) = is_nonneg(succ k) -> body(succ k). The body is
               // already unconditional, so the guard is vacuously discharged.
@@ -249,7 +256,7 @@ proof
     [by forall_intro induction-step]
   @conclusion |
     forall n: NonNegZ; is_nonneg(n) -> mul(succ(ONE), sumUpTo(idSeq, n)) = mul(n, prev(n))
-    [by instantiate nonnegInduction((fun n: Int => is_nonneg(n) -> mul(succ(ONE), sumUpTo(idSeq, n)) = mul(n, prev(n)))) base-case induction-step-for-all-k]
+    [using instantiation nonnegInduction((fun n: Int => is_nonneg(n) -> mul(succ(ONE), sumUpTo(idSeq, n)) = mul(n, prev(n)))) base-case induction-step-for-all-k]
 qed
 
 // -- sum of squares (AATA §2.1 Ex 1) ----------------------------------------
@@ -270,17 +277,17 @@ proof
     assume is_nonneg(ZERO) {
       @sum-at-zero-is-zero |
         sumUpTo(idSqSeq, ZERO) = ZERO
-        [by specialize sumUpToZero(idSqSeq)]
+        [using specialize sumUpToZero(idSqSeq)]
       @six-times-empty-sum |
         mul(SIX, sumUpTo(idSqSeq, ZERO)) = ZERO
-        [by simplify sum-at-zero-is-zero mulZeroRight]
+        [using simplify sum-at-zero-is-zero mulZeroRight]
       // (0-1)·0·(2·0-1) = 0 since the middle factor is 0.
       @rhs-at-zero-is-zero |
         mul(sub(ZERO, ONE), mul(ZERO, sub(mul(TWO, ZERO), ONE))) = ZERO
-        [by polynomial]
+        [using polynomial]
       @sum-of-squares-at-zero |
         mul(SIX, sumUpTo(idSqSeq, ZERO)) = mul(sub(ZERO, ONE), mul(ZERO, sub(mul(TWO, ZERO), ONE)))
-        [by chain six-times-empty-sum rhs-at-zero-is-zero]
+        [using chain six-times-empty-sum rhs-at-zero-is-zero]
     }
   @base-case |
     is_nonneg(ZERO) -> mul(SIX, sumUpTo(idSqSeq, ZERO)) = mul(sub(ZERO, ONE), mul(ZERO, sub(mul(TWO, ZERO), ONE)))
@@ -299,23 +306,23 @@ proof
                 [by hypothesis given-inductive-hypothesis]
               @inductive-hypothesis |
                 mul(SIX, sumUpTo(idSqSeq, k)) = mul(sub(k, ONE), mul(k, sub(mul(TWO, k), ONE)))
-                [by specialize guarded-inductive-hypothesis k-nonneg]
+                [using specialize guarded-inductive-hypothesis k-nonneg]
               @successor-nonneg |
                 is_nonneg(succ(k))
-                [by specialize nonnegSucc(k) k-nonneg]
+                [using specialize nonnegSucc(k) k-nonneg]
               @sum-at-successor |
                 sumUpTo(idSqSeq, succ(k)) = add(sumUpTo(idSqSeq, k), at(idSqSeq, k))
-                [by specialize sumUpToSucc(idSqSeq, k) k-nonneg]
+                [using specialize sumUpToSucc(idSqSeq, k) k-nonneg]
               @entry-at-k-is-k-squared |
                 at(idSqSeq, k) = mul(k, k)
-                [by specialize idSqSeqEntry(k) k-nonneg]
+                [using specialize idSqSeqEntry(k) k-nonneg]
               @sum-at-successor-adds-k-squared |
                 sumUpTo(idSqSeq, succ(k)) = add(sumUpTo(idSqSeq, k), mul(k, k))
                 [by rewrite entry-at-k-is-k-squared sum-at-successor]
               // 6·Σ_{k+1} = 6·(Σ_k + k²) = 6·Σ_k + 6k².
               @six-times-sum-successor |
                 mul(SIX, sumUpTo(idSqSeq, succ(k))) = add(mul(SIX, sumUpTo(idSqSeq, k)), mul(SIX, mul(k, k)))
-                [by arithmetic sum-at-successor-adds-k-squared]
+                [using arithmetic sum-at-successor-adds-k-squared]
               // substitute the IH: 6·Σ_{k+1} = (k-1)k(2k-1) + 6k².
               @six-times-sum-successor-with-ih |
                 mul(SIX, sumUpTo(idSqSeq, succ(k))) = add(mul(sub(k, ONE), mul(k, sub(mul(TWO, k), ONE))), mul(SIX, mul(k, k)))
@@ -328,13 +335,13 @@ proof
               // by `simplify` with the succ/prev/neg recursion lemmas.
               @first-factor-is-k |
                 sub(succ(k), ONE) = k
-                [by simplify definitionOfSubtraction oneIsSuccZero negSucc negZero addPrevRight prevSucc addZeroRight]
+                [using simplify definitionOfSubtraction oneIsSuccZero negSucc negZero addPrevRight prevSucc addZeroRight]
               @successor-is-k-plus-one |
                 succ(k) = add(k, ONE)
-                [by simplify oneIsSuccZero addSuccRight addZeroRight]
+                [using simplify oneIsSuccZero addSuccRight addZeroRight]
               @third-factor-is-two-k-plus-one |
                 sub(mul(TWO, succ(k)), ONE) = add(mul(TWO, k), ONE)
-                [by simplify definitionOfSubtraction oneIsSuccZero mulSuccRight negSucc negZero addSuccRight addPrevRight prevSucc addZeroRight addZeroLeft]
+                [using simplify definitionOfSubtraction oneIsSuccZero mulSuccRight negSucc negZero addSuccRight addPrevRight prevSucc addZeroRight addZeroLeft]
               @rhs-reflexive |
                 mul(sub(succ(k), ONE), mul(succ(k), sub(mul(TWO, succ(k)), ONE))) = mul(sub(succ(k), ONE), mul(succ(k), sub(mul(TWO, succ(k)), ONE)))
                 [by reflexivity]
@@ -351,15 +358,15 @@ proof
               // sub written as add(_, neg) so polynomial expands + folds numerals.
               @cubic-identity |
                 add(mul(sub(k, ONE), mul(k, sub(mul(TWO, k), ONE))), mul(SIX, mul(k, k))) = mul(k, mul(add(k, ONE), add(mul(TWO, k), ONE)))
-                [by polynomial]
+                [using polynomial]
               @cubic-identity-in-successor-form |
                 add(mul(sub(k, ONE), mul(k, sub(mul(TWO, k), ONE))), mul(SIX, mul(k, k))) = mul(sub(succ(k), ONE), mul(succ(k), sub(mul(TWO, succ(k)), ONE)))
-                [by chain cubic-identity rhs-successor-normalized]
+                [using chain cubic-identity rhs-successor-normalized]
               @given-successor-nonneg |
                 assume is_nonneg(succ(k)) {
                   @sum-of-squares-at-successor |
                     mul(SIX, sumUpTo(idSqSeq, succ(k))) = mul(sub(succ(k), ONE), mul(succ(k), sub(mul(TWO, succ(k)), ONE)))
-                    [by chain six-times-sum-successor-with-ih cubic-identity-in-successor-form]
+                    [using chain six-times-sum-successor-with-ih cubic-identity-in-successor-form]
                 }
               @predicate-at-successor |
                 is_nonneg(succ(k)) -> mul(SIX, sumUpTo(idSqSeq, succ(k))) = mul(sub(succ(k), ONE), mul(succ(k), sub(mul(TWO, succ(k)), ONE)))
@@ -384,7 +391,7 @@ proof
     [by forall_intro induction-step]
   @conclusion |
     forall n: NonNegZ; is_nonneg(n) -> mul(SIX, sumUpTo(idSqSeq, n)) = mul(sub(n, ONE), mul(n, sub(mul(TWO, n), ONE)))
-    [by instantiate nonnegInduction((fun n: Int => is_nonneg(n) -> mul(SIX, sumUpTo(idSqSeq, n)) = mul(sub(n, ONE), mul(n, sub(mul(TWO, n), ONE))))) base-case induction-step-for-all-k]
+    [using instantiation nonnegInduction((fun n: Int => is_nonneg(n) -> mul(SIX, sumUpTo(idSqSeq, n)) = mul(sub(n, ONE), mul(n, sub(mul(TWO, n), ONE))))) base-case induction-step-for-all-k]
 qed
 
 // -- sum of cubes (AATA §2.1 Ex 2) ------------------------------------------
@@ -403,17 +410,17 @@ proof
     assume is_nonneg(ZERO) {
       @sum-at-zero-is-zero |
         sumUpTo(idCubeSeq, ZERO) = ZERO
-        [by specialize sumUpToZero(idCubeSeq)]
+        [using specialize sumUpToZero(idCubeSeq)]
       @four-times-empty-sum |
         mul(FOUR, sumUpTo(idCubeSeq, ZERO)) = ZERO
-        [by simplify sum-at-zero-is-zero mulZeroRight]
+        [using simplify sum-at-zero-is-zero mulZeroRight]
       // (0·(0-1))² = 0² = 0.
       @rhs-at-zero-is-zero |
         mul(mul(ZERO, sub(ZERO, ONE)), mul(ZERO, sub(ZERO, ONE))) = ZERO
-        [by polynomial]
+        [using polynomial]
       @sum-of-cubes-at-zero |
         mul(FOUR, sumUpTo(idCubeSeq, ZERO)) = mul(mul(ZERO, sub(ZERO, ONE)), mul(ZERO, sub(ZERO, ONE)))
-        [by chain four-times-empty-sum rhs-at-zero-is-zero]
+        [using chain four-times-empty-sum rhs-at-zero-is-zero]
     }
   @base-case |
     is_nonneg(ZERO) -> mul(FOUR, sumUpTo(idCubeSeq, ZERO)) = mul(mul(ZERO, sub(ZERO, ONE)), mul(ZERO, sub(ZERO, ONE)))
@@ -432,23 +439,23 @@ proof
                 [by hypothesis given-inductive-hypothesis]
               @inductive-hypothesis |
                 mul(FOUR, sumUpTo(idCubeSeq, k)) = mul(mul(k, sub(k, ONE)), mul(k, sub(k, ONE)))
-                [by specialize guarded-inductive-hypothesis k-nonneg]
+                [using specialize guarded-inductive-hypothesis k-nonneg]
               @successor-nonneg |
                 is_nonneg(succ(k))
-                [by specialize nonnegSucc(k) k-nonneg]
+                [using specialize nonnegSucc(k) k-nonneg]
               @sum-at-successor |
                 sumUpTo(idCubeSeq, succ(k)) = add(sumUpTo(idCubeSeq, k), at(idCubeSeq, k))
-                [by specialize sumUpToSucc(idCubeSeq, k) k-nonneg]
+                [using specialize sumUpToSucc(idCubeSeq, k) k-nonneg]
               @entry-at-k-is-k-cubed |
                 at(idCubeSeq, k) = mul(k, mul(k, k))
-                [by specialize idCubeSeqEntry(k) k-nonneg]
+                [using specialize idCubeSeqEntry(k) k-nonneg]
               @sum-at-successor-adds-k-cubed |
                 sumUpTo(idCubeSeq, succ(k)) = add(sumUpTo(idCubeSeq, k), mul(k, mul(k, k)))
                 [by rewrite entry-at-k-is-k-cubed sum-at-successor]
               // 4·Σ_{k+1} = 4·(Σ_k + k³) = 4·Σ_k + 4k³.
               @four-times-sum-successor |
                 mul(FOUR, sumUpTo(idCubeSeq, succ(k))) = add(mul(FOUR, sumUpTo(idCubeSeq, k)), mul(FOUR, mul(k, mul(k, k))))
-                [by arithmetic sum-at-successor-adds-k-cubed]
+                [using arithmetic sum-at-successor-adds-k-cubed]
               // substitute the IH: 4·Σ_{k+1} = (k(k-1))² + 4k³.
               @four-times-sum-successor-with-ih |
                 mul(FOUR, sumUpTo(idCubeSeq, succ(k))) = add(mul(mul(k, sub(k, ONE)), mul(k, sub(k, ONE))), mul(FOUR, mul(k, mul(k, k))))
@@ -456,10 +463,10 @@ proof
               // normalize the successor RHS factors: (succ k)-1 = k, succ k = k+1.
               @first-factor-is-k |
                 sub(succ(k), ONE) = k
-                [by simplify definitionOfSubtraction oneIsSuccZero negSucc negZero addPrevRight prevSucc addZeroRight]
+                [using simplify definitionOfSubtraction oneIsSuccZero negSucc negZero addPrevRight prevSucc addZeroRight]
               @successor-is-k-plus-one |
                 succ(k) = add(k, ONE)
-                [by simplify oneIsSuccZero addSuccRight addZeroRight]
+                [using simplify oneIsSuccZero addSuccRight addZeroRight]
               @rhs-reflexive |
                 mul(mul(succ(k), sub(succ(k), ONE)), mul(succ(k), sub(succ(k), ONE))) = mul(mul(succ(k), sub(succ(k), ONE)), mul(succ(k), sub(succ(k), ONE)))
                 [by reflexivity]
@@ -473,15 +480,15 @@ proof
               // k-1, add(k,ONE) for k+1 so polynomial expands + folds numerals.
               @quartic-identity |
                 add(mul(mul(k, sub(k, ONE)), mul(k, sub(k, ONE))), mul(FOUR, mul(k, mul(k, k)))) = mul(mul(add(k, ONE), k), mul(add(k, ONE), k))
-                [by polynomial]
+                [using polynomial]
               @quartic-identity-in-successor-form |
                 add(mul(mul(k, sub(k, ONE)), mul(k, sub(k, ONE))), mul(FOUR, mul(k, mul(k, k)))) = mul(mul(succ(k), sub(succ(k), ONE)), mul(succ(k), sub(succ(k), ONE)))
-                [by chain quartic-identity rhs-successor-normalized]
+                [using chain quartic-identity rhs-successor-normalized]
               @given-successor-nonneg |
                 assume is_nonneg(succ(k)) {
                   @sum-of-cubes-at-successor |
                     mul(FOUR, sumUpTo(idCubeSeq, succ(k))) = mul(mul(succ(k), sub(succ(k), ONE)), mul(succ(k), sub(succ(k), ONE)))
-                    [by chain four-times-sum-successor-with-ih quartic-identity-in-successor-form]
+                    [using chain four-times-sum-successor-with-ih quartic-identity-in-successor-form]
                 }
               @predicate-at-successor |
                 is_nonneg(succ(k)) -> mul(FOUR, sumUpTo(idCubeSeq, succ(k))) = mul(mul(succ(k), sub(succ(k), ONE)), mul(succ(k), sub(succ(k), ONE)))
@@ -506,7 +513,7 @@ proof
     [by forall_intro induction-step]
   @conclusion |
     forall n: NonNegZ; is_nonneg(n) -> mul(FOUR, sumUpTo(idCubeSeq, n)) = mul(mul(n, sub(n, ONE)), mul(n, sub(n, ONE)))
-    [by instantiate nonnegInduction((fun n: Int => is_nonneg(n) -> mul(FOUR, sumUpTo(idCubeSeq, n)) = mul(mul(n, sub(n, ONE)), mul(n, sub(n, ONE))))) base-case induction-step-for-all-k]
+    [using instantiation nonnegInduction((fun n: Int => is_nonneg(n) -> mul(FOUR, sumUpTo(idCubeSeq, n)) = mul(mul(n, sub(n, ONE)), mul(n, sub(n, ONE))))) base-case induction-step-for-all-k]
 qed
 
 // -- arithmetic-progression sum (AATA §2.1 Ex 4) ----------------------------
@@ -526,17 +533,17 @@ proof
     assume is_nonneg(ZERO) {
       @sum-at-zero-is-zero |
         sumUpTo(idApSeq, ZERO) = ZERO
-        [by specialize sumUpToZero(idApSeq)]
+        [using specialize sumUpToZero(idApSeq)]
       @two-times-empty-sum |
         mul(TWO, sumUpTo(idApSeq, ZERO)) = ZERO
-        [by simplify sum-at-zero-is-zero mulZeroRight]
+        [using simplify sum-at-zero-is-zero mulZeroRight]
       // (0·(3·0-1))·X = 0·X = 0.
       @rhs-at-zero-is-zero |
         mul(mul(ZERO, sub(mul(THREE, ZERO), ONE)), X) = ZERO
-        [by polynomial]
+        [using polynomial]
       @sum-at-zero |
         mul(TWO, sumUpTo(idApSeq, ZERO)) = mul(mul(ZERO, sub(mul(THREE, ZERO), ONE)), X)
-        [by chain two-times-empty-sum rhs-at-zero-is-zero]
+        [using chain two-times-empty-sum rhs-at-zero-is-zero]
     }
   @base-case |
     is_nonneg(ZERO) -> mul(TWO, sumUpTo(idApSeq, ZERO)) = mul(mul(ZERO, sub(mul(THREE, ZERO), ONE)), X)
@@ -555,23 +562,23 @@ proof
                 [by hypothesis given-inductive-hypothesis]
               @inductive-hypothesis |
                 mul(TWO, sumUpTo(idApSeq, k)) = mul(mul(k, sub(mul(THREE, k), ONE)), X)
-                [by specialize guarded-inductive-hypothesis k-nonneg]
+                [using specialize guarded-inductive-hypothesis k-nonneg]
               @successor-nonneg |
                 is_nonneg(succ(k))
-                [by specialize nonnegSucc(k) k-nonneg]
+                [using specialize nonnegSucc(k) k-nonneg]
               @sum-at-successor |
                 sumUpTo(idApSeq, succ(k)) = add(sumUpTo(idApSeq, k), at(idApSeq, k))
-                [by specialize sumUpToSucc(idApSeq, k) k-nonneg]
+                [using specialize sumUpToSucc(idApSeq, k) k-nonneg]
               @entry-at-k |
                 at(idApSeq, k) = mul(add(mul(THREE, k), ONE), X)
-                [by specialize idApSeqEntry(k) k-nonneg]
+                [using specialize idApSeqEntry(k) k-nonneg]
               @sum-at-successor-adds-term |
                 sumUpTo(idApSeq, succ(k)) = add(sumUpTo(idApSeq, k), mul(add(mul(THREE, k), ONE), X))
                 [by rewrite entry-at-k sum-at-successor]
               // 2·Σ_{k+1} = 2·Σ_k + 2·(3k+1)X.
               @two-times-sum-successor |
                 mul(TWO, sumUpTo(idApSeq, succ(k))) = add(mul(TWO, sumUpTo(idApSeq, k)), mul(TWO, mul(add(mul(THREE, k), ONE), X)))
-                [by arithmetic sum-at-successor-adds-term]
+                [using arithmetic sum-at-successor-adds-term]
               // substitute the IH: 2·Σ_{k+1} = k(3k-1)X + 2(3k+1)X.
               @two-times-sum-successor-with-ih |
                 mul(TWO, sumUpTo(idApSeq, succ(k))) = add(mul(mul(k, sub(mul(THREE, k), ONE)), X), mul(TWO, mul(add(mul(THREE, k), ONE), X)))
@@ -579,10 +586,10 @@ proof
               // normalize the successor RHS factors: 3·succ(k)-1 = 3k+2, succ k = k+1.
               @successor-is-k-plus-one |
                 succ(k) = add(k, ONE)
-                [by simplify oneIsSuccZero addSuccRight addZeroRight]
+                [using simplify oneIsSuccZero addSuccRight addZeroRight]
               @three-successor-minus-one |
                 sub(mul(THREE, succ(k)), ONE) = add(mul(THREE, k), TWO)
-                [by simplify definitionOfSubtraction oneIsSuccZero mulSuccRight negSucc negZero addSuccRight addPrevRight prevSucc addZeroRight addZeroLeft]
+                [using simplify definitionOfSubtraction oneIsSuccZero mulSuccRight negSucc negZero addSuccRight addPrevRight prevSucc addZeroRight addZeroLeft]
               @rhs-reflexive |
                 mul(mul(succ(k), sub(mul(THREE, succ(k)), ONE)), X) = mul(mul(succ(k), sub(mul(THREE, succ(k)), ONE)), X)
                 [by reflexivity]
@@ -595,15 +602,15 @@ proof
               // the ring identity: k(3k-1)X + 2(3k+1)X = (k+1)(3k+2)X.
               @progression-identity |
                 add(mul(mul(k, sub(mul(THREE, k), ONE)), X), mul(TWO, mul(add(mul(THREE, k), ONE), X))) = mul(mul(add(k, ONE), add(mul(THREE, k), TWO)), X)
-                [by polynomial]
+                [using polynomial]
               @progression-identity-in-successor-form |
                 add(mul(mul(k, sub(mul(THREE, k), ONE)), X), mul(TWO, mul(add(mul(THREE, k), ONE), X))) = mul(mul(succ(k), sub(mul(THREE, succ(k)), ONE)), X)
-                [by chain progression-identity rhs-successor-normalized]
+                [using chain progression-identity rhs-successor-normalized]
               @given-successor-nonneg |
                 assume is_nonneg(succ(k)) {
                   @sum-at-successor-folded |
                     mul(TWO, sumUpTo(idApSeq, succ(k))) = mul(mul(succ(k), sub(mul(THREE, succ(k)), ONE)), X)
-                    [by chain two-times-sum-successor-with-ih progression-identity-in-successor-form]
+                    [using chain two-times-sum-successor-with-ih progression-identity-in-successor-form]
                 }
               @predicate-at-successor |
                 is_nonneg(succ(k)) -> mul(TWO, sumUpTo(idApSeq, succ(k))) = mul(mul(succ(k), sub(mul(THREE, succ(k)), ONE)), X)
@@ -628,5 +635,5 @@ proof
     [by forall_intro induction-step]
   @conclusion |
     forall n: NonNegZ; is_nonneg(n) -> mul(TWO, sumUpTo(idApSeq, n)) = mul(mul(n, sub(mul(THREE, n), ONE)), X)
-    [by instantiate nonnegInduction((fun n: Int => is_nonneg(n) -> mul(TWO, sumUpTo(idApSeq, n)) = mul(mul(n, sub(mul(THREE, n), ONE)), X))) base-case induction-step-for-all-k]
+    [using instantiation nonnegInduction((fun n: Int => is_nonneg(n) -> mul(TWO, sumUpTo(idApSeq, n)) = mul(mul(n, sub(mul(THREE, n), ONE)), X))) base-case induction-step-for-all-k]
 qed

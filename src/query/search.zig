@@ -82,23 +82,25 @@ const Candidate = struct { name: []const u8, name_off: u32, kind: []const u8, si
 /// one-line signature. Others (func/pred/import/alias/…) are skipped.
 fn candidate(arena: Allocator, source: []const u8, decl: ast.Decl) Allocator.Error!?Candidate {
     return switch (decl) {
-        .theorem => |t| .{
-            .name = tok(source, t.name),
-            .name_off = t.name.start,
-            .kind = "theorem",
-            .sig = try stmtSig(arena, source, .keyword_theorem, tok(source, t.name)),
+        // a theorem (incl. proof-carrying schema = theorem with params); alias skipped.
+        .theorem => |t| switch (t) {
+            .local => |l| .{
+                .name = tok(source, l.fact.name),
+                .name_off = l.fact.name.start,
+                .kind = "theorem",
+                .sig = try stmtSig(arena, source, .keyword_theorem, tok(source, l.fact.name)),
+            },
+            .alias => null,
         },
-        .axiom => |a| .{
-            .name = tok(source, a.name),
-            .name_off = a.name.start,
-            .kind = "axiom",
-            .sig = try stmtSig(arena, source, .keyword_axiom, tok(source, a.name)),
-        },
-        .schema => |s| .{
-            .name = tok(source, s.name),
-            .name_off = s.name.start,
-            .kind = if (s.steps == null) "axiom" else "theorem",
-            .sig = try stmtSig(arena, source, if (s.steps == null) .keyword_axiom else .keyword_theorem, tok(source, s.name)),
+        // an axiom (incl. axiom-schema = axiom with params); alias skipped.
+        .axiom => |a| switch (a) {
+            .local => |f| .{
+                .name = tok(source, f.name),
+                .name_off = f.name.start,
+                .kind = "axiom",
+                .sig = try stmtSig(arena, source, .keyword_axiom, tok(source, f.name)),
+            },
+            .alias => null,
         },
         else => null,
     };
