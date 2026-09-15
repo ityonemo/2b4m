@@ -6422,7 +6422,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
     // connect goal to premise (`sub(y,x) = succ(d)` from `add(x, succ(d)) = y`: the premise
     // rule fires on a term the goal does not contain), while the skeleton decides it
     // semantically. Gating on `bin`/`not` refused exactly that and declined the whole chain —
-    // the pre-refactor engine's mixed certifier had no such gate (std/integer-divides.bpa:1073).
+    // the pre-refactor engine's mixed certifier had no such gate (std/integer/divides.bpa:1073).
     if (!self.mixedCertShape(body)) return false;
 
     // collect the atoms (premises + stripped antecedents + body); decide validity.
@@ -9068,7 +9068,7 @@ test "mixedCertShape: a bare equation/order atom is in scope for the mixed skele
     const p = rig.prove;
     const a = try rig.v("a");
     const b = try rig.v("b");
-    // `a = b` — the std/integer-divides.bpa:1073 shape (a bare equation the equation cert
+    // `a = b` — the std/integer/divides.bpa:1073 shape (a bare equation the equation cert
     // cannot reach by rewriting, decided semantically by the skeleton instead).
     try testing.expect(p.mixedCertShape(try rig.eq(a, b)));
     // a boolean combination is in scope too (the original motivating shape).

@@ -133,7 +133,7 @@ marked hole appears only under `--draft`.
 **A library owes its own examples.** `--library` (a directory) additionally
 FAILS on any axiom declared in that directory that no theorem in it rests on.
 An axiom no derivation ever touches is one whose binders, guards and direction
-have never been checked, so `std/` carries a `<namespace>-examples.bpa` per
+have never been checked, so `std/` carries a `<namespace>/examples.bpa` per
 theory demonstrating exactly those axioms nothing else exercises. A fact a
 `model` names as a discharger (`src <- local`, a `@`-projection, a guard
 witness) counts as used — that is consumption by the model machinery rather
@@ -1465,9 +1465,9 @@ can't do cleanly.
 | `bpa query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.bpa` under it — corpus discovery) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
 
 ```
-$ bpa query whereis std/peano-parity.bpa addZeroRight
+$ bpa query whereis std/peano/parity.bpa addZeroRight
 addZeroRight
-  std/peano-parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
+  std/peano/parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
   std/peano.bpa:79:  theorem addZeroRight: forall n: Nat; add(n, ZERO) = n  [origin]
 ```
 

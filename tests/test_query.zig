@@ -220,7 +220,7 @@ pub fn addTests(
 
     // an ALIAS (`theorem addZeroRight = peano.addZeroRight` in subtraction)
     // resolves across files to the real proof — identical output.
-    ctx.ok(&.{ "query", "theorem", "std/peano-subtraction.bpa", "addZeroRight" }, std_theorem_text);
+    ctx.ok(&.{ "query", "theorem", "std/peano/subtraction.bpa", "addZeroRight" }, std_theorem_text);
 
     // a missing theorem: located error, exit 1
     ctx.fail(&.{ "query", "theorem", "std/peano.bpa", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
@@ -232,18 +232,18 @@ pub fn addTests(
     // `query whereis <file> <ident>`: trace an alias across files to its
     // origin. Pinned to real std (brittle by design). `sub` is a func
     // aliased in parity from subtraction.
-    ctx.ok(&.{ "query", "whereis", "std/peano-parity.bpa", "sub" },
+    ctx.ok(&.{ "query", "whereis", "std/peano/parity.bpa", "sub" },
         \\sub
-        \\  std/peano-parity.bpa:19:  func sub = subtraction.sub
-        \\  std/peano-subtraction.bpa:38:  func sub(a: Nat, b: Nat): Nat  [origin]
+        \\  std/peano/parity.bpa:19:  func sub = subtraction.sub
+        \\  std/peano/subtraction.bpa:38:  func sub(a: Nat, b: Nat): Nat  [origin]
         \\
     );
 
     // an import namespace resolves to the imported file as its origin.
-    ctx.ok(&.{ "query", "whereis", "std/peano-parity.bpa", "peano_divides" },
+    ctx.ok(&.{ "query", "whereis", "std/peano/parity.bpa", "peano_divides" },
         \\peano_divides
-        \\  std/peano-parity.bpa:10:  import peano_divides <<< "std/peano-divides.bpa"
-        \\  std/peano-divides.bpa  [origin: imported file]
+        \\  std/peano/parity.bpa:10:  import peano_divides <<< "std/peano/divides.bpa"
+        \\  std/peano/divides.bpa  [origin: imported file]
         \\
     );
 

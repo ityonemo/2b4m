@@ -328,12 +328,12 @@ disclosed and `--fast`-gated, so the trusted surface is always disclosed.
 | `examples/peano.bpa` | the living demo: automation-assisted Peano arithmetic |
 | `examples/peano-pure.bpa` | the same theory proved entirely by hand |
 | `examples/gauss.bpa` | Gauss's summation formula (with the `assoc_commut` tactic) |
-| `examples/euclid.bpa` | Euclid's gcd, consuming the verified `std/peano-divides` library |
+| `examples/euclid.bpa` | Euclid's gcd, consuming the verified `std/peano/divides` library |
 | `examples/euclid-compute.bpa` | gcd *run* on concrete numbers: `gcd(9, 6) = 3`, unfolded step by step |
 | `examples/incorrect.bpa` | three classic wrong proofs and their diagnostics |
 | `examples/sqrt2.bpa` | **√2 is irrational** (stated over ℕ), proven |
 | `examples/literate.md` | a **literate** proof: prose + checkable ` ```bpa ` blocks |
-| `std/` | the standard library: arithmetic (`peano`), order + strong induction (`peano-order`), subtraction, the verified divisibility/division/gcd unit (`peano-divides`), even/odd + the parity crux (`peano-parity`), abstract group theory (`group`), set algebra over a universe (`set`), and the theory of mappings (`function`) |
+| `std/` | the standard library: arithmetic (`peano`), order + strong induction (`peano/order`), subtraction, the verified divisibility/division/gcd unit (`peano/divides`), even/odd + the parity crux (`peano/parity`), abstract group theory (`group`), set algebra over a universe (`set`), and the theory of mappings (`function`) |
 | `aata/` | **literate transliterations of an abstract-algebra textbook** (Judson's AATA, GFDL) verified in bpa — the book's prose reproduced in order, each stated result followed by a checked proof; see `aata/README` |
 | `agents/` | agent-facing assets, symlinked into `.claude/`: `bpa-query-skill/` (a Skill teaching when to reach for `bpa query` over `grep`), `debug-guide.md` (the diagnostic flags — `--trace-facts`, `--axioms`, `debug accelerant`/`taint` — and which symptom calls for which) and `style-guide.md` (a path-scoped `.claude/rules/` file surfacing the drift-prone proof-label conventions freshly when a `.bpa`/proof `.md` is edited — the on-demand companion to `CONVENTIONS.md`) |
 | `tests/` | the integration suite: `zig build test` spawns the built `bpa` on each corpus file and asserts its exact stdout/stderr/exit. Gates live in subject-grouped `tests/test_*.zig` (cli, tactics, std, aata, examples, query, imports), each a one-line `ctx.ok`/`ctx.fail` (see `tests/Ctx.zig`); `build.zig` stays build configuration |

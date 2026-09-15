@@ -20,7 +20,7 @@ unsound and inexpressive for other domains:
 It also lacks `neg`/`sub`/`prev`, so `sub(add(a,b),b) = a` — a QF-linear ℤ identity —
 is rejected as out-of-fragment, forcing hand-proved cancellation lemmas.
 
-The concrete trigger: the ℤ Euclidean-gcd port (`std/integer-divides.bpa`) needs
+The concrete trigger: the ℤ Euclidean-gcd port (`std/integer/divides.bpa`) needs
 `sub`-cancellation steps that are textbook linear arithmetic but currently un-decidable
 by the accelerant.
 
