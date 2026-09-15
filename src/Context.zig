@@ -110,10 +110,11 @@ import_maps: std.ArrayList(ImportMap) = .empty,
 parse_state: std.ArrayList(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
-/// A SINGLE-THEOREM check (`bpa check <file> <theorem>`): only this root-file theorem is a
-/// root of demand — what it cites is demanded from there; the file's other theorems and
-/// axioms are not proved. Null = every root theorem (and axiom statement) is a root.
-root_theorem: ?InternPool.StrId = null,
+/// The files this run was ASKED ABOUT — one for a single-file check, N for a directory. Set
+/// by whoever racks the roots; the ENGINE never consults it (a file's tasks say what to do).
+/// It exists for REPORTING: the summary counts, the axiom report and the hole blast-radius all
+/// walk "the files the user named". `root_file` is the first entry.
+root_files: std.ArrayList(FileId) = .empty,
 /// ACCELERATED facts (`--fast`): a published fact Index -> the set of `using` words its proof
 /// ADMITTED (trusted, not proved). Populated at publish from the ProveTask's `prove.admitted`;
 /// read by the summary to disclose which theorems accelerated + under which words.
@@ -292,10 +293,39 @@ pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) st
 /// suspends until it completes. Imported files are parsed only when cited into — no eager
 /// transitive parse. (Loading is a thing you DO with a context.)
 pub fn loadProject(self: *Context, root_path: []const u8, root_source: []const u8) !FileId {
-    self.root_file = try self.discover(root_path, root_source);
+    return self.loadRoots(&.{.{ .path = root_path, .source = root_source }});
+}
+
+/// A root of the run: a file the user asked to check. With `theorem` null, EVERY local theorem
+/// (and axiom statement) in it is a proof obligation; with a name, only that theorem is.
+pub const Root = struct { path: []const u8, source: []const u8, theorem: ?[]const u8 = null };
+
+/// THE ENTRY: rack the tasks the request names, then run the engine once to quiescence.
+///   - `check <file>`           → a ParseTask that SEEDS proofs (racks a ProveTask per theorem).
+///   - `check <file> <theorem>` → a ParseTask that seeds nothing + the ONE ProveTask, racked
+///                                here; it suspends on the parse and resolves the name itself
+///                                (a missing/misused name is that task's diagnostic).
+///   - `check <dir>`            → a seeding ParseTask per file.
+/// The entry only racks; from there DEMAND drives everything (an import is parsed when cited
+/// into, a fact proved when cited). Sharing the pass is why a directory is N roots and not N
+/// runs: a fact two roots cite is proved once. Returns the first root (`self.root_file`).
+pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
+    std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
-    const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = self.root_file, .source = root_source, .path = root_path }));
-    self.parse_state.items[@intFromEnum(self.root_file)] = .{ .parsing = t };
+    for (roots) |r| {
+        const fid = try self.discover(r.path, r.source);
+        try self.root_files.append(self.arena, fid);
+        // a path listed twice (or already discovered as another root's import) parses once —
+        // `parse_state` is the guard.
+        if (self.parse_state.items[@intFromEnum(fid)] == .unparsed) {
+            const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = fid, .source = r.source, .path = r.path, .seed_proofs = r.theorem == null }));
+            self.parse_state.items[@intFromEnum(fid)] = .{ .parsing = t };
+        }
+        if (r.theorem) |name| {
+            _ = try eng.rack(try Engine.ProveTask.new(self.arena, .{ .file = try self.fileIndex(r.path), .name = try self.interner.internString(name) }));
+        }
+    }
+    self.root_file = self.root_files.items[0];
     try eng.run();
     return self.root_file;
 }

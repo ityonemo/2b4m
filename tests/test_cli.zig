@@ -377,13 +377,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/schema_lambda_capture.bpa" });
     // SINGLE-THEOREM CHECK: `bpa check <file> <theorem>` proves only the named theorem (and
     // what it cites) — `good` alone is clean while `broken` (and so the whole file) fails;
-    // the theorem follows the file, after any trust words; a wrong name / an axiom / an
-    // extra positional are diagnosed.
+    // the theorem follows the file, after any trust words. The entry racks the ParseTask and
+    // ONE ProveTask for the name, so a wrong name is that task's own diagnostic.
     ctx.ok(&.{ "check", "tests/cases/single_theorem.bpa", "good" }, "OK: 5 declarations, 1 theorems proven\n");
     ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "broken" }, "tests/cases/single_theorem.bpa:16:4: error: step claims 'q' but the axiom derives 'p'\n");
     ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa" }, "tests/cases/single_theorem.bpa:16:4: error: step claims 'q' but the axiom derives 'p'\n");
-    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "nosuch" }, "tests/cases/single_theorem.bpa:1:1: error: no theorem 'nosuch' in this file\n");
-    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "pq" }, "tests/cases/single_theorem.bpa:5:7: error: 'pq' is an axiom, not a theorem\n");
+    ctx.fail(&.{ "check", "tests/cases/single_theorem.bpa", "nosuch" }, "tests/cases/single_theorem.bpa:1:1: error: reference not found: 'nosuch'\n");
+    // naming an AXIOM racks its (statement-elaborating) task: nothing is proved, nothing fails.
+    ctx.ok(&.{ "check", "tests/cases/single_theorem.bpa", "pq" }, "OK: 5 declarations, 0 theorems proven\n");
     ctx.ok(&.{ "check", "--fast-only", "tautology", "tests/cases/single_theorem.bpa", "good" },
         \\OK: 5 declarations, 1 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)

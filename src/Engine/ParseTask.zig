@@ -28,6 +28,13 @@ const ParseTask = @This();
 file_id: Context.FileId,
 source: []const u8,
 path: []const u8,
+/// Does this parse SEED PROOFS? True when something asked for this file to be CHECKED (the
+/// entry point racked it) — the task scans the parsed decls and racks a ProveTask per local
+/// theorem + axiom statement. False when the file is merely being read because something cited
+/// into it (`demandParse`): its theorems are proved only where they are cited. The entry point
+/// also sets it false when it racks a specific ProveTask itself (`check <file> <theorem>`),
+/// since it has already said what to prove.
+seed_proofs: bool = false,
 
 /// Package a payload into a rack-ready `Engine.Task`. Arena-allocates the payload (so it
 /// outlives the queue slot behind the engine's type-erased `*anyopaque`) and bundles the
@@ -137,30 +144,8 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // the ROOT file's theorems are the roots of demand: scan + rack a ProveTask each.
     // (Only the root — imported files' theorems are demanded by citations, not proved
     // just for being imported.)
-    if (task.file_id == self.root_file) {
+    if (task.seed_proofs) {
         const file_index = try self.fileIndex(task.path);
-        // a SINGLE-THEOREM check: the named theorem is the only root of demand.
-        if (self.root_theorem) |want| {
-            self.sink.current_file = idx;
-            const text = self.interner.stringBytes(want);
-            const decl = self.declOf(task.file_id, want) orelse {
-                try self.sink.add(0, "no theorem '{s}' in this file", .{text});
-                return;
-            };
-            switch (decl.*) {
-                .theorem => |t| switch (t) {
-                    .local => |l| if (l.fact.params == null) {
-                        try h.rack(try Engine.ProveTask.new(self.arena, .{ .file = file_index, .name = want }));
-                    } else {
-                        try self.sink.add(l.fact.name.start, "'{s}' is a schema; it is checked at its instantiations", .{text});
-                    },
-                    .alias => try self.sink.add(ast.declName(decl).start, "'{s}' is an alias; the theorem is proved in its origin file", .{text}),
-                },
-                .axiom => try self.sink.add(ast.declName(decl).start, "'{s}' is an axiom, not a theorem", .{text}),
-                else => try self.sink.add(ast.declName(decl).start, "'{s}' is not a theorem", .{text}),
-            }
-            return;
-        }
         for (parsed.decls) |decl| {
             switch (decl) {
                 // a LOCAL theorem is a root of demand — rack its ProveTask; BUT a
