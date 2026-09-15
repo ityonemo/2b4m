@@ -209,9 +209,12 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
 
     switch (st.decl) {
         .axiom => {
-            // an axiom is a LEAF: its assertion IS the fact.
+            // an axiom is a LEAF: its assertion IS the fact. It SEEDS the axiom taint (it rests
+            // on itself), and its declaring file is recorded so `--axioms` can cite file:line.
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
-            _ = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
+            const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
+            try self.axiom_taint.put(self.arena, fact, try self.arena.dupe(InternPool.Index, &.{fact}));
+            try self.axiom_origin.put(self.arena, fact, .{ .name = task.name, .file = task.file, .loc = st.goal_loc });
         },
         .theorem => |t| return proveSteps(self, task, h, st, key, t.steps),
         .instance => |i| {
@@ -223,7 +226,11 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             // racks this task at all — so there is no per-instance trust bit here.)
             if (i.steps) |steps| return proveSteps(self, task, h, st, key, steps);
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
-            _ = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            // an axiom-schema's instance rests on whatever its STATEMENT's read pass cited
+            // (the schema axiom itself, typically) — carry that through to the citer.
+            if (st.prove.axioms_used.items.len > 0)
+                try self.axiom_taint.put(self.arena, fact, st.prove.axioms_used.items);
         },
         .hole => |hh| {
             // a hole is treated as an AXIOM everywhere except HERE: publish the leaf (its
@@ -235,6 +242,10 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
             try self.holes_reached.append(self.arena, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
+            // a hole is an axiom to the kernel, so it seeds the axiom taint like one; the
+            // `--axioms` report tells the two apart by consulting `holes_reached`.
+            try self.axiom_taint.put(self.arena, fact, try self.arena.dupe(InternPool.Index, &.{fact}));
+            try self.axiom_origin.put(self.arena, fact, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
             // the hole rests on ITSELF (the taint seed) — so any dependent inheriting this fact's
             // taint records this hole in its blast-radius.
             try self.hole_taint.put(self.arena, fact, try self.arena.dupe(InternPool.StrId, &.{hh.name}));
@@ -311,6 +322,9 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
             // record the HOLES this proof transitively rests on (blast-radius report only).
             if (st.prove.holes_used.items.len > 0)
                 try self.hole_taint.put(self.arena, fact, st.prove.holes_used.items);
+            // record the AXIOMS this proof transitively rests on (the `--axioms` report only).
+            if (st.prove.axioms_used.items.len > 0)
+                try self.axiom_taint.put(self.arena, fact, st.prove.axioms_used.items);
         },
     }
 }

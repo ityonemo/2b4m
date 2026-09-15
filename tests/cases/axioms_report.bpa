@@ -1,0 +1,34 @@
+// `bpa check <file> <theorem> --axioms` reports what a proof BOTTOMS OUT IN. `viaLemma`
+// rests on both axioms — one directly, one through the lemma it cites — while `direct`
+// rests on only the one it cites, so the report is per-theorem, not per-file.
+sort Nat
+const ZERO: Nat
+func succ(n: Nat): Nat
+pred p(n: Nat)
+pred q(n: Nat)
+
+axiom pZero: p(ZERO)
+axiom pImpliesQ: forall n: Nat; p(n) -> q(n)
+
+theorem direct: p(ZERO)
+proof
+  @conclusion |
+    p(ZERO)
+    [by cite pZero]
+qed
+
+theorem viaLemma: q(ZERO)
+proof
+  @p-at-zero |
+    p(ZERO)
+    [by cite direct]
+  @p-implies-q |
+    forall n: Nat; p(n) -> q(n)
+    [by cite pImpliesQ]
+  @p-implies-q-at-zero |
+    p(ZERO) -> q(ZERO)
+    [by forall_elim(ZERO) p-implies-q]
+  @conclusion |
+    q(ZERO)
+    [by modus_ponens p-implies-q-at-zero p-at-zero]
+qed

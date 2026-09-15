@@ -318,7 +318,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa> [theorem]
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] <file.bpa> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -332,6 +332,11 @@ pub fn main(init: std.process.Init) !u8 {
             \\
             \\check proves every theorem of the file; with a theorem name it proves
             \\only that one (and what it cites) — the rest of the file is not run.
+            \\--axioms additionally reports what the proof BOTTOMS OUT IN: every
+            \\axiom it transitively rests on, with the site each was declared at.
+            \\A `hole` is an axiom as far as the kernel is concerned, so it is
+            \\listed too and marked — which means --axioms only reaches a
+            \\hole-bearing proof under --draft (default mode rejects it first).
             \\check reports every failure as
             \\  file:line:col: error: <message>
             \\on stderr (exit 1), or a summary line on stdout (exit 0).
@@ -399,7 +404,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] <file.bpa> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] <file.bpa> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -415,6 +420,7 @@ pub fn main(init: std.process.Init) !u8 {
     const Mode = enum { none, all, only, except };
     var verify: bpa.Verify = .{};
     var draft = false;
+    var axioms = false;
     var mode: Mode = .none;
     var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
     // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except), the
@@ -428,6 +434,8 @@ pub fn main(init: std.process.Init) !u8 {
             mode = m;
         } else if (std.mem.eql(u8, arg, "--draft")) {
             draft = true;
+        } else if (std.mem.eql(u8, arg, "--axioms")) {
+            axioms = true;
         } else if (std.mem.startsWith(u8, arg, "--")) {
             return fail("error: unknown flag '{s}'\n{s}", .{ arg, usage });
         } else {
@@ -463,7 +471,7 @@ pub fn main(init: std.process.Init) !u8 {
         else => return fail("error: cannot open '{s}': {t}\n", .{ root_path, e }),
     };
 
-    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root, split.theorem);
+    var result = try bpa.checkProject(io, arena, root_path, source, null, readImport, verify, std_root, split.theorem, axioms);
     if (!result.ok()) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);
@@ -506,6 +514,20 @@ pub fn main(init: std.process.Init) !u8 {
     // admitted, not the whole trusted set). If a `--fast` set was given but NOTHING used it, the
     // run is fully verified in practice; note that so the trust flag isn't silently ignored.
     // Strict runs (no trusted set) say nothing.
+    // `--axioms`: what the checked proof(s) BOTTOM OUT IN. A `hole` is an axiom to the kernel,
+    // so it is listed here too and marked as one — default mode has already rejected a
+    // hole-bearing run above, so a hole only reaches this report under --draft.
+    if (axioms) {
+        if (result.axioms.len == 0) {
+            try out.writeAll("\n  — rests on no axioms");
+        } else {
+            try out.print("\n  — rests on {d} axiom(s):", .{result.axioms.len});
+            for (result.axioms) |a| {
+                try out.print("\n      {s}  ({s}:{d})", .{ a.name, a.path, a.line });
+                if (a.is_hole) try out.writeAll("  — HOLE");
+            }
+        }
+    }
     if (result.theorems_accelerated > 0) {
         try out.print("\n  \u{2014} NOT FULLY VERIFIED: {d} theorem(s) accelerated (admitted, not proved): ", .{result.theorems_accelerated});
         for (result.accelerated_names, 0..) |name, i| {

@@ -182,6 +182,18 @@ pub const ProjectResult = struct {
     theorems_accelerated: usize,
     accelerated_names: []const []const u8,
     holes: []const Hole,
+    /// the axioms the checked theorem(s) transitively rest on — only computed when the caller
+    /// asked (`--axioms`); empty otherwise. A HOLE reached by the proof appears here with
+    /// `is_hole` set: it is an axiom to the kernel, and the report says so explicitly.
+    axioms: []const Axiom,
+
+    pub const Axiom = struct {
+        name: []const u8,
+        path: []const u8,
+        line: usize,
+        /// this "axiom" is a `hole` — an aspirational placeholder the kernel treats as an axiom
+        is_hole: bool,
+    };
 
     pub const Hole = struct {
         name: []const u8,
@@ -196,6 +208,54 @@ pub const ProjectResult = struct {
     }
 };
 
+/// The axioms the ROOT theorems transitively rest on (`--axioms`), sorted by file then line so
+/// the report is stable. Reads `ctx.axiom_taint` — the set each proved root fact recorded — and
+/// resolves every axiom Index through `ctx.axiom_origin` to a name + site. A hole is flagged:
+/// the kernel treats it as an axiom, and the report should not quietly pass it off as one.
+fn collectAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.Axiom {
+    const root_idx = @intFromEnum(ctx.root_file);
+    const rsrc = ctx.files.items[root_idx].source;
+    const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
+    const rns = try ctx.interner.namespace(.universe, root_pf);
+    // union the axiom sets of every root theorem that was actually proved (one, under a
+    // single-theorem check).
+    var seen: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty;
+    var out: std.ArrayList(ProjectResult.Axiom) = .empty;
+    for (ctx.parsed.items[root_idx].decls) |decl| {
+        if (decl != .theorem) continue;
+        const nt = ast.theoremName(decl.theorem);
+        const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
+        if (ctx.root_theorem) |want| if (name != want) continue;
+        const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name }) orelse continue;
+        if (state != .proven) continue;
+        const axs = ctx.axiom_taint.get(state.proven) orelse continue;
+        for (axs) |a| {
+            if ((try seen.getOrPut(arena, a)).found_existing) continue;
+            const origin = ctx.axiom_origin.get(a) orelse continue;
+            const fid = ctx.pool_file.get(origin.file) orelse continue;
+            const f = ctx.files.items[@intFromEnum(fid)];
+            var is_hole = false;
+            for (ctx.holes_reached.items) |hh| {
+                if (hh.file == origin.file and hh.loc == origin.loc) is_hole = true;
+            }
+            try out.append(arena, .{
+                .name = ctx.interner.stringBytes(origin.name),
+                .path = f.path,
+                .line = std.zig.findLineColumn(f.source, origin.loc).line + 1,
+                .is_hole = is_hole,
+            });
+        }
+    }
+    std.mem.sort(ProjectResult.Axiom, out.items, {}, struct {
+        fn lessThan(_: void, x: ProjectResult.Axiom, y: ProjectResult.Axiom) bool {
+            if (!std.mem.eql(u8, x.path, y.path)) return std.mem.lessThan(u8, x.path, y.path);
+            return x.line < y.line;
+        }
+    }.lessThan);
+    return out.items;
+}
+
+/// The loaded project state after a demand run: for tools that must READ the result
 /// The loaded project state after a demand run: for tools that must READ the result
 /// rather than just count it.
 pub const LoadedProject = struct {
@@ -244,6 +304,7 @@ pub fn checkProject(
     verify: Verify,
     std_root: []const u8,
     theorem: ?[]const u8,
+    want_axioms: bool,
 ) !ProjectResult {
     const loaded = try loadProject(io, arena, root_path, root_source, read_ctx, read_fn, verify, std_root, theorem);
     const counts = try countRoot(loaded.context);
@@ -299,6 +360,7 @@ pub fn checkProject(
         .theorems_accelerated = counts.accelerated,
         .accelerated_names = counts.accelerated_names,
         .holes = holes.items,
+        .axioms = if (want_axioms) try collectAxioms(arena, ctx) else &.{},
     };
 }
 
@@ -385,6 +447,14 @@ test "a single-theorem check names a missing theorem, an axiom, a schema" {
     try std.testing.expectEqualStrings("'pq' is an axiom, not a theorem", axiom.sink.list.items[0].message);
     const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop: T -> Prop): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
     try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations", schema.sink.list.items[0].message);
+}
+
+test "splitCheckArgs: --axioms is a flag, not a positional" {
+    // the flag is stripped by main's loop before splitCheckArgs sees the positionals, so
+    // the file + theorem shape is unaffected by it.
+    const a = splitCheckArgs(&.{ "f.bpa", "thm" }).?;
+    try std.testing.expectEqualStrings("f.bpa", a.path);
+    try std.testing.expectEqualStrings("thm", a.theorem.?);
 }
 
 test {
