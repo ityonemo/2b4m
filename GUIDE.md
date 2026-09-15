@@ -139,6 +139,11 @@ theory demonstrating exactly those axioms nothing else exercises. A fact a
 witness) counts as used — that is consumption by the model machinery rather
 than by a citation.
 
+**When a run does something you cannot explain from the source**, `--trace-facts` reports
+which fact each citation actually resolved to, and in which namespace — the question a name
+alone cannot answer once model transfers have published second copies of a theory's theorems.
+See `agents/debug-guide.md` for that flag and the other diagnostics.
+
 By default `bpa check` **verifies everything**: `by arithmetic`/`by
 tautology` must produce a checkable certificate (an accelerated fallback is a hard
 error), and every `using` step (accelerant / model / import) is verified.

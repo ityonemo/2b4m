@@ -87,7 +87,8 @@ pub fn addTests(
     // infinitude/FTA arguments need. Plus the reification-existence axioms
     // (seqSingletonExists/seqConcatExists/seqRemoveExists) that let FTA
     // witness/splice/cancel factorization sequences.
-    ctx.okSilent(&.{ "check", "std/integer-sequence.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/sequence.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/product.bpa" });
 
     // WORKED EXAMPLES (`<theory>-examples.bpa`): a theory's axioms are demonstrated by the
     // library itself, not left for callers to be the first to exercise. `--library` over
@@ -135,7 +136,10 @@ pub fn addTests(
     // sequences (at(i)=i, i², i³, (3i+1)X) + nonneg-induction prove §2.1 Ex 1/2/4 and
     // the Gauss sum in DIVISION-FREE form (6·Σi²=(n-1)n(2n-1), 4·Σi³=(n(n-1))², etc.)
     // — ℚ not needed, only the fractional notation would be; ring steps by polynomial.
-    ctx.okSilent(&.{ "check", "std/integer-sum.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer/sum.bpa" });
+    // ONE sequence carries BOTH folds: the sort is shared, so a single `s` has a
+    // product and a sum. Two sorts would make this file ill-typed.
+    ctx.okSilent(&.{ "check", "tests/cases/integer_seq_both_folds.bpa" });
 
     // subgroups (std/subgroup.bpa, Judson §3.3): a STANDALONE theory (declares its own
     // parent group) — the subgroup criteria, the one-step test (both directions), the
