@@ -223,6 +223,10 @@ pub const ProjectResult = struct {
     holes: []const Hole,
     /// how many ROOTS were checked (1 for a file; a directory's file count).
     files_checked: usize,
+    /// `--trace-facts`: one entry per resolved citation, in completion order. Empty unless
+    /// asked. Accumulated during the run (the engine interleaves tasks, so writing as we go
+    /// would shred the lines into each other) and printed by the driver at the end.
+    fact_trace: []const []const u8,
     /// `--library`: the root files' axioms NO root theorem rests on — a library must not ship
     /// assumptions nothing uses. Empty unless asked. Same shape as `axioms` (never a hole).
     unused_axioms: []const Axiom,
@@ -400,6 +404,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
         .holes = holes.items,
         .axioms = if (want_axioms) try collectAxioms(arena, ctx, theorem) else &.{},
         .files_checked = roots.len,
+        .fact_trace = ctx.fact_trace.items,
         .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
     };
 }

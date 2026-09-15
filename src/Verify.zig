@@ -94,6 +94,13 @@ trusted: Word.Set = Word.Set.initEmpty(),
 /// checks consult to relax — NOT rejecting a proof for a dead step (a fact it introduces but
 /// never uses), etc. (Holes are allowed under `--draft` too, gated in main.) NOT a trust bypass.
 draft: bool = false,
+/// `--trace-facts`: print, for every fact CITATION the prover resolves, what it resolved TO —
+/// the namespace (universe, or a `(model, file)` pair), the declaring site, and the statement.
+/// A diagnostic for the class of bug where a citation reaches the wrong COPY of a name: two
+/// theorems can share a name across theories, and a model transfer publishes a second copy of
+/// its source's facts, so "which one did this step actually get?" is not answerable from the
+/// source text. Written to stderr as the run proceeds; never affects the verdict.
+trace_facts: bool = false,
 
 const Verify = @This();
 

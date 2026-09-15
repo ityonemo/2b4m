@@ -1456,6 +1456,83 @@ fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.
     };
 }
 
+/// `--trace-facts`: report what a citation RESOLVED TO. Two theorems in different theories
+/// can share a name, and a model transfer publishes a second copy of its source's facts under
+/// the same names in a `(model, file)` namespace — so which copy a step actually got is not
+/// answerable from the source. `why` says which resolution path produced it. Stderr; the
+/// verdict is unaffected.
+fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const u8) void {
+    if (!self.ctx.verify.trace_facts) return;
+    const a = self.ctx.arena;
+    var line: []const u8 = std.fmt.allocPrint(a, "{s}: cite {s}\n    -> {s}\n", .{
+        self.siteOf(self.file, tok.start),
+        self.text(tok),
+        self.describeNamespaceOf(ix),
+    }) catch return;
+    if (self.ctx.interner.keyOf(ix) == .fact) {
+        const f = self.ctx.interner.keyOf(ix).fact;
+        line = std.fmt.allocPrint(a, "{s}       {s} {s}\n", .{ line, @tagName(f.kind), self.ctx.interner.stringBytes(f.name) }) catch return;
+        if (self.pool.copyIn(self.ctx.interner, f.formula)) |t| {
+            if (self.renderTerm(t)) |stmt| {
+                line = std.fmt.allocPrint(a, "{s}       {s}\n", .{ line, stmt }) catch return;
+            } else |_| {}
+        } else |_| {}
+    }
+    line = std.fmt.allocPrint(a, "{s}       via {s}\n", .{ line, why }) catch return;
+    self.ctx.fact_trace.append(a, line) catch return;
+}
+
+/// `file:line:col` for a source offset. The offset must belong to `file` — a fact's `loc`
+/// indexes the file it was DECLARED in, which is generally not the citing file, so an offset
+/// past the end means we were handed the wrong file and the site is reported as unknown
+/// rather than read out of bounds.
+fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
+    const fid = self.ctx.pool_file.get(file) orelse return "?";
+    const f = self.ctx.files.items[@intFromEnum(fid)];
+    if (off >= f.source.len) return std.fmt.allocPrint(self.ctx.arena, "offset {d} (not in {s})", .{ off, f.path }) catch "?";
+    const lc = std.zig.findLineColumn(f.source, off);
+    return std.fmt.allocPrint(self.ctx.arena, "{s}:{d}:{d}", .{ f.path, lc.line + 1, lc.column + 1 }) catch "?";
+}
+
+/// Which FILE a published fact was declared in — searched by scanning the file table for the
+/// one whose namespace holds it. A fact Index records its `loc` but not its file, so the trace
+/// recovers it here (a linear scan is fine for a diagnostic).
+fn fileOfFact(self: *Prove, ix: InternPool.Index) ?InternPool.Index {
+    const key = self.ctx.interner.keyOf(ix);
+    const name: StrId = switch (key) {
+        .fact => |f| f.name,
+        .schema => |k| return k.file,
+        else => return null,
+    };
+    for (self.ctx.files.items) |f| {
+        const pf = self.ctx.fileIndex(f.path) catch continue;
+        const ns = self.ctx.interner.namespace(.universe, pf) catch continue;
+        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name })) |st| {
+            if (st == .proven and st.proven == ix) return pf;
+        }
+    }
+    return null;
+}
+
+/// Describe where a resolved fact CAME FROM: the namespace the citing task is resolving in
+/// (`universe` for an ordinary proof, or the model it is proving under) plus the fact's own
+/// declaration site. The distinction is the point of the trace — a citation that should have
+/// stayed in the universe but came back through a model is the bug this exists to show.
+fn describeNamespaceOf(self: *Prove, ix: InternPool.Index) []const u8 {
+    const key = self.ctx.interner.keyOf(ix);
+    const loc: u32 = switch (key) {
+        .fact => |f| f.loc,
+        .schema => |k| k.loc,
+        else => return "(not a fact)",
+    };
+    const ns_text = if (self.model == InternPool.Index.none or self.model == .universe)
+        "universe"
+    else
+        std.fmt.allocPrint(self.ctx.arena, "model#{d}", .{@intFromEnum(self.model)}) catch "model?";
+    const decl_file = self.fileOfFact(ix) orelse self.file;
+    return std.fmt.allocPrint(self.ctx.arena, "resolved in ns={s}, declared at {s}", .{ ns_text, self.siteOf(decl_file, loc) }) catch "?";
+}
+
 /// An axiom/theorem citation: GLOBAL fact via FactKV (the read pass made it proven, or
 /// left an in_flight-self / failed entry — diagnosed here).
 fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
@@ -1480,6 +1557,7 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
             .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) {
                 self.inheritHoles(x);
                 self.inheritAxioms(x);
+                self.traceFact(tok, x, "TRANSFER redirect: the citing task runs under a model, so the cited theorem resolved to its transferred copy");
                 return x;
             },
             .in_flight => {},
@@ -1498,6 +1576,7 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
         return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
     self.inheritHoles(ix);
     self.inheritAxioms(ix);
+    self.traceFact(tok, ix, if (self.model == InternPool.Index.none or self.model == .universe) "direct lookup" else "overlay (applyModel) under the citing task's model");
     return ix;
 }
 
