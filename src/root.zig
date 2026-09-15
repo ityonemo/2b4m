@@ -447,6 +447,10 @@ fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged
             for (ctx.axiom_taint.get(state.proven) orelse continue) |a| try used.put(arena, a, {});
         }
     }
+    // a fact a MODEL names as a discharger is used by the model machinery — it never appears in
+    // a proof's citation closure, but it is exactly as consumed.
+    var it = ctx.model_discharged.keyIterator();
+    while (it.next()) |k| try used.put(arena, k.*, {});
     return used;
 }
 
@@ -629,6 +633,62 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
     try std.testing.expectEqual(@as(usize, 5), r.unused_axioms[0].line);
     // the `--axioms` union sees both used axioms, the schema by its own name.
     try std.testing.expectEqual(@as(usize, 2), r.axioms.len);
+}
+
+test "library: a fact a model names as a discharger is USED, not unused" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const files = [_]MemFile{
+        .{ .path = "/lib/theory.bpa", .source =
+        \\sort Elem
+        \\const UNIT: Elem
+        \\func op(a: Elem, b: Elem): Elem
+        \\axiom opUnitLeft: forall a: Elem; op(UNIT, a) = a
+        \\theorem opUnitTwice: forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\proof
+        \\  @generalize-a |
+        \\    fix a: Elem {
+        \\      @unit-left |
+        \\        forall b: Elem; op(UNIT, b) = b
+        \\        [by cite opUnitLeft]
+        \\      @conclusion-twice |
+        \\        op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\        [by forall_elim(op(UNIT, a)) unit-left]
+        \\    }
+        \\  @conclusion |
+        \\    forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
+        \\    [by forall_intro generalize-a]
+        \\qed
+        \\
+        },
+        .{ .path = "/lib/concrete.bpa", .source =
+        \\import theory <<< "theory.bpa"
+        \\sort Thing
+        \\const ZED: Thing
+        \\func combine(a: Thing, b: Thing): Thing
+        \\axiom combineZedLeft: forall a: Thing; combine(ZED, a) = a
+        \\model ThingModel {
+        \\  theory.Elem: Thing
+        \\  theory.UNIT: ZED
+        \\  theory.op: combine
+        \\  theory.opUnitLeft <- combineZedLeft
+        \\}
+        \\theorem combineZedTwice: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+        \\proof
+        \\  @conclusion |
+        \\    forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+        \\    [using model(ThingModel) theory.opUnitTwice]
+        \\qed
+        \\
+        },
+    };
+    const r = try checkSources(arena, &files, true);
+    try std.testing.expect(r.ok());
+    // `combineZedLeft` is cited by NO proof — the model discharges `theory.opUnitLeft` with it.
+    // That is a use.
+    for (r.unused_axioms) |a| std.debug.print("unexpected unused: {s}\n", .{a.name});
+    try std.testing.expectEqual(@as(usize, 0), r.unused_axioms.len);
 }
 
 test {

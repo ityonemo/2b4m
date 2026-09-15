@@ -133,6 +133,12 @@ holes_reached: std.ArrayList(HoleDecl) = .empty,
 /// axiom's file:line. A `hole` publishes as an axiom and is recorded here too — the report
 /// separates them by asking `holes_reached`.
 axiom_origin: std.AutoHashMapUnmanaged(InternPool.Index, HoleDecl) = .empty,
+/// MODEL-DISCHARGED facts: every LOCAL fact a `model` names as the thing that discharges a
+/// source obligation (`src <- local`, a `@`-projection, or a guard witness on a `:` map).
+/// Such a fact is USED — by the model machinery rather than by a proof's citation closure, so
+/// it never enters `axiom_taint` — and `--library` must not call it unused. Recorded by
+/// ModelTask as each mapping resolves.
+model_discharged: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty,
 /// AXIOM TAINT (the `--axioms` report): a published fact Index -> the AXIOM fact Indexes its
 /// proof transitively rests on. An axiom maps to `&.{itself}`; a theorem citing it INHERITS
 /// that list (via `resolveFactRef`, accumulated in `Prove.axioms_used`) — the same side-channel
