@@ -1,0 +1,320 @@
+// Worked examples for `std/integer-sequence.bpa`'s reification-existence axioms.
+//
+// Why this file exists: `Seq` is observe-only — `at` and `productUpTo` READ a sequence
+// but nothing constructs one, so the five existence axioms ARE the constructors, stated
+// for callers (the FTA factorization builds singletons; its uniqueness index map builds
+// prepends and shifts). Nothing in `integer-sequence.bpa` builds on them, so nothing
+// exercises them — and these carry nonneg guards on a refined index sort, exactly the
+// kind of obligation that goes unchecked when no derivation ever discharges it. Each
+// theorem below unpacks a constructed witness and derives the smallest consequence that
+// needs the clause it names.
+import sequence <<< "std/integer-sequence.bpa"
+import integer <<< "std/integer.bpa"
+import order <<< "std/integer-order.bpa"
+
+sort Int = integer.Int
+sort NonNegZ = integer.NonNeg
+sort Seq = sequence.Seq
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func succ = integer.succ
+func add = integer.add
+func mul = integer.mul
+func at = sequence.at
+func productUpTo = sequence.productUpTo
+pred is_nonneg = order.nonneg
+pred less_than = order.less_than
+
+define at_most(a, b) = order.less_or_equal(a, b)
+
+axiom nonnegZero = order.nonnegZero
+axiom nonnegSucc = order.nonnegSucc
+theorem nonnegOne = sequence.nonnegOne
+axiom productUpToZero = sequence.productUpToZero
+axiom seqSingletonExists = sequence.seqSingletonExists
+axiom seqPrependExists = sequence.seqPrependExists
+axiom seqConcatExists = sequence.seqConcatExists
+axiom seqShiftPastExists = sequence.seqShiftPastExists
+axiom seqRemoveExists = sequence.seqRemoveExists
+
+// -- the singleton constructor ----------------------------------------------
+
+// [x] exists with head x and length-one product x, so some sequence's first entry
+// equals its own length-one product. The shape an FTA factorization starts from.
+theorem someSequenceHasHeadAsProduct: forall x: Int; exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = at(s, ZERO)
+proof
+  @zero-is-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @one-is-nonneg |
+    is_nonneg(ONE)
+    [by cite nonnegOne]
+  @generalize-x |
+    fix x: Int {
+      @singleton-exists |
+        exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = x
+        [using specialize seqSingletonExists(x)]
+      @with-singleton-s |
+        unpack s: Seq from singleton-exists {
+          @singleton-clauses |
+            at(s, ZERO) = x and productUpTo(s, ONE) = x
+            [by hypothesis with-singleton-s]
+          @head-is-x |
+            at(s, ZERO) = x
+            [by and_elim_left singleton-clauses]
+          @product-is-x |
+            productUpTo(s, ONE) = x
+            [by and_elim_right singleton-clauses]
+          @product-is-head |
+            productUpTo(s, ONE) = at(s, ZERO)
+            [by rewrite head-is-x product-is-x]
+          @both-clauses |
+            at(s, ZERO) = x and productUpTo(s, ONE) = at(s, ZERO)
+            [by and_intro head-is-x product-is-head]
+          @conclusion-some-singleton |
+            exists u: Seq; at(u, ZERO) = x and productUpTo(u, ONE) = at(u, ZERO)
+            [by exists_intro(s) both-clauses]
+        }
+      @conclusion-for-x |
+        exists u: Seq; at(u, ZERO) = x and productUpTo(u, ONE) = at(u, ZERO)
+        [by exists_elim with-singleton-s]
+    }
+  @conclusion |
+    forall x: Int; exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = at(s, ZERO)
+    [by forall_intro generalize-x]
+qed
+
+// -- the prepend constructor -------------------------------------------------
+
+// x :: s puts x at the head and shifts s up by one, so the result reads s's index 0
+// at its own index 1.
+theorem prependShiftsTheTail: forall x: Int; forall s: Seq; exists u: Seq; at(u, ZERO) = x and at(u, succ(ZERO)) = at(s, ZERO)
+proof
+  @zero-is-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @successor-of-zero-is-nonneg |
+    is_nonneg(succ(ZERO))
+    [using specialize nonnegSucc(ZERO) zero-is-nonneg]
+  @generalize-x |
+    fix x: Int {
+      @generalize-s |
+        fix s: Seq {
+          @prepend-exists |
+            exists u: Seq; at(u, ZERO) = x and (forall i: NonNegZ; at(u, succ(i)) = at(s, i))
+            [using specialize seqPrependExists(x, s)]
+          @with-prepended-u |
+            unpack u: Seq from prepend-exists {
+              @prepend-clauses |
+                at(u, ZERO) = x and (forall i: NonNegZ; at(u, succ(i)) = at(s, i))
+                [by hypothesis with-prepended-u]
+              @head-is-x |
+                at(u, ZERO) = x
+                [by and_elim_left prepend-clauses]
+              @tail-agrees-everywhere |
+                forall i: NonNegZ; at(u, succ(i)) = at(s, i)
+                [by and_elim_right prepend-clauses]
+              @tail-agrees-at-zero |
+                at(u, succ(ZERO)) = at(s, ZERO)
+                [by forall_elim(ZERO) tail-agrees-everywhere]
+              @both-clauses |
+                at(u, ZERO) = x and at(u, succ(ZERO)) = at(s, ZERO)
+                [by and_intro head-is-x tail-agrees-at-zero]
+              @conclusion-some-prepend |
+                exists v: Seq; at(v, ZERO) = x and at(v, succ(ZERO)) = at(s, ZERO)
+                [by exists_intro(u) both-clauses]
+            }
+          @conclusion-for-s |
+            exists v: Seq; at(v, ZERO) = x and at(v, succ(ZERO)) = at(s, ZERO)
+            [by exists_elim with-prepended-u]
+        }
+      @discharge-s |
+        forall s: Seq; exists v: Seq; at(v, ZERO) = x and at(v, succ(ZERO)) = at(s, ZERO)
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall x: Int; forall s: Seq; exists u: Seq; at(u, ZERO) = x and at(u, succ(ZERO)) = at(s, ZERO)
+    [by forall_intro generalize-x]
+qed
+
+// -- the concatenation constructor -------------------------------------------
+
+// Concatenating nothing onto nothing: at j = k = 0 the product clause says the result's
+// length-zero product is the product of two length-zero products — both ONE. The
+// degenerate case is what checks the clause's index arithmetic and its nonneg guard.
+theorem emptyConcatProductIsOne: forall s: Seq; forall t: Seq; is_nonneg(add(ZERO, ZERO)) -> exists u: Seq; productUpTo(u, add(ZERO, ZERO)) = mul(ONE, ONE)
+proof
+  @zero-is-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @generalize-s |
+    fix s: Seq {
+      @generalize-t |
+        fix t: Seq {
+          @given-sum-nonneg |
+            assume is_nonneg(add(ZERO, ZERO)) {
+              @sum-is-nonneg |
+                is_nonneg(add(ZERO, ZERO))
+                [by hypothesis given-sum-nonneg]
+              @concat-exists |
+                exists u: Seq;
+                  (forall i: NonNegZ; less_than(i, ZERO) -> at(u, i) = at(s, i))
+                  and (forall i: NonNegZ; is_nonneg(add(ZERO, i)) -> less_than(i, ZERO) -> at(u, add(ZERO, i)) = at(t, i))
+                  and productUpTo(u, add(ZERO, ZERO)) = mul(productUpTo(s, ZERO), productUpTo(t, ZERO))
+                [using specialize seqConcatExists(s, t, ZERO, ZERO) sum-is-nonneg]
+              @with-concatenated-u |
+                unpack u: Seq from concat-exists {
+                  @concat-clauses |
+                    (forall i: NonNegZ; less_than(i, ZERO) -> at(u, i) = at(s, i))
+                      and (forall i: NonNegZ; is_nonneg(add(ZERO, i)) -> less_than(i, ZERO) -> at(u, add(ZERO, i)) = at(t, i))
+                      and productUpTo(u, add(ZERO, ZERO)) = mul(productUpTo(s, ZERO), productUpTo(t, ZERO))
+                    [by hypothesis with-concatenated-u]
+                  @product-clause |
+                    productUpTo(u, add(ZERO, ZERO)) = mul(productUpTo(s, ZERO), productUpTo(t, ZERO))
+                    [by and_elim_right concat-clauses]
+                  @s-product-is-one |
+                    productUpTo(s, ZERO) = ONE
+                    [using specialize productUpToZero(s)]
+                  @t-product-is-one |
+                    productUpTo(t, ZERO) = ONE
+                    [using specialize productUpToZero(t)]
+                  @product-with-s-unfolded |
+                    productUpTo(u, add(ZERO, ZERO)) = mul(ONE, productUpTo(t, ZERO))
+                    [by rewrite s-product-is-one product-clause]
+                  @product-is-one-times-one |
+                    productUpTo(u, add(ZERO, ZERO)) = mul(ONE, ONE)
+                    [by rewrite t-product-is-one product-with-s-unfolded]
+                  @conclusion-some-concat |
+                    exists v: Seq; productUpTo(v, add(ZERO, ZERO)) = mul(ONE, ONE)
+                    [by exists_intro(u) product-is-one-times-one]
+                }
+              @conclusion-unpacked |
+                exists v: Seq; productUpTo(v, add(ZERO, ZERO)) = mul(ONE, ONE)
+                [by exists_elim with-concatenated-u]
+            }
+          @conclusion-guarded |
+            is_nonneg(add(ZERO, ZERO)) -> exists v: Seq; productUpTo(v, add(ZERO, ZERO)) = mul(ONE, ONE)
+            [by implies_intro given-sum-nonneg]
+        }
+      @discharge-t |
+        forall t: Seq; is_nonneg(add(ZERO, ZERO)) -> exists u: Seq; productUpTo(u, add(ZERO, ZERO)) = mul(ONE, ONE)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s: Seq; forall t: Seq; is_nonneg(add(ZERO, ZERO)) -> exists u: Seq; productUpTo(u, add(ZERO, ZERO)) = mul(ONE, ONE)
+    [by forall_intro generalize-s]
+qed
+
+// -- the reindex-past-a-threshold constructor --------------------------------
+
+// Shifting past a threshold with an empty window (k = 0): the reindexed sequence exists
+// and both clauses hold vacuously below the bound. What this checks is the guard —
+// `is_nonneg(m)` — and the existence of the witness itself.
+theorem shiftPastThresholdExists: forall g: Seq; is_nonneg(ZERO) -> exists r: Seq; forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(r, i) = at(g, i)
+proof
+  @generalize-g |
+    fix g: Seq {
+      @given-threshold-nonneg |
+        assume is_nonneg(ZERO) {
+          @threshold-is-nonneg |
+            is_nonneg(ZERO)
+            [by hypothesis given-threshold-nonneg]
+          @shift-exists |
+            exists r: Seq;
+              (forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(r, i) = at(g, i))
+              and (forall i: NonNegZ; less_than(i, ZERO) -> at_most(ZERO, at(g, i)) -> at(r, i) = succ(at(g, i)))
+            [using specialize seqShiftPastExists(g, ZERO, ZERO) threshold-is-nonneg]
+          @with-shifted-r |
+            unpack r: Seq from shift-exists {
+              @shift-clauses |
+                (forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(r, i) = at(g, i))
+                  and (forall i: NonNegZ; less_than(i, ZERO) -> at_most(ZERO, at(g, i)) -> at(r, i) = succ(at(g, i)))
+                [by hypothesis with-shifted-r]
+              @below-threshold-copied |
+                forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(r, i) = at(g, i)
+                [by and_elim_left shift-clauses]
+              @conclusion-some-shift |
+                exists q: Seq; forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(q, i) = at(g, i)
+                [by exists_intro(r) below-threshold-copied]
+            }
+          @conclusion-unpacked |
+            exists q: Seq; forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(q, i) = at(g, i)
+            [by exists_elim with-shifted-r]
+        }
+      @conclusion-guarded |
+        is_nonneg(ZERO) -> exists q: Seq; forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(q, i) = at(g, i)
+        [by implies_intro given-threshold-nonneg]
+    }
+  @conclusion |
+    forall g: Seq; is_nonneg(ZERO) -> exists r: Seq; forall i: NonNegZ; less_than(i, ZERO) -> less_than(at(g, i), ZERO) -> at(r, i) = at(g, i)
+    [by forall_intro generalize-g]
+qed
+
+// -- the removal constructor -------------------------------------------------
+
+// Deleting the sole entry of a length-one prefix (k = m = 0): the product clause says
+// the shortened product times the removed entry recovers the original length-one
+// product. Unfolding the empty product turns that into 1 · at(s,0).
+theorem removingTheOnlyEntryLeavesOne: forall s: Seq; is_nonneg(succ(ZERO)) -> less_than(ZERO, succ(ZERO)) -> exists t: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+proof
+  @zero-is-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @generalize-s |
+    fix s: Seq {
+      @given-successor-nonneg |
+        assume is_nonneg(succ(ZERO)) {
+          @given-zero-below-one |
+            assume less_than(ZERO, succ(ZERO)) {
+              @successor-is-nonneg |
+                is_nonneg(succ(ZERO))
+                [by hypothesis given-successor-nonneg]
+              @zero-below-one |
+                less_than(ZERO, succ(ZERO))
+                [by hypothesis given-zero-below-one]
+              @remove-exists |
+                exists t: Seq;
+                  mul(productUpTo(t, ZERO), at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                  and (forall i: NonNegZ; less_than(i, ZERO) -> at(t, i) = at(s, i))
+                  and (forall i: NonNegZ; is_nonneg(succ(i)) -> at_most(ZERO, i) -> less_than(i, ZERO) -> at(t, i) = at(s, succ(i)))
+                [using specialize seqRemoveExists(s, ZERO, ZERO) successor-is-nonneg zero-below-one]
+              @with-shortened-t |
+                unpack t: Seq from remove-exists {
+                  @remove-clauses |
+                    mul(productUpTo(t, ZERO), at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                      and (forall i: NonNegZ; less_than(i, ZERO) -> at(t, i) = at(s, i))
+                      and (forall i: NonNegZ; is_nonneg(succ(i)) -> at_most(ZERO, i) -> less_than(i, ZERO) -> at(t, i) = at(s, succ(i)))
+                    [by hypothesis with-shortened-t]
+                  @first-two-clauses |
+                    mul(productUpTo(t, ZERO), at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                      and (forall i: NonNegZ; less_than(i, ZERO) -> at(t, i) = at(s, i))
+                    [by and_elim_left remove-clauses]
+                  @product-recovers-original |
+                    mul(productUpTo(t, ZERO), at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                    [by and_elim_left first-two-clauses]
+                  @shortened-product-is-one |
+                    productUpTo(t, ZERO) = ONE
+                    [using specialize productUpToZero(t)]
+                  @one-times-entry-recovers-original |
+                    mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                    [by rewrite shortened-product-is-one product-recovers-original]
+                  @conclusion-some-removal |
+                    exists u: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                    [by exists_intro(t) one-times-entry-recovers-original]
+                }
+              @conclusion-unpacked |
+                exists u: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+                [by exists_elim with-shortened-t]
+            }
+          @conclusion-inner-guard |
+            less_than(ZERO, succ(ZERO)) -> exists u: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+            [by implies_intro given-zero-below-one]
+        }
+      @conclusion-both-guards |
+        is_nonneg(succ(ZERO)) -> less_than(ZERO, succ(ZERO)) -> exists u: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+        [by implies_intro given-successor-nonneg]
+    }
+  @conclusion |
+    forall s: Seq; is_nonneg(succ(ZERO)) -> less_than(ZERO, succ(ZERO)) -> exists t: Seq; mul(ONE, at(s, ZERO)) = productUpTo(s, succ(ZERO))
+    [by forall_intro generalize-s]
+qed
