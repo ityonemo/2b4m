@@ -49,8 +49,37 @@ The trace is buffered and printed as one block after the run, before the verdict
 be: the demand engine interleaves tasks, so writing each line as it is produced shreds them
 into each other. It never affects the verdict.
 
+**The lifecycle lines.** The same flag also prints what the SCHEDULER did, interleaved in
+order with the citations — because a resolution is only wrong relative to what was in
+flight at that moment:
+
+```
+[parse] task#19 = std/group.bpa
+[model] task#475 = model AdditiveGroup in file#120
+[prove] task#447 = additiveInverseUnique in ns#10372 (model#10371)
+[engine] rack task#447 (on task#43)        racked BY task#43
+[engine] run task#447
+[engine] park task#447 (on task#475)       suspended, waiting for task#475
+[engine] wake task#447 (on task#475)       task#475 finished; #447 back on the queue
+[engine] done task#447
+[read pass] transferred copy of mulNegRight under model#10371: in_flight owned by ANOTHER task — …
+```
+
+`[prove]`/`[fetch]`/`[model]`/`[parse]` lines give a task number its identity (a ProveTask's
+name, namespace and model; a ModelTask's model; a file's parse). `[read pass]` lines report
+what a citing task's read pass saw for a transferred copy: `ABSENT -> racking`, `proven`, or
+`in_flight owned by ANOTHER task` — the last is the state that must SUSPEND the citer.
+
+**One fact to hold onto:** the run queue is a STACK. `run` pops the most recently racked or
+woken task, so a root racked early (a file early in sorted order) sits at the bottom and
+parses LAST, and everything that can proceed without it does — which is how a task ends up
+claimed-but-unfinished for tens of thousands of trace lines while later tasks run to
+completion above it. Do not reason about interleavings from source order; read the trace.
+To follow a suspicious task: find its `[prove]` line, then `grep -n "task#N\b"` for its
+rack/run/park/wake/done, then identify what it parks on the same way.
+
 **Scale.** A whole-corpus sweep produces thousands of lines (`bpa check std --trace-facts` is
-~8000). Narrow first — `bpa check <file> <theorem> --trace-facts` traces one proof — or pipe
+~60,000 with the lifecycle lines). Narrow first — `bpa check <file> <theorem> --trace-facts` traces one proof — or pipe
 to `grep -A4 "cite <name>"`.
 
 ## `--axioms` — what does this proof rest on?

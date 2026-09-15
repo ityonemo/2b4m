@@ -61,6 +61,10 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     const path = self.files.items[idx].path;
+    if (self.verify.trace_facts) {
+        const line = std.fmt.allocPrint(self.arena, "[parse] task#{d} = {s}\n", .{ @intFromEnum(h.self_index), path }) catch "";
+        self.fact_trace.append(self.arena, line) catch {};
+    }
     // READ the file (the one place source enters the engine); a literate `.md` yields its
     // ```bpa blocks with every other line blanked, so offsets index the document as written.
     // A file that cannot be read is diagnosed where it was NAMED — the parent's import token

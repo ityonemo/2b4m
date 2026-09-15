@@ -148,6 +148,10 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     // model M for a transfer (so `(M,file) src.thm` is a distinct fact from the source).
     const ns = try self.interner.namespace(task.model, task.file);
     const key = FactKV.Key{ .namespace = ns, .name = task.name };
+    if (self.verify.trace_facts) {
+        const line = std.fmt.allocPrint(self.arena, "[prove] task#{d} = {s} in ns#{d} (model#{d})\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(ns), @intFromEnum(task.model) }) catch "";
+        self.fact_trace.append(self.arena, line) catch {};
+    }
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,
         .in_flight => |owner| {
