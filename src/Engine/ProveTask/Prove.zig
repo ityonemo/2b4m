@@ -1797,7 +1797,11 @@ fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, 
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
     const outcome = try self.demandInstance(e, null, c, false);
     const fact = switch (outcome) {
-        .proven => |ix| ix,
+        .proven => |ix| blk: {
+            self.inheritHoles(ix);
+            self.inheritAxioms(ix);
+            break :blk ix;
+        },
         .failed => return error.Recover,
         .blocked => return self.fail(c.rule.start, "internal: instantiate not resolved before process (read-pass bug)", .{}),
     };
@@ -1964,7 +1968,11 @@ fn transfersSchema(self: *Prove, c: ast.Step.Claim) Allocator.Error!union(enum) 
 fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     const outcome = try self.demandTransfer(c);
     const fact = switch (outcome) {
-        .proven => |ix| ix,
+        .proven => |ix| blk: {
+            self.inheritHoles(ix);
+            self.inheritAxioms(ix);
+            break :blk ix;
+        },
         .failed => return error.Recover,
         .blocked => return self.fail(c.rule.start, "internal: model transfer not resolved before process (read-pass bug)", .{}),
     };
@@ -1972,7 +1980,11 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
     // arguments (demanded in the read pass) — a schema_instance, like `instantiation`.
     if (self.ctx.interner.keyOf(fact) == .schema) {
         const inst = switch (try self.demandSchemaTransfer(c, fact)) {
-            .proven => |ix| ix,
+            .proven => |ix| blk: {
+                self.inheritHoles(ix);
+                self.inheritAxioms(ix);
+                break :blk ix;
+            },
             .failed => return error.Recover,
             .blocked => return self.fail(c.rule.start, "internal: transferred schema instance not resolved before process (read-pass bug)", .{}),
         };
@@ -2295,7 +2307,13 @@ fn setSyntheticName(decl: *ast.Decl, name: StrId) void {
 fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     const outcome = try self.demandUsing(w, e, goal, c);
     const fact = switch (outcome) {
-        .proven => |ix| ix,
+        .proven => |ix| blk: {
+            // the generated proof's own dependencies are this proof's (the `--axioms` report and
+            // the hole blast-radius both follow the certificate, not the surface).
+            self.inheritHoles(ix);
+            self.inheritAxioms(ix);
+            break :blk ix;
+        },
         .failed => return error.Recover,
         .blocked => return self.fail(c.rule.start, "internal: accelerant instance not resolved before process (read-pass bug)", .{}),
     };
