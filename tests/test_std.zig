@@ -94,7 +94,7 @@ pub fn addTests(
     // std/ is what makes this an obligation rather than a nicety — an axiom no derivation
     // touches has never had its binders, guards or direction checked.
     ctx.okSilent(&.{ "check", "std/sequence-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/integer-sequence-examples.bpa" });
+    ctx.okSilent(&.{ "check", "std/integer-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/real-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/rational-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/collection-examples.bpa" });
@@ -103,10 +103,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/complex-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/ring-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/field-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/field-order-examples.bpa" });
     ctx.okSilent(&.{ "check", "std/peano-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/integer-divides-examples.bpa" });
-    ctx.okSilent(&.{ "check", "std/integer-mod-n-examples.bpa" });
 
     // the reusable ℤ PRIME THEORY (std/primes.bpa): primality packaged once as a
     // transparent `define is_prime`, then Euclid's Lemma (via coprimeBezout),
