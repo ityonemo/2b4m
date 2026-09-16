@@ -62,4 +62,24 @@ pub fn addTests(
         ctx.ok(&.{ "check", seed, "tests/cases/holes_many.bpa", "--draft", "--axioms" }, holes_report);
     }
     ctx.okSilent(&.{ "fmt", "--check", "tests/cases/holes_many.bpa" });
+
+    // A CITATION CYCLE is a hard error naming every participant. Before this, the engine
+    // parked both proofs, drained its queue and returned as if quiescent — `OK: 0 theorems
+    // proven`, exit 0 — so a theorem that could never be proved read as success.
+    ctx.fail(&.{ "check", "tests/cases/cycle_two.bpa" },
+        \\tests/cases/cycle_two.bpa:13:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_two.bpa:20:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\
+    );
+    ctx.fail(&.{ "check", "tests/cases/cycle_three.bpa" },
+        \\tests/cases/cycle_three.bpa:7:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_three.bpa:14:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_three.bpa:21:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\
+    );
+    // ...but cyclic FILE IMPORTS stay legal — only the PROOF graph must be acyclic.
+    ctx.okSilent(&.{ "check", "tests/cases/imports/cycle_a.bpa" });
+    for ([_][]const u8{ "tests/cases/cycle_two.bpa", "tests/cases/cycle_three.bpa" }) |path| {
+        ctx.okSilent(&.{ "fmt", "--check", path });
+    }
 }

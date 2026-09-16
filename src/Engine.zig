@@ -250,6 +250,56 @@ fn wake(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
     }
 }
 
+/// A task that is parked forever: the run queue drained while it was still waiting.
+pub const Wedged = struct {
+    /// The stuck task, and what it was waiting for.
+    task: TaskIndex,
+    blocked_on: TaskIndex,
+    /// True when following `blocked_on` from this task leads BACK to it: a genuine cycle
+    /// that no scheduling order could have resolved. False when the chain instead runs into
+    /// a task that completed (a failed proof whose claim stands forever) — a consequence
+    /// whose root cause is already in the sink, so re-reporting it would add an error to
+    /// every failing file.
+    in_cycle: bool,
+};
+
+/// The tasks still parked at quiescence — empty on a healthy run.
+///
+/// A parked task is not counted `completed`, so `completed != racked` here means work was
+/// abandoned. Two shapes, which must be reported differently:
+///
+///   - a CYCLE: following `blocked_on` from the task leads back to the task. Nobody could
+///     have proceeded in any order — this is the real diagnostic.
+///   - a CHAIN ending in a FAILURE: the walk reaches a task that COMPLETED (a proof that
+///     diagnosed and published nothing leaves its FactKV claim standing forever, so its
+///     citers never wake) or reaches a self-park. The root cause is already in the sink;
+///     re-reporting the consequence would add an error to every failing file.
+///
+/// Each parked task has exactly ONE out-edge, so the wait-for graph is FUNCTIONAL and the
+/// walk is a plain cycle-find (bounded by the parked count, so a chain cannot loop forever).
+/// No strongly-connected-components machinery is needed.
+pub fn wedged(self: *const Engine, arena: std.mem.Allocator) std.mem.Allocator.Error![]const Wedged {
+    if (self.parked.items.len == 0) return &.{};
+    // blocker edges of the tasks that never completed: `blocked_on` for a parked task,
+    // absent for one that finished (which is what ends a failure chain).
+    var edge: std.AutoHashMapUnmanaged(TaskIndex, TaskIndex) = .empty;
+    defer edge.deinit(arena);
+    for (self.parked.items) |p| try edge.put(arena, p.task, p.blocked_on);
+
+    var out: std.ArrayList(Wedged) = .empty;
+    for (self.parked.items) |p| {
+        // walk the wait-for chain from this task; it is a cycle only if we come back here.
+        var cursor = p.blocked_on;
+        var hops: usize = 0;
+        const cyclic = while (hops <= self.parked.items.len) : (hops += 1) {
+            if (cursor == p.task) break true; // closed the loop
+            cursor = edge.get(cursor) orelse break false; // blocker completed: a failure chain
+        } else false;
+        try out.append(arena, .{ .task = p.task, .blocked_on = p.blocked_on, .in_cycle = cyclic });
+    }
+    return out.items;
+}
+
 pub fn deinit(self: *Engine) void {
     self.run_queue.deinit(self.arena);
     self.tasks.deinit(self.arena);
@@ -335,4 +385,130 @@ test "engine suspends a task blocked on another, resumes it when the blocker com
     try std.testing.expectEqual(e.racked, e.completed); // quiescent: both A and B completed
     // A did NOT complete on its suspending run — completed counts each task ONCE.
     try std.testing.expectEqual(@as(usize, 2), e.completed); // A + B
+}
+
+test "wedged: a healthy run leaves nothing parked" {
+    const S = struct {
+        fn run(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            _ = payload;
+            _ = h;
+        }
+    };
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var e = Engine.init(arena, undefined);
+    var dummy: u32 = 0;
+    _ = try e.rack(.{ .payload = &dummy, .run = &S.run });
+    try e.run();
+    try std.testing.expectEqual(@as(usize, 0), (try e.wedged(arena)).len);
+    try std.testing.expectEqual(e.racked, e.completed);
+}
+
+test "wedged: two tasks parked on each other are reported as a CYCLE" {
+    // The real shape of a citation cycle: task A demands B (racks it) and suspends on it;
+    // B, running, demands A — which already exists and is parked — and suspends on THAT.
+    // Neither can ever complete, the run queue drains, and `run` returns as if quiescent.
+    // This is what made two mutually-citing theorems print "OK: 0 theorems proven", exit 0.
+    const Shared = struct { a: ?TaskIndex = null, b: ?TaskIndex = null };
+    const Tasks = struct {
+        fn a(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            s.a = h.self_index;
+            if (s.b == null) s.b = try h.rackIndexed(.{ .payload = payload, .run = &@This().b });
+            h.suspendOn(s.b.?); // wait for B, which will wait for us
+        }
+        fn b(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            h.suspendOn(s.a.?); // A is parked on us; now we park on A — the cycle closes
+        }
+    };
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var e = Engine.init(arena, undefined);
+    var shared: Shared = .{};
+    _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
+    try e.run();
+
+    const w = try e.wedged(arena);
+    try std.testing.expectEqual(@as(usize, 2), w.len); // both stuck
+    for (w) |entry| try std.testing.expect(entry.in_cycle); // each blocker is itself stuck
+    try std.testing.expect(e.completed < e.racked); // work was abandoned
+}
+
+test "wedged: a CHAIN into a failed task is not a cycle, however long" {
+    // A waits on B, B waits on C, C completes without publishing (a failed proof leaves its
+    // claim standing, so B never wakes). Nothing here is cyclic — the chain has an end — and
+    // reporting it would add a second error to every file that already failed. Regression:
+    // a one-hop "is my blocker parked?" test called A a cycle, because B *is* parked.
+    const Shared = struct { b: ?TaskIndex = null, c: ?TaskIndex = null };
+    const Tasks = struct {
+        fn c(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            _ = payload;
+            _ = h; // completes, publishing nothing
+        }
+        fn b(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            if (s.c == null) s.c = try h.rackIndexed(.{ .payload = payload, .run = &@This().c });
+            h.suspendOn(s.c.?); // waits forever: C finished and will never wake anyone again
+        }
+        fn a(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            if (s.b == null) s.b = try h.rackIndexed(.{ .payload = payload, .run = &@This().b });
+            h.suspendOn(s.b.?);
+        }
+    };
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var e = Engine.init(arena, undefined);
+    var shared: Shared = .{};
+    _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
+    try e.run();
+
+    const w = try e.wedged(arena);
+    try std.testing.expectEqual(@as(usize, 2), w.len); // A and B are both stuck
+    for (w) |entry| try std.testing.expect(!entry.in_cycle); // but neither is in a cycle
+}
+
+test "wedged: a task parked on a COMPLETED task is not a cycle (the blocker failed)" {
+    // B runs to completion but publishes nothing useful; A waits on it forever. A is stuck,
+    // but the cause is B's own (already-diagnosed) failure — so this must NOT be reported as
+    // a cycle, or every failing file would grow a spurious second error.
+    const Shared = struct { b_index: ?TaskIndex = null };
+    const Tasks = struct {
+        fn b(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            _ = payload;
+            _ = h; // completes, having "failed" (published nothing)
+        }
+        fn a(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            if (s.b_index) |blocker| {
+                h.suspendOn(blocker); // wait on a task that already finished — never woken
+                return;
+            }
+            s.b_index = try h.rackIndexed(.{ .payload = payload, .run = &@This().b });
+            h.suspendOn(s.b_index.?);
+        }
+    };
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var e = Engine.init(arena, undefined);
+    var shared: Shared = .{};
+    _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
+    try e.run();
+
+    const w = try e.wedged(arena);
+    try std.testing.expectEqual(@as(usize, 1), w.len);
+    try std.testing.expect(!w[0].in_cycle); // blocked on a COMPLETED task: not a cycle
 }
