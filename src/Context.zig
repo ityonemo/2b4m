@@ -341,6 +341,7 @@ pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
     eng.trace = self.verify.trace_facts;
+    if (self.verify.chaos_seed) |seed| eng.chaos = .init(seed); // --chaos: shuffle scheduling
     for (roots) |r| {
         const fid = try self.discover(r.path, null);
         try self.root_files.append(self.arena, fid);

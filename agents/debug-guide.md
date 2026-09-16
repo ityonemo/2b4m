@@ -117,6 +117,33 @@ Per proof, every step whose rule *can* fall back to an accelerated verdict, at i
 `file:line:col`. A syntactic upper bound — a flagged step may still certify — so a clean
 report guarantees every step is kernel-checked, while a flagged one is only a candidate.
 
+## `--chaos[=SEED]` — does the output depend on the schedule?
+
+```
+bpa check --chaos=42 <file | dir>
+```
+
+Shuffles the engine's scheduling order under a fixed seed. The run does the same WORK in a
+different ORDER: a different task is pulled each time, so suspensions and wakeups interleave
+differently, deterministically per seed.
+
+This exists to TEST the determinism contract: output is a function of (tree, roots), never
+of scheduling — that is what the goldens encode, and what lets the engine reorder freely.
+So the check is a diff:
+
+```
+bpa check std > base.txt
+for s in 1 2 3 7 42 99; do bpa check std --chaos=$s | diff base.txt - || echo "seed $s DIFFERS"; done
+```
+
+Any difference is a determinism BUG — something leaked task order into output (an
+append-ordered list printed as-is, a count taken from scheduling, a hashmap iterated into a
+message). Because it is single-threaded and seeded, the failing schedule replays exactly,
+which is why this is worth reaching for BEFORE blaming a race.
+
+Note `--trace-facts` is deliberately exempt: it is a view OF the schedule, so its output is
+*expected* to change under `--chaos`. Never put it in a golden.
+
 ## Which to reach for
 
 | symptom | tool |
@@ -126,3 +153,4 @@ report guarantees every step is kernel-checked, while a flagged one is only a ca
 | "reference not found" inside a generated proof | `bpa debug accelerant` on the step |
 | a proof depends on something it shouldn't | `--axioms` |
 | is this really kernel-checked? | `bpa debug taint`, then plain `bpa check` |
+| output changed and the source didn't | `--chaos` sweep: if seeds disagree, it's a determinism bug |
