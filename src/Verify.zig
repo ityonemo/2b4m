@@ -101,6 +101,14 @@ draft: bool = false,
 /// its source's facts, so "which one did this step actually get?" is not answerable from the
 /// source text. Written to stderr as the run proceeds; never affects the verdict.
 trace_facts: bool = false,
+/// `--chaos[=SEED]`: shuffle the engine's scheduling order under a fixed seed, so a run
+/// explores a DIFFERENT task interleaving while staying single-threaded and reproducible.
+///
+/// Output is a function of (tree, roots), never of scheduling — that is the determinism
+/// contract the goldens encode. This is how the contract is TESTED: check the corpus under
+/// many seeds and diff. Any difference is a determinism bug (something leaked task order
+/// into output), caught here without threads to confuse the diagnosis. Null = off.
+chaos_seed: ?u64 = null,
 
 const Verify = @This();
 

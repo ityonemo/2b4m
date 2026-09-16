@@ -63,6 +63,11 @@ run_queue: std.ArrayList(TaskIndex) = .empty,
 /// scheduling unit test builds an Engine over an undefined Context; `Context.loadRoots`
 /// sets it from `verify` before the run.
 trace: bool = false,
+/// `--chaos`: when set, `pull` takes a RANDOM runnable task rather than the top of the
+/// stack, so a run explores a different interleaving. Deterministic per seed. Held here
+/// (like `trace`) so the scheduling unit tests can drive it without a Context. See
+/// `Verify.chaos_seed` for why this exists — it is how the determinism contract is tested.
+chaos: ?std.Random.DefaultPrng = null,
 /// SUSPENDED tasks, each tagged with the `blocked_on` task it waits on. Cores never pull
 /// from here. When a task completes, everything parked blocked-on IT moves to the run
 /// queue (`wake`). The parked set also doubles (later) as the cycle/wedge registry: run
@@ -162,10 +167,18 @@ pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
 }
 
 /// Pull the next runnable task's index, or null if the run queue is empty. Mutex-guarded.
+///
+/// Normally LIFO (`pop`) — see `traceLifecycle` on why the order is not guessable from the
+/// source. Under `--chaos` it takes a random runnable task instead: same work, different
+/// interleaving, which is what makes a determinism bug reproducible.
 fn pull(self: *Engine) ?TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
     if (self.run_queue.items.len == 0) return null;
+    if (self.chaos) |*prng| {
+        const i = prng.random().uintLessThan(usize, self.run_queue.items.len);
+        return self.run_queue.swapRemove(i);
+    }
     return self.run_queue.pop();
 }
 
