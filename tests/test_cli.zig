@@ -390,7 +390,9 @@ pub fn addTests(
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
-    ctx.ok(&.{ "check", "examples/gauss.bpa", "gaussSum" }, "OK: 72 declarations, 1 theorems proven\n");
+    // (the count tracks std/peano.bpa's declarations, forwarding section included — a
+    // single-theorem check still reads the whole imported file's decls.)
+    ctx.ok(&.{ "check", "examples/gauss.bpa", "gaussSum" }, "OK: 120 declarations, 1 theorems proven\n");
     // `--axioms`: what a proof BOTTOMS OUT IN, per theorem — `direct` cites one axiom,
     // `viaLemma` inherits a second through the theorem it cites. A HOLE is an axiom to the
     // kernel, so it is listed and MARKED — and only reachable under --draft, since default
