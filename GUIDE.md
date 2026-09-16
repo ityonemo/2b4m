@@ -391,6 +391,21 @@ wrongly-kinded definition is an error at the `intheory` line.
 intheory addIsCommutative
 ```
 
+A theory whose proofs live in sub-theory files makes the same promise with a
+FORWARD — an alias to the fact another file proved — grouped in the same
+section:
+
+```bpa
+import divides_theory <<< "std/integer/divides.bpa"
+theorem gcdGreatest = divides_theory.gcdGreatest
+```
+
+`intheory` promises a fact proved later in THIS file; a forward is that promise
+kept in another. Forward a theory's takeaway RESULTS, not the lemmas that got
+there — a consumer wanting a lemma imports the sub-theory directly. Name the
+import so it cannot collide with what it forwards (`divides_theory`, not
+`divides`).
+
 ### KEYWORD: import
 
 Loads another file under a namespace. Members are referenced with
