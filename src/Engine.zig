@@ -59,6 +59,10 @@ mutex: SpinLock = .{},
 /// INDICES into this table, not tasks.
 tasks: std.ArrayList(Task) = .empty,
 run_queue: std.ArrayList(TaskIndex) = .empty,
+/// `--trace-facts` lifecycle tracing. Held HERE (not read off `ctx`) because the pure
+/// scheduling unit test builds an Engine over an undefined Context; `Context.loadRoots`
+/// sets it from `verify` before the run.
+trace: bool = false,
 /// SUSPENDED tasks, each tagged with the `blocked_on` task it waits on. Cores never pull
 /// from here. When a task completes, everything parked blocked-on IT moves to the run
 /// queue (`wake`). The parked set also doubles (later) as the cycle/wedge registry: run
@@ -124,11 +128,14 @@ pub const Handle = struct {
 
     /// Rack a child task; discards its `TaskIndex` (fire-and-forget — the common case).
     pub fn rack(self: *Handle, task: Task) std.mem.Allocator.Error!void {
-        _ = try self.engine.rack(task);
+        const idx = try self.engine.rack(task);
+        self.engine.traceLifecycle("rack", idx, self.self_index);
     }
     /// Rack a child and KEEP its `TaskIndex` — for a task that will `suspendOn` the child.
     pub fn rackIndexed(self: *Handle, task: Task) std.mem.Allocator.Error!TaskIndex {
-        return self.engine.rack(task);
+        const idx = try self.engine.rack(task);
+        self.engine.traceLifecycle("rack", idx, self.self_index);
+        return idx;
     }
     /// Signal that this run is SUSPENDED, blocked on task `t`. The engine parks this task;
     /// when `t` completes it is moved back to the run queue and its `run` re-enters (it
@@ -181,20 +188,35 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
         const index = self.pull() orelse break; // run queue empty ⇒ quiescent
         const task = self.taskOf(index);
         var handle: Handle = .{ .engine = self, .self_index = index };
+        self.traceLifecycle("run", index, null);
         try task.run(self.ctx, task.payload, &handle);
         if (handle.blocked_on) |blocker| {
             // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
+            self.traceLifecycle("park", index, blocker);
             self.mutex.lock();
             try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
             self.mutex.unlock();
         } else {
             // COMPLETED: count it, then wake everyone parked blocked-on it.
+            self.traceLifecycle("done", index, null);
             self.mutex.lock();
             self.completed += 1;
             self.mutex.unlock();
             try self.wake(index);
         }
     }
+}
+
+/// `--trace-facts` lifecycle line: what the scheduler did with a task. The run queue is a
+/// STACK (`pull` pops the most recently racked or woken task), so an interleaving is not
+/// guessable from the source order of declarations — this is how you see it.
+fn traceLifecycle(self: *Engine, what: []const u8, index: TaskIndex, other: ?TaskIndex) void {
+    if (!self.trace) return; // never touch `ctx` unless tracing was switched on by a real run
+    const line = if (other) |o|
+        std.fmt.allocPrint(self.arena, "[engine] {s} task#{d} (on task#{d})\n", .{ what, @intFromEnum(index), @intFromEnum(o) }) catch return
+    else
+        std.fmt.allocPrint(self.arena, "[engine] {s} task#{d}\n", .{ what, @intFromEnum(index) }) catch return;
+    self.ctx.fact_trace.append(self.ctx.arena, line) catch return;
 }
 
 /// A task `finished` completed — move every parked task blocked-on it back to the run
@@ -207,6 +229,7 @@ fn wake(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
     while (i < self.parked.items.len) {
         if (self.parked.items[i].blocked_on == finished) {
             const woken = self.parked.swapRemove(i);
+            self.traceLifecycle("wake", woken.task, finished);
             try self.run_queue.append(self.arena, woken.task);
         } else {
             i += 1;

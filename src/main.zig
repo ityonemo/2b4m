@@ -341,7 +341,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | dir> [theorem]
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] <file.bpa | dir> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -360,6 +360,9 @@ pub fn main(init: std.process.Init) !u8 {
             \\--library (a directory) additionally FAILS on any axiom declared in the
             \\directory that no theorem in it rests on: a library ships no unused
             \\assumptions.
+            \\--trace-facts reports, for every fact citation, WHICH fact it resolved
+            \\to and in which namespace — for when a name means more than one thing
+            \\in a run (see agents/debug-guide.md).
             \\--axioms additionally reports what the proof BOTTOMS OUT IN: every
             \\axiom it transitively rests on, with the site each was declared at.
             \\A `hole` is an axiom as far as the kernel is concerned, so it is
@@ -432,7 +435,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -467,6 +470,8 @@ pub fn main(init: std.process.Init) !u8 {
             axioms = true;
         } else if (std.mem.eql(u8, arg, "--library")) {
             library = true;
+        } else if (std.mem.eql(u8, arg, "--trace-facts")) {
+            verify.trace_facts = true;
         } else if (std.mem.startsWith(u8, arg, "--")) {
             return fail("error: unknown flag '{s}'\n{s}", .{ arg, usage });
         } else {
@@ -518,6 +523,17 @@ pub fn main(init: std.process.Init) !u8 {
     } else &.{.{ .path = root_path, .theorem = split.theorem }};
 
     var result = try bpa.checkProject(io, arena, roots, null, readRaw, verify, std_root, axioms, library);
+    // `--trace-facts`: the citation trace, printed as one block BEFORE the verdict so it is
+    // readable even when the run then fails (which is the case it exists for).
+    if (verify.trace_facts) {
+        var tbuf: [4096]u8 = undefined;
+        var tfw: Io.File.Writer = .init(.stderr(), io, &tbuf);
+        const t = &tfw.interface;
+        try t.print("--- fact resolution trace ({d} citations) ---\n", .{result.fact_trace.len});
+        for (result.fact_trace) |line| try t.writeAll(line);
+        try t.writeAll("--- end trace ---\n");
+        try t.flush();
+    }
     if (!result.ok()) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);

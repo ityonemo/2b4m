@@ -133,11 +133,16 @@ marked hole appears only under `--draft`.
 **A library owes its own examples.** `--library` (a directory) additionally
 FAILS on any axiom declared in that directory that no theorem in it rests on.
 An axiom no derivation ever touches is one whose binders, guards and direction
-have never been checked, so `std/` carries a `<namespace>-examples.bpa` per
+have never been checked, so `std/` carries a `<namespace>/examples.bpa` per
 theory demonstrating exactly those axioms nothing else exercises. A fact a
 `model` names as a discharger (`src <- local`, a `@`-projection, a guard
 witness) counts as used — that is consumption by the model machinery rather
 than by a citation.
+
+**When a run does something you cannot explain from the source**, `--trace-facts` reports
+which fact each citation actually resolved to, and in which namespace — the question a name
+alone cannot answer once model transfers have published second copies of a theory's theorems.
+See `agents/debug-guide.md` for that flag and the other diagnostics.
 
 By default `bpa check` **verifies everything**: `by arithmetic`/`by
 tautology` must produce a checkable certificate (an accelerated fallback is a hard
@@ -385,6 +390,21 @@ wrongly-kinded definition is an error at the `intheory` line.
 ```bpa
 intheory addIsCommutative
 ```
+
+A theory whose proofs live in sub-theory files makes the same promise with a
+FORWARD — an alias to the fact another file proved — grouped in the same
+section:
+
+```bpa
+import divides_theory <<< "std/integer/divides.bpa"
+theorem gcdGreatest = divides_theory.gcdGreatest
+```
+
+`intheory` promises a fact proved later in THIS file; a forward is that promise
+kept in another. Forward a theory's takeaway RESULTS, not the lemmas that got
+there — a consumer wanting a lemma imports the sub-theory directly. Name the
+import so it cannot collide with what it forwards (`divides_theory`, not
+`divides`).
 
 ### KEYWORD: import
 
@@ -1460,9 +1480,9 @@ can't do cleanly.
 | `bpa query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.bpa` under it — corpus discovery) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
 
 ```
-$ bpa query whereis std/peano-parity.bpa addZeroRight
+$ bpa query whereis std/peano/parity.bpa addZeroRight
 addZeroRight
-  std/peano-parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
+  std/peano/parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
   std/peano.bpa:79:  theorem addZeroRight: forall n: Nat; add(n, ZERO) = n  [origin]
 ```
 

@@ -387,7 +387,7 @@ UNIFORMLY in both directions:
 
 ## Applications (std reuse candidates)
 
-- **Abstract divisibility — DONE.** `std/divisibility.bpa`; `std/integer-divides.bpa`
+- **Abstract divisibility — DONE.** `std/divisibility.bpa`; `std/integer/divides.bpa`
   models it. First real in-library `model` on duplicated std code.
 - **Group / set corpora moved to importable std — DONE.** `std/group.bpa` (10
   theorems + opt-in `opCommutative`), `std/set.bpa` (19 identities). Each aata

@@ -51,6 +51,10 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 }
 
 pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+    if (self.verify.trace_facts) {
+        const line = std.fmt.allocPrint(self.arena, "[model] task#{d} = model {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
+        self.fact_trace.append(self.arena, line) catch {};
+    }
     if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };

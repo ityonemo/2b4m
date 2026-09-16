@@ -54,7 +54,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups.md" });
     ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups-exercises.md" });
     // §4.2 "The Multiplicative Group of ℂ": ℂ arithmetic + the modulus identities
-    // (real proofs via std/complex-modulus.bpa); polar/DeMoivre/roots-of-unity deferred
+    // (real proofs via std/complex/modulus.bpa); polar/DeMoivre/roots-of-unity deferred
     // as prose on the trigonometry gap. Exercises: Ex 19 a/b/f proved; rest skip/defer.
     ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group.md" });
     ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group-exercises.md" });
@@ -102,7 +102,7 @@ pub fn addTests(
     // the base case AND the ∀n≥0 3|(4ⁿ−1) nonneg-induction (its inductive step
     // splits 4^(k+1)−1 = 4(4ᵏ−1)+3 and uses dividesMul/dividesAdd), plus the
     // Second Principle (strong induction) and the Principle of Well-Ordering,
-    // both aliased from std/integer-wellordering.bpa (proved there from ordinary
+    // both aliased from std/integer/wellordering.bpa (proved there from ordinary
     // induction). No hole; the file checks WITHOUT --draft.
     ctx.okSilent(&.{ "check", "aata/2.1-induction.md" });
     // §2.1 exercises: Judson's Ch2 induction exercises segregated out. Ex 5
@@ -111,7 +111,7 @@ pub fn addTests(
     // deferred (Σ / factorial / reals / cardinality). std used liberally.
     ctx.okSilent(&.{ "check", "aata/2.1-induction-exercises.md" });
     // §2.2 The Division Algorithm: Ch1-style — the proofs now live in
-    // std/integer-divides.bpa; this file aliases them and narrates. Existence
+    // std/integer/divides.bpa; this file aliases them and narrates. Existence
     // over all of ℤ + uniqueness.
     ctx.okSilent(&.{ "check", "aata/2.2-division-algorithm.md" });
     // §2.2 exercises: Ex 16/18 (Bézout ⟹ coprime, all three coprimality claims),

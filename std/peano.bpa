@@ -4,7 +4,7 @@
 //
 // This is the ARITHMETIC core: Nat, add, mul, and their algebra. The strict
 // order (`less_than`) and everything built on it — trichotomy, monotonicity,
-// and strong induction — live in std/peano-order.bpa, which imports this
+// and strong induction — live in std/peano/order.bpa, which imports this
 // file. (Addition-only would be Presburger arithmetic; multiplication is what
 // makes this Peano, so both live here — most users want both.)
 //
@@ -1056,3 +1056,84 @@ proof
     forall x, y, r: Nat; mul(x, mul(y, r)) = mul(y, mul(x, r))
     [by forall_intro generalize-x]
 qed
+
+// ============================================================================
+// THEORY OF ℕ — what the sub-theories under std/peano/ prove.
+//
+// `import peano <<< "std/peano.bpa"` reaches the ORDER, TRUNCATED SUBTRACTION,
+// DIVISIBILITY/GCD and PARITY without knowing which file proved which. The
+// `intheory` block above is the same promise for facts proved later in THIS
+// file; a forward is that promise kept in another file.
+//
+// What is forwarded is the TAKEAWAY RESULTS. The lemmas each sub-theory needed
+// on the way stay where they were proved — `import peano/order` (etc.) is still
+// the honest way to reach those, and the sub-theories cite each other directly.
+// ============================================================================
+
+import order <<< "std/peano/order.bpa"
+import subtraction <<< "std/peano/subtraction.bpa"
+import divides_theory <<< "std/peano/divides.bpa"
+import parity <<< "std/peano/parity.bpa"
+
+// -- the strict order (std/peano/order.bpa) ---------------------------------
+
+pred less_than = order.less_than
+axiom lessThanIntro = order.lessThanIntro
+axiom lessThanElim = order.lessThanElim
+define less_or_equal(a, b) = order.less_or_equal(a, b)
+
+theorem lessThanIrreflexive = order.lessThanIrreflexive
+theorem lessThanTransitive = order.lessThanTransitive
+theorem trichotomy = order.trichotomy
+theorem notLessThanZero = order.notLessThanZero
+theorem additionPreservesOrder = order.additionPreservesOrder
+theorem multiplicationPreservesOrder = order.multiplicationPreservesOrder
+theorem lessOrEqualRefl = order.lessOrEqualRefl
+theorem lessOrEqualTransitive = order.lessOrEqualTransitive
+theorem lessOrEqualAntisymmetric = order.lessOrEqualAntisymmetric
+theorem lessOrEqualSplit = order.lessOrEqualSplit
+theorem lessThanToLessOrEqual = order.lessThanToLessOrEqual
+theorem mulCancelLeft = order.mulCancelLeft
+theorem strongInduction = order.strongInduction
+theorem wellOrdering = order.wellOrdering
+
+// -- truncated subtraction (std/peano/subtraction.bpa) ----------------------
+// The measure lemma `subStrictlyDecreases` is what makes subtractive recursion
+// (Euclid's gcd) terminate.
+
+func sub = subtraction.sub
+axiom subZeroRight = subtraction.subZeroRight
+axiom subSuccSucc = subtraction.subSuccSucc
+axiom subZeroLeft = subtraction.subZeroLeft
+
+theorem subSelf = subtraction.subSelf
+theorem subAddCancel = subtraction.subAddCancel
+theorem addSubCancel = subtraction.addSubCancel
+theorem subStrictlyDecreases = subtraction.subStrictlyDecreases
+theorem mulSubDistribLeft = subtraction.mulSubDistribLeft
+
+// -- divisibility, division, gcd (std/peano/divides.bpa) --------------------
+
+define divides(d, n) = divides_theory.divides(d, n)
+func div = divides_theory.div
+func mod = divides_theory.mod
+func gcd = divides_theory.gcd
+
+theorem dividesRefl = divides_theory.dividesRefl
+theorem dividesZero = divides_theory.dividesZero
+theorem dividesAdd = divides_theory.dividesAdd
+theorem dividesMul = divides_theory.dividesMul
+theorem dividesSub = divides_theory.dividesSub
+theorem dividesTransitive = divides_theory.dividesTransitive
+theorem modIntro = divides_theory.modIntro
+theorem gcdDividesBoth = divides_theory.gcdDividesBoth
+theorem gcdGreatest = divides_theory.gcdGreatest
+
+// -- parity (std/peano/parity.bpa) ------------------------------------------
+// Even/odd is `divides(TWO, ·)`; the crux 2 | p² → 2 | p is the number-theoretic
+// heart of √2's irrationality.
+
+theorem evenOrOdd = parity.evenOrOdd
+theorem oddForm = parity.oddForm
+theorem evenSquareEven = parity.evenSquareEven
+theorem twoNotDivideOne = parity.twoNotDivideOne

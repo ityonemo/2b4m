@@ -388,8 +388,27 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                             ctx.interner.keyOf(src) == .fact and ctx.interner.keyOf(src).fact.kind == .theorem)
                         {
                             const tns = try ctx.interner.namespace(model, target_file);
-                            if (ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name }) == null) {
+                            const tstate = ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name });
+                            if (ctx.verify.trace_facts) {
+                                const what: []const u8 = if (tstate == null) "ABSENT -> racking its ProveTask (blocks)" else switch (tstate.?) {
+                                    .proven => "proven",
+                                    .in_flight => |o| if (o == h.self_index) "in_flight owned by SELF" else "in_flight owned by ANOTHER task — read pass sets NO blocker",
+                                };
+                                const line = std.fmt.allocPrint(ctx.arena, "[read pass] transferred copy of {s} under model#{d}: {s}\n", .{ ctx.interner.stringBytes(r.name), @intFromEnum(model), what }) catch "";
+                                ctx.fact_trace.append(ctx.arena, line) catch {};
+                            }
+                            // ABSENT: rack its re-proof and wait. IN FLIGHT under another task:
+                            // wait on THAT task — the same rule as the universe key above. The
+                            // old code only racked on absent and set no blocker on in_flight, so a
+                            // citer whose other refs resolved first ran its process pass while the
+                            // transferred copy was still being proved, and `resolveFactRef` fell
+                            // through to the UNTRANSFERRED source copy — a statement in the source
+                            // sort against a claim in the target sort. Order-dependent (the run
+                            // queue is a stack), so it surfaced only in a large directory sweep.
+                            if (tstate == null) {
                                 blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model }));
+                            } else if (tstate.? == .in_flight and tstate.?.in_flight != h.self_index) {
+                                blocker = tstate.?.in_flight;
                             }
                         }
                     },
@@ -1456,6 +1475,83 @@ fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.
     };
 }
 
+/// `--trace-facts`: report what a citation RESOLVED TO. Two theorems in different theories
+/// can share a name, and a model transfer publishes a second copy of its source's facts under
+/// the same names in a `(model, file)` namespace — so which copy a step actually got is not
+/// answerable from the source. `why` says which resolution path produced it. Stderr; the
+/// verdict is unaffected.
+fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const u8) void {
+    if (!self.ctx.verify.trace_facts) return;
+    const a = self.ctx.arena;
+    var line: []const u8 = std.fmt.allocPrint(a, "{s}: cite {s}\n    -> {s}\n", .{
+        self.siteOf(self.file, tok.start),
+        self.text(tok),
+        self.describeNamespaceOf(ix),
+    }) catch return;
+    if (self.ctx.interner.keyOf(ix) == .fact) {
+        const f = self.ctx.interner.keyOf(ix).fact;
+        line = std.fmt.allocPrint(a, "{s}       {s} {s}\n", .{ line, @tagName(f.kind), self.ctx.interner.stringBytes(f.name) }) catch return;
+        if (self.pool.copyIn(self.ctx.interner, f.formula)) |t| {
+            if (self.renderTerm(t)) |stmt| {
+                line = std.fmt.allocPrint(a, "{s}       {s}\n", .{ line, stmt }) catch return;
+            } else |_| {}
+        } else |_| {}
+    }
+    line = std.fmt.allocPrint(a, "{s}       via {s}\n", .{ line, why }) catch return;
+    self.ctx.fact_trace.append(a, line) catch return;
+}
+
+/// `file:line:col` for a source offset. The offset must belong to `file` — a fact's `loc`
+/// indexes the file it was DECLARED in, which is generally not the citing file, so an offset
+/// past the end means we were handed the wrong file and the site is reported as unknown
+/// rather than read out of bounds.
+fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
+    const fid = self.ctx.pool_file.get(file) orelse return "?";
+    const f = self.ctx.files.items[@intFromEnum(fid)];
+    if (off >= f.source.len) return std.fmt.allocPrint(self.ctx.arena, "offset {d} (not in {s})", .{ off, f.path }) catch "?";
+    const lc = std.zig.findLineColumn(f.source, off);
+    return std.fmt.allocPrint(self.ctx.arena, "{s}:{d}:{d}", .{ f.path, lc.line + 1, lc.column + 1 }) catch "?";
+}
+
+/// Which FILE a published fact was declared in — searched by scanning the file table for the
+/// one whose namespace holds it. A fact Index records its `loc` but not its file, so the trace
+/// recovers it here (a linear scan is fine for a diagnostic).
+fn fileOfFact(self: *Prove, ix: InternPool.Index) ?InternPool.Index {
+    const key = self.ctx.interner.keyOf(ix);
+    const name: StrId = switch (key) {
+        .fact => |f| f.name,
+        .schema => |k| return k.file,
+        else => return null,
+    };
+    for (self.ctx.files.items) |f| {
+        const pf = self.ctx.fileIndex(f.path) catch continue;
+        const ns = self.ctx.interner.namespace(.universe, pf) catch continue;
+        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name })) |st| {
+            if (st == .proven and st.proven == ix) return pf;
+        }
+    }
+    return null;
+}
+
+/// Describe where a resolved fact CAME FROM: the namespace the citing task is resolving in
+/// (`universe` for an ordinary proof, or the model it is proving under) plus the fact's own
+/// declaration site. The distinction is the point of the trace — a citation that should have
+/// stayed in the universe but came back through a model is the bug this exists to show.
+fn describeNamespaceOf(self: *Prove, ix: InternPool.Index) []const u8 {
+    const key = self.ctx.interner.keyOf(ix);
+    const loc: u32 = switch (key) {
+        .fact => |f| f.loc,
+        .schema => |k| k.loc,
+        else => return "(not a fact)",
+    };
+    const ns_text = if (self.model == InternPool.Index.none or self.model == .universe)
+        "universe"
+    else
+        std.fmt.allocPrint(self.ctx.arena, "model#{d}", .{@intFromEnum(self.model)}) catch "model?";
+    const decl_file = self.fileOfFact(ix) orelse self.file;
+    return std.fmt.allocPrint(self.ctx.arena, "resolved in ns={s}, declared at {s}", .{ ns_text, self.siteOf(decl_file, loc) }) catch "?";
+}
+
 /// An axiom/theorem citation: GLOBAL fact via FactKV (the read pass made it proven, or
 /// left an in_flight-self / failed entry — diagnosed here).
 fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
@@ -1480,10 +1576,19 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
             .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) {
                 self.inheritHoles(x);
                 self.inheritAxioms(x);
+                self.traceFact(tok, x, "TRANSFER redirect: the citing task runs under a model, so the cited theorem resolved to its transferred copy");
                 return x;
             },
-            .in_flight => {},
-        };
+            // the transferred copy is being proved RIGHT NOW by another task (or by this one):
+            // falling through hands the citation the UNTRANSFERRED source copy, whose statement
+            // is in the source sort — the mismatch `--trace-facts` exists to expose.
+            .in_flight => |owner| self.traceFact(tok, src, if (owner == self.h.self_index)
+                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by THIS task (self-cycle) — using the untransferred source copy"
+            else
+                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by ANOTHER task — using the untransferred source copy"),
+        } else {
+            self.traceFact(tok, src, "TRANSFER redirect FELL THROUGH: no transferred copy was ever demanded for this citation — using the untransferred source copy");
+        }
     }
     const ix = switch (state) {
         // in a model transfer, a source-axiom citation remaps (via the overlay) to its
@@ -1498,6 +1603,7 @@ fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
         return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
     self.inheritHoles(ix);
     self.inheritAxioms(ix);
+    self.traceFact(tok, ix, if (self.model == InternPool.Index.none or self.model == .universe) "direct lookup" else "overlay (applyModel) under the citing task's model");
     return ix;
 }
 
@@ -2105,6 +2211,13 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
     };
     if (self.ctx.interner.keyOf(fact) == .schema)
         return self.fail(rtok.start, "'{s}' is a schema; use `[using instantiation …]`, not an import citation", .{self.text(rtok)});
+    // the citation makes THIS proof rest on whatever the imported fact rests on (itself, if it
+    // is an axiom) — the same bookkeeping `resolveFactRef` does for `by cite`. Without it an
+    // axiom reached only through `import(I)` vanishes from `--axioms` and `--library` counts
+    // it unused.
+    self.inheritHoles(fact);
+    self.inheritAxioms(fact);
+    self.traceFact(rtok, fact, "import(I) citation: looked up in the import's namespace");
     // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
     // imported axiom is as citable as an imported theorem).
     return switch (self.ctx.interner.keyOf(fact).fact.kind) {
@@ -6316,7 +6429,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
     // connect goal to premise (`sub(y,x) = succ(d)` from `add(x, succ(d)) = y`: the premise
     // rule fires on a term the goal does not contain), while the skeleton decides it
     // semantically. Gating on `bin`/`not` refused exactly that and declined the whole chain —
-    // the pre-refactor engine's mixed certifier had no such gate (std/integer-divides.bpa:1073).
+    // the pre-refactor engine's mixed certifier had no such gate (std/integer/divides.bpa:1073).
     if (!self.mixedCertShape(body)) return false;
 
     // collect the atoms (premises + stripped antecedents + body); decide validity.
@@ -8962,7 +9075,7 @@ test "mixedCertShape: a bare equation/order atom is in scope for the mixed skele
     const p = rig.prove;
     const a = try rig.v("a");
     const b = try rig.v("b");
-    // `a = b` — the std/integer-divides.bpa:1073 shape (a bare equation the equation cert
+    // `a = b` — the std/integer/divides.bpa:1073 shape (a bare equation the equation cert
     // cannot reach by rewriting, decided semantically by the skeleton instead).
     try testing.expect(p.mixedCertShape(try rig.eq(a, b)));
     // a boolean combination is in scope too (the original motivating shape).
