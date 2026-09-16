@@ -2,7 +2,7 @@
 
 These files record the ONE thing about ℤ_n that is architecturally blocked: building
 ℤ_n over the **ℚ-cut ℤ** (composing the tower ℤ_n → ℤ → ℚ). The template itself —
-`std/integer-mod-n.bpa` — works over **standalone ℤ** and has been PROMOTED to `std/`
+`std/integer/mod-n.bpa` — works over **standalone ℤ** and has been PROMOTED to `std/`
 (and is used to build the concrete ℤ_n / U(n) structures). What remains parked here is
 only the ℚ-cut compositionality, which the **namespacing refactor** must unblock.
 

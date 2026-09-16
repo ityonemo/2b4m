@@ -50,7 +50,7 @@ sees what `query uses` cannot: axioms pulled in by an accelerant's certificate, 
 listed and marked `— HOLE` (visible only under `--draft`, since default mode
 rejects holes first). **`--library`** (on a directory) additionally FAILS on any
 axiom declared there that no theorem there rests on — which is why `std/` carries a
-`<namespace>-examples.bpa` per theory: a library demonstrates its own axioms rather
+`<namespace>/examples.bpa` per theory: a library demonstrates its own axioms rather
 than leaving a caller to be the first to exercise one. If you add an axiom to
 `std/`, add the example that uses it.
 

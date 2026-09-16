@@ -11,6 +11,22 @@ Order: header comment → imports → aliases → sorts → constants → functi
 predicates → axioms → theorems. Separate the groups with blank lines; in
 larger files, use section comments (`// -- axioms ----`).
 
+**A theory and its sub-theories.** A theory that grows past one file becomes a
+parent `std/X.bpa` beside a directory `std/X/` holding its sub-theories
+(`std/integer.bpa` + `std/integer/order.bpa`, `std/integer/divides.bpa`, …). The
+parent ends with a commented `// THEORY OF X` section that FORWARDS its
+sub-theories' results by alias (`theorem gcdGreatest = divides_theory.gcdGreatest`),
+grouped with the `intheory` block: `intheory` promises a fact proved later in this
+file, a forward is that promise kept in another. A consumer then writes `import
+integer` and reaches the order, the division algorithm and gcd without knowing
+which file proved which.
+
+Forward the **takeaway results** — what someone reasoning about the theory reaches
+for. A lemma does not belong in the forwarding section any more than it belongs in
+`intheory`; a consumer that genuinely wants one keeps the honest
+`import integer/order`. Name the import so it cannot collide with what it
+forwards (`divides_theory`, not `divides`).
+
 A **parenthesized parameter list makes a statement schematic** (a comptime
 form, instantiated per concrete argument): `axiom induction(prop: Nat -> Prop):
 ...` is an assumption family; `theorem contrapositive(p: Prop, q: Prop): ...
@@ -24,9 +40,9 @@ checked at declaration, only at use).
 schemas: an axiom no derivation ever rests on is one whose binders, guards and
 direction have never been checked, and "a caller will exercise it" is not the
 library's to assume. So each theory that states axioms nothing else in the
-library consumes ships a `<namespace>-examples.bpa` beside it — one file per
-top-level namespace (`integer-examples.bpa` covers `integer-divides`,
-`integer-mod-n` and `integer-sequence`), each theorem the smallest derivation
+library consumes ships a `std/<namespace>/examples.bpa` — one file per
+top-level namespace (`std/integer/examples.bpa` covers `integer/divides`,
+`integer/mod-n` and `integer/product`), each theorem the smallest derivation
 that genuinely needs the axiom it names. `bpa check <dir> --library` enforces
 this: it fails on any axiom declared in the directory that no theorem there
 rests on. Prefer arguments that give every clause content — an existence axiom

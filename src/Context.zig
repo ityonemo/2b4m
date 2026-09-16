@@ -133,6 +133,10 @@ holes_reached: std.ArrayList(HoleDecl) = .empty,
 /// axiom's file:line. A `hole` publishes as an axiom and is recorded here too — the report
 /// separates them by asking `holes_reached`.
 axiom_origin: std.AutoHashMapUnmanaged(InternPool.Index, HoleDecl) = .empty,
+/// `--trace-facts` output, ACCUMULATED rather than written as it happens: the demand engine
+/// interleaves tasks, so writing each line to stderr when it is produced shreds them into each
+/// other. The driver prints this once the run is quiescent.
+fact_trace: std.ArrayList([]const u8) = .empty,
 /// MODEL-DISCHARGED facts: every LOCAL fact a `model` names as the thing that discharges a
 /// source obligation (`src <- local`, a `@`-projection, or a guard witness on a `:` map).
 /// Such a fact is USED — by the model machinery rather than by a proof's citation closure, so
@@ -336,6 +340,7 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
+    eng.trace = self.verify.trace_facts;
     for (roots) |r| {
         const fid = try self.discover(r.path, null);
         try self.root_files.append(self.arena, fid);

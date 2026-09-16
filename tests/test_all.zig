@@ -11,6 +11,7 @@ const aata = @import("test_aata.zig");
 const examples = @import("test_examples.zig");
 const query = @import("test_query.zig");
 const imports = @import("test_imports.zig");
+const sweeps = @import("test_sweeps.zig");
 
 pub fn addTests(
     b: *std.Build,
@@ -24,4 +25,5 @@ pub fn addTests(
     examples.addTests(b, exe, test_step);
     query.addTests(b, exe, test_step);
     imports.addTests(b, exe, test_step);
+    sweeps.addTests(b, exe, test_step);
 }
