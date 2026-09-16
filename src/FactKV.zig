@@ -61,6 +61,20 @@ pub fn lookup(self: *FactKV, io: std.Io, key: Key) ?State {
     return self.map.get(key);
 }
 
+/// The `(namespace, name)` a task CLAIMED and never published — the fact it was proving
+/// when it got stuck. Used to name a wedged task in a diagnostic; null when the task holds
+/// no claim (a Parse/Fetch/Model task, or one whose claim was published).
+pub fn claimOf(self: *FactKV, io: std.Io, task: Engine.TaskIndex) ?Key {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    var it = self.map.iterator();
+    while (it.next()) |entry| switch (entry.value_ptr.*) {
+        .in_flight => |t| if (t == task) return entry.key_ptr.*,
+        .proven => {},
+    };
+    return null;
+}
+
 /// The ProveTask ENTRY PROTOCOL, atomic under the EXCLUSIVE lock (the claim in the absent
 /// case must be part of the same critical section as the lookup, or two provers both see
 /// "absent" and both claim). `self_task` is the calling prove-task's own `TaskIndex`.

@@ -357,5 +357,62 @@ pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     }
     self.root_file = self.root_files.items[0];
     try eng.run();
+    try self.reportWedge(&eng);
     return self.root_file;
+}
+
+/// A run that ends with tasks still PARKED abandoned work: nothing could wake them. Report
+/// the ones that form a CYCLE — tasks waiting on each other, so no order could have helped.
+///
+/// The other kind of wedge is a task parked behind a proof that FAILED: that proof published
+/// nothing, so its `in_flight` claim stands forever and its citers never wake. Its root cause
+/// is already in the sink (the failure's own diagnostic), so re-reporting the consequence
+/// would add an error to every failing file. `Engine.Wedged.in_cycle` is exactly that split.
+///
+/// Why this must exist: without it a citation cycle is SILENT — the theorems are simply never
+/// proved, the run looks quiescent, and `bpa check` prints `OK: 0 theorems proven` and exits
+/// 0. Silence must never imply verification.
+fn reportWedge(self: *Context, eng: *Engine) !void {
+    const stuck = try eng.wedged(self.arena);
+    if (stuck.len == 0) return;
+
+    // Name each cycle member by the fact it claimed but never published, ordered by
+    // declaration site so the report does not depend on task numbering (which is
+    // scheduling, not content — see `Verify.chaos_seed`).
+    const Member = struct { file: FileId, loc: u32, name: []const u8 };
+    var members: std.ArrayList(Member) = .empty;
+    for (stuck) |w| {
+        if (!w.in_cycle) continue; // parked behind a failure: already diagnosed
+        const key = self.facts.claimOf(self.io, w.task) orelse continue;
+        // A cycle whose fact is nonetheless PROVEN is abandoned duplicate work, not a
+        // failure: a second task claimed the same fact, the two waited on each other, and
+        // the winner published. (Real in the corpus: a theorem and the synthetic its own
+        // `arithmetic` step generates can each demand the other, while the theorem still
+        // proves by the ordinary path.) Only an UNPROVEN fact is a genuine wedge.
+        if (self.facts.lookup(self.io, key)) |state| if (state == .proven) continue;
+        const home = self.interner.keyOf(key.namespace).namespace.file;
+        const fid = self.pool_file.get(home) orelse continue;
+        const decl = self.declOf(fid, key.name) orelse continue;
+        const nt = ast.declName(decl);
+        try members.append(self.arena, .{ .file = fid, .loc = nt.start, .name = self.interner.stringBytes(key.name) });
+    }
+    if (members.items.len == 0) return;
+    const lessThan = struct {
+        fn f(_: void, x: Member, y: Member) bool {
+            if (x.file != y.file) return @intFromEnum(x.file) < @intFromEnum(y.file);
+            return x.loc < y.loc;
+        }
+    }.f;
+    std.mem.sort(Member, members.items, {}, lessThan);
+
+    // one error per participant, at its declaration, naming the whole cycle.
+    var names: std.ArrayList(u8) = .empty;
+    for (members.items, 0..) |m, i| {
+        if (i > 0) try names.appendSlice(self.arena, ", ");
+        try names.appendSlice(self.arena, m.name);
+    }
+    for (members.items) |m| {
+        self.sink.current_file = @intFromEnum(m.file);
+        try self.sink.add(m.loc, "'{s}' is part of a citation cycle ({s}) — each proof waits on the next, so none can be proved", .{ m.name, names.items });
+    }
 }
