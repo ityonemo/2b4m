@@ -393,6 +393,10 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
             .dependents = dep_list,
         });
     }
+    // `holes_reached` is filled in the order proofs REACHED the holes — i.e. in scheduling
+    // order, which is not part of the output contract (a `--chaos` sweep prints a different
+    // order per seed). Sort by declaration site, as the axiom report does.
+    std.mem.sort(ProjectResult.Hole, holes.items, {}, holeLessThan);
     return .{
         .files = loaded.files,
         .sink = loaded.sink,
@@ -428,6 +432,12 @@ fn axiomSite(ctx: *Context, ix: InternPool.Index) !?ProjectResult.Axiom {
         .line = std.zig.findLineColumn(f.source, loc).line + 1,
         .is_hole = is_hole,
     };
+}
+
+fn holeLessThan(_: void, x: ProjectResult.Hole, y: ProjectResult.Hole) bool {
+    if (!std.mem.eql(u8, x.path, y.path)) return std.mem.lessThan(u8, x.path, y.path);
+    if (x.line != y.line) return x.line < y.line;
+    return std.mem.lessThan(u8, x.name, y.name);
 }
 
 fn axiomLessThan(_: void, x: ProjectResult.Axiom, y: ProjectResult.Axiom) bool {
