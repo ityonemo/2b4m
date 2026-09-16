@@ -11,6 +11,22 @@ Order: header comment → imports → aliases → sorts → constants → functi
 predicates → axioms → theorems. Separate the groups with blank lines; in
 larger files, use section comments (`// -- axioms ----`).
 
+**A theory and its sub-theories.** A theory that grows past one file becomes a
+parent `std/X.bpa` beside a directory `std/X/` holding its sub-theories
+(`std/integer.bpa` + `std/integer/order.bpa`, `std/integer/divides.bpa`, …). The
+parent ends with a commented `// THEORY OF X` section that FORWARDS its
+sub-theories' results by alias (`theorem gcdGreatest = divides_theory.gcdGreatest`),
+grouped with the `intheory` block: `intheory` promises a fact proved later in this
+file, a forward is that promise kept in another. A consumer then writes `import
+integer` and reaches the order, the division algorithm and gcd without knowing
+which file proved which.
+
+Forward the **takeaway results** — what someone reasoning about the theory reaches
+for. A lemma does not belong in the forwarding section any more than it belongs in
+`intheory`; a consumer that genuinely wants one keeps the honest
+`import integer/order`. Name the import so it cannot collide with what it
+forwards (`divides_theory`, not `divides`).
+
 A **parenthesized parameter list makes a statement schematic** (a comptime
 form, instantiated per concrete argument): `axiom induction(prop: Nat -> Prop):
 ...` is an assumption family; `theorem contrapositive(p: Prop, q: Prop): ...
