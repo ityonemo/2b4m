@@ -2211,6 +2211,13 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
     };
     if (self.ctx.interner.keyOf(fact) == .schema)
         return self.fail(rtok.start, "'{s}' is a schema; use `[using instantiation …]`, not an import citation", .{self.text(rtok)});
+    // the citation makes THIS proof rest on whatever the imported fact rests on (itself, if it
+    // is an axiom) — the same bookkeeping `resolveFactRef` does for `by cite`. Without it an
+    // axiom reached only through `import(I)` vanishes from `--axioms` and `--library` counts
+    // it unused.
+    self.inheritHoles(fact);
+    self.inheritAxioms(fact);
+    self.traceFact(rtok, fact, "import(I) citation: looked up in the import's namespace");
     // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
     // imported axiom is as citable as an imported theorem).
     return switch (self.ctx.interner.keyOf(fact).fact.kind) {
