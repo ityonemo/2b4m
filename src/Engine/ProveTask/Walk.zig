@@ -107,6 +107,9 @@ interner: *InternPool,
 /// the proof's source text — step tokens index into it
 source: []const u8,
 sink: *Diagnostics.Sink,
+/// The file every diagnostic this walk records belongs to — its offsets index `source`.
+/// A value, not ambient sink state (see diagnostics.zig).
+file: u32 = 0,
 
 /// the reified traversal cursor (see Frame). Arena-resident: survives suspends.
 stack: std.ArrayList(Frame) = .empty,
@@ -132,7 +135,12 @@ started: bool = false,
 pending_binder: ?BinderInfo = null,
 
 pub fn init(arena: Allocator, interner: *InternPool, source: []const u8, sink: *Diagnostics.Sink) Walk {
-    return .{ .arena = arena, .interner = interner, .source = source, .sink = sink };
+    return initInFile(arena, interner, source, sink, 0);
+}
+
+/// `init` for a caller that knows which file `source` is (the demand engine).
+pub fn initInFile(arena: Allocator, interner: *InternPool, source: []const u8, sink: *Diagnostics.Sink, file: u32) Walk {
+    return .{ .arena = arena, .interner = interner, .source = source, .sink = sink, .file = file };
 }
 
 // -- local scope lookups (pub: drivers resolve local-first through these) --------------
@@ -408,7 +416,7 @@ fn text(self: *const Walk, t: lexer.Token) []const u8 {
 
 /// Record a diagnostic and signal failure (the false propagates up to Result.failed).
 fn reject(self: *Walk, offset: u32, comptime fmt: []const u8, args: anytype) Allocator.Error!bool {
-    self.sink.add(offset, fmt, args) catch return error.OutOfMemory;
+    self.sink.add(self.file, offset, fmt, args) catch return error.OutOfMemory;
     return false;
 }
 

@@ -1,6 +1,14 @@
 //! Diagnostics: collected as data during checking, rendered late as
-//! `path:line:col: error: message`. Multi-file: each diagnostic is stamped
-//! with the file being processed (`Sink.current_file`, set by the driver).
+//! `path:line:col: error: message`. Multi-file: each diagnostic carries the FILE its offset
+//! indexes into, passed explicitly at `add`.
+//!
+//! The file is a PARAMETER, never ambient state. It used to be a `current_file` field that
+//! each task set on entry, which worked only because one task ran at a time: "I am the last
+//! writer before my own `add`s" is an invariant several workers destroy silently — worker A
+//! sets file 3, B sets 7, A's diagnostic renders against B's source. `render` CLAMPS a
+//! past-the-end offset, so that misdirection degrades to a merely mislocated message rather
+//! than a crash, which makes it invisible to the goldens. Passing the file removes the
+//! invariant instead of documenting it.
 
 const std = @import("std");
 
@@ -20,18 +28,16 @@ pub const Diagnostic = struct {
 pub const Sink = struct {
     arena: std.mem.Allocator,
     list: std.ArrayList(Diagnostic) = .empty,
-    /// stamped onto every added diagnostic; the driver sets this before
-    /// processing each file (and the elaborator swaps it while elaborating a
-    /// schema defined in another file)
-    current_file: u32 = 0,
 
     pub fn init(arena: std.mem.Allocator) Sink {
         return .{ .arena = arena };
     }
 
-    pub fn add(self: *Sink, offset: u32, comptime fmt: []const u8, args: anytype) !void {
+    /// Record a diagnostic at `offset` in `file`. `file` indexes the driver's file list and
+    /// MUST be the file `offset` refers to — see the note at the top on why it is explicit.
+    pub fn add(self: *Sink, file: u32, offset: u32, comptime fmt: []const u8, args: anytype) !void {
         const msg = try std.fmt.allocPrint(self.arena, fmt, args);
-        try self.list.append(self.arena, .{ .file = self.current_file, .offset = offset, .message = msg });
+        try self.list.append(self.arena, .{ .file = file, .offset = offset, .message = msg });
     }
 
     /// Render all diagnostics, ordered by (file, byte offset). Identical duplicates collapse:
@@ -74,7 +80,7 @@ test "render: an offset past its file's end is CLAMPED, not a panic" {
     var sink: Sink = .init(arena);
     // an offset from a LONGER file, recorded against a short one (a demand-engine mispairing).
     const files = [_]FileSrc{.{ .path = "/t/short.bpa", .source = "sort Nat\n" }};
-    try sink.add(9_999, "stale offset", .{});
+    try sink.add(0, 9_999, "stale offset", .{});
     var out: std.Io.Writer.Allocating = .init(arena);
     try sink.render(&out.writer, &files);
     // renders (no crash) and names the right file.
@@ -88,7 +94,7 @@ test "render: an in-range offset still reports its true line and column" {
     const arena = arena_state.allocator();
     var sink: Sink = .init(arena);
     const files = [_]FileSrc{.{ .path = "/t/a.bpa", .source = "sort Nat\nconst Z: Nat\n" }};
-    try sink.add(9, "second line", .{}); // the 'c' of `const`
+    try sink.add(0, 9, "second line", .{}); // the 'c' of `const`
     var out: std.Io.Writer.Allocating = .init(arena);
     try sink.render(&out.writer, &files);
     try testing.expect(std.mem.indexOf(u8, out.written(), "/t/a.bpa:2:1:") != null);

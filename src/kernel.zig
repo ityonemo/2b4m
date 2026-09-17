@@ -119,6 +119,9 @@ pub const Kernel = struct {
     pool: *term.Pool,
     interner: *const InternPool,
     sink: *Diagnostics.Sink,
+    /// The file this kernel run's diagnostics belong to — a value, not ambient sink state
+    /// (see diagnostics.zig).
+    file: u32 = 0,
 
     const Fail = error{ Invalid, OutOfMemory };
 
@@ -157,7 +160,7 @@ pub const Kernel = struct {
     }
 
     fn fail(self: *Kernel, loc: u32, comptime fmt: []const u8, args: anytype) Fail {
-        self.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+        self.sink.add(self.file, loc, fmt, args) catch return error.OutOfMemory;
         return error.Invalid;
     }
 

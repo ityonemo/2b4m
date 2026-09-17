@@ -55,6 +55,9 @@ pub const Parser = struct {
     lex: lexer.Lexer,
     tok: Token,
     sink: *Diagnostics.Sink,
+    /// The file every diagnostic this parser records belongs to — its offsets index
+    /// `source`. Set at `init`; see diagnostics.zig on why the file is never ambient.
+    file: u32 = 0,
     /// When set, every non-reserved token the parser consumes is interned and
     /// carries its `StrId` (`Token.name`/`.qualifier`) — see `initInterning`.
     interner: ?*InternPool = null,
@@ -63,9 +66,15 @@ pub const Parser = struct {
     intern_oom: bool = false,
 
     pub fn init(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink) Parser {
+        return initInFile(arena, source, sink, 0);
+    }
+
+    /// `init` for a driver that knows which file it is parsing (the demand engine); the
+    /// bare `init` is for single-file callers (lint, query) whose file index is 0.
+    pub fn initInFile(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink, file: u32) Parser {
         var lex: lexer.Lexer = .init(source);
         const first = lex.next();
-        return .{ .arena = arena, .source = source, .lex = lex, .tok = first, .sink = sink };
+        return .{ .arena = arena, .source = source, .lex = lex, .tok = first, .sink = sink, .file = file };
     }
 
     /// Like `init`, but every non-reserved token is interned into `interner` as
@@ -74,7 +83,12 @@ pub const Parser = struct {
     /// never re-derives (or compares) name text from source. Parse-only tools
     /// (query/lint/fmt) keep plain `init`; their tokens' ids stay `.none`.
     pub fn initInterning(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink, interner: *InternPool) Parser {
-        var p = init(arena, source, sink);
+        return initInterningInFile(arena, source, sink, interner, 0);
+    }
+
+    /// `initInterning` for a driver that knows its file index (the demand engine).
+    pub fn initInterningInFile(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink, interner: *InternPool, file: u32) Parser {
+        var p = initInFile(arena, source, sink, file);
         p.interner = interner;
         p.tok = p.stamp(p.tok);
         return p;
@@ -102,7 +116,7 @@ pub const Parser = struct {
                     if (std.mem.indexOfScalar(u8, chars[i + 1 ..], '.') != null) {
                         // diagnosed here (parse time) so resolution never has to re-inspect
                         // name text; the token still stamps (qualifier + dotted remainder).
-                        self.sink.add(t.start, "only one level of namespace qualification is allowed", .{}) catch {
+                        self.sink.add(self.file, t.start, "only one level of namespace qualification is allowed", .{}) catch {
                             self.intern_oom = true;
                             return tok;
                         };
@@ -142,7 +156,7 @@ pub const Parser = struct {
 
     /// Report an error at the current token and begin recovery.
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
-        self.sink.add(self.tok.start, fmt, args) catch return error.OutOfMemory;
+        self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
         return error.Recover;
     }
 
@@ -941,14 +955,14 @@ pub const Parser = struct {
                 .equal, .not_equal => return, // comparisons aren't boolean ops
             },
             .not => |n| if (n.paren) return else {
-                self.sink.add(n.tok.start, "parenthesize this 'not' where it meets '{s}': mixed boolean operators require explicit parentheses", .{@tagName(outer)}) catch return error.OutOfMemory;
+                self.sink.add(self.file, n.tok.start, "parenthesize this 'not' where it meets '{s}': mixed boolean operators require explicit parentheses", .{@tagName(outer)}) catch return error.OutOfMemory;
                 return error.Recover;
             },
             else => return,
         };
         if (inner == outer) return; // same-operator chain is fine
         const b = operand.binary;
-        self.sink.add(b.tok.start, "parenthesize: '{s}' and '{s}' are different boolean operators and their nesting must be explicit", .{ @tagName(inner), @tagName(outer) }) catch return error.OutOfMemory;
+        self.sink.add(self.file, b.tok.start, "parenthesize: '{s}' and '{s}' are different boolean operators and their nesting must be explicit", .{ @tagName(inner), @tagName(outer) }) catch return error.OutOfMemory;
         return error.Recover;
     }
 };

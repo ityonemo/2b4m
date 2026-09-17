@@ -102,6 +102,10 @@ pub const DurableArg = union(enum) {
 
 const State = struct {
     source: []const u8,
+    /// The dense FileId `source` belongs to — every diagnostic this proof records indexes
+    /// it. Carried on the state rather than read from the sink so a diagnostic's file is a
+    /// value, not ambient (see diagnostics.zig).
+    file: u32,
     ns: InternPool.Index,
     decl: Decl,
     walk: *Walk,
@@ -139,11 +143,6 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 }
 
 pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
-    // diagnostics this run records belong to THIS task's file — point the sink at it (a
-    // task runs synchronously to its next suspend, so it is the last writer before any of
-    // its own `sink.add`s; sub-tasks reset it when they run). Prevents an imported fact's
-    // offset from being rendered against another file's (shorter) source.
-    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     // the fact's identity namespace is `(model, file)` — `.universe` for an ordinary proof,
     // model M for a transfer (so `(M,file) src.thm` is a distinct fact from the source).
     const ns = try self.interner.namespace(task.model, task.file);
@@ -304,7 +303,7 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     if (st.prove.known.missed) { // a statement carries no obligation; a miss here is diagnosed as one anyway
         for (st.prove.known.misses.items) |m| {
             const text = e.renderProp(m.prop) catch return error.OutOfMemory;
-            self.sink.add(m.loc, "unproved obligation: '{s}'", .{text}) catch return error.OutOfMemory;
+            self.sink.add(st.file, m.loc, "unproved obligation: '{s}'", .{text}) catch return error.OutOfMemory;
         }
         return .done;
     }
@@ -339,13 +338,13 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
     }
 }
 
-/// Point the sink at the file `task.loc` is relative to (the DEMANDER, `loc_file`, or
-/// `file` for a same-file / root demand), then record a demand-site diagnostic. Must
-/// precede any `sink.add(task.loc, …)` so the offset renders against the right source.
+/// Record a demand-site diagnostic against the file `task.loc` is relative to — the
+/// DEMANDER (`loc_file`), or `file` for a same-file / root demand — so the offset renders
+/// against the right source.
 fn demandDiag(self: *Context, task: *ProveTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
-    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+    const fid = self.pool_file.get(loc_file) orelse return; // undiscovered: nowhere to anchor
+    self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
 /// Find the fact's declaration in its file's parsed AST and build the production state.
@@ -396,7 +395,7 @@ fn schemaLocator(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactK
 /// Resolve a fact-reference token (possibly `ns.name`-qualified) to its PROVEN fact Index,
 /// demanding the import and/or the origin fact's ProveTask. Returns null if it SUSPENDED (a
 /// blocker was set) or DIAGNOSED. Diagnostics point at the alias's target token in
-/// `task.file` (where `sink.current_file` already points from `run`'s top).
+/// `task.file`.
 fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: lexer.Token) std.mem.Allocator.Error!?InternPool.Index {
     var target_file = task.file;
     var target_ns = try self.interner.namespace(.universe, task.file);
@@ -417,7 +416,8 @@ fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: le
                     target_file = self.interner.keyOf(m.namespace).namespace.file;
                 },
                 else => {
-                    self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
+                    const qfid = self.pool_file.get(task.file) orelse return null;
+                    self.sink.add(@intFromEnum(qfid), tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
                     return null;
                 },
             },
@@ -509,8 +509,8 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     };
     // DEFINE EXPANSION (the lifecycle's first step — see Engine/Expand): the decl's AST is made
     // define-free BEFORE its read pass or elaboration ever sees it. A suspend returns null with
-    // `task.st` unset, so the resume re-locates and re-expands (idempotent).
-    self.sink.current_file = @intFromEnum(fid);
+    // `task.st` unset, so the resume re-locates and re-expands (idempotent). (Expand anchors
+    // its own diagnostics at the file it is expanding.)
     const d: State.Decl = switch (raw) {
         .axiom => |a| switch (try Expand.expandFormula(self, h, task.file, a.formula, .{ .model = task.model })) {
             .ready => |f| .{ .axiom = .{ .formula = f } },
@@ -547,6 +547,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     prove.source_ast = source_ast;
     st.* = .{
         .source = source,
+        .file = @intFromEnum(fid),
         .ns = ns,
         .decl = d,
         .walk = walk,
@@ -572,7 +573,6 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     const schema_decl = self.declOf(fid, inst.schema_name).?;
     const schema_fact = ast.factOf(schema_decl).?;
     // DEFINE EXPANSION of the schema's body + steps in the SCHEMA's file (its params shadow).
-    self.sink.current_file = @intFromEnum(fid);
     const schema_formula: *const ast.Expr, const schema_steps: ?[]const ast.Step = if (schema_decl.* == .theorem)
         switch (try Expand.expandProof(self, h, task.file, schema_fact.formula, schema_decl.theorem.local.steps, .{ .scope = inst.params, .model = task.model })) {
             .ready => |pr| .{ pr.formula, pr.steps },
@@ -732,6 +732,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     walk.* = Walk.init(self.arena, self.interner, source, self.sink);
     st.* = .{
         .source = source,
+        .file = @intFromEnum(fid),
         .ns = ns,
         .decl = .{ .instance = .{ .formula = inst_formula, .steps = inst_steps } },
         .walk = walk,

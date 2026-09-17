@@ -55,7 +55,6 @@ pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator
         const line = std.fmt.allocPrint(self.arena, "[model] task#{d} = model {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
         self.fact_trace.append(self.arena, line) catch {};
     }
-    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.idents.claimOrLookup(self.io, key, h.self_index)) {
@@ -83,7 +82,7 @@ pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator
 /// overlay + publish the `.model`. Idempotent across resumes.
 fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
     const fid = self.pool_file.get(task.file) orelse {
-        self.sink.add(task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
+        self.sink.add(self.diagFile(task.file), task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
         return;
     };
     const source = self.files.items[@intFromEnum(fid)].source;
@@ -240,8 +239,7 @@ fn tokText(self: *Context, tok: Token) std.mem.Allocator.Error![]const u8 {
 
 /// A diagnostic at a token of the model's OWN declaration (not the citing site).
 fn diagAt(self: *Context, task: ModelTask, loc: u32, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
-    if (self.pool_file.get(task.file)) |f| self.sink.current_file = @intFromEnum(f);
-    self.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+    self.sink.add(self.diagFile(task.file), loc, fmt, args) catch return error.OutOfMemory;
 }
 
 /// Which demand table a mapping token resolves against.
@@ -418,8 +416,8 @@ fn resolveProjection(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
 
 fn demandDiag(self: *Context, task: ModelTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
-    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+    const fid = self.pool_file.get(loc_file) orelse return; // undiscovered: nowhere to anchor
+    self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
 // --- tests ----------------------------------------------------------------------------
