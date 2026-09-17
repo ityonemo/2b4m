@@ -995,8 +995,16 @@ pub fn exprLoc(e: *const ast.Expr) u32 {
 }
 
 fn fail(self: *Elab, offset: u32, comptime fmt: []const u8, args: anytype) Error {
-    self.sink.add(offset, fmt, args) catch return error.OutOfMemory;
+    self.sink.add(self.diagFile(), offset, fmt, args) catch return error.OutOfMemory;
     return error.Recover;
+}
+
+/// The file this elaboration's offsets index: the one its namespace is built over. Derived
+/// rather than passed so a diagnostic's file is never ambient state (see diagnostics.zig).
+fn diagFile(self: *const Elab) u32 {
+    const home = self.interner.keyOf(self.ns).namespace.file;
+    const fid = self.ctx.pool_file.get(home) orelse return 0;
+    return @intFromEnum(fid);
 }
 
 // --- tests ----------------------------------------------------------------------------
@@ -1195,7 +1203,7 @@ const World = struct {
     /// diagnose each as `unproved obligation` (Prove.settleMisses' residue path) and drain them.
     fn settle(w: *World, elab: *Elab, k: *Known) !void {
         for (k.misses.items) |m| {
-            try w.sink.add(m.loc, "unproved obligation: '{s}'", .{try elab.renderProp(m.prop)});
+            try w.sink.add(0, m.loc, "unproved obligation: '{s}'", .{try elab.renderProp(m.prop)});
         }
         k.misses.clearRetainingCapacity();
     }

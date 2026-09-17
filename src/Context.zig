@@ -337,6 +337,15 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// The entry only racks; from there DEMAND drives everything (an import is parsed when cited
 /// into, a fact proved when cited). Sharing the pass is why a directory is N roots and not N
 /// runs: a fact two roots cite is proved once. Returns the first root (`self.root_file`).
+/// The dense FileId a diagnostic whose offset indexes `file` renders against. Every
+/// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
+/// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
+/// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
+    const fid = self.pool_file.get(file) orelse return 0;
+    return @intFromEnum(fid);
+}
+
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
@@ -412,7 +421,6 @@ fn reportWedge(self: *Context, eng: *Engine) !void {
         try names.appendSlice(self.arena, m.name);
     }
     for (members.items) |m| {
-        self.sink.current_file = @intFromEnum(m.file);
-        try self.sink.add(m.loc, "'{s}' is part of a citation cycle ({s}) — each proof waits on the next, so none can be proved", .{ m.name, names.items });
+        try self.sink.add(@intFromEnum(m.file), m.loc, "'{s}' is part of a citation cycle ({s}) — each proof waits on the next, so none can be proved", .{ m.name, names.items });
     }
 }

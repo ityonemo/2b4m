@@ -109,9 +109,9 @@ const Expander = struct {
     // -- diagnostics -------------------------------------------------------------------
 
     fn fail(self: *Expander, loc: u32, comptime fmt: []const u8, args: anytype) Allocator.Error!void {
-        // the sink already points at the root file (the consumer set current_file); every
-        // offset this pass reports is a root-file offset (use sites / restamped tokens).
-        self.ctx.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+        // every offset this pass reports is a ROOT-FILE offset (use sites / restamped
+        // tokens), so `fid` — the file being expanded — is the one to render against.
+        self.ctx.sink.add(@intFromEnum(self.fid), loc, fmt, args) catch return error.OutOfMemory;
         self.failed = true;
     }
 

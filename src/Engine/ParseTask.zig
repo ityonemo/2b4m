@@ -72,19 +72,17 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // whatever cited into it proceeds to its own "reference not found".
     const bytes = self.read_fn(self.read_ctx, self.arena, path) catch {
         if (self.origins.items[idx]) |o| {
-            self.sink.current_file = @intFromEnum(o.file);
-            try self.sink.add(o.loc, "cannot open '{s}': file not found", .{path});
+            // diagnosed at the IMPORT token, so it belongs to the importing file
+            try self.sink.add(@intFromEnum(o.file), o.loc, "cannot open '{s}': file not found", .{path});
         } else {
-            self.sink.current_file = idx;
-            try self.sink.add(0, "cannot open '{s}': file not found", .{path});
+            try self.sink.add(idx, 0, "cannot open '{s}': file not found", .{path});
         }
         self.parse_state.items[idx] = .parsed;
         return;
     };
     const source = if (std.mem.endsWith(u8, path, ".md")) try literate.extract(self.arena, bytes) else bytes;
     self.files.items[idx].source = source;
-    self.sink.current_file = idx;
-    var p: parser.Parser = .initInterning(self.arena, source, self.sink, self.interner);
+    var p: parser.Parser = .initInterningInFile(self.arena, source, self.sink, self.interner, idx);
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
     self.declarations += parsed.decls.len;
@@ -98,9 +96,8 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     for (self.parsed.items[idx].decls) |*decl| {
         const fresh = try self.registerDecl(task.file_id, decl);
         if (!fresh) {
-            self.sink.current_file = idx;
             const nt = ast.declName(decl);
-            try self.sink.add(nt.start, "duplicate declaration of '{s}'", .{self.interner.stringBytes(nt.name)});
+            try self.sink.add(idx, nt.start, "duplicate declaration of '{s}'", .{self.interner.stringBytes(nt.name)});
         }
     }
 
@@ -111,9 +108,8 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     for (self.parsed.items[idx].decls) |decl| {
         if (decl != .forward) continue;
         const promised = decl.forward.name;
-        self.sink.current_file = idx;
         const target = self.declOf(task.file_id, promised.name) orelse {
-            try self.sink.add(promised.start, "forwarded theorem '{s}' is never defined", .{self.interner.stringBytes(promised.name)});
+            try self.sink.add(idx, promised.start, "forwarded theorem '{s}' is never defined", .{self.interner.stringBytes(promised.name)});
             continue;
         };
         if (target.* != .theorem) {
@@ -122,7 +118,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
                 .hole => "a hole",
                 else => "a non-theorem",
             };
-            try self.sink.add(promised.start, "'{s}' is forwarded as a theorem but defined as {s}", .{ self.interner.stringBytes(promised.name), kind });
+            try self.sink.add(idx, promised.start, "'{s}' is forwarded as a theorem but defined as {s}", .{ self.interner.stringBytes(promised.name), kind });
         }
     }
 

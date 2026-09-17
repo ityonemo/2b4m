@@ -121,7 +121,8 @@ fn checkBinderOrder(arena: Allocator, sink: *diagnostics.Sink, source: []const u
     if (declared_appearing.items.len != appeared.items.len) return; // shouldn't happen
     for (declared_appearing.items, appeared.items) |d, a| {
         if (!std.mem.eql(u8, d, a)) {
-            try sink.add(q.tok.start, "non-canonical binder order: 'forall {s}' should be 'forall {s}' (first-appearance order in the body)", .{
+            // lint is single-file: its sole source is file 0 in the render list.
+            try sink.add(0, q.tok.start, "non-canonical binder order: 'forall {s}' should be 'forall {s}' (first-appearance order in the body)", .{
                 try join(arena, declared.items), try join(arena, canonicalOrder(arena, declared.items, appeared.items) catch declared.items),
             });
             return;

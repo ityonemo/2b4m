@@ -104,8 +104,7 @@ fn noteSchemaRoot(ctx: *Context, theorem: ?[]const u8) !void {
     const decl = ctx.declOf(ctx.root_file, name) orelse return;
     const fact = ast.factOf(decl) orelse return;
     if (fact.params == null) return;
-    ctx.sink.current_file = @intCast(@intFromEnum(ctx.root_file));
-    try ctx.sink.add(fact.name.start, "'{s}' is a schema; it is checked at its instantiations — check a theorem that instantiates it", .{t});
+    try ctx.sink.add(@intCast(@intFromEnum(ctx.root_file)), fact.name.start, "'{s}' is a schema; it is checked at its instantiations — check a theorem that instantiates it", .{t});
 }
 
 /// `only` = a single-theorem check's theorem: the file's other theorems may have been PROVED
