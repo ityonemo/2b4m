@@ -63,7 +63,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     const path = self.files.items[idx].path;
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[parse] task#{d} = {s}\n", .{ @intFromEnum(h.self_index), path }) catch "";
-        self.fact_trace.append(self.arena, line) catch {};
+        self.traceLine(line);
     }
     // READ the file (the one place source enters the engine); a literate `.md` yields its
     // ```bpa blocks with every other line blanked, so offsets index the document as written.
@@ -85,7 +85,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     var p: parser.Parser = .initInterningInFile(self.arena, source, self.sink, self.interner, idx);
     const parsed = try p.parseFile();
     self.parsed.items[idx] = parsed;
-    self.declarations += parsed.decls.len;
+    self.addDeclarations(parsed.decls.len);
     // register each decl by name for O(1) by-name resolution (the demand tasks look up
     // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
     // This is the AUTHORITATIVE first pass: a name already registered here is a genuine

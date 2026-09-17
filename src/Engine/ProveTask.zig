@@ -149,7 +149,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     const key = FactKV.Key{ .namespace = ns, .name = task.name };
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[prove] task#{d} = {s} in ns#{d} (model#{d})\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(ns), @intFromEnum(task.model) }) catch "";
-        self.fact_trace.append(self.arena, line) catch {};
+        self.traceLine(line);
     }
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,
@@ -216,8 +216,8 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             // on itself), and its declaring file is recorded so `--axioms` can cite file:line.
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
-            try self.axiom_taint.put(self.arena, fact, try self.arena.dupe(InternPool.Index, &.{fact}));
-            try self.axiom_origin.put(self.arena, fact, .{ .name = task.name, .file = task.file, .loc = st.goal_loc });
+            try self.recordAxiomTaint(fact, try self.arena.dupe(InternPool.Index, &.{fact}));
+            try self.recordAxiomOrigin(fact, .{ .name = task.name, .file = task.file, .loc = st.goal_loc });
         },
         .theorem => |t| return proveSteps(self, task, h, st, key, t.steps),
         .instance => |i| {
@@ -239,7 +239,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
                 try axs.append(self.arena, sst.proven);
             };
             try axs.appendSlice(self.arena, st.prove.axioms_used.items);
-            if (axs.items.len > 0) try self.axiom_taint.put(self.arena, fact, axs.items);
+            if (axs.items.len > 0) try self.recordAxiomTaint(fact, axs.items);
         },
         .hole => |hh| {
             // a hole is treated as an AXIOM everywhere except HERE: publish the leaf (its
@@ -250,14 +250,14 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             // first. See [[hole-mechanism]].
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
-            try self.holes_reached.append(self.arena, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
+            try self.recordHoleReached(.{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
             // a hole is an axiom to the kernel, so it seeds the axiom taint like one; the
             // `--axioms` report tells the two apart by consulting `holes_reached`.
-            try self.axiom_taint.put(self.arena, fact, try self.arena.dupe(InternPool.Index, &.{fact}));
-            try self.axiom_origin.put(self.arena, fact, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
+            try self.recordAxiomTaint(fact, try self.arena.dupe(InternPool.Index, &.{fact}));
+            try self.recordAxiomOrigin(fact, .{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
             // the hole rests on ITSELF (the taint seed) — so any dependent inheriting this fact's
             // taint records this hole in its blast-radius.
-            try self.hole_taint.put(self.arena, fact, try self.arena.dupe(InternPool.StrId, &.{hh.name}));
+            try self.recordHoleTaint(fact, try self.arena.dupe(InternPool.StrId, &.{hh.name}));
         },
     }
 }
@@ -327,13 +327,13 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
             const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
             // record any `using` words this proof ADMITTED (`--fast`) against the fact, for the
             // summary's trust disclosure. Empty in strict mode (nothing admitted).
-            if (st.prove.admitted.count() > 0) try self.accelerated.put(self.arena, fact, st.prove.admitted);
+            if (st.prove.admitted.count() > 0) try self.recordAccelerated(fact, st.prove.admitted);
             // record the HOLES this proof transitively rests on (blast-radius report only).
             if (st.prove.holes_used.items.len > 0)
-                try self.hole_taint.put(self.arena, fact, st.prove.holes_used.items);
+                try self.recordHoleTaint(fact, st.prove.holes_used.items);
             // record the AXIOMS this proof transitively rests on (the `--axioms` report only).
             if (st.prove.axioms_used.items.len > 0)
-                try self.axiom_taint.put(self.arena, fact, st.prove.axioms_used.items);
+                try self.recordAxiomTaint(fact, st.prove.axioms_used.items);
         },
     }
 }

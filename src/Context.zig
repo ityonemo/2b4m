@@ -59,6 +59,21 @@ gpa: std.mem.Allocator,
 /// lock-free and never need it. Single-threaded today, so locks are uncontended.
 io: std.Io,
 sink: *diagnostics.Sink,
+/// Guards the per-file tables' growth and the parse claim (see `files`/`demandParse`). A
+/// self-contained spinlock, like `Engine.mutex` and `InternPool.intern_lock`: uncontended
+/// single-threaded, and the critical sections are marked for when workers land.
+files_lock: InternPool.Lock = .{},
+/// Guards the by-name AST registry (`ast_index`, `synthetic_at`). Unlike the file tables
+/// these are written DURING proving — an accelerant producer registers the synthetic decl it
+/// generated — so reads take it too: a hashmap rehashes on growth.
+ast_lock: InternPool.Lock = .{},
+/// Guards the publish-time SIDE TABLES — `accelerated`, `axiom_origin`, `axiom_taint`,
+/// `hole_taint`, `model_discharged`, `model_define_targets`, `holes_reached`, `expand_linted`
+/// — plus the `declarations` counter and the `fact_trace` buffer. One lock for all of them:
+/// they are low-traffic, written only as a task publishes, and never held together, so one
+/// lock-order edge beats eight. Most READS happen in reporting, after quiescence, and are
+/// unguarded by design; the accessors below cover the writes that race.
+side_lock: InternPool.Lock = .{},
 interner: *InternPool,
 /// The fact resolution/coordination table over `interner` (see FactKV). Filled by
 /// ProveTask (the scan's roots + every demanded citation).
@@ -90,6 +105,11 @@ declarations: usize = 0,
 /// `@intFromEnum(fid)` is the index). The engine's parse tasks populate these; the
 /// demand tasks read them. `import_maps[fid]` is that file's raw->child import
 /// resolution; `parsed[fid]` its AST; `parse_state[fid]` its demand-parse lifecycle.
+///
+/// GUARDED BY `files_lock`: these five grow together in `discover`, and `parse_state` also
+/// carries the parse CLAIM. Reads of an already-populated slot are safe unguarded (the
+/// tables only ever grow, and a slot is written once), but any growth or claim is a
+/// transaction.
 parsed: std.ArrayList(ast.File) = .empty,
 /// BY-NAME AST registry: `(FileId, name StrId) -> the decl`. Populated by ParseTask
 /// alongside `parsed[fid]` (one entry per named decl, keyed by its stamped name). The
@@ -203,6 +223,12 @@ pub fn lookupFile(self: *Context, resolved_path: []const u8) !?FileId {
 /// Pub: the parse task (Engine/ParseTask.zig) discovers a file's imports.
 pub fn discover(self: *Context, resolved_path: []const u8, origin: ?Origin) !FileId {
     const file_index = try self.fileIndex(resolved_path);
+    // ONE TRANSACTION: check, mint the id, grow the five per-file tables, record the
+    // mapping. Two tasks discovering the same path concurrently would otherwise both miss
+    // and both mint, giving one file two FileIds — and the appends themselves must not
+    // interleave, since the tables are grown in lockstep and indexed by that id.
+    self.files_lock.lock();
+    defer self.files_lock.unlock();
     if (self.pool_file.get(file_index)) |existing| return existing;
 
     const file_id: FileId = @enumFromInt(self.files.items.len);
@@ -238,6 +264,8 @@ pub fn preload(self: *Context, path: []const u8, source: []const u8) !FileId {
 /// separately.
 pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!bool {
     if (decl.* == .forward) return true;
+    self.ast_lock.lock();
+    defer self.ast_lock.unlock();
     const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
     if (!gop.found_existing) gop.value_ptr.* = decl;
     return !gop.found_existing;
@@ -276,18 +304,30 @@ pub fn copyModelDefineTargets(self: *Context, composed: InternPool.Index, outer:
 /// Resolve a decl by NAME in a file (registry lookup; null = no such decl). Replaces the
 /// linear `parsed[fid].decls` name-scans, and transparently serves synthetic decls.
 pub fn declOf(self: *const Context, file: FileId, name: InternPool.StrId) ?*const ast.Decl {
+    // A read takes the lock too: the map REHASHES on growth, so an unguarded read can race
+    // a concurrent `registerDecl` (the accelerant producers register synthetics DURING
+    // proving, so this map is not write-once). `@constCast` because the lock is mutable
+    // state on an otherwise-read-only view.
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
     return self.ast_index.get(.{ .file = file, .name = name });
 }
 
 /// Record that the step at `loc` in `file` produced the synthetic decl registered as `name`
 /// (keep-first: a step's synthetic is produced once per space; the first stays the answer).
 pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: InternPool.StrId) std.mem.Allocator.Error!void {
+    self.ast_lock.lock();
+    defer self.ast_lock.unlock();
     const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc });
     if (!gop.found_existing) gop.value_ptr.* = .{ .file = file, .name = name };
 }
 
 /// The synthetic decl the step at `loc` in `file` produced, if any.
 pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Decl {
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
     const key = self.synthetic_at.get(.{ .file = file, .loc = loc }) orelse return null;
     return self.ast_index.get(key);
 }
@@ -302,6 +342,11 @@ pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Dec
 pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) std.mem.Allocator.Error!ParseState {
     const fid = self.pool_file.get(file) orelse return .unparsed; // undiscovered — caller errors
     const idx = @intFromEnum(fid);
+    // The CLAIM (`unparsed` -> rack -> `.parsing`) is one transaction for the same reason
+    // `discover` is: two demanders racing it would rack two ParseTasks for one file, which
+    // double-registers its decls and double-counts `declarations`.
+    self.files_lock.lock();
+    defer self.files_lock.unlock();
     switch (self.parse_state.items[idx]) {
         .parsed => return .parsed,
         .parsing => |t| return .{ .parsing = t },
@@ -341,6 +386,63 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
 /// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
 /// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+/// Record that `fact` rests on `axioms` (the `--axioms` report's edge). Publish-time.
+pub fn recordAxiomTaint(self: *Context, fact: InternPool.Index, axioms: []const InternPool.Index) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.axiom_taint.put(self.arena, fact, axioms);
+}
+
+/// Record where the axiom `fact` was declared (its site in the `--axioms` report).
+pub fn recordAxiomOrigin(self: *Context, fact: InternPool.Index, decl: HoleDecl) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.axiom_origin.put(self.arena, fact, decl);
+}
+
+/// Record that `fact` rests on the named `holes` (the `--draft` blast radius).
+pub fn recordHoleTaint(self: *Context, fact: InternPool.Index, holes: []const InternPool.StrId) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.hole_taint.put(self.arena, fact, holes);
+}
+
+/// Record that a hole declaration was actually REACHED by a proof.
+pub fn recordHoleReached(self: *Context, decl: HoleDecl) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.holes_reached.append(self.arena, decl);
+}
+
+/// Record the `using` words `fact`'s proof ADMITTED under `--fast` (the disclosure set).
+pub fn recordAccelerated(self: *Context, fact: InternPool.Index, words: Verify.Word.Set) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.accelerated.put(self.arena, fact, words);
+}
+
+/// Record that a `model` names `fact` as a discharger — `--library` counts that as USE.
+pub fn recordModelDischarged(self: *Context, fact: InternPool.Index) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.model_discharged.put(self.arena, fact, {});
+}
+
+/// Add to the running declaration count (the summary line's total).
+pub fn addDeclarations(self: *Context, n: usize) void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    self.declarations += n;
+}
+
+/// Append a `--trace-facts` line. Buffered on the Context because per-task stderr writers
+/// interleave into shredded output; printed once, before the verdict.
+pub fn traceLine(self: *Context, line: []const u8) void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    self.fact_trace.append(self.arena, line) catch {};
+}
+
 pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
     const fid = self.pool_file.get(file) orelse return 0;
     return @intFromEnum(fid);

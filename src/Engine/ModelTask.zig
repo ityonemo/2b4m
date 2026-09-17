@@ -53,7 +53,7 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[model] task#{d} = model {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
-        self.fact_trace.append(self.arena, line) catch {};
+        self.traceLine(line);
     }
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };
@@ -166,14 +166,14 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
             const tgt = try resolveProjection(self, h, task.file, source, mapping.target, proj, &blocker);
             if (src) |s| if (tgt) |t| {
                 try overlay.append(self.arena, .{ .src = s, .tgt = t });
-                try self.model_discharged.put(self.arena, t, {});
+                try self.recordModelDischarged(t);
             };
             continue;
         }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
         if (src) |s| if (tgt) |t| {
             try overlay.append(self.arena, .{ .src = s, .tgt = t });
-            try self.model_discharged.put(self.arena, t, {}); // the local fact is USED
+            try self.recordModelDischarged(t); // the local fact is USED
         };
     }
     if (blocker) |b| return h.suspendOn(b);
@@ -277,7 +277,7 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
             for (r.dischargers) |d| {
                 if (try resolveEntity(self, h, task.file, source, d, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
-                    try self.model_discharged.put(self.arena, fact, {});
+                    try self.recordModelDischarged(fact);
                 }
             }
             return false;
@@ -292,7 +292,7 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
             for (c.closure_facts) |cf| {
                 if (try resolveEntity(self, h, task.file, source, cf, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
-                    try self.model_discharged.put(self.arena, fact, {});
+                    try self.recordModelDischarged(fact);
                 }
             }
             return false;
