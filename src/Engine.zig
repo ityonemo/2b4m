@@ -75,10 +75,17 @@ chaos: ?std.Random.DefaultPrng = null,
 /// `blocked_on` edge it will walk is recorded here from day one.
 parked: std.ArrayList(Parked) = .empty,
 
-/// the in/out counter — the race-free "done" detector. `racked` bumps on every rack;
-/// `completed` bumps as each task finishes. Quiescent ⇔ equal.
+/// The in/out counters, read TOGETHER under `mutex` to decide termination. `racked` bumps
+/// on every rack, `completed` as each task finishes, `in_flight` while a task is popped but
+/// not yet resolved (parked or completed).
+///
+/// They are a CONSISTENT SNAPSHOT, not three independent numbers: making them separate
+/// atomics would let a reader observe a combination that never existed — `in_flight` already
+/// decremented while the children that task racked are not yet in `racked` — which reads as
+/// a false wedge. So they stay under the engine lock and the predicate is evaluated there.
 racked: usize = 0,
 completed: usize = 0,
+in_flight: usize = 0,
 
 /// AFFORDANCE: abnormal/early teardown. Checked at the top of the loop; unused in the
 /// single-threaded happy path (quiescence ends the loop). No poison-pill delivery yet
@@ -166,20 +173,36 @@ pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
     return index;
 }
 
-/// Pull the next runnable task's index, or null if the run queue is empty. Mutex-guarded.
+/// What a worker should do next.
+const Next = union(enum) {
+    /// run this task (already counted `in_flight`)
+    run: TaskIndex,
+    /// nothing runnable and nothing in flight: the run is over (quiescent or wedged)
+    done,
+    /// nothing runnable, but a task IS in flight and may yet rack more work — wait
+    wait,
+};
+
+/// Claim the next runnable task, or say why there is none. Mutex-guarded, and the
+/// three-counter predicate is evaluated INSIDE that critical section (see `racked`).
 ///
 /// Normally LIFO (`pop`) — see `traceLifecycle` on why the order is not guessable from the
 /// source. Under `--chaos` it takes a random runnable task instead: same work, different
 /// interleaving, which is what makes a determinism bug reproducible.
-fn pull(self: *Engine) ?TaskIndex {
+fn pull(self: *Engine) Next {
     self.mutex.lock();
     defer self.mutex.unlock();
-    if (self.run_queue.items.len == 0) return null;
+    if (self.run_queue.items.len == 0) {
+        // An empty queue is NOT termination on its own: a worker may hold a task that will
+        // rack children. Only "nothing runnable AND nothing running" ends the run.
+        return if (self.in_flight == 0) .done else .wait;
+    }
+    self.in_flight += 1;
     if (self.chaos) |*prng| {
         const i = prng.random().uintLessThan(usize, self.run_queue.items.len);
-        return self.run_queue.swapRemove(i);
+        return .{ .run = self.run_queue.swapRemove(i) };
     }
-    return self.run_queue.pop();
+    return .{ .run = self.run_queue.pop().? }; // non-empty: checked above
 }
 
 /// The task with the given index (from the append-only table). Not mutex-guarded — the
@@ -193,12 +216,20 @@ pub fn taskCount(self: *const Engine) usize {
     return self.tasks.items.len;
 }
 
-/// Run the worker loop to QUIESCENCE (single-threaded). Returns when the run queue is
-/// drained and `completed == racked`. A task error stops the engine and propagates. The
-/// stop flag also ends the loop (affordance).
+/// Run the worker loop to QUIESCENCE. Returns when nothing is runnable and nothing is in
+/// flight. A task error stops the engine and propagates; the stop flag also ends the loop.
+///
+/// Tasks left PARKED at that point are a wedge — see `wedged` and `Context.reportWedge`.
 pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
-        const index = self.pull() orelse break; // run queue empty ⇒ quiescent
+        const index = switch (self.pull()) {
+            .run => |i| i,
+            .done => break,
+            // Single-threaded there is no one else to wait FOR, so `wait` cannot happen (a
+            // worker only sees it while another holds a task). With workers this becomes a
+            // condition wait; until then, treat it as done rather than spin.
+            .wait => break,
+        };
         const task = self.taskOf(index);
         var handle: Handle = .{ .engine = self, .self_index = index };
         self.traceLifecycle("run", index, null);
@@ -207,12 +238,14 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
             // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
             self.traceLifecycle("park", index, blocker);
             self.mutex.lock();
+            self.in_flight -= 1; // resolved: parked, not running
             try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
             self.mutex.unlock();
         } else {
             // COMPLETED: count it, then wake everyone parked blocked-on it.
             self.traceLifecycle("done", index, null);
             self.mutex.lock();
+            self.in_flight -= 1; // resolved: completed
             self.completed += 1;
             self.mutex.unlock();
             try self.wake(index);
