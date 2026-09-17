@@ -343,7 +343,7 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
 /// against the right source.
 fn demandDiag(self: *Context, task: *ProveTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    const fid = self.pool_file.get(loc_file) orelse return; // undiscovered: nowhere to anchor
+    const fid = self.fileOf(loc_file) orelse return; // undiscovered: nowhere to anchor
     self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
@@ -358,7 +358,7 @@ const AliasOutcome = enum { handled, not_alias };
 /// normal locate/prove path). Mirrors resolveRefs' `.fact` path: qualifier → import → target
 /// file/ns, then FactKV demand.
 fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Key) std.mem.Allocator.Error!AliasOutcome {
-    const fid = self.pool_file.get(task.file) orelse return .not_alias; // locate reports it
+    const fid = self.fileOf(task.file) orelse return .not_alias; // locate reports it
     const decl = self.declOf(fid, task.name) orelse return .not_alias; // locate reports "not found"
     const alias: ast.Alias = switch (decl.*) {
         .axiom => |a| switch (a) {
@@ -383,7 +383,7 @@ fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Ke
 /// `not_alias` = the decl is not a schema (fall through to the normal locate/prove path).
 fn schemaLocator(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Key) std.mem.Allocator.Error!AliasOutcome {
     _ = h;
-    const fid = self.pool_file.get(task.file) orelse return .not_alias; // locate reports it
+    const fid = self.fileOf(task.file) orelse return .not_alias; // locate reports it
     const decl = self.declOf(fid, task.name) orelse return .not_alias; // locate reports "not found"
     const fact = ast.factOf(decl) orelse return .not_alias; // an alias / non-fact → not us
     if (fact.params == null) return .not_alias; // a plain (ground) fact → normal prove path
@@ -416,7 +416,7 @@ fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: le
                     target_file = self.interner.keyOf(m.namespace).namespace.file;
                 },
                 else => {
-                    const qfid = self.pool_file.get(task.file) orelse return null;
+                    const qfid = self.fileOf(task.file) orelse return null;
                     self.sink.add(@intFromEnum(qfid), tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
                     return null;
                 },
@@ -438,11 +438,11 @@ fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: le
 }
 
 fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index) std.mem.Allocator.Error!?*State {
-    const fid = self.pool_file.get(task.file) orelse {
+    const fid = self.fileOf(task.file) orelse {
         try demandDiag(self, task, "internal: prove into an undiscovered file", .{});
         return null;
     };
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the fact's decl by name (O(1) registry lookup); a miss is "reference not found".
     const decl = self.declOf(fid, task.name) orelse {
@@ -451,7 +451,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         // generated proof (its tokens carry the step's rule offset): the accelerant cited a
         // well-known lemma by name and the citing file has no such name in scope.
         const loc_file = task.loc_file orelse task.file;
-        if (self.pool_file.get(loc_file)) |lfid| if (self.syntheticAt(lfid, task.loc) != null) {
+        if (self.fileOf(loc_file)) |lfid| if (self.syntheticAt(lfid, task.loc) != null) {
             try demandDiag(self, task, "the generated proof of this step cites '{s}', which is not in scope here; alias it from the theory that states it (`theorem {s} = <module>.{s}`)", .{ name, name, name });
             return null;
         };
@@ -565,8 +565,8 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
 fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.Index, inst: Instance) std.mem.Allocator.Error!?*State {
     // `ns` (the identity ns (model, file)) is stored as st.ns for the FactKV publish key;
     // resolution uses the schema file's universe ns + prove.model (below).
-    const fid = self.pool_file.get(task.file).?; // demandParse ensured it's parsed
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const fid = self.fileOf(task.file).?; // demandParse ensured it's parsed
+    const source = self.files.get(@intFromEnum(fid)).source;
     // the schema decl (parsed or synthetic) from the by-name registry: an axiom/theorem/hole
     // WITH params. Its formula is the schema body; a proof-carrying schema (a theorem) also
     // has steps (re-checked at this instance); an axiom-schema has none (trusted monomorph).

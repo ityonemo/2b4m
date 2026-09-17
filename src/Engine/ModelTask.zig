@@ -81,11 +81,11 @@ pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator
 /// suspending on any absent), and — once the whole closure is resolved — assemble the
 /// overlay + publish the `.model`. Idempotent across resumes.
 fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
-    const fid = self.pool_file.get(task.file) orelse {
+    const fid = self.fileOf(task.file) orelse {
         self.sink.add(self.diagFile(task.file), task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
         return;
     };
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the model decl by name (registry); require it actually be a `model`.
     const found = self.declOf(fid, task.name);
@@ -225,7 +225,7 @@ fn mappingDecl(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: T
             .unparsed => return null,
         }
     }
-    const fid = self.pool_file.get(target_file) orelse return null;
+    const fid = self.fileOf(target_file) orelse return null;
     const decl = self.declOf(fid, tok.name) orelse return null;
     return .{ .decl = decl, .file = target_file };
 }
@@ -416,7 +416,7 @@ fn resolveProjection(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
 
 fn demandDiag(self: *Context, task: ModelTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    const fid = self.pool_file.get(loc_file) orelse return; // undiscovered: nowhere to anchor
+    const fid = self.fileOf(loc_file) orelse return; // undiscovered: nowhere to anchor
     self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
@@ -451,9 +451,9 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
     };
     const fid = try ctx.preload(path, src);
     var p: parser.Parser = .initInterning(arena, src, sink, interner);
-    ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
-    ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
+    ctx.parsed.set(@intFromEnum(fid), try p.parseFile());
+    for (ctx.parsed.get(@intFromEnum(fid)).decls) |*decl| _ = try ctx.registerDecl(fid, decl);
+    ctx.parse_state.set(@intFromEnum(fid), .parsed);
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
 }

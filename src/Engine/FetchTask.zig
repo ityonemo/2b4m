@@ -102,17 +102,17 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
 /// the right source.
 fn demandDiag(self: *Context, task: FetchTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    const fid = self.pool_file.get(loc_file) orelse return; // undiscovered: nowhere to anchor
+    const fid = self.fileOf(loc_file) orelse return; // undiscovered: nowhere to anchor
     self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
 fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
-    const fid = self.pool_file.get(task.file) orelse {
+    const fid = self.fileOf(task.file) orelse {
         // the namespace's file was never discovered — an internal wiring error
         try demandDiag(self, task, "internal: fetch into an undiscovered file", .{});
         return;
     };
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the decl by name (O(1) registry lookup); a miss is "reference not found".
     const decl = self.declOf(fid, task.name) orelse {
@@ -182,11 +182,11 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 // the parse phase resolved the raw path -> child FileId; map it to the
                 // child's pool `.file` Index and bind the import to its namespace.
                 const raw = d.path.name; // the parser stamped the quote-stripped path
-                const target_fid = self.import_maps.items[@intFromEnum(fid)].get(raw) orelse {
+                const target_fid = self.import_maps.get(@intFromEnum(fid)).get(raw) orelse {
                     self.sink.add(self.diagFile(task.file), d.path.start, "import '{s}' was not resolved at parse time", .{source[d.path.start..d.path.end]}) catch return error.OutOfMemory;
                     return; // no publish — demanders of this import stay parked
                 };
-                const target_file = try self.fileIndex(self.files.items[@intFromEnum(target_fid)].path);
+                const target_file = try self.fileIndex(self.files.get(@intFromEnum(target_fid)).path);
                 const target_ns = try self.interner.namespace(.universe, target_file);
                 _ = try self.idents.publish(self.io, key, .{ .import = .{
                     .namespace = target_ns,
@@ -605,12 +605,12 @@ pub fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source
     };
     const fid = try ctx.preload(path, source);
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
-    ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
+    ctx.parsed.set(@intFromEnum(fid), try p.parseFile());
+    for (ctx.parsed.get(@intFromEnum(fid)).decls) |*decl| _ = try ctx.registerDecl(fid, decl);
     // this fixture registers the root file's decls DIRECTLY (bypassing ParseTask); mark it
     // `.parsed` so a later `demandParse` doesn't re-rack a ParseTask that would re-register
     // every decl and (now) diagnose each as a duplicate.
-    ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
+    ctx.parse_state.set(@intFromEnum(fid), .parsed);
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
 }
@@ -726,13 +726,13 @@ test "fetch: an import binds to the target file's namespace" {
     const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
-        ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
-        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
+        ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
+        for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
-    try ctx.import_maps.items[@intFromEnum(parent_fid)].put(arena, raw, child_fid);
+    try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const peano = try ctx.interner.internString("peano");
@@ -847,13 +847,13 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
-        ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
-        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
+        ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
+        for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
-    try ctx.import_maps.items[@intFromEnum(parent_fid)].put(arena, raw, child_fid);
+    try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const double = try ctx.interner.internString("double");

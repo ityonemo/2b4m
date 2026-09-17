@@ -60,7 +60,7 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 /// is the root file, scan its theorems and rack the seed ProveTasks.
 pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
-    const path = self.files.items[idx].path;
+    const path = self.files.get(idx).path;
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[parse] task#{d} = {s}\n", .{ @intFromEnum(h.self_index), path }) catch "";
         self.traceLine(line);
@@ -71,20 +71,20 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // — or at the top of the file itself for a root; it then counts as parsed-and-empty so
     // whatever cited into it proceeds to its own "reference not found".
     const bytes = self.read_fn(self.read_ctx, self.arena, path) catch {
-        if (self.origins.items[idx]) |o| {
+        if (self.origins.get(idx)) |o| {
             // diagnosed at the IMPORT token, so it belongs to the importing file
             try self.sink.add(@intFromEnum(o.file), o.loc, "cannot open '{s}': file not found", .{path});
         } else {
             try self.sink.add(idx, 0, "cannot open '{s}': file not found", .{path});
         }
-        self.parse_state.items[idx] = .parsed;
+        self.parse_state.set(idx, .parsed);
         return;
     };
     const source = if (std.mem.endsWith(u8, path, ".md")) try literate.extract(self.arena, bytes) else bytes;
-    self.files.items[idx].source = source;
+    self.files.at(idx).source = source; // in place: `at` is a stable pointer
     var p: parser.Parser = .initInterningInFile(self.arena, source, self.sink, self.interner, idx);
     const parsed = try p.parseFile();
-    self.parsed.items[idx] = parsed;
+    self.parsed.set(idx, parsed);
     self.addDeclarations(parsed.decls.len);
     // register each decl by name for O(1) by-name resolution (the demand tasks look up
     // decls by name, not position). The parsed slice is arena-stable, so the pointers hold.
@@ -93,7 +93,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // demand engine would otherwise silently keep the first and never notice, since a file
     // is only elaborated on demand). `forward` (intheory) decls register nothing and never
     // collide (registerDecl returns true for them).
-    for (self.parsed.items[idx].decls) |*decl| {
+    for (self.parsed.get(idx).decls) |*decl| {
         const fresh = try self.registerDecl(task.file_id, decl);
         if (!fresh) {
             const nt = ast.declName(decl);
@@ -105,7 +105,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     // as a THEOREM. It lands NOWHERE durable (not the registry, not the pool); ParseTask just
     // checks the promise holds (the real theorem registered above) and drops it. A missing name
     // or a name defined as something OTHER than a theorem (an axiom, etc.) is diagnosed.
-    for (self.parsed.items[idx].decls) |decl| {
+    for (self.parsed.get(idx).decls) |decl| {
         if (decl != .forward) continue;
         const promised = decl.forward.name;
         const target = self.declOf(task.file_id, promised.name) orelse {
@@ -151,11 +151,11 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
             // child's identity. discover RETAINS the path → dupe it durably (the scratch copy
             // is freed below).
             try self.discover(try self.arena.dupe(u8, resolved), .{ .file = task.file_id, .loc = d.path.start });
-        try self.import_maps.items[idx].put(self.arena, d.path.name, child);
+        try self.import_maps.at(idx).put(self.arena, d.path.name, child); // mutated in place
     }
 
     // this file's AST is now populated — mark it parsed so `demandParse` waiters wake.
-    self.parse_state.items[idx] = .parsed;
+    self.parse_state.set(idx, .parsed);
 
     // the ROOT file's theorems are the roots of demand: scan + rack a ProveTask each.
     // (Only the root — imported files' theorems are demanded by citations, not proved
