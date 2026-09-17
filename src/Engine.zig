@@ -229,7 +229,7 @@ fn traceLifecycle(self: *Engine, what: []const u8, index: TaskIndex, other: ?Tas
         std.fmt.allocPrint(self.arena, "[engine] {s} task#{d} (on task#{d})\n", .{ what, @intFromEnum(index), @intFromEnum(o) }) catch return
     else
         std.fmt.allocPrint(self.arena, "[engine] {s} task#{d}\n", .{ what, @intFromEnum(index) }) catch return;
-    self.ctx.fact_trace.append(self.ctx.arena, line) catch return;
+    self.ctx.traceLine(line);
 }
 
 /// A task `finished` completed — move every parked task blocked-on it back to the run

@@ -402,7 +402,7 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                                     .in_flight => |o| if (o == h.self_index) "in_flight owned by SELF" else "in_flight owned by ANOTHER task — read pass sets NO blocker",
                                 };
                                 const line = std.fmt.allocPrint(ctx.arena, "[read pass] transferred copy of {s} under model#{d}: {s}\n", .{ ctx.interner.stringBytes(r.name), @intFromEnum(model), what }) catch "";
-                                ctx.fact_trace.append(ctx.arena, line) catch {};
+                                ctx.traceLine(line);
                             }
                             // ABSENT: rack its re-proof and wait. IN FLIGHT under another task:
                             // wait on THAT task — the same rule as the universe key above. The
@@ -1504,7 +1504,7 @@ fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const 
         } else |_| {}
     }
     line = std.fmt.allocPrint(a, "{s}       via {s}\n", .{ line, why }) catch return;
-    self.ctx.fact_trace.append(a, line) catch return;
+    self.ctx.traceLine(line);
 }
 
 /// `file:line:col` for a source offset. The offset must belong to `file` — a fact's `loc`
