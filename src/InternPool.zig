@@ -82,6 +82,13 @@ map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load
 /// non-moving store is the other half. See `segmented.zig`.
 write_mutex: std.Io.Mutex = .init,
 
+/// Guards `get` — the interning path, which appends and rehashes `map` on a miss. Held
+/// INSIDE `get` rather than by its callers (see the note there). A self-contained spinlock,
+/// like `Engine.mutex`: `std.Io.Mutex` needs an `Io` handle, and the pool is constructed in
+/// a dozen places (mostly test rigs) that have none. Swap it when the engine's own lock is
+/// swapped — the call sites do not move.
+intern_lock: Lock = .{},
+
 arena: std.mem.Allocator,
 /// TRANSIENT staging for payloads that must land in `extra` as ONE contiguous run (a
 /// segmented store cannot hand out a slice spanning two blocks, so a payload whose tail is
@@ -469,6 +476,18 @@ fn keyEql(a: Key, b: Key) bool {
 /// at `Index.prop` (1). Prop is a root sort (no refinement); reserving it here means the
 /// well-known slot exists before anything else is interned, so `term.SortId.prop` can point
 /// at it once sorts become pool Indexes.
+/// A test-and-set spinlock. Uncontended while the engine is single-threaded; the value is
+/// that the critical section is MARKED and correct when workers land.
+pub const Lock = struct {
+    locked: std.atomic.Value(bool) = .init(false),
+    pub fn lock(self: *Lock) void {
+        while (self.locked.swap(true, .acquire)) std.atomic.spinLoopHint();
+    }
+    pub fn unlock(self: *Lock) void {
+        self.locked.store(false, .release);
+    }
+};
+
 pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     // `scratch` defaults to the arena: payload staging buffers are short-lived, and an
     // arena leak of a few words per mint is cheaper than threading a GPA in. (A caller that
@@ -497,6 +516,19 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
 /// Intern a key: return the existing `Index` if a structurally-equal entry exists, else
 /// append a new packed `Item` (+ `extra`) and record it. The always-intern entry point.
 pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
+    // SYNCHRONIZED INTERNALLY (see `write_mutex`): `get` MUTATES on a miss — it appends an
+    // Item and rehashes `map` — and it is called from ~225 sites, most of which cannot say
+    // locally whether their key is new. Auditing each to wrap it in `lockWrite` would be
+    // both huge and unverifiable, so the lock lives here, where the mutation is.
+    //
+    // Deliberately unconditional rather than a probe-then-lock fast path: `map` itself
+    // rehashes on growth, so even a "read" of it races a concurrent insert. Serializing all
+    // interning is correct; whether it is a contention problem is a question for `zig build
+    // bench` with workers, not one to pre-optimize. (`mint*` bypasses `get` entirely and
+    // stays under the caller's `lockWrite`, so the two disciplines do not nest.)
+    self.intern_lock.lock();
+    defer self.intern_lock.unlock();
+
     const gop = try self.map.getOrPutContextAdapted(self.arena, key, KeyAdapter{ .pool = self }, MapContext{ .pool = self });
     if (gop.found_existing) return gop.key_ptr.*;
 
@@ -895,6 +927,8 @@ pub fn composeModel(self: *InternPool, io: std.Io, outer: Index, inner: Index) s
         if (cur == m.parent) break; // universe fixpoint
         cur = m.parent;
     }
+    // `lockWrite` (the mint discipline) and `get`'s own `intern_lock` are DIFFERENT locks,
+    // so this nesting does not self-deadlock; the order is write_mutex -> intern_lock.
     self.lockWrite(io);
     defer self.unlockWrite(io);
     return self.get(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
