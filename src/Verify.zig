@@ -109,6 +109,20 @@ trace_facts: bool = false,
 /// many seeds and diff. Any difference is a determinism bug (something leaked task order
 /// into output), caught here without threads to confuse the diagnosis. Null = off.
 chaos_seed: ?u64 = null,
+/// `-j<n>`: how many worker threads prove in parallel. `-j1` is the single-threaded engine.
+///
+/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE: the per-file
+/// tables (`Context.files`/`parsed`/`parse_state`/`import_maps`) are still `ArrayList`s that
+/// REALLOCATE when `discover` appends, while 54 sites index them unguarded. Under `-j2+`
+/// that is a live use-after-free — it segfaults on the std sweep and silently loses a
+/// theorem on a small one. Making those tables non-moving (the `Segmented` store the
+/// InternPool already uses) is the next step; until then `-j<n>` is an opt-in for working
+/// ON that, not a mode to check proofs in.
+///
+/// Output is a function of (tree, roots), never of scheduling, so the worker count must
+/// change only how fast a run goes — never what it prints. `--chaos` tests that contract
+/// deterministically today; a `-j` sweep tests it under real threads once the tables move.
+workers: usize = 1,
 
 const Verify = @This();
 

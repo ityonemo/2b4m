@@ -467,7 +467,7 @@ pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
         }
     }
     self.root_file = self.root_files.items[0];
-    try eng.run();
+    try eng.runWorkers(self.verify.workers);
     try self.reportWedge(&eng);
     return self.root_file;
 }
