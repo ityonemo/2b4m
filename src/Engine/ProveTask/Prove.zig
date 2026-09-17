@@ -273,7 +273,7 @@ fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Erro
 /// The file this proof's offsets index — its own `file`, as a dense FileId. Derived rather
 /// than tracked on the sink so a diagnostic's file is a value (see diagnostics.zig).
 fn diagFile(self: *const Prove) u32 {
-    const fid = self.ctx.pool_file.get(self.file) orelse return 0;
+    const fid = self.ctx.fileOf(self.file) orelse return 0;
     return @intFromEnum(fid);
 }
 
@@ -333,10 +333,10 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
         if (r.ns == null and model != InternPool.Index.none and model != .universe) {
             const home = ctx.interner.keyOf(model).model.home;
             if (home != InternPool.Index.none and home != target_file) miss: {
-                if (ctx.pool_file.get(target_file)) |tfid| {
+                if (ctx.fileOf(target_file)) |tfid| {
                     if (ctx.declOf(tfid, r.name) != null) break :miss; // declared at source — no fallback
                 }
-                const hfid = ctx.pool_file.get(home) orelse break :miss;
+                const hfid = ctx.fileOf(home) orelse break :miss;
                 if (ctx.declOf(hfid, r.name) == null) break :miss; // not in home either
                 target_file = home;
                 target_ns = try ctx.interner.namespace(.universe, home);
@@ -456,7 +456,7 @@ pub fn elaborateFactStatement(
         },
         .unparsed => {}, // undiscovered — declOf below reports it cleanly
     }
-    const fid = self.pool_file.get(file) orelse {
+    const fid = self.fileOf(file) orelse {
         self.sink.add(0, 0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
         return .failed;
     };
@@ -464,7 +464,7 @@ pub fn elaborateFactStatement(
     // (This used to save/restore an ambient sink field; passing the file is the same
     // intent without the invariant that only one task may be running.)
     const diag_file: u32 = @intFromEnum(fid);
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the decl by name; a STATEMENT lives on a local axiom/theorem (an alias has no
     // formula of its own, a schema / hole is not a ground statement).
@@ -685,7 +685,7 @@ fn importFile(self: *Prove, itok: lexer.Token) Error!?InternPool.Index {
 fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
     const loc = c.rule.start;
     const wk = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub", "less_than", "nonneg" };
-    const fid = self.ctx.pool_file.get(self.file).?;
+    const fid = self.ctx.fileOf(self.file).?;
     var refs: std.ArrayList(RefScan.Ref) = .empty;
     for (wk) |name| {
         const nid = self.ctx.interner.internString(name) catch return error.OutOfMemory;
@@ -1453,7 +1453,7 @@ fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.S
         // FactKV (already-demanded) and the file's AST (a same-file fact decl that nothing
         // demanded, e.g. the cited axiom in `forall_elim(t) myAxiom`), so it fires regardless.
         const is_fact = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null or
-            (tok.qualifier == InternPool.Index.none and if (self.ctx.pool_file.get(self.file)) |fid|
+            (tok.qualifier == InternPool.Index.none and if (self.ctx.fileOf(self.file)) |fid|
                 if (self.ctx.declOf(fid, name)) |d| ast.factOf(d) != null else false
             else
                 false);
@@ -1512,8 +1512,8 @@ fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const 
 /// past the end means we were handed the wrong file and the site is reported as unknown
 /// rather than read out of bounds.
 fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
-    const fid = self.ctx.pool_file.get(file) orelse return "?";
-    const f = self.ctx.files.items[@intFromEnum(fid)];
+    const fid = self.ctx.fileOf(file) orelse return "?";
+    const f = self.ctx.files.get(@intFromEnum(fid));
     if (off >= f.source.len) return std.fmt.allocPrint(self.ctx.arena, "offset {d} (not in {s})", .{ off, f.path }) catch "?";
     const lc = std.zig.findLineColumn(f.source, off);
     return std.fmt.allocPrint(self.ctx.arena, "{s}:{d}:{d}", .{ f.path, lc.line + 1, lc.column + 1 }) catch "?";
@@ -1529,7 +1529,8 @@ fn fileOfFact(self: *Prove, ix: InternPool.Index) ?InternPool.Index {
         .schema => |k| return k.file,
         else => return null,
     };
-    for (self.ctx.files.items) |f| {
+    var files_it = self.ctx.files.iterator();
+    while (files_it.next()) |f| {
         const pf = self.ctx.fileIndex(f.path) catch continue;
         const ns = self.ctx.interner.namespace(.universe, pf) catch continue;
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name })) |st| {
@@ -1685,7 +1686,7 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
         .schema => |s| s,
         else => return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)}),
     };
-    const fid = self.ctx.pool_file.get(loc.file).?;
+    const fid = self.ctx.fileOf(loc.file).?;
     const decl = self.ctx.declOf(fid, loc.name) orelse
         return self.fail(tok.start, "internal: schema '{s}' locator has no decl", .{self.text(tok)});
     // a schema is an axiom/theorem/hole with params; extract its Fact decl-kind-agnostically.
@@ -1696,7 +1697,7 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
         .ns = ns,
         .name = loc.name,
         .fact = fact,
-        .source = self.ctx.files.items[@intFromEnum(fid)].source,
+        .source = self.ctx.files.get(@intFromEnum(fid)).source,
     };
 }
 
@@ -2068,7 +2069,7 @@ fn transfersSchema(self: *Prove, c: ast.Step.Claim) Allocator.Error!union(enum) 
         .parsing => |t| return .{ .blocked = t },
         .unparsed => return .no,
     }
-    const fid = self.ctx.pool_file.get(src_file) orelse return .no;
+    const fid = self.ctx.fileOf(src_file) orelse return .no;
     const decl = self.ctx.declOf(fid, tokName(rtok)) orelse return .no;
     const fact = ast.factOf(decl) orelse return .no;
     return if (fact.params != null) .yes else .no;
@@ -2122,7 +2123,7 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
     };
     const citing_params = self.schema_params;
     // the discharging schema's own parameter names, off its declaration.
-    const tfid = self.ctx.pool_file.get(sk.file) orelse {
+    const tfid = self.ctx.fileOf(sk.file) orelse {
         self.ctx.sink.add(self.diagFile(), rtok.start, "internal: the discharging schema's file is undiscovered", .{}) catch return error.OutOfMemory;
         return .failed;
     };
@@ -2332,7 +2333,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // collide keep-first with the standalone synthetic — the transferred instance would
     // resolve the UNRELATIVIZED schema. `{m<N>}` uses non-lexable braces (collision-free).
     var syn_name = syn.name;
-    const fid = self.ctx.pool_file.get(self.file).?;
+    const fid = self.ctx.fileOf(self.file).?;
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
     // the generated theorem STATES the preconditions of the terms it restates (see
     // `wrapObligations`); deterministic per step, so the keep-first registration is stable.
@@ -8014,7 +8015,7 @@ fn pushQualified(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: 
     // (theory selector) targets another namespace we can't check here, so it's kept.
     const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
     if (qualifier == InternPool.Index.none) {
-        const fid = self.ctx.pool_file.get(self.file).?;
+        const fid = self.ctx.fileOf(self.file).?;
         if (self.ctx.declOf(fid, name) == null) return;
     }
     // dupe onto the arena — callers pass inline `&.{…}` literals (stack temporaries).

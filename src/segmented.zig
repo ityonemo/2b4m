@@ -117,6 +117,23 @@ pub fn Segmented(comptime T: type) type {
             @atomicStore(u32, &self.block_count, b + 1, .release);
         }
 
+        /// Iterate every element in order. The store is append-only, so a walk started at a
+        /// given `len` stays valid even if another thread appends behind it.
+        pub const Iterator = struct {
+            store: *const Self,
+            i: u32 = 0,
+            end: u32,
+            pub fn next(it: *Iterator) ?T {
+                if (it.i >= it.end) return null;
+                defer it.i += 1;
+                return it.store.get(it.i);
+            }
+        };
+
+        pub fn iterator(self: *const Self) Iterator {
+            return .{ .store = self, .end = self.len };
+        }
+
         /// Append one element; returns its index.
         pub fn append(self: *Self, arena: Allocator, value: T) Allocator.Error!u32 {
             try self.ensureUnused(arena, 1);

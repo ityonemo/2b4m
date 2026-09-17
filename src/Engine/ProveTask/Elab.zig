@@ -1003,7 +1003,7 @@ fn fail(self: *Elab, offset: u32, comptime fmt: []const u8, args: anytype) Error
 /// rather than passed so a diagnostic's file is never ambient state (see diagnostics.zig).
 fn diagFile(self: *const Elab) u32 {
     const home = self.interner.keyOf(self.ns).namespace.file;
-    const fid = self.ctx.pool_file.get(home) orelse return 0;
+    const fid = self.ctx.fileOf(home) orelse return 0;
     return @intFromEnum(fid);
 }
 

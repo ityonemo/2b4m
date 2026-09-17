@@ -117,9 +117,9 @@ fn countRoot(context: *Context, only: ?[]const u8) !Counts {
     var word_set = Verify.Word.Set.initEmpty();
     for (context.root_files.items) |rf| {
         const root_idx = @intFromEnum(rf);
-        const root_parsed = context.parsed.items[root_idx];
-        const root_source = context.files.items[root_idx].source;
-        const root_pool_file = try context.fileIndex(context.files.items[root_idx].path);
+        const root_parsed = context.parsed.get(root_idx);
+        const root_source = context.files.get(root_idx).source;
+        const root_pool_file = try context.fileIndex(context.files.get(root_idx).path);
         const ns = try context.interner.namespace(.universe, root_pool_file);
         for (root_parsed.decls) |decl| {
             if (decl != .theorem) continue;
@@ -199,7 +199,7 @@ pub fn checkSourceTheorem(arena: std.mem.Allocator, source: []const u8, theorem:
     try noteSchemaRoot(context, theorem);
     const counts = try countRoot(context, theorem);
     return .{
-        .file = context.parsed.items[@intFromEnum(context.root_file)],
+        .file = context.parsed.get(@intFromEnum(context.root_file)),
         .sink = context.sink,
         .declarations = context.declarations,
         .theorems_proven = counts.proven,
@@ -267,10 +267,10 @@ fn collectAxioms(arena: std.mem.Allocator, ctx: *Context, only: ?[]const u8) ![]
     var out: std.ArrayList(ProjectResult.Axiom) = .empty;
     for (ctx.root_files.items) |rf| {
         const root_idx = @intFromEnum(rf);
-        const rsrc = ctx.files.items[root_idx].source;
-        const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
+        const rsrc = ctx.files.get(root_idx).source;
+        const root_pf = try ctx.fileIndex(ctx.files.get(root_idx).path);
         const rns = try ctx.interner.namespace(.universe, root_pf);
-        for (ctx.parsed.items[root_idx].decls) |decl| {
+        for (ctx.parsed.get(root_idx).decls) |decl| {
             if (decl != .theorem) continue;
             const nt = ast.theoremName(decl.theorem);
             const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
@@ -322,7 +322,7 @@ pub fn loadProject(
         .context = context,
         .sink = context.sink,
         .root_file = root_file,
-        .files = context.files.items,
+        .files = try context.fileList(arena),
         .declarations = context.declarations,
     };
 }
@@ -358,13 +358,13 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
     var deps: std.AutoHashMapUnmanaged(InternPool.StrId, std.ArrayList([]const u8)) = .empty;
     for (ctx.root_files.items) |rf| {
         const root_idx = @intFromEnum(rf);
-        const rsrc = ctx.files.items[root_idx].source;
-        const root_pf = try ctx.fileIndex(ctx.files.items[root_idx].path);
+        const rsrc = ctx.files.get(root_idx).source;
+        const root_pf = try ctx.fileIndex(ctx.files.get(root_idx).path);
         const rns = try ctx.interner.namespace(.universe, root_pf);
         // scan EVERY root theorem — LOCAL (proved here) AND ALIAS (a re-export of a fact proved
         // elsewhere). An alias resolves in the root ns to its ORIGIN fact Index, which carries
         // the origin's taint, so a re-exported hole-resting theorem shows in the blast-radius.
-        for (ctx.parsed.items[root_idx].decls) |decl| {
+        for (ctx.parsed.get(root_idx).decls) |decl| {
             if (decl != .theorem) continue;
             const nt = ast.theoremName(decl.theorem);
             const tname_str = rsrc[nt.start..nt.end];
@@ -381,8 +381,8 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
     }
     var holes: std.ArrayList(ProjectResult.Hole) = .empty;
     for (ctx.holes_reached.items) |h| {
-        const fid = ctx.pool_file.get(h.file) orelse continue;
-        const f = ctx.files.items[@intFromEnum(fid)];
+        const fid = ctx.fileOf(h.file) orelse continue;
+        const f = ctx.files.get(@intFromEnum(fid));
         const lc = std.zig.findLineColumn(f.source, h.loc);
         const dep_list: []const []const u8 = if (deps.get(h.name)) |d| d.items else &.{};
         try holes.append(arena, .{
@@ -419,8 +419,8 @@ fn axiomSite(ctx: *Context, ix: InternPool.Index) !?ProjectResult.Axiom {
         .schema => |sk| .{ sk.name, sk.file, sk.loc },
         else => if (ctx.axiom_origin.get(ix)) |o| .{ o.name, o.file, o.loc } else return null,
     };
-    const fid = ctx.pool_file.get(file) orelse return null;
-    const f = ctx.files.items[@intFromEnum(fid)];
+    const fid = ctx.fileOf(file) orelse return null;
+    const f = ctx.files.get(@intFromEnum(fid));
     var is_hole = false;
     for (ctx.holes_reached.items) |hh| {
         if (hh.file == file and hh.loc == loc) is_hole = true;
@@ -450,9 +450,9 @@ fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged
     var used: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty;
     for (ctx.root_files.items) |rf| {
         const root_idx = @intFromEnum(rf);
-        const rsrc = ctx.files.items[root_idx].source;
-        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(ctx.files.items[root_idx].path));
-        for (ctx.parsed.items[root_idx].decls) |decl| {
+        const rsrc = ctx.files.get(root_idx).source;
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(ctx.files.get(root_idx).path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
             if (decl != .theorem) continue;
             const nt = ast.theoremName(decl.theorem);
             const name = try ctx.interner.internString(rsrc[nt.start..nt.end]);
@@ -478,9 +478,9 @@ fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const Project
     var out: std.ArrayList(ProjectResult.Axiom) = .empty;
     for (ctx.root_files.items) |rf| {
         const root_idx = @intFromEnum(rf);
-        const f = ctx.files.items[root_idx];
+        const f = ctx.files.get(root_idx);
         const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(f.path));
-        for (ctx.parsed.items[root_idx].decls) |decl| {
+        for (ctx.parsed.get(root_idx).decls) |decl| {
             if (decl != .axiom or decl.axiom != .local) continue;
             const name_tok = decl.axiom.local.name;
             if (ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name_tok.name })) |state| {

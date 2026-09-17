@@ -111,13 +111,13 @@ trace_facts: bool = false,
 chaos_seed: ?u64 = null,
 /// `-j<n>`: how many worker threads prove in parallel. `-j1` is the single-threaded engine.
 ///
-/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE: the per-file
-/// tables (`Context.files`/`parsed`/`parse_state`/`import_maps`) are still `ArrayList`s that
-/// REALLOCATE when `discover` appends, while 54 sites index them unguarded. Under `-j2+`
-/// that is a live use-after-free — it segfaults on the std sweep and silently loses a
-/// theorem on a small one. Making those tables non-moving (the `Segmented` store the
-/// InternPool already uses) is the next step; until then `-j<n>` is an opt-in for working
-/// ON that, not a mode to check proofs in.
+/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE. The known
+/// hazards are closed — the per-file tables are non-moving, `pool_file` and the AST registry
+/// and the side tables are locked, interning synchronizes itself — but at least one race
+/// REMAINS UNFOUND: `bpa check tests/cases/dir_ok -j4` intermittently reports 2 theorems
+/// where `-j1` reports 3, so a proof is occasionally not counted as proven. Until that is
+/// root-caused, `-j<n>` is an opt-in for working ON the engine, not a mode to check proofs
+/// in, and every gate runs single-threaded.
 ///
 /// Output is a function of (tree, roots), never of scheduling, so the worker count must
 /// change only how fast a run goes — never what it prints. `--chaos` tests that contract
