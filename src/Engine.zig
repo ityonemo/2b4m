@@ -87,10 +87,14 @@ racked: usize = 0,
 completed: usize = 0,
 in_flight: usize = 0,
 
-/// AFFORDANCE: abnormal/early teardown. Checked at the top of the loop; unused in the
-/// single-threaded happy path (quiescence ends the loop). No poison-pill delivery yet
-/// (that wakes OTHER blocked workers — a multi-worker concern).
+/// Set when a task returns an error (or a caller asks for early teardown): every worker
+/// checks it at the top of its loop and exits, so one worker's failure does not leave the
+/// others running against a Context the caller is about to tear down.
 should_stop: std.atomic.Value(bool) = .init(false),
+/// The error that set `should_stop`, re-raised by `run` once the loop exits. Only OOM can
+/// realistically land here — a failed PROOF is a diagnostic in the sink, not an error — but
+/// an OOM under workers must not leave anyone waiting on a condition nobody will signal.
+failure: ?std.mem.Allocator.Error = null,
 
 /// A minimal test-and-set spinlock — the CONCURRENCY AFFORDANCE for shared engine
 /// state. Single-threaded now, so lock/unlock are uncontended atomic ops; the value is
@@ -220,20 +224,60 @@ pub fn taskCount(self: *const Engine) usize {
 /// flight. A task error stops the engine and propagates; the stop flag also ends the loop.
 ///
 /// Tasks left PARKED at that point are a wedge — see `wedged` and `Context.reportWedge`.
+/// Run to quiescence on `workers` threads (1 = the calling thread only, today's behavior).
+///
+/// Every worker runs the SAME loop; parallelism is at task granularity and the tasks
+/// coordinate through the Context's own locks. The caller's thread is one of the workers, so
+/// `workers` threads means `workers - 1` spawned.
+pub fn runWorkers(self: *Engine, workers: usize) std.mem.Allocator.Error!void {
+    if (workers <= 1) return self.run();
+
+    const spawned = try self.arena.alloc(std.Thread, workers - 1);
+    var started: usize = 0;
+    for (spawned) |*t| {
+        t.* = std.Thread.spawn(.{}, workerMain, .{self}) catch break; // fewer threads is fine
+        started += 1;
+    }
+    self.run() catch |err| {
+        // stop the others before joining, or they run on against a dying Context
+        self.should_stop.store(true, .release);
+        for (spawned[0..started]) |t| t.join();
+        return err;
+    };
+    for (spawned[0..started]) |t| t.join();
+    if (self.failure) |err| return err;
+}
+
+/// A spawned worker: the same loop, its error recorded on the engine (a thread cannot
+/// propagate one) for `runWorkers` to re-raise.
+fn workerMain(self: *Engine) void {
+    self.run() catch {}; // `run` already recorded it in `self.failure`
+}
+
 pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
         const index = switch (self.pull()) {
             .run => |i| i,
             .done => break,
-            // Single-threaded there is no one else to wait FOR, so `wait` cannot happen (a
-            // worker only sees it while another holds a task). With workers this becomes a
-            // condition wait; until then, treat it as done rather than spin.
-            .wait => break,
+            // Another worker holds a task that may yet rack more. Yield rather than spin
+            // hot; whoever resolves that task pushes to the queue or ends the run.
+            .wait => {
+                std.Thread.yield() catch {};
+                continue;
+            },
         };
         const task = self.taskOf(index);
         var handle: Handle = .{ .engine = self, .self_index = index };
         self.traceLifecycle("run", index, null);
-        try task.run(self.ctx, task.payload, &handle);
+        task.run(self.ctx, task.payload, &handle) catch |err| {
+            // Stop every worker, not just this one, and re-raise after the loop.
+            self.mutex.lock();
+            if (self.failure == null) self.failure = err;
+            self.in_flight -= 1; // this task is resolved (by failing)
+            self.mutex.unlock();
+            self.should_stop.store(true, .release);
+            break;
+        };
         if (handle.blocked_on) |blocker| {
             // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
             self.traceLifecycle("park", index, blocker);
@@ -251,6 +295,7 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
             try self.wake(index);
         }
     }
+    if (self.failure) |err| return err;
 }
 
 /// `--trace-facts` lifecycle line: what the scheduler did with a task. The run queue is a

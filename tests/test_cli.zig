@@ -17,7 +17,7 @@ pub fn addTests(
     const no_args = b.addRunArtifact(exe);
     no_args.has_side_effects = true;
     no_args.expectStdErrEqual(
-        "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] <file.bpa | dir> [theorem]\n" ++
+        "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] <file.bpa | dir> [theorem]\n" ++
             "       bpa fmt [--check] <file.bpa|.md>\n" ++
             "       bpa lint <file.bpa|.md>\n" ++
             "       bpa debug accelerant <file> <line | theorem step-label>\n" ++
