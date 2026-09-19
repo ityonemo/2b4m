@@ -104,6 +104,18 @@ parked: std.ArrayList(Parked) = .empty,
 racked: usize = 0,
 completed: usize = 0,
 in_flight: usize = 0,
+/// Work outstanding OUTSIDE the worker pool: an operation a task handed to a non-worker
+/// thread (a file read, say) which will call `externalEnd` when it lands.
+///
+/// It joins the snapshot above because a task awaiting one is PARKED, and the park path
+/// decrements `in_flight` — so such a task is neither queued nor running, and without this
+/// counter the termination predicate declares the run over while the work is still in
+/// flight. Every worker would see `.done`, `runWorkers` would join, and the engine would
+/// tear down with a write still pending into a Context its caller is about to drop.
+///
+/// Unreachable today (nothing completes off-worker); it is the prerequisite for anything
+/// that does, and is tested directly rather than left to be discovered later.
+external: usize = 0,
 
 /// Set when a task returns an error (or a caller asks for early teardown): every worker
 /// checks it at the top of its loop and exits, so one worker's failure does not leave the
@@ -216,8 +228,9 @@ fn pull(self: *Engine) Next {
     defer self.mutex.unlock();
     if (self.run_queue.items.len == 0) {
         // An empty queue is NOT termination on its own: a worker may hold a task that will
-        // rack children. Only "nothing runnable AND nothing running" ends the run.
-        return if (self.in_flight == 0) .done else .wait;
+        // rack children, or an off-worker operation may be about to wake one. Only "nothing
+        // runnable, nothing running, and nothing outstanding elsewhere" ends the run.
+        return if (self.in_flight == 0 and self.external == 0) .done else .wait;
     }
     self.in_flight += 1;
     if (self.chaos) |*prng| {
@@ -280,8 +293,16 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
         const index = switch (self.pull()) {
             .run => |i| i,
             .done => break,
-            // Another worker holds a task that may yet rack more. Yield rather than spin
-            // hot; whoever resolves that task pushes to the queue or ends the run.
+            // Another worker holds a task that may yet rack more, or an off-worker
+            // operation is pending. Yield rather than spin hot; whoever resolves it pushes
+            // to the queue or ends the run.
+            //
+            // FOLLOW-UP once anything actually uses `external`: a hand-off between workers
+            // resolves in microseconds, but an off-worker OPERATION can take milliseconds,
+            // and yielding in a loop for that long burns a core per idle worker. That wants
+            // a condition wait — which needs `mutex` to stop being a spinlock, since
+            // `std.Thread.Condition` requires a real mutex. Deliberately NOT bundled here:
+            // it touches the hot scheduling path, and this commit is meant to be inert.
             .wait => {
                 std.Thread.yield() catch {};
                 continue;
@@ -350,12 +371,61 @@ fn traceLifecycle(self: *Engine, what: []const u8, index: TaskIndex, other: ?Tas
     self.ctx.traceLine(line);
 }
 
+/// Register an off-worker operation, so the engine cannot terminate while it is pending.
+///
+/// Called BY THE TASK, on its worker thread, BEFORE handing the work off. The ordering is
+/// load-bearing: increment then submit, so there is never a window in which the work exists
+/// but the counter does not. Pair with exactly one `externalEnd`.
+pub fn externalBegin(self: *Engine) void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    self.external += 1;
+}
+
+/// Undo an `externalBegin` whose submission FAILED, so the caller can fall back to doing the
+/// work inline. Not `externalEnd`: nothing was woken and nothing completed, so this must not
+/// sweep `parked` or bump `completions`.
+pub fn externalCancel(self: *Engine) void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    self.external -= 1;
+}
+
+/// An off-worker operation landed: retire it and wake the task waiting on `blocker`.
+///
+/// CALLED FROM A NON-WORKER THREAD. Everything happens in ONE critical section, the same one
+/// the park path reads, so a task deciding to park cannot miss this completion: it either
+/// parks before and is swept here, or sees `completions` moved and requeues itself. That is
+/// the same rule the in-engine completion path follows — see `completions`.
+///
+/// The engine mutex is also the PUBLICATION BARRIER for whatever the operation produced: this
+/// releases it, and the woken worker's `pull` acquires it. A reviewer looking for an atomic
+/// on the result field should find this comment instead.
+pub fn externalEnd(self: *Engine, blocker: TaskIndex) void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    self.external -= 1;
+    self.completions += 1;
+    self.wakeLocked(blocker) catch |err| {
+        // The wake itself failed to allocate. Swallowing this would strand the parked task
+        // forever AND drop `external` to zero, so the engine would terminate and wedge.
+        // Fail the whole run instead, exactly as a task error does.
+        if (self.failure == null) self.failure = err;
+        self.should_stop.store(true, .release);
+    };
+}
+
 /// A task `finished` completed — move every parked task blocked-on it back to the run
 /// queue (it will re-enter its `run` and resume from its saved state). Mutex-guarded;
 /// the "stupid simple" parked-queue scan (no separate waiter lists).
 fn wake(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
     self.mutex.lock();
     defer self.mutex.unlock();
+    return self.wakeLocked(finished);
+}
+
+/// `wake`'s body, for a caller that already holds `mutex` (it is not reentrant).
+fn wakeLocked(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
     var i: usize = 0;
     while (i < self.parked.items.len) {
         if (self.parked.items[i].blocked_on == finished) {
@@ -628,4 +698,77 @@ test "wedged: a task parked on a COMPLETED task is not a cycle (the blocker fail
     const w = try e.wedged(arena);
     try std.testing.expectEqual(@as(usize, 1), w.len);
     try std.testing.expect(!w[0].in_cycle); // blocked on a COMPLETED task: not a cycle
+}
+
+test "external work keeps the engine alive: it must not terminate mid-operation" {
+    // A task hands work to a NON-WORKER thread and parks awaiting it. Without `external` in
+    // the termination predicate the engine sees an empty queue and nothing in flight, breaks
+    // out of every worker loop, and returns while the operation is still running — the task
+    // never resumes and whatever it was producing is silently dropped.
+    //
+    // This fails DETERMINISTICALLY without the fix (the sleep guarantees the engine reaches
+    // its predicate first), which is what makes it a gate rather than a flake.
+    const Shared = struct {
+        engine: *Engine = undefined,
+        index: Engine.TaskIndex = undefined,
+        runs: usize = 0,
+        landed: bool = false,
+
+        /// The off-worker side: stall long enough that the engine reaches its termination
+        /// check first, then complete. (A busy spin rather than a sleep: `std.Io.sleep`
+        /// needs an `Io` handle, and this test deliberately runs with an undefined Context.)
+        fn offWorker(s: *@This()) void {
+            var spin: usize = 0;
+            while (spin < 2_000_000) : (spin += 1) std.atomic.spinLoopHint();
+            s.landed = true;
+            s.engine.externalEnd(s.index);
+        }
+    };
+    const Task_ = struct {
+        fn run(ctx: *Context, payload: *anyopaque, h: *Handle) std.mem.Allocator.Error!void {
+            _ = ctx;
+            const s: *Shared = @ptrCast(@alignCast(payload));
+            s.runs += 1;
+            if (s.runs == 1) {
+                s.engine = h.engine;
+                s.index = h.self_index;
+                h.engine.externalBegin(); // BEFORE handing off — see externalBegin
+                const t = std.Thread.spawn(.{}, Shared.offWorker, .{s}) catch unreachable;
+                t.detach();
+                h.suspendOn(h.self_index); // the blocker is an operation, not a task
+                return;
+            }
+            // resumed: the operation landed, so we may finish.
+        }
+    };
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var e = Engine.init(arena, undefined);
+    var shared: Shared = .{};
+    _ = try e.rack(.{ .payload = &shared, .run = &Task_.run });
+    try e.run();
+
+    try std.testing.expect(shared.landed); // the engine waited for it
+    try std.testing.expectEqual(@as(usize, 2), shared.runs); // suspended, then resumed
+    try std.testing.expectEqual(e.racked, e.completed); // and it completed
+    try std.testing.expectEqual(@as(usize, 0), e.external); // balanced
+    try std.testing.expectEqual(@as(usize, 0), (try e.wedged(arena)).len);
+}
+
+test "externalCancel unwinds a failed submission without waking anything" {
+    // A backend that cannot accept the work (queue full, OOM) must leave the engine exactly
+    // as it found it, so the caller can fall back to doing the job inline. In particular it
+    // must NOT sweep `parked` or bump `completions` — nothing completed.
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    var e = Engine.init(arena_state.allocator(), undefined);
+
+    const before = e.completions;
+    e.externalBegin();
+    try std.testing.expectEqual(@as(usize, 1), e.external);
+    e.externalCancel();
+    try std.testing.expectEqual(@as(usize, 0), e.external);
+    try std.testing.expectEqual(before, e.completions); // no phantom completion
 }
