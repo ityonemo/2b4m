@@ -1078,7 +1078,7 @@ const World = struct {
         };
         walk.* = Walk.init(arena, interner, "", sink);
 
-        const file = try interner.get(.{ .file = .{ .path = try interner.internString("/t/w.bpa") } });
+        const file = try interner.intern(.{ .file = .{ .path = try interner.internString("/t/w.bpa") } });
         w.ns = try interner.namespace(.universe, file);
 
         const nat_name = try interner.internString("Nat");
@@ -1089,7 +1089,7 @@ const World = struct {
         } });
 
         const nat2 = [_]InternPool.Index{ w.nat, w.nat };
-        const add_sig = try interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
+        const add_sig = try interner.intern(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
         const add_name = try interner.internString("add");
         w.add_f = try idents.publish(w.io, .{ .namespace = w.ns, .name = add_name }, .{ .func = .{
             .sig = add_sig,
@@ -1099,7 +1099,7 @@ const World = struct {
             .loc = 0,
         } });
 
-        const le_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat2 } });
+        const le_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat2 } });
         const le_name = try interner.internString("le");
         w.le_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = le_name }, .{ .pred = .{
             .sig = le_sig,
@@ -1119,7 +1119,7 @@ const World = struct {
 
         // the refinement fixtures: pred inH(Nat); sort H = Nat where inH; shift(h: H): Nat; mk(n: Nat): H.
         const nat1 = [_]InternPool.Index{w.nat};
-        const inh_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
+        const inh_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
         const inh_name = try interner.internString("inH");
         w.inh_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = inh_name }, .{ .pred = .{
             .sig = inh_sig,
@@ -1136,7 +1136,7 @@ const World = struct {
             .refinement = .{ .parent = w.nat, .qualifiers = h_quals },
         } });
         const h1 = [_]InternPool.Index{w.h_sort};
-        const shift_sig = try interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &h1 } });
+        const shift_sig = try interner.intern(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &h1 } });
         const shift_name = try interner.internString("shift");
         w.shift_f = try idents.publish(w.io, .{ .namespace = w.ns, .name = shift_name }, .{ .func = .{
             .sig = shift_sig,
@@ -1145,7 +1145,7 @@ const World = struct {
             .name = shift_name,
             .loc = 0,
         } });
-        const mk_sig = try interner.get(.{ .sig = .{ .result = w.h_sort, .result_refined = .none, .args = &nat1 } });
+        const mk_sig = try interner.intern(.{ .sig = .{ .result = w.h_sort, .result_refined = .none, .args = &nat1 } });
         const mk_name = try interner.internString("mk");
         w.mk_f = try idents.publish(w.io, .{ .namespace = w.ns, .name = mk_name }, .{ .func = .{
             .sig = mk_sig,
@@ -1168,7 +1168,7 @@ const World = struct {
         const guard_off = try w.scratch.reify(guard_term, w.interner);
         w.interner.unlockWrite(w.io);
         const nat2 = [_]InternPool.Index{ w.nat, w.nat };
-        const div_sig = try w.interner.get(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
+        const div_sig = try w.interner.intern(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
         const div_name = try w.interner.internString("div");
         _ = try w.idents.publish(w.io, .{ .namespace = w.ns, .name = div_name }, .{ .func = .{
             .sig = div_sig,

@@ -498,7 +498,7 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
         try resolveSortDemand(self, h, file, source, rt)
     else
         .prop;
-    const sig = self.interner.get(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
+    const sig = self.interner.intern(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
     return .{ .sig = sig, .param_names = names };
 }
 

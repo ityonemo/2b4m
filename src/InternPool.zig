@@ -66,28 +66,13 @@ string_bytes: Segmented(u8) = .empty,
 /// re-deriving the key from the stored item (adapter context compares against `items`).
 map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load_percentage) = .empty,
 
-/// The WRITE mutex (see [[internpool-concurrency-model]]). `get` READS lock-free and never
-/// touches this — reads take NO lock, so the read path needs no `Io`. WRITERS (anything
-/// that mints a new `Index`) must hold it around the mint: a higher build layer (e.g. a
-/// theorem KV) takes `lockWrite(io)`, then calls `get` (which appends), then
-/// `unlockWrite(io)`. Reads stay lock-free; only writers serialize. `std.Io.Mutex` (not
-/// an RwLock — readers never take a shared lock) needs an `Io`, which writers get from the
-/// `Context` they hold.
+/// Guards the pool's WRITE paths — `intern`'s create arm, and (still to be routed through
+/// it) the `mint*` family. A self-contained spinlock, like `Engine.mutex`: `std.Io.Mutex`
+/// needs an `Io` handle, and the pool is constructed in a dozen places (mostly test rigs)
+/// that have none.
 ///
-/// CONCURRENCY PREREQUISITE (SATISFIED 2026-09-16): lock-free reads are only ACTUALLY safe
-/// once the store is NON-MOVING, and it now is — `items`/`extra`/`string_bytes` are
-/// `Segmented` (a table of doubling blocks, each allocated once and never resized or
-/// copied), so an element's address is stable for the pool's life and a reader can never
-/// race a writer's reallocation. This mutex makes the WRITE DISCIPLINE correct; the
-/// non-moving store is the other half. See `segmented.zig`.
-write_mutex: std.Io.Mutex = .init,
-
-/// Guards `get` — the interning path, which appends and rehashes `map` on a miss. Held
-/// INSIDE `get` rather than by its callers (see the note there). A self-contained spinlock,
-/// like `Engine.mutex`: `std.Io.Mutex` needs an `Io` handle, and the pool is constructed in
-/// a dozen places (mostly test rigs) that have none. Swap it when the engine's own lock is
-/// swapped — the call sites do not move.
-intern_lock: Lock = .{},
+/// READS never take it: `get` is pure and lock-free.
+write_lock: Lock = .{},
 
 arena: std.mem.Allocator,
 /// TRANSIENT staging for payloads that must land in `extra` as ONE contiguous run (a
@@ -495,7 +480,7 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     var self: InternPool = .{ .arena = arena, .scratch = arena };
     // Universe is its own parent — a self-reference at Index 0. The `.universe` constant
     // IS 0, so we can name it as the parent before the entry physically exists.
-    const universe = try self.get(.{ .model = .{ .parent = .universe } });
+    const universe = try self.intern(.{ .model = .{ .parent = .universe } });
     std.debug.assert(universe == .universe); // the universe model MUST be Index 0
     // The "Prop" name string lands at Index 1, then the builtin Prop SORT at Index 2 (its
     // name field references the string). `Index.prop` names the sort. Ordering matters:
@@ -513,22 +498,40 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     return self;
 }
 
-/// Intern a key: return the existing `Index` if a structurally-equal entry exists, else
-/// append a new packed `Item` (+ `extra`) and record it. The always-intern entry point.
-pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
-    // SYNCHRONIZED INTERNALLY (see `write_mutex`): `get` MUTATES on a miss — it appends an
-    // Item and rehashes `map` — and it is called from ~225 sites, most of which cannot say
-    // locally whether their key is new. Auditing each to wrap it in `lockWrite` would be
-    // both huge and unverifiable, so the lock lives here, where the mutation is.
-    //
-    // Deliberately unconditional rather than a probe-then-lock fast path: `map` itself
-    // rehashes on growth, so even a "read" of it races a concurrent insert. Serializing all
-    // interning is correct; whether it is a contention problem is a question for `zig build
-    // bench` with workers, not one to pre-optimize. (`mint*` bypasses `get` entirely and
-    // stays under the caller's `lockWrite`, so the two disciplines do not nest.)
-    self.intern_lock.lock();
-    defer self.intern_lock.unlock();
+/// LOOK UP a key — a PURE READ. Returns null when the key has never been interned.
+///
+/// Takes NO lock and mutates nothing, so it is free to call from any thread: the stores it
+/// reads through are `Segmented` (non-moving), so an entry's address is stable once written.
+/// This is the hot path — the overwhelming majority of interning calls are hits — and it is
+/// deliberately the cheapest thing in the pool.
+///
+/// Use `intern` when a miss should CREATE the entry. Splitting the two is what keeps the
+/// read path free: `get` used to create on a miss, which forced every caller — hit or miss —
+/// through the write lock.
+pub fn get(self: *const InternPool, key: Key) ?Index {
+    return self.map.getKeyAdapted(key, KeyAdapter{ .pool = self });
+}
 
+/// INTERN a key: its existing `Index` if one exists, else create the entry and return the
+/// fresh `Index`. The canonical-identity entry point — two structurally equal keys always
+/// yield the same `Index`.
+///
+/// Protocol (the miss path is the only part that locks):
+///   1. probe lock-free via `get`; a hit returns immediately;
+///   2. on a miss take `write_lock`;
+///   3. RE-PROBE under the lock — another thread may have interned this key while we were
+///      blocked, in which case we must return ITS index and build nothing;
+///   4. only if still absent, build the entry and publish it.
+///
+/// Step 3 is load-bearing: without it two threads that both miss would both build, putting
+/// two items in the store for one key and breaking the identity the whole pool rests on.
+pub fn intern(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
+    if (self.get(key)) |existing| return existing; // lock-free fast path
+
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
+
+    // RE-PROBE: someone may have interned it between our miss and taking the lock.
     const gop = try self.map.getOrPutContextAdapted(self.arena, key, KeyAdapter{ .pool = self }, MapContext{ .pool = self });
     if (gop.found_existing) return gop.key_ptr.*;
 
@@ -569,6 +572,8 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
 /// pool (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact IS
 /// committing "this fact is proven true". Takes the write-mutex like any pool write.
 pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff, name: StrId, loc: u32) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(Key.Fact{ .kind = kind, .formula = formula, .name = name, .loc = loc });
     _ = try self.items.append(self.arena, .{ .tag = .fact, .data = off });
@@ -580,6 +585,8 @@ pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff, name: StrId
 /// no qualifiers). Two root sorts have identical content but distinct Indexes (name-identity
 /// is IdentKV's). Callers hold the write-mutex, as with any pool write.
 pub fn mintSort(self: *InternPool, s: Key.Sort) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addSortPayload(s);
     _ = try self.items.append(self.arena, .{ .tag = .sort, .data = off });
@@ -683,6 +690,8 @@ pub fn symResult(self: *const InternPool, sym: Index) Index {
 /// Indexes.
 /// Mint an anonymous GUARD term Item (a define'd `where` qualifier), always appending.
 pub fn mintGuard(self: *InternPool, g: Key.Guard) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(g); // reflection: [term, carrier]
     _ = try self.items.append(self.arena, .{ .tag = .guard, .data = off });
@@ -690,6 +699,8 @@ pub fn mintGuard(self: *InternPool, g: Key.Guard) std.mem.Allocator.Error!Index 
 }
 
 pub fn mintConstant(self: *InternPool, c: Key.Constant) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(c); // reflection: [sort, name, loc]
     _ = try self.items.append(self.arena, .{ .tag = .constant, .data = off });
@@ -725,6 +736,8 @@ fn callableData(self: *const InternPool, off: u32) Key.Callable {
 /// Mint a fresh FUNCTION identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// Spills `[sig, guard, paramc, pn0, …]` into `extra`.
 pub fn mintFunc(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addCallable(c);
     _ = try self.items.append(self.arena, .{ .tag = .func, .data = off });
@@ -734,6 +747,8 @@ pub fn mintFunc(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Inde
 /// Mint a fresh PREDICATE identifier — same `Callable` payload as `mintFunc`, a distinct
 /// tag. ALWAYS appends (no dedup; IdentKV owns identity).
 pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addCallable(c);
     _ = try self.items.append(self.arena, .{ .tag = .pred, .data = off });
@@ -743,6 +758,8 @@ pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Inde
 /// Mint a fresh IMPORT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// Spills `[namespace, name, loc]` into `extra`.
 pub fn mintImport(self: *InternPool, m: Key.Import) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(m); // reflection: [namespace, name, loc]
     _ = try self.items.append(self.arena, .{ .tag = .import, .data = off });
@@ -753,21 +770,28 @@ pub fn mintImport(self: *InternPool, m: Key.Import) std.mem.Allocator.Error!Inde
 /// Spills `[name, file, loc]` into `extra` (reflection). The template content is NOT stored
 /// — it is re-read from the by-name AST registry via `file`+`name`.
 pub fn mintSchema(self: *InternPool, s: Key.Schema) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(s); // reflection: [name, file, loc]
     _ = try self.items.append(self.arena, .{ .tag = .schema, .data = off });
     return index;
 }
 
-/// Take the WRITE mutex around a mint (see [[internpool-concurrency-model]]). A writer
-/// wraps its `get`-that-appends in `lockWrite`/`unlockWrite`; `get` itself never touches
-/// the mutex, so READS stay lock-free. Uncontended today (single-threaded). Uncancelable
-/// so the lock discipline can't be interrupted mid-mint.
+/// NO-OPS, retained so the old call sites keep compiling while they are retired.
+///
+/// The pool used to require its CALLERS to hold a write mutex around a mint. That contract
+/// could not be honored and was not: six of the ten `appendExtraRun` sites took no lock at
+/// all, which let two theorems publish the same `extra` offset and so cite each other's
+/// formula. Mutation is synchronized INSIDE the pool now (`write_lock`), so taking a lock
+/// out here would deadlock — the lock is not reentrant.
 pub fn lockWrite(self: *InternPool, io: std.Io) void {
-    self.write_mutex.lockUncancelable(io);
+    _ = self;
+    _ = io;
 }
 pub fn unlockWrite(self: *InternPool, io: std.Io) void {
-    self.write_mutex.unlock(io);
+    _ = self;
+    _ = io;
 }
 
 // -- raw `extra` u32-run API (term serialization rests on this) ------------------------
@@ -780,6 +804,8 @@ pub fn unlockWrite(self: *InternPool, io: std.Io) void {
 /// hold the write-mutex (`lockWrite`), same discipline as any mint. `reify` calls this once
 /// per term (the whole serialized run in one append).
 pub fn appendExtraRun(self: *InternPool, run: []const u32) std.mem.Allocator.Error!u32 {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     // CONTIGUOUS: `extraRun` hands this back as a slice, so it must live in one block.
     return self.extra.appendSliceContiguous(self.arena, run);
 }
@@ -831,7 +857,7 @@ pub fn count(self: *const InternPool) usize {
 
 /// Intern bytes as a string, returning its `StrId` (== a pool `Index`). Content-deduped.
 pub fn internString(self: *InternPool, bytes: []const u8) std.mem.Allocator.Error!StrId {
-    return self.get(.{ .string = bytes });
+    return self.intern(.{ .string = bytes });
 }
 
 /// The bytes of an interned string. Asserts `id` names a `.string` item.
@@ -846,7 +872,7 @@ pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
 /// same pair always yields the same `Index`. The universe-namespace of `file` is
 /// `namespace(.universe, file)`.
 pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator.Error!Index {
-    return self.get(.{ .namespace = .{ .model = model, .file = file } });
+    return self.intern(.{ .namespace = .{ .model = model, .file = file } });
 }
 
 /// Interpret a SOURCE entity `Index` THROUGH a model: walk `model`'s overlay chain (its
@@ -927,11 +953,9 @@ pub fn composeModel(self: *InternPool, io: std.Io, outer: Index, inner: Index) s
         if (cur == m.parent) break; // universe fixpoint
         cur = m.parent;
     }
-    // `lockWrite` (the mint discipline) and `get`'s own `intern_lock` are DIFFERENT locks,
-    // so this nesting does not self-deadlock; the order is write_mutex -> intern_lock.
-    self.lockWrite(io);
-    defer self.unlockWrite(io);
-    return self.get(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
+    // `intern` synchronizes itself; no caller-held lock (see `write_lock`).
+    _ = io;
+    return self.intern(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
 }
 
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
@@ -1049,12 +1073,12 @@ test "sig: [result, result_refined, argc, args…] interns/round-trips; dedups s
     const bool_ = try pool.internString("Bool");
 
     // (Nat, Int) -> Bool, with no result refinement (none)
-    const s1 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
-    const s1_again = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
-    const s2 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ int, nat } } }); // arg order
-    const s3 = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, int } } }); // result
-    const s4 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = nat, .args = &.{ nat, int } } }); // refined
-    const s_nullary = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{} } });
+    const s1 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s1_again = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s2 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ int, nat } } }); // arg order
+    const s3 = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, int } } }); // result
+    const s4 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = nat, .args = &.{ nat, int } } }); // refined
+    const s_nullary = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{} } });
 
     try std.testing.expectEqual(s1, s1_again); // structural dedup
     try std.testing.expect(s1 != s2);
@@ -1123,7 +1147,7 @@ test "refinement queries: carrierOf/qualifiersOf/isRefined walk the chain" {
     try std.testing.expectEqualSlices(Index, &.{ in_c, in_b }, try pool.qualifiersOf(arena, c));
 
     // symResult reads a func's signature result sort.
-    const sig = try pool.get(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
+    const sig = try pool.intern(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
     const f = try pool.mintFunc(.{ .sig = sig, .guard = no_term, .param_names = &.{try pool.internString("x")}, .name = nm, .loc = 0 });
     try std.testing.expectEqual(a, pool.symResult(f));
 }
@@ -1150,7 +1174,7 @@ test "func: [sig, guard|none, paramc, names…] minted fresh, round-trips; guard
 
     const nm = try pool.internString("s");
     const nat = try pool.mintSort(.{ .name = nm, .loc = 0, .refinement = null });
-    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
+    const sig = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
     const n_name = try pool.internString("n");
     const m_name = try pool.internString("m");
     // stand-in guard term-offset (a real guard is a reified `extra` offset; any u32 works).
@@ -1182,7 +1206,7 @@ test "pred: same Callable payload as func, minted under a DISTINCT kind" {
     const nm = try pool.internString("s");
     const nat = try pool.mintSort(.{ .name = nm, .loc = 0, .refinement = null });
     // a predicate's sig has no meaningful result sort in the pool layout; use none-ish.
-    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
+    const sig = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
     const x = try pool.internString("x");
 
     const is_even = try pool.mintPred(.{ .sig = sig, .guard = InternPool.no_term, .param_names = &.{x}, .name = nm, .loc = 0 });
@@ -1198,7 +1222,7 @@ test "import: data = the .namespace it binds; minted (two imports of one ns are 
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
     const ns = try pool.namespace(.universe, f);
 
     const nm = try pool.internString("P");
@@ -1213,7 +1237,7 @@ test "schema: locator [name, file, loc] minted fresh, round-trips" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
     const nm = try pool.internString("induction");
     const s = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 });
     const s2 = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 }); // distinct
@@ -1255,10 +1279,10 @@ test "universe model is seeded at Index 0 as its own parent" {
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);
     // re-asking for the universe payload dedups back to Index 0
-    try std.testing.expectEqual(InternPool.Index.universe, try pool.get(.{ .model = .{ .parent = .universe } }));
+    try std.testing.expectEqual(InternPool.Index.universe, try pool.intern(.{ .model = .{ .parent = .universe } }));
 
     // a model whose parent is universe: distinct from universe, round-trips its parent
-    const child = try pool.get(.{ .model = .{ .parent = .universe } });
+    const child = try pool.intern(.{ .model = .{ .parent = .universe } });
     // NOTE: with an empty overlay, this child has the SAME payload as universe {parent:0}
     // and therefore DEDUPS to universe. Distinct child models require a distinct parent or
     // a non-empty overlay (deferred). Assert the dedup is exactly that:
@@ -1287,11 +1311,11 @@ test "composeModel is exact function composition, at any depth, through a parent
 
     // inner = {a→b} PARENTED on {c→d}: its domain is {a, c}, and `c` lives ONLY in the parent
     // level — the case a top-overlay-only composition gets wrong.
-    const inner_parent = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = c, .tgt = d }} } });
-    const inner = try pool.get(.{ .model = .{ .parent = inner_parent, .overlay = &.{.{ .src = a, .tgt = b }} } });
+    const inner_parent = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = c, .tgt = d }} } });
+    const inner = try pool.intern(.{ .model = .{ .parent = inner_parent, .overlay = &.{.{ .src = a, .tgt = b }} } });
     try std.testing.expectEqual(d, pool.applyModel(inner, c)); // the parent level is live
     // outer maps inner's targets on (b→e, d→f) plus a source inner never touches (g→p).
-    const outer = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{ .{ .src = b, .tgt = e }, .{ .src = d, .tgt = f }, .{ .src = g, .tgt = p } } } });
+    const outer = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{ .{ .src = b, .tgt = e }, .{ .src = d, .tgt = f }, .{ .src = g, .tgt = p } } } });
 
     // THE PROPERTY: composed(x) == outer(inner(x)) for every x — inner's top overlay (a→b→e),
     // inner's PARENT level (c→d→f), outer-only fallthrough (g→p), and unmapped (q→q).
@@ -1306,7 +1330,7 @@ test "composeModel is exact function composition, at any depth, through a parent
 
     // A THIRD LAYER: composing with the (parented, composed) model as the AMBIENT still holds —
     // the associativity that makes nesting sound at any depth.
-    const third = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = q, .tgt = a }} } });
+    const third = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = q, .tgt = a }} } });
     const composed2 = try pool.composeModel(io, composed, third);
     for (all) |x| {
         try std.testing.expectEqual(pool.applyModel(composed, pool.applyModel(third, x)), pool.applyModel(composed2, x));
@@ -1324,8 +1348,8 @@ test "namespace = (model, file), deduped per pair" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
-    const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f_int = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
+    const f_nat = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
 
     // universe-namespace of each file (distinct non-universe models need overlays, deferred)
     const u_int = try pool.namespace(.universe, f_int);
@@ -1375,9 +1399,9 @@ test "file interns by path: same path -> same Index, distinct paths -> distinct"
     const p_int = try pool.internString("std/integer.bpa");
     const p_nat = try pool.internString("std/peano.bpa");
 
-    const a = try pool.get(.{ .file = .{ .path = p_int } });
-    const b = try pool.get(.{ .file = .{ .path = p_nat } });
-    const a2 = try pool.get(.{ .file = .{ .path = p_int } }); // second importer, same file
+    const a = try pool.intern(.{ .file = .{ .path = p_int } });
+    const b = try pool.intern(.{ .file = .{ .path = p_nat } });
+    const a2 = try pool.intern(.{ .file = .{ .path = p_int } }); // second importer, same file
 
     try std.testing.expectEqual(a, a2); // DEDUP: same path collapses to one Index
     try std.testing.expect(a != b); // distinct paths are distinct entities

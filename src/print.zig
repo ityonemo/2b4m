@@ -223,10 +223,10 @@ const Fixture = struct {
         pool.* = .init(arena, arena);
         const nat_ix = try interner.mintSort(.{ .name = try interner.internString("Nat"), .loc = 0, .refinement = null });
         const nat2 = [_]InternPool.Index{ nat_ix, nat_ix };
-        const add_sig = try interner.get(.{ .sig = .{ .result = nat_ix, .result_refined = .none, .args = &nat2 } });
+        const add_sig = try interner.intern(.{ .sig = .{ .result = nat_ix, .result_refined = .none, .args = &nat2 } });
         const add_ix = try interner.mintFunc(.{ .sig = add_sig, .guard = InternPool.no_term, .param_names = &.{}, .name = try interner.internString("add"), .loc = 0 });
         const nat1 = [_]InternPool.Index{nat_ix};
-        const even_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
+        const even_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
         const even_ix = try interner.mintPred(.{ .sig = even_sig, .guard = InternPool.no_term, .param_names = &.{}, .name = try interner.internString("even"), .loc = 0 });
         return .{
             .interner = interner,
