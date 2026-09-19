@@ -101,6 +101,28 @@ draft: bool = false,
 /// its source's facts, so "which one did this step actually get?" is not answerable from the
 /// source text. Written to stderr as the run proceeds; never affects the verdict.
 trace_facts: bool = false,
+/// `--chaos[=SEED]`: shuffle the engine's scheduling order under a fixed seed, so a run
+/// explores a DIFFERENT task interleaving while staying single-threaded and reproducible.
+///
+/// Output is a function of (tree, roots), never of scheduling — that is the determinism
+/// contract the goldens encode. This is how the contract is TESTED: check the corpus under
+/// many seeds and diff. Any difference is a determinism bug (something leaked task order
+/// into output), caught here without threads to confuse the diagnosis. Null = off.
+chaos_seed: ?u64 = null,
+/// `-j<n>`: how many worker threads prove in parallel. `-j1` is the single-threaded engine.
+///
+/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE. The known
+/// hazards are closed — the per-file tables are non-moving, `pool_file` and the AST registry
+/// and the side tables are locked, interning synchronizes itself — but at least one race
+/// REMAINS UNFOUND: `bpa check tests/cases/dir_ok -j4` intermittently reports 2 theorems
+/// where `-j1` reports 3, so a proof is occasionally not counted as proven. Until that is
+/// root-caused, `-j<n>` is an opt-in for working ON the engine, not a mode to check proofs
+/// in, and every gate runs single-threaded.
+///
+/// Output is a function of (tree, roots), never of scheduling, so the worker count must
+/// change only how fast a run goes — never what it prints. `--chaos` tests that contract
+/// deterministically today; a `-j` sweep tests it under real threads once the tables move.
+workers: usize = 1,
 
 const Verify = @This();
 

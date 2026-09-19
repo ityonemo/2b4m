@@ -31,6 +31,7 @@
 //! struct + one `keyOf` case, no hand-written pack/unpack.
 
 const std = @import("std");
+const Segmented = @import("segmented.zig").Segmented;
 
 const InternPool = @This();
 
@@ -51,34 +52,33 @@ pub const TermOff = u32;
 pub const no_term: TermOff = 0xFFFF_FFFF;
 
 /// The packed store: one `Item` per interned entity, indexed by `@intFromEnum(Index)`.
-items: std.MultiArrayList(Item) = .empty,
+/// NON-MOVING (`Segmented`): an appended element's address is stable for the pool's life,
+/// which is what makes the lock-free read path below sound. See `segmented.zig`.
+items: Segmented(Item) = .empty,
 /// Variable-length payload spill. An `Item.data` may be an offset into here; the run of
-/// `u32`s starting there decodes (via reflection) into a payload struct.
-extra: std.ArrayList(u32) = .empty,
+/// `u32`s starting there decodes (via reflection) into a payload struct. Non-moving, and
+/// runs that are handed out as SLICES are appended contiguously (see `sortData`/`sigData`).
+extra: Segmented(u32) = .empty,
 /// Raw byte store for `.string` items. An interned string's bytes live here as a
 /// contiguous run (its `String` payload in `extra` records the offset + length).
-string_bytes: std.ArrayList(u8) = .empty,
+string_bytes: Segmented(u8) = .empty,
 /// Dedup map: structural key hash -> Index. `void` value; the Index is recovered by
 /// re-deriving the key from the stored item (adapter context compares against `items`).
 map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load_percentage) = .empty,
 
-/// The WRITE mutex (see [[internpool-concurrency-model]]). `get` READS lock-free and never
-/// touches this — reads take NO lock, so the read path needs no `Io`. WRITERS (anything
-/// that mints a new `Index`) must hold it around the mint: a higher build layer (e.g. a
-/// theorem KV) takes `lockWrite(io)`, then calls `get` (which appends), then
-/// `unlockWrite(io)`. Reads stay lock-free; only writers serialize. `std.Io.Mutex` (not
-/// an RwLock — readers never take a shared lock) needs an `Io`, which writers get from the
-/// `Context` they hold.
+/// Guards the pool's WRITE paths — `intern`'s create arm, and (still to be routed through
+/// it) the `mint*` family. A self-contained spinlock, like `Engine.mutex`: `std.Io.Mutex`
+/// needs an `Io` handle, and the pool is constructed in a dozen places (mostly test rigs)
+/// that have none.
 ///
-/// CONCURRENCY PREREQUISITE (NOT yet satisfied): lock-free reads are only ACTUALLY safe
-/// once the store is NON-MOVING. `items`/`extra`/`string_bytes` are plain `ArrayList`s
-/// that reallocate on grow — a single-threaded placeholder. Until they become segmented
-/// (list-of-fixed-blocks) or pre-reserved, a lock-free reader can race a writer's
-/// reallocation. This mutex makes the WRITE DISCIPLINE correct; the non-moving store is the
-/// separate, still-pending half. Single-threaded today, so neither hazard is live.
-write_mutex: std.Io.Mutex = .init,
+/// READS never take it: `get` is pure and lock-free.
+write_lock: Lock = .{},
 
 arena: std.mem.Allocator,
+/// TRANSIENT staging for payloads that must land in `extra` as ONE contiguous run (a
+/// segmented store cannot hand out a slice spanning two blocks, so a payload whose tail is
+/// read back as a slice is built here first, then appended in one go). Defaults to `arena`.
+scratch: std.mem.Allocator,
 
 /// A dense handle into the pool. Non-exhaustive: low values are RESERVED for well-known
 /// entries, `_` covers dynamically-interned ones.
@@ -461,11 +461,26 @@ fn keyEql(a: Key, b: Key) bool {
 /// at `Index.prop` (1). Prop is a root sort (no refinement); reserving it here means the
 /// well-known slot exists before anything else is interned, so `term.SortId.prop` can point
 /// at it once sorts become pool Indexes.
+/// A test-and-set spinlock. Uncontended while the engine is single-threaded; the value is
+/// that the critical section is MARKED and correct when workers land.
+pub const Lock = struct {
+    locked: std.atomic.Value(bool) = .init(false),
+    pub fn lock(self: *Lock) void {
+        while (self.locked.swap(true, .acquire)) std.atomic.spinLoopHint();
+    }
+    pub fn unlock(self: *Lock) void {
+        self.locked.store(false, .release);
+    }
+};
+
 pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
-    var self: InternPool = .{ .arena = arena };
+    // `scratch` defaults to the arena: payload staging buffers are short-lived, and an
+    // arena leak of a few words per mint is cheaper than threading a GPA in. (A caller that
+    // cares can set `scratch` to a reclaiming allocator afterwards.)
+    var self: InternPool = .{ .arena = arena, .scratch = arena };
     // Universe is its own parent — a self-reference at Index 0. The `.universe` constant
     // IS 0, so we can name it as the parent before the entry physically exists.
-    const universe = try self.get(.{ .model = .{ .parent = .universe } });
+    const universe = try self.intern(.{ .model = .{ .parent = .universe } });
     std.debug.assert(universe == .universe); // the universe model MUST be Index 0
     // The "Prop" name string lands at Index 1, then the builtin Prop SORT at Index 2 (its
     // name field references the string). `Index.prop` names the sort. Ordering matters:
@@ -483,35 +498,67 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     return self;
 }
 
-/// Intern a key: return the existing `Index` if a structurally-equal entry exists, else
-/// append a new packed `Item` (+ `extra`) and record it. The always-intern entry point.
-pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
+/// LOOK UP a key — a PURE READ. Returns null when the key has never been interned.
+///
+/// Takes NO lock and mutates nothing, so it is free to call from any thread: the stores it
+/// reads through are `Segmented` (non-moving), so an entry's address is stable once written.
+/// This is the hot path — the overwhelming majority of interning calls are hits — and it is
+/// deliberately the cheapest thing in the pool.
+///
+/// Use `intern` when a miss should CREATE the entry. Splitting the two is what keeps the
+/// read path free: `get` used to create on a miss, which forced every caller — hit or miss —
+/// through the write lock.
+pub fn get(self: *const InternPool, key: Key) ?Index {
+    return self.map.getKeyAdapted(key, KeyAdapter{ .pool = self });
+}
+
+/// INTERN a key: its existing `Index` if one exists, else create the entry and return the
+/// fresh `Index`. The canonical-identity entry point — two structurally equal keys always
+/// yield the same `Index`.
+///
+/// Protocol (the miss path is the only part that locks):
+///   1. probe lock-free via `get`; a hit returns immediately;
+///   2. on a miss take `write_lock`;
+///   3. RE-PROBE under the lock — another thread may have interned this key while we were
+///      blocked, in which case we must return ITS index and build nothing;
+///   4. only if still absent, build the entry and publish it.
+///
+/// Step 3 is load-bearing: without it two threads that both miss would both build, putting
+/// two items in the store for one key and breaking the identity the whole pool rests on.
+pub fn intern(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
+    if (self.get(key)) |existing| return existing; // lock-free fast path
+
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
+
+    // RE-PROBE: someone may have interned it between our miss and taking the lock.
     const gop = try self.map.getOrPutContextAdapted(self.arena, key, KeyAdapter{ .pool = self }, MapContext{ .pool = self });
     if (gop.found_existing) return gop.key_ptr.*;
 
     const index: Index = @enumFromInt(self.items.len);
     switch (key) {
         .string => |bytes| {
-            const bytes_off: u32 = @intCast(self.string_bytes.items.len);
-            try self.string_bytes.appendSlice(self.arena, bytes);
+            // the START comes from the append itself: a contiguous append may PAD past a
+            // block boundary first, so the pre-append length is not where the bytes land.
+            const bytes_off = try self.string_bytes.appendSliceContiguous(self.arena, bytes);
             const off = try self.addExtra(Key.String{ .off = bytes_off, .len = @intCast(bytes.len) });
-            try self.items.append(self.arena, .{ .tag = .string, .data = off });
+            _ = try self.items.append(self.arena, .{ .tag = .string, .data = off });
         },
         .file => |f| {
             const off = try self.addExtra(Key.File{ .path = f.path });
-            try self.items.append(self.arena, .{ .tag = .file, .data = off });
+            _ = try self.items.append(self.arena, .{ .tag = .file, .data = off });
         },
         .model => |m| {
             const off = try self.addModel(m); // [parent, overlay_count, ...src/tgt pairs]
-            try self.items.append(self.arena, .{ .tag = .model, .data = off });
+            _ = try self.items.append(self.arena, .{ .tag = .model, .data = off });
         },
         .namespace => |ns| {
             const off = try self.addExtra(ns);
-            try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
+            _ = try self.items.append(self.arena, .{ .tag = .namespace, .data = off });
         },
         .sig => |s| {
             const off = try self.addSig(s); // [result, result_refined, argc, a0, …]
-            try self.items.append(self.arena, .{ .tag = .sig, .data = off });
+            _ = try self.items.append(self.arena, .{ .tag = .sig, .data = off });
         },
         // facts/identifiers are minted via mintFact/mint*, never `get` (no dedup)
         .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable,
@@ -525,9 +572,11 @@ pub fn get(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
 /// pool (FactKV owns `(ns,name)→Index` and guarantees single-mint). Interning a fact IS
 /// committing "this fact is proven true". Takes the write-mutex like any pool write.
 pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff, name: StrId, loc: u32) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(Key.Fact{ .kind = kind, .formula = formula, .name = name, .loc = loc });
-    try self.items.append(self.arena, .{ .tag = .fact, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .fact, .data = off });
     return index;
 }
 
@@ -536,33 +585,39 @@ pub fn mintFact(self: *InternPool, kind: Key.Kind, formula: TermOff, name: StrId
 /// no qualifiers). Two root sorts have identical content but distinct Indexes (name-identity
 /// is IdentKV's). Callers hold the write-mutex, as with any pool write.
 pub fn mintSort(self: *InternPool, s: Key.Sort) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addSortPayload(s);
-    try self.items.append(self.arena, .{ .tag = .sort, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .sort, .data = off });
     return index;
 }
 
 /// Append `[name, loc, parent, qualc, q0, …]` to `extra`; return the start offset.
 fn addSortPayload(self: *InternPool, s: Key.Sort) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
     const qn: u32 = if (s.refinement) |r| @intCast(r.qualifiers.len) else 0;
-    try self.extra.ensureUnusedCapacity(self.arena, 4 + qn);
-    self.extra.appendAssumeCapacity(@intFromEnum(s.name));
-    self.extra.appendAssumeCapacity(s.loc);
-    self.extra.appendAssumeCapacity(if (s.refinement) |r| @intFromEnum(r.parent) else @intFromEnum(Index.none));
-    self.extra.appendAssumeCapacity(qn);
-    if (s.refinement) |r| for (r.qualifiers) |q| self.extra.appendAssumeCapacity(@intFromEnum(q));
-    return off;
+    // ONE contiguous run: `sortData` hands the qualifier tail back as a live SLICE, which a
+    // segmented store can only do within a single block. Build the whole payload in scratch,
+    // then append it contiguously (the store pads past a boundary rather than straddling).
+    var buf: std.ArrayList(u32) = .empty;
+    defer buf.deinit(self.scratch);
+    try buf.ensureTotalCapacity(self.scratch, 4 + qn);
+    buf.appendAssumeCapacity(@intFromEnum(s.name));
+    buf.appendAssumeCapacity(s.loc);
+    buf.appendAssumeCapacity(if (s.refinement) |r| @intFromEnum(r.parent) else @intFromEnum(Index.none));
+    buf.appendAssumeCapacity(qn);
+    if (s.refinement) |r| for (r.qualifiers) |q| buf.appendAssumeCapacity(@intFromEnum(q));
+    return self.extra.appendSliceContiguous(self.arena, buf.items);
 }
 
 /// Read a sort payload at `off` back — the inverse of `addSortPayload`.
 fn sortData(self: *const InternPool, off: u32) Key.Sort {
-    const name: StrId = @enumFromInt(self.extra.items[off]);
-    const loc = self.extra.items[off + 1];
-    const parent_raw = self.extra.items[off + 2];
-    const qn = self.extra.items[off + 3];
+    const name: StrId = @enumFromInt(self.extra.get(off));
+    const loc = self.extra.get(off + 1);
+    const parent_raw = self.extra.get(off + 2);
+    const qn = self.extra.get(off + 3);
     if (parent_raw == @intFromEnum(Index.none)) return .{ .name = name, .loc = loc, .refinement = null };
-    const raw = self.extra.items[off + 4 .. off + 4 + qn];
+    const raw = self.extra.sliceContiguous(off + 4, qn);
     return .{ .name = name, .loc = loc, .refinement = .{ .parent = @enumFromInt(parent_raw), .qualifiers = @ptrCast(raw) } };
 }
 
@@ -635,67 +690,79 @@ pub fn symResult(self: *const InternPool, sym: Index) Index {
 /// Indexes.
 /// Mint an anonymous GUARD term Item (a define'd `where` qualifier), always appending.
 pub fn mintGuard(self: *InternPool, g: Key.Guard) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(g); // reflection: [term, carrier]
-    try self.items.append(self.arena, .{ .tag = .guard, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .guard, .data = off });
     return index;
 }
 
 pub fn mintConstant(self: *InternPool, c: Key.Constant) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(c); // reflection: [sort, name, loc]
-    try self.items.append(self.arena, .{ .tag = .constant, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .constant, .data = off });
     return index;
 }
 
 /// Append `[sig, guard, name, loc, paramc, pn0, …]` to `extra`; return the start offset.
 fn addCallable(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 5 + c.param_names.len);
-    self.extra.appendAssumeCapacity(@intFromEnum(c.sig));
-    self.extra.appendAssumeCapacity(c.guard); // TermOff (u32), not an Index
-    self.extra.appendAssumeCapacity(@intFromEnum(c.name));
-    self.extra.appendAssumeCapacity(c.loc);
-    self.extra.appendAssumeCapacity(@intCast(c.param_names.len));
-    for (c.param_names) |n| self.extra.appendAssumeCapacity(@intFromEnum(n));
-    return off;
+    // ONE contiguous run — `callableData` slices the param-name tail (see `addSortPayload`).
+    var buf: std.ArrayList(u32) = .empty;
+    defer buf.deinit(self.scratch);
+    try buf.ensureTotalCapacity(self.scratch, 5 + c.param_names.len);
+    buf.appendAssumeCapacity(@intFromEnum(c.sig));
+    buf.appendAssumeCapacity(c.guard); // TermOff (u32), not an Index
+    buf.appendAssumeCapacity(@intFromEnum(c.name));
+    buf.appendAssumeCapacity(c.loc);
+    buf.appendAssumeCapacity(@intCast(c.param_names.len));
+    for (c.param_names) |n| buf.appendAssumeCapacity(@intFromEnum(n));
+    return self.extra.appendSliceContiguous(self.arena, buf.items);
 }
 
 /// Read a callable payload at `off` back — the inverse of `addCallable`.
 fn callableData(self: *const InternPool, off: u32) Key.Callable {
-    const sig: Index = @enumFromInt(self.extra.items[off]);
-    const guard: TermOff = self.extra.items[off + 1]; // TermOff (u32), not an Index
-    const name: StrId = @enumFromInt(self.extra.items[off + 2]);
-    const loc = self.extra.items[off + 3];
-    const n = self.extra.items[off + 4];
-    const raw = self.extra.items[off + 5 .. off + 5 + n];
+    const sig: Index = @enumFromInt(self.extra.get(off));
+    const guard: TermOff = self.extra.get(off + 1); // TermOff (u32), not an Index
+    const name: StrId = @enumFromInt(self.extra.get(off + 2));
+    const loc = self.extra.get(off + 3);
+    const n = self.extra.get(off + 4);
+    const raw = self.extra.sliceContiguous(off + 5, n);
     return .{ .sig = sig, .guard = guard, .name = name, .loc = loc, .param_names = @ptrCast(raw) };
 }
 
 /// Mint a fresh FUNCTION identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// Spills `[sig, guard, paramc, pn0, …]` into `extra`.
 pub fn mintFunc(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addCallable(c);
-    try self.items.append(self.arena, .{ .tag = .func, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .func, .data = off });
     return index;
 }
 
 /// Mint a fresh PREDICATE identifier — same `Callable` payload as `mintFunc`, a distinct
 /// tag. ALWAYS appends (no dedup; IdentKV owns identity).
 pub fn mintPred(self: *InternPool, c: Key.Callable) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addCallable(c);
-    try self.items.append(self.arena, .{ .tag = .pred, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .pred, .data = off });
     return index;
 }
 
 /// Mint a fresh IMPORT identifier, ALWAYS appending (no dedup; IdentKV owns identity).
 /// Spills `[namespace, name, loc]` into `extra`.
 pub fn mintImport(self: *InternPool, m: Key.Import) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(m); // reflection: [namespace, name, loc]
-    try self.items.append(self.arena, .{ .tag = .import, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .import, .data = off });
     return index;
 }
 
@@ -703,21 +770,28 @@ pub fn mintImport(self: *InternPool, m: Key.Import) std.mem.Allocator.Error!Inde
 /// Spills `[name, file, loc]` into `extra` (reflection). The template content is NOT stored
 /// — it is re-read from the by-name AST registry via `file`+`name`.
 pub fn mintSchema(self: *InternPool, s: Key.Schema) std.mem.Allocator.Error!Index {
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
     const index: Index = @enumFromInt(self.items.len);
     const off = try self.addExtra(s); // reflection: [name, file, loc]
-    try self.items.append(self.arena, .{ .tag = .schema, .data = off });
+    _ = try self.items.append(self.arena, .{ .tag = .schema, .data = off });
     return index;
 }
 
-/// Take the WRITE mutex around a mint (see [[internpool-concurrency-model]]). A writer
-/// wraps its `get`-that-appends in `lockWrite`/`unlockWrite`; `get` itself never touches
-/// the mutex, so READS stay lock-free. Uncontended today (single-threaded). Uncancelable
-/// so the lock discipline can't be interrupted mid-mint.
+/// NO-OPS, retained so the old call sites keep compiling while they are retired.
+///
+/// The pool used to require its CALLERS to hold a write mutex around a mint. That contract
+/// could not be honored and was not: six of the ten `appendExtraRun` sites took no lock at
+/// all, which let two theorems publish the same `extra` offset and so cite each other's
+/// formula. Mutation is synchronized INSIDE the pool now (`write_lock`), so taking a lock
+/// out here would deadlock — the lock is not reentrant.
 pub fn lockWrite(self: *InternPool, io: std.Io) void {
-    self.write_mutex.lockUncancelable(io);
+    _ = self;
+    _ = io;
 }
 pub fn unlockWrite(self: *InternPool, io: std.Io) void {
-    self.write_mutex.unlock(io);
+    _ = self;
+    _ = io;
 }
 
 // -- raw `extra` u32-run API (term serialization rests on this) ------------------------
@@ -730,15 +804,16 @@ pub fn unlockWrite(self: *InternPool, io: std.Io) void {
 /// hold the write-mutex (`lockWrite`), same discipline as any mint. `reify` calls this once
 /// per term (the whole serialized run in one append).
 pub fn appendExtraRun(self: *InternPool, run: []const u32) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.appendSlice(self.arena, run);
-    return off;
+    self.write_lock.lock();
+    defer self.write_lock.unlock();
+    // CONTIGUOUS: `extraRun` hands this back as a slice, so it must live in one block.
+    return self.extra.appendSliceContiguous(self.arena, run);
 }
 
 /// Read `len` `u32`s from `extra` starting at `off` — a lock-free read (the run is
 /// immutable once appended). `copyIn` walks the returned slice to rebuild a scratchpad term.
 pub fn extraRun(self: *const InternPool, off: u32, len: u32) []const u32 {
-    return self.extra.items[off .. off + len];
+    return self.extra.sliceContiguous(off, len);
 }
 
 /// The first `u32` of a serialized term run is its payload WORD-COUNT (number of u32s after
@@ -747,7 +822,7 @@ pub fn extraRun(self: *const InternPool, off: u32, len: u32) []const u32 {
 /// node self-describes its width via its tag), post-order, until consumed — the last node is
 /// the root.
 pub fn extraRunLen(self: *const InternPool, off: u32) u32 {
-    return self.extra.items[off];
+    return self.extra.get(off);
 }
 
 /// Reconstruct the ergonomic `Key` from an `Index` — the inverse of `get`'s packing.
@@ -756,7 +831,7 @@ pub fn keyOf(self: *const InternPool, index: Index) Key {
     return switch (item.tag) {
         .string => {
             const s = self.extraData(Key.String, item.data);
-            return .{ .string = self.string_bytes.items[s.off .. s.off + s.len] };
+            return .{ .string = self.string_bytes.sliceContiguous(s.off, s.len) };
         },
         .file => .{ .file = self.extraData(Key.File, item.data) },
         .model => .{ .model = self.modelData(item.data) },
@@ -782,7 +857,7 @@ pub fn count(self: *const InternPool) usize {
 
 /// Intern bytes as a string, returning its `StrId` (== a pool `Index`). Content-deduped.
 pub fn internString(self: *InternPool, bytes: []const u8) std.mem.Allocator.Error!StrId {
-    return self.get(.{ .string = bytes });
+    return self.intern(.{ .string = bytes });
 }
 
 /// The bytes of an interned string. Asserts `id` names a `.string` item.
@@ -797,7 +872,7 @@ pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
 /// same pair always yields the same `Index`. The universe-namespace of `file` is
 /// `namespace(.universe, file)`.
 pub fn namespace(self: *InternPool, model: Index, file: Index) std.mem.Allocator.Error!Index {
-    return self.get(.{ .namespace = .{ .model = model, .file = file } });
+    return self.intern(.{ .namespace = .{ .model = model, .file = file } });
 }
 
 /// Interpret a SOURCE entity `Index` THROUGH a model: walk `model`'s overlay chain (its
@@ -878,9 +953,9 @@ pub fn composeModel(self: *InternPool, io: std.Io, outer: Index, inner: Index) s
         if (cur == m.parent) break; // universe fixpoint
         cur = m.parent;
     }
-    self.lockWrite(io);
-    defer self.unlockWrite(io);
-    return self.get(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
+    // `intern` synchronizes itself; no caller-held lock (see `write_lock`).
+    _ = io;
+    return self.intern(.{ .model = .{ .parent = outer, .overlay = overlay.items, .dischargers = dischargers.items, .home = home } });
 }
 
 // -- model encoding (`[parent, overlay_count, src0, tgt0, …]`) -------------------------
@@ -889,34 +964,37 @@ pub fn composeModel(self: *InternPool, io: std.Io, outer: Index, inner: Index) s
 
 /// Append `[parent, overlay_count, src0, tgt0, …]` to `extra`; return the start offset.
 fn addModel(self: *InternPool, m: Key.Model) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 4 + (m.overlay.len + m.dischargers.len) * 2);
-    self.extra.appendAssumeCapacity(@intFromEnum(m.parent));
-    self.extra.appendAssumeCapacity(@intFromEnum(m.home));
-    self.extra.appendAssumeCapacity(@intCast(m.overlay.len));
+    // ONE contiguous run — `modelData` reinterprets both pair-runs as slices (see
+    // `addSortPayload` for why a segmented store needs the whole payload in one block).
+    var buf: std.ArrayList(u32) = .empty;
+    defer buf.deinit(self.scratch);
+    try buf.ensureTotalCapacity(self.scratch, 4 + (m.overlay.len + m.dischargers.len) * 2);
+    buf.appendAssumeCapacity(@intFromEnum(m.parent));
+    buf.appendAssumeCapacity(@intFromEnum(m.home));
+    buf.appendAssumeCapacity(@intCast(m.overlay.len));
     for (m.overlay) |mapping| {
-        self.extra.appendAssumeCapacity(@intFromEnum(mapping.src));
-        self.extra.appendAssumeCapacity(@intFromEnum(mapping.tgt));
+        buf.appendAssumeCapacity(@intFromEnum(mapping.src));
+        buf.appendAssumeCapacity(@intFromEnum(mapping.tgt));
     }
-    self.extra.appendAssumeCapacity(@intCast(m.dischargers.len));
+    buf.appendAssumeCapacity(@intCast(m.dischargers.len));
     for (m.dischargers) |d| {
-        self.extra.appendAssumeCapacity(@intFromEnum(d.src));
-        self.extra.appendAssumeCapacity(@intFromEnum(d.tgt));
+        buf.appendAssumeCapacity(@intFromEnum(d.src));
+        buf.appendAssumeCapacity(@intFromEnum(d.tgt));
     }
-    return off;
+    return self.extra.appendSliceContiguous(self.arena, buf.items);
 }
 
 /// Read the model payload at `off` back — the inverse of `addModel`. Each pair-run
 /// reinterprets the `u32` run in `extra` as `Mapping` (two `Index`es), zero-copy. Layout:
 /// `[parent, home, overlay_count, ...overlay pairs, discharger_count, ...discharger pairs]`.
 fn modelData(self: *const InternPool, off: u32) Key.Model {
-    const parent: Index = @enumFromInt(self.extra.items[off]);
-    const home: Index = @enumFromInt(self.extra.items[off + 1]);
-    const on = self.extra.items[off + 2];
-    const overlay_raw = self.extra.items[off + 3 .. off + 3 + on * 2];
+    const parent: Index = @enumFromInt(self.extra.get(off));
+    const home: Index = @enumFromInt(self.extra.get(off + 1));
+    const on = self.extra.get(off + 2);
+    const overlay_raw = self.extra.sliceContiguous(off + 3, on * 2);
     const dcount_at = off + 3 + on * 2;
-    const dn = self.extra.items[dcount_at];
-    const disch_raw = self.extra.items[dcount_at + 1 .. dcount_at + 1 + dn * 2];
+    const dn = self.extra.get(dcount_at);
+    const disch_raw = self.extra.sliceContiguous(dcount_at + 1, dn * 2);
     return .{ .parent = parent, .home = home, .overlay = @ptrCast(overlay_raw), .dischargers = @ptrCast(disch_raw) };
 }
 
@@ -924,21 +1002,23 @@ fn modelData(self: *const InternPool, off: u32) Key.Model {
 
 /// Append `[result, result_refined, argc, a0, …]` to `extra`; return the start offset.
 fn addSig(self: *InternPool, s: Key.Sig) std.mem.Allocator.Error!u32 {
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, 3 + s.args.len);
-    self.extra.appendAssumeCapacity(@intFromEnum(s.result));
-    self.extra.appendAssumeCapacity(@intFromEnum(s.result_refined));
-    self.extra.appendAssumeCapacity(@intCast(s.args.len));
-    for (s.args) |arg| self.extra.appendAssumeCapacity(@intFromEnum(arg));
-    return off;
+    // ONE contiguous run — `sigData` slices the arg tail.
+    var buf: std.ArrayList(u32) = .empty;
+    defer buf.deinit(self.scratch);
+    try buf.ensureTotalCapacity(self.scratch, 3 + s.args.len);
+    buf.appendAssumeCapacity(@intFromEnum(s.result));
+    buf.appendAssumeCapacity(@intFromEnum(s.result_refined));
+    buf.appendAssumeCapacity(@intCast(s.args.len));
+    for (s.args) |arg| buf.appendAssumeCapacity(@intFromEnum(arg));
+    return self.extra.appendSliceContiguous(self.arena, buf.items);
 }
 
 /// Read a signature payload at `off` back — the inverse of `addSig`.
 fn sigData(self: *const InternPool, off: u32) Key.Sig {
-    const result: Index = @enumFromInt(self.extra.items[off]);
-    const result_refined: Index = @enumFromInt(self.extra.items[off + 1]);
-    const n = self.extra.items[off + 2];
-    const raw = self.extra.items[off + 3 .. off + 3 + n];
+    const result: Index = @enumFromInt(self.extra.get(off));
+    const result_refined: Index = @enumFromInt(self.extra.get(off + 1));
+    const n = self.extra.get(off + 2);
+    const raw = self.extra.sliceContiguous(off + 3, n);
     return .{ .result = result, .result_refined = result_refined, .args = @ptrCast(raw) };
 }
 
@@ -950,13 +1030,11 @@ fn sigData(self: *const InternPool, off: u32) Key.Sig {
 fn addExtra(self: *InternPool, payload: anytype) std.mem.Allocator.Error!u32 {
     const T = @TypeOf(payload);
     const fields = @typeInfo(T).@"struct".fields;
-    const off: u32 = @intCast(self.extra.items.len);
-    try self.extra.ensureUnusedCapacity(self.arena, fields.len);
-    inline for (fields) |field| {
-        const v = @field(payload, field.name);
-        self.extra.appendAssumeCapacity(encodeField(v));
-    }
-    return off;
+    // Staged then appended as ONE run so the payload's fields are contiguous and the
+    // returned offset is where they actually landed (a contiguous append may pad first).
+    var buf: [fields.len]u32 = undefined;
+    inline for (fields, 0..) |field, i| buf[i] = encodeField(@field(payload, field.name));
+    return self.extra.appendSliceContiguous(self.arena, &buf);
 }
 
 /// Decode a `T` payload from `extra` starting at `off` — the inverse of `addExtra`.
@@ -964,7 +1042,7 @@ fn extraData(self: *const InternPool, comptime T: type, off: u32) T {
     const fields = @typeInfo(T).@"struct".fields;
     var result: T = undefined;
     inline for (fields, 0..) |field, i| {
-        @field(result, field.name) = decodeField(field.type, self.extra.items[off + i]);
+        @field(result, field.name) = decodeField(field.type, self.extra.get(off + @as(u32, i)));
     }
     return result;
 }
@@ -995,12 +1073,12 @@ test "sig: [result, result_refined, argc, args…] interns/round-trips; dedups s
     const bool_ = try pool.internString("Bool");
 
     // (Nat, Int) -> Bool, with no result refinement (none)
-    const s1 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
-    const s1_again = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
-    const s2 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ int, nat } } }); // arg order
-    const s3 = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, int } } }); // result
-    const s4 = try pool.get(.{ .sig = .{ .result = bool_, .result_refined = nat, .args = &.{ nat, int } } }); // refined
-    const s_nullary = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{} } });
+    const s1 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s1_again = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ nat, int } } });
+    const s2 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = .none, .args = &.{ int, nat } } }); // arg order
+    const s3 = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, int } } }); // result
+    const s4 = try pool.intern(.{ .sig = .{ .result = bool_, .result_refined = nat, .args = &.{ nat, int } } }); // refined
+    const s_nullary = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{} } });
 
     try std.testing.expectEqual(s1, s1_again); // structural dedup
     try std.testing.expect(s1 != s2);
@@ -1069,7 +1147,7 @@ test "refinement queries: carrierOf/qualifiersOf/isRefined walk the chain" {
     try std.testing.expectEqualSlices(Index, &.{ in_c, in_b }, try pool.qualifiersOf(arena, c));
 
     // symResult reads a func's signature result sort.
-    const sig = try pool.get(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
+    const sig = try pool.intern(.{ .sig = .{ .result = a, .result_refined = .none, .args = &.{a} } });
     const f = try pool.mintFunc(.{ .sig = sig, .guard = no_term, .param_names = &.{try pool.internString("x")}, .name = nm, .loc = 0 });
     try std.testing.expectEqual(a, pool.symResult(f));
 }
@@ -1096,7 +1174,7 @@ test "func: [sig, guard|none, paramc, names…] minted fresh, round-trips; guard
 
     const nm = try pool.internString("s");
     const nat = try pool.mintSort(.{ .name = nm, .loc = 0, .refinement = null });
-    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
+    const sig = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{ nat, nat } } });
     const n_name = try pool.internString("n");
     const m_name = try pool.internString("m");
     // stand-in guard term-offset (a real guard is a reified `extra` offset; any u32 works).
@@ -1128,7 +1206,7 @@ test "pred: same Callable payload as func, minted under a DISTINCT kind" {
     const nm = try pool.internString("s");
     const nat = try pool.mintSort(.{ .name = nm, .loc = 0, .refinement = null });
     // a predicate's sig has no meaningful result sort in the pool layout; use none-ish.
-    const sig = try pool.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
+    const sig = try pool.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = &.{nat} } });
     const x = try pool.internString("x");
 
     const is_even = try pool.mintPred(.{ .sig = sig, .guard = InternPool.no_term, .param_names = &.{x}, .name = nm, .loc = 0 });
@@ -1144,7 +1222,7 @@ test "import: data = the .namespace it binds; minted (two imports of one ns are 
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
     const ns = try pool.namespace(.universe, f);
 
     const nm = try pool.internString("P");
@@ -1159,7 +1237,7 @@ test "schema: locator [name, file, loc] minted fresh, round-trips" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
     const nm = try pool.internString("induction");
     const s = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 });
     const s2 = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 }); // distinct
@@ -1201,10 +1279,10 @@ test "universe model is seeded at Index 0 as its own parent" {
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);
     // re-asking for the universe payload dedups back to Index 0
-    try std.testing.expectEqual(InternPool.Index.universe, try pool.get(.{ .model = .{ .parent = .universe } }));
+    try std.testing.expectEqual(InternPool.Index.universe, try pool.intern(.{ .model = .{ .parent = .universe } }));
 
     // a model whose parent is universe: distinct from universe, round-trips its parent
-    const child = try pool.get(.{ .model = .{ .parent = .universe } });
+    const child = try pool.intern(.{ .model = .{ .parent = .universe } });
     // NOTE: with an empty overlay, this child has the SAME payload as universe {parent:0}
     // and therefore DEDUPS to universe. Distinct child models require a distinct parent or
     // a non-empty overlay (deferred). Assert the dedup is exactly that:
@@ -1233,11 +1311,11 @@ test "composeModel is exact function composition, at any depth, through a parent
 
     // inner = {a→b} PARENTED on {c→d}: its domain is {a, c}, and `c` lives ONLY in the parent
     // level — the case a top-overlay-only composition gets wrong.
-    const inner_parent = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = c, .tgt = d }} } });
-    const inner = try pool.get(.{ .model = .{ .parent = inner_parent, .overlay = &.{.{ .src = a, .tgt = b }} } });
+    const inner_parent = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = c, .tgt = d }} } });
+    const inner = try pool.intern(.{ .model = .{ .parent = inner_parent, .overlay = &.{.{ .src = a, .tgt = b }} } });
     try std.testing.expectEqual(d, pool.applyModel(inner, c)); // the parent level is live
     // outer maps inner's targets on (b→e, d→f) plus a source inner never touches (g→p).
-    const outer = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{ .{ .src = b, .tgt = e }, .{ .src = d, .tgt = f }, .{ .src = g, .tgt = p } } } });
+    const outer = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{ .{ .src = b, .tgt = e }, .{ .src = d, .tgt = f }, .{ .src = g, .tgt = p } } } });
 
     // THE PROPERTY: composed(x) == outer(inner(x)) for every x — inner's top overlay (a→b→e),
     // inner's PARENT level (c→d→f), outer-only fallthrough (g→p), and unmapped (q→q).
@@ -1252,7 +1330,7 @@ test "composeModel is exact function composition, at any depth, through a parent
 
     // A THIRD LAYER: composing with the (parented, composed) model as the AMBIENT still holds —
     // the associativity that makes nesting sound at any depth.
-    const third = try pool.get(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = q, .tgt = a }} } });
+    const third = try pool.intern(.{ .model = .{ .parent = .universe, .overlay = &.{.{ .src = q, .tgt = a }} } });
     const composed2 = try pool.composeModel(io, composed, third);
     for (all) |x| {
         try std.testing.expectEqual(pool.applyModel(composed, pool.applyModel(third, x)), pool.applyModel(composed2, x));
@@ -1270,8 +1348,8 @@ test "namespace = (model, file), deduped per pair" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f_int = try pool.get(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
-    const f_nat = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f_int = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
+    const f_nat = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
 
     // universe-namespace of each file (distinct non-universe models need overlays, deferred)
     const u_int = try pool.namespace(.universe, f_int);
@@ -1321,9 +1399,9 @@ test "file interns by path: same path -> same Index, distinct paths -> distinct"
     const p_int = try pool.internString("std/integer.bpa");
     const p_nat = try pool.internString("std/peano.bpa");
 
-    const a = try pool.get(.{ .file = .{ .path = p_int } });
-    const b = try pool.get(.{ .file = .{ .path = p_nat } });
-    const a2 = try pool.get(.{ .file = .{ .path = p_int } }); // second importer, same file
+    const a = try pool.intern(.{ .file = .{ .path = p_int } });
+    const b = try pool.intern(.{ .file = .{ .path = p_nat } });
+    const a2 = try pool.intern(.{ .file = .{ .path = p_int } }); // second importer, same file
 
     try std.testing.expectEqual(a, a2); // DEDUP: same path collapses to one Index
     try std.testing.expect(a != b); // distinct paths are distinct entities

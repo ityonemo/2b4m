@@ -109,9 +109,9 @@ const Expander = struct {
     // -- diagnostics -------------------------------------------------------------------
 
     fn fail(self: *Expander, loc: u32, comptime fmt: []const u8, args: anytype) Allocator.Error!void {
-        // the sink already points at the root file (the consumer set current_file); every
-        // offset this pass reports is a root-file offset (use sites / restamped tokens).
-        self.ctx.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+        // every offset this pass reports is a ROOT-FILE offset (use sites / restamped
+        // tokens), so `fid` — the file being expanded — is the one to render against.
+        self.ctx.sink.add(@intFromEnum(self.fid), loc, fmt, args) catch return error.OutOfMemory;
         self.failed = true;
     }
 
@@ -151,7 +151,7 @@ const Expander = struct {
             },
             .unparsed => return null, // undiscovered — the elaborator diagnoses
         }
-        const fid = self.ctx.pool_file.get(target_file) orelse return null;
+        const fid = self.ctx.fileOf(target_file) orelse return null;
         return .{ .file = target_file, .fid = fid };
     }
 
@@ -181,7 +181,7 @@ const Expander = struct {
         }
         const sym = (try self.demandGlobal(env, tok)) orelse return if (self.blocker != null) .pending else .other;
         const d = self.ctx.modelDefineTarget(self.opts.model, sym) orelse return .other;
-        const fid = self.ctx.pool_file.get(d.file) orelse return .other;
+        const fid = self.ctx.fileOf(d.file) orelse return .other;
         const def_decl = self.ctx.declOf(fid, d.name) orelse return .other;
         return .{ .define = .{ .site = .{ .file = d.file, .name = d.name }, .fid = fid, .decl = def_decl, .exact = true } };
     }
@@ -738,7 +738,7 @@ pub fn Outcome(comptime T: type) type {
 }
 
 fn init(ctx: *Context, h: *Engine.Handle, file: Index, opts: Options) Allocator.Error!?Expander {
-    const fid = ctx.pool_file.get(file) orelse return null;
+    const fid = ctx.fileOf(file) orelse return null;
     return .{ .ctx = ctx, .h = h, .arena = ctx.arena, .file = file, .fid = fid, .opts = opts };
 }
 

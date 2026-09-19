@@ -266,8 +266,15 @@ fn localName(self: *Prove, tok: lexer.Token) Error!StrId {
 }
 
 fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Error {
-    self.ctx.sink.add(offset, fmt, args) catch return error.OutOfMemory;
+    self.ctx.sink.add(self.diagFile(), offset, fmt, args) catch return error.OutOfMemory;
     return error.Recover;
+}
+
+/// The file this proof's offsets index — its own `file`, as a dense FileId. Derived rather
+/// than tracked on the sink so a diagnostic's file is a value (see diagnostics.zig).
+fn diagFile(self: *const Prove) u32 {
+    const fid = self.ctx.fileOf(self.file) orelse return 0;
+    return @intFromEnum(fid);
 }
 
 pub fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
@@ -326,10 +333,10 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
         if (r.ns == null and model != InternPool.Index.none and model != .universe) {
             const home = ctx.interner.keyOf(model).model.home;
             if (home != InternPool.Index.none and home != target_file) miss: {
-                if (ctx.pool_file.get(target_file)) |tfid| {
+                if (ctx.fileOf(target_file)) |tfid| {
                     if (ctx.declOf(tfid, r.name) != null) break :miss; // declared at source — no fallback
                 }
-                const hfid = ctx.pool_file.get(home) orelse break :miss;
+                const hfid = ctx.fileOf(home) orelse break :miss;
                 if (ctx.declOf(hfid, r.name) == null) break :miss; // not in home either
                 target_file = home;
                 target_ns = try ctx.interner.namespace(.universe, home);
@@ -395,7 +402,7 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                                     .in_flight => |o| if (o == h.self_index) "in_flight owned by SELF" else "in_flight owned by ANOTHER task — read pass sets NO blocker",
                                 };
                                 const line = std.fmt.allocPrint(ctx.arena, "[read pass] transferred copy of {s} under model#{d}: {s}\n", .{ ctx.interner.stringBytes(r.name), @intFromEnum(model), what }) catch "";
-                                ctx.fact_trace.append(ctx.arena, line) catch {};
+                                ctx.traceLine(line);
                             }
                             // ABSENT: rack its re-proof and wait. IN FLIGHT under another task:
                             // wait on THAT task — the same rule as the universe key above. The
@@ -449,29 +456,28 @@ pub fn elaborateFactStatement(
         },
         .unparsed => {}, // undiscovered — declOf below reports it cleanly
     }
-    const fid = self.pool_file.get(file) orelse {
-        self.sink.add(0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
+    const fid = self.fileOf(file) orelse {
+        self.sink.add(0, 0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
         return .failed;
     };
-    // point diagnostics at the STATEMENT's own file (offsets below index its source) for the
-    // duration of this elaboration only — the caller's diagnostics index the caller's file.
-    const caller_file = self.sink.current_file;
-    defer self.sink.current_file = caller_file;
-    self.sink.current_file = @intFromEnum(fid);
-    const source = self.files.items[@intFromEnum(fid)].source;
+    // Every diagnostic below indexes the STATEMENT's own file — `fid` — not the caller's.
+    // (This used to save/restore an ambient sink field; passing the file is the same
+    // intent without the invariant that only one task may be running.)
+    const diag_file: u32 = @intFromEnum(fid);
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the decl by name; a STATEMENT lives on a local axiom/theorem (an alias has no
     // formula of its own, a schema / hole is not a ground statement).
     const decl = self.declOf(fid, name) orelse {
-        self.sink.add(0, "reference not found: '{s}'", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        self.sink.add(diag_file, 0, "reference not found: '{s}'", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
         return .failed;
     };
     const fact = ast.factOf(decl) orelse {
-        self.sink.add(ast.declName(decl).start, "'{s}' has no stated formula (an alias or a non-fact)", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        self.sink.add(diag_file, ast.declName(decl).start, "'{s}' has no stated formula (an alias or a non-fact)", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
         return .failed;
     };
     if (fact.params != null) {
-        self.sink.add(fact.name.start, "'{s}' is a schema; its statement is not a ground formula", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
+        self.sink.add(diag_file, fact.name.start, "'{s}' is a schema; its statement is not a ground formula", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
         return .failed;
     }
     // DEFINE EXPANSION first (see Engine/Expand): the statement is made define-free before its
@@ -679,7 +685,7 @@ fn importFile(self: *Prove, itok: lexer.Token) Error!?InternPool.Index {
 fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
     const loc = c.rule.start;
     const wk = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub", "less_than", "nonneg" };
-    const fid = self.ctx.pool_file.get(self.file).?;
+    const fid = self.ctx.fileOf(self.file).?;
     var refs: std.ArrayList(RefScan.Ref) = .empty;
     for (wk) |name| {
         const nid = self.ctx.interner.internString(name) catch return error.OutOfMemory;
@@ -832,7 +838,7 @@ fn settleMisses(self: *Prove, e: *Elab, kb: kernel.BlockId) Error!void {
                 continue;
             }
         }
-        self.ctx.sink.add(m.loc, "unproved obligation: '{s}'", .{try e.renderProp(m.prop)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), m.loc, "unproved obligation: '{s}'", .{try e.renderProp(m.prop)}) catch return error.OutOfMemory;
         unresolved = true;
     }
     if (unresolved) return error.Recover;
@@ -1447,7 +1453,7 @@ fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.S
         // FactKV (already-demanded) and the file's AST (a same-file fact decl that nothing
         // demanded, e.g. the cited axiom in `forall_elim(t) myAxiom`), so it fires regardless.
         const is_fact = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null or
-            (tok.qualifier == InternPool.Index.none and if (self.ctx.pool_file.get(self.file)) |fid|
+            (tok.qualifier == InternPool.Index.none and if (self.ctx.fileOf(self.file)) |fid|
                 if (self.ctx.declOf(fid, name)) |d| ast.factOf(d) != null else false
             else
                 false);
@@ -1498,7 +1504,7 @@ fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const 
         } else |_| {}
     }
     line = std.fmt.allocPrint(a, "{s}       via {s}\n", .{ line, why }) catch return;
-    self.ctx.fact_trace.append(a, line) catch return;
+    self.ctx.traceLine(line);
 }
 
 /// `file:line:col` for a source offset. The offset must belong to `file` — a fact's `loc`
@@ -1506,8 +1512,8 @@ fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const 
 /// past the end means we were handed the wrong file and the site is reported as unknown
 /// rather than read out of bounds.
 fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
-    const fid = self.ctx.pool_file.get(file) orelse return "?";
-    const f = self.ctx.files.items[@intFromEnum(fid)];
+    const fid = self.ctx.fileOf(file) orelse return "?";
+    const f = self.ctx.files.get(@intFromEnum(fid));
     if (off >= f.source.len) return std.fmt.allocPrint(self.ctx.arena, "offset {d} (not in {s})", .{ off, f.path }) catch "?";
     const lc = std.zig.findLineColumn(f.source, off);
     return std.fmt.allocPrint(self.ctx.arena, "{s}:{d}:{d}", .{ f.path, lc.line + 1, lc.column + 1 }) catch "?";
@@ -1523,7 +1529,8 @@ fn fileOfFact(self: *Prove, ix: InternPool.Index) ?InternPool.Index {
         .schema => |k| return k.file,
         else => return null,
     };
-    for (self.ctx.files.items) |f| {
+    var files_it = self.ctx.files.iterator();
+    while (files_it.next()) |f| {
         const pf = self.ctx.fileIndex(f.path) catch continue;
         const ns = self.ctx.interner.namespace(.universe, pf) catch continue;
         if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name })) |st| {
@@ -1679,7 +1686,7 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
         .schema => |s| s,
         else => return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)}),
     };
-    const fid = self.ctx.pool_file.get(loc.file).?;
+    const fid = self.ctx.fileOf(loc.file).?;
     const decl = self.ctx.declOf(fid, loc.name) orelse
         return self.fail(tok.start, "internal: schema '{s}' locator has no decl", .{self.text(tok)});
     // a schema is an axiom/theorem/hole with params; extract its Fact decl-kind-agnostically.
@@ -1690,7 +1697,7 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
         .ns = ns,
         .name = loc.name,
         .fact = fact,
-        .source = self.ctx.files.items[@intFromEnum(fid)].source,
+        .source = self.ctx.files.get(@intFromEnum(fid)).source,
     };
 }
 
@@ -1875,7 +1882,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .in_flight => |owner| {
             if (owner == self.h.self_index) {
                 // demanding the very instance THIS task is proving — a self-cycle.
-                self.ctx.sink.add(c.schema.?.start, "cyclic schema instantiation of '{s}'", .{self.text(c.schema.?)}) catch return error.OutOfMemory;
+                self.ctx.sink.add(self.diagFile(), c.schema.?.start, "cyclic schema instantiation of '{s}'", .{self.text(c.schema.?)}) catch return error.OutOfMemory;
                 return .failed;
             }
             return .{ .blocked = owner };
@@ -1929,11 +1936,11 @@ fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, 
 /// Index, or a blocker to suspend on. Called from the READ PASS (and re-checked in process).
 fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
     if (c.schema == null) {
-        self.ctx.sink.add(c.rule.start, "model citation requires a model name: `[by model(M) src.thm]`", .{}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), c.rule.start, "model citation requires a model name: `[by model(M) src.thm]`", .{}) catch return error.OutOfMemory;
         return .failed;
     }
     if (c.refs.len != 1) {
-        self.ctx.sink.add(c.rule.start, "`[by model(M) …]` cites exactly one transferred theorem", .{}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), c.rule.start, "`[by model(M) …]` cites exactly one transferred theorem", .{}) catch return error.OutOfMemory;
         return .failed;
     }
     // resolve M (a `.model` Index) in the CITING file's namespace. A model name is a
@@ -1941,11 +1948,11 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     // (the base-name lookup below would be wrong for it, so keep it a miss).
     const mtok = c.schema.?;
     if (mtok.qualifier != InternPool.Index.none) {
-        self.ctx.sink.add(mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     }
     const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(mtok) }) orelse {
-        self.ctx.sink.add(mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     };
     const model_ix = switch (mstate) {
@@ -1953,7 +1960,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         .in_flight => |owner| return .{ .blocked = owner },
     };
     if (self.ctx.interner.keyOf(model_ix) != .model) {
-        self.ctx.sink.add(mtok.start, "'{s}' is not a model", .{self.text(mtok)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), mtok.start, "'{s}' is not a model", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     }
     // the source theorem: QUALIFIED `src.thm` names the source file via its import; an
@@ -1966,14 +1973,14 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else blk: {
         const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
         const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse {
-            self.ctx.sink.add(rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
+            self.ctx.sink.add(self.diagFile(), rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
             return .failed;
         };
         break :blk switch (imp_state) {
             .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
                 .import => |imp| self.ctx.interner.keyOf(imp.namespace).namespace.file,
                 else => {
-                    self.ctx.sink.add(rtok.start, "'{s}' is not a namespace", .{qtext}) catch return error.OutOfMemory;
+                    self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' is not a namespace", .{qtext}) catch return error.OutOfMemory;
                     return .failed;
                 },
             },
@@ -2013,7 +2020,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
                 } else ix;
                 const mapped = self.ctx.interner.applyModel(effective_model, universe_ix);
                 if (mapped == universe_ix) {
-                    self.ctx.sink.add(rtok.start, "'{s}' is a schema obligation the model does not discharge (`{s} <- <local schema>`)", .{ self.text(rtok), self.text(rtok) }) catch return error.OutOfMemory;
+                    self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' is a schema obligation the model does not discharge (`{s} <- <local schema>`)", .{ self.text(rtok), self.text(rtok) }) catch return error.OutOfMemory;
                     return .failed;
                 }
                 return .{ .proven = mapped };
@@ -2022,7 +2029,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         },
         .in_flight => |owner| {
             if (owner == self.h.self_index) {
-                self.ctx.sink.add(rtok.start, "model transfer of '{s}' depends on itself", .{self.text(rtok)}) catch return error.OutOfMemory;
+                self.ctx.sink.add(self.diagFile(), rtok.start, "model transfer of '{s}' depends on itself", .{self.text(rtok)}) catch return error.OutOfMemory;
                 return .failed;
             }
             return .{ .blocked = owner };
@@ -2062,7 +2069,7 @@ fn transfersSchema(self: *Prove, c: ast.Step.Claim) Allocator.Error!union(enum) 
         .parsing => |t| return .{ .blocked = t },
         .unparsed => return .no,
     }
-    const fid = self.ctx.pool_file.get(src_file) orelse return .no;
+    const fid = self.ctx.fileOf(src_file) orelse return .no;
     const decl = self.ctx.declOf(fid, tokName(rtok)) orelse return .no;
     const fact = ast.factOf(decl) orelse return .no;
     return if (fact.params != null) .yes else .no;
@@ -2111,25 +2118,25 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
     const rtok = c.refs[0];
     const sk = self.ctx.interner.keyOf(schema_ix).schema;
     const args_in = self.schema_args orelse {
-        self.ctx.sink.add(rtok.start, "'{s}' transfers as a schema; cite it from a schema whose parameters stand in for its own, and instantiate that schema", .{self.text(rtok)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' transfers as a schema; cite it from a schema whose parameters stand in for its own, and instantiate that schema", .{self.text(rtok)}) catch return error.OutOfMemory;
         return .failed;
     };
     const citing_params = self.schema_params;
     // the discharging schema's own parameter names, off its declaration.
-    const tfid = self.ctx.pool_file.get(sk.file) orelse {
-        self.ctx.sink.add(rtok.start, "internal: the discharging schema's file is undiscovered", .{}) catch return error.OutOfMemory;
+    const tfid = self.ctx.fileOf(sk.file) orelse {
+        self.ctx.sink.add(self.diagFile(), rtok.start, "internal: the discharging schema's file is undiscovered", .{}) catch return error.OutOfMemory;
         return .failed;
     };
     const decl = self.ctx.declOf(tfid, sk.name) orelse {
-        self.ctx.sink.add(rtok.start, "reference not found: '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), rtok.start, "reference not found: '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
         return .failed;
     };
     const params = (if (ast.factOf(decl)) |f| f.params else null) orelse {
-        self.ctx.sink.add(rtok.start, "'{s}' discharges the schema '{s}' but is not a schema", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok) }) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' discharges the schema '{s}' but is not a schema", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok) }) catch return error.OutOfMemory;
         return .failed;
     };
     if (params.len != citing_params.len) {
-        self.ctx.sink.add(rtok.start, "'{s}' (discharging '{s}') takes {d} parameter(s); this schema takes {d}", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok), params.len, citing_params.len }) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' (discharging '{s}') takes {d} parameter(s); this schema takes {d}", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok), params.len, citing_params.len }) catch return error.OutOfMemory;
         return .failed;
     }
     const pnames = try self.ctx.arena.alloc(StrId, params.len);
@@ -2148,7 +2155,7 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
         .proven => |ix| return .{ .proven = ix },
         .in_flight => |owner| {
             if (owner == self.h.self_index) {
-                self.ctx.sink.add(rtok.start, "cyclic schema instantiation of '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
+                self.ctx.sink.add(self.diagFile(), rtok.start, "cyclic schema instantiation of '{s}'", .{self.ctx.interner.stringBytes(sk.name)}) catch return error.OutOfMemory;
                 return .failed;
             }
             return .{ .blocked = owner };
@@ -2173,7 +2180,7 @@ fn rekeyArgs(self: *Prove, from: []const StrId, to: []const StrId, args: *const 
     out.* = .empty;
     for (from, to) |f, t| {
         const a = args.get(f) orelse {
-            self.ctx.sink.add(loc_tok.start, "internal: schema parameter '{s}' has no bound argument", .{self.ctx.interner.stringBytes(f)}) catch return error.OutOfMemory;
+            self.ctx.sink.add(self.diagFile(), loc_tok.start, "internal: schema parameter '{s}' has no bound argument", .{self.ctx.interner.stringBytes(f)}) catch return error.OutOfMemory;
             return null;
         };
         try out.put(self.ctx.arena, t, a);
@@ -2326,7 +2333,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // collide keep-first with the standalone synthetic — the transferred instance would
     // resolve the UNRELATIVIZED schema. `{m<N>}` uses non-lexable braces (collision-free).
     var syn_name = syn.name;
-    const fid = self.ctx.pool_file.get(self.file).?;
+    const fid = self.ctx.fileOf(self.file).?;
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
     // the generated theorem STATES the preconditions of the terms it restates (see
     // `wrapObligations`); deterministic per step, so the keep-first registration is stable.
@@ -8008,7 +8015,7 @@ fn pushQualified(self: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: 
     // (theory selector) targets another namespace we can't check here, so it's kept.
     const name = self.ctx.interner.internString(name_text) catch return error.OutOfMemory;
     if (qualifier == InternPool.Index.none) {
-        const fid = self.ctx.pool_file.get(self.file).?;
+        const fid = self.ctx.fileOf(self.file).?;
         if (self.ctx.declOf(fid, name) == null) return;
     }
     // dupe onto the arena — callers pass inline `&.{…}` literals (stack temporaries).
@@ -8792,6 +8799,8 @@ pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
         .pool = self.pool,
         .interner = self.ctx.interner,
         .sink = self.ctx.sink,
+        // a rejection's offset indexes THIS proof's file, not the demander's
+        .file = self.diagFile(),
     };
     const proven = try k.check(.{ .steps = self.low_steps.items, .blocks = self.low_blocks.items }, goal, goal_loc);
     if (!proven) return false;
@@ -8889,7 +8898,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
         if (reached[i]) continue;
         const label = self.ctx.interner.stringBytes(s.label);
         if (std.mem.indexOfScalar(u8, label, '#') != null) continue; // synthetic
-        self.ctx.sink.add(s.loc, "unused fact: step '{s}' is never used — no later step or the conclusion cites it (a proof must use every fact it introduces; use --draft while filling in a proof)", .{label}) catch return error.OutOfMemory;
+        self.ctx.sink.add(self.diagFile(), s.loc, "unused fact: step '{s}' is never used — no later step or the conclusion cites it (a proof must use every fact it introduces; use --draft while filling in a proof)", .{label}) catch return error.OutOfMemory;
         any_dead = true;
     }
     return !any_dead;

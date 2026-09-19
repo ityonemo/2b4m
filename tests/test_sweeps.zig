@@ -37,4 +37,49 @@ pub fn addTests(
     traced.expectStdOutEqual("OK: 5 declarations, 1 theorems proven\n");
     traced.expectStdErrMatch("--- end trace ---\n");
     traced.expectExitCode(0);
+
+    // DETERMINISM: output is a function of (tree, roots), NEVER of scheduling. `--chaos=N`
+    // shuffles which runnable task the engine pulls, so pinning ONE golden across several
+    // seeds asserts exactly that contract — a report that leaks task order fails here.
+    //
+    // This fixture is what caught it: four holes reached by four SEPARATE proofs were
+    // disclosed in `holes_reached` APPEND order, i.e. whatever order those proofs ran in, so
+    // the list came out differently under most seeds. The report sorts by declaration site
+    // now. (agents/debug-guide.md shows the wider by-hand sweep over a directory; the corpus
+    // is deterministic under chaos today, and this keeps the cheapest witness in the suite.)
+    const holes_report =
+        \\OK: 12 declarations, 4 theorems proven
+        \\  — rests on 4 axiom(s):
+        \\      holeAlpha  (tests/cases/holes_many.bpa:18)  — HOLE
+        \\      holeBravo  (tests/cases/holes_many.bpa:19)  — HOLE
+        \\      holeCharlie  (tests/cases/holes_many.bpa:20)  — HOLE
+        \\      holeDelta  (tests/cases/holes_many.bpa:21)  — HOLE
+        \\  — DRAFT — 4 hole(s) unfilled (aspirational; the result is conditional on them): holeAlpha holeBravo holeCharlie holeDelta; re-run `bpa check` (no --draft) once filled.
+        \\
+    ;
+    ctx.ok(&.{ "check", "tests/cases/holes_many.bpa", "--draft", "--axioms" }, holes_report);
+    for ([_][]const u8{ "--chaos=1", "--chaos=7", "--chaos=42", "--chaos=99" }) |seed| {
+        ctx.ok(&.{ "check", seed, "tests/cases/holes_many.bpa", "--draft", "--axioms" }, holes_report);
+    }
+    ctx.okSilent(&.{ "fmt", "--check", "tests/cases/holes_many.bpa" });
+
+    // A CITATION CYCLE is a hard error naming every participant. Before this, the engine
+    // parked both proofs, drained its queue and returned as if quiescent — `OK: 0 theorems
+    // proven`, exit 0 — so a theorem that could never be proved read as success.
+    ctx.fail(&.{ "check", "tests/cases/cycle_two.bpa" },
+        \\tests/cases/cycle_two.bpa:13:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_two.bpa:20:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\
+    );
+    ctx.fail(&.{ "check", "tests/cases/cycle_three.bpa" },
+        \\tests/cases/cycle_three.bpa:7:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_three.bpa:14:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/cycle_three.bpa:21:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\
+    );
+    // ...but cyclic FILE IMPORTS stay legal — only the PROOF graph must be acyclic.
+    ctx.okSilent(&.{ "check", "tests/cases/imports/cycle_a.bpa" });
+    for ([_][]const u8{ "tests/cases/cycle_two.bpa", "tests/cases/cycle_three.bpa" }) |path| {
+        ctx.okSilent(&.{ "fmt", "--check", path });
+    }
 }

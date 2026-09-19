@@ -119,6 +119,9 @@ pub const Kernel = struct {
     pool: *term.Pool,
     interner: *const InternPool,
     sink: *Diagnostics.Sink,
+    /// The file this kernel run's diagnostics belong to — a value, not ambient sink state
+    /// (see diagnostics.zig).
+    file: u32 = 0,
 
     const Fail = error{ Invalid, OutOfMemory };
 
@@ -157,7 +160,7 @@ pub const Kernel = struct {
     }
 
     fn fail(self: *Kernel, loc: u32, comptime fmt: []const u8, args: anytype) Fail {
-        self.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+        self.sink.add(self.file, loc, fmt, args) catch return error.OutOfMemory;
         return error.Invalid;
     }
 
@@ -798,7 +801,7 @@ fn buildRig(arena: Allocator) !Rig {
 
     const nat_ix = try interner.mintSort(.{ .name = try interner.internString("nat"), .loc = 0, .refinement = null });
     const nat_args = [_]InternPool.Index{nat_ix};
-    const d_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat_args } });
+    const d_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat_args } });
     const d_ix = try interner.mintPred(.{
         .sig = d_sig,
         .guard = InternPool.no_term,
@@ -806,7 +809,7 @@ fn buildRig(arena: Allocator) !Rig {
         .name = try interner.internString("d"),
         .loc = 0,
     });
-    const p_sig = try interner.get(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &.{} } });
+    const p_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &.{} } });
     const p_ix = try interner.mintPred(.{
         .sig = p_sig,
         .guard = InternPool.no_term,
