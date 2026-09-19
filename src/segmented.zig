@@ -51,6 +51,15 @@ pub fn Segmented(comptime T: type) type {
         /// How many blocks are allocated.
         block_count: u32 = 0,
         /// Number of elements appended — the store's logical length.
+        ///
+        /// PUBLISHED WITH RELEASE, read with acquire (`count`). The element is written
+        /// FIRST and `len` bumped second, so a reader that observes the new length is
+        /// guaranteed to observe the element too. Without that ordering a lock-free reader
+        /// can see a length that includes a slot whose contents are not yet visible on its
+        /// core, and read uninitialized memory as a live entry.
+        ///
+        /// Writers still serialize on the owner's lock — this ordering is about making a
+        /// completed write VISIBLE, not about making concurrent appends safe.
         len: u32 = 0,
 
         pub const empty: Self = .{};
@@ -131,7 +140,13 @@ pub fn Segmented(comptime T: type) type {
         };
 
         pub fn iterator(self: *const Self) Iterator {
-            return .{ .store = self, .end = self.len };
+            return .{ .store = self, .end = self.count() };
+        }
+
+        /// The logical length, acquire-loaded so every element below it is visible. Use this
+        /// rather than reading `len` directly from another thread.
+        pub fn count(self: *const Self) u32 {
+            return @atomicLoad(u32, &self.len, .acquire);
         }
 
         /// Append one element; returns its index.
@@ -140,7 +155,8 @@ pub fn Segmented(comptime T: type) type {
             const i = self.len;
             const spot = locate(i);
             self.blocks[spot.block][spot.offset] = value;
-            self.len = i + 1;
+            // element first, THEN the length — see the field.
+            @atomicStore(u32, &self.len, i + 1, .release);
             return i;
         }
 
@@ -168,7 +184,8 @@ pub fn Segmented(comptime T: type) type {
             };
             const spot = locate(start);
             @memcpy(self.blocks[spot.block][spot.offset..][0..n], values);
-            self.len = start + n;
+            // elements first, THEN the length — see the field.
+            @atomicStore(u32, &self.len, start + n, .release);
             return start;
         }
 

@@ -339,7 +339,7 @@ fn mintNatFn(ip: *InternPool, name: []const u8, arity: usize, nat: InternPool.In
     const nm = try ip.internString(name);
     const args = try ip.arena.alloc(InternPool.Index, arity);
     @memset(args, nat);
-    const sig = try ip.get(.{ .sig = .{ .result = nat, .result_refined = .none, .args = args } });
+    const sig = try ip.intern(.{ .sig = .{ .result = nat, .result_refined = .none, .args = args } });
     const pnames = try ip.arena.alloc(InternPool.Index, arity);
     for (pnames, 0..) |*p, i| p.* = try ip.internString(try std.fmt.allocPrint(ip.arena, "a{d}", .{i}));
     const ix = try ip.mintFunc(.{ .sig = sig, .guard = InternPool.no_term, .param_names = pnames, .name = nm, .loc = 0 });

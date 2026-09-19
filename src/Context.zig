@@ -209,7 +209,7 @@ pub const ParseState = union(enum) {
 /// identity. The InternPool dedups: the same path always yields the same Index.
 pub fn fileIndex(self: *Context, resolved_path: []const u8) !InternPool.Index {
     const path_id = try self.interner.internString(resolved_path);
-    return self.interner.get(.{ .file = .{ .path = path_id } });
+    return self.interner.intern(.{ .file = .{ .path = path_id } });
 }
 
 /// The FileId already assigned to a resolved path, or null if not yet discovered. Reads
