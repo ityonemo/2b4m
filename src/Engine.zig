@@ -26,6 +26,7 @@
 
 const std = @import("std");
 const Context = @import("Context.zig");
+const Segmented = @import("segmented.zig").Segmented;
 
 const Engine = @This();
 
@@ -57,7 +58,24 @@ mutex: SpinLock = .{},
 /// that outlives its time in the run queue (so a suspended task can be waited on / parked
 /// on by `TaskIndex`, and FactKV can record "task T is proving this"). The run queue holds
 /// INDICES into this table, not tasks.
-tasks: std.ArrayList(Task) = .empty,
+tasks: Segmented(Task) = .empty,
+/// How many tasks have completed, bumped under `mutex` as each finishes. A task snapshots
+/// it before running; the park path compares against that snapshot.
+///
+/// This closes the LOST WAKEUP. A task decides to suspend on blocker B and returns; the
+/// engine records the park afterwards. If B completes in that window, B's `wake` scans
+/// `parked`, finds nothing, and moves on — leaving the parker queued against a task that
+/// will never complete again. Its theorem is then never proved and never counted, with no
+/// diagnostic: `reportWedge` only reports cycles, and a chain into a completed task is
+/// deliberately silent because that is what a legitimately failed dependency looks like.
+///
+/// Why a COUNTER and not a per-task "did B finish?" flag: B may have finished long before
+/// this task ever ran, in which case suspending on it is a permanent wait that the task will
+/// re-enter identically every time — requeueing on "B is finished" livelocks. What makes a
+/// requeue safe is specifically that a completion happened DURING this run, i.e. the wake we
+/// might have missed is one that could still have been for us. Comparing the counter to the
+/// pre-run snapshot asks exactly that question.
+completions: usize = 0,
 run_queue: std.ArrayList(TaskIndex) = .empty,
 /// `--trace-facts` lifecycle tracing. Held HERE (not read off `ctx`) because the pure
 /// scheduling unit test builds an Engine over an undefined Context; `Context.loadRoots`
@@ -170,8 +188,8 @@ pub fn init(arena: std.mem.Allocator, ctx: *Context) Engine {
 pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
     self.mutex.lock();
     defer self.mutex.unlock();
-    const index: TaskIndex = @enumFromInt(self.tasks.items.len);
-    try self.tasks.append(self.arena, task);
+    const index: TaskIndex = @enumFromInt(self.tasks.len);
+    _ = try self.tasks.append(self.arena, task);
     self.racked += 1;
     try self.run_queue.append(self.arena, index);
     return index;
@@ -209,15 +227,18 @@ fn pull(self: *Engine) Next {
     return .{ .run = self.run_queue.pop().? }; // non-empty: checked above
 }
 
-/// The task with the given index (from the append-only table). Not mutex-guarded — the
-/// table never moves an existing entry (append-only), so a held index is always valid.
+/// The task with the given index. Not mutex-guarded: the table is a NON-MOVING segmented
+/// store, so an entry appended under the mutex in `rack` keeps a stable address and a
+/// concurrent reader can never observe a reallocation. (It was an `ArrayList`, whose
+/// `append` reallocates and copies — the same use-after-free the pool and Context tables
+/// were already converted to fix; this table was missed.)
 fn taskOf(self: *const Engine, index: TaskIndex) Task {
-    return self.tasks.items[@intFromEnum(index)];
+    return self.tasks.get(@intFromEnum(index));
 }
 
 /// Number of tasks ever racked (the append-only table's length).
 pub fn taskCount(self: *const Engine) usize {
-    return self.tasks.items.len;
+    return self.tasks.len;
 }
 
 /// Run the worker loop to QUIESCENCE. Returns when nothing is runnable and nothing is in
@@ -267,6 +288,11 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
             },
         };
         const task = self.taskOf(index);
+        // Snapshot BEFORE running: any completion after this point is one whose wake we
+        // could have raced (see `completions`).
+        self.mutex.lock();
+        const completions_before = self.completions;
+        self.mutex.unlock();
         var handle: Handle = .{ .engine = self, .self_index = index };
         self.traceLifecycle("run", index, null);
         task.run(self.ctx, task.payload, &handle) catch |err| {
@@ -279,18 +305,32 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
             break;
         };
         if (handle.blocked_on) |blocker| {
-            // SUSPENDED: park it (do NOT count as completed — it hasn't finished).
-            self.traceLifecycle("park", index, blocker);
+            // SUSPENDED — park it, UNLESS the blocker finished while this task was deciding
+            // to suspend, in which case its wake has already come and gone and parking would
+            // strand us forever. Decided under the mutex the completion path writes
+            // `finished` in, so the two cannot both miss (see the field).
             self.mutex.lock();
-            self.in_flight -= 1; // resolved: parked, not running
-            try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
+            self.in_flight -= 1; // resolved: parked or requeued, not running
+            if (self.completions != completions_before) {
+                // Something completed while we ran, so a wake meant for us may already have
+                // swept `parked` before we got here. Requeue rather than park: re-running is
+                // cheap and idempotent, and it cannot livelock, because a requeue needs a
+                // FRESH completion each time and completions are finite.
+                self.traceLifecycle("requeue", index, blocker);
+                try self.run_queue.append(self.arena, index);
+            } else {
+                self.traceLifecycle("park", index, blocker);
+                try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
+            }
             self.mutex.unlock();
         } else {
-            // COMPLETED: count it, then wake everyone parked blocked-on it.
+            // COMPLETED: mark finished (under the mutex the park path reads it in), count
+            // it, then wake everyone parked blocked-on it.
             self.traceLifecycle("done", index, null);
             self.mutex.lock();
             self.in_flight -= 1; // resolved: completed
             self.completed += 1;
+            self.completions += 1; // a park racing this run must requeue (see `completions`)
             self.mutex.unlock();
             try self.wake(index);
         }
@@ -380,7 +420,6 @@ pub fn wedged(self: *const Engine, arena: std.mem.Allocator) std.mem.Allocator.E
 
 pub fn deinit(self: *Engine) void {
     self.run_queue.deinit(self.arena);
-    self.tasks.deinit(self.arena);
     self.parked.deinit(self.arena);
 }
 
