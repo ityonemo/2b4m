@@ -23,6 +23,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
+const Segmented = @import("segmented.zig").Segmented;
 const InternPool = @import("InternPool.zig");
 const Engine = @import("Engine.zig");
 const FactKV = @import("FactKV.zig");
@@ -59,6 +60,21 @@ gpa: std.mem.Allocator,
 /// lock-free and never need it. Single-threaded today, so locks are uncontended.
 io: std.Io,
 sink: *diagnostics.Sink,
+/// Guards the per-file tables' growth and the parse claim (see `files`/`demandParse`). A
+/// self-contained spinlock, like `Engine.mutex` and `InternPool.intern_lock`: uncontended
+/// single-threaded, and the critical sections are marked for when workers land.
+files_lock: InternPool.Lock = .{},
+/// Guards the by-name AST registry (`ast_index`, `synthetic_at`). Unlike the file tables
+/// these are written DURING proving — an accelerant producer registers the synthetic decl it
+/// generated — so reads take it too: a hashmap rehashes on growth.
+ast_lock: InternPool.Lock = .{},
+/// Guards the publish-time SIDE TABLES — `accelerated`, `axiom_origin`, `axiom_taint`,
+/// `hole_taint`, `model_discharged`, `model_define_targets`, `holes_reached`, `expand_linted`
+/// — plus the `declarations` counter and the `fact_trace` buffer. One lock for all of them:
+/// they are low-traffic, written only as a task publishes, and never held together, so one
+/// lock-order edge beats eight. Most READS happen in reporting, after quiescence, and are
+/// unguarded by design; the accessors below cover the writes that race.
+side_lock: InternPool.Lock = .{},
 interner: *InternPool,
 /// The fact resolution/coordination table over `interner` (see FactKV). Filled by
 /// ProveTask (the scan's roots + every demanded citation).
@@ -66,11 +82,11 @@ facts: FactKV,
 /// The identifier resolution/coordination table over `interner` (see IdentKV). Filled
 /// by FetchTask on demand.
 idents: IdentKV,
-files: std.ArrayList(diagnostics.FileSrc) = .empty,
+files: Segmented(diagnostics.FileSrc) = .empty,
 /// Per file: WHERE it was discovered from — the `import` token in the parent that named it —
 /// or null for a root. A file's ParseTask READS the file; when the read fails, this is where
 /// "cannot open" is reported (the parent's import site), the way an eager reader would have.
-origins: std.ArrayList(?Origin) = .empty,
+origins: Segmented(?Origin) = .empty,
 /// pool `.file` entity Index -> the dense FileId cursoring the per-file tables. The
 /// InternPool does the path dedup (same resolved path -> same file Index); this maps that
 /// interned identity onto the FileId used to index files/parsed/import_maps. A second
@@ -90,7 +106,12 @@ declarations: usize = 0,
 /// `@intFromEnum(fid)` is the index). The engine's parse tasks populate these; the
 /// demand tasks read them. `import_maps[fid]` is that file's raw->child import
 /// resolution; `parsed[fid]` its AST; `parse_state[fid]` its demand-parse lifecycle.
-parsed: std.ArrayList(ast.File) = .empty,
+///
+/// GUARDED BY `files_lock`: these five grow together in `discover`, and `parse_state` also
+/// carries the parse CLAIM. Reads of an already-populated slot are safe unguarded (the
+/// tables only ever grow, and a slot is written once), but any growth or claim is a
+/// transaction.
+parsed: Segmented(ast.File) = .empty,
 /// BY-NAME AST registry: `(FileId, name StrId) -> the decl`. Populated by ParseTask
 /// alongside `parsed[fid]` (one entry per named decl, keyed by its stamped name). The
 /// demand tasks resolve a decl by NAME through this (O(1)) instead of linear-scanning
@@ -104,14 +125,14 @@ ast_index: std.AutoHashMapUnmanaged(DeclKey, *const ast.Decl) = .empty,
 /// `registerDecl`, keep-first). The debug reprint (`bpa debug accelerant`) locates a step's
 /// synthetic through this; the engine itself resolves synthetics by NAME via `ast_index`.
 synthetic_at: std.AutoHashMapUnmanaged(SyntheticKey, DeclKey) = .empty,
-import_maps: std.ArrayList(ImportMap) = .empty,
+import_maps: Segmented(ImportMap) = .empty,
 /// LAZY-PARSE state per FileId (Step 11): a file is discovered (source read, FileId +
 /// table slots reserved) LONG before it is parsed — parsing is on demand, when a
 /// Fetch/Prove task first needs the file's AST. `unparsed` = discovered only;
 /// `parsing` = a ParseTask (this TaskIndex) is parsing it, suspend blocked-on it;
 /// `parsed` = `parsed[fid]` is populated, proceed. Mirrors the FactKV/IdentKV protocol
 /// but keyed by the dense FileId (a plain array, not a hashmap).
-parse_state: std.ArrayList(ParseState) = .empty,
+parse_state: Segmented(ParseState) = .empty,
 /// the root FileId (its theorems are the roots of demand).
 root_file: FileId = undefined,
 /// The files this run was ASKED ABOUT — one for a single-file check, N for a directory. Set
@@ -188,13 +209,13 @@ pub const ParseState = union(enum) {
 /// identity. The InternPool dedups: the same path always yields the same Index.
 pub fn fileIndex(self: *Context, resolved_path: []const u8) !InternPool.Index {
     const path_id = try self.interner.internString(resolved_path);
-    return self.interner.get(.{ .file = .{ .path = path_id } });
+    return self.interner.intern(.{ .file = .{ .path = path_id } });
 }
 
 /// The FileId already assigned to a resolved path, or null if not yet discovered. Reads
 /// through the pool (interns the path -> file Index -> the pool_file map).
 pub fn lookupFile(self: *Context, resolved_path: []const u8) !?FileId {
-    return self.pool_file.get(try self.fileIndex(resolved_path));
+    return self.fileOf(try self.fileIndex(resolved_path));
 }
 
 /// Register a newly-discovered file: intern its path (the file entity), assign a FileId,
@@ -203,16 +224,23 @@ pub fn lookupFile(self: *Context, resolved_path: []const u8) !?FileId {
 /// Pub: the parse task (Engine/ParseTask.zig) discovers a file's imports.
 pub fn discover(self: *Context, resolved_path: []const u8, origin: ?Origin) !FileId {
     const file_index = try self.fileIndex(resolved_path);
+    // ONE TRANSACTION: check, mint the id, grow the five per-file tables, record the
+    // mapping. Two tasks discovering the same path concurrently would otherwise both miss
+    // and both mint, giving one file two FileIds — and the appends themselves must not
+    // interleave, since the tables are grown in lockstep and indexed by that id.
+    self.files_lock.lock();
+    defer self.files_lock.unlock();
+    // direct map read, NOT `fileOf`: we already hold `files_lock` (it is not reentrant).
     if (self.pool_file.get(file_index)) |existing| return existing;
 
-    const file_id: FileId = @enumFromInt(self.files.items.len);
+    const file_id: FileId = @enumFromInt(self.files.len);
     // the SOURCE is not read here: the file's ParseTask reads it (and extracts a literate
     // document's bpa blocks) when the file is actually parsed. Until then it is empty.
-    try self.files.append(self.arena, .{ .path = resolved_path, .source = "" });
-    try self.origins.append(self.arena, origin);
-    try self.parsed.append(self.arena, .{ .decls = &.{} });
-    try self.import_maps.append(self.arena, .{});
-    try self.parse_state.append(self.arena, .unparsed);
+    _ = try self.files.append(self.arena, .{ .path = resolved_path, .source = "" });
+    _ = try self.origins.append(self.arena, origin);
+    _ = try self.parsed.append(self.arena, .{ .decls = &.{} });
+    _ = try self.import_maps.append(self.arena, .{});
+    _ = try self.parse_state.append(self.arena, .unparsed);
     try self.pool_file.put(self.arena, file_index, file_id);
     return file_id;
 }
@@ -222,7 +250,7 @@ pub fn discover(self: *Context, resolved_path: []const u8, origin: ?Origin) !Fil
 /// ParseTask reads its own file.
 pub fn preload(self: *Context, path: []const u8, source: []const u8) !FileId {
     const fid = try self.discover(path, null);
-    self.files.items[@intFromEnum(fid)].source = source;
+    self.files.at(@intFromEnum(fid)).source = source; // in place
     return fid;
 }
 
@@ -238,6 +266,8 @@ pub fn preload(self: *Context, path: []const u8, source: []const u8) !FileId {
 /// separately.
 pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem.Allocator.Error!bool {
     if (decl.* == .forward) return true;
+    self.ast_lock.lock();
+    defer self.ast_lock.unlock();
     const gop = try self.ast_index.getOrPut(self.arena, .{ .file = file, .name = ast.declName(decl).name });
     if (!gop.found_existing) gop.value_ptr.* = decl;
     return !gop.found_existing;
@@ -276,18 +306,30 @@ pub fn copyModelDefineTargets(self: *Context, composed: InternPool.Index, outer:
 /// Resolve a decl by NAME in a file (registry lookup; null = no such decl). Replaces the
 /// linear `parsed[fid].decls` name-scans, and transparently serves synthetic decls.
 pub fn declOf(self: *const Context, file: FileId, name: InternPool.StrId) ?*const ast.Decl {
+    // A read takes the lock too: the map REHASHES on growth, so an unguarded read can race
+    // a concurrent `registerDecl` (the accelerant producers register synthetics DURING
+    // proving, so this map is not write-once). `@constCast` because the lock is mutable
+    // state on an otherwise-read-only view.
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
     return self.ast_index.get(.{ .file = file, .name = name });
 }
 
 /// Record that the step at `loc` in `file` produced the synthetic decl registered as `name`
 /// (keep-first: a step's synthetic is produced once per space; the first stays the answer).
 pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: InternPool.StrId) std.mem.Allocator.Error!void {
+    self.ast_lock.lock();
+    defer self.ast_lock.unlock();
     const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc });
     if (!gop.found_existing) gop.value_ptr.* = .{ .file = file, .name = name };
 }
 
 /// The synthetic decl the step at `loc` in `file` produced, if any.
 pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Decl {
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
     const key = self.synthetic_at.get(.{ .file = file, .loc = loc }) orelse return null;
     return self.ast_index.get(key);
 }
@@ -300,14 +342,19 @@ pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Dec
 /// live `parsing` and suspends on the same task. `h` racks; single-threaded so the
 /// discover→check→rack window is uncontended.
 pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) std.mem.Allocator.Error!ParseState {
-    const fid = self.pool_file.get(file) orelse return .unparsed; // undiscovered — caller errors
+    const fid = self.fileOf(file) orelse return .unparsed; // undiscovered — caller errors
     const idx = @intFromEnum(fid);
-    switch (self.parse_state.items[idx]) {
+    // The CLAIM (`unparsed` -> rack -> `.parsing`) is one transaction for the same reason
+    // `discover` is: two demanders racing it would rack two ParseTasks for one file, which
+    // double-registers its decls and double-counts `declarations`.
+    self.files_lock.lock();
+    defer self.files_lock.unlock();
+    switch (self.parse_state.get(idx)) {
         .parsed => return .parsed,
         .parsing => |t| return .{ .parsing = t },
         .unparsed => {
             const t = try h.rackIndexed(try Engine.ParseTask.new(self.arena, .{ .file_id = fid }));
-            self.parse_state.items[idx] = .{ .parsing = t };
+            self.parse_state.set(idx, .{ .parsing = t });
             return .{ .parsing = t };
         },
     }
@@ -337,24 +384,167 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// The entry only racks; from there DEMAND drives everything (an import is parsed when cited
 /// into, a fact proved when cited). Sharing the pass is why a directory is N roots and not N
 /// runs: a fact two roots cite is proved once. Returns the first root (`self.root_file`).
+/// The dense FileId a diagnostic whose offset indexes `file` renders against. Every
+/// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
+/// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
+/// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+/// Record that `fact` rests on `axioms` (the `--axioms` report's edge). Publish-time.
+pub fn recordAxiomTaint(self: *Context, fact: InternPool.Index, axioms: []const InternPool.Index) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.axiom_taint.put(self.arena, fact, axioms);
+}
+
+/// Record where the axiom `fact` was declared (its site in the `--axioms` report).
+pub fn recordAxiomOrigin(self: *Context, fact: InternPool.Index, decl: HoleDecl) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.axiom_origin.put(self.arena, fact, decl);
+}
+
+/// Record that `fact` rests on the named `holes` (the `--draft` blast radius).
+pub fn recordHoleTaint(self: *Context, fact: InternPool.Index, holes: []const InternPool.StrId) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.hole_taint.put(self.arena, fact, holes);
+}
+
+/// Record that a hole declaration was actually REACHED by a proof.
+pub fn recordHoleReached(self: *Context, decl: HoleDecl) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.holes_reached.append(self.arena, decl);
+}
+
+/// Record the `using` words `fact`'s proof ADMITTED under `--fast` (the disclosure set).
+pub fn recordAccelerated(self: *Context, fact: InternPool.Index, words: Verify.Word.Set) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.accelerated.put(self.arena, fact, words);
+}
+
+/// Record that a `model` names `fact` as a discharger — `--library` counts that as USE.
+pub fn recordModelDischarged(self: *Context, fact: InternPool.Index) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.model_discharged.put(self.arena, fact, {});
+}
+
+/// Add to the running declaration count (the summary line's total).
+pub fn addDeclarations(self: *Context, n: usize) void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    self.declarations += n;
+}
+
+/// Append a `--trace-facts` line. Buffered on the Context because per-task stderr writers
+/// interleave into shredded output; printed once, before the verdict.
+pub fn traceLine(self: *Context, line: []const u8) void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    self.fact_trace.append(self.arena, line) catch {};
+}
+
+/// The file table as a flat slice, for the diagnostic renderer (which indexes it by the
+/// `file` each diagnostic carries). Built on `arena` AFTER the run, when the table has
+/// stopped growing — the segmented store exists precisely so the live table need not be
+/// contiguous while tasks are appending to it.
+/// The dense FileId a pool `.file` Index was discovered as, or null. GUARDED: `discover`
+/// inserts into this map, which REHASHES on growth, so an unguarded read can race a
+/// concurrent discovery — and every task does this lookup constantly.
+pub fn fileOf(self: *const Context, file: InternPool.Index) ?FileId {
+    const lock = @constCast(&self.files_lock);
+    lock.lock();
+    defer lock.unlock();
+    return self.pool_file.get(file);
+}
+
+pub fn fileList(self: *const Context, arena: std.mem.Allocator) std.mem.Allocator.Error![]const diagnostics.FileSrc {
+    const out = try arena.alloc(diagnostics.FileSrc, self.files.len);
+    for (out, 0..) |*slot, i| slot.* = self.files.get(@intCast(i));
+    return out;
+}
+
+pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
+    const fid = self.fileOf(file) orelse return 0;
+    return @intFromEnum(fid);
+}
+
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
     eng.trace = self.verify.trace_facts;
+    if (self.verify.chaos_seed) |seed| eng.chaos = .init(seed); // --chaos: shuffle scheduling
     for (roots) |r| {
         const fid = try self.discover(r.path, null);
         try self.root_files.append(self.arena, fid);
         // a path listed twice (or already discovered as another root's import) parses once —
         // `parse_state` is the guard.
-        if (self.parse_state.items[@intFromEnum(fid)] == .unparsed) {
+        if (self.parse_state.get(@intFromEnum(fid)) == .unparsed) {
             const t = try eng.rack(try Engine.ParseTask.new(self.arena, .{ .file_id = fid, .seed_proofs = r.theorem == null }));
-            self.parse_state.items[@intFromEnum(fid)] = .{ .parsing = t };
+            self.parse_state.set(@intFromEnum(fid), .{ .parsing = t });
         }
         if (r.theorem) |name| {
             _ = try eng.rack(try Engine.ProveTask.new(self.arena, .{ .file = try self.fileIndex(r.path), .name = try self.interner.internString(name) }));
         }
     }
     self.root_file = self.root_files.items[0];
-    try eng.run();
+    try eng.runWorkers(self.verify.workers);
+    try self.reportWedge(&eng);
     return self.root_file;
+}
+
+/// A run that ends with tasks still PARKED abandoned work: nothing could wake them. Report
+/// the ones that form a CYCLE — tasks waiting on each other, so no order could have helped.
+///
+/// The other kind of wedge is a task parked behind a proof that FAILED: that proof published
+/// nothing, so its `in_flight` claim stands forever and its citers never wake. Its root cause
+/// is already in the sink (the failure's own diagnostic), so re-reporting the consequence
+/// would add an error to every failing file. `Engine.Wedged.in_cycle` is exactly that split.
+///
+/// Why this must exist: without it a citation cycle is SILENT — the theorems are simply never
+/// proved, the run looks quiescent, and `bpa check` prints `OK: 0 theorems proven` and exits
+/// 0. Silence must never imply verification.
+fn reportWedge(self: *Context, eng: *Engine) !void {
+    const stuck = try eng.wedged(self.arena);
+    if (stuck.len == 0) return;
+
+    // Name each cycle member by the fact it claimed but never published, ordered by
+    // declaration site so the report does not depend on task numbering (which is
+    // scheduling, not content — see `Verify.chaos_seed`).
+    const Member = struct { file: FileId, loc: u32, name: []const u8 };
+    var members: std.ArrayList(Member) = .empty;
+    for (stuck) |w| {
+        if (!w.in_cycle) continue; // parked behind a failure: already diagnosed
+        const key = self.facts.claimOf(self.io, w.task) orelse continue;
+        // A cycle whose fact is nonetheless PROVEN is abandoned duplicate work, not a
+        // failure: a second task claimed the same fact, the two waited on each other, and
+        // the winner published. (Real in the corpus: a theorem and the synthetic its own
+        // `arithmetic` step generates can each demand the other, while the theorem still
+        // proves by the ordinary path.) Only an UNPROVEN fact is a genuine wedge.
+        if (self.facts.lookup(self.io, key)) |state| if (state == .proven) continue;
+        const home = self.interner.keyOf(key.namespace).namespace.file;
+        const fid = self.fileOf(home) orelse continue;
+        const decl = self.declOf(fid, key.name) orelse continue;
+        const nt = ast.declName(decl);
+        try members.append(self.arena, .{ .file = fid, .loc = nt.start, .name = self.interner.stringBytes(key.name) });
+    }
+    if (members.items.len == 0) return;
+    const lessThan = struct {
+        fn f(_: void, x: Member, y: Member) bool {
+            if (x.file != y.file) return @intFromEnum(x.file) < @intFromEnum(y.file);
+            return x.loc < y.loc;
+        }
+    }.f;
+    std.mem.sort(Member, members.items, {}, lessThan);
+
+    // one error per participant, at its declaration, naming the whole cycle.
+    var names: std.ArrayList(u8) = .empty;
+    for (members.items, 0..) |m, i| {
+        if (i > 0) try names.appendSlice(self.arena, ", ");
+        try names.appendSlice(self.arena, m.name);
+    }
+    for (members.items) |m| {
+        try self.sink.add(@intFromEnum(m.file), m.loc, "'{s}' is part of a citation cycle ({s}) — each proof waits on the next, so none can be proved", .{ m.name, names.items });
+    }
 }

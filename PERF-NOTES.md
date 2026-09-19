@@ -1,12 +1,29 @@
 # PERF-NOTES — execution-strategy rearchitecture (measured 2026-08-01)
 
-Status: RECORDED, NOT SCHEDULED. Nothing here is worth building at today's
-corpus size (the full integration suite re-proves the entire corpus in ~0.8 s).
-This note pins the measurements, the architecture we converged on, and the
-decisions already made, so that when the work starts it starts from conclusions
-rather than re-derivation.
+Status: RECORDED, NOT SCHEDULED. This note pins the measurements, the
+architecture we converged on, and the decisions already made, so that when the
+work starts it starts from conclusions rather than re-derivation.
 
-## Measurements (2026-08-01)
+## Measurements (2026-09-16) — run `zig build bench`
+
+**Always measure a ReleaseFast build.** `build.zig` uses
+`standardOptimizeOption`, so a bare `zig build` produces a DEBUG binary that is
+roughly 35x slower; the `bench` step builds its own ReleaseFast binary for
+exactly this reason. Timings taken 2026-09-16 (16 cores):
+
+| target | Debug | ReleaseFast |
+|---|---|---|
+| `check std` (48 files, 468 theorems) | 61.7 s | **1.82 s** |
+| `check aata` (25 files, 165 theorems) | 69.9 s | **2.24 s** |
+| `std/integer/divides.bpa` (547 decls) | 11.9 s | **0.34 s** |
+
+This supersedes the 2026-08-01 numbers below, and with them the conclusion that
+the suite is *"process-spawn-bound, not compute-bound"* — a single file now runs
+long enough that spawn tax is not the story. It also resets the revisit
+trigger recorded at the end of this note: measured against ReleaseFast, the
+corpus has NOT crossed it.
+
+## Superseded measurements (2026-08-01)
 
 - Full `zig build test`: **~0.82 s** wall — ~137 cold `bpa` spawns at ~8 ms
   each. The suite is **process-spawn-bound**, not compute-bound.
@@ -186,12 +203,12 @@ remains useful as a *scheduling hint* that makes suspensions rare.
 - **The kernel stays single-threaded and untouched.** Parallelism at theorem
   granularity only; a prove job runs the existing elaborator + kernel on one
   proof.
-- **Per-worker pool segments.** A shared prefix (terms created by declaration
-  elaboration, which runs under the same writer lock and is immutable once
-  published); each prove job appends its intermediate terms to its own segment
-  (`TermId` → (segment, offset), or reserved strides). Sound because the pool
-  is append-only with no dedup. The known aliasing trap (`pool.args()` slices
-  invalidated by growth) remains a per-worker discipline, exactly as today.
+- ~~**Per-worker pool segments.**~~ RETRACTED 2026-09-16: this assumed ONE
+  shared term pool that is append-only with no dedup. Neither half holds now.
+  `term.Pool` is hash-consed (`term.zig`), and pools are created PER TASK as
+  local scratch (`FetchTask`, `Schema`, `Elab` each `init` their own) — never
+  shared. There is no cross-worker structural table to contend on, so there is
+  nothing here to build.
 - **Env grows under a single writer lock.** Lazy file demand means the env is
   *not* frozen during proving: a newly demanded file's (or declaration's)
   elaboration appends statements mid-run. Declaration elaboration is cheap and
@@ -332,5 +349,10 @@ so only build it if the suite hurts before phase 1 lands.)
 Not scheduled. Start phase 1 (the engine) when the suite or interactive
 latency is *felt* (rough thresholds: suite > 5 s, or a single-file check
 > 250 ms), or when DEPCHECK narrowing is wanted — whichever comes first.
+
+**Status 2026-09-16: not crossed.** Measured on ReleaseFast (see the top of
+this note), `zig build bench` runs the whole corpus in under 6 s and the
+heaviest single file in 0.34 s. Debug numbers look like the trigger is far
+past — they are not the measurement to judge by.
 Phase 2 (the durable cache) follows when re-proving unchanged work is the
 dominant cost.

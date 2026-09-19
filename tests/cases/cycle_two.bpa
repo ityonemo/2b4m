@@ -1,0 +1,25 @@
+// DELIBERATELY BROKEN: two theorems cite each other, so neither can ever be proved.
+//
+// Before cycle detection this file printed `OK: 0 theorems proven` and exited 0 — the
+// engine parked both proofs, drained its run queue, and returned as if quiescent. Nothing
+// examined the parked set, so "no theorems were proved" was reported as success. Silence
+// must never imply verification: a wedge is now a hard error naming every participant.
+//
+// (A SELF-citation is caught earlier and differently, by the read pass — see
+// `cites '<name>', whose proof has not completed`. This file is the ≥ 2 case, which
+// reaches the engine's wait-for graph instead.)
+pred p
+
+theorem first: p
+proof
+  @conclusion |
+    p
+    [by cite second]
+qed
+
+theorem second: p
+proof
+  @conclusion |
+    p
+    [by cite first]
+qed

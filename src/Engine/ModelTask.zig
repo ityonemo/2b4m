@@ -53,9 +53,8 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[model] task#{d} = model {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
-        self.fact_trace.append(self.arena, line) catch {};
+        self.traceLine(line);
     }
-    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.idents.claimOrLookup(self.io, key, h.self_index)) {
@@ -82,11 +81,11 @@ pub fn run(self: *Context, task: ModelTask, h: *Engine.Handle) std.mem.Allocator
 /// suspending on any absent), and — once the whole closure is resolved — assemble the
 /// overlay + publish the `.model`. Idempotent across resumes.
 fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
-    const fid = self.pool_file.get(task.file) orelse {
-        self.sink.add(task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
+    const fid = self.fileOf(task.file) orelse {
+        self.sink.add(self.diagFile(task.file), task.loc, "internal: model into an undiscovered file", .{}) catch return error.OutOfMemory;
         return;
     };
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the model decl by name (registry); require it actually be a `model`.
     const found = self.declOf(fid, task.name);
@@ -167,14 +166,14 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
             const tgt = try resolveProjection(self, h, task.file, source, mapping.target, proj, &blocker);
             if (src) |s| if (tgt) |t| {
                 try overlay.append(self.arena, .{ .src = s, .tgt = t });
-                try self.model_discharged.put(self.arena, t, {});
+                try self.recordModelDischarged(t);
             };
             continue;
         }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
         if (src) |s| if (tgt) |t| {
             try overlay.append(self.arena, .{ .src = s, .tgt = t });
-            try self.model_discharged.put(self.arena, t, {}); // the local fact is USED
+            try self.recordModelDischarged(t); // the local fact is USED
         };
     }
     if (blocker) |b| return h.suspendOn(b);
@@ -226,7 +225,7 @@ fn mappingDecl(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: T
             .unparsed => return null,
         }
     }
-    const fid = self.pool_file.get(target_file) orelse return null;
+    const fid = self.fileOf(target_file) orelse return null;
     const decl = self.declOf(fid, tok.name) orelse return null;
     return .{ .decl = decl, .file = target_file };
 }
@@ -240,8 +239,7 @@ fn tokText(self: *Context, tok: Token) std.mem.Allocator.Error![]const u8 {
 
 /// A diagnostic at a token of the model's OWN declaration (not the citing site).
 fn diagAt(self: *Context, task: ModelTask, loc: u32, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
-    if (self.pool_file.get(task.file)) |f| self.sink.current_file = @intFromEnum(f);
-    self.sink.add(loc, fmt, args) catch return error.OutOfMemory;
+    self.sink.add(self.diagFile(task.file), loc, fmt, args) catch return error.OutOfMemory;
 }
 
 /// Which demand table a mapping token resolves against.
@@ -279,7 +277,7 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
             for (r.dischargers) |d| {
                 if (try resolveEntity(self, h, task.file, source, d, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
-                    try self.model_discharged.put(self.arena, fact, {});
+                    try self.recordModelDischarged(fact);
                 }
             }
             return false;
@@ -294,7 +292,7 @@ fn checkWitnesses(self: *Context, h: *Engine.Handle, task: ModelTask, source: []
             for (c.closure_facts) |cf| {
                 if (try resolveEntity(self, h, task.file, source, cf, .fact, blocker)) |fact| {
                     try dischargers.append(self.arena, .{ .src = tgt, .tgt = fact });
-                    try self.model_discharged.put(self.arena, fact, {});
+                    try self.recordModelDischarged(fact);
                 }
             }
             return false;
@@ -418,8 +416,8 @@ fn resolveProjection(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
 
 fn demandDiag(self: *Context, task: ModelTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
-    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+    const fid = self.fileOf(loc_file) orelse return; // undiscovered: nowhere to anchor
+    self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
 // --- tests ----------------------------------------------------------------------------
@@ -453,9 +451,9 @@ fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, src: []con
     };
     const fid = try ctx.preload(path, src);
     var p: parser.Parser = .initInterning(arena, src, sink, interner);
-    ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
-    ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
+    ctx.parsed.set(@intFromEnum(fid), try p.parseFile());
+    for (ctx.parsed.get(@intFromEnum(fid)).decls) |*decl| _ = try ctx.registerDecl(fid, decl);
+    ctx.parse_state.set(@intFromEnum(fid), .parsed);
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
 }

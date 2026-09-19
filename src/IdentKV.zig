@@ -120,7 +120,7 @@ fn mintUnderLock(self: *IdentKV, mint: Mint) std.mem.Allocator.Error!InternPool.
         .func => |c| self.pool.mintFunc(c),
         .pred => |c| self.pool.mintPred(c),
         .import => |m| self.pool.mintImport(m),
-        .model => |m| self.pool.get(.{ .model = m }), // deduped by content (parent+overlay)
+        .model => |m| self.pool.intern(.{ .model = m }), // deduped by content (parent+overlay)
         .existing => |ix| ix, // alias-collapse: bind to the target's origin Index, mint nothing
     };
 }
@@ -134,7 +134,7 @@ test "IdentKV demand table: claim -> in_flight -> publish -> done, deduped per k
     var threaded: std.Io.Threaded = .init(arena_state.allocator(), .{});
     const io = threaded.io();
 
-    const f = try pool.get(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
     const ns = try pool.namespace(.universe, f);
     const nat = try pool.internString("Nat");
     const k = IdentKV.Key{ .namespace = ns, .name = nat };

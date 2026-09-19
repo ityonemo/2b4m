@@ -68,11 +68,8 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[fetch] task#{d} = ident {s} in file#{d}\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(task.file) }) catch "";
-        self.fact_trace.append(self.arena, line) catch {};
+        self.traceLine(line);
     }
-    // point the sink at THIS task's file (see the same note in ProveTask.run): a fetch's
-    // "reference not found" / kind-mismatch offset is relative to its own file's source.
-    if (self.pool_file.get(task.file)) |fid| self.sink.current_file = @intFromEnum(fid);
     const ns = try self.interner.namespace(.universe, task.file);
     const key = IdentKV.Key{ .namespace = ns, .name = task.name };
     switch (try self.idents.claimOrLookup(self.io, key, h.self_index)) {
@@ -100,22 +97,22 @@ pub fn run(self: *Context, task: FetchTask, h: *Engine.Handle) std.mem.Allocator
 /// imports (no identifier references — never suspends). Layer 2: constants/funcs/preds
 /// — referenced sorts are demanded via `resolveSortDemand`, which may rack sub-fetches
 /// and SUSPEND; each resume re-enters here idempotently (earlier demands hit `done`).
-/// Point the sink at the file `task.loc` is relative to (the DEMANDER, `loc_file`, or
-/// `file` for a same-file demand), then record a demand-site diagnostic. Must precede
-/// any such `sink.add(task.loc, …)` so the offset renders against the right source.
+/// Record a demand-site diagnostic against the file `task.loc` is relative to — the
+/// DEMANDER (`loc_file`), or `file` for a same-file demand — so the offset renders against
+/// the right source.
 fn demandDiag(self: *Context, task: FetchTask, comptime fmt: []const u8, args: anytype) std.mem.Allocator.Error!void {
     const loc_file = task.loc_file orelse task.file;
-    if (self.pool_file.get(loc_file)) |lf| self.sink.current_file = @intFromEnum(lf);
-    self.sink.add(task.loc, fmt, args) catch return error.OutOfMemory;
+    const fid = self.fileOf(loc_file) orelse return; // undiscovered: nowhere to anchor
+    self.sink.add(@intFromEnum(fid), task.loc, fmt, args) catch return error.OutOfMemory;
 }
 
 fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key) std.mem.Allocator.Error!void {
-    const fid = self.pool_file.get(task.file) orelse {
+    const fid = self.fileOf(task.file) orelse {
         // the namespace's file was never discovered — an internal wiring error
         try demandDiag(self, task, "internal: fetch into an undiscovered file", .{});
         return;
     };
-    const source = self.files.items[@intFromEnum(fid)].source;
+    const source = self.files.get(@intFromEnum(fid)).source;
 
     // resolve the decl by name (O(1) registry lookup); a miss is "reference not found".
     const decl = self.declOf(fid, task.name) orelse {
@@ -185,11 +182,11 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
                 // the parse phase resolved the raw path -> child FileId; map it to the
                 // child's pool `.file` Index and bind the import to its namespace.
                 const raw = d.path.name; // the parser stamped the quote-stripped path
-                const target_fid = self.import_maps.items[@intFromEnum(fid)].get(raw) orelse {
-                    self.sink.add(d.path.start, "import '{s}' was not resolved at parse time", .{source[d.path.start..d.path.end]}) catch return error.OutOfMemory;
+                const target_fid = self.import_maps.get(@intFromEnum(fid)).get(raw) orelse {
+                    self.sink.add(self.diagFile(task.file), d.path.start, "import '{s}' was not resolved at parse time", .{source[d.path.start..d.path.end]}) catch return error.OutOfMemory;
                     return; // no publish — demanders of this import stay parked
                 };
-                const target_file = try self.fileIndex(self.files.items[@intFromEnum(target_fid)].path);
+                const target_file = try self.fileIndex(self.files.get(@intFromEnum(target_fid)).path);
                 const target_ns = try self.interner.namespace(.universe, target_file);
                 _ = try self.idents.publish(self.io, key, .{ .import = .{
                     .namespace = target_ns,
@@ -307,7 +304,7 @@ const AliasKind = enum {
 /// EXISTING pool Index — mints nothing (identity by origin). Resolve TARGET (demanding it +
 /// following qualifiers; transitive through a chain of aliases for free, since each aliased
 /// target already resolved to its origin Index), check its kind, then publish `Mint.existing`.
-/// A diagnostic points at the alias's TARGET token (in `task.file`, where `sink.current_file`
+/// A diagnostic points at the alias's TARGET token (in `task.file`,
 /// already points) — the local name has no meaning apart from its target.
 fn publishAlias(self: *Context, h: *Engine.Handle, task: FetchTask, key: IdentKV.Key, a: ast.Alias, kind: AliasKind) std.mem.Allocator.Error!void {
     const target = demandTok(self, h, task.file, a.target) catch |e| switch (e) {
@@ -315,7 +312,7 @@ fn publishAlias(self: *Context, h: *Engine.Handle, task: FetchTask, key: IdentKV
         error.Unresolved => return, // suspended (resume re-runs) or diagnosed by demandTok
     };
     if (!kind.matches(self.interner.keyOf(target))) {
-        self.sink.add(a.target.start, "'{s}' is not a {s}", .{ self.interner.stringBytes(a.target.name), kind.label() }) catch return error.OutOfMemory;
+        self.sink.add(self.diagFile(task.file), a.target.start, "'{s}' is not a {s}", .{ self.interner.stringBytes(a.target.name), kind.label() }) catch return error.OutOfMemory;
         return; // no publish
     }
     _ = try self.idents.publish(self.io, key, .{ .existing = target });
@@ -362,7 +359,7 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
         };
         const imp = self.interner.keyOf(imp_ix);
         if (imp != .import) {
-            self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
+            self.sink.add(self.diagFile(file), tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
             return error.Unresolved;
         }
         // the sort lives in the imported namespace's FILE
@@ -376,7 +373,7 @@ fn resolveSortDemand(self: *Context, h: *Engine.Handle, file: InternPool.Index, 
         },
     };
     if (self.interner.keyOf(ix) != .sort) {
-        self.sink.add(tok.start, "'{s}' is not a sort", .{text}) catch return error.OutOfMemory;
+        self.sink.add(self.diagFile(file), tok.start, "'{s}' is not a sort", .{text}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
     return ix;
@@ -409,13 +406,13 @@ fn resolveGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, sourc
         const cb = switch (self.interner.keyOf(ix)) {
             .pred => |c| c,
             else => {
-                self.sink.add(tok.start, "sort refinement '{s}' is not a predicate in scope", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+                self.sink.add(self.diagFile(file), tok.start, "sort refinement '{s}' is not a predicate in scope", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
                 return error.Unresolved;
             },
         };
         const sig = self.interner.keyOf(cb.sig).sig;
         if (sig.args.len != 1 or self.interner.carrierOf(sig.args[0]) != carrier) {
-            self.sink.add(tok.start, "sort refinement '{s}' must be a unary predicate over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+            self.sink.add(self.diagFile(file), tok.start, "sort refinement '{s}' must be a unary predicate over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
             return error.Unresolved;
         }
         return ix;
@@ -432,7 +429,7 @@ fn resolveGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, sourc
         error.Recover => return error.Unresolved, // diagnosed by Elab
     };
     if (typed.sort != Elab.prop_sort) {
-        self.sink.add(tok.start, "sort refinement '{s}' must be a proposition over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
+        self.sink.add(self.diagFile(file), tok.start, "sort refinement '{s}' must be a proposition over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
     self.interner.lockWrite(self.io);
@@ -455,7 +452,7 @@ fn demandTok(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lex
             },
         };
         if (self.interner.keyOf(imp_ix) != .import) {
-            self.sink.add(tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
+            self.sink.add(self.diagFile(file), tok.start, "'{s}' is not a namespace", .{self.interner.stringBytes(tok.qualifier)}) catch return error.OutOfMemory;
             return error.Unresolved;
         }
         target_file = self.interner.keyOf(imp_ix).import.namespace;
@@ -487,7 +484,7 @@ const SigParts = struct { sig: InternPool.Index, param_names: []const InternPool
 fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, params: []const ast.Binder, result_tok: ?lexer.Token) ResolveError!SigParts {
     for (params) |b| {
         if (b.guard != null) {
-            self.sink.add(b.name.start, "predicated parameters ('where') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
+            self.sink.add(self.diagFile(file), b.name.start, "predicated parameters ('where') are not yet supported by the demand prover", .{}) catch return error.OutOfMemory;
             return error.Unresolved;
         }
     }
@@ -501,7 +498,7 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
         try resolveSortDemand(self, h, file, source, rt)
     else
         .prop;
-    const sig = self.interner.get(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
+    const sig = self.interner.intern(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
     return .{ .sig = sig, .param_names = names };
 }
 
@@ -558,7 +555,7 @@ fn reifyGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source:
         error.Recover => return error.Unresolved,
     };
     if (typed.sort != Elab.prop_sort) {
-        self.sink.add(exprLocOf(requires), "a function's 'requires' precondition must be a proposition", .{}) catch return error.OutOfMemory;
+        self.sink.add(self.diagFile(file), exprLocOf(requires), "a function's 'requires' precondition must be a proposition", .{}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
 
@@ -608,12 +605,12 @@ pub fn fixtureCtx(arena: std.mem.Allocator, io: std.Io, path: []const u8, source
     };
     const fid = try ctx.preload(path, source);
     var p: parser.Parser = .initInterning(arena, source, sink, interner);
-    ctx.parsed.items[@intFromEnum(fid)] = try p.parseFile();
-    for (ctx.parsed.items[@intFromEnum(fid)].decls) |*decl| _ = try ctx.registerDecl(fid, decl);
+    ctx.parsed.set(@intFromEnum(fid), try p.parseFile());
+    for (ctx.parsed.get(@intFromEnum(fid)).decls) |*decl| _ = try ctx.registerDecl(fid, decl);
     // this fixture registers the root file's decls DIRECTLY (bypassing ParseTask); mark it
     // `.parsed` so a later `demandParse` doesn't re-rack a ParseTask that would re-register
     // every decl and (now) diagnose each as a duplicate.
-    ctx.parse_state.items[@intFromEnum(fid)] = .parsed;
+    ctx.parse_state.set(@intFromEnum(fid), .parsed);
     try testing.expectEqual(@as(usize, 0), sink.list.items.len);
     return ctx;
 }
@@ -729,13 +726,13 @@ test "fetch: an import binds to the target file's namespace" {
     const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
-        ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
-        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
+        ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
+        for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
-    try ctx.import_maps.items[@intFromEnum(parent_fid)].put(arena, raw, child_fid);
+    try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const peano = try ctx.interner.internString("peano");
@@ -850,13 +847,13 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
-        ctx.parsed.items[@intFromEnum(child_fid)] = try p.parseFile();
-        for (ctx.parsed.items[@intFromEnum(child_fid)].decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
-        ctx.parse_state.items[@intFromEnum(child_fid)] = .parsed; // registered directly; don't re-parse
+        ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
+        for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
+        ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
     const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
     const raw = try ctx.interner.internString("child.bpa");
-    try ctx.import_maps.items[@intFromEnum(parent_fid)].put(arena, raw, child_fid);
+    try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const double = try ctx.interner.internString("double");
