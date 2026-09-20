@@ -654,7 +654,7 @@ test "fetch: a root sort is produced from its declaration and published (demande
     const f = try ctx.fileIndex("/t/a.bpa");
     const nat = try ctx.interner.internString("Nat");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     // two demanders of the same sort: the second dedups to a suspended waiter.
     _ = try eng.rack(try new(arena, .{ .file = f, .name = nat, .loc = 0 }));
@@ -687,7 +687,7 @@ test "fetch: a `where`-alias produces a refined sort {parent, [guard]}" {
     const f = try ctx.fileIndex("/t/a.bpa");
     const pos = try ctx.interner.internString("Pos");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = pos, .loc = 0 }));
     try eng.run();
@@ -732,7 +732,7 @@ test "fetch: an import binds to the target file's namespace" {
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const peano = try ctx.interner.internString("peano");
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = parent, .name = peano, .loc = 0 }));
     try eng.run();
@@ -759,7 +759,7 @@ test "fetch: an undeclared name diagnoses 'reference not found' and publishes no
     const f = try ctx.fileIndex("/t/a.bpa");
     const missing = try ctx.interner.internString("Missing");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = missing, .loc = 3 }));
     try eng.run();
@@ -791,7 +791,7 @@ test "fetch layer 2: a func's sorts are sub-demanded; sig + param names assemble
     const le = try ctx.interner.internString("le");
     const zero = try ctx.interner.internString("ZERO");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     // demand ONLY the callables/constant — the sort Nat is sub-demanded automatically.
     _ = try eng.rack(try new(arena, .{ .file = f, .name = add, .loc = 0 }));
@@ -853,7 +853,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
 
     const parent = try ctx.fileIndex("/t/parent.bpa");
     const double = try ctx.interner.internString("double");
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = parent, .name = double, .loc = 0 }));
     try eng.run();
@@ -886,7 +886,7 @@ test "fetch layer 2: a guarded func ('requires') reifies its precondition into t
     const f = try ctx.fileIndex("/t/a.bpa");
     const dec = try ctx.interner.internString("dec");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = dec, .loc = 0 }));
     try eng.run();
@@ -921,7 +921,7 @@ test "fetch: a fact name demanded as an identifier is a kind mismatch" {
     const f = try ctx.fileIndex("/t/a.bpa");
     const axp = try ctx.interner.internString("axP");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = axp, .loc = 0 }));
     try eng.run();
@@ -949,7 +949,7 @@ test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via
     const f = try ctx.fileIndex("/t/a.bpa");
     const name = try ctx.interner.internString("everywhereGoal");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = name, .loc = 0 }));
     try eng.run();

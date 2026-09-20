@@ -494,7 +494,7 @@ pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
 
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
-    var eng = Engine.init(self.arena, self);
+    var eng = Engine.init(self.arena, self, self.io);
     // Every off-worker load reports to `eng` (`externalEnd`), so all of them must land before
     // this frame ends — including on the failure path, where `runWorkers` returns with loads
     // still in flight. `runWorkers` joins every worker first, so nothing submits after it

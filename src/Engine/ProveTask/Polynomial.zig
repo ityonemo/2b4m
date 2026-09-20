@@ -965,7 +965,7 @@ pub const Rig = struct {
         const file = try ctx.fileIndex("/t/ring.bpa");
         const ns = try ctx.interner.namespace(.universe, file);
         const eng = try arena.create(Engine);
-        eng.* = Engine.init(arena, ctx);
+        eng.* = Engine.init(arena, ctx, ctx.io);
         for ([_][]const u8{ "Int", "ZERO", "add", "mul", "neg", "succ" }) |n| {
             _ = try eng.rack(try FetchTask.new(arena, .{ .file = file, .name = try ctx.interner.internString(n), .loc = 0 }));
         }
