@@ -349,7 +349,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-delay=<us>] <file.bpa | dir> [theorem]
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.bpa | dir> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -443,7 +443,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-delay=<us>] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -484,6 +484,13 @@ pub fn main(init: std.process.Init) !u8 {
             verify.workers = std.fmt.parseInt(usize, arg["-j".len..], 10) catch
                 return fail("error: -j takes a worker count, e.g. -j4\n", .{});
             if (verify.workers.? == 0) return fail("error: -j needs at least one worker\n", .{});
+        } else if (std.mem.startsWith(u8, arg, "--io-threads=")) {
+            verify.io_threads = std.fmt.parseInt(usize, arg["--io-threads=".len..], 10) catch
+                return fail("error: --io-threads= takes a thread count, e.g. --io-threads=16\n", .{});
+            if (verify.io_threads == 0) return fail("error: --io-threads needs at least one thread (use --sync-io for no pool)\n", .{});
+            if (verify.io_threads > bpa.Verify.max_io_threads) return fail("error: --io-threads is capped at {d}\n", .{bpa.Verify.max_io_threads});
+        } else if (std.mem.eql(u8, arg, "--sync-io")) {
+            verify.sync_io = true;
         } else if (std.mem.startsWith(u8, arg, "--io-delay=")) {
             const us = std.fmt.parseInt(u64, arg["--io-delay=".len..], 10) catch
                 return fail("error: --io-delay= takes microseconds, e.g. --io-delay=5000\n", .{});
