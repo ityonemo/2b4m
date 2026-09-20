@@ -475,7 +475,7 @@ pub fn main(init: std.process.Init) !u8 {
         } else if (std.mem.startsWith(u8, arg, "-j")) {
             verify.workers = std.fmt.parseInt(usize, arg["-j".len..], 10) catch
                 return fail("error: -j takes a worker count, e.g. -j4\n", .{});
-            if (verify.workers == 0) return fail("error: -j needs at least one worker\n", .{});
+            if (verify.workers.? == 0) return fail("error: -j needs at least one worker\n", .{});
         } else if (std.mem.eql(u8, arg, "--chaos")) {
             verify.chaos_seed = 0;
         } else if (std.mem.startsWith(u8, arg, "--chaos=")) {

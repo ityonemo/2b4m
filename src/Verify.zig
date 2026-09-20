@@ -109,22 +109,33 @@ trace_facts: bool = false,
 /// many seeds and diff. Any difference is a determinism bug (something leaked task order
 /// into output), caught here without threads to confuse the diagnosis. Null = off.
 chaos_seed: ?u64 = null,
-/// `-j<n>`: how many worker threads prove in parallel. `-j1` is the single-threaded engine.
+/// `-j<n>`: how many worker threads prove in parallel; null = `defaultWorkers()`.
 ///
-/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE. The known
-/// hazards are closed — the per-file tables are non-moving, `pool_file` and the AST registry
-/// and the side tables are locked, interning synchronizes itself — but at least one race
-/// REMAINS UNFOUND: `bpa check tests/cases/dir_ok -j4` intermittently reports 2 theorems
-/// where `-j1` reports 3, so a proof is occasionally not counted as proven. Until that is
-/// root-caused, `-j<n>` is an opt-in for working ON the engine, not a mode to check proofs
-/// in, and every gate runs single-threaded.
+/// DEFAULT (user ruling 2026-09-20): `max(1, logical_cpus / 2)` — the logical CPU count
+/// HALVED. The prover is compute-bound and lock-heavy, and the measured optimum sits at the
+/// PHYSICAL core count: on an 8-core/16-thread box `check std` runs 0.68 s at `-j8` and
+/// regresses to 0.78 s at `-j16`, consistent with SMT siblings splitting one core's
+/// execution units (a spinning sibling steals cycles from the very lock holder it waits
+/// on). Halving the logical count lands on physical cores wherever SMT is on.
 ///
-/// Output is a function of (tree, roots), never of scheduling, so the worker count must
-/// change only how fast a run goes — never what it prints. `--chaos` tests that contract
-/// deterministically today; a `-j` sweep tests it under real threads once the tables move.
-workers: usize = 1,
+/// On a machine WITHOUT SMT this undershoots by 2x. That is accepted on purpose: the
+/// binary does not parse `/sys` to find physical cores. `-j<n>` always exists, and a user
+/// who wants physical-core precision wraps `bpa` in a shell script that reads
+/// `/sys/devices/system/cpu/*/topology` and passes `-j`. That is the documented contract.
+///
+/// (`-j1` was the default while a scheduling race was open — a task could park on a
+/// blocker that had already finished, so `dir_ok -j4` sometimes counted 2 theorems where
+/// `-j1` counted 3. That was found and fixed, and std/aata are byte-identical from `-j1`
+/// to `-j16`; output is a function of (tree, roots), never of scheduling.)
+workers: ?usize = null,
 
 const Verify = @This();
+
+/// The default worker count: logical CPUs halved, never below 1. See `workers`.
+pub fn defaultWorkers() usize {
+    const logical = std.Thread.getCpuCount() catch 2;
+    return @max(1, logical / 2);
+}
 
 /// Is the `using` word named by `rule_word` (an `InternPool.RuleStr` — but resolved by the
 /// caller to a `Word`) currently trusted? Callers map their rule to a `Word` first.
