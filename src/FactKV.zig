@@ -103,13 +103,8 @@ pub fn claimOrLookup(self: *FactKV, io: std.Io, key: Key, self_task: Engine.Task
 pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, formula: InternPool.TermOff, loc: u32) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
-    self.pool.lockWrite(io);
     // the fact's name IS its identity key's name; loc comes from the caller (declaration site).
-    const index = self.pool.mintFact(kind, formula, key.name, loc) catch |e| {
-        self.pool.unlockWrite(io);
-        return e;
-    };
-    self.pool.unlockWrite(io);
+    const index = try self.pool.mintFact(kind, formula, key.name, loc);
     try self.map.put(self.pool.arena, key, .{ .proven = index });
     return index;
 }
@@ -123,12 +118,7 @@ pub fn publish(self: *FactKV, io: std.Io, key: Key, kind: InternPool.Key.Kind, f
 pub fn publishSchema(self: *FactKV, io: std.Io, key: Key, s: InternPool.Key.Schema) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
-    self.pool.lockWrite(io);
-    const index = self.pool.mintSchema(s) catch |e| {
-        self.pool.unlockWrite(io);
-        return e;
-    };
-    self.pool.unlockWrite(io);
+    const index = try self.pool.mintSchema(s);
     try self.map.put(self.pool.arena, key, .{ .proven = index });
     return index;
 }
