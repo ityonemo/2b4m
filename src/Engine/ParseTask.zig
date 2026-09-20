@@ -77,7 +77,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
         } else {
             try self.sink.add(idx, 0, "cannot open '{s}': file not found", .{path});
         }
-        self.parse_state.set(idx, .parsed);
+        self.markParsed(task.file_id); // under files_lock: publishes the registrations above
         return;
     };
     const source = if (std.mem.endsWith(u8, path, ".md")) try literate.extract(self.arena, bytes) else bytes;
@@ -155,7 +155,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     }
 
     // this file's AST is now populated — mark it parsed so `demandParse` waiters wake.
-    self.parse_state.set(idx, .parsed);
+    self.markParsed(task.file_id); // under files_lock: publishes the registrations above
 
     // the ROOT file's theorems are the roots of demand: scan + rack a ProveTask each.
     // (Only the root — imported files' theorems are demanded by citations, not proved
