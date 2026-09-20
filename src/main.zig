@@ -7,6 +7,13 @@ const bpa = @import("bpa");
 // User program, not a library: io lives in a global for convenience.
 pub var io: Io = undefined;
 
+/// `--io-delay=<us>`: sleep this long inside EVERY source-file read, to simulate a slow
+/// filesystem (cold cache, NFS, sshfs) on a machine whose page cache cannot be dropped.
+/// A measurement knob, not a tuning one: it is how the cost of a blocking read — and, once
+/// reads move off the prover workers, the benefit — is made visible and reproducible. The
+/// delay happens in `readFile`, i.e. exactly where a real slow read would block. 0 = off.
+pub var io_delay_ns: u64 = 0;
+
 fn fail(comptime fmt: []const u8, args: anytype) u8 {
     var buf: [512]u8 = undefined;
     var fw: Io.File.Writer = .init(.stderr(), io, &buf);
@@ -132,6 +139,7 @@ fn emitQuery(text: []const u8, ok: bool) !u8 {
 }
 
 fn readFile(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (io_delay_ns != 0) try Io.sleep(io, .fromNanoseconds(@intCast(io_delay_ns)), .awake); // --io-delay
     return Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(64 << 20)) catch |e| switch (e) {
         error.FileNotFound => return error.FileNotFound,
         else => return e,
@@ -341,7 +349,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.writeAll(
             \\bpa — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] <file.bpa | dir> [theorem]
+            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-delay=<us>] <file.bpa | dir> [theorem]
             \\       bpa fmt [--check] <file.bpa|.md>
             \\       bpa lint <file.bpa|.md>
             \\       bpa debug accelerant <file> <line | theorem step-label>
@@ -435,7 +443,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-delay=<us>] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -476,6 +484,10 @@ pub fn main(init: std.process.Init) !u8 {
             verify.workers = std.fmt.parseInt(usize, arg["-j".len..], 10) catch
                 return fail("error: -j takes a worker count, e.g. -j4\n", .{});
             if (verify.workers.? == 0) return fail("error: -j needs at least one worker\n", .{});
+        } else if (std.mem.startsWith(u8, arg, "--io-delay=")) {
+            const us = std.fmt.parseInt(u64, arg["--io-delay=".len..], 10) catch
+                return fail("error: --io-delay= takes microseconds, e.g. --io-delay=5000\n", .{});
+            io_delay_ns = us * std.time.ns_per_us;
         } else if (std.mem.eql(u8, arg, "--chaos")) {
             verify.chaos_seed = 0;
         } else if (std.mem.startsWith(u8, arg, "--chaos=")) {
