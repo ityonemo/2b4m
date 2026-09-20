@@ -128,6 +128,19 @@ chaos_seed: ?u64 = null,
 /// `-j1` counted 3. That was found and fixed, and std/aata are byte-identical from `-j1`
 /// to `-j16`; output is a function of (tree, roots), never of scheduling.)
 workers: ?usize = null,
+/// `--sync-io`: read every source file INLINE on the prover worker that demanded it — the
+/// pre-loader code path — instead of handing the read to the I/O pool (`Engine/Loader.zig`).
+/// Reads are asynchronous BY DEFAULT; this is the explicit opt-out and the bisection
+/// baseline, and the suite pins a gate to it so the inline path stays exercised.
+sync_io: bool = false,
+/// `--io-threads=<n>`: the CEILING of the file-loading pool (blocking syscalls, disjoint from
+/// the prover workers), capped at `max_io_threads`. Sized separately from `-j` on purpose:
+/// a loader thread sleeps in the kernel, so SMT costs it nothing and the pool may exceed the
+/// core count. A load the pool cannot take (ceiling reached) is read inline, so a small
+/// ceiling is slower, never wrong.
+io_threads: usize = max_io_threads,
+
+pub const max_io_threads = 64;
 
 const Verify = @This();
 

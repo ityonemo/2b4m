@@ -30,6 +30,23 @@ pub fn addTests(
         ctx.okSilent(&.{ "fmt", "--check", path });
     }
 
+    // FILE READS are off-worker by default (Engine/Loader.zig), so every gate above runs the
+    // async path. These pin the two OTHER paths so they stay exercised: `--sync-io` is the
+    // inline read on the demanding worker (the opt-out and the bisection baseline), and a
+    // one-thread ceiling makes the pool REFUSE most submissions, which must fall back to the
+    // inline read rather than fail or wedge. A directory sweep, so the reads overlap.
+    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--sync-io" });
+    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-threads=1" });
+    // ...and a missing import is diagnosed identically whichever thread met the error (the
+    // pool thread records it as data; the resumed task diagnoses at the import token).
+    const import_missing_diag =
+        \\tests/cases/imports/missing_import.bpa:4:18: error: cannot open 'tests/cases/imports/nope.bpa': file not found
+        \\tests/cases/imports/missing_import.bpa:10:26: error: reference not found: 'reflexive'
+        \\
+    ;
+    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.bpa", "--sync-io" }, import_missing_diag);
+    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.bpa", "--io-threads=1" }, import_missing_diag);
+
     // `--trace-facts` runs to completion and leaves the verdict alone. Its text carries task
     // numbers, so the stdout verdict is pinned exactly and the stderr trace only by its
     // footer (a checked run must state SOME expectation for a stream it writes to).

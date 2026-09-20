@@ -43,6 +43,7 @@ const Parked = struct { task: TaskIndex, blocked_on: TaskIndex };
 /// imports (transitional); `prove` is racked by the parse scan per theorem — a NO-OP for
 /// now. The engine treats both uniformly via type-erased payloads (see `Task`).
 pub const ParseTask = @import("Engine/ParseTask.zig");
+pub const Loader = @import("Engine/Loader.zig");
 pub const ProveTask = @import("Engine/ProveTask.zig");
 pub const FetchTask = @import("Engine/FetchTask.zig");
 pub const ModelTask = @import("Engine/ModelTask.zig");

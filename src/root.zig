@@ -316,6 +316,24 @@ pub fn loadProject(
     // the same file reached as an import are one FileId).
     const canon = try arena.alloc(Context.Root, roots.len);
     for (roots, canon) |r, *c| c.* = .{ .path = try std.fs.path.resolve(arena, &.{r.path}), .theorem = r.theorem };
+
+    // The FILE-LOADING pool: dedicated, bounded, owned by this frame (see Engine/Loader.zig).
+    // Its gpa must be thread-safe and must really free (`Group.Task.destroy`) — `gpa()`, never
+    // an arena. Declared before the loader so it outlives it; `loadRoots` drains every load
+    // before returning, so `deinit` never joins a thread mid-read.
+    var threaded: std.Io.Threaded = .init(gpa(), .{ .concurrent_limit = .limited(@min(verify.io_threads, Verify.max_io_threads)) });
+    defer threaded.deinit();
+    var loader: Engine.Loader = .{ .io = threaded.io() };
+    context.loader = if (verify.sync_io) null else &loader;
+    defer context.loader = null; // the pool dies with this frame; the context outlives it
+    if (context.loader) |l| {
+        // pre-warm: a directory check reads (at least) every root, a single-file check a
+        // handful of imports — spawn those threads now, off the critical path, not one at a
+        // time under the first submissions. Clamped to the ceiling (a hold beyond it would be
+        // refused, harmlessly) and to the cap.
+        const floor: usize = if (roots.len > 1) roots.len else 5;
+        l.prewarm(@min(floor, @min(verify.io_threads, Verify.max_io_threads)));
+    }
     const root_file = try context.loadRoots(canon);
     return .{
         .interner = context.interner,

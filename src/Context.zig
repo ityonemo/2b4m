@@ -95,6 +95,11 @@ origins: Segmented(?Origin) = .empty,
 pool_file: std.AutoHashMapUnmanaged(InternPool.Index, FileId) = .empty,
 read_ctx: ?*anyopaque,
 read_fn: ReadFileFn,
+/// The off-worker file loader (`Engine/Loader.zig`), when the run has one: `root.loadProject`
+/// configures it unless `--sync-io`. Null = every read is inline on the demanding worker (the
+/// in-process test rigs that call `loadRoots` directly, and `--sync-io`). Valid only for the
+/// duration of `loadRoots` — the pool it fronts is owned by the caller's frame.
+loader: ?*Engine.Loader = null,
 /// which verification layers are active (see Verify).
 verify: Verify,
 /// the standard library root: import paths beginning "std/" resolve here
@@ -490,6 +495,11 @@ pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
     var eng = Engine.init(self.arena, self);
+    // Every off-worker load reports to `eng` (`externalEnd`), so all of them must land before
+    // this frame ends — including on the failure path, where `runWorkers` returns with loads
+    // still in flight. `runWorkers` joins every worker first, so nothing submits after it
+    // returns and the barrier is exact.
+    defer if (self.loader) |l| l.drain();
     eng.trace = self.verify.trace_facts;
     if (self.verify.chaos_seed) |seed| eng.chaos = .init(seed); // --chaos: shuffle scheduling
     for (roots) |r| {
