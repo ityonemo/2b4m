@@ -101,12 +101,7 @@ pub const Mint = union(enum) {
 pub fn publish(self: *IdentKV, io: std.Io, key: Key, mint: Mint) std.mem.Allocator.Error!InternPool.Index {
     self.lock.lockUncancelable(io);
     defer self.lock.unlock(io);
-    self.pool.lockWrite(io);
-    const index = self.mintUnderLock(mint) catch |e| {
-        self.pool.unlockWrite(io);
-        return e;
-    };
-    self.pool.unlockWrite(io);
+    const index = try self.mintUnderLock(mint);
     try self.map.put(self.pool.arena, key, .{ .done = index });
     return index;
 }

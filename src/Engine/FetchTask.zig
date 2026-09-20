@@ -432,8 +432,6 @@ fn resolveGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, sourc
         self.sink.add(self.diagFile(file), tok.start, "sort refinement '{s}' must be a proposition over the base sort", .{source[tok.start..tok.end]}) catch return error.OutOfMemory;
         return error.Unresolved;
     }
-    self.interner.lockWrite(self.io);
-    defer self.interner.unlockWrite(self.io);
     const off = scratch.reify(typed.id, self.interner) catch return error.OutOfMemory;
     return self.interner.mintGuard(.{ .term = off, .carrier = carrier }) catch return error.OutOfMemory;
 }
@@ -560,8 +558,6 @@ fn reifyGuard(self: *Context, h: *Engine.Handle, file: InternPool.Index, source:
     }
 
     // (c) serialize the guard durably (params live as `#gN` fvars in the reified term).
-    self.interner.lockWrite(self.io);
-    defer self.interner.unlockWrite(self.io);
     return scratch.reify(typed.id, self.interner) catch return error.OutOfMemory;
 }
 
