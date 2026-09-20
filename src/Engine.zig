@@ -2,7 +2,7 @@
 //!
 //! This FILE IS the engine struct (capitalized-file = top-level-struct convention):
 //! `const Engine = @import("Engine.zig")` yields the type directly, and its fields +
-//! methods live at file top level; the helper types (SpinLock, Task, Handle) are nested
+//! methods live at file top level; the helper types (Task, Handle) are nested
 //! pub decls. Task PAYLOADS live under `src/Engine/` (ParseTask now, re-exported here).
 //!
 //! This is the strangler entry point for the execution refactor (see the plan file
@@ -51,10 +51,20 @@ pub const ModelTask = @import("Engine/ModelTask.zig");
 arena: std.mem.Allocator,
 ctx: *Context,
 
-/// AFFORDANCE: guards the task table, run queue + counters. One worker never contends;
-/// multi-core stealing later takes this lock (or replaces it with per-core deques).
-/// Present from day one so the shared-state shape is correct.
-mutex: SpinLock = .{},
+/// Guards the task table, run queue + counters, and is what an idle worker WAITS on (see
+/// `idle`). A BLOCKING mutex (a futex under the Threaded `Io`), not a spinlock: with file
+/// reads off-worker a task can be parked for milliseconds, and a worker with nothing to run
+/// must sleep for that long, not yield-spin — a spinning SMT sibling also steals cycles from
+/// the very lock holder it waits on (the measured `-j16` regression).
+mutex: std.Io.Mutex = .init,
+/// The idle wait. SIGNALLED (one waiter) under `mutex` whenever the run queue gains a task —
+/// `rack`, a wake, a requeue — and BROADCAST whenever the run may be over: `in_flight` or
+/// `external` reaching zero, or `should_stop`. `pull` re-evaluates its predicate after every
+/// wake, so a spurious or surplus wake costs one loop iteration and nothing else.
+idle: std.Io.Condition = .init,
+/// The `Io` the mutex and condition block through — the Context's; its Threaded backend
+/// implements both as futexes, so any thread (a loader thread included) may take them.
+io: std.Io,
 /// The task TABLE — append-only; a task's `TaskIndex` is its slot here, a STABLE handle
 /// that outlives its time in the run queue (so a suspended task can be waited on / parked
 /// on by `TaskIndex`, and FactKV can record "task T is proving this"). The run queue holds
@@ -127,25 +137,6 @@ should_stop: std.atomic.Value(bool) = .init(false),
 /// an OOM under workers must not leave anyone waiting on a condition nobody will signal.
 failure: ?std.mem.Allocator.Error = null,
 
-/// A minimal test-and-set spinlock — the CONCURRENCY AFFORDANCE for shared engine
-/// state. Single-threaded now, so lock/unlock are uncontended atomic ops; the value is
-/// that the critical sections are MARKED. When real multi-threading lands, swap this for
-/// `std.Io.Mutex` (futex-blocking, needs an `Io` handle) or per-core work-stealing
-/// deques — the lock/unlock CALL SITES stay identical. (Zig 0.16 moved the blocking
-/// mutex under `std.Io`; a self-contained spinlock avoids threading an `Io` handle
-/// through the engine before we actually spawn threads.)
-pub const SpinLock = struct {
-    locked: std.atomic.Value(bool) = .init(false),
-    pub fn lock(self: *SpinLock) void {
-        while (self.locked.swap(true, .acquire)) {
-            std.atomic.spinLoopHint();
-        }
-    }
-    pub fn unlock(self: *SpinLock) void {
-        self.locked.store(false, .release);
-    }
-};
-
 /// A unit of work: a TYPE-ERASED payload pointer plus the function that runs it. The
 /// engine is task-type-AGNOSTIC — it never inspects the payload; it just calls `run`,
 /// which casts the pointer back to its concrete type. Each task type (see `src/Engine/`)
@@ -192,19 +183,44 @@ pub const Handle = struct {
     }
 };
 
-pub fn init(arena: std.mem.Allocator, ctx: *Context) Engine {
-    return .{ .arena = arena, .ctx = ctx };
+pub fn init(arena: std.mem.Allocator, ctx: *Context, io: std.Io) Engine {
+    return .{ .arena = arena, .ctx = ctx, .io = io };
+}
+
+fn lock(self: *Engine) void {
+    self.mutex.lockUncancelable(self.io);
+}
+
+fn unlock(self: *Engine) void {
+    self.mutex.unlock(self.io);
+}
+
+/// Under `mutex`: fail the run — record the error, raise the stop flag, and wake every idle
+/// worker so it observes the flag (a sleeping worker would otherwise never look).
+fn stopLocked(self: *Engine, err: ?std.mem.Allocator.Error) void {
+    if (err) |e| if (self.failure == null) {
+        self.failure = e;
+    };
+    self.should_stop.store(true, .release);
+    self.idle.broadcast(self.io);
+}
+
+/// Under `mutex`, after a counter moved: if nothing is running and nothing is outstanding,
+/// the run is over (quiescent, or wedged) — every waiter must wake to see `.done`.
+fn noteMaybeOverLocked(self: *Engine) void {
+    if (self.in_flight == 0 and self.external == 0) self.idle.broadcast(self.io);
 }
 
 /// Rack a task: append it to the task table (assigning its stable `TaskIndex`), bump
 /// `racked`, push the index to the run queue. Returns the `TaskIndex`. Mutex-guarded.
 pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.lock();
+    defer self.unlock();
     const index: TaskIndex = @enumFromInt(self.tasks.len);
     _ = try self.tasks.append(self.arena, task);
     self.racked += 1;
     try self.run_queue.append(self.arena, index);
+    self.idle.signal(self.io); // one runnable task: one sleeping worker
     return index;
 }
 
@@ -212,33 +228,37 @@ pub fn rack(self: *Engine, task: Task) std.mem.Allocator.Error!TaskIndex {
 const Next = union(enum) {
     /// run this task (already counted `in_flight`)
     run: TaskIndex,
-    /// nothing runnable and nothing in flight: the run is over (quiescent or wedged)
+    /// nothing runnable and nothing in flight (or the run was stopped): the run is over
     done,
-    /// nothing runnable, but a task IS in flight and may yet rack more work — wait
-    wait,
 };
 
-/// Claim the next runnable task, or say why there is none. Mutex-guarded, and the
-/// three-counter predicate is evaluated INSIDE that critical section (see `racked`).
+/// Claim the next runnable task, BLOCKING while there is none but the run is not over.
+/// Mutex-guarded, and the counter predicate is evaluated INSIDE that critical section (see
+/// `racked`); the wait releases the mutex and re-checks on every wake (see `idle`).
+///
+/// An empty queue is NOT termination on its own: a worker may hold a task that will rack
+/// children, or an off-worker operation may be about to wake one. Only "nothing runnable,
+/// nothing running, and nothing outstanding elsewhere" ends the run — and a stop request.
 ///
 /// Normally LIFO (`pop`) — see `traceLifecycle` on why the order is not guessable from the
 /// source. Under `--chaos` it takes a random runnable task instead: same work, different
 /// interleaving, which is what makes a determinism bug reproducible.
 fn pull(self: *Engine) Next {
-    self.mutex.lock();
-    defer self.mutex.unlock();
-    if (self.run_queue.items.len == 0) {
-        // An empty queue is NOT termination on its own: a worker may hold a task that will
-        // rack children, or an off-worker operation may be about to wake one. Only "nothing
-        // runnable, nothing running, and nothing outstanding elsewhere" ends the run.
-        return if (self.in_flight == 0 and self.external == 0) .done else .wait;
+    self.lock();
+    defer self.unlock();
+    while (true) {
+        if (self.should_stop.load(.acquire)) return .done;
+        if (self.run_queue.items.len != 0) {
+            self.in_flight += 1;
+            if (self.chaos) |*prng| {
+                const i = prng.random().uintLessThan(usize, self.run_queue.items.len);
+                return .{ .run = self.run_queue.swapRemove(i) };
+            }
+            return .{ .run = self.run_queue.pop().? }; // non-empty: checked above
+        }
+        if (self.in_flight == 0 and self.external == 0) return .done;
+        self.idle.waitUncancelable(self.io, &self.mutex);
     }
-    self.in_flight += 1;
-    if (self.chaos) |*prng| {
-        const i = prng.random().uintLessThan(usize, self.run_queue.items.len);
-        return .{ .run = self.run_queue.swapRemove(i) };
-    }
-    return .{ .run = self.run_queue.pop().? }; // non-empty: checked above
 }
 
 /// The task with the given index. Not mutex-guarded: the table is a NON-MOVING segmented
@@ -274,8 +294,11 @@ pub fn runWorkers(self: *Engine, workers: usize) std.mem.Allocator.Error!void {
         started += 1;
     }
     self.run() catch |err| {
-        // stop the others before joining, or they run on against a dying Context
-        self.should_stop.store(true, .release);
+        // stop the others before joining, or they run on against a dying Context (`run`
+        // already raised the flag and woke the sleepers; this is belt and braces)
+        self.lock();
+        self.stopLocked(null);
+        self.unlock();
         for (spawned[0..started]) |t| t.join();
         return err;
     };
@@ -293,37 +316,22 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
     while (!self.should_stop.load(.acquire)) {
         const index = switch (self.pull()) {
             .run => |i| i,
-            .done => break,
-            // Another worker holds a task that may yet rack more, or an off-worker
-            // operation is pending. Yield rather than spin hot; whoever resolves it pushes
-            // to the queue or ends the run.
-            //
-            // FOLLOW-UP once anything actually uses `external`: a hand-off between workers
-            // resolves in microseconds, but an off-worker OPERATION can take milliseconds,
-            // and yielding in a loop for that long burns a core per idle worker. That wants
-            // a condition wait — which needs `mutex` to stop being a spinlock, since
-            // `std.Thread.Condition` requires a real mutex. Deliberately NOT bundled here:
-            // it touches the hot scheduling path, and this commit is meant to be inert.
-            .wait => {
-                std.Thread.yield() catch {};
-                continue;
-            },
+            .done => break, // quiescent, wedged, or stopped
         };
         const task = self.taskOf(index);
         // Snapshot BEFORE running: any completion after this point is one whose wake we
         // could have raced (see `completions`).
-        self.mutex.lock();
+        self.lock();
         const completions_before = self.completions;
-        self.mutex.unlock();
+        self.unlock();
         var handle: Handle = .{ .engine = self, .self_index = index };
         self.traceLifecycle("run", index, null);
         task.run(self.ctx, task.payload, &handle) catch |err| {
             // Stop every worker, not just this one, and re-raise after the loop.
-            self.mutex.lock();
-            if (self.failure == null) self.failure = err;
+            self.lock();
             self.in_flight -= 1; // this task is resolved (by failing)
-            self.mutex.unlock();
-            self.should_stop.store(true, .release);
+            self.stopLocked(err);
+            self.unlock();
             break;
         };
         if (handle.blocked_on) |blocker| {
@@ -331,7 +339,7 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
             // to suspend, in which case its wake has already come and gone and parking would
             // strand us forever. Decided under the mutex the completion path writes
             // `finished` in, so the two cannot both miss (see the field).
-            self.mutex.lock();
+            self.lock();
             self.in_flight -= 1; // resolved: parked or requeued, not running
             if (self.completions != completions_before) {
                 // Something completed while we ran, so a wake meant for us may already have
@@ -340,20 +348,23 @@ pub fn run(self: *Engine) std.mem.Allocator.Error!void {
                 // FRESH completion each time and completions are finite.
                 self.traceLifecycle("requeue", index, blocker);
                 try self.run_queue.append(self.arena, index);
+                self.idle.signal(self.io);
             } else {
                 self.traceLifecycle("park", index, blocker);
                 try self.parked.append(self.arena, .{ .task = index, .blocked_on = blocker });
+                self.noteMaybeOverLocked(); // the last runner parking = a wedge; waiters must see it
             }
-            self.mutex.unlock();
+            self.unlock();
         } else {
             // COMPLETED: mark finished (under the mutex the park path reads it in), count
             // it, then wake everyone parked blocked-on it.
             self.traceLifecycle("done", index, null);
-            self.mutex.lock();
+            self.lock();
             self.in_flight -= 1; // resolved: completed
             self.completed += 1;
             self.completions += 1; // a park racing this run must requeue (see `completions`)
-            self.mutex.unlock();
+            self.noteMaybeOverLocked();
+            self.unlock();
             try self.wake(index);
         }
     }
@@ -378,8 +389,8 @@ fn traceLifecycle(self: *Engine, what: []const u8, index: TaskIndex, other: ?Tas
 /// load-bearing: increment then submit, so there is never a window in which the work exists
 /// but the counter does not. Pair with exactly one `externalEnd`.
 pub fn externalBegin(self: *Engine) void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.lock();
+    defer self.unlock();
     self.external += 1;
 }
 
@@ -387,9 +398,10 @@ pub fn externalBegin(self: *Engine) void {
 /// work inline. Not `externalEnd`: nothing was woken and nothing completed, so this must not
 /// sweep `parked` or bump `completions`.
 pub fn externalCancel(self: *Engine) void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.lock();
+    defer self.unlock();
     self.external -= 1;
+    self.noteMaybeOverLocked();
 }
 
 /// An off-worker operation landed: retire it and wake the task waiting on `blocker`.
@@ -403,25 +415,25 @@ pub fn externalCancel(self: *Engine) void {
 /// releases it, and the woken worker's `pull` acquires it. A reviewer looking for an atomic
 /// on the result field should find this comment instead.
 pub fn externalEnd(self: *Engine, blocker: TaskIndex) void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.lock();
+    defer self.unlock();
     self.external -= 1;
     self.completions += 1;
     self.wakeLocked(blocker) catch |err| {
         // The wake itself failed to allocate. Swallowing this would strand the parked task
         // forever AND drop `external` to zero, so the engine would terminate and wedge.
         // Fail the whole run instead, exactly as a task error does.
-        if (self.failure == null) self.failure = err;
-        self.should_stop.store(true, .release);
+        self.stopLocked(err);
     };
+    self.noteMaybeOverLocked();
 }
 
 /// A task `finished` completed — move every parked task blocked-on it back to the run
 /// queue (it will re-enter its `run` and resume from its saved state). Mutex-guarded;
 /// the "stupid simple" parked-queue scan (no separate waiter lists).
 fn wake(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.lock();
+    defer self.unlock();
     return self.wakeLocked(finished);
 }
 
@@ -433,6 +445,7 @@ fn wakeLocked(self: *Engine, finished: TaskIndex) std.mem.Allocator.Error!void {
             const woken = self.parked.swapRemove(i);
             self.traceLifecycle("wake", woken.task, finished);
             try self.run_queue.append(self.arena, woken.task);
+            self.idle.signal(self.io);
         } else {
             i += 1;
         }
@@ -494,6 +507,11 @@ pub fn deinit(self: *Engine) void {
     self.parked.deinit(self.arena);
 }
 
+/// The scheduling tests run over an UNDEFINED Context, so the engine's blocking primitives
+/// get an `Io` of their own: a Threaded that never spawns — its mutex and condition are
+/// plain futexes regardless, which is all the engine takes from it.
+var test_threaded: std.Io.Threaded = .init_single_threaded;
+
 test "engine runs racked tasks to quiescence, tasks can rack more" {
     // Pure-scheduling test: the run fn exercises the queue + in/out counter WITHOUT
     // touching the Context ctx (an undefined ctx pointer is fine — we test scheduling).
@@ -519,7 +537,7 @@ test "engine runs racked tasks to quiescence, tasks can rack more" {
 
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
-    var e = Engine.init(arena_state.allocator(), undefined);
+    var e = Engine.init(arena_state.allocator(), undefined, test_threaded.io());
     const seed = try arena_state.allocator().create(u32);
     seed.* = 8;
     const seed_index = try e.rack(.{ .payload = seed, .run = &S.run });
@@ -564,7 +582,7 @@ test "engine suspends a task blocked on another, resumes it when the blocker com
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     var shared: Shared = .{};
-    var e = Engine.init(arena_state.allocator(), undefined);
+    var e = Engine.init(arena_state.allocator(), undefined, test_threaded.io());
     _ = try e.rack(.{ .payload = &shared, .run = &A.run });
     try e.run();
 
@@ -586,7 +604,7 @@ test "wedged: a healthy run leaves nothing parked" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var e = Engine.init(arena, undefined);
+    var e = Engine.init(arena, undefined, test_threaded.io());
     var dummy: u32 = 0;
     _ = try e.rack(.{ .payload = &dummy, .run = &S.run });
     try e.run();
@@ -617,7 +635,7 @@ test "wedged: two tasks parked on each other are reported as a CYCLE" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var e = Engine.init(arena, undefined);
+    var e = Engine.init(arena, undefined, test_threaded.io());
     var shared: Shared = .{};
     _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
     try e.run();
@@ -656,7 +674,7 @@ test "wedged: a CHAIN into a failed task is not a cycle, however long" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var e = Engine.init(arena, undefined);
+    var e = Engine.init(arena, undefined, test_threaded.io());
     var shared: Shared = .{};
     _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
     try e.run();
@@ -691,7 +709,7 @@ test "wedged: a task parked on a COMPLETED task is not a cycle (the blocker fail
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var e = Engine.init(arena, undefined);
+    var e = Engine.init(arena, undefined, test_threaded.io());
     var shared: Shared = .{};
     _ = try e.rack(.{ .payload = &shared, .run = &Tasks.a });
     try e.run();
@@ -746,7 +764,7 @@ test "external work keeps the engine alive: it must not terminate mid-operation"
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var e = Engine.init(arena, undefined);
+    var e = Engine.init(arena, undefined, test_threaded.io());
     var shared: Shared = .{};
     _ = try e.rack(.{ .payload = &shared, .run = &Task_.run });
     try e.run();
@@ -764,7 +782,7 @@ test "externalCancel unwinds a failed submission without waking anything" {
     // must NOT sweep `parked` or bump `completions` — nothing completed.
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
-    var e = Engine.init(arena_state.allocator(), undefined);
+    var e = Engine.init(arena_state.allocator(), undefined, test_threaded.io());
 
     const before = e.completions;
     e.externalBegin();

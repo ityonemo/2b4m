@@ -481,7 +481,7 @@ test "model: overlay populated from same-file symbol + obligation mappings; dedu
     const f = try ctx.fileIndex("/t/m.bpa");
     const mname = try ctx.interner.internString("M");
 
-    var eng = Engine.init(arena, ctx);
+    var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
     _ = try eng.rack(try new(arena, .{ .file = f, .name = mname, .loc = 0 }));
     try eng.run();
