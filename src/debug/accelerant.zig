@@ -68,7 +68,9 @@ pub fn accelerant(
     // the ordinary STRICT check of the project (default Verify → every synthetic is produced
     // by the very code that always produces it). A proof/resolution error surfaces as a
     // diagnostic, rendered against the root path AS GIVEN (the loader canonicalizes it).
-    const loaded = try root.loadProject(io, arena, &.{.{ .path = path }}, read_ctx, read_fn, .{}, std_root);
+    // `.custom`: this command reads through whatever `read_fn` its caller supplied, so the
+    // pool loader (which honours it) rather than the ring (which opens paths itself).
+    const loaded = try root.loadProject(io, arena, &.{.{ .path = path }}, read_ctx, read_fn, .custom, .{}, std_root);
     const files = try arena.dupe(diagnostics.FileSrc, loaded.files);
     files[@intFromEnum(loaded.root_file)].path = path;
     if (loaded.sink.list.items.len > 0) return renderDiagnostics(arena, files, loaded.sink);

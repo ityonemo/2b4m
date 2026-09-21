@@ -778,8 +778,6 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     quals[0] = gpred;
     const label = std.fmt.allocPrint(self.arena, "{s} where {s}", .{ self.text(b.sort), self.text(g) }) catch return error.OutOfMemory;
     const nm = self.interner.internString(label) catch return error.OutOfMemory;
-    self.interner.lockWrite(self.io);
-    defer self.interner.unlockWrite(self.io);
     const ix = self.interner.mintSort(.{ .name = nm, .loc = b.sort.start, .refinement = .{ .parent = @enumFromInt(@intFromEnum(base)), .qualifiers = quals } }) catch return error.OutOfMemory;
     return @enumFromInt(@intFromEnum(ix));
 }
@@ -1164,9 +1162,7 @@ const World = struct {
         const g0 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g0"), .sort = nat_sort } });
         const g1 = try w.scratch.add(.{ .fvar = .{ .name = try w.interner.internString("#g1"), .sort = nat_sort } });
         const guard_term = try w.scratch.addApp(.pred, @enumFromInt(@intFromEnum(w.le_p)), &.{ g0, g1 });
-        w.interner.lockWrite(w.io);
         const guard_off = try w.scratch.reify(guard_term, w.interner);
-        w.interner.unlockWrite(w.io);
         const nat2 = [_]InternPool.Index{ w.nat, w.nat };
         const div_sig = try w.interner.intern(.{ .sig = .{ .result = w.nat, .result_refined = .none, .args = &nat2 } });
         const div_name = try w.interner.internString("div");

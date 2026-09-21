@@ -141,7 +141,10 @@ const Expander = struct {
         };
         const target_file = switch (self.ctx.interner.keyOf(imp)) {
             .import => |m| self.ctx.interner.keyOf(m.namespace).namespace.file,
-            else => return null, // not a namespace — the elaborator diagnoses
+            else => |k| {
+                self.trace("qualifier '{s}' resolved to a {s}, not a namespace -> null", .{ self.text(tok.qualifier), @tagName(k) });
+                return null; // not a namespace — the elaborator diagnoses
+            },
         };
         switch (try self.ctx.demandParse(self.h, target_file)) {
             .parsed => {},
@@ -149,9 +152,15 @@ const Expander = struct {
                 self.blocker = t;
                 return null;
             },
-            .unparsed => return null, // undiscovered — the elaborator diagnoses
+            .unparsed => {
+                self.trace("qualifier '{s}': target file#{d} UNDISCOVERED -> null", .{ self.text(tok.qualifier), @intFromEnum(target_file) });
+                return null; // undiscovered — the elaborator diagnoses
+            },
         }
-        const fid = self.ctx.fileOf(target_file) orelse return null;
+        const fid = self.ctx.fileOf(target_file) orelse {
+            self.trace("qualifier '{s}': no FileId for file#{d} -> null", .{ self.text(tok.qualifier), @intFromEnum(target_file) });
+            return null;
+        };
         return .{ .file = target_file, .fid = fid };
     }
 
@@ -165,6 +174,15 @@ const Expander = struct {
     /// ALIASES ending on one (followed by name through the registry: identity by origin; a
     /// looping chain is cut by the bound), or — under a model — a source symbol the model maps
     /// ONTO a define (a `.model_target` resolution: the body is the parent space's, exact)?
+    /// `--trace-facts` line for the define-resolution decisions — the ONE place a name is
+    /// classified define / alias / other, which is where a wrong "other" turns a guard into
+    /// an opaque identifier demand. Buffered like every other trace line.
+    fn trace(self: *Expander, comptime fmt: []const u8, args: anytype) void {
+        if (!self.ctx.verify.trace_facts) return;
+        const line = std.fmt.allocPrint(self.ctx.arena, "[expand] " ++ fmt ++ "\n", args) catch return;
+        self.ctx.traceLine(line);
+    }
+
     fn resolveDefine(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Resolved {
         const direct = try self.resolveDeclDefine(env, tok);
         if (direct != .other) return direct;
@@ -187,30 +205,54 @@ const Expander = struct {
     }
 
     fn resolveDeclDefine(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Resolved {
-        var target = (try self.targetOf(env, tok)) orelse return if (self.blocker != null) .pending else .other;
+        var target = (try self.targetOf(env, tok)) orelse {
+            if (self.blocker == null) self.trace("'{s}': target unresolvable, no blocker -> other", .{self.text(tok.name)}) else self.trace("'{s}': target pending on task#{d}", .{ self.text(tok.name), @intFromEnum(self.blocker.?) });
+            return if (self.blocker != null) .pending else .other;
+        };
         var name = tok.name;
         var hops: u32 = 0;
         while (hops < 64) : (hops += 1) {
-            const decl = self.ctx.declOf(target.fid, name) orelse return .other;
+            const decl = self.ctx.declOf(target.fid, name) orelse {
+                self.trace("'{s}': no decl in file#{d} (hop {d}) -> other", .{ self.text(name), @intFromEnum(target.fid), hops });
+                return .other;
+            };
             const alias: ast.Alias = switch (decl.*) {
-                .define => return .{ .define = .{ .site = .{ .file = target.file, .name = name }, .fid = target.fid, .decl = decl } },
+                .define => {
+                    self.trace("'{s}': define in file#{d} (hop {d})", .{ self.text(name), @intFromEnum(target.fid), hops });
+                    return .{ .define = .{ .site = .{ .file = target.file, .name = name }, .fid = target.fid, .decl = decl } };
+                },
                 .constant => |c| switch (c) {
                     .alias => |a| a,
-                    else => return .other,
+                    else => {
+                        self.trace("'{s}': a local constant in file#{d} (hop {d}) -> other", .{ self.text(name), @intFromEnum(target.fid), hops });
+                        return .other;
+                    },
                 },
                 .func => |f| switch (f) {
                     .alias => |a| a,
-                    else => return .other,
+                    else => {
+                        self.trace("'{s}': a local func in file#{d} (hop {d}) -> other", .{ self.text(name), @intFromEnum(target.fid), hops });
+                        return .other;
+                    },
                 },
                 .pred => |p| switch (p) {
                     .alias => |a| a,
-                    else => return .other,
+                    else => {
+                        self.trace("'{s}': a local pred in file#{d} (hop {d}) -> other", .{ self.text(name), @intFromEnum(target.fid), hops });
+                        return .other;
+                    },
                 },
-                else => return .other,
+                else => |k| {
+                    self.trace("'{s}': a {s} in file#{d} (hop {d}) -> other", .{ self.text(name), @tagName(k), @intFromEnum(target.fid), hops });
+                    return .other;
+                },
             };
             // follow the alias: its target resolves in the ALIAS's file.
             const alias_env: Env = .{ .file = target.file, .fid = target.fid, .params = &.{}, .def = null, .parent = null, .symbolize = false, .loc = null };
-            target = (try self.targetOf(&alias_env, alias.target)) orelse return if (self.blocker != null) .pending else .other;
+            target = (try self.targetOf(&alias_env, alias.target)) orelse {
+                if (self.blocker == null) self.trace("'{s}' -> alias target '{s}' unresolvable, no blocker -> other", .{ self.text(name), self.text(alias.target.name) }) else self.trace("'{s}' -> alias target '{s}' pending on task#{d}", .{ self.text(name), self.text(alias.target.name), @intFromEnum(self.blocker.?) });
+                return if (self.blocker != null) .pending else .other;
+            };
             name = alias.target.name;
         }
         return .other;
@@ -223,6 +265,7 @@ const Expander = struct {
         const ns = try self.ctx.interner.namespace(.universe, target.file);
         const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = ns, .name = tok.name }) orelse {
             self.blocker = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = target.file, .name = tok.name, .loc = env.loc orelse tok.start, .loc_file = self.file }));
+            self.trace("demand IDENT '{s}' in file#{d} -> task#{d}", .{ self.text(tok.name), @intFromEnum(target.fid), @intFromEnum(self.blocker.?) });
             return null;
         };
         return switch (state) {
@@ -278,12 +321,22 @@ const Expander = struct {
         return null;
     }
 
-    /// A BINDER-GUARD token: like `globalTok`, but never symbolizes while the name's
-    /// define-resolution is outstanding — symbolizing demands it as an IDENTIFIER, and a name
-    /// that turns out to be a define is a misuse there (FetchTask's `.define` arm). The
-    /// guard desugaring handles a RESOLVED define; this covers the pending window.
+    /// A BINDER-GUARD token: like `globalTok`, but never symbolizes a name whose
+    /// define-resolution is outstanding OR is a define — symbolizing demands it as an
+    /// IDENTIFIER, and a define is a misuse there (FetchTask's `.define` arm). The guard
+    /// desugaring (`desugarDefineGuards`) is what handles a RESOLVED define; a guard reaching
+    /// here as `.define` means the resolution FLIPPED within this pass: it was pending when
+    /// the quantifier was classified (the desugaring left it alone, blocker recorded) and
+    /// another worker finished the parse/fetch before this binder was rebuilt. The pass is
+    /// being redone from the AST regardless (`finish` suspends on the blocker), so leave the
+    /// token as written and let the re-run desugar it. Single-threaded, a resolution cannot
+    /// change mid-pass and this arm is unreachable — `define_guard_nested.bpa` at `-j8` is
+    /// the repro (was ~1 in 15 runs).
     fn guardTok(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Token {
-        if (tok.tag != .symbol and (try self.resolveDefine(env, tok)) == .pending) return stamp(env, tok);
+        if (tok.tag != .symbol) switch (try self.resolveDefine(env, tok)) {
+            .pending, .define => return stamp(env, tok),
+            .other => {},
+        };
         return self.globalTok(env, tok);
     }
 

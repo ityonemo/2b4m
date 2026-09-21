@@ -8,8 +8,15 @@
 //!
 //! A FileId is assigned at DISCOVERY time (so a child's id exists before its parse runs —
 //! cyclic-import safe); the SOURCE is read HERE, by the file's own ParseTask — nobody hands
-//! it in (a `.md` is a literate document: its ```bpa blocks are extracted here too). Parse is
-//! the ONE task type that never suspends.
+//! it in (a `.md` is a literate document: its ```bpa blocks are extracted here too).
+//!
+//! THE READ IS OFF-WORKER when the run has a loader (`Engine/Loader.zig`, the default): the
+//! first entry hands the file to the I/O pool and SUSPENDS ON ITSELF — the blocker is an
+//! operation, not a task; `Engine.external` keeps the run alive and the pool thread's
+//! `externalEnd` is the wake. The resumed entry finds the bytes published on the payload
+//! (`state == .landed`) and parses. Without a loader (test rigs, `--sync-io`), or when the
+//! pool refuses the submission, the read happens inline and the task never suspends — the
+//! post-read half is one function either way, so the two paths cannot drift.
 //!
 //! LAZY PARSING (Step 11): a ParseTask parses ONE file. It discovers + resolves that
 //! file's imports (populating `import_maps` so a qualified `ns.name` can find the child's
@@ -38,6 +45,55 @@ file_id: Context.FileId,
 /// since it has already said what to prove.
 seed_proofs: bool = false,
 
+/// The load's lifecycle — the IDEMPOTENCE GUARD for a re-entered run (like `ProveTask.st`).
+/// `unsent`: nothing read yet. `in_flight`: handed to the loader (a resumed run must NOT
+/// submit again — the `completions` requeue rule can re-run a task before its read lands).
+/// `landed`: `load_bytes`/`load_err` are valid. The loader thread writes those two fields
+/// and THEN stores `.landed` with release; the worker acquires the state before reading them.
+state: std.atomic.Value(LoadState) = .init(.unsent),
+/// Valid once `state == .landed` (see `state`). The read's outcome: the source bytes
+/// (a `.md` already extracted), or the error the read hit.
+load_bytes: []const u8 = &.{},
+load_err: ?anyerror = null,
+
+pub const LoadState = enum(u8) { unsent, in_flight, landed };
+pub const LoadResult = union(enum) { bytes: []const u8, failed: anyerror };
+
+/// READ a file — the one place source enters the engine. Callable from ANY thread: the
+/// durable output (the bytes read to render time) lands on `ctx.arena`, whose bump is
+/// thread-safe; a literate `.md`'s raw bytes are transient — read into a scratch arena,
+/// extracted onto `ctx.arena`, the scratch reclaimed here. Failures are DATA (the caller
+/// diagnoses on its worker, where `sink`/`origins` belong).
+pub fn readSource(ctx: *Context, path: []const u8) LoadResult {
+    if (std.mem.endsWith(u8, path, ".md")) {
+        var scratch: std.heap.ArenaAllocator = .init(ctx.gpa);
+        defer scratch.deinit();
+        const raw = ctx.read_fn(ctx.read_ctx, scratch.allocator(), path) catch |e| return .{ .failed = e };
+        // ```bpa blocks with every other line blanked, so offsets index the document as written
+        const source = literate.extract(ctx.arena, raw) catch |e| return .{ .failed = e };
+        return .{ .bytes = source };
+    }
+    const bytes = ctx.read_fn(ctx.read_ctx, ctx.arena, path) catch |e| return .{ .failed = e };
+    return .{ .bytes = bytes };
+}
+
+/// `--io-delay`: the simulated slow read, for the paths that read synchronously (inline here,
+/// or on a pool thread). Sleeps through `io` — the caller's, so a pool thread uses its own.
+pub fn ioDelay(ctx: *const Context, io: std.Io) void {
+    if (ctx.verify.io_delay_ns == 0) return;
+    std.Io.sleep(io, .fromNanoseconds(@intCast(ctx.verify.io_delay_ns)), .awake) catch {};
+}
+
+/// Publish a read's outcome on the task (any thread). The fields go first, the state last
+/// with release — the resumed run's acquire of `.landed` is what makes them visible.
+pub fn land(task: *ParseTask, result: LoadResult) void {
+    switch (result) {
+        .bytes => |b| task.load_bytes = b,
+        .failed => |e| task.load_err = e,
+    }
+    task.state.store(.landed, .release);
+}
+
 /// Package a payload into a rack-ready `Engine.Task`. Arena-allocates the payload (so it
 /// outlives the queue slot behind the engine's type-erased `*anyopaque`) and bundles the
 /// typed `runErased`. Call sites just `try h.rack(ParseTask.new(arena, .{…}))`.
@@ -50,7 +106,7 @@ pub fn new(arena: std.mem.Allocator, payload: ParseTask) std.mem.Allocator.Error
 /// The engine calls this with the type-erased payload; cast back and dispatch to `run`.
 fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const task: *ParseTask = @ptrCast(@alignCast(payload));
-    return run(self, task.*, h);
+    return run(self, task, h);
 }
 
 /// The parse-task body: parse ONE file, resolve its imports (DISCOVER each child + record
@@ -58,29 +114,57 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 /// child's ParseTask; that happens on demand when something cites into it). Mark the file
 /// `parsed` at the end (the completion wakes anyone suspended in `demandParse`). If this
 /// is the root file, scan its theorems and rack the seed ProveTasks.
-pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
+pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     const path = self.files.get(idx).path;
+    // READ the file — off-worker when there is a loader (see the header), else inline.
+    switch (task.state.load(.acquire)) {
+        .unsent => {
+            if (self.loader) |l| {
+                task.state.store(.in_flight, .monotonic); // before the hand-off: a re-run must see it
+                if (l.submit(self, h.engine, task, h.self_index)) |_| {
+                    if (self.verify.trace_facts) {
+                        const line = std.fmt.allocPrint(self.arena, "[load] task#{d} = {s}\n", .{ @intFromEnum(h.self_index), path }) catch "";
+                        self.traceLine(line);
+                    }
+                    h.suspendOn(h.self_index); // the blocker is an OPERATION, not a task (`external` keeps the run alive)
+                    return;
+                } else |_| {
+                    // the pool refused (ceiling reached / no thread): read inline, this run
+                    task.state.store(.unsent, .monotonic);
+                }
+            }
+            ioDelay(self, self.io);
+            task.land(readSource(self, path));
+        },
+        // Re-run before the read landed (the `completions` requeue rule): wait again. Each
+        // re-run needs a FRESH completion, and completions are finite, so this cannot spin.
+        .in_flight => {
+            h.suspendOn(h.self_index);
+            return;
+        },
+        .landed => {},
+    }
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[parse] task#{d} = {s}\n", .{ @intFromEnum(h.self_index), path }) catch "";
         self.traceLine(line);
     }
-    // READ the file (the one place source enters the engine); a literate `.md` yields its
-    // ```bpa blocks with every other line blanked, so offsets index the document as written.
     // A file that cannot be read is diagnosed where it was NAMED — the parent's import token
     // — or at the top of the file itself for a root; it then counts as parsed-and-empty so
-    // whatever cited into it proceeds to its own "reference not found".
-    const bytes = self.read_fn(self.read_ctx, self.arena, path) catch {
+    // whatever cited into it proceeds to its own "reference not found". (An allocation
+    // failure is the run's, not the file's — re-raised as this task's error.)
+    if (task.load_err) |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
         if (self.origins.get(idx)) |o| {
             // diagnosed at the IMPORT token, so it belongs to the importing file
             try self.sink.add(@intFromEnum(o.file), o.loc, "cannot open '{s}': file not found", .{path});
         } else {
             try self.sink.add(idx, 0, "cannot open '{s}': file not found", .{path});
         }
-        self.parse_state.set(idx, .parsed);
+        self.markParsed(task.file_id); // under files_lock: publishes the registrations above
         return;
-    };
-    const source = if (std.mem.endsWith(u8, path, ".md")) try literate.extract(self.arena, bytes) else bytes;
+    }
+    const source = task.load_bytes;
     self.files.at(idx).source = source; // in place: `at` is a stable pointer
     var p: parser.Parser = .initInterningInFile(self.arena, source, self.sink, self.interner, idx);
     const parsed = try p.parseFile();
@@ -155,7 +239,7 @@ pub fn run(self: *Context, task: ParseTask, h: *Engine.Handle) std.mem.Allocator
     }
 
     // this file's AST is now populated — mark it parsed so `demandParse` waiters wake.
-    self.parse_state.set(idx, .parsed);
+    self.markParsed(task.file_id); // under files_lock: publishes the registrations above
 
     // the ROOT file's theorems are the roots of demand: scan + rack a ProveTask each.
     // (Only the root — imported files' theorems are demanded by citations, not proved
