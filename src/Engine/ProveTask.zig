@@ -65,6 +65,18 @@ loc_file: ?InternPool.Index = null,
 /// The fact is minted in the namespace `(model, file)`, so two models of one source give
 /// distinct transferred facts.
 model: InternPool.Index = .universe,
+/// THE PROOF TREE's parent edge: the `(namespace, name)` of the proof that DEMANDED this
+/// one, or null for a root (a theorem the run was asked to check). Recorded against the
+/// published fact by `recordProofParent`, so the chain can be walked back from any fact to
+/// the root that wanted it. See `Context.proof_parent`.
+///
+/// A KEY rather than a fact Index because the demander's Index does not exist yet — a
+/// fact interns its FORMULA, so it only exists once elaborated, while the demander knows
+/// its own `(namespace, name)` from the start.
+///
+/// Set by whoever racks the task; the three root sites (ParseTask's root scan, twice, and
+/// `Context.loadRoots`) leave it null.
+parent: ?FactKV.Key = null,
 /// a SCHEMA INSTANCE payload (Step 12): present iff this task proves a monomorphized
 /// schema instance rather than a named decl. Carries the schema decl locator + the bound
 /// args (durable TermOffs — copied into the task's own scratchpad on the first run). When
@@ -230,6 +242,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             if (i.steps) |steps| return proveSteps(self, task, h, st, key, steps);
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            try self.recordProofParent(fact, task.parent); // proof tree: an instance is a node
             // an AXIOM-schema's instance is a trusted monomorphization: it rests on the schema
             // itself. Seed the axiom taint with the schema's LOCATOR (what `--axioms` reports
             // and `--library` counts as used), plus whatever the statement's read pass cited.
@@ -276,7 +289,7 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     const refs = try scanner.scanFormula(formula);
     // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
     // ns — a model transfer's source names resolve there + get overlay-redirected.
-    if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, refs)) |blocker| {
+    if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, st.prove.self_key, refs)) |blocker| {
         h.suspendOn(blocker);
         return .suspended;
     }
@@ -314,7 +327,6 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
 /// Drive the Walk over `steps` proving `st.goal`; on success reify + publish the fact.
 /// Shared by ordinary theorems and proof-carrying schema instances.
 fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, key: FactKV.Key, steps: []const ast.Step) std.mem.Allocator.Error!void {
-    _ = task;
     switch (try st.walk.drive(steps, st.prove)) {
         .blocked => |blocker| {
             h.suspendOn(blocker);
@@ -325,6 +337,7 @@ fn proveSteps(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *State, k
             if (!try st.prove.finish(st.goal.?, st.goal_loc)) return; // no publish
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .theorem, off, st.goal_loc);
+            try self.recordProofParent(fact, task.parent); // proof tree: a proved theorem is a node
             // record any `using` words this proof ADMITTED (`--fast`) against the fact, for the
             // summary's trust disclosure. Empty in strict mode (nothing admitted).
             if (st.prove.admitted.count() > 0) try self.recordAccelerated(fact, st.prove.admitted);
@@ -544,6 +557,8 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
     const resolve_ns = try self.interner.namespace(.universe, task.file);
     const prove = try Prove.init(self, h, source, task.file, resolve_ns);
     prove.model = task.model;
+    // PROOF TREE: everything this proof demands records THIS fact as its parent.
+    prove.self_key = .{ .namespace = ns, .name = task.name };
     prove.source_ast = source_ast;
     st.* = .{
         .source = source,
@@ -596,6 +611,8 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     const resolve_ns = try self.interner.namespace(.universe, task.file);
     const prove = try Prove.init(self, h, source, task.file, resolve_ns);
     prove.model = task.model;
+    // PROOF TREE: everything this proof demands records THIS fact as its parent.
+    prove.self_key = .{ .namespace = ns, .name = task.name };
     prove.source_ast = inst_source_ast;
     prove.pre_relativized = inst.synthetic; // delaborated formulas: no guard re-injection
 
@@ -740,4 +757,67 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
         .goal_loc = schema_fact.name.start,
     };
     return st;
+}
+
+const testing = std.testing;
+
+test "proof tree: a cited theorem records its CITER as parent; a root records none" {
+    // The tree's whole purpose is answering "why was this proved". `outer` cites `inner`,
+    // so `inner`'s node must name `outer`; `outer` itself was asked for, so it has no parent.
+    // An AXIOM is a LEAF and gets no node at all — its assertion IS the fact.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const io = threaded.io();
+
+    const ctx = try FetchTask.fixtureCtx(arena, io, "/t/p.bpa",
+        \\sort T
+        \\pred p(a: T)
+        \\axiom base: forall a: T; p(a)
+        \\theorem inner: forall a: T; p(a)
+        \\proof
+        \\  @conclusion |
+        \\    forall a: T; p(a)
+        \\    [by cite base]
+        \\qed
+        \\theorem outer: forall a: T; p(a)
+        \\proof
+        \\  @conclusion |
+        \\    forall a: T; p(a)
+        \\    [by cite inner]
+        \\qed
+    );
+    const f = try ctx.fileIndex("/t/p.bpa");
+    const ns = try ctx.interner.namespace(.universe, f);
+
+    var eng = Engine.init(arena, ctx, ctx.io);
+    defer eng.deinit();
+    // ONLY `outer` is asked for — `inner` is reached by demand, which is the edge under test.
+    _ = try eng.rack(try new(arena, .{ .file = f, .name = try ctx.interner.internString("outer") }));
+    try eng.run();
+    try testing.expectEqual(eng.racked, eng.completed); // quiescent, no wedge
+    try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
+
+    const outer_key: FactKV.Key = .{ .namespace = ns, .name = try ctx.interner.internString("outer") };
+    const inner_key: FactKV.Key = .{ .namespace = ns, .name = try ctx.interner.internString("inner") };
+    const outer = (ctx.facts.lookup(io, outer_key).?).proven;
+    const inner = (ctx.facts.lookup(io, inner_key).?).proven;
+
+    // `outer` is a ROOT: nothing demanded it.
+    try testing.expect(ctx.proof_parent.get(outer).? == null);
+
+    // `inner` was demanded BY `outer` — the edge the tree exists to record.
+    const inner_parent = ctx.proof_parent.get(inner).?.?;
+    try testing.expectEqual(outer_key.namespace, inner_parent.namespace);
+    try testing.expectEqual(outer_key.name, inner_parent.name);
+
+    // and the chain walks from `inner` back to its root.
+    const chain = try ctx.proofChain(arena, inner);
+    try testing.expectEqual(@as(usize, 1), chain.len);
+    try testing.expectEqual(outer_key.name, chain[0].name);
+
+    // an AXIOM is a leaf: no node.
+    const base = (ctx.facts.lookup(io, .{ .namespace = ns, .name = try ctx.interner.internString("base") }).?).proven;
+    try testing.expect(ctx.proof_parent.get(base) == null);
 }

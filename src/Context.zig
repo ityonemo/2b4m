@@ -174,8 +174,13 @@ model_discharged: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty,
 /// that list (via `resolveFactRef`, accumulated in `Prove.axioms_used`) — the same side-channel
 /// shape as `hole_taint`, and likewise never consulted for a proof verdict.
 axiom_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.Index) = .empty,
-/// THE PROOF TREE: a published fact Index -> the fact whose proof DEMANDED it, or
-/// `InternPool.Index.none` for a root (a theorem the run was asked to check).
+/// THE PROOF TREE: a published fact Index -> the `(namespace, name)` of the proof that
+/// DEMANDED it, or null for a root (a theorem the run was asked to check).
+///
+/// The parent is a KEY, not an Index, because a fact's Index does not exist until its
+/// statement is elaborated (`Key.Fact` includes the formula) — whereas a demanding proof
+/// knows its own `(namespace, name)` from the moment it starts. The namespace already
+/// encodes `(model, file)`, so a model TRANSFER and its source are distinct parents.
 ///
 /// One node per ProveTask that actually proves something — a `.theorem` or a schema
 /// `.instance`. An AXIOM and a HOLE are LEAVES and get no node: their assertion IS the
@@ -192,7 +197,7 @@ axiom_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.Index
 /// APPEND-ONLY and keyed by interned identity, so it is insensitive to scheduling: a second
 /// demander of an already-proven fact adds nothing (the first proof is the one that
 /// happened). Report ORDER must still come from declaration sites, never from task order.
-proof_parent: std.AutoHashMapUnmanaged(InternPool.Index, InternPool.Index) = .empty,
+proof_parent: std.AutoHashMapUnmanaged(InternPool.Index, ?FactKV.Key) = .empty,
 /// HOLE TAINT (for the summary's blast-radius): a published fact Index -> the hole NAMES it
 /// transitively rests on. A `hole` maps to `&.{its own name}`; a theorem citing a hole-tainted
 /// fact INHERITS that list (via `resolveFactRef`, accumulated in `Prove.holes_used`). Read to
@@ -439,7 +444,7 @@ pub fn recordAxiomTaint(self: *Context, fact: InternPool.Index, axioms: []const 
 /// Record `fact`'s parent in the proof tree — the fact whose proof demanded it, or
 /// `InternPool.Index.none` for a root. Keep-first: a fact is proved once, and the demander
 /// that raced to it first is the one whose proof actually caused the work.
-pub fn recordProofParent(self: *Context, fact: InternPool.Index, parent: InternPool.Index) std.mem.Allocator.Error!void {
+pub fn recordProofParent(self: *Context, fact: InternPool.Index, parent: ?FactKV.Key) std.mem.Allocator.Error!void {
     self.side_lock.lock();
     defer self.side_lock.unlock();
     const gop = try self.proof_parent.getOrPut(self.arena, fact);
@@ -449,15 +454,21 @@ pub fn recordProofParent(self: *Context, fact: InternPool.Index, parent: InternP
 /// The chain of facts that led to `fact` being proved, innermost FIRST (`fact` itself, then
 /// its demander, ...) up to a root. Bounded by the table size, so a cycle cannot loop
 /// forever. Reads unguarded: callers use it after quiescence, when nothing is still writing.
-pub fn proofChain(self: *const Context, arena: std.mem.Allocator, fact: InternPool.Index) std.mem.Allocator.Error![]const InternPool.Index {
-    var out: std.ArrayList(InternPool.Index) = .empty;
-    var cur = fact;
+pub fn proofChain(self: *const Context, arena: std.mem.Allocator, fact: InternPool.Index) std.mem.Allocator.Error![]const FactKV.Key {
+    var out: std.ArrayList(FactKV.Key) = .empty;
+    var cur: ?FactKV.Key = self.proof_parent.get(fact) orelse null;
     var hops: usize = 0;
     while (hops <= self.proof_parent.count()) : (hops += 1) {
-        try out.append(arena, cur);
-        const parent = self.proof_parent.get(cur) orelse break;
-        if (parent == InternPool.Index.none) break; // a root
-        cur = parent;
+        const key = cur orelse break; // a root: nobody demanded it
+        try out.append(arena, key);
+        // `lookup` takes the table's lock, so it needs a mutable receiver; this walk is
+        // logically read-only (same pattern as `declOf`/`fileOf`).
+        const state = @constCast(&self.facts).lookup(self.io, key) orelse break;
+        const parent_fact = switch (state) {
+            .proven => |ix| ix,
+            .in_flight => break, // still being proved: the chain ends here
+        };
+        cur = self.proof_parent.get(parent_fact) orelse null;
     }
     return out.items;
 }
