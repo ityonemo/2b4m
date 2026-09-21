@@ -63,6 +63,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "aata/4.3-repeated-squares.md" });
     ctx.okSilent(&.{ "check", "aata/4.3-repeated-squares-exercises.md" });
 
+    // Chapter 5 §5.1 "Definitions and Notation": the symmetric group S_X proved a
+    // group from the function axioms (closure, associativity, identity, inverses).
+    // The CYCLE-NOTATION results (disjoint cycles commute, the disjoint-cycle and
+    // transposition decompositions) and every cardinality claim (|S_n| = n!) are
+    // prose with in-place notes — they need a finite-support/cardinality theory.
+    ctx.okSilent(&.{ "check", "aata/5.1-permutation-groups.md" });
+    ctx.okSilent(&.{ "fmt", "--check", "aata/5.1-permutation-groups.md" });
+
     // AATA set theory: the literate transliteration of Chapter 1 §1.2.1
     // (the set-algebra proposition + De Morgan's laws proved by hand; the §1.2
     // exercises discharged in one line each by the `ext` tactic).

@@ -108,7 +108,12 @@ form is a fine content label: `@add-is-commutative`.)
   statement binder, reuse the statement's own binder name; induction variable is
   `k`; re-fixing a conceptual var in a disjoint subproof appends an index
   (`a`, `a2`). No infix minus — ever (`sub(a, b)`).
-- **Imports**: alias a name used more than once, qualify inline
+- **Imports**: name an import after its PATH with `/` written `_`
+  (`std/function/invertible.bpa` → `function_invertible`) — a namespace shares a
+  declaration space with every symbol, so naming a theory after its subject
+  collides with the subject (`import invertible` beside `pred invertible = …` is
+  a hard duplicate-declaration error, plus confusing follow-on errors at each
+  *use*). Then alias a name used more than once, qualify inline
   (`peano.mulSuccLeft`) for a single use. Prefer `by arithmetic(<module>)` in
   files layered above the primitives.
 - **Layout**: three lines per step — `@label |`, then the formula, then

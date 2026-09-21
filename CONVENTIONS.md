@@ -24,8 +24,29 @@ which file proved which.
 Forward the **takeaway results** — what someone reasoning about the theory reaches
 for. A lemma does not belong in the forwarding section any more than it belongs in
 `intheory`; a consumer that genuinely wants one keeps the honest
-`import integer/order`. Name the import so it cannot collide with what it
-forwards (`divides_theory`, not `divides`).
+`import integer/order`.
+
+**Name an import after its PATH, with `/` written `_`**: `std/function/invertible.bpa`
+is imported as `function_invertible`, `std/integer/divides.bpa` as
+`integer_divides`, `std/peano.bpa` as `peano`. The name is then mechanical — you
+can write it without opening the file, and a reader recovers the path from the
+name.
+
+The reason is not tidiness. An import binds a **namespace** in the same
+declaration space as every sort, constant, function and predicate, so a theory
+named after its subject collides with the subject itself: `import invertible <<<
+"std/function/invertible.bpa"` beside the natural alias `pred invertible =
+function.invertible` is a hard `duplicate declaration` error — and, because the
+name then resolves to the namespace, it is followed by unrelated-looking errors
+at every *use* of the predicate (`'invertible' is not callable`). Deriving the
+name from the path sidesteps the whole class: a path-shaped name is never the
+name of a symbol the theory declares.
+
+A `-` in a path becomes `_` as well (`std/integer/mod-n.bpa` →
+`integer_mod_n`), since a hyphen is not an identifier character. Where a name
+would be intolerably long, shorten from the FRONT — drop leading path segments
+the context makes obvious (`function_invertible`, not `std_function_invertible`)
+— never from the back, which is the part that identifies the theory.
 
 A **parenthesized parameter list makes a statement schematic** (a comptime
 form, instantiated per concrete argument): `axiom induction(prop: Nat -> Prop):
