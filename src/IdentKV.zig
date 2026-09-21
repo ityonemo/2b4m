@@ -59,6 +59,24 @@ pub fn lookup(self: *IdentKV, io: std.Io, key: Key) ?State {
     return self.map.get(key);
 }
 
+/// REVERSE lookup: the name bound to `index` in `namespace`, or null. A scan, not an index —
+/// this is a DIAGNOSTIC-only path (a model Item carries no name of its own, so a message that
+/// wants to say `M` rather than `model#7` has to find it here), and a namespace holds a few
+/// dozen entries. Mirrors `FactKV.claimOf`, which scans for the same reason.
+pub fn nameOf(self: *IdentKV, io: std.Io, namespace: InternPool.Index, index: InternPool.Index) ?InternPool.StrId {
+    self.lock.lockUncancelable(io);
+    defer self.lock.unlock(io);
+    var it = self.map.iterator();
+    while (it.next()) |entry| {
+        if (entry.key_ptr.namespace != namespace) continue;
+        switch (entry.value_ptr.*) {
+            .done => |ix| if (ix == index) return entry.key_ptr.name,
+            .in_flight => {},
+        }
+    }
+    return null;
+}
+
 /// The FetchTask ENTRY PROTOCOL, atomic under the EXCLUSIVE lock (the claim in the absent
 /// case must share the critical section with the lookup, or two fetchers both see "absent"
 /// and both claim). `self_task` is the calling fetch-task's own `TaskIndex`.

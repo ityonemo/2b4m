@@ -122,6 +122,13 @@ pub const Kernel = struct {
     /// The file this kernel run's diagnostics belong to — a value, not ambient sink state
     /// (see diagnostics.zig).
     file: u32 = 0,
+    /// A PREFIX for every diagnostic this run records, or empty for none. The kernel knows
+    /// nothing about models — it is the trust boundary — so the caller supplies the words.
+    /// A model TRANSFER sets it to `Model@theorem`, which is the only signal a reader gets
+    /// that the formulas being compared live in two different vocabularies: the claim in
+    /// target terms, the cited fact still in source terms. Without it the rejection reads as
+    /// an ordinary mismatch in the SOURCE file, with no hint a transfer is involved.
+    context: []const u8 = "",
 
     const Fail = error{ Invalid, OutOfMemory };
 
@@ -160,7 +167,12 @@ pub const Kernel = struct {
     }
 
     fn fail(self: *Kernel, loc: u32, comptime fmt: []const u8, args: anytype) Fail {
-        self.sink.add(self.file, loc, fmt, args) catch return error.OutOfMemory;
+        if (self.context.len == 0) {
+            self.sink.add(self.file, loc, fmt, args) catch return error.OutOfMemory;
+        } else {
+            const body = std.fmt.allocPrint(self.arena, fmt, args) catch return error.OutOfMemory;
+            self.sink.add(self.file, loc, "{s}: {s}", .{ self.context, body }) catch return error.OutOfMemory;
+        }
         return error.Invalid;
     }
 

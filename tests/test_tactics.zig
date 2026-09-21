@@ -149,7 +149,7 @@ pub fn addTests(
     // rejected. In the demand path an unmapped source axiom stays the SOURCE axiom under the
     // transfer (applyModel = identity), so its formula fails to match the transferred step's
     // relativized claim — the rejection surfaces at that source citation.
-    ctx.fail(&.{ "check", "tests/cases/model_cite_bad.bpa" }, "tests/cases/model_cite_source.bpa:43:8: error: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model_cite_bad.bpa" }, "tests/cases/model_cite_source.bpa:43:8: error: ThingModel@unitCollapsesAndMarks: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
     // a model maps only the source theory's AXIOMS; mapping a source THEOREM (which
     // materializes through the mapped axioms) is misuse and rejected at that mapping.
     ctx.fail(&.{ "check", "tests/cases/model_maps_theorem_bad.bpa" }, "tests/cases/model_maps_theorem_bad.bpa:22:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
@@ -177,7 +177,7 @@ pub fn addTests(
     // fallback point for future author-supplied obligations).
     // (demand path: no discharger nominated for good(ZED), so the transferred proof's
     // forall_elim(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
-    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.bpa" }, "tests/cases/model_guarded_source.bpa:20:4: error: step claims 'combine(ZED, ZED) = ZED' but forall_elim derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
+    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.bpa" }, "tests/cases/model_guarded_source.bpa:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but forall_elim derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
     // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `exists_intro`);
