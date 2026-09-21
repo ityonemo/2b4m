@@ -95,6 +95,11 @@ origins: Segmented(?Origin) = .empty,
 pool_file: std.AutoHashMapUnmanaged(InternPool.Index, FileId) = .empty,
 read_ctx: ?*anyopaque,
 read_fn: ReadFileFn,
+/// The off-worker file loader (`Engine/Loader.zig`), when the run has one: `root.loadProject`
+/// configures it unless `--sync-io`. Null = every read is inline on the demanding worker (the
+/// in-process test rigs that call `loadRoots` directly, and `--sync-io`). Valid only for the
+/// duration of `loadRoots` — the pool it fronts is owned by the caller's frame.
+loader: ?*Engine.Loader = null,
 /// which verification layers are active (see Verify).
 verify: Verify,
 /// the standard library root: import paths beginning "std/" resolve here
@@ -341,6 +346,23 @@ pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Dec
 /// that task's index) and returns `.parsing`. Idempotent: a second demander sees the
 /// live `parsing` and suspends on the same task. `h` racks; single-threaded so the
 /// discover→check→rack window is uncontended.
+/// PUBLISH a file as parsed. Taken under `files_lock` — the lock `demandParse` READS the
+/// state under — so that everything the ParseTask wrote before this point (the decl
+/// registrations, the import map) happens-before any reader that observes `.parsed`.
+///
+/// A plain store here was a real race: nothing ordered it after the writes it announces,
+/// so the compiler may hoist it above the preceding `ast_lock` release and a reader on
+/// another thread can see `.parsed` while `declOf` still misses. In `Expand.resolveDeclDefine`
+/// a miss means "not a define", the guard is left opaque, and a FetchTask later hits the
+/// define-misuse arm: `'isBig' is a define — it expands where it is used` on
+/// `define_guard_nested.bpa`, 2 runs in 20 at `-j8` and never under `--chaos` (which
+/// reorders the schedule without threads — this needs two).
+pub fn markParsed(self: *Context, fid: FileId) void {
+    self.files_lock.lock();
+    defer self.files_lock.unlock();
+    self.parse_state.set(@intFromEnum(fid), .parsed);
+}
+
 pub fn demandParse(self: *Context, h: *Engine.Handle, file: InternPool.Index) std.mem.Allocator.Error!ParseState {
     const fid = self.fileOf(file) orelse return .unparsed; // undiscovered — caller errors
     const idx = @intFromEnum(fid);
@@ -472,7 +494,12 @@ pub fn diagFile(self: *const Context, file: InternPool.Index) u32 {
 
 pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
     std.debug.assert(roots.len > 0);
-    var eng = Engine.init(self.arena, self);
+    var eng = Engine.init(self.arena, self, self.io);
+    // Every off-worker load reports to `eng` (`externalEnd`), so all of them must land before
+    // this frame ends — including on the failure path, where `runWorkers` returns with loads
+    // still in flight. `runWorkers` joins every worker first, so nothing submits after it
+    // returns and the barrier is exact.
+    defer if (self.loader) |l| l.drain();
     eng.trace = self.verify.trace_facts;
     if (self.verify.chaos_seed) |seed| eng.chaos = .init(seed); // --chaos: shuffle scheduling
     for (roots) |r| {
@@ -489,7 +516,7 @@ pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
         }
     }
     self.root_file = self.root_files.items[0];
-    try eng.runWorkers(self.verify.workers);
+    try eng.runWorkers(self.verify.workers orelse Verify.defaultWorkers());
     try self.reportWedge(&eng);
     return self.root_file;
 }

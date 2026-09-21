@@ -177,7 +177,7 @@ pub fn checkSources(arena: std.mem.Allocator, files: []const MemFile, library: b
     mem.* = .{ .files = files };
     const roots = try arena.alloc(Context.Root, files.len);
     for (files, roots) |f, *r| r.* = .{ .path = f.path };
-    const loaded = try loadProject(io, arena, roots, @ptrCast(mem), &readMem, .{}, "");
+    const loaded = try loadProject(io, arena, roots, @ptrCast(mem), &readMem, .custom, .{}, "");
     return summarize(arena, loaded, roots, true, library);
 }
 
@@ -300,6 +300,11 @@ pub const LoadedProject = struct {
     declarations: usize,
 };
 
+/// What the paths a run names actually are. The thread-pool loader and the inline read go
+/// through `read_fn`, so they work over anything; the io_uring loader opens the PATH itself,
+/// so it is only eligible when the paths are real files on this machine.
+pub const Source = enum { filesystem, custom };
+
 /// Run the demand loader/checker and hand back the world. `checkProject` is this + the
 /// count summary.
 pub fn loadProject(
@@ -308,6 +313,7 @@ pub fn loadProject(
     roots: []const Context.Root,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
+    source: Source,
     verify: Verify,
     std_root: []const u8,
 ) !LoadedProject {
@@ -316,6 +322,35 @@ pub fn loadProject(
     // the same file reached as an import are one FileId).
     const canon = try arena.alloc(Context.Root, roots.len);
     for (roots, canon) |r, *c| c.* = .{ .path = try std.fs.path.resolve(arena, &.{r.path}), .theorem = r.theorem };
+
+    // The FILE LOADER, owned by this frame (see Engine/Loader.zig). The thread pool is
+    // always built (cheap; it is the fallback): its gpa must be thread-safe and must really
+    // free (`Group.Task.destroy`) — `gpa()`, never an arena. On Linux with no explicit
+    // `--io-threads` the io_uring backend is tried first; a refusal (seccomp, an old kernel)
+    // silently leaves the pool in charge. `loadRoots` drains every load before returning, so
+    // neither teardown ever joins a thread mid-read. Declaration order = teardown order
+    // reversed: loader detached from the context, ring, then pool.
+    const pool_ceiling = @min(verify.io_threads orelse Verify.max_io_threads, Verify.max_io_threads);
+    var threaded: std.Io.Threaded = .init(gpa(), .{ .concurrent_limit = .limited(pool_ceiling) });
+    defer threaded.deinit();
+    var loader: Engine.Loader = .{ .backend = .{ .pool = .{ .io = threaded.io() } } };
+    const ring: ?*Engine.Loader.Ring = if (Engine.Loader.uring_supported and source == .filesystem and !verify.sync_io and verify.io_threads == null)
+        Engine.Loader.Ring.init(gpa(), io) catch null
+    else
+        null;
+    defer if (ring) |r| r.deinit();
+    if (ring) |r| loader.backend = .{ .ring = r };
+    context.loader = if (verify.sync_io) null else &loader;
+    defer context.loader = null; // the backends die with this frame; the context outlives it
+    if (context.loader) |l| {
+        if (verify.trace_facts) context.traceLine(std.fmt.allocPrint(arena, "[load] backend = {s}\n", .{l.name()}) catch "");
+        // pre-warm the pool: a directory check reads (at least) every root, a single-file
+        // check a handful of imports — spawn those threads now, off the critical path, not
+        // one at a time under the first submissions. Clamped to the ceiling (a hold beyond
+        // it would be refused, harmlessly). A no-op for the ring.
+        const floor: usize = if (roots.len > 1) roots.len else 5;
+        l.prewarm(@min(floor, pool_ceiling));
+    }
     const root_file = try context.loadRoots(canon);
     return .{
         .interner = context.interner,
@@ -333,12 +368,13 @@ pub fn checkProject(
     roots: []const Context.Root,
     read_ctx: ?*anyopaque,
     read_fn: ReadFileFn,
+    source: Source,
     verify: Verify,
     std_root: []const u8,
     want_axioms: bool,
     library: bool,
 ) !ProjectResult {
-    const loaded = try loadProject(io, arena, roots, read_ctx, read_fn, verify, std_root);
+    const loaded = try loadProject(io, arena, roots, read_ctx, read_fn, source, verify, std_root);
     return summarize(arena, loaded, roots, want_axioms, library);
 }
 

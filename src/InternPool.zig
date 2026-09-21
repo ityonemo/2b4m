@@ -62,9 +62,12 @@ extra: Segmented(u32) = .empty,
 /// Raw byte store for `.string` items. An interned string's bytes live here as a
 /// contiguous run (its `String` payload in `extra` records the offset + length).
 string_bytes: Segmented(u8) = .empty,
-/// Dedup map: structural key hash -> Index. `void` value; the Index is recovered by
-/// re-deriving the key from the stored item (adapter context compares against `items`).
-map: std.HashMapUnmanaged(Index, void, MapContext, std.hash_map.default_max_load_percentage) = .empty,
+/// Dedup table: structural key -> Index, probed LOCK-FREE by `get` and written only under
+/// `write_lock` by `intern`. NOT a `std.HashMapUnmanaged`: that type rehashes by swapping
+/// its header non-atomically and writes slots non-atomically, so a lock-free probe racing an
+/// insert reads a torn `Index`, hands it to `keyOf`, and faults (or worse, silently matches
+/// the wrong item). See `Dedup` for the structure that makes the probe sound.
+dedup: Dedup = .{},
 
 /// Guards the pool's WRITE paths — `intern`'s create arm, and (still to be routed through
 /// it) the `mint*` family. A self-contained spinlock, like `Engine.mutex`: `std.Io.Mutex`
@@ -384,29 +387,6 @@ pub const Key = union(enum) {
 
 // -- the dedup map's hashing/equality, computed over the ergonomic Key ----------------
 
-const MapContext = struct {
-    pool: *const InternPool,
-
-    pub fn hash(ctx: MapContext, index: Index) u64 {
-        return hashKey(ctx.pool.keyOf(index));
-    }
-    pub fn eql(ctx: MapContext, a: Index, b: Index) bool {
-        return keyEql(ctx.pool.keyOf(a), ctx.pool.keyOf(b));
-    }
-};
-
-/// Adapter so we can look up / insert by a Key we haven't stored yet (getOrPutAdapted).
-const KeyAdapter = struct {
-    pool: *const InternPool,
-
-    pub fn hash(_: KeyAdapter, key: Key) u64 {
-        return hashKey(key);
-    }
-    pub fn eql(ctx: KeyAdapter, key: Key, index: Index) bool {
-        return keyEql(key, ctx.pool.keyOf(index));
-    }
-};
-
 fn hashKey(key: Key) u64 {
     var h = std.hash.Wyhash.init(0);
     std.hash.autoHash(&h, std.meta.activeTag(key));
@@ -455,6 +435,81 @@ fn keyEql(a: Key, b: Key) bool {
         .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable, // minted
     };
 }
+
+/// The dedup table: open addressing, linear probing, one atomic `u32` (a raw `Index`) per
+/// slot, `Index.none` meaning empty.
+///
+/// SOUND FOR LOCK-FREE READERS because nothing a reader touches ever moves or tears:
+///   - The live table is reached through `cur`, loaded ONCE per probe with acquire. Growth
+///     builds a NEW table under `write_lock`, fully populated, then publishes it with
+///     release. The old table is never written again and never freed (arena), so a reader
+///     that loaded the old pointer probes a valid, immutable, at-most-half-full table. It
+///     may MISS a key inserted after its load — harmless: a miss goes to the locked path,
+///     which re-probes the current table.
+///   - A slot is stored with release only AFTER the item it names is fully appended
+///     (`intern` appends first, inserts last), so a reader that acquire-loads a non-empty
+///     slot sees a complete item and `keyOf` is safe. No slot is ever overwritten.
+///   - The writer keeps every table under 50% full, so every probe hits an empty slot and
+///     terminates — on the current table and on any stale one.
+/// Only `intern` writes, under `write_lock`, and it re-probes before inserting, so a key is
+/// never in the table twice.
+const Dedup = struct {
+    const EMPTY: u32 = @intFromEnum(Index.none);
+    const min_slots: u32 = 1024;
+
+    const Slots = struct {
+        mask: u32,
+        slots: []std.atomic.Value(u32),
+    };
+
+    /// The live table; null until the first insert. Readers acquire-load, growth release-stores.
+    cur: std.atomic.Value(?*Slots) = .init(null),
+    /// Live entries. Written only under `write_lock`.
+    count: u32 = 0,
+
+    /// Lock-free probe. Returns the Index whose key is structurally equal to `key`, or null.
+    fn find(self: *const Dedup, pool: *const InternPool, key: Key) ?Index {
+        const t = self.cur.load(.acquire) orelse return null;
+        var i: u32 = @as(u32, @truncate(hashKey(key))) & t.mask;
+        while (true) : (i = (i + 1) & t.mask) {
+            const raw = t.slots[i].load(.acquire);
+            if (raw == EMPTY) return null;
+            const index: Index = @enumFromInt(raw);
+            if (keyEql(key, pool.keyOf(index))) return index;
+        }
+    }
+
+    /// Record `index` for `key`. CALLER HOLDS `write_lock` and has already re-probed (so the
+    /// key is absent) and already appended the item (so a reader that sees the slot sees a
+    /// complete item).
+    fn insertLocked(self: *Dedup, arena: std.mem.Allocator, pool: *const InternPool, key: Key, index: Index) std.mem.Allocator.Error!void {
+        var t = self.cur.load(.monotonic); // we are the only writer; no acquire needed
+        if (t == null or (self.count + 1) * 2 > t.?.mask + 1) t = try self.grow(arena, pool, t);
+        var i: u32 = @as(u32, @truncate(hashKey(key))) & t.?.mask;
+        while (t.?.slots[i].load(.monotonic) != EMPTY) i = (i + 1) & t.?.mask;
+        t.?.slots[i].store(@intFromEnum(index), .release); // item first, slot second — see above
+        self.count += 1;
+    }
+
+    /// Build a table twice the size, re-insert every live entry, publish it. The old table
+    /// is abandoned in place (never freed) so stale readers stay valid.
+    fn grow(self: *Dedup, arena: std.mem.Allocator, pool: *const InternPool, old: ?*Slots) std.mem.Allocator.Error!*Slots {
+        const n: u32 = if (old) |o| (o.mask + 1) * 2 else min_slots;
+        const fresh = try arena.create(Slots);
+        fresh.* = .{ .mask = n - 1, .slots = try arena.alloc(std.atomic.Value(u32), n) };
+        for (fresh.slots) |*slot| slot.* = .init(EMPTY);
+        if (old) |o| for (o.slots) |*slot| {
+            const raw = slot.load(.monotonic);
+            if (raw == EMPTY) continue;
+            const k = pool.keyOf(@enumFromInt(raw));
+            var i: u32 = @as(u32, @truncate(hashKey(k))) & fresh.mask;
+            while (fresh.slots[i].load(.monotonic) != EMPTY) i = (i + 1) & fresh.mask;
+            fresh.slots[i].store(raw, .monotonic); // not yet visible to anyone
+        };
+        self.cur.store(fresh, .release); // publish the fully-built table
+        return fresh;
+    }
+};
 
 /// Seed the pool with the RESERVED entries: the UNIVERSE MODEL at `Index.universe` (0) —
 /// an empty parent stack every model's chain bottoms out at — and the builtin `Prop` SORT
@@ -509,7 +564,7 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
 /// read path free: `get` used to create on a miss, which forced every caller — hit or miss —
 /// through the write lock.
 pub fn get(self: *const InternPool, key: Key) ?Index {
-    return self.map.getKeyAdapted(key, KeyAdapter{ .pool = self });
+    return self.dedup.find(self, key);
 }
 
 /// INTERN a key: its existing `Index` if one exists, else create the entry and return the
@@ -532,8 +587,7 @@ pub fn intern(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
     defer self.write_lock.unlock();
 
     // RE-PROBE: someone may have interned it between our miss and taking the lock.
-    const gop = try self.map.getOrPutContextAdapted(self.arena, key, KeyAdapter{ .pool = self }, MapContext{ .pool = self });
-    if (gop.found_existing) return gop.key_ptr.*;
+    if (self.dedup.find(self, key)) |existing| return existing;
 
     const index: Index = @enumFromInt(self.items.len);
     switch (key) {
@@ -563,7 +617,7 @@ pub fn intern(self: *InternPool, key: Key) std.mem.Allocator.Error!Index {
         // facts/identifiers are minted via mintFact/mint*, never `get` (no dedup)
         .fact, .sort, .constant, .func, .pred, .guard, .import, .schema => unreachable,
     }
-    gop.key_ptr.* = index;
+    try self.dedup.insertLocked(self.arena, self, key, index); // item is complete; publish it
     return index;
 }
 
@@ -778,31 +832,15 @@ pub fn mintSchema(self: *InternPool, s: Key.Schema) std.mem.Allocator.Error!Inde
     return index;
 }
 
-/// NO-OPS, retained so the old call sites keep compiling while they are retired.
-///
-/// The pool used to require its CALLERS to hold a write mutex around a mint. That contract
-/// could not be honored and was not: six of the ten `appendExtraRun` sites took no lock at
-/// all, which let two theorems publish the same `extra` offset and so cite each other's
-/// formula. Mutation is synchronized INSIDE the pool now (`write_lock`), so taking a lock
-/// out here would deadlock — the lock is not reentrant.
-pub fn lockWrite(self: *InternPool, io: std.Io) void {
-    _ = self;
-    _ = io;
-}
-pub fn unlockWrite(self: *InternPool, io: std.Io) void {
-    _ = self;
-    _ = io;
-}
-
 // -- raw `extra` u32-run API (term serialization rests on this) ------------------------
 // Terms are NOT interned Items (bpa is an explicit prover — no term dedup); a DURABLE term
 // is a self-contained u32 run in `extra`, written/read by term.zig's `reify`/`copyIn`. The
 // pool stays term-AGNOSTIC: it just stores and hands back the run. (term.zig imports
 // InternPool, not the reverse, so the term-shaped encode/decode lives there.)
 
-/// Append a run of `u32`s to `extra`; return its start offset. A WRITE — the caller must
-/// hold the write-mutex (`lockWrite`), same discipline as any mint. `reify` calls this once
-/// per term (the whole serialized run in one append).
+/// Append a run of `u32`s to `extra`; return its start offset. A WRITE, synchronized
+/// internally like every mint (see `write_lock`). `reify` calls this once per term (the
+/// whole serialized run in one append).
 pub fn appendExtraRun(self: *InternPool, run: []const u32) std.mem.Allocator.Error!u32 {
     self.write_lock.lock();
     defer self.write_lock.unlock();
@@ -1411,4 +1449,65 @@ test "file interns by path: same path -> same Index, distinct paths -> distinct"
     try std.testing.expectEqual(p_nat, pool.keyOf(b).file.path);
     // a file entity's Index is distinct from its path's string Index (one id space)
     try std.testing.expect(@intFromEnum(a) != @intFromEnum(p_int));
+}
+
+test "dedup: lock-free readers never see a torn slot while a writer interns" {
+    // THE regression gate for the lock-free `get`. Before the `Dedup` table, `get` probed a
+    // `std.HashMapUnmanaged` while `intern` inserted into it on another thread; a rehash
+    // swaps the map's header non-atomically and slots are written non-atomically, so a
+    // reader could pull a torn `Index` out of a slot and fault inside `keyOf` — 2 runs in 6
+    // on `check tests/cases/iff.bpa -j8`, debug build. Release hid it (no safety checks).
+    //
+    // Readers spin on keys interned BEFORE they started and must always get the same Index
+    // back; meanwhile the writer interns thousands of fresh keys, forcing several growths.
+    // Under the old map this crashes or returns a wrong Index within milliseconds.
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: InternPool = try .init(arena);
+
+    const n_known = 64;
+    var known: [n_known]Index = undefined;
+    var names: [n_known][8]u8 = undefined;
+    for (&known, &names, 0..) |*ix, *nm, i| {
+        _ = try std.fmt.bufPrint(nm, "k{d:0>6}", .{i});
+        ix.* = try pool.internString(nm);
+    }
+
+    const Reader = struct {
+        fn run(p: *InternPool, keys: *const [n_known]Index, nms: *const [n_known][8]u8, stop: *std.atomic.Value(bool), bad: *std.atomic.Value(u32)) void {
+            var i: usize = 0;
+            while (!stop.load(.acquire)) : (i +%= 1) {
+                const k = i % n_known;
+                // `get` is the lock-free probe under test
+                const got = p.get(.{ .string = &nms[k] }) orelse {
+                    _ = bad.fetchAdd(1, .monotonic);
+                    continue;
+                };
+                if (got != keys[k]) _ = bad.fetchAdd(1, .monotonic);
+            }
+        }
+    };
+    var stop: std.atomic.Value(bool) = .init(false);
+    var bad: std.atomic.Value(u32) = .init(0);
+    var readers: [6]std.Thread = undefined;
+    for (&readers) |*t| t.* = try std.Thread.spawn(.{}, Reader.run, .{ &pool, &known, &names, &stop, &bad });
+
+    // the writer: thousands of fresh keys, growing the table several times over
+    var buf: [16]u8 = undefined;
+    var i: usize = 0;
+    while (i < 20_000) : (i += 1) {
+        const nm = try std.fmt.bufPrint(&buf, "fresh{d}", .{i});
+        _ = try pool.internString(nm);
+    }
+    stop.store(true, .release);
+    for (readers) |t| t.join();
+
+    try std.testing.expectEqual(@as(u32, 0), bad.load(.acquire)); // every read exact
+    // and the writer's keys all dedup to themselves afterwards
+    i = 0;
+    while (i < 20_000) : (i += 1000) {
+        const nm = try std.fmt.bufPrint(&buf, "fresh{d}", .{i});
+        try std.testing.expectEqual(try pool.internString(nm), pool.get(.{ .string = nm }).?);
+    }
 }

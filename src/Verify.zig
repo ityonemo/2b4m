@@ -109,22 +109,57 @@ trace_facts: bool = false,
 /// many seeds and diff. Any difference is a determinism bug (something leaked task order
 /// into output), caught here without threads to confuse the diagnosis. Null = off.
 chaos_seed: ?u64 = null,
-/// `-j<n>`: how many worker threads prove in parallel. `-j1` is the single-threaded engine.
+/// `-j<n>`: how many worker threads prove in parallel; null = `defaultWorkers()`.
 ///
-/// DEFAULT 1, DELIBERATELY. The engine is thread-READY, not yet thread-SAFE. The known
-/// hazards are closed — the per-file tables are non-moving, `pool_file` and the AST registry
-/// and the side tables are locked, interning synchronizes itself — but at least one race
-/// REMAINS UNFOUND: `bpa check tests/cases/dir_ok -j4` intermittently reports 2 theorems
-/// where `-j1` reports 3, so a proof is occasionally not counted as proven. Until that is
-/// root-caused, `-j<n>` is an opt-in for working ON the engine, not a mode to check proofs
-/// in, and every gate runs single-threaded.
+/// DEFAULT (user ruling 2026-09-20): `max(1, logical_cpus / 2)` — the logical CPU count
+/// HALVED. The prover is compute-bound and lock-heavy, and the measured optimum sits at the
+/// PHYSICAL core count: on an 8-core/16-thread box `check std` runs 0.68 s at `-j8` and
+/// regresses to 0.78 s at `-j16`, consistent with SMT siblings splitting one core's
+/// execution units (a spinning sibling steals cycles from the very lock holder it waits
+/// on). Halving the logical count lands on physical cores wherever SMT is on.
 ///
-/// Output is a function of (tree, roots), never of scheduling, so the worker count must
-/// change only how fast a run goes — never what it prints. `--chaos` tests that contract
-/// deterministically today; a `-j` sweep tests it under real threads once the tables move.
-workers: usize = 1,
+/// On a machine WITHOUT SMT this undershoots by 2x. That is accepted on purpose: the
+/// binary does not parse `/sys` to find physical cores. `-j<n>` always exists, and a user
+/// who wants physical-core precision wraps `bpa` in a shell script that reads
+/// `/sys/devices/system/cpu/*/topology` and passes `-j`. That is the documented contract.
+///
+/// (`-j1` was the default while a scheduling race was open — a task could park on a
+/// blocker that had already finished, so `dir_ok -j4` sometimes counted 2 theorems where
+/// `-j1` counted 3. That was found and fixed, and std/aata are byte-identical from `-j1`
+/// to `-j16`; output is a function of (tree, roots), never of scheduling.)
+workers: ?usize = null,
+/// `--sync-io`: read every source file INLINE on the prover worker that demanded it — the
+/// pre-loader code path — instead of handing the read to the I/O pool (`Engine/Loader.zig`).
+/// Reads are asynchronous BY DEFAULT; this is the explicit opt-out and the bisection
+/// baseline, and the suite pins a gate to it so the inline path stays exercised.
+sync_io: bool = false,
+/// `--io-threads=<n>`: use the THREAD-POOL loader backend with `n` as its ceiling (capped at
+/// `max_io_threads`). Unset (the default) means: on Linux the io_uring backend — ONE ring
+/// thread, no count to tune — falling back to the pool at `max_io_threads` where the ring is
+/// refused; elsewhere the pool at `max_io_threads`. Naming a count therefore selects the pool
+/// as well as sizing it, which is what keeps that path exercised on Linux. The pool is sized
+/// separately from `-j` on purpose: a loader thread sleeps in the kernel, so SMT costs it
+/// nothing and it may exceed the core count. A load the pool cannot take (ceiling reached) is
+/// read inline, so a small ceiling is slower, never wrong. (See `Engine/Loader.zig`.)
+io_threads: ?usize = null,
+
+/// `--io-delay=<us>` in nanoseconds: sleep this long inside EVERY source-file read, to
+/// simulate a slow filesystem (cold cache, NFS, sshfs) on a machine whose page cache cannot
+/// be dropped. A measurement knob, not a tuning one: it is how the cost of a blocking read —
+/// and the benefit of reads that are off-worker — is made visible and reproducible. Applied
+/// by whichever path reads: the inline read, a pool thread (both sleep before the read), or
+/// the ring (a linked timeout ahead of the open, so the delay itself is asynchronous). 0 = off.
+io_delay_ns: u64 = 0,
+
+pub const max_io_threads = 64;
 
 const Verify = @This();
+
+/// The default worker count: logical CPUs halved, never below 1. See `workers`.
+pub fn defaultWorkers() usize {
+    const logical = std.Thread.getCpuCount() catch 2;
+    return @max(1, logical / 2);
+}
 
 /// Is the `using` word named by `rule_word` (an `InternPool.RuleStr` — but resolved by the
 /// caller to a `Word`) currently trusted? Callers map their rule to a `Word` first.

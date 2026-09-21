@@ -1486,10 +1486,8 @@ test "remapFormula: sorts/syms absent from the map pass through unchanged" {
 /// rebuilt term is alpha-equal to the original. Same-pool round-trip works because the repr
 /// is locally-nameless with no dedup: `copyIn` appends fresh-but-structurally-identical
 /// nodes, so `alphaEq(rebuilt, id)` holds.
-fn expectReifyRoundTrip(io: std.Io, ip: *InternPool, p: *Pool, id: TermId) !void {
-    ip.lockWrite(io);
+fn expectReifyRoundTrip(ip: *InternPool, p: *Pool, id: TermId) !void {
     const off = try p.reify(id, ip);
-    ip.unlockWrite(io);
     const rebuilt = try p.copyIn(ip, off);
     try testing.expect(p.alphaEq(rebuilt, id));
 }
@@ -1501,36 +1499,34 @@ test "reify/copyIn: every node kind round-trips through extra" {
     var pool: Pool = .init(arena, arena);
     const p = &pool;
     var ip: InternPool = try .init(arena);
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const io = threaded.io();
 
     // bvar, fvar
     const b0 = try p.add(.{ .bvar = 0 });
-    try expectReifyRoundTrip(io, &ip, p, b0);
+    try expectReifyRoundTrip(&ip, p, b0);
     const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
-    try expectReifyRoundTrip(io, &ip, p, x);
+    try expectReifyRoundTrip(&ip, p, x);
 
     // app(add, x, b0) and pred(P, x) — variable-length, with shared subterms
     const add = tsym(7);
     const app = try p.addApp(.app, add, &.{ x, b0 });
-    try expectReifyRoundTrip(io, &ip, p, app);
+    try expectReifyRoundTrip(&ip, p, app);
     const pred = try p.addApp(.pred, tsym(9), &.{x});
-    try expectReifyRoundTrip(io, &ip, p, pred);
+    try expectReifyRoundTrip(&ip, p, pred);
 
     // eq, not
     const eq = try p.add(.{ .eq = .{ .lhs = app, .rhs = b0 } });
-    try expectReifyRoundTrip(io, &ip, p, eq);
+    try expectReifyRoundTrip(&ip, p, eq);
     const neg = try p.add(.{ .not = eq });
-    try expectReifyRoundTrip(io, &ip, p, neg);
+    try expectReifyRoundTrip(&ip, p, neg);
 
     // bin (all ops), quant (both), nested — the whole tree
     const conj = try p.add(.{ .bin = .{ .op = .and_op, .lhs = eq, .rhs = neg } });
-    try expectReifyRoundTrip(io, &ip, p, conj);
+    try expectReifyRoundTrip(&ip, p, conj);
     const body = try p.close(conj, sid(1)); // close over x -> a loose bvar
     const fa = try p.add(.{ .quant = .{ .q = .forall, .sort = nat, .hint = sid(1), .body = body } });
-    try expectReifyRoundTrip(io, &ip, p, fa);
+    try expectReifyRoundTrip(&ip, p, fa);
     const ex = try p.add(.{ .quant = .{ .q = .exists, .sort = nat, .hint = sid(2), .body = body } });
-    try expectReifyRoundTrip(io, &ip, p, ex);
+    try expectReifyRoundTrip(&ip, p, ex);
 }
 
 test "reify/copyIn: shared subterm emitted once, rebuilt consistently" {
@@ -1540,14 +1536,12 @@ test "reify/copyIn: shared subterm emitted once, rebuilt consistently" {
     var pool: Pool = .init(arena, arena);
     const p = &pool;
     var ip: InternPool = try .init(arena);
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const io = threaded.io();
 
     // f(x, x): x appears twice — reify emits it once (dedup within the run), copyIn
     // rebuilds a valid tree either way; assert structural round-trip.
     const x = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
     const fxx = try p.addApp(.app, tsym(1), &.{ x, x });
-    try expectReifyRoundTrip(io, &ip, p, fxx);
+    try expectReifyRoundTrip(&ip, p, fxx);
 }
 
 test "reify/copyIn: deep term round-trips without overflow (iterative reify+copyIn)" {
@@ -1557,13 +1551,11 @@ test "reify/copyIn: deep term round-trips without overflow (iterative reify+copy
     var pool: Pool = .init(arena, arena);
     const p = &pool;
     var ip: InternPool = try .init(arena);
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const io = threaded.io();
 
     // 200k-deep not-chain: reify's post-order emit (iterative) + copyIn's linear rebuild both
     // handle it without a C-stack overflow, and the round-trip is structure-preserving.
     var cur = try p.add(.{ .fvar = .{ .name = sid(1), .sort = nat } });
     var i: usize = 0;
     while (i < 200_000) : (i += 1) cur = try p.add(.{ .not = cur });
-    try expectReifyRoundTrip(io, &ip, p, cur);
+    try expectReifyRoundTrip(&ip, p, cur);
 }
