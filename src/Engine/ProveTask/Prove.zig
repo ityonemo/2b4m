@@ -130,6 +130,11 @@ schema_params: []const StrId = &.{},
 /// via resolveFactRef) is filtered `applyModel(model, source)`, so source names remap to
 /// their targets. `.universe` = an ordinary (identity) proof.
 model: InternPool.Index = .universe,
+/// THE PROOF TREE: this proof's own `(namespace, name)`. Every ProveTask this proof demands
+/// inherits it as `parent`, so the chain records "X was proved because Y's proof needed it".
+/// Null only for a context with no owning fact (the statement-elaboration helper). See
+/// `Context.proof_parent`.
+self_key: ?FactKV.Key = null,
 /// SYNTHETIC (accelerant-generated) schema instance (13e): its formulas were DELABORATED
 /// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
 /// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
@@ -298,7 +303,7 @@ fn sortName(self: *const Prove, sort: SortId) []const u8 {
 /// for absent names. Returns a blocker to suspend on, or null when the whole closure is
 /// resolved "enough" to process (proven/done, or in_flight-SELF — the latter is left for
 /// process to diagnose as a self-citation). IDEMPOTENT — re-runs on every resume.
-pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns: InternPool.Index, model: InternPool.Index, refs: []const RefScan.Ref) Allocator.Error!?Engine.TaskIndex {
+pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns: InternPool.Index, model: InternPool.Index, parent: ?FactKV.Key, refs: []const RefScan.Ref) Allocator.Error!?Engine.TaskIndex {
     var blocker: ?Engine.TaskIndex = null;
     for (refs) |r| {
         // a QUALIFIED candidate resolves its import first; until the import is done we
@@ -375,7 +380,7 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
             // instantiate handler then demands the monomorphized instance FACT separately.
             .fact, .schema => {
                 const state = ctx.facts.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
-                    blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
+                    blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .parent = parent }));
                     continue;
                 };
                 switch (state) {
@@ -413,7 +418,7 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
                             // sort against a claim in the target sort. Order-dependent (the run
                             // queue is a stack), so it surfaced only in a large directory sweep.
                             if (tstate == null) {
-                                blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model }));
+                                blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model, .parent = parent }));
                             } else if (tstate.? == .in_flight and tstate.?.in_flight != h.self_index) {
                                 blocker = tstate.?.in_flight;
                             }
@@ -497,7 +502,7 @@ pub fn elaborateFactStatement(
 
     var scanner = RefScan.init(self.arena, self.interner, source, walk);
     const refs = try scanner.scanFormula(formula);
-    if (try resolveRefs(self, h, file, resolve_ns, model, refs)) |blocker| {
+    if (try resolveRefs(self, h, file, resolve_ns, model, null, refs)) |blocker| {
         h.suspendOn(blocker);
         return .suspended;
     }
@@ -539,7 +544,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
     const refs = try scanner.scanStep(step);
-    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, refs)) |blocker| return blocker;
+    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, refs)) |blocker| return blocker;
 
     // an `instantiate` step additionally DEMANDS the monomorphized instance FACT (its own
     // ProveTask) — the schema name + args are now resolved, so build the instance and
@@ -619,7 +624,7 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
         },
         .fact, .schema => {}, // a PROOF demand — skipped under trust
     };
-    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, idents[0..n])) |blocker| return blocker;
+    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, idents[0..n])) |blocker| return blocker;
 
     // parse the source file whose decl AST the α-match reads (model: src.thm's file; import:
     // I's file; instantiation: the schema's file). An accelerant admits from the local goal,
@@ -703,7 +708,7 @@ fn demandArithIdents(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.Ta
             try refs.append(self.ctx.arena, .{ .ns = null, .name = induction_id, .domain = .schema, .loc = loc });
         };
     };
-    return resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, refs.items);
+    return resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, refs.items);
 }
 
 pub fn process(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!bool {
@@ -1897,6 +1902,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .loc = c.schema.?.start,
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
+        .parent = self.self_key, // proof tree: this instance exists because THIS proof cited it
         .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
     }));
     return .{ .blocked = blocker };
@@ -2041,6 +2047,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         .loc = rtok.start,
         .loc_file = self.file,
         .model = effective_model,
+        .parent = self.self_key, // proof tree: the TRANSFER's parent is the citing proof
     }));
     return .{ .blocked = blocker };
 }
@@ -2169,6 +2176,7 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
         .loc = rtok.start,
         .loc_file = self.file,
         .model = self.model,
+        .parent = self.self_key, // proof tree: a transferred schema's instance
         .instance = .{ .schema_name = sk.name, .params = pnames, .args = durable, .args_source = durable_source },
     }));
     return .{ .blocked = blocker };
