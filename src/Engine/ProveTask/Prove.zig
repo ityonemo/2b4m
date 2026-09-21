@@ -8798,6 +8798,27 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
 
 // -- conclusion ------------------------------------------------------------------------
 
+/// `Model@theorem` when this proof is a model TRANSFER, else empty (an ordinary proof needs
+/// no prefix). The model's own name comes off its `.model` Item's home file + name.
+fn transferLabel(self: *Prove) []const u8 {
+    if (self.model == InternPool.Index.none or self.model == .universe) return "";
+    const key = self.self_key orelse return "";
+    // A model Item carries no name (it is structural); the NAME lives in IdentKV, in the
+    // universe namespace of the file the model was declared in (`home`). Scan that namespace
+    // for the entry bound to this model Index. A composed model (a nested transfer) has no
+    // declared name — fall back to the theorem alone rather than printing `model#7`.
+    const home = self.ctx.interner.keyOf(self.model).model.home;
+    const thm = self.ctx.interner.stringBytes(key.name);
+    if (home != InternPool.Index.none) {
+        const home_ns = self.ctx.interner.namespace(.universe, home) catch return thm;
+        if (self.ctx.idents.nameOf(self.ctx.io, home_ns, self.model)) |n| {
+            return std.fmt.allocPrint(self.ctx.arena, "{s}@{s}", .{ self.ctx.interner.stringBytes(n), thm }) catch thm;
+        }
+    }
+    return thm;
+}
+
+
 /// Walk done: seal the root, kernel-check the whole lowering against `goal`, then the
 /// use-all-facts pass (unless --draft). True iff the theorem is established.
 pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
@@ -8809,6 +8830,12 @@ pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
         .sink = self.ctx.sink,
         // a rejection's offset indexes THIS proof's file, not the demander's
         .file = self.diagFile(),
+        // Under a MODEL this proof is a TRANSFER: it re-proves a source theorem with every
+        // global redirected through the overlay, so its claims are in TARGET terms while any
+        // fact the model does not map is still in SOURCE terms. Label every rejection
+        // `Model@theorem` so that is visible — without it the reader sees two formulas in
+        // different vocabularies, in a file they did not write, with nothing naming the model.
+        .context = self.transferLabel(),
     };
     const proven = try k.check(.{ .steps = self.low_steps.items, .blocks = self.low_blocks.items }, goal, goal_loc);
     if (!proven) return false;

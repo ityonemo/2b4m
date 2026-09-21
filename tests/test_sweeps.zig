@@ -35,6 +35,15 @@ pub fn addTests(
     // inline read on the demanding worker (the opt-out and the bisection baseline), and a
     // one-thread ceiling makes the pool REFUSE most submissions, which must fall back to the
     // inline read rather than fail or wedge. A directory sweep, so the reads overlap.
+    // A model TRANSFER re-proves a source theorem under the overlay, so its claims are in
+    // TARGET terms while any fact the model does not map stays in SOURCE terms. A rejection
+    // therefore compares two vocabularies, reported at a line in the SOURCE file — which read
+    // as a remapping BUG until the `Model@theorem` prefix made the transfer visible. Pin it.
+    ctx.fail(&.{ "check", "tests/cases/model_transfer_label/transfer.bpa" },
+        \\tests/cases/model_transfer_label/source.bpa:12:4: error: M@srcPlain: step claims 'forall x: Grp; op(x, E) = x' but the axiom derives 'forall x: SrcVal; scomb(x, SRCE) = x'
+        \\
+    );
+
     ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--sync-io" });
     ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-threads=1" });
     // `--io-delay` is honoured on every path (the ring spends it as a linked timeout whose
