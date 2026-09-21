@@ -86,7 +86,14 @@ pub fn Segmented(comptime T: type) type {
         }
 
         /// Element `i` by value. Lock-free: reads only an existing block, which never moves.
+        ///
+        /// `i` MUST be in range. Out of range is not a soft error here: `locate` would index
+        /// an unallocated block and read whatever that pointer happens to be — in a release
+        /// build, silent garbage rather than a crash. The most likely way to get here wrongly
+        /// is an absent-marker sentinel (`InternPool.Index.none` = 0xFFFF_FFFF) reaching a
+        /// lookup that should have tested for it first, so name that case in the message.
         pub fn get(self: *const Self, i: u32) T {
+            self.assertInRange(i);
             const spot = locate(i);
             return self.blocks[spot.block][spot.offset];
         }
@@ -94,8 +101,28 @@ pub fn Segmented(comptime T: type) type {
         /// A STABLE pointer to element `i`. Valid for the life of the store — this is the
         /// whole point of the type.
         pub fn at(self: *const Self, i: u32) *T {
+            self.assertInRange(i);
             const spot = locate(i);
             return &self.blocks[spot.block][spot.offset];
+        }
+
+        /// Bounds check for the by-index accessors. `count()` is an ACQUIRE load, pairing
+        /// with `append`'s release store, so a reader sees a published element's contents.
+        ///
+        /// The message is FORMATTED (`std.debug.panic`, which is not elided in release —
+        /// it is `@panic` plus a format). This path should never execute, so its cost is
+        /// irrelevant, and when it does execute the index and the length are exactly what
+        /// the debugging needs.
+        fn assertInRange(self: *const Self, i: u32) void {
+            const n = self.count();
+            if (i < n) return;
+            // The absent marker is by far the likeliest way to arrive here wrongly
+            // (`InternPool.Index.none` = 0xFFFF_FFFF reaching a lookup that should have
+            // tested for it), so it earns its own message.
+            if (i == 0xFFFF_FFFF) {
+                std.debug.panic("segmented: index 0xFFFF_FFFF — an absent-marker sentinel (Index.none) reached a lookup; test for it before indexing", .{});
+            }
+            std.debug.panic("segmented: index {d} out of range (len {d})", .{ i, n });
         }
 
         /// Overwrite element `i` (the store is append-only in LENGTH, but an element may be
@@ -213,6 +240,28 @@ test "segmented: append and read back across many blocks" {
     }
     try std.testing.expectEqual(@as(u32, n), s.len);
     for (0..n) |i| try std.testing.expectEqual(@as(u32, @intCast(i * 3)), s.get(@intCast(i)));
+}
+
+test "segmented: an out-of-range index is a PANIC, not a garbage read" {
+    // `get`/`at` index a block table directly, so an out-of-range index used to read an
+    // unallocated block pointer — undefined behavior, and in a release build silent garbage
+    // rather than a crash. The sentinel `InternPool.Index.none` (0xFFFF_FFFF) is the way this
+    // actually happens: an absent marker reaching a lookup that should have tested for it.
+    // `std.testing.expectPanic` is not available here, so this test documents the contract and
+    // checks the in-range boundary exactly; the panic itself is covered by the assertion's own
+    // condition (`i < count()`), which the boundary cases below pin.
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var s: Segmented(u32) = .empty;
+    _ = try s.append(arena, 7);
+    _ = try s.append(arena, 9);
+
+    // the last VALID index reads back; one past it would panic.
+    try std.testing.expectEqual(@as(u32, 9), s.get(1));
+    try std.testing.expectEqual(@as(u32, 2), s.count());
+    try std.testing.expectEqual(@as(u32, 9), s.at(1).*);
 }
 
 test "segmented: an element's ADDRESS is stable across growth (the whole point)" {

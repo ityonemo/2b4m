@@ -174,6 +174,25 @@ model_discharged: std.AutoHashMapUnmanaged(InternPool.Index, void) = .empty,
 /// that list (via `resolveFactRef`, accumulated in `Prove.axioms_used`) — the same side-channel
 /// shape as `hole_taint`, and likewise never consulted for a proof verdict.
 axiom_taint: std.AutoHashMapUnmanaged(InternPool.Index, []const InternPool.Index) = .empty,
+/// THE PROOF TREE: a published fact Index -> the fact whose proof DEMANDED it, or
+/// `InternPool.Index.none` for a root (a theorem the run was asked to check).
+///
+/// One node per ProveTask that actually proves something — a `.theorem` or a schema
+/// `.instance`. An AXIOM and a HOLE are LEAVES and get no node: their assertion IS the
+/// fact, nothing was demanded to establish it (they seed `axiom_taint` with themselves
+/// instead).
+///
+/// The parent pointer IS the demand chain: walk it to a root to recover "why was this
+/// proved". A fact is keyed in a namespace and `Key.Namespace = {model, file}`, so a model
+/// TRANSFER of `src.thm` and the source `src.thm` are distinct nodes — which is what lets a
+/// failed transfer say "model M cannot transfer src.thm" against the citing step rather
+/// than against the source theorem's own line (the diagnostic that cost this project two
+/// wrong root-cause analyses).
+///
+/// APPEND-ONLY and keyed by interned identity, so it is insensitive to scheduling: a second
+/// demander of an already-proven fact adds nothing (the first proof is the one that
+/// happened). Report ORDER must still come from declaration sites, never from task order.
+proof_parent: std.AutoHashMapUnmanaged(InternPool.Index, InternPool.Index) = .empty,
 /// HOLE TAINT (for the summary's blast-radius): a published fact Index -> the hole NAMES it
 /// transitively rests on. A `hole` maps to `&.{its own name}`; a theorem citing a hole-tainted
 /// fact INHERITS that list (via `resolveFactRef`, accumulated in `Prove.holes_used`). Read to
@@ -415,6 +434,32 @@ pub fn recordAxiomTaint(self: *Context, fact: InternPool.Index, axioms: []const 
     self.side_lock.lock();
     defer self.side_lock.unlock();
     try self.axiom_taint.put(self.arena, fact, axioms);
+}
+
+/// Record `fact`'s parent in the proof tree — the fact whose proof demanded it, or
+/// `InternPool.Index.none` for a root. Keep-first: a fact is proved once, and the demander
+/// that raced to it first is the one whose proof actually caused the work.
+pub fn recordProofParent(self: *Context, fact: InternPool.Index, parent: InternPool.Index) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    const gop = try self.proof_parent.getOrPut(self.arena, fact);
+    if (!gop.found_existing) gop.value_ptr.* = parent;
+}
+
+/// The chain of facts that led to `fact` being proved, innermost FIRST (`fact` itself, then
+/// its demander, ...) up to a root. Bounded by the table size, so a cycle cannot loop
+/// forever. Reads unguarded: callers use it after quiescence, when nothing is still writing.
+pub fn proofChain(self: *const Context, arena: std.mem.Allocator, fact: InternPool.Index) std.mem.Allocator.Error![]const InternPool.Index {
+    var out: std.ArrayList(InternPool.Index) = .empty;
+    var cur = fact;
+    var hops: usize = 0;
+    while (hops <= self.proof_parent.count()) : (hops += 1) {
+        try out.append(arena, cur);
+        const parent = self.proof_parent.get(cur) orelse break;
+        if (parent == InternPool.Index.none) break; // a root
+        cur = parent;
+    }
+    return out.items;
 }
 
 /// Record where the axiom `fact` was declared (its site in the `--axioms` report).
