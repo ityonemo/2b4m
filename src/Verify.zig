@@ -133,12 +133,23 @@ workers: ?usize = null,
 /// Reads are asynchronous BY DEFAULT; this is the explicit opt-out and the bisection
 /// baseline, and the suite pins a gate to it so the inline path stays exercised.
 sync_io: bool = false,
-/// `--io-threads=<n>`: the CEILING of the file-loading pool (blocking syscalls, disjoint from
-/// the prover workers), capped at `max_io_threads`. Sized separately from `-j` on purpose:
-/// a loader thread sleeps in the kernel, so SMT costs it nothing and the pool may exceed the
-/// core count. A load the pool cannot take (ceiling reached) is read inline, so a small
-/// ceiling is slower, never wrong.
-io_threads: usize = max_io_threads,
+/// `--io-threads=<n>`: use the THREAD-POOL loader backend with `n` as its ceiling (capped at
+/// `max_io_threads`). Unset (the default) means: on Linux the io_uring backend — ONE ring
+/// thread, no count to tune — falling back to the pool at `max_io_threads` where the ring is
+/// refused; elsewhere the pool at `max_io_threads`. Naming a count therefore selects the pool
+/// as well as sizing it, which is what keeps that path exercised on Linux. The pool is sized
+/// separately from `-j` on purpose: a loader thread sleeps in the kernel, so SMT costs it
+/// nothing and it may exceed the core count. A load the pool cannot take (ceiling reached) is
+/// read inline, so a small ceiling is slower, never wrong. (See `Engine/Loader.zig`.)
+io_threads: ?usize = null,
+
+/// `--io-delay=<us>` in nanoseconds: sleep this long inside EVERY source-file read, to
+/// simulate a slow filesystem (cold cache, NFS, sshfs) on a machine whose page cache cannot
+/// be dropped. A measurement knob, not a tuning one: it is how the cost of a blocking read —
+/// and the benefit of reads that are off-worker — is made visible and reproducible. Applied
+/// by whichever path reads: the inline read, a pool thread (both sleep before the read), or
+/// the ring (a linked timeout ahead of the open, so the delay itself is asynchronous). 0 = off.
+io_delay_ns: u64 = 0,
 
 pub const max_io_threads = 64;
 
