@@ -37,6 +37,10 @@ pub fn addTests(
     // inline read rather than fail or wedge. A directory sweep, so the reads overlap.
     ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--sync-io" });
     ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-threads=1" });
+    // `--io-delay` is honoured on every path (the ring spends it as a linked timeout whose
+    // expiry must not break the chain — it did, once); a small delay so the gate stays quick.
+    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-delay=1000" });
+    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-delay=1000", "--io-threads=2" });
     // ...and a missing import is diagnosed identically whichever thread met the error (the
     // pool thread records it as data; the resumed task diagnoses at the import token).
     const import_missing_diag =

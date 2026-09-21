@@ -7,13 +7,6 @@ const bpa = @import("bpa");
 // User program, not a library: io lives in a global for convenience.
 pub var io: Io = undefined;
 
-/// `--io-delay=<us>`: sleep this long inside EVERY source-file read, to simulate a slow
-/// filesystem (cold cache, NFS, sshfs) on a machine whose page cache cannot be dropped.
-/// A measurement knob, not a tuning one: it is how the cost of a blocking read — and, once
-/// reads move off the prover workers, the benefit — is made visible and reproducible. The
-/// delay happens in `readFile`, i.e. exactly where a real slow read would block. 0 = off.
-pub var io_delay_ns: u64 = 0;
-
 fn fail(comptime fmt: []const u8, args: anytype) u8 {
     var buf: [512]u8 = undefined;
     var fw: Io.File.Writer = .init(.stderr(), io, &buf);
@@ -139,7 +132,6 @@ fn emitQuery(text: []const u8, ok: bool) !u8 {
 }
 
 fn readFile(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
-    if (io_delay_ns != 0) try Io.sleep(io, .fromNanoseconds(@intCast(io_delay_ns)), .awake); // --io-delay
     return Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(64 << 20)) catch |e| switch (e) {
         error.FileNotFound => return error.FileNotFound,
         else => return e,
@@ -487,14 +479,14 @@ pub fn main(init: std.process.Init) !u8 {
         } else if (std.mem.startsWith(u8, arg, "--io-threads=")) {
             verify.io_threads = std.fmt.parseInt(usize, arg["--io-threads=".len..], 10) catch
                 return fail("error: --io-threads= takes a thread count, e.g. --io-threads=16\n", .{});
-            if (verify.io_threads == 0) return fail("error: --io-threads needs at least one thread (use --sync-io for no pool)\n", .{});
-            if (verify.io_threads > bpa.Verify.max_io_threads) return fail("error: --io-threads is capped at {d}\n", .{bpa.Verify.max_io_threads});
+            if (verify.io_threads.? == 0) return fail("error: --io-threads needs at least one thread (use --sync-io for no pool)\n", .{});
+            if (verify.io_threads.? > bpa.Verify.max_io_threads) return fail("error: --io-threads is capped at {d}\n", .{bpa.Verify.max_io_threads});
         } else if (std.mem.eql(u8, arg, "--sync-io")) {
             verify.sync_io = true;
         } else if (std.mem.startsWith(u8, arg, "--io-delay=")) {
             const us = std.fmt.parseInt(u64, arg["--io-delay=".len..], 10) catch
                 return fail("error: --io-delay= takes microseconds, e.g. --io-delay=5000\n", .{});
-            io_delay_ns = us * std.time.ns_per_us;
+            verify.io_delay_ns = us * std.time.ns_per_us;
         } else if (std.mem.eql(u8, arg, "--chaos")) {
             verify.chaos_seed = 0;
         } else if (std.mem.startsWith(u8, arg, "--chaos=")) {
@@ -550,7 +542,7 @@ pub fn main(init: std.process.Init) !u8 {
         break :blk rs;
     } else &.{.{ .path = root_path, .theorem = split.theorem }};
 
-    var result = try bpa.checkProject(io, arena, roots, null, readRaw, verify, std_root, axioms, library);
+    var result = try bpa.checkProject(io, arena, roots, null, readRaw, .filesystem, verify, std_root, axioms, library);
     // `--trace-facts`: the citation trace, printed as one block BEFORE the verdict so it is
     // readable even when the run then fails (which is the case it exists for).
     if (verify.trace_facts) {

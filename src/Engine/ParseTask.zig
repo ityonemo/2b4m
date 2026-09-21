@@ -77,6 +77,13 @@ pub fn readSource(ctx: *Context, path: []const u8) LoadResult {
     return .{ .bytes = bytes };
 }
 
+/// `--io-delay`: the simulated slow read, for the paths that read synchronously (inline here,
+/// or on a pool thread). Sleeps through `io` — the caller's, so a pool thread uses its own.
+pub fn ioDelay(ctx: *const Context, io: std.Io) void {
+    if (ctx.verify.io_delay_ns == 0) return;
+    std.Io.sleep(io, .fromNanoseconds(@intCast(ctx.verify.io_delay_ns)), .awake) catch {};
+}
+
 /// Publish a read's outcome on the task (any thread). The fields go first, the state last
 /// with release — the resumed run's acquire of `.landed` is what makes them visible.
 pub fn land(task: *ParseTask, result: LoadResult) void {
@@ -127,6 +134,7 @@ pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocato
                     task.state.store(.unsent, .monotonic);
                 }
             }
+            ioDelay(self, self.io);
             task.land(readSource(self, path));
         },
         // Re-run before the read landed (the `completions` requeue rule): wait again. Each
