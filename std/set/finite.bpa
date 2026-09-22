@@ -1,0 +1,494 @@
+// std/set/finite.bpa — EQUINUMEROSITY and finite cardinality.
+//
+// Cardinality is defined the USUAL way — by BIJECTION, not by an inductive count. Two
+// sets are equinumerous when some map is a bijection from one ONTO the other, and a set
+// is finite of size n when it is equinumerous with the initial segment {0, …, n-1}.
+//
+// Why bijection rather than a `hasSize(s, n)` recursion on `insert`: the inductive
+// definition is structurally finite — its second argument is a `Nat`, so it can never
+// relate two INFINITE sets. Defining equinumerosity first makes finiteness the special
+// case where the counterpart is an initial segment, and leaves Cantor, Schröder–Bernstein
+// and countability expressible in the same vocabulary later.
+//
+// The maps are ordinary `std/function.bpa` `Fn`s. A bijection BETWEEN SETS is not a new
+// kind of object: it is a total `Fn` whose behavior is CONSTRAINED ON a source set —
+// injective on it, and carrying it exactly onto a target set. What the function does
+// outside the source is irrelevant and never reasoned about, which is the same device
+// `inverse` already uses for a non-invertible argument. This works because
+// `std/set.bpa` and `std/function.bpa` share `std/element.bpa`'s `Element` sort.
+
+import set <<< "std/set.bpa"
+import element <<< "std/element.bpa"
+import function <<< "std/function.bpa"
+import peano <<< "std/peano.bpa"
+
+sort Element = element.Element
+sort Set = set.Set
+const emptyset = set.emptyset
+pred member = set.member
+axiom emptysetMember = set.emptysetMember
+axiom extensionality = set.extensionality
+
+sort Fn = function.Fn
+func apply = function.apply
+const identityFn = function.identityFn
+axiom identityApply = function.identityApply
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+pred less_than = peano.less_than
+theorem notLessThanZero = peano.notLessThanZero
+
+// -- maps between sets ------------------------------------------------------
+
+// `f` sends every element of `a` into `b`. (A total Fn does something everywhere; this
+// constrains it only ON `a`, which is all a set-to-set map means here.)
+define mapsInto(f, a, b) = forall x: Element; member(x, a) -> member(apply(f, x), b)
+
+// `f` is injective ON `a`: distinct elements of `a` have distinct images. Weaker than
+// `function.injective`, which demands it everywhere — a map may collide outside `a` and
+// still biject `a`.
+define injectiveOn(f, a) =
+  forall x: Element; forall y: Element;
+  member(x, a) -> member(y, a) -> apply(f, x) = apply(f, y) -> x = y
+
+// `f` covers `b` FROM `a`: every element of `b` is the image of some element of `a`.
+define coversFrom(f, a, b) =
+  forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
+
+// `f` BIJECTS `a` onto `b`: into, injective on the source, and covering the target.
+define bijectsOnto(f, a, b) = mapsInto(f, a, b) and injectiveOn(f, a) and coversFrom(f, a, b)
+
+// -- equinumerosity ---------------------------------------------------------
+
+// `a` and `b` have the SAME SIZE: some map bijects one onto the other. This is the
+// relation cardinality is built from, and it is meaningful for infinite sets too.
+define equinumerous(a, b) = exists f: Fn; bijectsOnto(f, a, b)
+
+// -- finiteness -------------------------------------------------------------
+
+// The initial segment {0, …, n-1} as a SET. This needs the naturals to BE elements, so
+// the theory takes an injection `numeral` from Nat into Element and cuts the segment
+// membershipwise through it. (An abstract Element sort has no numbers of its own; naming
+// them this way keeps sets of ANYTHING countable, which assuming Element = Nat would not.)
+func numeral(n: Nat): Element
+axiom numeralInjective: forall m: Nat; forall n: Nat; numeral(m) = numeral(n) -> m = n
+
+func segment(n: Nat): Set
+axiom segmentMember: forall n: Nat; forall x: Element;
+  member(x, segment(n)) iff (exists k: Nat; less_than(k, n) and x = numeral(k))
+
+// `a` HAS SIZE n when it is equinumerous with {0, …, n-1}.
+define hasSize(a, n) = equinumerous(a, segment(n))
+
+// `a` is FINITE when it has some size.
+define isFinite(a) = exists n: Nat; hasSize(a, n)
+
+// -- the first facts --------------------------------------------------------
+
+// No natural is below ZERO, so no witness for the segment-ZERO membership body exists.
+theorem noElementBelowZero: forall x: Element; not (exists k: Nat; less_than(k, ZERO) and x = numeral(k))
+proof
+  @generalize-x |
+    fix x: Element {
+      @suppose-a-witness |
+        assume exists k: Nat; less_than(k, ZERO) and x = numeral(k) {
+          @the-witness |
+            exists k: Nat; less_than(k, ZERO) and x = numeral(k)
+            [by hypothesis suppose-a-witness]
+          @with-witness |
+            unpack k: Nat from the-witness {
+              @witness-facts |
+                less_than(k, ZERO) and x = numeral(k)
+                [by hypothesis with-witness]
+              @witness-is-below-zero |
+                less_than(k, ZERO)
+                [by and_elim_left witness-facts]
+              @nothing-is-below-zero |
+                not less_than(k, ZERO)
+                [using specialize notLessThanZero(k)]
+              @conclusion-absurd |
+                succ(ZERO) = ZERO
+                [by absurd witness-is-below-zero nothing-is-below-zero]
+            }
+          @conclusion-contradiction |
+            succ(ZERO) = ZERO
+            [by exists_elim with-witness]
+        }
+      @zero-is-not-a-successor |
+        succ(ZERO) != ZERO
+        [using specialize peano.succNotZero(ZERO)]
+      @conclusion-no-witness |
+        not (exists k: Nat; less_than(k, ZERO) and x = numeral(k))
+        [by not_intro suppose-a-witness conclusion-contradiction zero-is-not-a-successor]
+    }
+  @conclusion |
+    forall x: Element; not (exists k: Nat; less_than(k, ZERO) and x = numeral(k))
+    [by forall_intro generalize-x]
+qed
+
+// The empty segment is empty: nothing is below ZERO.
+theorem segmentZeroIsEmpty: segment(ZERO) = emptyset
+proof
+  @pointwise-forward |
+    fix x: Element {
+      @membership-unfolds |
+        member(x, segment(ZERO)) iff (exists k: Nat; less_than(k, ZERO) and x = numeral(k))
+        [using specialize segmentMember(ZERO, x)]
+      // no witness can exist: any k below ZERO contradicts notLessThanZero.
+      @no-witness |
+        not (exists k: Nat; less_than(k, ZERO) and x = numeral(k))
+        [using specialize noElementBelowZero(x)]
+      @not-in-the-empty-segment |
+        not member(x, segment(ZERO))
+        [using tautology membership-unfolds no-witness]
+      @segment-into-empty |
+        member(x, segment(ZERO)) -> member(x, emptyset)
+        [using tautology not-in-the-empty-segment]
+    }
+  @discharge-forward |
+    forall x: Element; member(x, segment(ZERO)) -> member(x, emptyset)
+    [by forall_intro pointwise-forward]
+  @pointwise-backward |
+    fix x: Element {
+      @not-in-the-empty-set |
+        not member(x, emptyset)
+        [using specialize emptysetMember(x)]
+      @empty-into-segment |
+        member(x, emptyset) -> member(x, segment(ZERO))
+        [using tautology not-in-the-empty-set]
+    }
+  @discharge-backward |
+    forall x: Element; member(x, emptyset) -> member(x, segment(ZERO))
+    [by forall_intro pointwise-backward]
+  @conclusion |
+    segment(ZERO) = emptyset
+    [using specialize extensionality(segment(ZERO), emptyset) discharge-forward discharge-backward]
+qed
+
+// The three identity facts, each pointwise from id(x) = x.
+theorem identityMapsInto: forall a: Set; forall x: Element; member(x, a) -> member(apply(identityFn, x), a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-x |
+        fix x: Element {
+          @given-member |
+            assume member(x, a) {
+              @x-is-a-member |
+                member(x, a)
+                [by hypothesis given-member]
+              @identity-fixes-x |
+                apply(identityFn, x) = x
+                [using specialize identityApply(x)]
+              @conclusion-image-is-a-member |
+                member(apply(identityFn, x), a)
+                [by rewrite identity-fixes-x x-is-a-member]
+            }
+          @conclusion-implication |
+            member(x, a) -> member(apply(identityFn, x), a)
+            [by implies_intro given-member]
+        }
+      @discharge-x |
+        forall x: Element; member(x, a) -> member(apply(identityFn, x), a)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall a: Set; forall x: Element; member(x, a) -> member(apply(identityFn, x), a)
+    [by forall_intro generalize-a]
+qed
+
+theorem identityIsInjectiveOn: forall a: Set; forall x: Element; forall y: Element;
+  member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-x |
+        fix x: Element {
+          @generalize-y |
+            fix y: Element {
+              @given-x-member |
+                assume member(x, a) {
+                  @given-y-member |
+                    assume member(y, a) {
+                      @given-images-equal |
+                        assume apply(identityFn, x) = apply(identityFn, y) {
+                          @images-equal |
+                            apply(identityFn, x) = apply(identityFn, y)
+                            [by hypothesis given-images-equal]
+                          @identity-fixes-x |
+                            apply(identityFn, x) = x
+                            [using specialize identityApply(x)]
+                          @identity-fixes-y |
+                            apply(identityFn, y) = y
+                            [using specialize identityApply(y)]
+                          @x-equals-image-of-y |
+                            x = apply(identityFn, y)
+                            [by rewrite identity-fixes-x images-equal]
+                          @conclusion-equal |
+                            x = y
+                            [by rewrite identity-fixes-y x-equals-image-of-y]
+                        }
+                      @conclusion-images |
+                        apply(identityFn, x) = apply(identityFn, y) -> x = y
+                        [by implies_intro given-images-equal]
+                    }
+                  @conclusion-y |
+                    member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+                    [by implies_intro given-y-member]
+                }
+              @conclusion-x |
+                member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+                [by implies_intro given-x-member]
+            }
+          @discharge-y |
+            forall y: Element; member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+            [by forall_intro generalize-y]
+        }
+      @discharge-x |
+        forall x: Element; forall y: Element; member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall a: Set; forall x: Element; forall y: Element;
+      member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+    [by forall_intro generalize-a]
+qed
+
+theorem identityCovers: forall a: Set; forall y: Element;
+  member(y, a) -> exists x: Element; member(x, a) and apply(identityFn, x) = y
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-y |
+        fix y: Element {
+          @given-y-member |
+            assume member(y, a) {
+              @y-is-a-member |
+                member(y, a)
+                [by hypothesis given-y-member]
+              @identity-fixes-y |
+                apply(identityFn, y) = y
+                [using specialize identityApply(y)]
+              @y-witnesses-itself |
+                member(y, a) and apply(identityFn, y) = y
+                [by and_intro y-is-a-member identity-fixes-y]
+              @conclusion-witness |
+                exists x: Element; member(x, a) and apply(identityFn, x) = y
+                [by exists_intro(y) y-witnesses-itself]
+            }
+          @conclusion-implication |
+            member(y, a) -> exists x: Element; member(x, a) and apply(identityFn, x) = y
+            [by implies_intro given-y-member]
+        }
+      @discharge-y |
+        forall y: Element; member(y, a) -> exists x: Element; member(x, a) and apply(identityFn, x) = y
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall a: Set; forall y: Element; member(y, a) -> exists x: Element; member(x, a) and apply(identityFn, x) = y
+    [by forall_intro generalize-a]
+qed
+
+// EVERY set is equinumerous with itself — the identity map bijects it onto itself.
+// (Reflexivity: the first of the three properties that make equinumerosity an
+// equivalence, and the one the empty-set size below needs.)
+theorem equinumerousReflexive: forall a: Set; equinumerous(a, a)
+proof
+  @generalize-a |
+    fix a: Set {
+      // each of the three, pointwise: id(x) = x turns every obligation into a triviality.
+      @identity-maps-into |
+        forall x: Element; member(x, a) -> member(apply(identityFn, x), a)
+        [using specialize identityMapsInto(a)]
+      @identity-is-injective-on-a |
+        forall x: Element; forall y: Element;
+          member(x, a) -> member(y, a) -> apply(identityFn, x) = apply(identityFn, y) -> x = y
+        [using specialize identityIsInjectiveOn(a)]
+      @identity-covers |
+        forall y: Element; member(y, a) -> exists x: Element; member(x, a) and apply(identityFn, x) = y
+        [using specialize identityCovers(a)]
+      @into-and-injective |
+        mapsInto(identityFn, a, a) and injectiveOn(identityFn, a)
+        [by and_intro identity-maps-into identity-is-injective-on-a]
+      @identity-bijects |
+        mapsInto(identityFn, a, a) and injectiveOn(identityFn, a) and coversFrom(identityFn, a, a)
+        [by and_intro into-and-injective identity-covers]
+      @conclusion-witness |
+        exists f: Fn; bijectsOnto(f, a, a)
+        [by exists_intro(identityFn) identity-bijects]
+    }
+  @conclusion |
+    forall a: Set; equinumerous(a, a)
+    [by forall_intro generalize-a]
+qed
+
+// The empty set has size ZERO.
+theorem emptysetHasSizeZero: hasSize(emptyset, ZERO)
+proof
+  @empty-segment |
+    segment(ZERO) = emptyset
+    [by cite segmentZeroIsEmpty]
+  @empty-is-equinumerous-with-itself |
+    equinumerous(emptyset, emptyset)
+    [using specialize equinumerousReflexive(emptyset)]
+  @conclusion |
+    hasSize(emptyset, ZERO)
+    [by rewrite empty-segment empty-is-equinumerous-with-itself]
+qed
+
+// A set of size ZERO is empty. (With `emptysetHasSizeZero` this pins size ZERO exactly:
+// the empty set is the ONLY set of size zero — the base case of size uniqueness.)
+theorem sizeZeroIsEmpty: forall a: Set; hasSize(a, ZERO) -> a = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @given-size-zero |
+        assume hasSize(a, ZERO) {
+          @the-bijection-exists |
+            exists f: Fn; bijectsOnto(f, a, segment(ZERO))
+            [by hypothesis given-size-zero]
+          @with-bijection |
+            unpack f: Fn from the-bijection-exists {
+              @bijection-facts |
+                mapsInto(f, a, segment(ZERO)) and injectiveOn(f, a) and coversFrom(f, a, segment(ZERO))
+                [by hypothesis with-bijection]
+              @into-and-injective |
+                mapsInto(f, a, segment(ZERO)) and injectiveOn(f, a)
+                [by and_elim_left bijection-facts]
+              @f-maps-into-the-empty-segment |
+                forall x: Element; member(x, a) -> member(apply(f, x), segment(ZERO))
+                [by and_elim_left into-and-injective]
+              // every member of `a` would land in the EMPTY segment — so `a` has none.
+              @pointwise-empty |
+                fix x: Element {
+                  @image-lands-in-the-segment |
+                    member(x, a) -> member(apply(f, x), segment(ZERO))
+                    [using specialize f-maps-into-the-empty-segment(x)]
+                  @the-segment-is-empty |
+                    segment(ZERO) = emptyset
+                    [by cite segmentZeroIsEmpty]
+                  @image-lands-in-the-empty-set |
+                    member(x, a) -> member(apply(f, x), emptyset)
+                    [by rewrite the-segment-is-empty image-lands-in-the-segment]
+                  @nothing-is-in-the-empty-set |
+                    not member(apply(f, x), emptyset)
+                    [using specialize emptysetMember(apply(f, x))]
+                  @x-is-not-a-member |
+                    member(x, a) -> member(x, emptyset)
+                    [using tautology image-lands-in-the-empty-set nothing-is-in-the-empty-set]
+                }
+              @a-is-included-in-empty |
+                forall x: Element; member(x, a) -> member(x, emptyset)
+                [by forall_intro pointwise-empty]
+              @pointwise-backward |
+                fix x: Element {
+                  @not-in-the-empty-set |
+                    not member(x, emptyset)
+                    [using specialize emptysetMember(x)]
+                  @empty-into-a |
+                    member(x, emptyset) -> member(x, a)
+                    [using tautology not-in-the-empty-set]
+                }
+              @empty-is-included-in-a |
+                forall x: Element; member(x, emptyset) -> member(x, a)
+                [by forall_intro pointwise-backward]
+              @conclusion-equal |
+                a = emptyset
+                [using specialize extensionality(a, emptyset) a-is-included-in-empty empty-is-included-in-a]
+            }
+          @conclusion-unpacked |
+            a = emptyset
+            [by exists_elim with-bijection]
+        }
+      @conclusion-implication |
+        hasSize(a, ZERO) -> a = emptyset
+        [by implies_intro given-size-zero]
+    }
+  @conclusion |
+    forall a: Set; hasSize(a, ZERO) -> a = emptyset
+    [by forall_intro generalize-a]
+qed
+
+// The numerals below n are exactly the members of segment(n) — the bridge between the
+// Nat-side bound and the Element-side membership, and the one place `numeralInjective`
+// earns its keep (it is what makes `numeral(k) = numeral(j)` recover `k = j`).
+theorem numeralInSegment: forall n: Nat; forall k: Nat;
+  member(numeral(k), segment(n)) iff less_than(k, n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @membership-unfolds |
+            member(numeral(k), segment(n)) iff (exists j: Nat; less_than(j, n) and numeral(k) = numeral(j))
+            [using specialize segmentMember(n, numeral(k))]
+          // forward: a witness j has numeral(k) = numeral(j), so k = j by injectivity.
+          @given-member |
+            assume member(numeral(k), segment(n)) {
+              @is-a-member |
+                member(numeral(k), segment(n))
+                [by hypothesis given-member]
+              @the-witness |
+                exists j: Nat; less_than(j, n) and numeral(k) = numeral(j)
+                [using tautology membership-unfolds is-a-member]
+              @with-witness |
+                unpack j: Nat from the-witness {
+                  @witness-facts |
+                    less_than(j, n) and numeral(k) = numeral(j)
+                    [by hypothesis with-witness]
+                  @witness-below-n |
+                    less_than(j, n)
+                    [by and_elim_left witness-facts]
+                  @numerals-agree |
+                    numeral(k) = numeral(j)
+                    [by and_elim_right witness-facts]
+                  @k-is-j |
+                    k = j
+                    [using specialize numeralInjective(k, j) numerals-agree]
+                  @conclusion-below |
+                    less_than(k, n)
+                    [by rewrite k-is-j witness-below-n]
+                }
+              @conclusion-forward |
+                less_than(k, n)
+                [by exists_elim with-witness]
+            }
+          @member-implies-below |
+            member(numeral(k), segment(n)) -> less_than(k, n)
+            [by implies_intro given-member]
+          // backward: k itself is the witness.
+          @given-below |
+            assume less_than(k, n) {
+              @k-below-n |
+                less_than(k, n)
+                [by hypothesis given-below]
+              @numeral-is-itself |
+                numeral(k) = numeral(k)
+                [by reflexivity]
+              @k-witnesses |
+                less_than(k, n) and numeral(k) = numeral(k)
+                [by and_intro k-below-n numeral-is-itself]
+              @the-witness-exists |
+                exists j: Nat; less_than(j, n) and numeral(k) = numeral(j)
+                [by exists_intro(k) k-witnesses]
+              @conclusion-member |
+                member(numeral(k), segment(n))
+                [using tautology membership-unfolds the-witness-exists]
+            }
+          @below-implies-member |
+            less_than(k, n) -> member(numeral(k), segment(n))
+            [by implies_intro given-below]
+          @conclusion-iff |
+            member(numeral(k), segment(n)) iff less_than(k, n)
+            [by iff_intro member-implies-below below-implies-member]
+        }
+      @discharge-k |
+        forall k: Nat; member(numeral(k), segment(n)) iff less_than(k, n)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall n: Nat; forall k: Nat; member(numeral(k), segment(n)) iff less_than(k, n)
+    [by forall_intro generalize-n]
+qed

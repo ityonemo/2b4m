@@ -232,6 +232,10 @@ pub fn addTests(
     // by the extensionality→unfold→tautology recipe. Available for a structure to
     // `model` and inherit. The AATA transcription (aata/1.2.1-sets.md) aliases these.
     ctx.okSilent(&.{ "check", "std/set.bpa" });
+    // EQUINUMEROSITY + finite cardinality (std/set/finite.bpa): size by BIJECTION, not by
+    // an inductive count — so the vocabulary also covers infinite sets. The empty set has
+    // size ZERO and is the ONLY set of that size (the base case of size uniqueness).
+    ctx.okSilent(&.{ "check", "std/set/finite.bpa" });
 
     // collections (std/collection.bpa): sets of sets, one level up. A Collection MODELS
     // std/set.bpa with set.Element -> Set, set.Set -> Collection, so the whole set
