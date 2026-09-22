@@ -130,6 +130,10 @@ pub fn addTests(
     // inverse law invOfProduct: inv(g0·…·g_{n-1}) = g_{n-1}⁻¹·…·g0⁻¹ (Judson §3.2
     // Ex 27) by induction, step = binary invProduct. Never cites opCommutative.
     ctx.okSilent(&.{ "check", "std/group/sequence.bpa" });
+    // ...and its five sequence-BUILDING postulates, each unpacked once (an existential whose
+    // witness is never unpacked is one whose shape has never been checked). These also carry
+    // the GroupSeq model's obligations for std/sequence.bpa's same-named axioms.
+    ctx.okSilent(&.{ "check", "std/group/sequence-examples.bpa" });
 
     // finite integer sums (std/integer-sum.bpa): the SECOND fold over sequence.bpa
     // (combine:add, IDENTITY:ZERO) → sumUpTo(s, n) = Σ_{i<n} at(s,i). Identity-style
