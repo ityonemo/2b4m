@@ -31,6 +31,8 @@ axiom extensionality = set.extensionality
 
 sort Fn = function.Fn
 func apply = function.apply
+func compose = function.compose
+axiom composeApply = function.composeApply
 const identityFn = function.identityFn
 axiom identityApply = function.identityApply
 
@@ -491,4 +493,447 @@ proof
   @conclusion |
     forall n: Nat; forall k: Nat; member(numeral(k), segment(n)) iff less_than(k, n)
     [by forall_intro generalize-n]
+qed
+
+// -- equinumerosity is an EQUIVALENCE ----------------------------------------
+//
+// Reflexivity is above (`equinumerousReflexive`). TRANSITIVITY composes the two
+// bijections; SYMMETRY needs an inverse map and is harder — see below.
+
+// The composite of a bijection a -> b with one b -> c bijects a -> c. Each of the three
+// conditions transfers: into by chaining, injective by peeling the outer map's injectivity
+// then the inner's, covering by pulling a c-element back through g and then through f.
+// INTO: x in a sends through f into b, then through g into c.
+theorem composeMapsInto: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
+  mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @generalize-c |
+                    fix c: Set {
+                      @given-f-into |
+                        assume mapsInto(f, a, b) {
+                          @given-g-into |
+                            assume mapsInto(g, b, c) {
+                              @f-into |
+                                forall x: Element; member(x, a) -> member(apply(f, x), b)
+                                [by hypothesis given-f-into]
+                              @g-into |
+                                forall x: Element; member(x, b) -> member(apply(g, x), c)
+                                [by hypothesis given-g-into]
+                              @pointwise |
+                                fix x: Element {
+                                  @given-x-in-a |
+                                    assume member(x, a) {
+                                      @x-in-a |
+                                        member(x, a)
+                                        [by hypothesis given-x-in-a]
+                                      @fx-in-b |
+                                        member(apply(f, x), b)
+                                        [using specialize f-into(x) x-in-a]
+                                      @gfx-in-c |
+                                        member(apply(g, apply(f, x)), c)
+                                        [using specialize g-into(apply(f, x)) fx-in-b]
+                                      @composite-applies |
+                                        apply(compose(g, f), x) = apply(g, apply(f, x))
+                                        [using specialize composeApply(g, f, x)]
+                                      @conclusion-x |
+                                        member(apply(compose(g, f), x), c)
+                                        [by rewrite composite-applies gfx-in-c]
+                                    }
+                                  @conclusion-implication |
+                                    member(x, a) -> member(apply(compose(g, f), x), c)
+                                    [by implies_intro given-x-in-a]
+                                }
+                              @conclusion-into |
+                                forall x: Element; member(x, a) -> member(apply(compose(g, f), x), c)
+                                [by forall_intro pointwise]
+                            }
+                          @conclusion-g |
+                            mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+                            [by implies_intro given-g-into]
+                        }
+                      @conclusion-f |
+                        mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+                        [by implies_intro given-f-into]
+                    }
+                  @discharge-c |
+                    forall c: Set; mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+                    [by forall_intro generalize-c]
+                }
+              @discharge-b |
+                forall b: Set; forall c: Set; mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set; forall c: Set; mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+            [by forall_intro generalize-a]
+        }
+      @discharge-g |
+        forall g: Fn; forall a: Set; forall b: Set; forall c: Set; mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
+      mapsInto(f, a, b) -> mapsInto(g, b, c) -> mapsInto(compose(g, f), a, c)
+    [by forall_intro generalize-f]
+qed
+
+// INJECTIVE ON: if (g∘f)(x) = (g∘f)(y) for x, y in a, then g's injectivity on b (where f
+// lands them) gives f(x) = f(y), and f's injectivity on a gives x = y.
+theorem composeIsInjectiveOn: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set;
+  mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @given-into |
+                    assume mapsInto(f, a, b) {
+                      @given-f-injective |
+                        assume injectiveOn(f, a) {
+                          @given-g-injective |
+                            assume injectiveOn(g, b) {
+                              @f-into |
+                                forall x: Element; member(x, a) -> member(apply(f, x), b)
+                                [by hypothesis given-into]
+                              @f-injective |
+                                forall x: Element; forall y: Element;
+                                  member(x, a) -> member(y, a) -> apply(f, x) = apply(f, y) -> x = y
+                                [by hypothesis given-f-injective]
+                              @g-injective |
+                                forall x: Element; forall y: Element;
+                                  member(x, b) -> member(y, b) -> apply(g, x) = apply(g, y) -> x = y
+                                [by hypothesis given-g-injective]
+                              @pointwise |
+                                fix x: Element {
+                                  @inner |
+                                    fix y: Element {
+                                      @given-x |
+                                        assume member(x, a) {
+                                          @given-y |
+                                            assume member(y, a) {
+                                              @given-images |
+                                                assume apply(compose(g, f), x) = apply(compose(g, f), y) {
+                                                  @x-in-a |
+                                                    member(x, a)
+                                                    [by hypothesis given-x]
+                                                  @y-in-a |
+                                                    member(y, a)
+                                                    [by hypothesis given-y]
+                                                  @images-equal |
+                                                    apply(compose(g, f), x) = apply(compose(g, f), y)
+                                                    [by hypothesis given-images]
+                                                  @unfold-x |
+                                                    apply(compose(g, f), x) = apply(g, apply(f, x))
+                                                    [using specialize composeApply(g, f, x)]
+                                                  @unfold-y |
+                                                    apply(compose(g, f), y) = apply(g, apply(f, y))
+                                                    [using specialize composeApply(g, f, y)]
+                                                  // g(f(x)) = (g∘f)(x) = (g∘f)(y) = g(f(y))
+                                                  @unfold-x-flipped |
+                                                    apply(g, apply(f, x)) = apply(compose(g, f), x)
+                                                    [by symmetry unfold-x]
+                                                  @through-the-composite |
+                                                    apply(g, apply(f, x)) = apply(compose(g, f), y)
+                                                    [using chain unfold-x-flipped images-equal]
+                                                  @g-images-equal |
+                                                    apply(g, apply(f, x)) = apply(g, apply(f, y))
+                                                    [using chain through-the-composite unfold-y]
+                                                  @fx-in-b |
+                                                    member(apply(f, x), b)
+                                                    [using specialize f-into(x) x-in-a]
+                                                  @fy-in-b |
+                                                    member(apply(f, y), b)
+                                                    [using specialize f-into(y) y-in-a]
+                                                  @f-images-equal |
+                                                    apply(f, x) = apply(f, y)
+                                                    [using specialize g-injective(apply(f, x), apply(f, y)) fx-in-b fy-in-b g-images-equal]
+                                                  @conclusion-equal |
+                                                    x = y
+                                                    [using specialize f-injective(x, y) x-in-a y-in-a f-images-equal]
+                                                }
+                                              @conclusion-images |
+                                                apply(compose(g, f), x) = apply(compose(g, f), y) -> x = y
+                                                [by implies_intro given-images]
+                                            }
+                                          @conclusion-y |
+                                            member(y, a) -> apply(compose(g, f), x) = apply(compose(g, f), y) -> x = y
+                                            [by implies_intro given-y]
+                                        }
+                                      @conclusion-x |
+                                        member(x, a) -> member(y, a) -> apply(compose(g, f), x) = apply(compose(g, f), y) -> x = y
+                                        [by implies_intro given-x]
+                                    }
+                                  @discharge-y |
+                                    forall y: Element; member(x, a) -> member(y, a) -> apply(compose(g, f), x) = apply(compose(g, f), y) -> x = y
+                                    [by forall_intro inner]
+                                }
+                              @conclusion-injective |
+                                forall x: Element; forall y: Element;
+                                  member(x, a) -> member(y, a) -> apply(compose(g, f), x) = apply(compose(g, f), y) -> x = y
+                                [by forall_intro pointwise]
+                            }
+                          @conclusion-g |
+                            injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+                            [by implies_intro given-g-injective]
+                        }
+                      @conclusion-f |
+                        injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+                        [by implies_intro given-f-injective]
+                    }
+                  @conclusion-into |
+                    mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+                    [by implies_intro given-into]
+                }
+              @discharge-b |
+                forall b: Set; mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set; mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-g |
+        forall g: Fn; forall a: Set; forall b: Set; mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall a: Set; forall b: Set;
+      mapsInto(f, a, b) -> injectiveOn(f, a) -> injectiveOn(g, b) -> injectiveOn(compose(g, f), a)
+    [by forall_intro generalize-f]
+qed
+
+// COVERS: a z in c is g(y) for some y in b, and that y is f(x) for some x in a — so z is
+// (g∘f)(x).
+theorem composeCovers: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
+  coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @generalize-c |
+                    fix c: Set {
+                      @given-f-covers |
+                        assume coversFrom(f, a, b) {
+                          @given-g-covers |
+                            assume coversFrom(g, b, c) {
+                              @f-covers |
+                                forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
+                                [by hypothesis given-f-covers]
+                              @g-covers |
+                                forall y: Element; member(y, c) -> exists x: Element; member(x, b) and apply(g, x) = y
+                                [by hypothesis given-g-covers]
+                              @pointwise |
+                                fix z: Element {
+                                  @given-z-in-c |
+                                    assume member(z, c) {
+                                      @z-in-c |
+                                        member(z, c)
+                                        [by hypothesis given-z-in-c]
+                                      @g-preimage-exists |
+                                        exists y: Element; member(y, b) and apply(g, y) = z
+                                        [using specialize g-covers(z) z-in-c]
+                                      @with-g-preimage |
+                                        unpack y: Element from g-preimage-exists {
+                                          @y-facts |
+                                            member(y, b) and apply(g, y) = z
+                                            [by hypothesis with-g-preimage]
+                                          @y-in-b |
+                                            member(y, b)
+                                            [by and_elim_left y-facts]
+                                          @g-of-y |
+                                            apply(g, y) = z
+                                            [by and_elim_right y-facts]
+                                          @f-preimage-exists |
+                                            exists x: Element; member(x, a) and apply(f, x) = y
+                                            [using specialize f-covers(y) y-in-b]
+                                          @with-f-preimage |
+                                            unpack x: Element from f-preimage-exists {
+                                              @x-facts |
+                                                member(x, a) and apply(f, x) = y
+                                                [by hypothesis with-f-preimage]
+                                              @x-in-a |
+                                                member(x, a)
+                                                [by and_elim_left x-facts]
+                                              @f-of-x |
+                                                apply(f, x) = y
+                                                [by and_elim_right x-facts]
+                                              @composite-at-x |
+                                                apply(compose(g, f), x) = apply(g, apply(f, x))
+                                                [using specialize composeApply(g, f, x)]
+                                              @composite-through-y |
+                                                apply(compose(g, f), x) = apply(g, y)
+                                                [by rewrite f-of-x composite-at-x]
+                                              @composite-is-z |
+                                                apply(compose(g, f), x) = z
+                                                [using chain composite-through-y g-of-y]
+                                              @x-witnesses |
+                                                member(x, a) and apply(compose(g, f), x) = z
+                                                [by and_intro x-in-a composite-is-z]
+                                              @conclusion-witness |
+                                                exists x2: Element; member(x2, a) and apply(compose(g, f), x2) = z
+                                                [by exists_intro(x) x-witnesses]
+                                            }
+                                          @conclusion-f-preimage |
+                                            exists x2: Element; member(x2, a) and apply(compose(g, f), x2) = z
+                                            [by exists_elim with-f-preimage]
+                                        }
+                                      @conclusion-g-preimage |
+                                        exists x2: Element; member(x2, a) and apply(compose(g, f), x2) = z
+                                        [by exists_elim with-g-preimage]
+                                    }
+                                  @conclusion-implication |
+                                    member(z, c) -> exists x2: Element; member(x2, a) and apply(compose(g, f), x2) = z
+                                    [by implies_intro given-z-in-c]
+                                }
+                              @conclusion-covers |
+                                forall z: Element; member(z, c) -> exists x2: Element; member(x2, a) and apply(compose(g, f), x2) = z
+                                [by forall_intro pointwise]
+                            }
+                          @conclusion-g |
+                            coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                            [by implies_intro given-g-covers]
+                        }
+                      @conclusion-f |
+                        coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                        [by implies_intro given-f-covers]
+                    }
+                  @discharge-c |
+                    forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                    [by forall_intro generalize-c]
+                }
+              @discharge-b |
+                forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+            [by forall_intro generalize-a]
+        }
+      @discharge-g |
+        forall g: Fn; forall a: Set; forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
+      coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+    [by forall_intro generalize-f]
+qed
+
+// TRANSITIVITY: the composite of the two bijections is one.
+theorem equinumerousTransitive: forall a: Set; forall b: Set; forall c: Set;
+  equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @given-a-b |
+                assume equinumerous(a, b) {
+                  @given-b-c |
+                    assume equinumerous(b, c) {
+                      @f-exists |
+                        exists f: Fn; bijectsOnto(f, a, b)
+                        [by hypothesis given-a-b]
+                      @g-exists |
+                        exists g: Fn; bijectsOnto(g, b, c)
+                        [by hypothesis given-b-c]
+                      @with-f |
+                        unpack f: Fn from f-exists {
+                          @f-bijects |
+                            mapsInto(f, a, b) and injectiveOn(f, a) and coversFrom(f, a, b)
+                            [by hypothesis with-f]
+                          @f-pair |
+                            mapsInto(f, a, b) and injectiveOn(f, a)
+                            [by and_elim_left f-bijects]
+                          @f-into |
+                            mapsInto(f, a, b)
+                            [by and_elim_left f-pair]
+                          @f-injective |
+                            injectiveOn(f, a)
+                            [by and_elim_right f-pair]
+                          @f-covers |
+                            coversFrom(f, a, b)
+                            [by and_elim_right f-bijects]
+                          @with-g |
+                            unpack g: Fn from g-exists {
+                              @g-bijects |
+                                mapsInto(g, b, c) and injectiveOn(g, b) and coversFrom(g, b, c)
+                                [by hypothesis with-g]
+                              @g-pair |
+                                mapsInto(g, b, c) and injectiveOn(g, b)
+                                [by and_elim_left g-bijects]
+                              @g-into |
+                                mapsInto(g, b, c)
+                                [by and_elim_left g-pair]
+                              @g-injective |
+                                injectiveOn(g, b)
+                                [by and_elim_right g-pair]
+                              @g-covers |
+                                coversFrom(g, b, c)
+                                [by and_elim_right g-bijects]
+                              @composite-into |
+                                mapsInto(compose(g, f), a, c)
+                                [using specialize composeMapsInto(f, g, a, b, c) f-into g-into]
+                              @composite-injective |
+                                injectiveOn(compose(g, f), a)
+                                [using specialize composeIsInjectiveOn(f, g, a, b) f-into f-injective g-injective]
+                              @composite-covers |
+                                coversFrom(compose(g, f), a, c)
+                                [using specialize composeCovers(f, g, a, b, c) f-covers g-covers]
+                              @composite-pair |
+                                mapsInto(compose(g, f), a, c) and injectiveOn(compose(g, f), a)
+                                [by and_intro composite-into composite-injective]
+                              @composite-bijects |
+                                mapsInto(compose(g, f), a, c) and injectiveOn(compose(g, f), a) and coversFrom(compose(g, f), a, c)
+                                [by and_intro composite-pair composite-covers]
+                              @conclusion-witness |
+                                exists h: Fn; bijectsOnto(h, a, c)
+                                [by exists_intro(compose(g, f)) composite-bijects]
+                            }
+                          @conclusion-g |
+                            exists h: Fn; bijectsOnto(h, a, c)
+                            [by exists_elim with-g]
+                        }
+                      @conclusion-f |
+                        exists h: Fn; bijectsOnto(h, a, c)
+                        [by exists_elim with-f]
+                    }
+                  @conclusion-b-c |
+                    equinumerous(b, c) -> equinumerous(a, c)
+                    [by implies_intro given-b-c]
+                }
+              @conclusion-a-b |
+                equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+                [by implies_intro given-a-b]
+            }
+          @discharge-c |
+            forall c: Set; equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+    [by forall_intro generalize-a]
 qed
