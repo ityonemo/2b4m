@@ -1,0 +1,115 @@
+# Chapter 5 (Permutation Groups) — pain points & missing machinery
+
+A log kept WHILE transliterating Chapter 5, recording what the bpa language or
+standard library lacked at the moment it blocked a proof. Entries that have since
+been ADDRESSED are removed rather than annotated — what remains is what is still
+missing. Plain markdown without a `.md` extension so the literate checker never
+parses the fenced examples here.
+
+(Ablated 2026-09-24: seven resolved entries. For the record of what they were and
+how they were fixed, see the commits — `1845ce1` import naming, `8fd59d8` the
+model-transfer diagnostic, `fc1bf60`/`c2c8479` the proof tree, `6662d29` the
+parity theory, `36d087a` finite cardinality, `8b40243` definition blocks.)
+
+---
+
+## STILL MISSING — the one real blocker
+
+### FINITENESS — and it is ONE gap, not two
+
+Cycle notation and cardinality look like separate blockers; they are the same
+missing piece, and the distinction matters for what to build.
+
+- **Cycle notation is NOT blocked on sequences.** `std/sequence.bpa`'s `Value` is
+  a bare abstract sort and several theories already model it at different targets,
+  so a finite list of POINTS is available today. What a cycle needs beyond the
+  list is its SUPPORT — {x : σ(x) ≠ x} — to be finite. "Disjoint" quantifies over
+  the support and the decomposition theorem inducts on it.
+- **The finiteness is not a convenience — the theorem is FALSE without it.**
+  "Every permutation is a product of disjoint cycles" fails on an infinite set,
+  where a permutation may move infinitely many points. The obstacle is not that
+  bpa cannot express the theorem; it is that the theorem needs a hypothesis bpa
+  cannot state.
+- **Cardinality** (`|S_n| = n!`, `|A_n| = n!/2`, `|D_n| = 2n`) needs the same
+  thing plus a counting function.
+
+PARTIAL PROGRESS (`36d087a`): `std/set/finite.bpa` now defines EQUINUMEROSITY by
+bijection and finiteness as equinumerosity with an initial segment — the
+vocabulary is there, and it covers infinite sets too. What is still missing is
+size UNIQUENESS (needs pigeonhole), a counting function, and the SUPPORT of a
+permutation as a finite set.
+
+Blocks, in chapter 5 alone: the two cycle-structure results, the transposition
+decomposition, `|S_n| = n!`, `|A_n| = n!/2`, `|D_n| = 2n`, and the whole
+cube-motions section. Also the standing "finite sets + cardinality" cluster
+across chapters 3 and 4 (`aata/EXERCISES-DEFERRED`). Highest-leverage addition to
+the standard library.
+
+### Well-founded / lexicographic induction
+
+Judson's parity LEMMA ("the identity is a product of an even number of
+transpositions") is a terminating-rewrite argument on a lexicographic measure —
+product length, then the position of a symbol's last occurrence — and bpa has
+ℕ-induction only. Its four rewrite identities are also statements about CYCLE
+NOTATION, so this is blocked twice over.
+
+The lemma is therefore ASSUMED in `aata/5.1-permutation-groups.md`, exactly as
+Judson states it, and disclosed by `--axioms`. Everything downstream of it is
+proved.
+
+---
+
+## Open, smaller
+
+### Clause variables in a definition block take the FIRST PARAM'S SORT
+
+Found while surveying the corpus for definition migrations (`7dff5a4`). A free
+variable a definition's declaration does not bind takes the sort of the first
+param. Right by luck for recursive clauses (`k` in `add(succ(k), b)` is a `Nat`
+like `a`), wrong for the membership style:
+
+    func union(a: Set, b: Set) => Set:
+      member(x, union(a, b)) iff (member(x, a) or member(x, b))
+    -- error: expected sort 'Set', got 'Element'   (at `x`)
+
+The fix is to take the sort from USE (`member`'s first argument pins
+`x : Element`), which subsumes the first-param heuristic. Blocks TIER 2 of
+DEFINITION-MIGRATION-CANDIDATES.
+
+### `std/peano.bpa` forwards parity THEOREMS but not `TWO`
+
+The four parity theorems are forwarded; `TWO`, which every one of them is stated
+in terms of, is a `define` private to `std/peano/parity.bpa`. A consumer can CITE
+them from the parent but cannot WRITE their statements. Mechanically checkable:
+for each forwarded theorem, every non-local symbol in its statement should also be
+forwarded. (Import `std/peano/parity.bpa` directly meanwhile.)
+
+---
+
+## From §5.2 (dihedral groups, 2026-09-24)
+
+Nothing NEW is missing — §5.2 is blocked by the same finiteness gap as §5.1, and
+the presentation half went through cleanly. Two notes worth keeping:
+
+- **`rewrite` needs a TARGET STEP, not a bare formula.** Repeatedly I wrote
+  `[by rewrite <equation> <something-that-was-not-a-step>]` and got "unknown
+  reference". The fix each time was to introduce the target as its own step —
+  often a trivial `[by reflexivity]` — and rewrite INTO that. Worth knowing
+  before writing an equational chain.
+- **`opAssoc` is stated `op(op(a,b),c) = op(a,op(b,c))`** — left-nested on the
+  LEFT. Half my uses wanted the mirror and needed an explicit `[by symmetry …]`.
+  Not a gap, just a direction to check before citing.
+
+## Process notes worth keeping
+
+- `bpa check tests/cases` (the whole fixture directory as one sweep) is a runaway
+  — pathological fixtures, 6.8 GB RSS, >8 min. Use test_sweeps' curated dirs.
+- Outside the repo, `zig` on PATH is asdf 0.15.2; scratch probes need
+  `/home/ityonemo/.asdf/installs/zig/0.16.0/zig`.
+- `tautology` is PROPOSITIONAL only — it treats a quantified statement as an
+  opaque atom. A goal needing reasoning INSIDE a quantifier wants an explicit
+  `fix` + `specialize`, not a tactic. Cost me two wrong turns in the parity work;
+  the countermodel it prints is what makes this obvious.
+- A test-harness failure message ECHOES the expected output. Twice I read those
+  echoed lines as program output and went hunting for a nondeterminism bug that
+  did not exist. Read what the gate ASSERTS before believing a diff.
