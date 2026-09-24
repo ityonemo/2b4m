@@ -299,7 +299,11 @@ pub const Parser = struct {
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
                 const params = try self.parseParams();
-                _ = try self.expect(.colon);
+                // `=> Result`, not `: Result` — the colon is reserved for a DEFINITION
+                // block (`func f(a: T) => U:` followed by its defining clauses). `=>` is
+                // already the lambda arrow (`fun k: Nat => body`), so it reads the same way:
+                // takes these, gives that.
+                _ = try self.expect(.fat_arrow);
                 const result = try self.expect(.identifier);
                 var requires: ?*const ast.Expr = null;
                 if (self.tok.tag == .keyword_requires) {
@@ -1054,7 +1058,7 @@ test "declarations parse" {
     const source =
         \\sort Nat
         \\const ZERO: Nat
-        \\func div(a: Nat, b: Nat): Nat requires b != ZERO
+        \\func div(a: Nat, b: Nat) => Nat requires b != ZERO
         \\pred even(n: Nat)
         \\axiom reflAx: forall x: Nat; x = x
         \\axiom induction(prop: Nat -> Prop):

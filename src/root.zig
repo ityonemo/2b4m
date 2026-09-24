@@ -693,7 +693,7 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         .{ .path = "/lib/theory.bpa", .source =
         \\sort Elem
         \\const UNIT: Elem
-        \\func op(a: Elem, b: Elem): Elem
+        \\func op(a: Elem, b: Elem) => Elem
         \\axiom opUnitLeft: forall a: Elem; op(UNIT, a) = a
         \\theorem opUnitTwice: forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
         \\proof
@@ -716,7 +716,7 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\import theory <<< "theory.bpa"
         \\sort Thing
         \\const ZED: Thing
-        \\func combine(a: Thing, b: Thing): Thing
+        \\func combine(a: Thing, b: Thing) => Thing
         \\axiom combineZedLeft: forall a: Thing; combine(ZED, a) = a
         \\model ThingModel {
         \\  theory.Elem: Thing

@@ -371,11 +371,11 @@ test "declarations lex to expected tags" {
     try expectTags("sort nat", &.{ .keyword_sort, .identifier });
     try expectTags("const zero: nat", &.{ .keyword_const, .identifier, .colon, .identifier });
     try expectTags(
-        "func div(a: nat, b: nat): nat requires b != zero",
+        "func div(a: nat, b: nat) => nat requires b != zero",
         &.{
             .keyword_func, .identifier, .l_paren,    .identifier,       .colon,
             .identifier,   .comma,      .identifier, .colon,            .identifier,
-            .r_paren,      .colon,      .identifier, .keyword_requires, .identifier,
+            .r_paren,      .fat_arrow,  .identifier, .keyword_requires, .identifier,
             .bang_equal,   .identifier,
         },
     );
