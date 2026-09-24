@@ -67,6 +67,24 @@ define surjectiveOnto(f, a, b) =
 // `Fn` does something everywhere; this pins the codomain).
 define bijectsOnto(f, a, b) = mapsInto(f, a, b) and injectiveOn(f, a) and surjectiveOnto(f, a, b)
 
+// -- the transposition map ---------------------------------------------------
+//
+// `swap(u, v)` exchanges `u` and `v` and fixes everything else — a TRANSPOSITION.
+//
+// It is the one map the counting argument must BUILD. Showing two segments of different
+// length cannot be equinumerous goes by induction: from a bijection
+// `segment(m+1) -> segment(n+1)`, produce one `segment(m) -> segment(n)` by dropping the
+// top element of each. But the bijection may send the source's top into the MIDDLE of the
+// target, so the tops do not line up. Composing with a swap that exchanges wherever the top
+// landed with the actual top fixes that, and then the restriction is a bijection.
+//
+// Note what this route AVOIDS: the map is pinned by EQUATIONS on its values, so nothing
+// here needs an inverse, a definite description, or choice.
+func swap(u: Element, v: Element) => Fn:
+  apply(swap(u, v), x) = v when x = u;
+  apply(swap(u, v), x) = u when x = v;
+  apply(swap(u, v), x) = x when x != u and x != v
+
 // -- equinumerosity ---------------------------------------------------------
 
 // `a` and `b` have the SAME SIZE: some map bijects one onto the other. This is the
@@ -941,4 +959,119 @@ proof
   @conclusion |
     forall a: Set; forall b: Set; forall c: Set; equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
     [by forall_intro generalize-a]
+qed
+
+// `swap`'s three values, as ordinary theorems — each clause with its guard discharged, so
+// downstream proofs cite a plain equation instead of re-deriving the case every time.
+theorem swapAtFirst: forall u: Element; forall v: Element; apply(swap(u, v), u) = v
+proof
+  @clause |
+    forall u: Element; forall v: Element; forall x: Element;
+      x = u -> apply(swap(u, v), x) = v
+    [by definition(0) swap]
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @at-u |
+            u = u -> apply(swap(u, v), u) = v
+            [by forall_elim(u, v, u) clause]
+          @u-is-u |
+            u = u
+            [by reflexivity]
+          @conclusion-uv |
+            apply(swap(u, v), u) = v
+            [by modus_ponens at-u u-is-u]
+        }
+      @discharge-v |
+        forall v: Element; apply(swap(u, v), u) = v
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; apply(swap(u, v), u) = v
+    [by forall_intro generalize-u]
+qed
+
+theorem swapAtSecond: forall u: Element; forall v: Element; apply(swap(u, v), v) = u
+proof
+  @clause |
+    forall u: Element; forall v: Element; forall x: Element;
+      x = v -> apply(swap(u, v), x) = u
+    [by definition(1) swap]
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @at-v |
+            v = v -> apply(swap(u, v), v) = u
+            [by forall_elim(u, v, v) clause]
+          @v-is-v |
+            v = v
+            [by reflexivity]
+          @conclusion-uv |
+            apply(swap(u, v), v) = u
+            [by modus_ponens at-v v-is-v]
+        }
+      @discharge-v |
+        forall v: Element; apply(swap(u, v), v) = u
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; apply(swap(u, v), v) = u
+    [by forall_intro generalize-u]
+qed
+
+theorem swapElsewhere: forall u: Element; forall v: Element; forall x: Element;
+  x != u -> x != v -> apply(swap(u, v), x) = x
+proof
+  @clause |
+    forall u: Element; forall v: Element; forall x: Element;
+      (x != u and x != v) -> apply(swap(u, v), x) = x
+    [by definition(2) swap]
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-x |
+            fix x: Element {
+              @given-not-u |
+                assume x != u {
+                  @given-not-v |
+                    assume x != v {
+                      @not-u |
+                        x != u
+                        [by hypothesis given-not-u]
+                      @not-v |
+                        x != v
+                        [by hypothesis given-not-v]
+                      @neither |
+                        x != u and x != v
+                        [by and_intro not-u not-v]
+                      @at-x |
+                        (x != u and x != v) -> apply(swap(u, v), x) = x
+                        [by forall_elim(u, v, x) clause]
+                      @conclusion-x |
+                        apply(swap(u, v), x) = x
+                        [by modus_ponens at-x neither]
+                    }
+                  @conclusion-not-v |
+                    x != v -> apply(swap(u, v), x) = x
+                    [by implies_intro given-not-v]
+                }
+              @conclusion-not-u |
+                x != u -> x != v -> apply(swap(u, v), x) = x
+                [by implies_intro given-not-u]
+            }
+          @discharge-x |
+            forall x: Element; x != u -> x != v -> apply(swap(u, v), x) = x
+            [by forall_intro generalize-x]
+        }
+      @discharge-v |
+        forall v: Element; forall x: Element; x != u -> x != v -> apply(swap(u, v), x) = x
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall x: Element;
+      x != u -> x != v -> apply(swap(u, v), x) = x
+    [by forall_intro generalize-u]
 qed
