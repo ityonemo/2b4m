@@ -559,6 +559,53 @@ error reads as nonsense ("unused axiom: <mangled name>"). The mangling is what
 makes that cheap — the reporter recognizes a definition-sourced axiom and phrases
 it accordingly, and prints the USER-FACING name.
 
+## FUTURE: a SOUNDNESS CHECK on definitions (user, 2026-09-24 — flagged, NOT to build now)
+
+This is the justification the two forms deserve, and it is better than "one is
+shorter". Make the choice of form carry SEMANTIC weight:
+
+  - **the definitional form gets a soundness check** — the checker verifies the
+    clauses actually define something;
+  - **the manual axiom form gets none** — you are asserting on your own
+    authority, and you can therefore state an UNSOUND pair and have it accepted.
+
+A reader then learns something real from the form: `func add(…) => Nat:` means
+the checker vouched for those clauses; two hand-written axioms mean it did not.
+Today the forms differ only in convenience, which is a weak reason for a language
+to have both.
+
+**What the check would have to mean, at minimum:**
+
+1. **Pairwise consistency.** Two clauses whose guards can both hold must AGREE
+   where they overlap. This is exactly the hazard we identified when settling
+   "all conditions explicit on all clauses" and then deferred:
+
+       gcd(a, b) = a                  when b = ZERO;
+       gcd(a, b) = gcd(b, mod(a, b))            -- unguarded: overlaps at b = ZERO
+                                                -- and contradicts the first
+
+   The current answer is "the author's responsibility, unchecked, exactly as for
+   hand-written axiom pairs". A soundness check is what would change that.
+
+2. **Termination of recursive clauses.** The STRUCTURAL-DECREASE criterion worked
+   out earlier: `add(succ(a), b) = succ(add(a, b))` decreases in its first
+   argument, so the equation is well-founded; `f(n) = f(n)` or
+   `f(n) = succ(f(n))` do not, and the second is outright inconsistent. This is
+   the property that makes an equation a DEFINITION rather than a circular
+   assertion — and note it is a genuine criterion, not a heuristic: it is exactly
+   what makes the recursion well-founded.
+
+Neither is cheap. Consistency needs the guards decidable enough to test for
+overlap; termination is a real analysis. Both are, however, precisely the
+properties that distinguish a definition from an axiom — which is why the
+distinction is worth building rather than left as a style preference.
+
+Open sub-question if this is taken up: is a failed check an ERROR (the definition
+is rejected, and you must use the axiom form to say it anyway), or does it
+DOWNGRADE (accepted, but reported as un-vouched)? The no-warnings philosophy
+argues for the error; the "don't reject much" ruling argues for accepting what
+converts to an axiom easily. They point opposite ways here.
+
 ## Open questions
 
 - **Underdetermined binders.** Binder sorts are inferred lazily from the body,
