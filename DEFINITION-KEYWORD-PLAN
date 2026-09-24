@@ -1,0 +1,587 @@
+# `definition` — design notes
+
+## STATUS: BUILT (2026-09-24, branch `definition-keyword`)
+
+Working end to end — parser, desugaring, citation, and both reports. Commits:
+  128a8dd  func result sort moves to `=>` (327 decls, corpus-wide migration)
+  d135c85  definition blocks: parse, desugar to axioms, `[by definition]` citation
+  (this)   `--axioms` / `--library` report definitions as definitions
+
+Gate: `tests/cases/definition_blocks.bpa` (all three forms + the `--axioms`
+golden). Everything below is the design record that produced it; the OPEN
+QUESTIONS section at the end is what remains.
+
+## SUPERSEDING DESIGN (user, 2026-09-24): the DECLARATION carries its clauses
+
+**There is no `definition of` keyword.** A `pred` or `func` declaration may be
+followed by `:` and its defining clauses. The declaration IS the header.
+
+    pred isEvenPerm(g: Grp):
+      isEvenPerm(g) iff exists s: Seq; exists m: Nat;
+        allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+
+    func sub(a: Int, b: Int) => Int:
+      sub(a, b) = add(a, neg(b))
+
+    func add(a: Nat, b: Nat) => Nat:
+      add(ZERO, b) = b;
+      add(succ(k), b) = succ(add(k, b))
+
+Bare declarations keep their present meaning — `pred member(x: Element, s: Set)`
+and `func union(a: Set, b: Set) => Set` with no colon are opaque, as today.
+
+**Why this beats `definition of`** (user objection that produced it): with a
+separate keyword, the reader tells a predicate from a function by the SHAPE of
+the definition — parens in the header meant predicate, a bare header meant
+function. That is a subtle cue carrying far too much weight, and the two forms
+look similar enough to misread. Here the KIND is the first word on the line, and
+the sorts are declared where sorts are already declared.
+
+**What this design deletes, versus the `definition of` plan below:**
+  - the `definition of` keyword itself (and `of`);
+  - the parens-mean-predicate rule;
+  - binder-sort INFERENCE entirely — sorts come from the declaration, as they
+    always have. No laziness, no "fixed at first demand", and the one remaining
+    open question (bodies that constrain a binder only relatively, e.g.
+    `x = y`) simply VANISHES;
+  - the redundancy of naming the symbol in both a declaration and a definition.
+
+**`func` changes its result-sort syntax to free the colon.** `func f(a: T): U`
+becomes `func f(a: T) => U`, so `:` can open the clause block. `=>` is already the
+LAMBDA arrow (`fun k: Nat => body` in schema instantiations), i.e. it already
+means "takes these, gives that" — consistent, not overloaded. `->` was considered
+and rejected: it is the implication arrow and would read wrongly in a signature.
+
+MIGRATION COST: 93 `func` declarations in `std/` alone, plus aata/ and fixtures —
+mechanical (`): X` -> `) => X`), one-time, and it touches nearly every theory
+file plus any suite goldens that quote a signature.
+
+**THE LONG FORM STAYS LEGAL AND EQUIVALENT — this is only sugar** (user,
+2026-09-24). Writing the declaration and its axiom separately keeps working,
+unchanged, and produces the same kernel content:
+
+    pred isEvenPerm(g: Grp)
+    axiom isEvenPermDef: forall g: Grp;
+      isEvenPerm(g) iff exists s: Seq; …
+
+is equivalent to the sugared
+
+    pred isEvenPerm(g: Grp):
+      isEvenPerm(g) iff exists s: Seq; …
+
+Same declaration, same formula, same obligation on the kernel. This is what the
+14 corpus `iff` sites do today and nothing about them changes — no migration is
+forced, and no existing file becomes wrong.
+
+The one difference is NOMINAL, and worth stating plainly:
+  - long form: the axiom has the AUTHOR's name, cited `[by cite isEvenPermDef]`;
+  - sugared:   the axiom's name is MANGLED, cited `[by definition isEvenPerm]`.
+
+So the equivalence is semantic, not nominal. A consequence to keep in mind: a
+file may BOTH define a symbol with clauses AND separately state an axiom about
+it — different names, both true, no collision. That is correct (an axiom about a
+defined symbol is an ordinary theorem-shaped assumption), but it is the kind of
+thing to notice now rather than discover later.
+
+**What SURVIVES from the design below** (all still applies):
+  - clauses are separated by `;`, each written EXACTLY as the axiom it becomes;
+  - ALL CONDITIONS EXPLICIT ON ALL CLAUSES — axioms have no precedence, so
+    nothing is inherited from clause order; clauses are order-independent;
+  - Erlang-style clause guards, `when` after the head, for when the heads do not
+    themselves distinguish the cases;
+  - NO pattern matching — `add(succ(k), b)` is an ordinary term, exactly as the
+    corpus already writes `addSuccLeft`;
+  - arms are ZERO-INDEXED; `[by definition(N) f]` addresses a function's clause
+    positionally, a predicate cites bare (`[by definition p]`);
+  - the emitted axiom's name is MANGLED deterministically so `--axioms` can
+    disclose a stipulation differently from an assumption, and citation is
+    remangling rather than search;
+  - an UNUSED definition is a `--library` error, reported as a "definition";
+  - NO lint forcing `axiom` into a definition (it cannot work — see below).
+
+---
+
+## (superseded) the `definition of` design
+
+---
+
+# `definition:` — design notes (not yet built)
+
+Syntactic sugar that is a bit more than sugar: it declares a SYMBOL and its
+characterizing axiom in one statement, with binder sorts inferred LAZILY.
+
+## Semantics (user rulings, 2026-09-22)
+
+- **Biconditional, not one-directional.** `definition: p(x) when body` gives the
+  kernel `axiom: forall x; body iff p(x)`. The predicate is a real, nameable,
+  model-mappable symbol AND fully eliminable both ways. (One-directional `=>`
+  was considered and rejected: it leaves the predicate underdetermined — nothing
+  rules out a model satisfying it everywhere.)
+- **Distinct syntax from `define`.** The keyword carries a COLON —
+  `definition:` — because `define` (a macro, no identity, not nameable) and
+  `definition:` (a declaration + axiom) are close enough in spelling to confuse.
+- **Permissive.** "We can generally not reject that much" — if it converts to an
+  axiom easily, accept it. No classification of which symbol is being
+  "introduced".
+- **Binder sorts are INFERRED, LAZILY, and FIXED.** Not inferred at parse time:
+  the body is elaborated at FIRST DEMAND, in the demanding context, exactly as
+  `define` already works (a define never infers a param sort — the caller's
+  already-elaborated argument arrives, and the body's own elaboration types
+  everything). The first demand PINS the signature; later uses check against it.
+  Fixed, not re-derived per use — re-deriving would be polymorphism, a much
+  bigger change in a first-order kernel, and would cost the symbol its identity.
+
+## THE LINT — DROPPED (user, 2026-09-22)
+
+**Decision: do not build a lint that forces `axiom` into `definition:`.** The
+analysis below is kept because it is what led to the decision, and because the
+shape tests remain useful for anyone triaging the feature later.
+
+**Why it cannot work.** The Peano case is not merely hard, it is a matter of
+stance. `addSuccLeft: add(succ(a), b) = succ(add(a, b))` genuinely does two
+things at once: it DEFINES `add` by structural recursion, AND it AXIOMATIZES the
+arithmetic, because `add` is a primitive of Peano with no prior existence. Those
+are the same statement read from two positions, not two textual shapes a checker
+could tell apart. Peano with `add` primitive and these as axioms is standard;
+Peano with `add` defined by recursion over a bare successor is equally standard.
+A lint here asks a question the syntax cannot answer, and it would be wrong on
+precisely the cases users care most about. (User: "it is confusing because it
+really is conceptually more axiomatic on the system.")
+
+**What survives the objection.** The 14 `iff` sites are definitions under ANY
+reading — `invertible(f) iff (exists g; …)` introduces `invertible` and nothing
+else; the symbol has no independent existence to take a stance about. But even
+there, forcing a rewrite is not worth machinery: `definition:` is shorter and
+names the symbol for you, which is incentive enough, and a lint that fires 14
+times once and never again earns nothing. Revisit only with evidence that people
+are writing the long form by ACCIDENT.
+
+**Design consequence that still holds:** `definition:` should still desugar INTO
+an ordinary `axiom` node, because that keeps the feature honest sugar and keeps
+everything downstream (models, citations, `--axioms`) working unchanged. The
+reusable shape predicate is no longer required, since nothing consumes it.
+
+## (retained) the shape analysis that led there
+
+**Goal: detect an `axiom` that should have been a `definition:`, and force the
+rewrite.** We are NOT building this yet, but the implementation must not make it
+expensive later.
+
+**Design constraint that follows:** `definition:` must desugar INTO an ordinary
+`axiom` AST node, and the shape test must live in ONE named, reusable predicate
+(something like `ast.isDefinitional(axiom)`), not inlined in the parser. Then the
+lint is that same predicate run over hand-written axioms. If the desugaring and
+the detector ever drift apart, the lint reports things the sugar cannot express.
+
+**What the corpus says the test must get right** (scan, 2026-09-22, std/ only):
+
+| shape | count | genuinely definitional? |
+|---|---|---|
+| `pred(vars) iff body` | 2 | YES — `invertibleDef`, `isUnitCharacterization` |
+| `pred(…, f(vars)) iff body` | 12 | YES — the whole set/collection membership style |
+| `f(vars) = body` | 63 matched by syntax | only ~6 |
+
+**The bottom row is the trap.** A naive "lhs is a function applied to variables"
+test matches `addIsCommutative`, `mulOneLeft`, `iSquared`, `opCommutative` — 57
+theory AXIOMS that assert a PROPERTY and introduce nothing. Rewriting those as
+definitions would be wrong and the lint would be noise. The genuinely equational
+definitions read as such by name and intent: `subDefinition`, `succDefinition`,
+`prevDefinition`, `conjDef`, `definitionOfSubtraction`, and arguably recursion
+base cases (`foldZero`, `productUpToZero`).
+
+So the syntactic test is NOT sufficient for the equational case.
+
+**CORRECTION (user, 2026-09-22): "a definition does not recurse" is WRONG.** I
+wrote that as a heuristic; it is false, and it would reject the clearest
+definitions in the library. Recursive definitions are the NORMAL case for a
+function on an inductive sort:
+
+    addSuccLeft:  add(succ(a), b) = succ(add(a, b))     // IS the definition of +
+    mulSuccLeft:  mul(succ(a), b) = add(mul(a, b), b)   // IS the definition of *
+    foldSucc:     foldUpTo(s, succ(k)) = combine(foldUpTo(s, k), at(s, k))
+    powerSucc:    power(g, succ(n)) = op(power(g, n), g)
+    subSuccSucc:  sub(succ(a), succ(b)) = sub(a, b)
+
+Every one has the head symbol on both sides.
+
+**The real criterion is STRUCTURAL recursion, not absence of recursion.**
+
+    add(succ(a), b) = succ(add(a, b))   definitional: the recursive call's first
+                                        argument DECREASES (a under succ(a))
+    add(a, b)       = add(b, a)         NOT definitional: the recursive call is on
+                                        the SAME arguments, merely rearranged — a
+                                        property, not a construction
+
+**But the deeper reason `addIsCommutative` is not a missed definition is
+SEMANTIC, not syntactic** (user question, 2026-09-22: "how is add(b,a)=add(a,b)
+an axiom and not a theorem?"). The library already answers this, and the split is
+principled:
+
+    std/peano.bpa      theorem addIsCommutative   -- `add` HAS a definition
+                                                     (addZeroLeft + addSuccLeft),
+                                                     so commutativity is PROVED
+                                                     by induction
+    std/{ring,field,complex,rational,real}.bpa
+                       axiom   addIsCommutative   -- `add` is a PRIMITIVE of an
+                                                     abstract theory; commutativity
+                                                     is part of what it MEANS to be
+                                                     a ring, not a consequence
+
+So in the five theories where it is an axiom, **there is nothing to define** —
+`add` has no meaning beyond the axioms that constrain it. That is the real
+dividing line:
+
+  - a DEFINITION introduces a symbol by giving its meaning in terms of others;
+  - a THEORY AXIOM constrains a primitive that has no meaning beyond its axioms.
+
+`mulOneLeft`, `iSquared`, `opCommutative`, `grpIdentityLeft` are all the second
+kind. The structural-recursion test above is a usable syntactic PROXY for this
+distinction, not the distinction itself — worth remembering when the lint's false
+positives are triaged.
+
+This is the right test on the merits, not just a discriminator: it is exactly the
+condition that makes the equation WELL-FOUNDED rather than circular.
+
+Revised heuristic for the equational case:
+  - lhs is the head symbol applied to arguments that are bare variables or
+    CONSTRUCTOR PATTERNS over bare variables (`succ(a)`, not `ONE`);
+  - every RHS free variable appears among the lhs variables;
+  - every recursive occurrence of the head on the RHS is applied to a
+    STRUCTURALLY SMALLER argument than the corresponding lhs pattern.
+That accepts all five above, and rejects `addIsCommutative` (same arguments),
+`mulOneLeft` (`mul(ONE, a)` — a constant, not a constructor pattern over a
+variable) and `iSquared` (`mul(i, i)` — no variables at all).
+
+**A further consequence: definitions come in FAMILIES.** `addZeroLeft` +
+`addSuccLeft` together define `add` by cases on the constructor; either alone is
+half a definition. A single-axiom `definition:` cannot express a recursive
+function at all. So the syntax likely needs a multi-clause form — one statement
+carrying the base and step cases — or `definition:` is understood to cover only
+the non-recursive shapes, with recursive functions left to hand-written axiom
+pairs. UNRESOLVED; decide before building the equational half.
+
+The `iff` rows are safe under the simple test; start the lint there and treat the
+equational case as opt-in or advisory until the heuristic is validated against
+the 63.
+
+## `--axioms` discloses a definition DIFFERENTLY (user, 2026-09-22)
+
+A definition-sourced axiom is not epistemically the same as a hand-written one,
+and the report should not flatten them. `--axioms` answers "what am I trusting?":
+
+  - `extensionality`, `induction` — genuine ASSUMPTIONS about a structure, which
+    a reader should weigh;
+  - a clause emitted from `definition: sub(a,b) is add(a, neg(b))` — a
+    STIPULATION that introduces a symbol. Doubting it is not really coherent.
+
+Both are axioms to the kernel; only the first is something to weigh. Today's
+report lists them identically (`std/set/finite.bpa --axioms` shows
+`segmentMember` — a pure definition — beside `extensionality` and `induction`).
+
+**Mechanism: MANGLE the emitted axiom's name** (user ruling) rather than keeping a
+side table. The marking then travels with the fact, and every consumer sees it
+without a lookup. Precedent both ways:
+
+  - the HOLE mechanism publishes as an axiom and distinguishes via the
+    `holes_reached` SIDE TABLE — the thing we are avoiding;
+  - accelerant synthetics already mangle: `specialize{<hash>}`, `chain{<hash>}`
+    (`Prove.zig`). `{}` cannot appear in a parsed identifier, so a mangled name
+    can never collide with a user's.
+
+So: emit the axiom under a name the parser could not write, carrying a definition
+marker plus the user-facing name, and have the report strip/flag it — listing
+definitions separately from assumptions, or annotating them in place.
+
+Consequences to keep in mind when building:
+  - the mangled name must still render READABLY wherever an axiom name is shown
+    (`--axioms`, `--library`'s unused report, the `Model@theorem` transfer label);
+  - `--library`'s "unused axiom" check should probably IGNORE definition-sourced
+    axioms, or every unused definition becomes a library error;
+  - a definition must still be CITABLE by its user-facing name, so the mangling
+    is a publication detail, not a renaming of what the author wrote.
+
+## `by definition` — the citation form (user, 2026-09-22)
+
+A definition emits an axiom, so proofs must cite it. The word is `definition`, on
+the **`by` side**: `RuleStr.keyword` partitions the vocabulary by "kernel
+primitive → `by`" vs "engine proof-generation → `using`", and a definition
+citation generates nothing — the kernel re-checks the cited formula against the
+step's claim, exactly as `cite`/`axiom`/`theorem` do.
+
+    @unfold-the-definition |
+      exists s: Seq; exists m: Nat; … iff isEvenPerm(sigma)
+      [by definition isEvenPerm]
+
+**Multi-arm: `by definition(N) <name>`** cites arm N (user ruling). Each arm is
+its own emitted axiom, so each needs its own address, and the parenthesized-argument
+form already exists on rule words (`model(M)`, `arithmetic(module)`).
+
+    definition: add(a, b)
+      <arm 1>  a is ZERO     ->  b
+      <arm 2>  a is succ(k)  ->  succ(add(k, b))
+
+    [by definition(1) add]   // the base clause
+    [by definition(2) add]   // the step clause
+
+**Lookup is REMANGLING, not search** (user): the mangled publication name is a
+deterministic function of (user-facing name, arm), so a citation just remangles
+and looks the fact up directly. No reverse index, no scan, no side table — and
+the mangled name is never something an author types or reads.
+
+Resolved by that: `cite` needs no special case. A definition is published ONLY
+under its mangled name, so a bare `by cite add` simply misses — the author is
+pushed to `by definition` by name resolution, with no extra rule.
+
+RESOLVED — **arms are ZERO-indexed** (corpus survey, 2026-09-22). I had leaned
+1-based on the grounds that an author thinks "first clause, second clause". That
+was wrong: the corpus is uniformly zero-indexed in the PROOF LANGUAGE, and an arm
+index is an index into a list of clauses — the same kind of thing as a sequence
+index, not a prose ordinal.
+
+  zero-indexed (everything in the language):
+    at(s, ZERO)                     the FIRST sequence entry
+    foldUpTo(s, ZERO) = IDENTITY    the empty fold
+    foldUpTo(s, succ(k)) = combine(foldUpTo(s, k), at(s, k))
+                                    works only because index k is the (k+1)-th entry
+    segment(n) = {0, …, n-1}        so hasSize(a, n) counts n elements
+    at(r, i) = at(s, sub(n, succ(i)))   today's seqReverse, zero-indexed
+
+  one-indexed — EXACTLY ONE, and not in the language:
+    diagnostics render `loc.line + 1`, `loc.column + 1` (diagnostics.zig:62), so
+    a user sees `file.bpa:7:17`. Stored zero-indexed; the +1 is a RENDERING
+    decision at the last moment, matching the universal editor convention. It
+    does not generalize — that is a position in a text file for an external
+    convention, not an address into a structure.
+
+  neither: "expects {d} argument(s)" &c. are COUNTS, not ordinals. `--axioms` and
+  the hole report address things by NAME, never by position.
+
+So: `[by definition(0) add]` is the base clause, `[by definition(1) add]` the
+step.
+  - **single-arm form**: bare `by definition add`, or `by definition(1) add`?
+    Bare reads better and is the common case; parens would then mark multi-arm
+    only. Leaning bare-allowed, with `(N)` required once there is more than one
+    arm (an unqualified citation of a multi-arm definition is then an error that
+    names the arms).
+
+Implementation notes:
+  - add `definition` to `InternPool.RuleStr` (reserved, `by` side). NOTE `of()`
+    bounds the reserved range by `.import`, so a new entry goes INSIDE the range
+    or that bound moves;
+  - the mangled name must render READABLY wherever an axiom name is shown
+    (`--axioms`, `--library` unused report, the `Model@theorem` transfer label).
+
+## SYNTAX — settled (user, 2026-09-22)
+
+The keyword is **`definition of`**, and the form SPLITS BY KIND — predicates and
+functions get different shapes, because the two cases genuinely differ.
+
+**Predicates** — parenthesized header carrying the binders, then the body. The
+head is always the same and the connective is always `iff`, so writing either
+would be pure repetition:
+
+    definition of isEvenPerm(g):
+      exists s: Seq; exists m: Nat;
+        allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+
+    -> pred isEvenPerm(g: G)
+     + axiom <mangled>: forall g: G; <body> iff isEvenPerm(g)
+
+**Functions** — bare header naming only the symbol, then one or more ARMS, each
+written EXACTLY as the axiom it becomes. For a recursive function neither the
+head nor the body is constant, and that variation IS the definition:
+
+    definition of sub:
+      sub(a, b) = add(a, neg(b))
+
+    definition of add:
+      add(ZERO, b) = b;
+      add(succ(k), b) = succ(add(k, b))
+
+    -> func add(…): …
+     + axiom <mangled 0>: forall b: Nat; add(ZERO, b) = b
+     + axiom <mangled 1>: forall k, b: Nat; add(succ(k), b) = succ(add(k, b))
+
+A one-arm function is just a function with one arm — NOT a special form. `sub`
+and `add` are written the same way.
+
+**Why the asymmetry is right:** it mirrors a real one. A predicate definition has
+ONE shape with a fixed head; a function definition may have SEVERAL shapes whose
+differing heads are the whole content. Writing `isEvenPerm(g) iff …` would repeat
+what the header already said; writing `add`'s arms is unavoidable.
+
+**Parse-time distinction:** the header's parens. `definition of p(args):` is a
+predicate and takes a body; `definition of f:` is a function and takes arms. No
+lookahead needed.
+
+### Clause GUARDS — Erlang-inspired, `when` after the head (user, 2026-09-22)
+
+A function arm may carry a guard, placed Erlang-style on the CLAUSE (after the
+head) rather than on the symbol:
+
+    definition of div:
+      div(a, b) = …  when b != ZERO
+
+    definition of gcd:
+      gcd(a, b) = a                  when b = ZERO;
+      gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+
+This solves a scoping problem the bare header otherwise has: the guard mentions
+`b`, and clause-placement means `b` is bound by the clause head right there. A
+symbol-level guard (`definition of div requires b != ZERO:`) has no binder list
+to scope against, and adding one to the header would collide with the rule that
+parens mark a PREDICATE.
+
+`requires` already exists for this on `func` declarations (`func div(a: Nat, b:
+Nat): Nat requires b != ZERO`); a definition's guard is the per-clause analogue.
+Predicates need none — a predicate is total on its argument sorts.
+
+**ALL CONDITIONS EXPLICIT ON ALL CLAUSES (user ruling).** Erlang clauses are
+ordered and first-match-wins; axioms have NO precedence. Two unguarded clauses
+that overlap are simply inconsistent — `gcd(a, ZERO) = a` beside an unguarded
+`gcd(a, b) = gcd(b, mod(a, b))` both apply at `b = ZERO` and contradict. So every
+clause states its own condition in full, inheriting nothing from clause order.
+
+Consequences of that:
+  - clauses are SEMANTICALLY order-independent; reordering them changes nothing.
+    `definition(N)` is therefore POSITIONAL ADDRESSING, not precedence.
+  - the alternative — emitting each clause guarded by the negation of the earlier
+    ones — was rejected: it makes the emitted axioms differ from what the author
+    wrote, which breaks the property that an arm IS its axiom.
+  - DISJOINTNESS / EXHAUSTIVENESS stay the author's responsibility, unchecked,
+    exactly as they are today for hand-written axiom pairs. The sugar does not
+    make this worse, but it does make an overlapping clause set easier to write
+    by accident. A future check could verify the guards are pairwise exclusive.
+
+  - PATTERNS vs GUARDS: with all conditions explicit, `gcd(a, ZERO) = a` and
+    `gcd(a, b) = a when b = ZERO` say the same thing. Allow BOTH — `add(succ(k),
+    b)` is far more readable than `add(n, b) when n = succ(k)`, which would also
+    leave `k` unbound. Note that head patterns are a genuinely NEW concept for
+    the language (nothing destructures a term today; proofs case-split with
+    `zeroOrSucc` + `or_elim`), so this is the one part of the feature that is
+    more than sugar.
+
+### Clause GUARDS — Erlang-inspired, `when` after the head (user, 2026-09-22)
+
+A function arm may carry a guard, placed Erlang-style on the CLAUSE (after the
+head) rather than on the symbol:
+
+    definition of gcd:
+      gcd(a, b) = a                  when b = ZERO;
+      gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+
+Clause placement solves a scoping problem the bare header otherwise has: the
+guard mentions `b`, and `b` is bound by the clause head right there. A
+symbol-level guard (`definition of gcd requires …:`) has no binder list to scope
+against, and adding one would collide with the rule that parens mark a PREDICATE.
+`requires` already does this job on `func` declarations; a clause guard is the
+per-clause analogue. Predicates need none (total on their argument sorts).
+
+**ALL CONDITIONS EXPLICIT ON ALL CLAUSES (user ruling).** Erlang clauses are
+ordered and first-match-wins; axioms have NO precedence. Two overlapping
+unguarded clauses are simply inconsistent. So every clause states its condition
+in full and inherits nothing from clause order. Therefore:
+  - clauses are SEMANTICALLY order-independent; `definition(N)` is POSITIONAL
+    ADDRESSING, not precedence;
+  - emitting each clause guarded by the negation of earlier ones was REJECTED —
+    it would make the emitted axiom differ from what the author wrote, breaking
+    the property that an arm IS its axiom;
+  - disjointness/exhaustiveness stay the author's responsibility, unchecked,
+    exactly as for hand-written axiom pairs today.
+
+### NO pattern matching — and none is needed (user, 2026-09-22)
+
+I had flagged "head patterns" as the one part of the feature that is more than
+sugar. **That was a misreading**: I saw Erlang-shaped syntax and assumed Erlang
+semantics. `add(succ(k), b)` is NOT a pattern — it is an ordinary TERM. `k` is a
+normal universally quantified variable and `succ(k)` is a plain application in
+argument position. Nothing destructures.
+
+This is already how the corpus writes these axioms:
+
+    axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
+    axiom foldSucc:    forall s: Seq; forall k: Nat;
+                       foldUpTo(s, succ(k)) = combine(foldUpTo(s, k), at(s, k))
+    axiom powerSucc:   forall g: Grp; forall n: Int; power(g, succ(n)) = op(power(g, n), g)
+
+So an arm is just a plain equation over universally quantified variables, the
+binders come from the variables appearing in it (the same lazy inference already
+settled for predicates), and the feature introduces NO new concept — it is sugar
+end to end.
+
+Consequently the choice is not "patterns vs guards" but simply what the author
+writes, both being legal axiom text already:
+
+    definition of add:            -- distinct heads: disjointness is VISIBLE
+      add(ZERO, b) = b;
+      add(succ(k), b) = succ(add(k, b))
+
+    definition of gcd:            -- same head: a guard states the distinction
+      gcd(a, b) = a                  when b = ZERO;
+      gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+
+**Consequences:**
+  - ARMS ARE ONLY EVER FUNCTIONS, so `definition(N)` indexing applies only to
+    function definitions. A predicate has exactly one body and is cited BARE:
+    `[by definition isEvenPerm]`. That settles the bare-citation question —
+    bare for predicates, `(N)` for functions.
+  - The predicate body's connective is IMPLIED (`iff`; a predicate body is always
+    a proposition). Function arms write `=` themselves, as they must anyway.
+  - Arms are ZERO-INDEXED (see above): `[by definition(0) add]` is the base
+    clause, `[by definition(1) add]` the step.
+  - Keywords needed: `definition` and `of`. `when` is NOT needed and should be
+    un-reserved (it was reserved in 2d81b87 for an earlier design of mine).
+    `of` is free — the only corpus hits are English prose in literate markdown,
+    outside bpa blocks — and `from` sets the precedent for a small word as a
+    keyword (`unpack r: Seq from the-exists`).
+
+## `--library`: an UNUSED DEFINITION IS AN ERROR (user ruling, 2026-09-24)
+
+`--library` fails on an axiom no theorem in the library rests on. A definition
+emits an axiom, so an unused definition fails too — **deliberately, with no
+carve-out.**
+
+I had argued for exempting them, reasoning that an unused ASSUMPTION is
+suspicious (you are asking readers to trust something for no reason) while an
+unused DEFINITION is merely a symbol nobody has used yet. That was weaker than it
+sounded: `--library` is not about trust, it is about a library DEMONSTRATING ITS
+OWN SURFACE — which is why `std/` carries an `examples.bpa` per theory, and why
+the check caught five unused sequence postulates in `std/group/sequence.bpa` on
+2026-09-22 and was right to. A definition is surface. If the library defines a
+symbol and never uses it, either a consumer is expected to (so an example should
+demonstrate it) or it is leftover.
+
+Keeping the rule uniform also beats the special case: every emitted axiom is
+subject to the same check, with nothing to remember.
+
+Implementation note: the REPORT should say "definition", not "axiom", or the
+error reads as nonsense ("unused axiom: <mangled name>"). The mangling is what
+makes that cheap — the reporter recognizes a definition-sourced axiom and phrases
+it accordingly, and prints the USER-FACING name.
+
+## Open questions
+
+- **Underdetermined binders.** Binder sorts are inferred lazily from the body,
+  which usually determines them (in `isEvenPerm(g)`, the body's
+  `productUpTo(s, m) = g` pins `g : Grp` via productUpTo's result sort). But a
+  body can leave one free — the clearest case is equality between two binders and
+  nothing else:
+
+      definition of sameThing(x, y):
+        x = y
+
+  Equality is sort-polymorphic, so the body constrains only that `x` and `y`
+  MATCH; a first-order kernel needs a concrete sort. Options: (a) hard error at
+  first demand, naming the binder; (b) an OPTIONAL annotation as the escape hatch
+  (`definition of sameThing(x: Element, y: Element):`), full inference otherwise;
+  (c) require annotations always, which throws away the inference that motivated
+  the feature. Leaning (b) — it matches how the language already works
+  (declarations carry sorts, expressions are checked), keeping the common case
+  clean and the awkward case expressible rather than blocked.
+
+  Subtlety: because inference is LAZY and the signature is FIXED at first demand,
+  an underdetermined definition is diagnosed only when something first cites it,
+  and the error points at the DEFINITION rather than the citation. That is the
+  right place for it, but it means an UNCITED bad definition is never diagnosed —
+  consistent with how uncited files already behave, and now also covered by the
+  `--library` rule above, which forces every definition in a library to be used.

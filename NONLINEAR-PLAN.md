@@ -106,8 +106,8 @@ Add exact integer division and remainder as **declarations + axioms**, not a
 new solver:
 
 ```
-func div(a: Nat, b: Nat): Nat requires b != ZERO
-func mod(a: Nat, b: Nat): Nat requires b != ZERO
+func div(a: Nat, b: Nat) => Nat requires b != ZERO
+func mod(a: Nat, b: Nat) => Nat requires b != ZERO
 axiom divMod: forall a, b: Nat; b != ZERO ->
   add(mul(b, div(a, b)), mod(a, b)) = a
 axiom modBound: forall a, b: Nat; b != ZERO -> less_than(mod(a, b), b)

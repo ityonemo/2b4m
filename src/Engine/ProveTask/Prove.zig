@@ -8562,6 +8562,30 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
     }
     switch (kind) {
         .instantiation, .model, .import => unreachable, // dispatched above
+        // `[by definition p]` / `[by definition(N) f]` — cite a clause axiom a definition
+        // block emitted. The fact is found by RE-MANGLING (symbol, arm), never by search:
+        // the parser published it under `definition{<name>}{<arm>}`, a spelling no source
+        // identifier can have. `(N)` is zero-indexed and selects a function's clause; a
+        // predicate has one clause and is cited bare (arm 0).
+        .definition => {
+            try self.wantRefs(c, 1);
+            const rtok = c.refs[0];
+            const arm: usize = if (c.schema) |a| blk: {
+                const txt = self.text(a);
+                break :blk std.fmt.parseInt(usize, txt, 10) catch {
+                    return self.fail(a.start, "`[by definition(N) …]` takes a clause NUMBER (zero-indexed); got '{s}'", .{txt});
+                };
+            } else 0;
+            const mangled = std.fmt.allocPrint(self.ctx.arena, "definition{{{s}}}{{{d}}}", .{ self.text(rtok), arm }) catch return error.OutOfMemory;
+            const mangled_id = self.ctx.interner.internString(mangled) catch return error.OutOfMemory;
+            var lookup = rtok;
+            lookup.name = mangled_id;
+            const stmt = self.resolveFactRef(lookup) catch |err| switch (err) {
+                error.Recover => return self.fail(rtok.start, "'{s}' has no definition clause {d} (a definition block publishes one clause per arm, numbered from 0)", .{ self.text(rtok), arm }),
+                else => return err,
+            };
+            return .{ .axiom_ref = .{ .stmt = stmt, .loc = rtok.start } };
+        },
         .axiom, .theorem, .cite => {
             try self.wantRefs(c, 1);
             const stmt = try self.resolveFactRef(c.refs[0]);

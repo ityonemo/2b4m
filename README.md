@@ -81,8 +81,8 @@ A proof is a sequence of labeled steps, each justified by a rule:
 ```
 sort Nat
 const ZERO: Nat
-func succ(n: Nat): Nat
-func add(a: Nat, b: Nat): Nat
+func succ(n: Nat) => Nat
+func add(a: Nat, b: Nat) => Nat
 axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
 axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
 

@@ -64,6 +64,12 @@ pub const Parser = struct {
     /// Interning failure is remembered here (stamping happens inside the
     /// infallible `advance`) and surfaced as OutOfMemory when `parseFile` returns.
     intern_oom: bool = false,
+    /// DESUGARED declarations a `parseDecl` produced BESIDES its return value, drained by
+    /// `parseFile` right after it. A DEFINITION BLOCK (`pred p(x: T): <clauses>`) is one
+    /// source declaration that becomes several AST ones — the `pred`/`func` itself, returned
+    /// normally, plus one `axiom` per clause staged here. Nothing downstream learns that
+    /// definitions exist: they are axioms by the time anyone looks.
+    pending: std.ArrayList(ast.Decl) = .empty,
 
     pub fn init(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink) Parser {
         return initInFile(arena, source, sink, 0);
@@ -237,6 +243,10 @@ pub const Parser = struct {
                 },
             };
             try decls.append(self.arena, decl);
+            // a definition block staged its clause axioms — emit them right after the
+            // declaration they belong to, so source order is preserved.
+            for (self.pending.items) |extra| try decls.append(self.arena, extra);
+            self.pending.clearRetainingCapacity();
         }
         if (self.intern_oom) return error.OutOfMemory;
         return .{ .decls = try decls.toOwnedSlice(self.arena) };
@@ -299,13 +309,19 @@ pub const Parser = struct {
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
                 const params = try self.parseParams();
-                _ = try self.expect(.colon);
+                // `=> Result`, not `: Result` — the colon is reserved for a DEFINITION
+                // block (`func f(a: T) => U:` followed by its defining clauses). `=>` is
+                // already the lambda arrow (`fun k: Nat => body`), so it reads the same way:
+                // takes these, gives that.
+                _ = try self.expect(.fat_arrow);
                 const result = try self.expect(.identifier);
                 var requires: ?*const ast.Expr = null;
                 if (self.tok.tag == .keyword_requires) {
                     _ = self.advance();
                     requires = try self.parseExpr();
                 }
+                // `func f(a: T) => U:` opens a DEFINITION BLOCK (see parseDefinitionClauses).
+                if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
                 return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires } } };
             },
             .keyword_pred => {
@@ -313,6 +329,9 @@ pub const Parser = struct {
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| return .{ .pred = .{ .alias = .{ .name = name, .target = target } } };
                 const params = try self.parseParams();
+                // `pred p(x: T):` opens a DEFINITION BLOCK — the declaration carries the
+                // clauses that characterize it. Bare `pred p(x: T)` stays opaque.
+                if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
                 return .{ .pred = .{ .local = .{ .name = name, .params = params } } };
             },
             .keyword_axiom => {
@@ -465,6 +484,107 @@ pub const Parser = struct {
     }
 
     /// `( ident: sort, ... )` — absent or `()` means ZERO-ary.
+    /// A DEFINITION BLOCK's clauses, staged onto `pending` as synthetic `axiom` decls.
+    /// Called with the `:` still current, after the `pred`/`func` header is parsed.
+    ///
+    ///     pred isEvenPerm(g: Grp):
+    ///       isEvenPerm(g) iff exists s: Seq; …
+    ///
+    ///     func add(a: Nat, b: Nat) => Nat:
+    ///       add(ZERO, b) = b;
+    ///       add(succ(k), b) = succ(add(k, b))
+    ///
+    /// Each clause is written EXACTLY as the axiom it becomes, so the desugaring is a
+    /// wrapping, not a translation: universally quantify over the declaration's params and
+    /// emit. A clause's own free variables beyond the params (`k` in `add(succ(k), b)`) are
+    /// quantified too — collected in first-appearance order so the binder list is a
+    /// function of the text, never of a hash walk.
+    ///
+    /// An optional Erlang-style `when <guard>` makes the clause conditional: the emitted
+    /// formula becomes `guard -> clause`. Guards do NOT establish precedence — every clause
+    /// states its own condition in full, because axioms have no order (see
+    /// DEFINITION-KEYWORD-PLAN).
+    fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!void {
+        _ = try self.expect(.colon);
+        var arm: usize = 0;
+        while (true) {
+            const clause = try self.parseExpr();
+            var formula = clause;
+            if (self.tok.tag == .keyword_when) {
+                const when_tok = self.tok;
+                _ = self.advance();
+                const guard = try self.parseExpr();
+                const node = try self.arena.create(ast.Expr);
+                node.* = .{ .binary = .{ .op = .implies, .tok = when_tok, .lhs = guard, .rhs = clause } };
+                formula = node;
+            }
+            try self.stageDefinitionAxiom(name, params, formula, arm);
+            arm += 1;
+            if (self.tok.tag != .semicolon) break;
+            _ = self.advance();
+        }
+    }
+
+    /// Wrap one clause in `forall` over the declaration's params plus any extra free
+    /// variables it mentions, and stage it as an axiom.
+    fn stageDefinitionAxiom(self: *Parser, name: Token, params: []const ast.Binder, clause: *const ast.Expr, arm: usize) ParseError!void {
+        var binders: std.ArrayList(ast.Binder) = .empty;
+        try binders.appendSlice(self.arena, params);
+        // Extra free variables the CLAUSE mentions beyond the declaration's params (`k` in
+        // `add(s(k), b) = s(add(k, b))`) are quantified too, at the params' sorts. Collected
+        // in FIRST-APPEARANCE order so the binder list is a function of the text, never of a
+        // traversal accident. A clause naming a variable at no known sort is diagnosed
+        // downstream as an unresolved reference, which is the right error and the right place.
+        try self.collectClauseVars(clause, &binders);
+        const formula = if (binders.items.len == 0) clause else blk: {
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .quant = .{ .q = .forall, .tok = name, .binders = try binders.toOwnedSlice(self.arena), .body = clause } };
+            break :blk node;
+        };
+        // The emitted axiom's name is MANGLED — it cannot be the declaration's own, which
+        // already names the pred/func (that collision is what `definition{…}` avoids). The
+        // mangling is DETERMINISTIC in (symbol, arm), so `[by definition(N) f]` finds the
+        // fact by re-mangling rather than searching, and `{}` cannot occur in a parsed
+        // identifier, so a mangled name can never collide with a user's. `--axioms` reads
+        // the marker to disclose a definition differently from a genuine assumption.
+        var mangled = name;
+        if (self.interner) |ip| {
+            const mangled_text = std.fmt.allocPrint(self.arena, "definition{{{s}}}{{{d}}}", .{ self.text(name), arm }) catch return error.OutOfMemory;
+            mangled.name = ip.internString(mangled_text) catch {
+                self.intern_oom = true;
+                return;
+            };
+        }
+        try self.pending.append(self.arena, .{ .axiom = .{ .local = .{ .name = mangled, .formula = formula } } });
+    }
+
+    /// Append every `.name` leaf of `e` that is not already bound (by the declaration's
+    /// params, an inner quantifier, or an earlier find) to `out`, at the sort of the FIRST
+    /// declared param. Lower-case single-token names only: an upper-case or qualified name
+    /// is a global (a const, another symbol), not a clause variable.
+    fn collectClauseVars(self: *Parser, e: *const ast.Expr, out: *std.ArrayList(ast.Binder)) ParseError!void {
+        if (out.items.len == 0) return; // no param sort to give them — nothing to infer from
+        const sort = out.items[0].sort;
+        switch (e.*) {
+            .name => |t| {
+                if (t.qualifier != InternPool.StrId.none) return; // qualified: a global
+                const txt = self.text(t);
+                if (txt.len == 0 or !std.ascii.isLower(txt[0])) return; // ALLCAPS/Camel: a global
+                for (out.items) |b| if (b.name.name == t.name) return; // already bound
+                try out.append(self.arena, .{ .name = t, .sort = sort });
+            },
+            .call => |c| for (c.args) |a| try self.collectClauseVars(a, out),
+            .binary => |b| {
+                try self.collectClauseVars(b.lhs, out);
+                try self.collectClauseVars(b.rhs, out);
+            },
+            .not => |n| try self.collectClauseVars(n.operand, out),
+            // a quantifier binds its own; its body's other frees are still ours to catch.
+            .quant => |q| try self.collectClauseVars(q.body, out),
+            .lambda => |l| try self.collectClauseVars(l.body, out),
+        }
+    }
+
     fn parseParams(self: *Parser) ParseError![]const ast.Binder {
         if (self.tok.tag != .l_paren) return &.{};
         _ = self.advance();
@@ -617,6 +737,14 @@ pub const Parser = struct {
                 // module whose scope their vocabulary + lemmas resolve against
                 // (regardless of local aliases), reusing the `schema` token
                 // slot. Bare (no parens) resolves against local scope.
+                // `definition(N)` selects a definition block's CLAUSE — a numeral, not a
+                // name, so it reuses the `schema` slot with a `.number` token. Bare
+                // `definition p` means clause 0 (a predicate has exactly one).
+                if (std.mem.eql(u8, self.text(rule), "definition") and self.tok.tag == .l_paren) {
+                    _ = self.advance();
+                    schema = try self.expect(.number);
+                    _ = try self.expect(.r_paren);
+                }
                 if (isTheoryRule(self.text(rule)) and self.tok.tag == .l_paren) {
                     _ = self.advance();
                     schema = try self.expect(.identifier);
@@ -1054,7 +1182,7 @@ test "declarations parse" {
     const source =
         \\sort Nat
         \\const ZERO: Nat
-        \\func div(a: Nat, b: Nat): Nat requires b != ZERO
+        \\func div(a: Nat, b: Nat) => Nat requires b != ZERO
         \\pred even(n: Nat)
         \\axiom reflAx: forall x: Nat; x = x
         \\axiom induction(prop: Nat -> Prop):

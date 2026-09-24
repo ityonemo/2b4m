@@ -253,8 +253,8 @@ fn expectFmt(input: []const u8, expected: []const u8) !void {
 
 test "declarations normalize to one per line at column 0" {
     try expectFmt(
-        "sort   Nat\n  const ZERO:Nat\nfunc succ( n:Nat ):Nat\naxiom a:forall b:Nat ;succ(b)!=ZERO\n",
-        "sort Nat\nconst ZERO: Nat\nfunc succ(n: Nat): Nat\naxiom a: forall b: Nat; succ(b) != ZERO\n",
+        "sort   Nat\n  const ZERO:Nat\nfunc succ( n:Nat ) => Nat\naxiom a:forall b:Nat ;succ(b)!=ZERO\n",
+        "sort Nat\nconst ZERO: Nat\nfunc succ(n: Nat) => Nat\naxiom a: forall b: Nat; succ(b) != ZERO\n",
     );
 }
 
