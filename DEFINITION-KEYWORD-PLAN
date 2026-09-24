@@ -428,8 +428,53 @@ writes, both being legal axiom text already:
     outside bpa blocks — and `from` sets the precedent for a small word as a
     keyword (`unpack r: Seq from the-exists`).
 
+## `--library`: an UNUSED DEFINITION IS AN ERROR (user ruling, 2026-09-24)
+
+`--library` fails on an axiom no theorem in the library rests on. A definition
+emits an axiom, so an unused definition fails too — **deliberately, with no
+carve-out.**
+
+I had argued for exempting them, reasoning that an unused ASSUMPTION is
+suspicious (you are asking readers to trust something for no reason) while an
+unused DEFINITION is merely a symbol nobody has used yet. That was weaker than it
+sounded: `--library` is not about trust, it is about a library DEMONSTRATING ITS
+OWN SURFACE — which is why `std/` carries an `examples.bpa` per theory, and why
+the check caught five unused sequence postulates in `std/group/sequence.bpa` on
+2026-09-22 and was right to. A definition is surface. If the library defines a
+symbol and never uses it, either a consumer is expected to (so an example should
+demonstrate it) or it is leftover.
+
+Keeping the rule uniform also beats the special case: every emitted axiom is
+subject to the same check, with nothing to remember.
+
+Implementation note: the REPORT should say "definition", not "axiom", or the
+error reads as nonsense ("unused axiom: <mangled name>"). The mangling is what
+makes that cheap — the reporter recognizes a definition-sourced axiom and phrases
+it accordingly, and prints the USER-FACING name.
+
 ## Open questions
 
-- Whether an underdetermined binder (never constrained by the body) is a hard
-  error at first demand, or takes an optional annotation as an escape hatch.
-- (RESOLVED by the kind split: predicates cite bare, functions cite `(N)`.)
+- **Underdetermined binders.** Binder sorts are inferred lazily from the body,
+  which usually determines them (in `isEvenPerm(g)`, the body's
+  `productUpTo(s, m) = g` pins `g : Grp` via productUpTo's result sort). But a
+  body can leave one free — the clearest case is equality between two binders and
+  nothing else:
+
+      definition of sameThing(x, y):
+        x = y
+
+  Equality is sort-polymorphic, so the body constrains only that `x` and `y`
+  MATCH; a first-order kernel needs a concrete sort. Options: (a) hard error at
+  first demand, naming the binder; (b) an OPTIONAL annotation as the escape hatch
+  (`definition of sameThing(x: Element, y: Element):`), full inference otherwise;
+  (c) require annotations always, which throws away the inference that motivated
+  the feature. Leaning (b) — it matches how the language already works
+  (declarations carry sorts, expressions are checked), keeping the common case
+  clean and the awkward case expressible rather than blocked.
+
+  Subtlety: because inference is LAZY and the signature is FIXED at first demand,
+  an underdetermined definition is diagnosed only when something first cites it,
+  and the error points at the DEFINITION rather than the citation. That is the
+  right place for it, but it means an UNCITED bad definition is never diagnosed —
+  consistent with how uncited files already behave, and now also covered by the
+  `--library` rule above, which forces every definition in a library to be used.
