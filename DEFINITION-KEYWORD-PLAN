@@ -1,3 +1,99 @@
+# `definition` — design notes (not yet built)
+
+## SUPERSEDING DESIGN (user, 2026-09-24): the DECLARATION carries its clauses
+
+**There is no `definition of` keyword.** A `pred` or `func` declaration may be
+followed by `:` and its defining clauses. The declaration IS the header.
+
+    pred isEvenPerm(g: Grp):
+      isEvenPerm(g) iff exists s: Seq; exists m: Nat;
+        allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+
+    func sub(a: Int, b: Int) => Int:
+      sub(a, b) = add(a, neg(b))
+
+    func add(a: Nat, b: Nat) => Nat:
+      add(ZERO, b) = b;
+      add(succ(k), b) = succ(add(k, b))
+
+Bare declarations keep their present meaning — `pred member(x: Element, s: Set)`
+and `func union(a: Set, b: Set) => Set` with no colon are opaque, as today.
+
+**Why this beats `definition of`** (user objection that produced it): with a
+separate keyword, the reader tells a predicate from a function by the SHAPE of
+the definition — parens in the header meant predicate, a bare header meant
+function. That is a subtle cue carrying far too much weight, and the two forms
+look similar enough to misread. Here the KIND is the first word on the line, and
+the sorts are declared where sorts are already declared.
+
+**What this design deletes, versus the `definition of` plan below:**
+  - the `definition of` keyword itself (and `of`);
+  - the parens-mean-predicate rule;
+  - binder-sort INFERENCE entirely — sorts come from the declaration, as they
+    always have. No laziness, no "fixed at first demand", and the one remaining
+    open question (bodies that constrain a binder only relatively, e.g.
+    `x = y`) simply VANISHES;
+  - the redundancy of naming the symbol in both a declaration and a definition.
+
+**`func` changes its result-sort syntax to free the colon.** `func f(a: T): U`
+becomes `func f(a: T) => U`, so `:` can open the clause block. `=>` is already the
+LAMBDA arrow (`fun k: Nat => body` in schema instantiations), i.e. it already
+means "takes these, gives that" — consistent, not overloaded. `->` was considered
+and rejected: it is the implication arrow and would read wrongly in a signature.
+
+MIGRATION COST: 93 `func` declarations in `std/` alone, plus aata/ and fixtures —
+mechanical (`): X` -> `) => X`), one-time, and it touches nearly every theory
+file plus any suite goldens that quote a signature.
+
+**THE LONG FORM STAYS LEGAL AND EQUIVALENT — this is only sugar** (user,
+2026-09-24). Writing the declaration and its axiom separately keeps working,
+unchanged, and produces the same kernel content:
+
+    pred isEvenPerm(g: Grp)
+    axiom isEvenPermDef: forall g: Grp;
+      isEvenPerm(g) iff exists s: Seq; …
+
+is equivalent to the sugared
+
+    pred isEvenPerm(g: Grp):
+      isEvenPerm(g) iff exists s: Seq; …
+
+Same declaration, same formula, same obligation on the kernel. This is what the
+14 corpus `iff` sites do today and nothing about them changes — no migration is
+forced, and no existing file becomes wrong.
+
+The one difference is NOMINAL, and worth stating plainly:
+  - long form: the axiom has the AUTHOR's name, cited `[by cite isEvenPermDef]`;
+  - sugared:   the axiom's name is MANGLED, cited `[by definition isEvenPerm]`.
+
+So the equivalence is semantic, not nominal. A consequence to keep in mind: a
+file may BOTH define a symbol with clauses AND separately state an axiom about
+it — different names, both true, no collision. That is correct (an axiom about a
+defined symbol is an ordinary theorem-shaped assumption), but it is the kind of
+thing to notice now rather than discover later.
+
+**What SURVIVES from the design below** (all still applies):
+  - clauses are separated by `;`, each written EXACTLY as the axiom it becomes;
+  - ALL CONDITIONS EXPLICIT ON ALL CLAUSES — axioms have no precedence, so
+    nothing is inherited from clause order; clauses are order-independent;
+  - Erlang-style clause guards, `when` after the head, for when the heads do not
+    themselves distinguish the cases;
+  - NO pattern matching — `add(succ(k), b)` is an ordinary term, exactly as the
+    corpus already writes `addSuccLeft`;
+  - arms are ZERO-INDEXED; `[by definition(N) f]` addresses a function's clause
+    positionally, a predicate cites bare (`[by definition p]`);
+  - the emitted axiom's name is MANGLED deterministically so `--axioms` can
+    disclose a stipulation differently from an assumption, and citation is
+    remangling rather than search;
+  - an UNUSED definition is a `--library` error, reported as a "definition";
+  - NO lint forcing `axiom` into a definition (it cannot work — see below).
+
+---
+
+## (superseded) the `definition of` design
+
+---
+
 # `definition:` — design notes (not yet built)
 
 Syntactic sugar that is a bit more than sugar: it declares a SYMBOL and its
