@@ -1,0 +1,130 @@
+# Which std/aata constructs should become DEFINITION BLOCKS
+
+Survey after `definition` landed (2026-09-24). The test is the one settled during
+the design: **a DEFINITION introduces a symbol by giving its meaning in terms of
+others; a THEORY AXIOM constrains a primitive that has no meaning beyond its
+axioms.** Syntax cannot tell these apart — both are `func f(…) => U` plus an
+equation — so every candidate below is judged on that question.
+
+---
+
+## TIER 1 — clear definitions, should migrate
+
+Each builds its symbol out of ALREADY-MEANINGFUL parts. Nothing is being
+assumed; the equation IS the symbol's meaning.
+
+### Recursive definitions (multi-clause — the form definition blocks exist for)
+
+| file | symbol | clauses |
+|---|---|---|
+| `std/peano.bpa` | `add` | `addZeroLeft` + `addSuccLeft` |
+| `std/peano.bpa` | `mul` | `mulZeroLeft` + `mulSuccLeft` |
+| `std/peano/subtraction.bpa` | `sub` | `subZeroRight` + `subSuccSucc` + `subZeroLeft` |
+| `std/integer.bpa` | `add` | `addZeroLeft` + `addSuccLeft` + `addPrevLeft` |
+| `std/integer.bpa` | `neg` | `negZero` + `negSucc` + `negPrev` |
+| `std/integer.bpa` | `mul` | `mulZeroLeft` + `mulSuccLeft` + `mulPrevLeft` |
+| `std/integer/divides.bpa` | `pow` | `powZero` + `powSucc` |
+| `std/group/power.bpa` | `power` | `powerZero` + `powerSucc` + `powerPrev` |
+| `std/sequence.bpa` | `foldUpTo` | `foldZero` + `foldSucc` |
+| `std/group/sequence.bpa` | `productUpTo` | `productUpToZero` + `productUpToSucc` |
+| `std/group/sequence.bpa` | `revProductUpTo` | `revProductZero` + `revProductSucc` |
+| `std/integer/product.bpa` | `productUpTo` | `productUpToZero` + `productUpToSucc` |
+| `std/integer/sum.bpa` | `sumUpTo` | `sumUpToZero` + `sumUpToSucc` |
+
+**These are the flagship cases.** `add(ZERO,b) = b; add(succ(a),b) = succ(add(a,b))`
+is *the* definition of addition, and today it is two separately-named axioms that
+a reader must notice belong together. A definition block says so.
+
+### Single-clause definitions
+
+| file | symbol | axiom |
+|---|---|---|
+| `std/integer.bpa` | `sub` | `definitionOfSubtraction` — `sub(a,b) = add(a, neg(b))` |
+| `std/rational.bpa` | `sub` / `succ` / `prev` | `subDefinition` / `succDefinition` / `prevDefinition` |
+| `std/real.bpa` | `sub` / `succ` / `prev` | same three |
+| `std/complex.bpa` | `conj` | `conjDef` |
+| `std/integer/mod-n.bpa` | `znPower` | `znPowerDef` |
+
+The names already say it (`…Definition`, `…Def`).
+
+### Predicate definitions (the `iff` sites)
+
+| file | symbol | axiom |
+|---|---|---|
+| `std/function.bpa` | `invertible` | `invertibleDef` |
+| `std/integer/mod-n.bpa` | `isUnit` | `isUnitCharacterization` |
+
+Both introduce the predicate and nothing else constrains it.
+
+---
+
+## TIER 2 — the MEMBERSHIP style: defines a FUNCTION via an existing predicate
+
+`std/set.bpa`'s `unionMember`, `intersectionMember`, `differenceMember`,
+`complementMember`; `std/collection.bpa`'s four `…Contains`; `std/set/finite.bpa`'s
+`segmentMember`; `std/integer/mod-n.bpa`'s `clsCongruent`.
+
+These ARE definitions — `union` means exactly "membership is disjunction" — but
+the clause's head is `member(x, union(a,b))`, not `union(a,b)`.
+
+**BLOCKED today — verified 2026-09-24, not speculation.** This fails:
+
+    func union(a: Set, b: Set) => Set:
+      member(x, union(a, b)) iff (member(x, a) or member(x, b))
+    -- error: expected sort 'Set', got 'Element'   (at `x`)
+
+The cause is the known limitation in the clause-variable rule: a free variable
+the declaration does not bind takes the FIRST PARAM'S SORT. For a recursive
+definition that is always right (`k` in `add(succ(k), b)` is a `Nat` like `a`);
+here `x` is an `Element` while the first param is a `Set`, so it is simply wrong.
+
+Two ways to unblock, neither built:
+  - infer the variable's sort from its USE in the clause (`member`'s first
+    argument sort pins `x : Element`) — the right fix, and it subsumes the
+    first-param heuristic entirely;
+  - allow an explicit binder on the clause.
+
+Until then TIER 2 cannot migrate. TIER 1 is unaffected and verified working.
+
+---
+
+## TIER 3 — NOT definitions, leave alone
+
+**Every abstract-theory axiom.** `std/{ring,field,group,subgroup,rational,real,
+complex,divisibility}.bpa` and `std/field/order.bpa`: `addIsAssociative`,
+`addIsCommutative`, `mulOneLeft`, `opAssoc`, `opCommutative`, `iSquared`,
+`lessThanTrichotomy`, the `fromReal*` homomorphism laws, `re*`/`im*`, the
+`mod-n` homomorphism laws (`addHom`, `mulHom`, `negHom`), `inverseLeft/Right`,
+`lessThanElim`, `succInjective`, `numeralInjective`, `gcdZero`/`gcdAbs`,
+`prevSucc`/`succPrev`, `composeApply`/`identityApply`, `unitInverseLeft`.
+
+In these theories the symbol is a PRIMITIVE. `add` in a ring is not built from
+anything — commutativity is part of what it MEANS to be a ring, an assumption a
+reader must weigh. The library already reflects this exactly: `addIsCommutative`
+is a THEOREM in `std/peano.bpa` (where `add` has a definition) and an AXIOM in
+ring/field/real/rational/complex (where it does not).
+
+Turning these into definitions would be WRONG: `--axioms` would stop reporting
+them as assumptions, which is the one thing that report exists to do.
+
+---
+
+## Recommendation
+
+Migrate TIER 1 — 13 recursive definitions and 9 single-clause ones. That is where
+the feature pays: the reader sees the clauses as one definition, `--axioms` stops
+listing 30+ construction equations beside genuine assumptions, and nobody invents
+another `…Def` name.
+
+TIER 2 is BLOCKED until clause variables take their sort from USE rather than
+from the first param (see above) — a fix worth making on its own merits, since
+the current rule is right only by luck for the recursive cases.
+
+TIER 3 never — and the `--axioms` report is the reason to be careful: its value
+is that it lists what a result ASSUMES, which TIER 1 migrations sharpen (fewer
+false entries) and a TIER 3 migration would destroy.
+
+**Caveat on TIER 1:** migrating changes `--axioms` output for anything resting on
+those symbols, and several suite goldens quote it. Expect golden churn
+proportional to the migration, and do it in reviewable chunks — one theory per
+commit — rather than all at once.
