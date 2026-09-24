@@ -240,6 +240,12 @@ pub const ProjectResult = struct {
         line: usize,
         /// this "axiom" is a `hole` — an aspirational placeholder the kernel treats as an axiom
         is_hole: bool,
+        /// this "axiom" is a DEFINITION CLAUSE, emitted by a `pred`/`func` definition block
+        /// rather than written as an assumption. Both are axioms to the kernel, but only one
+        /// is something a reader should WEIGH: a definition introduces a symbol (doubting it
+        /// is not coherent), an assumption constrains a primitive. Set from the mangled
+        /// publication name; see `definitionName`.
+        is_definition: bool = false,
     };
 
     pub const Hole = struct {
@@ -448,6 +454,20 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
     };
 }
 
+/// If `name` is a definition clause's MANGLED publication name (`definition{sym}{arm}`),
+/// the user-facing symbol and its arm; else null. The parser publishes clause axioms under
+/// that spelling precisely so reports can tell a STIPULATION from an ASSUMPTION — and so the
+/// reader never sees the mangling, which no source identifier could contain.
+fn definitionName(name: []const u8) ?struct { symbol: []const u8, arm: []const u8 } {
+    const prefix = "definition{";
+    if (!std.mem.startsWith(u8, name, prefix)) return null;
+    const rest = name[prefix.len..];
+    const close = std.mem.indexOfScalar(u8, rest, '}') orelse return null;
+    const tail = rest[close + 1 ..];
+    if (tail.len < 2 or tail[0] != '{' or tail[tail.len - 1] != '}') return null;
+    return .{ .symbol = rest[0..close], .arm = tail[1 .. tail.len - 1] };
+}
+
 /// The site of an axiom Index for a report: a ground axiom's from `axiom_origin` (recorded at
 /// publish), a schema axiom's from its locator key. Null = not an axiom we can place.
 fn axiomSite(ctx: *Context, ix: InternPool.Index) !?ProjectResult.Axiom {
@@ -461,8 +481,18 @@ fn axiomSite(ctx: *Context, ix: InternPool.Index) !?ProjectResult.Axiom {
     for (ctx.holes_reached.items) |hh| {
         if (hh.file == file and hh.loc == loc) is_hole = true;
     }
+    const raw = ctx.interner.stringBytes(name);
+    // a definition clause reports under the SYMBOL it defines, with its arm — never the
+    // mangled spelling, which is a publication detail.
+    if (definitionName(raw)) |d| return .{
+        .name = std.fmt.allocPrint(ctx.arena, "{s} (clause {s})", .{ d.symbol, d.arm }) catch return null,
+        .path = f.path,
+        .line = std.zig.findLineColumn(f.source, loc).line + 1,
+        .is_hole = is_hole,
+        .is_definition = true,
+    };
     return .{
-        .name = ctx.interner.stringBytes(name),
+        .name = raw,
         .path = f.path,
         .line = std.zig.findLineColumn(f.source, loc).line + 1,
         .is_hole = is_hole,
@@ -522,11 +552,14 @@ fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const Project
             if (ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = name_tok.name })) |state| {
                 if (state == .proven and used.contains(state.proven)) continue;
             }
+            const raw = ctx.interner.stringBytes(name_tok.name);
+            const un = definitionName(raw);
             try out.append(arena, .{
-                .name = ctx.interner.stringBytes(name_tok.name),
+                .name = if (un) |d| try std.fmt.allocPrint(arena, "{s} (clause {s})", .{ d.symbol, d.arm }) else raw,
                 .path = f.path,
                 .line = std.zig.findLineColumn(f.source, name_tok.start).line + 1,
                 .is_hole = false,
+                .is_definition = un != null,
             });
         }
     }

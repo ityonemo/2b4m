@@ -100,6 +100,18 @@ pub fn addTests(
     // real, kernel-checked facts (the theorems instantiate them).
     ctx.okSilent(&.{ "check", "tests/cases/definition_blocks.bpa" });
     ctx.okSilent(&.{ "fmt", "--check", "tests/cases/definition_blocks.bpa" });
+    // `--axioms` discloses a definition clause DIFFERENTLY from an assumption: a definition
+    // introduces a symbol (doubting it is not coherent), an assumption constrains a
+    // primitive, and only the second is something a reader should weigh. Reported under the
+    // SYMBOL and its clause — never the mangled publication name.
+    ctx.ok(&.{ "check", "tests/cases/definition_blocks.bpa", "--axioms" },
+        \\OK: 15 declarations, 3 theorems proven
+        \\  — rests on 3 axiom(s):
+        \\      isZero (clause 0)  (tests/cases/definition_blocks.bpa:10)  — DEFINITION
+        \\      add (clause 0)  (tests/cases/definition_blocks.bpa:14)  — DEFINITION
+        \\      add (clause 1)  (tests/cases/definition_blocks.bpa:14)  — DEFINITION
+        \\
+    );
     ctx.okSilent(&.{ "check", "tests/cases/imp_chain.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/forall_swap.bpa" });
 

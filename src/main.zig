@@ -590,8 +590,22 @@ pub fn main(init: std.process.Init) !u8 {
         var ebuf: [4096]u8 = undefined;
         var efw: Io.File.Writer = .init(.stderr(), io, &ebuf);
         const err = &efw.interface;
-        try err.print("error: {d} unused axiom(s) — no theorem in the library rests on them:\n", .{result.unused_axioms.len});
-        for (result.unused_axioms) |a| try err.print("  - {s}  ({s}:{d})\n", .{ a.name, a.path, a.line });
+        var unused_definitions: usize = 0;
+        for (result.unused_axioms) |a| {
+            if (a.is_definition) unused_definitions += 1;
+        }
+        const unused_axioms = result.unused_axioms.len - unused_definitions;
+        // A definition is as much a library's SURFACE as an assumption is, so an unused one
+        // is equally an error — but calling it an "unused axiom" reads as nonsense. Name each
+        // for what it is.
+        if (unused_axioms > 0 and unused_definitions > 0) {
+            try err.print("error: {d} unused axiom(s) and {d} unused definition(s) — nothing in the library rests on them:\n", .{ unused_axioms, unused_definitions });
+        } else if (unused_definitions > 0) {
+            try err.print("error: {d} unused definition(s) — nothing in the library uses them:\n", .{unused_definitions});
+        } else {
+            try err.print("error: {d} unused axiom(s) — no theorem in the library rests on them:\n", .{unused_axioms});
+        }
+        for (result.unused_axioms) |a| try err.print("  - {s}{s}  ({s}:{d})\n", .{ a.name, if (a.is_definition) " — DEFINITION" else "", a.path, a.line });
         try err.flush();
         return 1;
     }
@@ -621,6 +635,10 @@ pub fn main(init: std.process.Init) !u8 {
             for (result.axioms) |a| {
                 try out.print("\n      {s}  ({s}:{d})", .{ a.name, a.path, a.line });
                 if (a.is_hole) try out.writeAll("  — HOLE");
+                // a DEFINITION is not an assumption to weigh: it introduces a symbol, and
+                // doubting it is not coherent. Marked so the report's real content — what
+                // this result actually ASSUMES — is readable at a glance.
+                if (a.is_definition) try out.writeAll("  — DEFINITION");
             }
         }
     }
