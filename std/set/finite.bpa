@@ -1075,3 +1075,246 @@ proof
       x != u -> x != v -> apply(swap(u, v), x) = x
     [by forall_intro generalize-u]
 qed
+
+// swap is an INVOLUTION: applying it twice returns the original. Three cases on x.
+theorem swapIsAnInvolution: forall u: Element; forall v: Element; forall x: Element;
+  apply(swap(u, v), apply(swap(u, v), x)) = x
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-x |
+            fix x: Element {
+              @cases |
+                x = u or x = v or (x != u and x != v)
+                [using tautology]
+              @conclusion-x |
+                apply(swap(u, v), apply(swap(u, v), x)) = x
+                case cases {
+                  @when-x-is-u |
+                    assume x = u {
+                      @x-is-u |
+                        x = u
+                        [by hypothesis when-x-is-u]
+                      @first-application |
+                        apply(swap(u, v), u) = v
+                        [using specialize swapAtFirst(u, v)]
+                      @second-application |
+                        apply(swap(u, v), v) = u
+                        [using specialize swapAtSecond(u, v)]
+                      @twice-at-u |
+                        apply(swap(u, v), apply(swap(u, v), u)) = u
+                        [by rewrite first-application second-application]
+                      @conclusion-u |
+                        apply(swap(u, v), apply(swap(u, v), x)) = x
+                        [by rewrite x-is-u twice-at-u]
+                    }
+                  @when-x-is-v |
+                    assume x = v {
+                      @x-is-v |
+                        x = v
+                        [by hypothesis when-x-is-v]
+                      @first-application |
+                        apply(swap(u, v), v) = u
+                        [using specialize swapAtSecond(u, v)]
+                      @second-application |
+                        apply(swap(u, v), u) = v
+                        [using specialize swapAtFirst(u, v)]
+                      @twice-at-v |
+                        apply(swap(u, v), apply(swap(u, v), v)) = v
+                        [by rewrite first-application second-application]
+                      @conclusion-v |
+                        apply(swap(u, v), apply(swap(u, v), x)) = x
+                        [by rewrite x-is-v twice-at-v]
+                    }
+                  @when-x-is-neither |
+                    assume x != u and x != v {
+                      @neither |
+                        x != u and x != v
+                        [by hypothesis when-x-is-neither]
+                      @not-u |
+                        x != u
+                        [by and_elim_left neither]
+                      @not-v |
+                        x != v
+                        [by and_elim_right neither]
+                      @fixed |
+                        apply(swap(u, v), x) = x
+                        [using specialize swapElsewhere(u, v, x) not-u not-v]
+                      @conclusion-neither |
+                        apply(swap(u, v), apply(swap(u, v), x)) = x
+                        [by rewrite fixed fixed]
+                    }
+                }
+            }
+          @discharge-x |
+            forall x: Element; apply(swap(u, v), apply(swap(u, v), x)) = x
+            [by forall_intro generalize-x]
+        }
+      @discharge-v |
+        forall v: Element; forall x: Element; apply(swap(u, v), apply(swap(u, v), x)) = x
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall x: Element;
+      apply(swap(u, v), apply(swap(u, v), x)) = x
+    [by forall_intro generalize-u]
+qed
+
+// INJECTIVE everywhere, hence on any set: if swap sends x and y to the same place, apply
+// swap again — the involution returns x and y themselves, so they were equal.
+theorem swapIsInjectiveOn: forall u: Element; forall v: Element; forall a: Set;
+  injectiveOn(swap(u, v), a)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-a |
+            fix a: Set {
+              @pointwise |
+                fix x: Element {
+                  @inner |
+                    fix y: Element {
+                      @given-x |
+                        assume member(x, a) {
+                          @given-y |
+                            assume member(y, a) {
+                              @given-images |
+                                assume apply(swap(u, v), x) = apply(swap(u, v), y) {
+                                  @images-equal |
+                                    apply(swap(u, v), x) = apply(swap(u, v), y)
+                                    [by hypothesis given-images]
+                                  @twice-x |
+                                    apply(swap(u, v), apply(swap(u, v), x)) = x
+                                    [using specialize swapIsAnInvolution(u, v, x)]
+                                  @twice-y |
+                                    apply(swap(u, v), apply(swap(u, v), y)) = y
+                                    [using specialize swapIsAnInvolution(u, v, y)]
+                                  @x-through-y |
+                                    apply(swap(u, v), apply(swap(u, v), y)) = x
+                                    [by rewrite images-equal twice-x]
+                                  // y = swap(swap(y)) = x
+                                  @twice-y-flipped |
+                                    y = apply(swap(u, v), apply(swap(u, v), y))
+                                    [by symmetry twice-y]
+                                  @y-equals-x |
+                                    y = x
+                                    [using chain twice-y-flipped x-through-y]
+                                  @conclusion-equal |
+                                    x = y
+                                    [by symmetry y-equals-x]
+                                }
+                              @conclusion-images |
+                                apply(swap(u, v), x) = apply(swap(u, v), y) -> x = y
+                                [by implies_intro given-images]
+                            }
+                          @conclusion-y |
+                            member(y, a) -> apply(swap(u, v), x) = apply(swap(u, v), y) -> x = y
+                            [by implies_intro given-y]
+                        }
+                      @conclusion-x |
+                        member(x, a) -> member(y, a) -> apply(swap(u, v), x) = apply(swap(u, v), y) -> x = y
+                        [by implies_intro given-x]
+                    }
+                  @discharge-y |
+                    forall y: Element; member(x, a) -> member(y, a) -> apply(swap(u, v), x) = apply(swap(u, v), y) -> x = y
+                    [by forall_intro inner]
+                }
+              @conclusion-injective |
+                forall x: Element; forall y: Element;
+                  member(x, a) -> member(y, a) -> apply(swap(u, v), x) = apply(swap(u, v), y) -> x = y
+                [by forall_intro pointwise]
+            }
+          @discharge-a |
+            forall a: Set; injectiveOn(swap(u, v), a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-v |
+        forall v: Element; forall a: Set; injectiveOn(swap(u, v), a)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall a: Set; injectiveOn(swap(u, v), a)
+    [by forall_intro generalize-u]
+qed
+
+// SURJECTIVE onto the swapped image: for y in the target, `swap(u,v)` applied to
+// `swap(u,v)(y)` IS y, so the preimage is that — no search, no choice, the involution
+// hands it over.
+theorem swapCoversItsImage: forall u: Element; forall v: Element; forall a: Set; forall b: Set;
+  (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+  surjectiveOnto(swap(u, v), a, b)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @given-lands |
+                    assume forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a) {
+                      @lands |
+                        forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)
+                        [by hypothesis given-lands]
+                      @pointwise |
+                        fix y: Element {
+                          @given-y-in-b |
+                            assume member(y, b) {
+                              @y-in-b |
+                                member(y, b)
+                                [by hypothesis given-y-in-b]
+                              @preimage-in-a |
+                                member(apply(swap(u, v), y), a)
+                                [using specialize lands(y) y-in-b]
+                              @preimage-maps-back |
+                                apply(swap(u, v), apply(swap(u, v), y)) = y
+                                [using specialize swapIsAnInvolution(u, v, y)]
+                              @witness |
+                                member(apply(swap(u, v), y), a)
+                                  and apply(swap(u, v), apply(swap(u, v), y)) = y
+                                [by and_intro preimage-in-a preimage-maps-back]
+                              @conclusion-y |
+                                exists x: Element; member(x, a) and apply(swap(u, v), x) = y
+                                [by exists_intro(apply(swap(u, v), y)) witness]
+                            }
+                          @conclusion-implication |
+                            member(y, b) -> exists x: Element; member(x, a) and apply(swap(u, v), x) = y
+                            [by implies_intro given-y-in-b]
+                        }
+                      @conclusion-surjective |
+                        forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(swap(u, v), x) = y
+                        [by forall_intro pointwise]
+                    }
+                  @conclusion-implication |
+                    (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+                      surjectiveOnto(swap(u, v), a, b)
+                    [by implies_intro given-lands]
+                }
+              @discharge-b |
+                forall b: Set;
+                  (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+                  surjectiveOnto(swap(u, v), a, b)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set;
+              (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+              surjectiveOnto(swap(u, v), a, b)
+            [by forall_intro generalize-a]
+        }
+      @discharge-v |
+        forall v: Element; forall a: Set; forall b: Set;
+          (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+          surjectiveOnto(swap(u, v), a, b)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall a: Set; forall b: Set;
+      (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
+      surjectiveOnto(swap(u, v), a, b)
+    [by forall_intro generalize-u]
+qed
