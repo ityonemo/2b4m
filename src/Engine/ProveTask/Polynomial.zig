@@ -953,10 +953,10 @@ pub const Rig = struct {
     pub const source =
         \\sort Int
         \\const ZERO: Int
-        \\func add(a: Int, b: Int): Int
-        \\func mul(a: Int, b: Int): Int
-        \\func neg(a: Int): Int
-        \\func succ(a: Int): Int
+        \\func add(a: Int, b: Int) => Int
+        \\func mul(a: Int, b: Int) => Int
+        \\func neg(a: Int) => Int
+        \\func succ(a: Int) => Int
     ;
 
     pub fn init(arena: std.mem.Allocator, io: std.Io) !Rig {

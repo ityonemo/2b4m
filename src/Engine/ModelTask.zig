@@ -469,8 +469,8 @@ test "model: overlay populated from same-file symbol + obligation mappings; dedu
     // (axiom srcAx <- tgtAx). All same-file so no import qualifier is needed.
     const ctx = try fixtureCtx(arena, io, "/t/m.bpa",
         \\sort T
-        \\func srcF(a: T): T
-        \\func tgtF(a: T): T
+        \\func srcF(a: T) => T
+        \\func tgtF(a: T) => T
         \\axiom srcAx: forall a: T; srcF(a) = a
         \\axiom tgtAx: forall a: T; tgtF(a) = a
         \\model M {

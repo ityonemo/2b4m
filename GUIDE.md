@@ -202,9 +202,9 @@ The guard appears at each position `H` is used:
   `[by predicate <fix-label>]`, and `forall_intro` concludes the relativized
   `forall h; inH(h) -> …`. `unpack h: H` needs nothing special — the existential
   it opens already carries `inH(h)` as a conjunct (project it with `and_elim_left`).
-- **Function arguments** — `func f(x: H): R` makes every call owe `inH(t)` for the
+- **Function arguments** — `func f(x: H) => R` makes every call owe `inH(t)` for the
   actual argument `t` (an undischarged obligation is an error), like a `requires`.
-- **Function results** — `func op(a: H, b: H): H` asserts `op` is *closed* on `H`
+- **Function results** — `func op(a: H, b: H) => H` asserts `op` is *closed* on `H`
   (an uninterpreted function's signature is an assertion, on par with an axiom):
   each application `op(x, y)` makes `inH(op(x, y))` available, so a downstream
   `f(op(x, y))` composes for free — the subgroup-closure pattern.
@@ -215,7 +215,7 @@ An **anonymous** predicated sort may be written inline anywhere a sort appears,
 without a named `sort` declaration:
 
 ```bpa
-func f(x: G where inH): R              // inline-refined argument
+func f(x: G where inH) => R              // inline-refined argument
 theorem t: forall h: G where inH; P(h) // inline-refined binder
 ```
 
@@ -276,9 +276,14 @@ obligation that the guard holds, discharged against facts available at the
 use site (an undischarged obligation is an error).
 
 ```bpa
-func succ(n: Nat): Nat
-func div(a: Nat, b: Nat): Nat requires b != ZERO
+func succ(n: Nat) => Nat
+func div(a: Nat, b: Nat) => Nat requires b != ZERO
 ```
+
+The result sort follows `=>`, not `:` — the same arrow a lambda uses
+(`fun k: Nat => body`), reading the same way: takes these, gives that. The colon
+is reserved for a DEFINITION block, where a declaration carries its defining
+clauses (`func sub(a: Int, b: Int) => Int:` followed by `sub(a, b) = …`).
 
 ### KEYWORD: pred
 
