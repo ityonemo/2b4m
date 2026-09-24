@@ -48,19 +48,24 @@ theorem notLessThanZero = peano.notLessThanZero
 // constrains it only ON `a`, which is all a set-to-set map means here.)
 define mapsInto(f, a, b) = forall x: Element; member(x, a) -> member(apply(f, x), b)
 
-// `f` is injective ON `a`: distinct elements of `a` have distinct images. Weaker than
+// `f` is INJECTIVE ON `a`: distinct elements of `a` have distinct images. The relativized
+// twin of `function.injective`, and weaker than
 // `function.injective`, which demands it everywhere — a map may collide outside `a` and
 // still biject `a`.
 define injectiveOn(f, a) =
   forall x: Element; forall y: Element;
   member(x, a) -> member(y, a) -> apply(f, x) = apply(f, y) -> x = y
 
-// `f` covers `b` FROM `a`: every element of `b` is the image of some element of `a`.
-define coversFrom(f, a, b) =
+// `f` is SURJECTIVE from `a` ONTO `b`: every element of `b` is the image of some element
+// of `a`. The relativized twin of `function.surjective`, which demands every element of the
+// whole universe be hit.
+define surjectiveOnto(f, a, b) =
   forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
 
-// `f` BIJECTS `a` onto `b`: into, injective on the source, and covering the target.
-define bijectsOnto(f, a, b) = mapsInto(f, a, b) and injectiveOn(f, a) and coversFrom(f, a, b)
+// `f` BIJECTS `a` onto `b`. The textbook pair — INJECTIVE and SURJECTIVE — both
+// relativized to the two sets, plus `mapsInto` to say where `f` sends `a` at all (a total
+// `Fn` does something everywhere; this pins the codomain).
+define bijectsOnto(f, a, b) = mapsInto(f, a, b) and injectiveOn(f, a) and surjectiveOnto(f, a, b)
 
 // -- equinumerosity ---------------------------------------------------------
 
@@ -315,7 +320,7 @@ proof
         mapsInto(identityFn, a, a) and injectiveOn(identityFn, a)
         [by and_intro identity-maps-into identity-is-injective-on-a]
       @identity-bijects |
-        mapsInto(identityFn, a, a) and injectiveOn(identityFn, a) and coversFrom(identityFn, a, a)
+        mapsInto(identityFn, a, a) and injectiveOn(identityFn, a) and surjectiveOnto(identityFn, a, a)
         [by and_intro into-and-injective identity-covers]
       @conclusion-witness |
         exists f: Fn; bijectsOnto(f, a, a)
@@ -354,7 +359,7 @@ proof
           @with-bijection |
             unpack f: Fn from the-bijection-exists {
               @bijection-facts |
-                mapsInto(f, a, segment(ZERO)) and injectiveOn(f, a) and coversFrom(f, a, segment(ZERO))
+                mapsInto(f, a, segment(ZERO)) and injectiveOn(f, a) and surjectiveOnto(f, a, segment(ZERO))
                 [by hypothesis with-bijection]
               @into-and-injective |
                 mapsInto(f, a, segment(ZERO)) and injectiveOn(f, a)
@@ -716,8 +721,8 @@ qed
 
 // COVERS: a z in c is g(y) for some y in b, and that y is f(x) for some x in a — so z is
 // (g∘f)(x).
-theorem composeCovers: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
-  coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+theorem composeIsSurjectiveOnto: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
+  surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
 proof
   @generalize-f |
     fix f: Fn {
@@ -730,9 +735,9 @@ proof
                   @generalize-c |
                     fix c: Set {
                       @given-f-covers |
-                        assume coversFrom(f, a, b) {
+                        assume surjectiveOnto(f, a, b) {
                           @given-g-covers |
-                            assume coversFrom(g, b, c) {
+                            assume surjectiveOnto(g, b, c) {
                               @f-covers |
                                 forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
                                 [by hypothesis given-f-covers]
@@ -807,32 +812,32 @@ proof
                                 [by forall_intro pointwise]
                             }
                           @conclusion-g |
-                            coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                            surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
                             [by implies_intro given-g-covers]
                         }
                       @conclusion-f |
-                        coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                        surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
                         [by implies_intro given-f-covers]
                     }
                   @discharge-c |
-                    forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                    forall c: Set; surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
                     [by forall_intro generalize-c]
                 }
               @discharge-b |
-                forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+                forall b: Set; forall c: Set; surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
                 [by forall_intro generalize-b]
             }
           @discharge-a |
-            forall a: Set; forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+            forall a: Set; forall b: Set; forall c: Set; surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
             [by forall_intro generalize-a]
         }
       @discharge-g |
-        forall g: Fn; forall a: Set; forall b: Set; forall c: Set; coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+        forall g: Fn; forall a: Set; forall b: Set; forall c: Set; surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
         [by forall_intro generalize-g]
     }
   @conclusion |
     forall f: Fn; forall g: Fn; forall a: Set; forall b: Set; forall c: Set;
-      coversFrom(f, a, b) -> coversFrom(g, b, c) -> coversFrom(compose(g, f), a, c)
+      surjectiveOnto(f, a, b) -> surjectiveOnto(g, b, c) -> surjectiveOnto(compose(g, f), a, c)
     [by forall_intro generalize-f]
 qed
 
@@ -859,7 +864,7 @@ proof
                       @with-f |
                         unpack f: Fn from f-exists {
                           @f-bijects |
-                            mapsInto(f, a, b) and injectiveOn(f, a) and coversFrom(f, a, b)
+                            mapsInto(f, a, b) and injectiveOn(f, a) and surjectiveOnto(f, a, b)
                             [by hypothesis with-f]
                           @f-pair |
                             mapsInto(f, a, b) and injectiveOn(f, a)
@@ -871,12 +876,12 @@ proof
                             injectiveOn(f, a)
                             [by and_elim_right f-pair]
                           @f-covers |
-                            coversFrom(f, a, b)
+                            surjectiveOnto(f, a, b)
                             [by and_elim_right f-bijects]
                           @with-g |
                             unpack g: Fn from g-exists {
                               @g-bijects |
-                                mapsInto(g, b, c) and injectiveOn(g, b) and coversFrom(g, b, c)
+                                mapsInto(g, b, c) and injectiveOn(g, b) and surjectiveOnto(g, b, c)
                                 [by hypothesis with-g]
                               @g-pair |
                                 mapsInto(g, b, c) and injectiveOn(g, b)
@@ -888,7 +893,7 @@ proof
                                 injectiveOn(g, b)
                                 [by and_elim_right g-pair]
                               @g-covers |
-                                coversFrom(g, b, c)
+                                surjectiveOnto(g, b, c)
                                 [by and_elim_right g-bijects]
                               @composite-into |
                                 mapsInto(compose(g, f), a, c)
@@ -897,13 +902,13 @@ proof
                                 injectiveOn(compose(g, f), a)
                                 [using specialize composeIsInjectiveOn(f, g, a, b) f-into f-injective g-injective]
                               @composite-covers |
-                                coversFrom(compose(g, f), a, c)
-                                [using specialize composeCovers(f, g, a, b, c) f-covers g-covers]
+                                surjectiveOnto(compose(g, f), a, c)
+                                [using specialize composeIsSurjectiveOnto(f, g, a, b, c) f-covers g-covers]
                               @composite-pair |
                                 mapsInto(compose(g, f), a, c) and injectiveOn(compose(g, f), a)
                                 [by and_intro composite-into composite-injective]
                               @composite-bijects |
-                                mapsInto(compose(g, f), a, c) and injectiveOn(compose(g, f), a) and coversFrom(compose(g, f), a, c)
+                                mapsInto(compose(g, f), a, c) and injectiveOn(compose(g, f), a) and surjectiveOnto(compose(g, f), a, c)
                                 [by and_intro composite-pair composite-covers]
                               @conclusion-witness |
                                 exists h: Fn; bijectsOnto(h, a, c)
