@@ -1,0 +1,58 @@
+// DEFINITION BLOCKS: a `pred`/`func` declaration carries the clauses that characterize it.
+// Each clause is written exactly as the axiom it becomes; the parser wraps it in the
+// declaration's binders and publishes it under a mangled name, cited `[by definition …]`.
+sort T
+const Z: T
+func s(n: T) => T
+pred big(n: T)
+
+// PREDICATE: one clause, the connective written out, cited BARE.
+pred isZero(n: T):
+  isZero(n) iff n = Z
+
+// FUNCTION: several clauses, each its own axiom, cited by ZERO-INDEXED arm.
+func add(a: T, b: T) => T:
+  add(Z, b) = b;
+  add(s(k), b) = s(add(k, b))
+
+// GUARDED clauses (Erlang-style `when`), every condition stated in full — axioms have no
+// precedence, so nothing is inherited from clause order.
+func pick(n: T) => T:
+  pick(n) = Z when big(n);
+  pick(n) = n when not big(n)
+
+theorem zeroIsZero: isZero(Z)
+proof
+  @definition-of-is-zero |
+    forall n: T; isZero(n) iff n = Z
+    [by definition isZero]
+  @at-zero |
+    isZero(Z) iff Z = Z
+    [by forall_elim(Z) definition-of-is-zero]
+  @zero-equals-itself |
+    Z = Z
+    [by reflexivity]
+  @conclusion |
+    isZero(Z)
+    [using tautology at-zero zero-equals-itself]
+qed
+
+theorem addingZeroToZero: add(Z, Z) = Z
+proof
+  @base-clause |
+    forall a: T; forall b: T; add(Z, b) = b
+    [by definition(0) add]
+  @conclusion |
+    add(Z, Z) = Z
+    [by forall_elim(Z, Z) base-clause]
+qed
+
+theorem addingZeroToOne: add(s(Z), Z) = s(add(Z, Z))
+proof
+  @step-clause |
+    forall a: T; forall b: T; forall k: T; add(s(k), b) = s(add(k, b))
+    [by definition(1) add]
+  @conclusion |
+    add(s(Z), Z) = s(add(Z, Z))
+    [by forall_elim(Z, Z, Z) step-clause]
+qed
