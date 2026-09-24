@@ -295,6 +295,88 @@ pred less_than(a: Nat, b: Nat)
 pred raining
 ```
 
+A predicate declared bare like that is OPAQUE: it has no meaning beyond whatever
+axioms constrain it. Follow the declaration with `:` and a clause to DEFINE it
+instead — see **DEFINITION BLOCKS** below.
+
+### DEFINITION BLOCKS
+
+A `pred` or `func` declaration may carry the clauses that characterize it: follow
+the declaration with `:`, then one or more clauses separated by `;`. Each clause
+is written **exactly as the axiom it becomes** — the checker wraps it in the
+declaration's binders and emits an ordinary axiom, so there is nothing to learn
+about how it desugars.
+
+```bpa
+pred isZero(n: Nat):
+  isZero(n) iff n = ZERO
+
+func double(n: Nat) => Nat:
+  double(n) = add(n, n)
+
+func add(a: Nat, b: Nat) => Nat:
+  add(ZERO, b) = b;
+  add(succ(k), b) = succ(add(k, b))
+```
+
+A predicate has one clause and writes its own connective (`iff` for a
+proposition). A function may have several — a recursive definition needs one per
+case, and neither clause alone is the definition.
+
+**Clause guards.** When the heads do not themselves distinguish the cases, a
+clause may carry a guard, `when` after the head:
+
+```bpa
+func gcd(a: Nat, b: Nat) => Nat:
+  gcd(a, b) = a                  when b = ZERO;
+  gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+```
+
+**Every clause states its own condition in full.** Unlike a pattern-matching
+language, clauses here are NOT ordered and there is no first-match-wins: each
+becomes a standalone axiom, and axioms have no precedence. Two clauses that
+overlap and disagree are simply inconsistent — the checker does not (yet) catch
+that, exactly as it does not for hand-written axiom pairs.
+
+**Citing a clause** uses `by definition`, with the clause number for a function
+(zero-indexed; a predicate has one clause and cites bare):
+
+```bpa
+@definition-of-is-zero |
+  forall n: Nat; isZero(n) iff n = ZERO
+  [by definition isZero]
+
+@base-clause |
+  forall a, b: Nat; add(ZERO, b) = b
+  [by definition(0) add]
+```
+
+**This is sugar.** Declaring the symbol and stating its axiom separately stays
+legal and means the same thing:
+
+```bpa
+pred isZero(n: Nat)
+axiom isZeroDef: forall n: Nat; isZero(n) iff n = ZERO
+```
+
+The only difference is the axiom's name — yours in the long form, generated in
+the short one — and therefore how you cite it (`by cite isZeroDef` versus
+`by definition isZero`).
+
+**`--axioms` tells the two apart.** A definition clause is reported as a
+DEFINITION rather than listed beside genuine assumptions, because it is not
+something to weigh: it introduces a symbol, where an assumption constrains a
+primitive. `--library` likewise reports an unused definition as a definition —
+and still fails on one, since a definition is as much a library's surface as an
+axiom is.
+
+**How this differs from `define`.** A `define` is a MACRO: it is substituted
+before anything else looks at the text, the kernel never sees the name, and it
+therefore cannot be cited, mapped by a model, or named anywhere a symbol is
+required. A definition block declares a REAL symbol and characterizes it with an
+axiom. Reach for `define` for an abbreviation, a definition block for a symbol
+that must exist in its own right.
+
 ### KEYWORD: axiom
 
 Asserts a formula without proof. Axioms are the file's assumptions; a proof cites

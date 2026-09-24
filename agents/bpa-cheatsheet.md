@@ -141,9 +141,40 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
 - `arithmetic refs…` — linear arithmetic over Nat (Presburger). `arithmetic(module)` / `fallback(thm)` variants. `fallback(thm)` cites a proven theorem for a decide-but-can't-certify goal; the goal may be `thm` VERBATIM or a SPECIALIZED INSTANCE (the matcher infers the ∀-witnesses and discharges `thm`'s `->` antecedents from the step's refs, emitting a kernel-checked forall_elim+mp chain).
 - Discipline: in `std/*.bpa` use accelerants freely (shortest kernel-checked proof). In `aata/*.md` do NOT accelerate a step Judson spells out — transcribe it; accelerants only for algebra the book elides. (See `.claude/rules/aata-guide.md`.)
 
+## DEFINITION BLOCKS — a declaration may carry its defining clauses
+
+A `pred`/`func` declaration followed by `:` takes the clauses that characterize
+it, `;`-separated. Each clause is written EXACTLY as the axiom it becomes.
+
+```bpa
+pred isZero(n: Nat):
+  isZero(n) iff n = ZERO          // a predicate: one clause, writes its connective
+
+func add(a: Nat, b: Nat) => Nat:
+  add(ZERO, b) = b;               // a function: one clause per case
+  add(succ(k), b) = succ(add(k, b))
+
+func gcd(a: Nat, b: Nat) => Nat:  // guards when the heads don't distinguish
+  gcd(a, b) = a                  when b = ZERO;
+  gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+```
+
+- **Every clause states its own condition IN FULL.** Clauses are not ordered and
+  there is no first-match-wins: each is a standalone axiom, and axioms have no
+  precedence. Overlapping clauses that disagree are inconsistent, unchecked.
+- **Cite with `by definition`** — `[by definition isZero]` for a predicate,
+  `[by definition(0) add]` for a function clause (ZERO-indexed).
+- **It is SUGAR.** `pred p(x: T)` + a separately-named `axiom` means the same
+  thing; only the axiom's name differs (and so `by cite thatName` cites it).
+- **NOT `define`.** A `define` is a macro — substituted before anything looks at
+  it, invisible to the kernel, so it cannot be cited, model-mapped, or named
+  where a symbol is required. A definition block declares a REAL symbol.
+- `--axioms` marks a clause `— DEFINITION` rather than listing it beside genuine
+  assumptions; `--library` still fails on an unused one, naming it a definition.
+
 ## Declaration keywords — one-liners; detail at `### KEYWORD: <name>` in GUIDE.md
 
-`sort` (a type; `sort H = G where inH` is a refined subsort; `where inH and inK` conjoins guards), `const` (0-ary), `func` (returns a term-sort, never Prop), `pred` (opaque predicate; no `:=` body), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[using model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only). GUARDED model (sort mapped onto `G where inH`): NOMINATE membership dischargers on the `:` map — a CONST `src.C: TGT(baseFact…)` (parens; one ground fact per guard pred), a FUNC `src.op: F -| closureFact…` (`-|`; closure preserves membership). Transferred theorems relativize (`inH(x) ->` per binder); an unconditional axiom mapped to itself auto-weakens.
+`sort` (a type; `sort H = G where inH` is a refined subsort; `where inH and inK` conjoins guards), `const` (0-ary), `func` (returns a term-sort, never Prop — RESULT SORT AFTER `=>`: `func f(a: T) => U`), `pred` (opaque predicate), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[using model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only). GUARDED model (sort mapped onto `G where inH`): NOMINATE membership dischargers on the `:` map — a CONST `src.C: TGT(baseFact…)` (parens; one ground fact per guard pred), a FUNC `src.op: F -| closureFact…` (`-|`; closure preserves membership). Transferred theorems relativize (`inH(x) ->` per binder); an unconditional axiom mapped to itself auto-weakens.
 
 ## `import` and `model` — unlearn the Python prior (these are two different axes)
 

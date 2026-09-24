@@ -108,6 +108,14 @@ form is a fine content label: `@add-is-commutative`.)
   statement binder, reuse the statement's own binder name; induction variable is
   `k`; re-fixing a conceptual var in a disjoint subproof appends an index
   (`a`, `a2`). No infix minus — ever (`sub(a, b)`).
+- **Defining a symbol**: prefer a DEFINITION BLOCK (`pred p(x: T):` / `func f(a:
+  T) => U:` followed by its clauses) over declaring the symbol and writing a
+  separately-named axiom. Same meaning, but the reader sees at the declaration
+  what the symbol MEANS, `--axioms` reports it as a definition rather than as an
+  assumption to weigh, and you do not invent a name like `pDef`. Keep the long
+  form when the axiom genuinely IS an assumption about a primitive — `add` in a
+  ring is constrained by its axioms, not defined by them. Use `define` only for
+  an abbreviation you never need to cite, model-map, or name.
 - **Imports**: name an import after its PATH with `/` written `_`
   (`std/function/invertible.bpa` → `function_invertible`) — a namespace shares a
   declaration space with every symbol, so naming a theory after its subject
