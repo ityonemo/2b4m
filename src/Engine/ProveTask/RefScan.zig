@@ -92,6 +92,19 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
             try self.scanExpr(c.formula);
             switch (ruleDomain(c.rule.name, c.kind)) {
                 .fact => for (c.refs) |r| try self.addTok(r, .fact),
+                // `[by definition(N) f]` cites the clause axiom the parser published under
+                // the MANGLED name `definition{f}{N}` — so the read pass must demand THAT,
+                // not the bare symbol (which names a pred/func, not a fact). Re-mangling
+                // here mirrors the citation's own lookup: deterministic in (symbol, arm).
+                .definition => for (c.refs) |r| {
+                    const arm: usize = if (c.schema) |a|
+                        std.fmt.parseInt(usize, self.source[a.start..a.end], 10) catch 0
+                    else
+                        0;
+                    const text = std.fmt.allocPrint(self.arena, "definition{{{s}}}{{{d}}}", .{ self.interner.stringBytes(r.name), arm }) catch return error.OutOfMemory;
+                    const id = self.interner.internString(text) catch return error.OutOfMemory;
+                    try self.add(.{ .ns = null, .name = id, .domain = .fact, .loc = r.start });
+                },
                 .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema
                 // NAME (its `c.refs` are LOCAL premise labels — not enumerated)
                 .model => if (c.schema) |s| try self.addTok(s, .model), // the model NAME (the
@@ -175,9 +188,10 @@ pub fn scanFormula(self: *Scanner, e: *const ast.Expr) Allocator.Error![]const R
 /// steps/blocks (including accelerant names, which hard-error as unsupported at process
 /// time — their refs never fetch). Dispatch is on the RESERVED rule-word StrId the parser
 /// stamped — integer comparison, no strcmp past parsing.
-fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, import, accelerant, local } {
+fn ruleDomain(rule: StrId, kind: ast.Step.Claim.Kind) enum { fact, instantiate, model, import, accelerant, definition, local } {
     if (InternPool.RuleStr.of(rule)) |word| return switch (word) {
         .axiom, .theorem, .cite => .fact,
+        .definition => .definition,
         .instantiation => .instantiate,
         .model => .model,
         .import => .import,

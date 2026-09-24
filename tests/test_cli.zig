@@ -94,6 +94,12 @@ pub fn addTests(
 
     // M3: proofs that must check
     ctx.okSilent(&.{ "check", "tests/cases/modus_ponens.bpa" });
+    // DEFINITION BLOCKS: a pred/func declaration carrying its defining clauses. Pins all
+    // three forms — a predicate (one clause, cited bare), a multi-clause function (cited by
+    // zero-indexed arm), and Erlang-style `when` guards — plus that the emitted axioms are
+    // real, kernel-checked facts (the theorems instantiate them).
+    ctx.okSilent(&.{ "check", "tests/cases/definition_blocks.bpa" });
+    ctx.okSilent(&.{ "fmt", "--check", "tests/cases/definition_blocks.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/imp_chain.bpa" });
     ctx.okSilent(&.{ "check", "tests/cases/forall_swap.bpa" });
 

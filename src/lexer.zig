@@ -42,8 +42,6 @@ pub const Token = struct {
         keyword_sort,
         keyword_const,
         keyword_define,
-        keyword_definition,
-        keyword_of,
         keyword_when,
         keyword_func,
         keyword_pred,
@@ -90,6 +88,12 @@ pub const Token = struct {
         pipe, // | (step-label delimiter)
         l_bracket, // [ (justification opener)
         r_bracket, // ]
+        /// A DECIMAL NUMERAL (`0`, `42`). The bpa TERM language has no numerals — a natural
+        /// is `ZERO`/`succ(ZERO)`, an integer theory supplies its own — so this token never
+        /// appears in a formula. It exists for places that index a STRUCTURE rather than
+        /// denote a value: `[by definition(0) add]` selects a definition's clause. Digits
+        /// inside an identifier (`eq2`) are unaffected: a numeral must START with a digit.
+        number,
         /// import path: "peano.bpa" (no escapes)
         string,
         import_arrow, // <<<
@@ -112,8 +116,6 @@ pub const Token = struct {
                 .keyword_sort => "sort",
                 .keyword_const => "const",
                 .keyword_define => "define",
-                .keyword_definition => "definition",
-                .keyword_of => "of",
                 .keyword_when => "when",
                 .keyword_func => "func",
                 .keyword_pred => "pred",
@@ -154,6 +156,7 @@ pub const Token = struct {
                 .pipe => "|",
                 .l_bracket => "[",
                 .r_bracket => "]",
+                .number => "number",
                 .string => "string",
                 .import_arrow => "<<<",
                 .obligation_arrow => "<-",
@@ -172,8 +175,6 @@ const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
     .{ "sort", .keyword_sort },
     .{ "const", .keyword_const },
     .{ "define", .keyword_define },
-    .{ "definition", .keyword_definition },
-    .{ "of", .keyword_of },
     .{ "when", .keyword_when },
     .{ "func", .keyword_func },
     .{ "pred", .keyword_pred },
@@ -293,6 +294,10 @@ pub const Lexer = struct {
                     }
                 }
                 break :blk .at_label;
+            },
+            '0'...'9' => blk: {
+                while (self.index < src.len and src[self.index] >= '0' and src[self.index] <= '9') self.index += 1;
+                break :blk .number;
             },
             ':' => .colon,
             ';' => .semicolon,
