@@ -70,6 +70,12 @@ pub fn addTests(
     // prose with in-place notes — they need a finite-support/cardinality theory.
     ctx.okSilent(&.{ "check", "aata/5.1-permutation-groups.md" });
     ctx.okSilent(&.{ "fmt", "--check", "aata/5.1-permutation-groups.md" });
+    // §5.2 "Dihedral Groups": the PRESENTATION — what the relations s² = 1 and srs = r⁻¹
+    // give, including the load-bearing `sPastR` (moving a reflection past a rotation
+    // inverts it), which is what makes Judson's two shapes closed. |D_n| = 2n, the
+    // exhaustion argument and the cube's motion group need finite counting: prose.
+    ctx.okSilent(&.{ "check", "aata/5.2-dihedral-groups.md" });
+    ctx.okSilent(&.{ "fmt", "--check", "aata/5.2-dihedral-groups.md" });
 
     // AATA set theory: the literate transliteration of Chapter 1 §1.2.1
     // (the set-algebra proposition + De Morgan's laws proved by hand; the §1.2
