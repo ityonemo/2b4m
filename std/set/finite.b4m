@@ -1326,6 +1326,120 @@ qed
 
 // -- segment STRUCTURE (what the counting induction peels) -------------------
 
+// A swap of two members of `a` keeps `a` inside itself: x is u (goes to v, a member), or
+// v (goes to u, a member), or neither (stays put).
+theorem swapMapsInto: forall u: Element; forall v: Element; forall a: Set;
+  member(u, a) -> member(v, a) -> mapsInto(swap(u, v), a, a)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-a |
+            fix a: Set {
+              @given-u |
+                assume member(u, a) {
+                  @given-v |
+                    assume member(v, a) {
+                      @u-in-a |
+                        member(u, a)
+                        [by hypothesis given-u]
+                      @v-in-a |
+                        member(v, a)
+                        [by hypothesis given-v]
+                      @pointwise |
+                        fix x: Element {
+                          @given-x |
+                            assume member(x, a) {
+                              @x-in-a |
+                                member(x, a)
+                                [by hypothesis given-x]
+                              @x-is-u-or-v-or-neither |
+                                x = u or x = v or (x != u and x != v)
+                                [using tautology]
+                              @conclusion-image-in-a |
+                                member(apply(swap(u, v), x), a)
+                                case x-is-u-or-v-or-neither {
+                                  @when-first |
+                                    assume x = u {
+                                      @x-is-u |
+                                        x = u
+                                        [by hypothesis when-first]
+                                      @u-goes-to-v |
+                                        apply(swap(u, v), u) = v
+                                        [using specialize swapAtFirst(u, v)]
+                                      @x-goes-to-v |
+                                        apply(swap(u, v), x) = v
+                                        [by rewrite x-is-u u-goes-to-v]
+                                      @conclusion-first |
+                                        member(apply(swap(u, v), x), a)
+                                        [by rewrite x-goes-to-v v-in-a]
+                                    }
+                                  @when-second |
+                                    assume x = v {
+                                      @x-is-v |
+                                        x = v
+                                        [by hypothesis when-second]
+                                      @v-goes-to-u |
+                                        apply(swap(u, v), v) = u
+                                        [using specialize swapAtSecond(u, v)]
+                                      @x-goes-to-u |
+                                        apply(swap(u, v), x) = u
+                                        [by rewrite x-is-v v-goes-to-u]
+                                      @conclusion-second |
+                                        member(apply(swap(u, v), x), a)
+                                        [by rewrite x-goes-to-u u-in-a]
+                                    }
+                                  @when-neither |
+                                    assume x != u and x != v {
+                                      @x-is-neither |
+                                        x != u and x != v
+                                        [by hypothesis when-neither]
+                                      @x-is-not-u |
+                                        x != u
+                                        [by and_elim_left x-is-neither]
+                                      @x-is-not-v |
+                                        x != v
+                                        [by and_elim_right x-is-neither]
+                                      @x-stays-put |
+                                        apply(swap(u, v), x) = x
+                                        [using specialize swapElsewhere(u, v, x) x-is-not-u x-is-not-v]
+                                      @conclusion-neither |
+                                        member(apply(swap(u, v), x), a)
+                                        [by rewrite x-stays-put x-in-a]
+                                    }
+                                }
+                            }
+                          @conclusion-implication |
+                            member(x, a) -> member(apply(swap(u, v), x), a)
+                            [by implies_intro given-x]
+                        }
+                      @conclusion-into |
+                        forall x: Element; member(x, a) -> member(apply(swap(u, v), x), a)
+                        [by forall_intro pointwise]
+                    }
+                  @conclusion-v |
+                    member(v, a) -> mapsInto(swap(u, v), a, a)
+                    [by implies_intro given-v]
+                }
+              @conclusion-u |
+                member(u, a) -> member(v, a) -> mapsInto(swap(u, v), a, a)
+                [by implies_intro given-u]
+            }
+          @discharge-a |
+            forall a: Set; member(u, a) -> member(v, a) -> mapsInto(swap(u, v), a, a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-v |
+        forall v: Element; forall a: Set; member(u, a) -> member(v, a) -> mapsInto(swap(u, v), a, a)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall a: Set;
+      member(u, a) -> member(v, a) -> mapsInto(swap(u, v), a, a)
+    [by forall_intro generalize-u]
+qed
+
 // SEGMENT DECOMPOSITION: a member of segment(succ n) is either a member of segment(n) or
 // the top element numeral(n). This is what lets the induction PEEL the top off.
 theorem segmentSuccSplits: forall n: Nat; forall x: Element;
@@ -1639,5 +1753,287 @@ proof
       injectiveOn(f, segment(succ(m))) ->
       apply(f, numeral(m)) = numeral(n) ->
       mapsInto(f, segment(m), segment(n))
+    [by forall_intro generalize-f]
+qed
+
+// INJECTIVE is nearly free: injectivity on a set restricts to any subset, and segment(m)
+// sits inside segment(succ m).
+theorem restrictionIsInjectiveOn: forall f: Fn; forall m: Nat;
+  injectiveOn(f, segment(succ(m))) -> injectiveOn(f, segment(m))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-m |
+        fix m: Nat {
+          @given-injective |
+            assume injectiveOn(f, segment(succ(m))) {
+              @injective |
+                forall x: Element; forall y: Element;
+                  member(x, segment(succ(m))) -> member(y, segment(succ(m))) ->
+                  apply(f, x) = apply(f, y) -> x = y
+                [by hypothesis given-injective]
+              @pointwise |
+                fix x: Element {
+                  @inner |
+                    fix y: Element {
+                      @given-x |
+                        assume member(x, segment(m)) {
+                          @given-y |
+                            assume member(y, segment(m)) {
+                              @given-images |
+                                assume apply(f, x) = apply(f, y) {
+                                  @x-in-small |
+                                    member(x, segment(m))
+                                    [by hypothesis given-x]
+                                  @y-in-small |
+                                    member(y, segment(m))
+                                    [by hypothesis given-y]
+                                  @images-equal |
+                                    apply(f, x) = apply(f, y)
+                                    [by hypothesis given-images]
+                                  @x-in-big |
+                                    member(x, segment(succ(m)))
+                                    [using specialize segmentGrows(m, x) x-in-small]
+                                  @y-in-big |
+                                    member(y, segment(succ(m)))
+                                    [using specialize segmentGrows(m, y) y-in-small]
+                                  @conclusion-equal |
+                                    x = y
+                                    [using specialize injective(x, y) x-in-big y-in-big images-equal]
+                                }
+                              @conclusion-images |
+                                apply(f, x) = apply(f, y) -> x = y
+                                [by implies_intro given-images]
+                            }
+                          @conclusion-y |
+                            member(y, segment(m)) -> apply(f, x) = apply(f, y) -> x = y
+                            [by implies_intro given-y]
+                        }
+                      @conclusion-x |
+                        member(x, segment(m)) -> member(y, segment(m)) -> apply(f, x) = apply(f, y) -> x = y
+                        [by implies_intro given-x]
+                    }
+                  @discharge-y |
+                    forall y: Element; member(x, segment(m)) -> member(y, segment(m)) -> apply(f, x) = apply(f, y) -> x = y
+                    [by forall_intro inner]
+                }
+              @conclusion-injective |
+                forall x: Element; forall y: Element;
+                  member(x, segment(m)) -> member(y, segment(m)) -> apply(f, x) = apply(f, y) -> x = y
+                [by forall_intro pointwise]
+            }
+          @conclusion-restricts |
+            injectiveOn(f, segment(succ(m))) -> injectiveOn(f, segment(m))
+            [by implies_intro given-injective]
+        }
+      @discharge-m |
+        forall m: Nat; injectiveOn(f, segment(succ(m))) -> injectiveOn(f, segment(m))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall f: Fn; forall m: Nat; injectiveOn(f, segment(succ(m))) -> injectiveOn(f, segment(m))
+    [by forall_intro generalize-f]
+qed
+
+// SURJECTIVE runs the top-unreachable idea the other way: y in segment(n) has a preimage x
+// in segment(succ m), and x cannot be the top — the top goes to numeral(n), which is not
+// in segment(n) where y lives. So x is in segment(m).
+theorem restrictionIsSurjectiveOnto: forall f: Fn; forall m: Nat; forall n: Nat;
+  surjectiveOnto(f, segment(succ(m)), segment(succ(n))) ->
+  apply(f, numeral(m)) = numeral(n) ->
+  surjectiveOnto(f, segment(m), segment(n))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-covers |
+                assume surjectiveOnto(f, segment(succ(m)), segment(succ(n))) {
+                  @given-top |
+                    assume apply(f, numeral(m)) = numeral(n) {
+                      @covers |
+                        forall y: Element; member(y, segment(succ(n))) ->
+                          exists x: Element; member(x, segment(succ(m))) and apply(f, x) = y
+                        [by hypothesis given-covers]
+                      @top-to-top |
+                        apply(f, numeral(m)) = numeral(n)
+                        [by hypothesis given-top]
+                      @pointwise |
+                        fix y: Element {
+                          @given-y |
+                            assume member(y, segment(n)) {
+                              @y-in-small |
+                                member(y, segment(n))
+                                [by hypothesis given-y]
+                              @y-in-big |
+                                member(y, segment(succ(n)))
+                                [using specialize segmentGrows(n, y) y-in-small]
+                              @preimage-exists |
+                                exists x: Element; member(x, segment(succ(m))) and apply(f, x) = y
+                                [using specialize covers(y) y-in-big]
+                              @with-preimage-x |
+                                unpack x: Element from preimage-exists {
+                                  @preimage-facts |
+                                    member(x, segment(succ(m))) and apply(f, x) = y
+                                    [by hypothesis with-preimage-x]
+                                  @x-in-big |
+                                    member(x, segment(succ(m)))
+                                    [by and_elim_left preimage-facts]
+                                  @x-maps-to-y |
+                                    apply(f, x) = y
+                                    [by and_elim_right preimage-facts]
+                                  @x-splits |
+                                    member(x, segment(m)) or x = numeral(m)
+                                    [using specialize segmentSuccSplits(m, x) x-in-big]
+                                  @conclusion-preimage-in-small |
+                                    exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                                    case x-splits {
+                                      @when-in-small |
+                                        assume member(x, segment(m)) {
+                                          @x-in-small |
+                                            member(x, segment(m))
+                                            [by hypothesis when-in-small]
+                                          @x-is-a-preimage-in-small |
+                                            member(x, segment(m)) and apply(f, x) = y
+                                            [by and_intro x-in-small x-maps-to-y]
+                                          @conclusion-small |
+                                            exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                                            [by exists_intro(x) x-is-a-preimage-in-small]
+                                        }
+                                      @when-at-top |
+                                        assume x = numeral(m) {
+                                          // then y would be numeral(n), which is not in segment(n)
+                                          @x-is-top |
+                                            x = numeral(m)
+                                            [by hypothesis when-at-top]
+                                          @top-maps-to-y |
+                                            apply(f, numeral(m)) = y
+                                            [by rewrite x-is-top x-maps-to-y]
+                                          @y-is-top |
+                                            numeral(n) = y
+                                            [by rewrite top-to-top top-maps-to-y]
+                                          @top-in-small |
+                                            member(numeral(n), segment(n))
+                                            [by rewrite y-is-top y-in-small]
+                                          @top-not-in-small |
+                                            not member(numeral(n), segment(n))
+                                            [using specialize topIsNotInTheSmallerSegment(n)]
+                                          @conclusion-absurd |
+                                            exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                                            [by absurd top-in-small top-not-in-small]
+                                        }
+                                    }
+                                }
+                              @conclusion-y-has-a-preimage |
+                                exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                                [by exists_elim with-preimage-x]
+                            }
+                          @conclusion-implication |
+                            member(y, segment(n)) -> exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                            [by implies_intro given-y]
+                        }
+                      @conclusion-covers |
+                        forall y: Element; member(y, segment(n)) ->
+                          exists x2: Element; member(x2, segment(m)) and apply(f, x2) = y
+                        [by forall_intro pointwise]
+                    }
+                  @conclusion-top |
+                    apply(f, numeral(m)) = numeral(n) -> surjectiveOnto(f, segment(m), segment(n))
+                    [by implies_intro given-top]
+                }
+              @conclusion-covers-hyp |
+                surjectiveOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> surjectiveOnto(f, segment(m), segment(n))
+                [by implies_intro given-covers]
+            }
+          @discharge-n |
+            forall n: Nat; surjectiveOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> surjectiveOnto(f, segment(m), segment(n))
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m: Nat; forall n: Nat; surjectiveOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> surjectiveOnto(f, segment(m), segment(n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall f: Fn; forall m: Nat; forall n: Nat;
+      surjectiveOnto(f, segment(succ(m)), segment(succ(n))) ->
+      apply(f, numeral(m)) = numeral(n) ->
+      surjectiveOnto(f, segment(m), segment(n))
+    [by forall_intro generalize-f]
+qed
+
+// THE RESTRICTION LEMMA, assembled: the three halves together say the restriction of a
+// top-preserving bijection is a bijection.
+theorem restrictionBijects: forall f: Fn; forall m: Nat; forall n: Nat;
+  bijectsOnto(f, segment(succ(m)), segment(succ(n))) ->
+  apply(f, numeral(m)) = numeral(n) ->
+  bijectsOnto(f, segment(m), segment(n))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-bijection |
+                assume bijectsOnto(f, segment(succ(m)), segment(succ(n))) {
+                  @given-top |
+                    assume apply(f, numeral(m)) = numeral(n) {
+                      @bijection-facts |
+                        mapsInto(f, segment(succ(m)), segment(succ(n))) and injectiveOn(f, segment(succ(m))) and surjectiveOnto(f, segment(succ(m)), segment(succ(n)))
+                        [by hypothesis given-bijection]
+                      @top-to-top |
+                        apply(f, numeral(m)) = numeral(n)
+                        [by hypothesis given-top]
+                      @into-and-injective |
+                        mapsInto(f, segment(succ(m)), segment(succ(n))) and injectiveOn(f, segment(succ(m)))
+                        [by and_elim_left bijection-facts]
+                      @into |
+                        mapsInto(f, segment(succ(m)), segment(succ(n)))
+                        [by and_elim_left into-and-injective]
+                      @injective |
+                        injectiveOn(f, segment(succ(m)))
+                        [by and_elim_right into-and-injective]
+                      @covers |
+                        surjectiveOnto(f, segment(succ(m)), segment(succ(n)))
+                        [by and_elim_right bijection-facts]
+                      @restriction-maps-into |
+                        mapsInto(f, segment(m), segment(n))
+                        [using specialize restrictionMapsInto(f, m, n) into injective top-to-top]
+                      @restriction-is-injective |
+                        injectiveOn(f, segment(m))
+                        [using specialize restrictionIsInjectiveOn(f, m) injective]
+                      @restriction-covers |
+                        surjectiveOnto(f, segment(m), segment(n))
+                        [using specialize restrictionIsSurjectiveOnto(f, m, n) covers top-to-top]
+                      @restriction-into-and-injective |
+                        mapsInto(f, segment(m), segment(n)) and injectiveOn(f, segment(m))
+                        [by and_intro restriction-maps-into restriction-is-injective]
+                      @conclusion-bijects |
+                        bijectsOnto(f, segment(m), segment(n))
+                        [by and_intro restriction-into-and-injective restriction-covers]
+                    }
+                  @conclusion-top |
+                    apply(f, numeral(m)) = numeral(n) -> bijectsOnto(f, segment(m), segment(n))
+                    [by implies_intro given-top]
+                }
+              @conclusion-bijection-hyp |
+                bijectsOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> bijectsOnto(f, segment(m), segment(n))
+                [by implies_intro given-bijection]
+            }
+          @discharge-n |
+            forall n: Nat; bijectsOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> bijectsOnto(f, segment(m), segment(n))
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m: Nat; forall n: Nat; bijectsOnto(f, segment(succ(m)), segment(succ(n))) -> apply(f, numeral(m)) = numeral(n) -> bijectsOnto(f, segment(m), segment(n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall f: Fn; forall m: Nat; forall n: Nat;
+      bijectsOnto(f, segment(succ(m)), segment(succ(n))) ->
+      apply(f, numeral(m)) = numeral(n) ->
+      bijectsOnto(f, segment(m), segment(n))
     [by forall_intro generalize-f]
 qed
