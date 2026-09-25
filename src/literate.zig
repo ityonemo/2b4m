@@ -1,21 +1,21 @@
-//! Literate bpa: `bpa check foo.md` checks the proofs embedded in a Markdown
-//! document. Only ```` ```bpa ```` fenced blocks are code; everything else is
+//! Literate 2b4m: `2b4m check foo.md` checks the proofs embedded in a Markdown
+//! document. Only ```` ```2b4m ```` fenced blocks are code; everything else is
 //! prose.
 //!
-//! The extraction is a MASK, not a copy: every line outside a `bpa` block —
+//! The extraction is a MASK, not a copy: every line outside a `2b4m` block —
 //! prose, blank lines, the fence lines themselves — is replaced by an empty
-//! line, and the *contents* of `bpa` blocks are kept verbatim in place. So the
+//! line, and the *contents* of `2b4m` blocks are kept verbatim in place. So the
 //! result has the SAME byte and line offsets as the original `.md`, which means
 //! error locations (`file.md:line:col`) map straight back to the document with
-//! zero offset bookkeeping. All `bpa` blocks share one scope (they concatenate
+//! zero offset bookkeeping. All `2b4m` blocks share one scope (they concatenate
 //! into a single logical file), so a later block can cite an earlier one.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const fmt = @import("fmt.zig");
 
-/// Mask `source` (a Markdown document) to bpa code: keep the lines inside
-/// ```` ```bpa ```` fences, blank everything else, preserving line count and
+/// Mask `source` (a Markdown document) to 2b4m code: keep the lines inside
+/// ```` ```2b4m ```` fences, blank everything else, preserving line count and
 /// every byte offset. The returned buffer has the same length as `source`
 /// except where content is dropped (replaced by nothing but the newline).
 pub fn extract(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
@@ -33,16 +33,16 @@ pub fn extract(arena: Allocator, source: []const u8) Allocator.Error![]const u8 
         const line = source[line_start..line_end];
 
         if (isFenceOpen(line)) {
-            // the ```bpa fence line itself is not code — blank it, enter block
+            // the ```2b4m fence line itself is not code — blank it, enter block
             in_block = true;
         } else if (in_block and isFenceClose(line)) {
             // closing ``` — blank it, leave block
             in_block = false;
         } else if (in_block) {
-            // inside a bpa block: keep the line verbatim
+            // inside a 2b4m block: keep the line verbatim
             try out.appendSlice(arena, line);
         }
-        // (else: prose / blank / non-bpa fence — emit nothing but the newline)
+        // (else: prose / blank / non-2b4m fence — emit nothing but the newline)
 
         if (has_nl) try out.append(arena, '\n');
         i = line_end + @intFromBool(has_nl);
@@ -50,7 +50,7 @@ pub fn extract(arena: Allocator, source: []const u8) Allocator.Error![]const u8 
     return out.items;
 }
 
-/// Format a literate `.md` document: reformat the bpa inside each ```` ```bpa ````
+/// Format a literate `.md` document: reformat the 2b4m inside each ```` ```2b4m ````
 /// fenced block with `fmt.format`, leaving ALL prose, blank lines, and fence
 /// lines byte-for-byte verbatim. The inverse of the situation `extract` is built
 /// for — here the prose is preserved and the code is rewritten, whereas `extract`
@@ -94,7 +94,7 @@ pub fn formatLiterate(arena: Allocator, source: []const u8) Allocator.Error![]co
             try block.appendSlice(arena, line);
             if (has_nl) try block.append(arena, '\n');
         } else {
-            // prose / blank / non-bpa fence: verbatim
+            // prose / blank / non-2b4m fence: verbatim
             try out.appendSlice(arena, line);
             if (has_nl) try out.append(arena, '\n');
         }
@@ -108,12 +108,12 @@ pub fn formatLiterate(arena: Allocator, source: []const u8) Allocator.Error![]co
     return out.items;
 }
 
-/// A ```` ```bpa ```` opening fence: ``` (or more backticks) immediately
-/// followed by the info string `bpa` (and nothing else but trailing spaces).
+/// A ```` ```2b4m ```` opening fence: ``` (or more backticks) immediately
+/// followed by the info string `2b4m` (and nothing else but trailing spaces).
 fn isFenceOpen(line: []const u8) bool {
     const rest = fenceRest(line) orelse return false;
     const info = std.mem.trim(u8, rest, " \t");
-    return std.mem.eql(u8, info, "bpa");
+    return std.mem.eql(u8, info, "2b4m");
 }
 
 /// A closing fence: a run of backticks with no info string.
@@ -137,7 +137,7 @@ fn fenceRest(line: []const u8) ?[]const u8 {
 
 const testing = std.testing;
 
-test "extract keeps bpa block content, blanks prose, preserves offsets" {
+test "extract keeps 2b4m block content, blanks prose, preserves offsets" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -147,7 +147,7 @@ test "extract keeps bpa block content, blanks prose, preserves offsets" {
         \\
         \\Some prose.
         \\
-        \\```bpa
+        \\```2b4m
         \\sort Nat
         \\const Z: Nat
         \\```
@@ -157,12 +157,12 @@ test "extract keeps bpa block content, blanks prose, preserves offsets" {
     ;
     const got = try extract(a, md);
     // the mask preserves NEWLINE count (so line numbers map), though prose
-    // bytes are dropped (columns only matter inside bpa blocks, kept verbatim).
+    // bytes are dropped (columns only matter inside 2b4m blocks, kept verbatim).
     try testing.expectEqual(
         std.mem.count(u8, md, "\n"),
         std.mem.count(u8, got, "\n"),
     );
-    // the bpa lines survive, on their original line numbers
+    // the 2b4m lines survive, on their original line numbers
     const expect =
         \\
         \\
@@ -179,7 +179,7 @@ test "extract keeps bpa block content, blanks prose, preserves offsets" {
     try testing.expectEqualStrings(expect, got);
 }
 
-test "ignores non-bpa fences" {
+test "ignores non-2b4m fences" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -190,7 +190,7 @@ test "ignores non-bpa fences" {
         \\```zig
         \\also not
         \\```
-        \\```bpa
+        \\```2b4m
         \\sort Nat
         \\```
         \\
@@ -210,19 +210,19 @@ test "ignores non-bpa fences" {
     , got);
 }
 
-test "formatLiterate reflows bpa blocks and leaves prose verbatim" {
+test "formatLiterate reflows 2b4m blocks and leaves prose verbatim" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
 
     // prose (including a deliberately mis-indented heading and trailing spaces),
-    // then a bpa block whose steps are written on one line and under-indented.
+    // then a 2b4m block whose steps are written on one line and under-indented.
     const md =
         \\#   Title
         \\
         \\Some   prose   with   inner   spaces.
         \\
-        \\```bpa
+        \\```2b4m
         \\theorem t: a
         \\proof
         \\@conclusion | a [by cite h]
@@ -233,14 +233,14 @@ test "formatLiterate reflows bpa blocks and leaves prose verbatim" {
         \\
     ;
     const got = try formatLiterate(a, md);
-    // prose lines survive byte-for-byte; only the bpa block is reflowed to the
+    // prose lines survive byte-for-byte; only the 2b4m block is reflowed to the
     // canonical three-line-per-step form.
     const expect =
         \\#   Title
         \\
         \\Some   prose   with   inner   spaces.
         \\
-        \\```bpa
+        \\```2b4m
         \\theorem t: a
         \\proof
         \\  @conclusion |
@@ -255,12 +255,12 @@ test "formatLiterate reflows bpa blocks and leaves prose verbatim" {
     try testing.expectEqualStrings(expect, got);
 }
 
-test "formatLiterate ignores non-bpa fences" {
+test "formatLiterate ignores non-2b4m fences" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
     // a plain fence and a zig fence must pass through untouched, even though
-    // their contents would be mangled if treated as bpa source.
+    // their contents would be mangled if treated as 2b4m source.
     const md =
         \\```
         \\@not a step | but looks like one
@@ -275,7 +275,7 @@ test "formatLiterate ignores non-bpa fences" {
     try testing.expectEqualStrings(md, got);
 }
 
-test "formatLiterate flushes an unterminated bpa block verbatim" {
+test "formatLiterate flushes an unterminated 2b4m block verbatim" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -284,7 +284,7 @@ test "formatLiterate flushes an unterminated bpa block verbatim" {
     const md =
         \\intro
         \\
-        \\```bpa
+        \\```2b4m
         \\sort Nat
         \\const Z: Nat
     ;

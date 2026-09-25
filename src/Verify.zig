@@ -120,7 +120,7 @@ chaos_seed: ?u64 = null,
 ///
 /// On a machine WITHOUT SMT this undershoots by 2x. That is accepted on purpose: the
 /// binary does not parse `/sys` to find physical cores. `-j<n>` always exists, and a user
-/// who wants physical-core precision wraps `bpa` in a shell script that reads
+/// who wants physical-core precision wraps `2b4m` in a shell script that reads
 /// `/sys/devices/system/cpu/*/topology` and passes `-j`. That is the documented contract.
 ///
 /// (`-j1` was the default while a scheduling race was open — a task could park on a

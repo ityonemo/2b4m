@@ -1,0 +1,34 @@
+// Citation rule — the FORBIDDEN case. The model maps opUnitLeft but NOT
+// opUnitRight. Since opUnitRight is affected by the substitution (it mentions
+// Sort/op/UNIT) yet is absent from the mapping, the materialized proof of
+// unitCollapsesAndMarks would cite a fact whose meaning shifts under the
+// interpretation with nothing accounting for it — rejected, naming opUnitRight.
+import cite <<< "model_cite_source.b4m"
+
+sort Thing
+const NEUTRAL: Thing
+func combine(a: Thing, b: Thing) => Thing
+
+axiom combineNeutralLeftAxiom: forall a: Thing; combine(NEUTRAL, a) = a
+theorem combineNeutralLeft: forall a: Thing; combine(NEUTRAL, a) = a
+proof
+  @conclusion |
+    forall a: Thing; combine(NEUTRAL, a) = a
+    [by cite combineNeutralLeftAxiom]
+qed
+
+// opUnitRight deliberately NOT mapped — the forbidden gap.
+model ThingModel {
+  cite.Sort: Thing
+  cite.UNIT: NEUTRAL
+  cite.op: combine
+  cite.opUnitLeft <- combineNeutralLeft
+  }
+
+theorem combineCollapsesAndMarks:
+  (forall a: Thing; combine(NEUTRAL, combine(a, NEUTRAL)) = combine(NEUTRAL, a)) and cite.marks(cite.POINT)
+proof
+  @conclusion |
+    (forall a: Thing; combine(NEUTRAL, combine(a, NEUTRAL)) = combine(NEUTRAL, a)) and cite.marks(cite.POINT)
+    [using model(ThingModel) cite.unitCollapsesAndMarks]
+qed

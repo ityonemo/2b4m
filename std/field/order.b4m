@@ -1,0 +1,223 @@
+// std/field/order.b4m — the theory of an ORDERED FIELD: a field (std/field.b4m)
+// with a total strict order `less_than` compatible with the field operations
+// (translation-invariant addition, positivity closed under multiplication). ℚ and
+// ℝ are ordered fields (ℂ is NOT — it has no compatible order).
+//
+// The field structure MODELS std/field.b4m (model FieldIsOrdered), so the field
+// corpus (mulOneRight, recipMulLeft, noZeroDivisors, the transferred ring facts)
+// transfers in; the order-specific theorems are proved from the order axioms plus
+// those transferred facts.
+//
+// Unlike std/integer/order.b4m (where `less_than` is CONSTRUCTED from a nonneg gap
+// witness), here it is POSTULATED abstractly — an opaque `pred` with the standard
+// ordered-field axioms — since there is no underlying successor structure to build
+// it from.
+
+import field <<< "std/field.b4m"
+
+sort OrderedField
+const ZERO: OrderedField
+const ONE: OrderedField
+func add(a: OrderedField, b: OrderedField) => OrderedField
+func mul(a: OrderedField, b: OrderedField) => OrderedField
+func neg(a: OrderedField) => OrderedField
+func recip(a: OrderedField) => OrderedField
+
+// -- field axioms (discharge the field model below) -------------------------
+axiom addIsAssociative: forall a, b, c: OrderedField; add(add(a, b), c) = add(a, add(b, c))
+axiom addZeroLeft: forall a: OrderedField; add(ZERO, a) = a
+axiom addNegLeft: forall a: OrderedField; add(neg(a), a) = ZERO
+axiom addIsCommutative: forall a, b: OrderedField; add(a, b) = add(b, a)
+axiom mulIsAssociative: forall a, b, c: OrderedField; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulAddDistribLeft: forall a, b, c: OrderedField; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulAddDistribRight: forall a, b, c: OrderedField; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+axiom mulIsCommutative: forall a, b: OrderedField; mul(a, b) = mul(b, a)
+axiom mulOneLeft: forall a: OrderedField; mul(ONE, a) = a
+axiom fieldInverse: forall a: OrderedField; a != ZERO -> mul(a, recip(a)) = ONE
+axiom oneNotZero: ONE != ZERO
+
+model FieldIsOrdered {
+  field.Field: OrderedField
+  field.ZERO: ZERO
+  field.ONE: ONE
+  field.add: add
+  field.mul: mul
+  field.neg: neg
+  field.recip: recip
+  field.addIsAssociative <- addIsAssociative
+  field.addZeroLeft <- addZeroLeft
+  field.addNegLeft <- addNegLeft
+  field.addIsCommutative <- addIsCommutative
+  field.mulIsAssociative <- mulIsAssociative
+  field.mulAddDistribLeft <- mulAddDistribLeft
+  field.mulAddDistribRight <- mulAddDistribRight
+  field.mulIsCommutative <- mulIsCommutative
+  field.mulOneLeft <- mulOneLeft
+  field.fieldInverse <- fieldInverse
+  field.oneNotZero <- oneNotZero
+}
+
+// -- the strict order + its axioms ------------------------------------------
+// Opaque `pred` (nothing pattern-matches on it here). Standard ordered-field
+// axioms: strict total order + translation-invariance + positive-product.
+pred less_than(a: OrderedField, b: OrderedField)
+
+axiom lessThanIrreflexive: forall a: OrderedField; not less_than(a, a)
+axiom lessThanTransitive: forall a, b, c: OrderedField; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+axiom lessThanTrichotomy: forall a, b: OrderedField; less_than(a, b) or a = b or less_than(b, a)
+// addition is translation-invariant: a < b ⟺ a+c < b+c (both directions).
+axiom lessThanAddRight: forall a, b, c: OrderedField; less_than(a, b) -> less_than(add(a, c), add(b, c))
+axiom lessThanAddCancel: forall a, b, c: OrderedField; less_than(add(a, c), add(b, c)) -> less_than(a, b)
+// the product of two positives is positive.
+axiom positiveProduct: forall a, b: OrderedField; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+
+define less_or_equal(a, b) = less_than(a, b) or a = b
+
+// -- derived order theorems -------------------------------------------------
+
+// asymmetry: a < b → not b < a. From transitivity + irreflexivity (a<b and b<a
+// would give a<a).
+theorem lessThanAsymmetric: forall a, b: OrderedField; less_than(a, b) -> (not less_than(b, a))
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @given-a-less-b |
+            assume less_than(a, b) {
+              @a-less-b |
+                less_than(a, b)
+                [by hypothesis given-a-less-b]
+              @given-b-less-a |
+                assume less_than(b, a) {
+                  @b-less-a |
+                    less_than(b, a)
+                    [by hypothesis given-b-less-a]
+                  @a-less-a |
+                    less_than(a, a)
+                    [using specialize lessThanTransitive(a, b, a) a-less-b b-less-a]
+                  @a-not-less-a |
+                    not less_than(a, a)
+                    [using specialize lessThanIrreflexive(a)]
+                }
+              @not-b-less-a |
+                not less_than(b, a)
+                [by not_intro given-b-less-a a-less-a a-not-less-a]
+            }
+          @discharge |
+            less_than(a, b) -> (not less_than(b, a))
+            [by implies_intro given-a-less-b]
+        }
+      @discharge-b |
+        forall b: OrderedField; less_than(a, b) -> (not less_than(b, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: OrderedField; less_than(a, b) -> (not less_than(b, a))
+    [by forall_intro generalize-a]
+qed
+
+// -- ring-lemma shims (for the order-lemma algebra below) --------------------
+theorem addNegRight: forall a: OrderedField; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: OrderedField; add(a, neg(a)) = ZERO
+    [using model(FieldIsOrdered) field.addNegRight]
+qed
+
+theorem negMulNeg: forall a, b: OrderedField; mul(neg(a), neg(b)) = mul(a, b)
+proof
+  @conclusion |
+    forall a, b: OrderedField; mul(neg(a), neg(b)) = mul(a, b)
+    [using model(FieldIsOrdered) field.negMulNeg]
+qed
+
+theorem mulOneRight: forall a: OrderedField; mul(a, ONE) = a
+proof
+  @conclusion |
+    forall a: OrderedField; mul(a, ONE) = a
+    [using model(FieldIsOrdered) field.mulOneRight]
+qed
+
+// -- ZERO < ONE (the foundational positivity fact) ---------------------------
+// By trichotomy: 0=1 contradicts oneNotZero; and 1<0 is impossible — adding −1 to
+// 1<0 gives 0 < −1, so (−1)·(−1) > 0 by positiveProduct, but (−1)·(−1) = 1, giving
+// 0 < 1, which with 1 < 0 violates asymmetry. So 0 < 1.
+theorem zeroLessThanOne: less_than(ZERO, ONE)
+proof
+  @trichotomy |
+    less_than(ZERO, ONE) or ZERO = ONE or less_than(ONE, ZERO)
+    [using specialize lessThanTrichotomy(ZERO, ONE)]
+  @conclusion |
+    less_than(ZERO, ONE)
+    case trichotomy {
+      @when-zero-less-one |
+        assume less_than(ZERO, ONE) {
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by hypothesis when-zero-less-one]
+        }
+      @when-zero-is-one |
+        assume ZERO = ONE {
+          @zero-is-one |
+            ZERO = ONE
+            [by hypothesis when-zero-is-one]
+          @one-is-zero |
+            ONE = ZERO
+            [by symmetry zero-is-one]
+          @one-not-zero |
+            ONE != ZERO
+            [by cite oneNotZero]
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by absurd one-is-zero one-not-zero]
+        }
+      @when-one-less-zero |
+        assume less_than(ONE, ZERO) {
+          @one-less-zero |
+            less_than(ONE, ZERO)
+            [by hypothesis when-one-less-zero]
+          // add −1 to both sides: 1+(−1) < 0+(−1).
+          @shifted |
+            less_than(add(ONE, neg(ONE)), add(ZERO, neg(ONE)))
+            [using specialize lessThanAddRight(ONE, ZERO, neg(ONE)) one-less-zero]
+          @one-plus-neg |
+            add(ONE, neg(ONE)) = ZERO
+            [using specialize addNegRight(ONE)]
+          @zero-plus-neg |
+            add(ZERO, neg(ONE)) = neg(ONE)
+            [using specialize addZeroLeft(neg(ONE))]
+          // rewrite the endpoints: ZERO < neg(ONE).
+          @shifted-left |
+            less_than(ZERO, add(ZERO, neg(ONE)))
+            [by rewrite one-plus-neg shifted]
+          @zero-less-negone |
+            less_than(ZERO, neg(ONE))
+            [by rewrite zero-plus-neg shifted-left]
+          // (−1)·(−1) > 0, and (−1)·(−1) = 1, so 0 < 1.
+          @negone-squared-positive |
+            less_than(ZERO, mul(neg(ONE), neg(ONE)))
+            [using specialize positiveProduct(neg(ONE), neg(ONE)) zero-less-negone zero-less-negone]
+          @negMulNeg-at |
+            mul(neg(ONE), neg(ONE)) = mul(ONE, ONE)
+            [using specialize negMulNeg(ONE, ONE)]
+          @mulOneRight-at |
+            mul(ONE, ONE) = ONE
+            [using specialize mulOneRight(ONE)]
+          @negone-squared-is-one |
+            mul(neg(ONE), neg(ONE)) = ONE
+            [using chain negMulNeg-at mulOneRight-at]
+          @zero-less-one |
+            less_than(ZERO, ONE)
+            [by rewrite negone-squared-is-one negone-squared-positive]
+        }
+    }
+qed
+
+// smoke test: noZeroDivisors transfers through the field model.
+theorem noZeroDivisors: forall a, b: OrderedField; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+proof
+  @conclusion |
+    forall a, b: OrderedField; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+    [using model(FieldIsOrdered) field.noZeroDivisors]
+qed

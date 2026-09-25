@@ -1,4 +1,4 @@
-//! `bpa query theorem <file> <name>` — the full source of one theorem.
+//! `2b4m query theorem <file> <name>` — the full source of one theorem.
 //!
 //! Prints the declaration verbatim: its leading doc-comment (the contiguous
 //! `//` block directly above it, blank-line-terminated), the `theorem <name>:`

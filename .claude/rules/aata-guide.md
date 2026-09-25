@@ -7,7 +7,7 @@ paths:
 
 The `aata/` files are literate transliterations of Judson's *Abstract Algebra:
 Theory and Applications* — the book's prose and development reproduced in order,
-each stated result followed by a machine-checked ` ```bpa ` proof. These rules
+each stated result followed by a machine-checked ` ```2b4m ` proof. These rules
 govern how those proofs are written. (For proof-label/naming conventions see
 `CONVENTIONS.md` and `agents/style-guide.md`.)
 
@@ -57,7 +57,7 @@ proof mirrors the book's reasoning. Reserve accelerants for the algebraic drudge
 the book *elides* — "clearly `a − bq − b = r − b`", ring rearrangements, normal-form
 equalities: the moves a human reader also skips.
 
-(Contrast `std/*.bpa`, where the rule is the opposite: collapse to the shortest
+(Contrast `std/*.b4m`, where the rule is the opposite: collapse to the shortest
 kernel-checked proof, accelerants everywhere — no demonstrative value needed.)
 
 ## No `hole`s in transliterations
@@ -71,7 +71,7 @@ sketching a skeleton), not for a proof that is known and expected to be complete
 
 ## When something is beyond the kernel
 
-Where a stated result exceeds what bpa's first-order kernel can express, keep the
+Where a stated result exceeds what 2b4m's first-order kernel can express, keep the
 prose and mark it in place — a `**Deferred:** …` note for an exercise, or a
 `// this section cannot currently be encoded [reason]` block for a stated theorem —
 saying exactly what it would require. Never silently drop a result.

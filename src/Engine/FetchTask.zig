@@ -618,12 +618,12 @@ test "ast registry: declOf resolves parsed decls by name; a miss is null; a synt
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\func succ(n: Nat) => Nat
         \\axiom refl: forall n: Nat; n = n
     );
-    const fid = (try ctx.lookupFile("/t/a.bpa")).?;
+    const fid = (try ctx.lookupFile("/t/a.b4m")).?;
 
     // each named decl resolves by its stamped name, to the right kind.
     try testing.expect(ctx.declOf(fid, try ctx.interner.internString("Nat")).?.* == .sort);
@@ -647,11 +647,11 @@ test "fetch: a root sort is produced from its declaration and published (demande
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\sort Bool
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const nat = try ctx.interner.internString("Nat");
 
     var eng = Engine.init(arena, ctx, ctx.io);
@@ -679,12 +679,12 @@ test "fetch: a `where`-alias produces a refined sort {parent, [guard]}" {
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\pred nonzero(n: Nat)
         \\sort Pos = Nat where nonzero
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const pos = try ctx.interner.internString("Pos");
 
     var eng = Engine.init(arena, ctx, ctx.io);
@@ -716,21 +716,21 @@ test "fetch: an import binds to the target file's namespace" {
 
     // parent imports child; simulate the parse phase's import resolution by
     // discovering both files and recording the raw-path -> child mapping.
-    const ctx = try fixtureCtx(arena, io, "/t/parent.bpa",
-        \\import peano <<< "child.bpa"
+    const ctx = try fixtureCtx(arena, io, "/t/parent.b4m",
+        \\import peano <<< "child.b4m"
     );
-    const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
+    const child_fid = try ctx.preload("/t/child.b4m", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
         for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
         ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
-    const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
-    const raw = try ctx.interner.internString("child.bpa");
+    const parent_fid = (try ctx.lookupFile("/t/parent.b4m")).?;
+    const raw = try ctx.interner.internString("child.b4m");
     try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
-    const parent = try ctx.fileIndex("/t/parent.bpa");
+    const parent = try ctx.fileIndex("/t/parent.b4m");
     const peano = try ctx.interner.internString("peano");
     var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
@@ -743,7 +743,7 @@ test "fetch: an import binds to the target file's namespace" {
     const key = ctx.interner.keyOf(outcome.done);
     try testing.expect(key == .import);
     // the import's namespace IS the child's universe-namespace
-    const child_file = try ctx.fileIndex("/t/child.bpa");
+    const child_file = try ctx.fileIndex("/t/child.b4m");
     try testing.expectEqual(try ctx.interner.namespace(.universe, child_file), key.import.namespace);
     try testing.expectEqual(@as(usize, 0), ctx.sink.list.items.len);
 }
@@ -755,8 +755,8 @@ test "fetch: an undeclared name diagnoses 'reference not found' and publishes no
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa", "sort Nat");
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m", "sort Nat");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const missing = try ctx.interner.internString("Missing");
 
     var eng = Engine.init(arena, ctx, ctx.io);
@@ -780,13 +780,13 @@ test "fetch layer 2: a func's sorts are sub-demanded; sig + param names assemble
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\func add(a: Nat, b: Nat) => Nat
         \\pred le(a: Nat, b: Nat)
         \\const ZERO: Nat
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const add = try ctx.interner.internString("add");
     const le = try ctx.interner.internString("le");
     const zero = try ctx.interner.internString("ZERO");
@@ -836,22 +836,22 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/parent.bpa",
-        \\import peano <<< "child.bpa"
+    const ctx = try fixtureCtx(arena, io, "/t/parent.b4m",
+        \\import peano <<< "child.b4m"
         \\func double(n: peano.Nat) => peano.Nat
     );
-    const child_fid = try ctx.preload("/t/child.bpa", "sort Nat");
+    const child_fid = try ctx.preload("/t/child.b4m", "sort Nat");
     {
         var p: parser.Parser = .initInterning(arena, "sort Nat", ctx.sink, ctx.interner);
         ctx.parsed.set(@intFromEnum(child_fid), try p.parseFile());
         for (ctx.parsed.get(@intFromEnum(child_fid)).decls) |*decl| _ = try ctx.registerDecl(child_fid, decl);
         ctx.parse_state.set(@intFromEnum(child_fid), .parsed); // registered directly; don't re-parse
     }
-    const parent_fid = (try ctx.lookupFile("/t/parent.bpa")).?;
-    const raw = try ctx.interner.internString("child.bpa");
+    const parent_fid = (try ctx.lookupFile("/t/parent.b4m")).?;
+    const raw = try ctx.interner.internString("child.b4m");
     try ctx.import_maps.at(@intFromEnum(parent_fid)).put(arena, raw, child_fid);
 
-    const parent = try ctx.fileIndex("/t/parent.bpa");
+    const parent = try ctx.fileIndex("/t/parent.b4m");
     const double = try ctx.interner.internString("double");
     var eng = Engine.init(arena, ctx, ctx.io);
     defer eng.deinit();
@@ -862,7 +862,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
 
     // the func's arg/result sort is the CHILD file's Nat
     const parent_ns = try ctx.interner.namespace(.universe, parent);
-    const child_file = try ctx.fileIndex("/t/child.bpa");
+    const child_file = try ctx.fileIndex("/t/child.b4m");
     const child_ns = try ctx.interner.namespace(.universe, child_file);
     const nat = ctx.idents.lookup(io, .{ .namespace = child_ns, .name = try ctx.interner.internString("Nat") }).?.done;
     const dbl = ctx.idents.lookup(io, .{ .namespace = parent_ns, .name = double }).?.done;
@@ -878,12 +878,12 @@ test "fetch layer 2: a guarded func ('requires') reifies its precondition into t
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\pred pos(n: Nat)
         \\func dec(n: Nat) => Nat requires pos(n)
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const dec = try ctx.interner.internString("dec");
 
     var eng = Engine.init(arena, ctx, ctx.io);
@@ -914,11 +914,11 @@ test "fetch: a fact name demanded as an identifier is a kind mismatch" {
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\axiom axP: P
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const axp = try ctx.interner.internString("axP");
 
     var eng = Engine.init(arena, ctx, ctx.io);
@@ -939,14 +939,14 @@ test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via
 
     // FetchTask produces only IDENTIFIERS; a schema is a fact-with-params → it belongs to the
     // FACT table (a ProveTask publishes its `.schema` locator). Reaching FetchTask is misuse.
-    const ctx = try fixtureCtx(arena, io, "/t/a.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort T
         \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
         \\proof
         \\  @c | forall x: T; goal(x) [by cite ax]
         \\qed
     );
-    const f = try ctx.fileIndex("/t/a.bpa");
+    const f = try ctx.fileIndex("/t/a.b4m");
     const name = try ctx.interner.internString("everywhereGoal");
 
     var eng = Engine.init(arena, ctx, ctx.io);

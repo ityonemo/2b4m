@@ -1,6 +1,8 @@
-# bpa
+# 2b4m — "too big for margin"
 
-A proof checker written in Zig. It consumes `.bpa` files containing
+*2b4m* is named for Fermat's note that his proof was too large for the margin: this is the tool for proofs that don't fit there.
+
+A proof checker written in Zig. It consumes `.b4m` files containing
 declarations and proofs, verifies every step, and reports either a summary
 line or precise `file:line:col` diagnostics.
 
@@ -18,7 +20,7 @@ invoke explicitly, and its work is either replayed as ordinary checked
 steps or disclosed.
 
 **Optimized for LLMs and humans alike.** Both audiences read the same
-surface: names are greppable (`bpa query uses` lists every fact a proof cites),
+surface: names are greppable (`2b4m query uses` lists every fact a proof cites),
 diagnostics re-parse verbatim as source, connectives are words rather than
 symbol soup, and libraries of schematic statements cost nothing until used
 — so context stays small and feedback stays precise. Layout is generous on
@@ -32,7 +34,7 @@ axiom induction(prop: Nat -> Prop):
   prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
 ```
 
-behaves like `fn List(comptime T: type)`: in the case of bpa it is a **stored
+behaves like `fn List(comptime T: type)`: in the case of 2b4m it is a **stored
 form**, not a theorem. It does nothing until instantiated with a concrete,
 written-out argument, at which point it is monomorphized into plain
 first-order logic.  A theorem schema's proof is re-checked at each
@@ -42,7 +44,7 @@ instance, just as Zig re-analyzes a generic function per instantiation.
 predicates is what makes proof assistants heavy: higher-order unification,
 undecidable matching, large trusted cores. But almost every practical use
 of that power is *instantiating* a general rule with a predicate you
-supply. bpa keeps exactly that half: schemas are instantiated only with
+supply. 2b4m keeps exactly that half: schemas are instantiated only with
 formulas you have actually written down, so instantiation is decidable
 substitution rather than search, no quantifier over predicates ever exists
 in the object logic, and the trusted kernel stays a small body of concrete
@@ -58,7 +60,7 @@ the elaborator, parser, or a tactic asserts. There are exactly two claims
 the kernel accepts without re-deriving — a schema *instance* (and it still
 checks the premise-matching) and a named *accelerated* verdict — and both are
 made visible rather than hidden: an accelerated step marks its theorem accelerated, the summary
-line discloses it, and by default `bpa check` rejects it outright (only the
+line discloses it, and by default `2b4m check` rejects it outright (only the
 opt-in `--fast` accepts an accelerated verdict). Ambiguity is
 squeezed out of the surface for the same reason: `:` is only ever sort
 ascription, `|` only ever a step label, connectives are words not symbols,
@@ -69,7 +71,7 @@ reads is the way it is checked.
 
 ```
 zig build
-./zig-out/bin/bpa check examples/peano.bpa
+./zig-out/bin/2b4m check examples/peano.b4m
 ```
 
 ```
@@ -100,28 +102,28 @@ qed
 Failures are located and exact:
 
 ```
-$ ./zig-out/bin/bpa check examples/incorrect.bpa
-examples/incorrect.bpa:39:41: error: modus_ponens: expected antecedent 'raining', got 'wet'
+$ ./zig-out/bin/2b4m check examples/incorrect.b4m
+examples/incorrect.b4m:39:41: error: modus_ponens: expected antecedent 'raining', got 'wet'
 ```
 
 ## Commands
 
 ```
-bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.bpa | file.md | dir> [theorem]
-bpa fmt [--check] <file.bpa>
-bpa lint <file.bpa | file.md>
-bpa debug accelerant <file> <line | theorem step-label>
-bpa query outline  <file> [theorem]
-bpa query theorem  <file> <name> [--sig]
-bpa query whereis  <file> <identifier>
-bpa query search   <file|dir> <query>
+2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] <file.b4m | file.md | dir> [theorem]
+2b4m fmt [--check] <file.b4m>
+2b4m lint <file.b4m | file.md>
+2b4m debug accelerant <file> <line | theorem step-label>
+2b4m query outline  <file> [theorem]
+2b4m query theorem  <file> <name> [--sig]
+2b4m query whereis  <file> <identifier>
+2b4m query search   <file|dir> <query>
 ```
 
 `check` verifies a file and everything it imports. By default it verifies
 everything; `--fast` defers per-`using`-word verification during development
 and says so loudly (`--fast` trusts all `using` words, `--fast-only W…` only
 the listed words, `--fast-except W…` all but the listed). Re-run plain
-`bpa check` to finalize. `fmt` normalizes whitespace and indentation in place
+`2b4m check` to finalize. `fmt` normalizes whitespace and indentation in place
 (`--check` reports instead of rewriting). `lint` reports convention violations `check`
 ignores because they don't affect validity — currently canonical binder order
 (a leading `forall` must bind in first-appearance order); see `CONVENTIONS.md`.
@@ -129,26 +131,26 @@ ignores because they don't affect validity — currently canonical binder order
 ### Literate proofs (`.md`)
 
 `check` also runs on **Markdown**: give it a `.md` file and it verifies the
-proofs inside ` ```bpa ` fenced code blocks, ignoring the prose. All the code
+proofs inside ` ```2b4m ` fenced code blocks, ignoring the prose. All the code
 blocks in a document share one scope (a later block may cite a theorem from an
 earlier one), and errors report the line number **in the `.md` itself** — so a
 literate proof document is a first-class, checkable artifact. See
 `examples/literate.md`.
 
 ```
-$ bpa check examples/literate.md
+$ 2b4m check examples/literate.md
 OK: 6 declarations, 1 theorems proven
 ```
 
-The `bpa query` commands (below) also understand `.md` — they extract the same
-`bpa` blocks — so you can outline, look up, or search proofs written literately.
+The `2b4m query` commands (below) also understand `.md` — they extract the same
+`2b4m` blocks — so you can outline, look up, or search proofs written literately.
 
 ### Query (read-only inspection)
 
 For most simple searches (label audits, tactic-usage sites, counts), using `grep`
 or similar is encouraged!
 
-`bpa query` navigates a proof corpus without checking it — for the cases plain
+`2b4m query` navigates a proof corpus without checking it — for the cases plain
 text searching, especially `grep`, handles poorly: a proof's *structure*, a
 theorem's *exact statement* (which may wrap across lines), *following an alias
 across files*, or *finding a lemma by concept* when the name is fuzzy.
@@ -169,7 +171,7 @@ across files*, or *finding a lemma by concept* when the name is fuzzy.
   "what does theorem X depend on?" — semantic and alias-aware, where a
   multi-line `[by …]` defeats `grep`.
 
-(The **acceleration audit** — where trust enters a proof — is `bpa debug taint`,
+(The **acceleration audit** — where trust enters a proof — is `2b4m debug taint`,
 below, not a query.)
 
 Query may support semantic searching in the future.
@@ -179,11 +181,11 @@ Query may support semantic searching in the future.
 An accelerated tactic like `[using simplify …]` or `[using arithmetic]` stands in for a
 chunk of proof the tactic generates and the kernel checks. In default (strict)
 mode that generated proof is a real, suppressed **synthetic theorem** — nothing is
-trusted, everything is kernel-checked. `bpa debug accelerant` reprints it, as the
-bpa a person would have written:
+trusted, everything is kernel-checked. `2b4m debug accelerant` reprints it, as the
+2b4m a person would have written:
 
 ```
-$ bpa debug accelerant tests/cases/farkas.bpa belowBothWaysIsAbsurd conclusion
+$ 2b4m debug accelerant tests/cases/farkas.b4m belowBothWaysIsAbsurd conclusion
 theorem arithmetic: forall a: Nat; forall b: Nat; less_than(a, b) -> less_than(b, a) -> less_than(a, a)
 proof
   @b2 |
@@ -197,12 +199,12 @@ qed
 ```
 
 Point it at a step by line number (`… <file> 23`) or by enclosing theorem + step
-label (`… <file> <theorem> <label>`). The output is valid bpa — fed back through
-`bpa check` it re-verifies from scratch. Useful for reviewing exactly what a
+label (`… <file> <theorem> <label>`). The output is valid 2b4m — fed back through
+`2b4m check` it re-verifies from scratch. Useful for reviewing exactly what a
 tactic discharged, and (as the underlying named-theorem chain) the export IR for a
 future Lean/Isabelle/Rocq backend.
 
-`bpa debug taint <file> [theorem]` is the companion audit: per proof, every step
+`2b4m debug taint <file> [theorem]` is the companion audit: per proof, every step
 whose rule can fall back to an accelerated verdict (`arithmetic`, `tautology`,
 `polynomial`, `assoc_commut`, `assoc`, `extensionality`, and their quantified variants),
 flagged at its `file:line:col` — *where trust enters the proof*. A clean report
@@ -227,7 +229,7 @@ means every step is kernel-checked.
   *accelerated tactic*) accept the goal, marks the theorem, and discloses it on the
   summary line. In other words, the default is certificate-or-error; accelerated
   verdicts are never accepted unless you ask for `--fast`.
-- **Imports** (`import peano <<< "std/peano.bpa"`) bring in namespaced
+- **Imports** (`import peano <<< "std/peano.b4m"`) bring in namespaced
   declarations. A cross-file citation is an `import` `using` step; under
   `--fast` (or `--fast-only import`) that step is *admitted* — accepted by
   matching the cited statement rather than re-deriving it — and the summary
@@ -236,14 +238,14 @@ means every step is kernel-checked.
 
 ## Compared to other proof assistants
 
-bpa is young and deliberately narrow; the mature systems below are vastly
+2b4m is young and deliberately narrow; the mature systems below are vastly
 more capable and have decades of libraries. These sections are about
-*design differences*, not a claim that bpa competes on power. The recurring
-theme: bpa trades expressive foundations for a tiny kernel, decidable
+*design differences*, not a claim that 2b4m competes on power. The recurring
+theme: 2b4m trades expressive foundations for a tiny kernel, decidable
 elaboration, and an explicit surface — a trade that suits a proof *checker*
 whose proofs are written to be read (by humans and LLMs) and grepped.
 
-bpa is designed to rule these footguns out by construction. Each is a genuine
+2b4m is designed to rule these footguns out by construction. Each is a genuine
 trade-off the mature systems made knowingly, for good reasons — but we think
 it's better not to have them at all.
 
@@ -251,13 +253,13 @@ One footgun is shared by all three, so it goes here: **division (and other
 partial functions) is made *total* by fiat.** Lean, Isabelle/HOL, and Rocq
 all define `n / 0 = 0` (and `head []`, etc.) so the term is well-typed —
 which means `n / 0` silently denotes a meaningless value and a proof can pass
-through it without anyone noticing the degenerate case. bpa instead guards
+through it without anyone noticing the degenerate case. 2b4m instead guards
 such functions (`func div(a, b) requires b != ZERO`), turning every use into
 a proof obligation: you must *prove* the divisor is nonzero, or the check
 fails with a located error. The cost is that you carry the obligation; the
 benefit is that the `n / 0` case cannot silently slip into a proof.
 
-In general, bpa inverts the usual relationship with accelerated tactics:
+In general, 2b4m inverts the usual relationship with accelerated tactics:
 
 - **Certificate-by-default.** `by arithmetic` *produces a full kernel-checked
   proof* whenever it can, and the default mode is certificate-or-error — a
@@ -269,18 +271,18 @@ In general, bpa inverts the usual relationship with accelerated tactics:
   certificate generation and takes the accelerated verdict, for quick iteration
   while a proof is still being worked out.
 
-Anything that bpa trusts beyond the kernel is **named, transitively propagated,
+Anything that 2b4m trusts beyond the kernel is **named, transitively propagated,
 printed on every summary line, and rejected by default**.
 
-### Lean vs bpa
+### Lean vs 2b4m
 
 Lean is a dependently-typed proof assistant and a full programming language
 (the Calculus of Inductive Constructions; proofs *are* programs). It is vastly
-more expressive than bpa's many-sorted first-order logic. For example, in Lean
-you can index a type by a value, which bpa cannot, at the cost of a kernel that
+more expressive than 2b4m's many-sorted first-order logic. For example, in Lean
+you can index a type by a value, which 2b4m cannot, at the cost of a kernel that
 implements definitional equality, universe checking, and inductive families. That
 Lean is a full programming language makes it harder to reason about without deeper
-knowledge of the underlying language; bpa is on the surface easier to reason about
+knowledge of the underlying language; 2b4m is on the surface easier to reason about
 at the expense of having longer proofs. This tradeoff is taken for two reasons:
 
 - modulo context windows, LLMs seem to have more patience walking through steppy
@@ -291,52 +293,52 @@ at the expense of having longer proofs. This tradeoff is taken for two reasons:
 
 *The footgun:* `native_decide` expands the trust surface silently, to include
 the compiler and FFI, both places where bugs have been found that enable deriving
-`False`.  These are only visible via `#print axioms`, versus bpa, which always
+`False`.  These are only visible via `#print axioms`, versus 2b4m, which always
 discloses accelerated-tactic use.
 
-### Isabelle/HOL vs bpa
+### Isabelle/HOL vs 2b4m
 
 Isabelle/HOL is higher-order logic under the **LCF architecture**: theorems are
 an abstract type only the small kernel can mint, so even `sledgehammer` and the
-classical reasoner factor through kernel inferences. bpa shares the tiny-trusted-core
+classical reasoner factor through kernel inferences. 2b4m shares the tiny-trusted-core
 instinct — its certificate-first tactics replay as kernel steps the same way —
 but is first-order (the schema mechanism covers only *instantiation*, not real
 quantification over predicates).
 
 *The footgun:* the `eval` method / `value` prove by emitting ML, compiling, and
 running it — expanding the trust surface to the code generator, the ML compiler,
-and the runtime, outside the LCF kernel. bpa's accelerated tactic is the same shape, but
+and the runtime, outside the LCF kernel. 2b4m's accelerated tactic is the same shape, but
 rejected in the default mode and disclosed under `--fast` rather than trusted silently.
 
-### Rocq (Coq) vs bpa
+### Rocq (Coq) vs 2b4m
 
 Rocq, like Lean, is founded on the Calculus of Inductive Constructions with
 dependent types and proofs-as-programs (and pioneered much of that tradition —
 `Ltac`, extraction, CompCert). Its `Ltac` is a Turing-complete *untrusted*
-metaprogramming layer emitting proof terms the kernel re-checks; bpa's tactics
+metaprogramming layer emitting proof terms the kernel re-checks; 2b4m's tactics
 fill the same role but are fixed built-ins, not a metalanguage.
 
 *The footgun:* `native_compute` (to OCaml) and `vm_compute` (a bytecode VM)
 close goals by computation, folding the compiler or VM into the trusted base —
-discoverable only via `Print Assumptions`. bpa's accelerated tactics are the analogue, but
+discoverable only via `Print Assumptions`. 2b4m's accelerated tactics are the analogue, but
 disclosed and `--fast`-gated, so the trusted surface is always disclosed.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `examples/peano.bpa` | the living demo: automation-assisted Peano arithmetic |
-| `examples/peano-pure.bpa` | the same theory proved entirely by hand |
-| `examples/gauss.bpa` | Gauss's summation formula (with the `assoc_commut` tactic) |
-| `examples/euclid.bpa` | Euclid's gcd, consuming the verified `std/peano/divides` library |
-| `examples/euclid-compute.bpa` | gcd *run* on concrete numbers: `gcd(9, 6) = 3`, unfolded step by step |
-| `examples/incorrect.bpa` | three classic wrong proofs and their diagnostics |
-| `examples/sqrt2.bpa` | **√2 is irrational** (stated over ℕ), proven |
-| `examples/literate.md` | a **literate** proof: prose + checkable ` ```bpa ` blocks |
-| `std/` | the standard library: arithmetic (`peano`), the integers (`integer`), abstract group theory (`group`), set algebra over a universe (`set`), the theory of mappings (`function`), and the number tower above them. A theory that outgrows one file becomes `std/X.bpa` beside a directory `std/X/` of sub-theories (`std/integer/divides.bpa`), and the parent forwards their headline results — so `import integer` reaches the order, the division algorithm and gcd/Bézout directly |
-| `aata/` | **literate transliterations of an abstract-algebra textbook** (Judson's AATA, GFDL) verified in bpa — the book's prose reproduced in order, each stated result followed by a checked proof; see `aata/README` |
-| `agents/` | agent-facing assets, symlinked into `.claude/`: `bpa-query-skill/` (a Skill teaching when to reach for `bpa query` over `grep`), `debug-guide.md` (the diagnostic flags — `--trace-facts`, `--axioms`, `debug accelerant`/`taint` — and which symptom calls for which) and `style-guide.md` (a path-scoped `.claude/rules/` file surfacing the drift-prone proof-label conventions freshly when a `.bpa`/proof `.md` is edited — the on-demand companion to `CONVENTIONS.md`) |
-| `tests/` | the integration suite: `zig build test` spawns the built `bpa` on each corpus file and asserts its exact stdout/stderr/exit. Gates live in subject-grouped `tests/test_*.zig` (cli, tactics, std, aata, examples, query, imports), each a one-line `ctx.ok`/`ctx.fail` (see `tests/Ctx.zig`); `build.zig` stays build configuration |
+| `examples/peano.b4m` | the living demo: automation-assisted Peano arithmetic |
+| `examples/peano-pure.b4m` | the same theory proved entirely by hand |
+| `examples/gauss.b4m` | Gauss's summation formula (with the `assoc_commut` tactic) |
+| `examples/euclid.b4m` | Euclid's gcd, consuming the verified `std/peano/divides` library |
+| `examples/euclid-compute.b4m` | gcd *run* on concrete numbers: `gcd(9, 6) = 3`, unfolded step by step |
+| `examples/incorrect.b4m` | three classic wrong proofs and their diagnostics |
+| `examples/sqrt2.b4m` | **√2 is irrational** (stated over ℕ), proven |
+| `examples/literate.md` | a **literate** proof: prose + checkable ` ```2b4m ` blocks |
+| `std/` | the standard library: arithmetic (`peano`), the integers (`integer`), abstract group theory (`group`), set algebra over a universe (`set`), the theory of mappings (`function`), and the number tower above them. A theory that outgrows one file becomes `std/X.b4m` beside a directory `std/X/` of sub-theories (`std/integer/divides.b4m`), and the parent forwards their headline results — so `import integer` reaches the order, the division algorithm and gcd/Bézout directly |
+| `aata/` | **literate transliterations of an abstract-algebra textbook** (Judson's AATA, GFDL) verified in 2b4m — the book's prose reproduced in order, each stated result followed by a checked proof; see `aata/README` |
+| `agents/` | agent-facing assets, symlinked into `.claude/`: `2b4m-query-skill/` (a Skill teaching when to reach for `2b4m query` over `grep`), `debug-guide.md` (the diagnostic flags — `--trace-facts`, `--axioms`, `debug accelerant`/`taint` — and which symptom calls for which) and `style-guide.md` (a path-scoped `.claude/rules/` file surfacing the drift-prone proof-label conventions freshly when a `.b4m`/proof `.md` is edited — the on-demand companion to `CONVENTIONS.md`) |
+| `tests/` | the integration suite: `zig build test` spawns the built `2b4m` on each corpus file and asserts its exact stdout/stderr/exit. Gates live in subject-grouped `tests/test_*.zig` (cli, tactics, std, aata, examples, query, imports), each a one-line `ctx.ok`/`ctx.fail` (see `tests/Ctx.zig`); `build.zig` stays build configuration |
 | `GUIDE.md` | every keyword, the kernel design, the built-in accelerated tactics |
 | `CONVENTIONS.md` | naming and proof-writing style |
 | `ACCELERATION.md` | the accelerated-tactic registry and trust disclosure |

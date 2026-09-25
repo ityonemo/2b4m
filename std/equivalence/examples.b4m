@@ -1,0 +1,52 @@
+// Worked example for `std/equivalence.b4m`'s class constructor.
+//
+// Why this file exists: `classOf` builds the equivalence class [x] = { y : y ~ x }, and
+// `classMember` is the two-way bridge between set membership and the relation. Nothing in
+// `equivalence.b4m` itself eliminates it, so neither direction has ever been exercised —
+// and a conjunction of two implications is exactly the shape where a reversed direction
+// goes unnoticed. The theorem below uses both directions against each other.
+import equivalence <<< "std/equivalence.b4m"
+import set <<< "std/set.b4m"
+import relation <<< "std/relation.b4m"
+
+sort Element = set.Element
+sort Set = set.Set
+func classOf = equivalence.classOf
+pred member = set.member
+pred related = relation.related
+
+axiom classMember = equivalence.classMember
+
+// A reflexive relation puts every element in its own class: instantiate the bridge at
+// (x, x), take the relation-to-membership direction, and feed it reflexivity. This is
+// the step every partition argument starts from — the classes actually cover.
+theorem reflexivePutsEachElementInItsOwnClass: (forall x: Element; related(x, x)) -> forall x: Element; member(x, classOf(x))
+proof
+  @given-reflexive |
+    assume forall x: Element; related(x, x) {
+      @relation-is-reflexive |
+        forall x: Element; related(x, x)
+        [by hypothesis given-reflexive]
+      @generalize-x |
+        fix x: Element {
+          @x-is-related-to-itself |
+            related(x, x)
+            [by forall_elim(x) relation-is-reflexive]
+          @class-membership-bridge |
+            (member(x, classOf(x)) -> related(x, x)) and (related(x, x) -> member(x, classOf(x)))
+            [using specialize classMember(x, x)]
+          @relation-implies-membership |
+            related(x, x) -> member(x, classOf(x))
+            [by and_elim_right class-membership-bridge]
+          @conclusion-x-in-its-class |
+            member(x, classOf(x))
+            [by modus_ponens relation-implies-membership x-is-related-to-itself]
+        }
+      @conclusion-every-element |
+        forall x: Element; member(x, classOf(x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    (forall x: Element; related(x, x)) -> forall x: Element; member(x, classOf(x))
+    [by implies_intro given-reflexive]
+qed

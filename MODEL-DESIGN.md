@@ -19,17 +19,17 @@ is a group** (guarded by `nonzero`) — two models of the *same* theory on the
 multiplicative-*monoid* was the earlier driver; ℚ is sharper because both are
 groups, exercising the two-models-of-one-theory collision.) The original
 forcing function remains **nonneg-ℤ is-a Peano ℕ** (guarded), to retire the
-hand-duplicated ℕ-algebra-over-ℤ in `std/integer-ring.bpa`.
+hand-duplicated ℕ-algebra-over-ℤ in `std/integer-ring.b4m`.
 
 ## Design philosophy — `model` is comptime structural transfer (the Zig way)
 
-This is the framing that makes `model` bpa's distinctive contribution, and it is
+This is the framing that makes `model` 2b4m's distinctive contribution, and it is
 a **design constraint**, not just a description. Every open question is decided by
 whether the answer keeps `model` comptime-shaped.
 
 The *capability* — prove theorems over an abstract theory, transfer them to a
 concrete structure by discharging axioms — is exactly what **Lean typeclasses**,
-**Isabelle locales**, and **Rocq module functors / structures** already do. bpa is
+**Isabelle locales**, and **Rocq module functors / structures** already do. 2b4m is
 NOT claiming to do something they cannot. The distinctiveness is in the SHAPE:
 
 > **`model` is to typeclasses/locales what Zig `comptime` is to C++ templates +
@@ -46,16 +46,16 @@ NOT claiming to do something they cannot. The distinctiveness is in the SHAPE:
 - **Monomorphize-and-forget over carry-the-dictionary.** `remapFormula` is
   comptime codegen: it emits the concrete theorem's AST from the abstract one and
   is DONE. No dictionary passing, no vtable, no residual machinery at
-  proof-checking time. The big provers carry the typeclass dictionary; bpa
+  proof-checking time. The big provers carry the typeclass dictionary; 2b4m
   specializes the formula once and moves on.
 - **Tiny kernel, power beside it.** `model` is a disclosed, tainted, kernel-EXTERNAL
   rewrite (an accelerant, see Trust model). The kernel never learns what a
   "structure" is — same architectural bet as Zig's small-language + comptime, and
-  as bpa's small-kernel + accelerants. It came out this shape because it inherits
+  as 2b4m's small-kernel + accelerants. It came out this shape because it inherits
   Zig's values, not despite being written in Zig.
 - **LLM-authorable.** A model block is a flat mapping table a language model can
   write and read; typeclass instance resolution is implicit action-at-a-distance
-  that is hard to author without a feedback loop. Legibility is bpa's whole reason
+  that is hard to author without a feedback loop. Legibility is 2b4m's whole reason
   to exist, and the comptime shape is what keeps `model` legible.
 
 ### The invariant (the non-goal that defines the feature)
@@ -63,7 +63,7 @@ NOT claiming to do something they cannot. The distinctiveness is in the SHAPE:
 **Stay comptime-shaped: explicit at the cite, structural not nominal, resolved-to-
 concrete-and-done, no dictionary, no search.** Test any proposed extension by:
 *would this be a comptime transform, or would it need a runtime/resolution
-mechanism?* If the latter, it is not bpa's `model` anymore — it is a worse
+mechanism?* If the latter, it is not 2b4m's `model` anymore — it is a worse
 reimplementation of the thing the big provers already do well.
 
 Concretely, these would BREAK the distinctiveness and are therefore NON-GOALS:
@@ -148,12 +148,12 @@ qed
 ```
 
 `model` is a **built-in justification-verb** (like `axiom`, `rewrite`) — NOT a
-user-defined tactic (bpa has none). `[using model(AdditiveGroup) group.cancelLeft]`
+user-defined tactic (2b4m has none). `[using model(AdditiveGroup) group.cancelLeft]`
 remaps `group.cancelLeft`'s formula through the `AdditiveGroup` mapping and checks
 it equals the step goal. The cite names BOTH the instance (which mapping) and the
 source theorem (what to transfer) — necessary because a sort has multiple models.
 
-Spelling follows bpa's parameterized-tactic convention: the **instance is
+Spelling follows 2b4m's parameterized-tactic convention: the **instance is
 parenthesized** (the mode selector, exactly like `assoc(opAssoc)`,
 `polynomial(theory)`, `forall_elim(t) step`) and the **source theorem is a bare
 ref** (the fact operated on). No `with` particle — the `by` grammar has none
@@ -330,7 +330,7 @@ shared machinery with FOUR uses, which is why it's worth building well once:
 3. **accelerant debug mode** — wrap ANY certifier's steps into a reviewable named
    theorem (next; in proximal-todo). Today accelerant reasoning is opaque
    (`--fast` shows a taint; elaborated mode's inline steps vanish); reifying it as
-   named theorems is the transparency lever for bpa's LLM-authored thesis.
+   named theorems is the transparency lever for 2b4m's LLM-authored thesis.
 4. **mechanical export (Lean/Isabelle/Rocq)** — an accelerant's *verdict* doesn't
    translate (an external prover won't accept "the Presburger procedure decided
    it"), but the materialized full KERNEL-STEP CHAIN does — it maps onto
@@ -353,7 +353,7 @@ accelerant's reasoning is opaque — `--fast` shows only a taint, and elaborated
 mode's inline certificate steps vanish into the proof; you cannot point at "the
 chain `arithmetic`/`ext` generated for this goal" and read it as standalone
 objects. Reifying accelerant output as inspectable theorems is the transparency
-lever for exactly the black-box spots — valuable for bpa's LLM-authored,
+lever for exactly the black-box spots — valuable for 2b4m's LLM-authored,
 trust-legible thesis. `model`'s strict path is the prototype; generalizing it to
 the other accelerants as an opt-in debug mode is the long-range direction.
 
@@ -387,21 +387,21 @@ UNIFORMLY in both directions:
 
 ## Applications (std reuse candidates)
 
-- **Abstract divisibility — DONE.** `std/divisibility.bpa`; `std/integer/divides.bpa`
+- **Abstract divisibility — DONE.** `std/divisibility.b4m`; `std/integer/divides.b4m`
   models it. First real in-library `model` on duplicated std code.
-- **Group / set corpora moved to importable std — DONE.** `std/group.bpa` (10
-  theorems + opt-in `opCommutative`), `std/set.bpa` (19 identities). Each aata
+- **Group / set corpora moved to importable std — DONE.** `std/group.b4m` (10
+  theorems + opt-in `opCommutative`), `std/set.b4m` (19 identities). Each aata
   transcription aliases back. This is what makes them modelable (locally, on
   demand, by any consumer).
-- **`std/ring.bpa` models group additively — DONE.** The first TWO-LEVEL model
+- **`std/ring.b4m` models group additively — DONE.** The first TWO-LEVEL model
   (a `model` inside a modelable theory). Judson's first ring proposition
   (a·0=0·a=0; a(-b)=(-a)b=-(ab); (-a)(-b)=ab) proved by transferring the
   additive-group cancelRight/inverseUnique/invInvolution through the AdditiveGroup
   model.
 
 - **ℤ thin model over ring — NEXT (the payoff / three-level chain).** Make
-  `std/integer-ring.bpa` (or a new consumer) declare a `model IntegerRing { … }`
-  over `std/ring.bpa` (its ring-sort mapping targeting `Int`), so ℤ inherits the
+  `std/integer-ring.b4m` (or a new consumer) declare a `model IntegerRing { … }`
+  over `std/ring.b4m` (its ring-sort mapping targeting `Int`), so ℤ inherits the
   ring corpus instead of hand-deriving it, and
   the ℤ→ring→group THREE-level materialization is exercised. Discharge audit: ℤ
   already has 7 of the 9 ring axioms as facts (addIsAssociative, addZeroLeft,

@@ -18,7 +18,7 @@ in one paragraph, and what is still open.
   searched for. A statement owes nothing; a bound element owes nothing; a generated theorem
   states its preconditions as antecedents.
 - **Accelerants as generated proofs.** Every `using` accelerant produces a synthetic schema
-  that the ordinary pipeline proves and the kernel re-checks; `bpa debug accelerant` prints it.
+  that the ordinary pipeline proves and the kernel re-checks; `2b4m debug accelerant` prints it.
   `--fast` is a per-word admit set (accept, don't prove); `instantiation` is never admitted.
 - **Models.** Structure interpretation with `:` maps and `<-` discharges, guarded targets with
   nominated dischargers, composed models for nested transfers, and schema sources discharged

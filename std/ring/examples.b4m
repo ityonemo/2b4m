@@ -1,0 +1,41 @@
+// Worked example for `std/ring.b4m`'s multiplicative associativity.
+//
+// Why this file exists: `mulIsAssociative` is one of the ring axioms every concrete ring
+// discharges when it models this theory, but `ring.b4m`'s own theorems are additive, so
+// no derivation here ever uses it. An associativity axiom stated with its parentheses
+// the wrong way round would look identical until something reassociated a real product.
+import ring <<< "std/ring.b4m"
+
+sort Ring = ring.Ring
+const ONE = ring.ONE
+func mul = ring.mul
+
+axiom mulIsAssociative = ring.mulIsAssociative
+
+// A four-fold product reassociates from the left-nested to the right-nested spelling in
+// one step. Using it on a triple whose middle factor is itself a product is what exposes
+// the axiom's direction.
+theorem reassociateAProductOfThree: forall a, b, c: Ring; mul(mul(a, b), mul(c, ONE)) = mul(a, mul(b, mul(c, ONE)))
+proof
+  @generalize-a |
+    fix a: Ring {
+      @generalize-b |
+        fix b: Ring {
+          @generalize-c |
+            fix c: Ring {
+              @conclusion-reassociated |
+                mul(mul(a, b), mul(c, ONE)) = mul(a, mul(b, mul(c, ONE)))
+                [using specialize mulIsAssociative(a, b, mul(c, ONE))]
+            }
+          @discharge-c |
+            forall c: Ring; mul(mul(a, b), mul(c, ONE)) = mul(a, mul(b, mul(c, ONE)))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Ring; mul(mul(a, b), mul(c, ONE)) = mul(a, mul(b, mul(c, ONE)))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ring; mul(mul(a, b), mul(c, ONE)) = mul(a, mul(b, mul(c, ONE)))
+    [by forall_intro generalize-a]
+qed

@@ -1,4 +1,4 @@
-//! Lexer for .bpa files. Zero-allocation: tokens are tag + byte range into the
+//! Lexer for .b4m files. Zero-allocation: tokens are tag + byte range into the
 //! source (style of std/zig/tokenizer.zig). `//` comments are skipped.
 
 const std = @import("std");
@@ -88,18 +88,18 @@ pub const Token = struct {
         pipe, // | (step-label delimiter)
         l_bracket, // [ (justification opener)
         r_bracket, // ]
-        /// A DECIMAL NUMERAL (`0`, `42`). The bpa TERM language has no numerals — a natural
+        /// A DECIMAL NUMERAL (`0`, `42`). The 2b4m TERM language has no numerals — a natural
         /// is `ZERO`/`succ(ZERO)`, an integer theory supplies its own — so this token never
         /// appears in a formula. It exists for places that index a STRUCTURE rather than
         /// denote a value: `[by definition(0) add]` selects a definition's clause. Digits
         /// inside an identifier (`eq2`) are unaffected: a numeral must START with a digit.
         number,
-        /// import path: "peano.bpa" (no escapes)
+        /// import path: "peano.b4m" (no escapes)
         string,
         import_arrow, // <<<
         obligation_arrow, // <- (model axiom-obligation discharge)
         closure_turnstile, // -| (model func closure-discharge: `op -| closureFact`)
-        /// only emitted when `keep_comments` is set (used by `bpa fmt`)
+        /// only emitted when `keep_comments` is set (used by `2b4m fmt`)
         comment,
         invalid,
         eof,
@@ -205,7 +205,7 @@ const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
 pub const Lexer = struct {
     source: []const u8,
     index: u32 = 0,
-    /// emit `.comment` tokens instead of skipping them (for `bpa fmt`)
+    /// emit `.comment` tokens instead of skipping them (for `2b4m fmt`)
     keep_comments: bool = false,
 
     pub fn init(source: []const u8) Lexer {
@@ -419,7 +419,7 @@ test "invalid characters produce invalid token" {
 }
 
 test "imports: keyword, arrow, string, qualified names" {
-    try expectTags("import peano <<< \"peano.bpa\"", &.{ .keyword_import, .identifier, .import_arrow, .string });
+    try expectTags("import peano <<< \"peano.b4m\"", &.{ .keyword_import, .identifier, .import_arrow, .string });
     try expectTags("peano.Nat", &.{.identifier});
     try expectTags("good(lib.NIL)", &.{ .identifier, .l_paren, .identifier, .r_paren });
     // '.' joins only before a letter/underscore; a lone '<' is invalid

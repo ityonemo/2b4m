@@ -20,7 +20,7 @@ unsound and inexpressive for other domains:
 It also lacks `neg`/`sub`/`prev`, so `sub(add(a,b),b) = a` — a QF-linear ℤ identity —
 is rejected as out-of-fragment, forcing hand-proved cancellation lemmas.
 
-The concrete trigger: the ℤ Euclidean-gcd port (`std/integer/divides.bpa`) needs
+The concrete trigger: the ℤ Euclidean-gcd port (`std/integer/divides.b4m`) needs
 `sub`-cancellation steps that are textbook linear arithmetic but currently un-decidable
 by the accelerant.
 
@@ -130,7 +130,7 @@ witnesses (they carry `x≥0`), so the existing Cooper tests stay green.
 
 ## Verification (fractal RED→GREEN)
 
-- **RED**: a fixture `tests/cases/arithmetic_integer_sub.bpa` with
+- **RED**: a fixture `tests/cases/arithmetic_integer_sub.b4m` with
   `theorem t: forall a, b: Int; sub(add(a, b), b) = a proof … [using arithmetic(integer)]`
   — today errors "sub(add(a,b),b) is outside linear arithmetic".
 - **GREEN**: after the change, `[using arithmetic(integer)]` decides it (strict, with a
@@ -155,7 +155,7 @@ witnesses (they carry `x≥0`), so the existing Cooper tests stay green.
   for QF).
 - `src/elaborate.zig` — `wellKnownSym`/`theoryScope` (2804, 3508) — the theory-binding
   channel new symbols/preds resolve through.
-- `std/peano.bpa` / `std/integer.bpa` — the theory bindings that declare (or don't)
+- `std/peano.b4m` / `std/integer.b4m` — the theory bindings that declare (or don't)
   domain nonnegativity + bind neg/sub/prev.
 - `tests/test_tactics.zig` + `tests/cases/arithmetic*/farkas*/cooper*/smt*` — the
   no-regression surface.
@@ -175,15 +175,15 @@ certifier must abstract consistently), so std strict-mode steps can't yet use it
 (`buildWitness`/`witnessCandidates`) now builds `prev`-towers for negative offsets
 (`buildTowerSigned`), so a quantified-ℤ existential with a negative witness — e.g.
 `exists y; x = succ(y)` (y = prev(x)) — certifies STRICT, not just `--fast`. Null for ℕ
-(no `prev`). Gate: `tests/cases/cooper_negative_witness.bpa`.
+(no `prev`). Gate: `tests/cases/cooper_negative_witness.b4m`.
 
 **LANDED (28e66ed) — inverse-pair cancellation in the equation certifier.** The
 sorted-tower join now parses `neg(fvar)` leaves (`isTowerLeaf`) and cancels additive-
 inverse pairs (`cancelInverses`): bubble `x` adjacent-before `neg(x)`, collapse with
 `addNegRight`, drop the ZERO — all trace rewrites, kernel-checked. So
 `add(a, sub(b,a)) = b` (leaf multiset {a,b,neg(a)} → {b}) certifies STRICT. RED→GREEN
-gate `tests/cases/arithmetic_cert_neg_cancel.bpa`; unlocked migrating
-`std/integer.bpa` `addDiffReaches` (27-line chain → one `[using arithmetic]`).
+gate `tests/cases/arithmetic_cert_neg_cancel.b4m`; unlocked migrating
+`std/integer.b4m` `addDiffReaches` (27-line chain → one `[using arithmetic]`).
 
 **LANDED (84ac3be) — opaque compound leaves in the equation certifier.** `isTowerLeaf`
 now accepts an opaque atom (`isOpaqueAtom`: an app whose head isn't part of the sum
@@ -192,7 +192,7 @@ recursively. `cancelInverses` is order-aware (addNegRight vs addNegLeft) and bub
 cancelled pair to the TAIL (`emitSwap`) so `add(x, neg(x))` is a genuine innermost subterm
 — fixing a non-kernel-checking certificate for two-plus opaque leaves. So a goal like
 `sub(add(a, f(x)), f(x)) = a` certifies STRICT. Guarded by a corpus-captured regression
-harness (6 planEquation shape tests) + `arithmetic_cert_opaque_leaf.bpa`. This is the
+harness (6 planEquation shape tests) + `arithmetic_cert_opaque_leaf.b4m`. This is the
 mechanism the gcd port's `sub(a, mul(b,q)) = mod(a,b)` step needs — its `subOfAddCancel`
 detour can now be dropped (follow-up).
 

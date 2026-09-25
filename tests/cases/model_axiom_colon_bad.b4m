@@ -1,0 +1,29 @@
+// REJECTION: discharging an AXIOM obligation with `:` is now an error — axiom
+// discharges must use `<-` (which reads as "this obligation is discharged by
+// that fact"), keeping `:` for symbol/sort interpretation only. Here
+// `source.opUnitLeft` is an axiom, so the `:` on its line must be rejected.
+//
+// Under the demand prover a model builds only when CITED, so the theorem below
+// transfers a source theorem through `ThingModel` — forcing the build and
+// rejecting the malformed `source.opUnitLeft: combineZedLeft` line.
+import source <<< "model_source.b4m"
+
+sort Thing
+const ZED: Thing
+func combine(a: Thing, b: Thing) => Thing
+
+axiom combineZedLeft: forall a: Thing; combine(ZED, a) = a
+
+model ThingModel {
+  source.Sort: Thing
+  source.UNIT: ZED
+  source.op: combine
+  source.opUnitLeft: combineZedLeft
+}
+
+theorem combineZedLeftTwice: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+proof
+  @conclusion |
+    forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
+    [using model(ThingModel) source.opUnitLeftTwice]
+qed

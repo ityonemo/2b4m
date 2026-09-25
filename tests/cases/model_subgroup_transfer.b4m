@@ -1,0 +1,199 @@
+// THE GROUP CORPUS, TRANSFERRED ONTO A SUBGROUP — the two-layer model stack.
+// One regression guard covering both the single subgroup and the iterated case:
+//   - a subgroup inH of a group Grp; the whole group corpus transfers onto it for
+//     free (8 theorems on H below);
+//   - K < H < G: a subgroup inK OF the subgroup H (3 theorems on K), the iterated
+//     case, composing on the same machinery (see the section break).
+//
+// The stack:
+//  1. HSubGroup models the standalone subgroup theory (std/subgroup.b4m) onto inH —
+//     reifying its group-shaped vocabulary + criteria onto the membership predicate.
+//  2. HGroup says "inH is a group" by routing each group AXIOM obligation THROUGH
+//     HSubGroup via the `@`-projection mapping value `group.X: HSubGroup@subgroup.X`
+//     — the inverted dependency, made explicit and walkable. (Only the axioms are
+//     mapped; the derived right-sided laws materialize through them.)
+//  3. Every group theorem then transfers onto the subgroup through HGroup,
+//     relativized to H. Kernel-checked, no accelerated tactics.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+
+// the ambient GROUP, reified into this file.
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+
+// a concrete subgroup membership predicate over Grp + its predicated sort.
+pred inH(g: Grp)
+sort H = Grp where inH
+
+// its criteria, asserted here (a concrete subgroup would PROVE these).
+axiom hHasIdentity: inH(E)
+axiom hClosedOp: forall a, b: Grp; inH(a) -> inH(b) -> inH(op(a, b))
+axiom hClosedInverse: forall a: Grp; inH(a) -> inH(inverse(a))
+
+// ── LAYER 1: HSubGroup — inH IS a subgroup (models the subgroup theory). ──────
+// The subgroup theory's sort `Sub` maps to the guarded H; its group-shaped
+// primitives to Grp's; its criteria to inH's.
+model HSubGroup {
+  subgroup.Grp: Grp
+  subgroup.Sub: H
+  subgroup.op: op
+  subgroup.inverse: inverse
+  subgroup.E: E
+  subgroup.inSubgroup: inH
+  subgroup.subgroupHasIdentity <- hHasIdentity
+  subgroup.subgroupClosedOp <- hClosedOp
+  subgroup.subgroupClosedInverse <- hClosedInverse
+  // the subgroup theory's abstract PARENT group IS the real group. A model maps
+  // only AXIOMS: grpAssoc/grpIdentityLeft/grpInverseLeft are the parent's axioms;
+  // its Right laws are theorems that materialize through these, so they are NOT
+  // mapped (mapping a theorem is a hard error).
+    subgroup.grpAssoc <- group.opAssoc
+    subgroup.grpIdentityLeft <- group.opIdentityLeft
+    subgroup.grpInverseLeft <- group.opInverseLeft
+}
+
+// ── LAYER 2: HGroup — inH IS a group, routing each group.X THROUGH HSubGroup. ─
+model HGroup {
+  group.Grp: H
+  group.op: op -| hClosedOp             // H is closed under op (curried closure)
+  group.inverse: inverse -| hClosedInverse   // H is closed under inverse
+  group.E: E(hHasIdentity)              // E is in H (base membership)
+  group.opAssoc <- HSubGroup @subgroup.opAssoc
+  group.opIdentityLeft <- HSubGroup @subgroup.opIdentityLeft
+  group.opInverseLeft <- HSubGroup @subgroup.opInverseLeft
+}
+
+// ── the payoff: EVERY group theorem transferred onto the subgroup through HGroup,
+//    relativized to H. Each is one line — the group corpus, for free on the subgroup.
+theorem hIdentityUnique: forall x: H; (forall g: H; op(x, g) = g) -> x = E
+proof
+  @conclusion |
+    forall x: H; (forall g: H; op(x, g) = g) -> x = E
+    [using model(HGroup) group.identityUnique]
+qed
+
+theorem hInverseUnique: forall a, b: H; op(a, b) = E -> b = inverse(a)
+proof
+  @conclusion |
+    forall a, b: H; op(a, b) = E -> b = inverse(a)
+    [using model(HGroup) group.inverseUnique]
+qed
+
+// NOTE: group.invProduct (and group.squareIdImpliesAbelian, which cites it) use the
+// `assoc` ACCELERATED tactic in their proofs — transferring an accelerated-tactic
+// proof through a GUARDED model is a known separate boundary (the tactic's
+// synthesized steps don't re-emit under the interpretation). Omitted here; the other
+// eight transfer cleanly.
+
+theorem hInvInvolution: forall a: H; inverse(inverse(a)) = a
+proof
+  @conclusion |
+    forall a: H; inverse(inverse(a)) = a
+    [using model(HGroup) group.invInvolution]
+qed
+
+theorem hSolutionExists: forall b, a: H; op(op(b, inverse(a)), a) = b
+proof
+  @conclusion |
+    forall b, a: H; op(op(b, inverse(a)), a) = b
+    [using model(HGroup) group.solutionExists]
+qed
+
+theorem hSolutionUnique: forall x, a, b, y: H; op(x, a) = b -> op(y, a) = b -> x = y
+proof
+  @conclusion |
+    forall x, a, b, y: H; op(x, a) = b -> op(y, a) = b -> x = y
+    [using model(HGroup) group.solutionUnique]
+qed
+
+theorem hCancelRight: forall b, a, c: H; op(b, a) = op(c, a) -> b = c
+proof
+  @conclusion |
+    forall b, a, c: H; op(b, a) = op(c, a) -> b = c
+    [using model(HGroup) group.cancelRight]
+qed
+
+theorem hCancelLeft: forall a, b, c: H; op(a, b) = op(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: H; op(a, b) = op(a, c) -> b = c
+    [using model(HGroup) group.cancelLeft]
+qed
+
+theorem hSelfInverse: (forall a: H; op(a, a) = E) -> forall a: H; inverse(a) = a
+proof
+  @conclusion |
+    (forall a: H; op(a, a) = E) -> forall a: H; inverse(a) = a
+    [using model(HGroup) group.selfInverse]
+qed
+
+// ════════════════════════════════════════════════════════════════════════════
+// ITERATED — K < H < G: a subgroup inK of the subgroup H.
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The subgroup-of-a-subgroup composes on the SAME machinery: a second model stack
+// (KSubGroup → KGroup) identical in shape to H's. FLATTENED representation keeps
+// each guard a single predicate — `inK` is a predicate over the base group Grp,
+// `K = Grp where inK`, and `inK(g) -> inH(g)` records K ⊆ H. K is then just another
+// subgroup of Grp whose members happen to lie in H, and the group corpus transfers
+// onto it exactly as onto H.
+
+pred inK(g: Grp)
+sort K = Grp where inK
+
+axiom kInH: forall g: Grp; inK(g) -> inH(g)
+axiom kHasIdentity: inK(E)
+axiom kClosedOp: forall a, b: Grp; inK(a) -> inK(b) -> inK(op(a, b))
+axiom kClosedInverse: forall a: Grp; inK(a) -> inK(inverse(a))
+
+// KSubGroup: inK IS a subgroup of Grp (single guard inK).
+model KSubGroup {
+  subgroup.Grp: Grp
+  subgroup.Sub: K
+  subgroup.op: op
+  subgroup.inverse: inverse
+  subgroup.E: E
+  subgroup.inSubgroup: inK
+  subgroup.subgroupHasIdentity <- kHasIdentity
+  subgroup.subgroupClosedOp <- kClosedOp
+  subgroup.subgroupClosedInverse <- kClosedInverse
+  subgroup.grpAssoc <- group.opAssoc
+  subgroup.grpIdentityLeft <- group.opIdentityLeft
+  subgroup.grpInverseLeft <- group.opInverseLeft
+}
+
+// KGroup: inK IS a group, routing each group axiom through KSubGroup.
+model KGroup {
+  group.Grp: K
+  group.op: op -| kClosedOp
+  group.inverse: inverse -| kClosedInverse
+  group.E: E(kHasIdentity)
+  group.opAssoc <- KSubGroup @subgroup.opAssoc
+  group.opIdentityLeft <- KSubGroup @subgroup.opIdentityLeft
+  group.opInverseLeft <- KSubGroup @subgroup.opInverseLeft
+}
+
+// three group theorems transferred onto the SUB-subgroup K.
+theorem kIdentityUnique: forall x: K; (forall g: K; op(x, g) = g) -> x = E
+proof
+  @conclusion |
+    forall x: K; (forall g: K; op(x, g) = g) -> x = E
+    [using model(KGroup) group.identityUnique]
+qed
+
+theorem kInverseUnique: forall a, b: K; op(a, b) = E -> b = inverse(a)
+proof
+  @conclusion |
+    forall a, b: K; op(a, b) = E -> b = inverse(a)
+    [using model(KGroup) group.inverseUnique]
+qed
+
+theorem kInvInvolution: forall a: K; inverse(inverse(a)) = a
+proof
+  @conclusion |
+    forall a: K; inverse(inverse(a)) = a
+    [using model(KGroup) group.invInvolution]
+qed

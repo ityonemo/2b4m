@@ -1,0 +1,116 @@
+// The paradigm guarded-model case, END TO END in one file: a SUBGROUP (elements
+// satisfying `inH`) modeling its own group's underlying sort. Exercises, together:
+//   - a SAME-FILE guarded model (source theory and model share one file);
+//   - AUTO-WEAKENING — the group axiom `opIdentityLeft` (unconditional on G) is
+//     mapped to ITSELF; the materializer synthesizes its relativized obligation
+//     `inH(a) -> op(E,a)=a` as a free weakening (no hand-written relativized copy);
+//   - inH(E) proved BY CONTRADICTION from the three definitional subgroup axioms
+//     (nonempty + closed under op + closed under inverse), then used to discharge
+//     the transfer's identity-membership obligation.
+
+// --- the group theory (would be std/group.b4m; inlined as the model source) ---
+sort Grp
+const E: Grp
+func op(a: Grp, b: Grp) => Grp
+func inverse(a: Grp) => Grp
+
+axiom opIdentityLeft: forall a: Grp; op(E, a) = a
+axiom opInverseRight: forall a: Grp; op(a, inverse(a)) = E
+
+// a group theorem to transfer: the identity fixes itself on the left.
+theorem opFixesIdentity: op(E, E) = E
+proof
+  @identity-law |
+    forall a: Grp; op(E, a) = a
+    [by cite opIdentityLeft]
+  @conclusion |
+    op(E, E) = E
+    [by forall_elim(E) identity-law]
+qed
+
+// --- the subgroup: a predicate over the SAME sort + its defining axioms ----
+pred inH(g: Grp)
+
+axiom inhabited: exists g: Grp; inH(g)
+axiom closedOp: forall a, b: Grp; inH(a) -> inH(b) -> inH(op(a, b))
+axiom closedInverse: forall a: Grp; inH(a) -> inH(inverse(a))
+
+// inH(E) is a THEOREM of the criterion, not an axiom: suppose E ∉ H; H is nonempty
+// so pick a ∈ H; then a⁻¹ ∈ H and op(a, a⁻¹) ∈ H, but op(a, a⁻¹) = E, so E ∈ H —
+// contradiction. The guarded model discharges its inH(E) obligation from this.
+theorem hasIdentity: inH(E)
+proof
+  @suppose-identity-absent |
+    assume not inH(E) {
+      @some-member-exists |
+        exists g: Grp; inH(g)
+        [by cite inhabited]
+      @with-member |
+        unpack member: Grp from some-member-exists {
+          @member-is-in-H |
+            inH(member)
+            [by hypothesis with-member]
+          @closed-under-inverse |
+            forall a: Grp; inH(a) -> inH(inverse(a))
+            [by cite closedInverse]
+          @inverse-of-member-in-H-if-member |
+            inH(member) -> inH(inverse(member))
+            [by forall_elim(member) closed-under-inverse]
+          @inverse-of-member-in-H |
+            inH(inverse(member))
+            [by modus_ponens inverse-of-member-in-H-if-member member-is-in-H]
+          @closed-under-op |
+            forall a, b: Grp; inH(a) -> inH(b) -> inH(op(a, b))
+            [by cite closedOp]
+          @product-in-H-if-both |
+            inH(member) -> inH(inverse(member)) -> inH(op(member, inverse(member)))
+            [by forall_elim(member, inverse(member)) closed-under-op]
+          @product-in-H-if-inverse |
+            inH(inverse(member)) -> inH(op(member, inverse(member)))
+            [by modus_ponens product-in-H-if-both member-is-in-H]
+          @product-is-in-H |
+            inH(op(member, inverse(member)))
+            [by modus_ponens product-in-H-if-inverse inverse-of-member-in-H]
+          @inverse-law |
+            forall a: Grp; op(a, inverse(a)) = E
+            [by cite opInverseRight]
+          @product-is-identity |
+            op(member, inverse(member)) = E
+            [by forall_elim(member) inverse-law]
+          @conclusion-identity-in-H |
+            inH(E)
+            [by rewrite product-is-identity product-is-in-H]
+        }
+      @identity-is-a-member |
+        inH(E)
+        [by exists_elim with-member]
+      @identity-absent |
+        not inH(E)
+        [by hypothesis suppose-identity-absent]
+    }
+  @identity-not-absent |
+    not not inH(E)
+    [by not_intro suppose-identity-absent identity-is-a-member identity-absent]
+  @conclusion |
+    inH(E)
+    [by double_negation identity-not-absent]
+qed
+
+// --- the guarded model: opIdentityLeft mapped to ITSELF (auto-weakened) -------
+sort GrpH = Grp where inH
+
+model SubgroupIsGroup {
+  Grp: GrpH
+  E: E(hasIdentity)
+  opIdentityLeft <- opIdentityLeft
+}
+
+// transferred (relativized) theorem: op(E, E) = E holds on H. Materialization
+// weakens opIdentityLeft to inH(a) -> op(E,a)=a and discharges inH(E) from
+// hasIdentity at the forall_elim(E).
+theorem transferred: op(E, E) = E
+proof
+  @conclusion |
+    op(E, E) = E
+    [using model(SubgroupIsGroup) opFixesIdentity]
+qed

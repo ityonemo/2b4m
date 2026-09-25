@@ -1,0 +1,57 @@
+// `polynomial` folding numeral coefficients: like-monomials (equal non-numeric
+// cores) are collected, their counts summed as a succ-tower coefficient. The
+// merge emits a kernel-rechecked mulSuccLeft fold chain. This closes the
+// aata/2.3 Ex 20 workaround block (twoQPlusTwoQ / twoQSquared) natively.
+//
+// TWO = succ(ONE), FOUR = succ(succ(succ(ONE))) are `define` macros in
+// int_divides; they expand to succ-towers, so the canonical coefficient shape
+// mul(succ^n(ZERO), core) matches on both sides.
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Int = int_divides.Int
+const ONE = int_divides.ONE
+func add = int_divides.add
+func mul = int_divides.mul
+define TWO = int_divides.TWO
+define FOUR = int_divides.FOUR
+
+// the minimal coefficient fold: q + q = 2·q.
+theorem qPlusQ: forall q: Int;
+  add(q, q) = mul(TWO, q)
+proof
+  @conclusion |
+    forall q: Int; add(q, q) = mul(TWO, q)
+    [using polynomial_quantified(int_divides)]
+qed
+
+// the aata/2.3 additive fold: 2q + 2q = 4q.
+theorem twoQPlusTwoQ: forall q: Int;
+  add(mul(TWO, q), mul(TWO, q)) = mul(FOUR, q)
+proof
+  @conclusion |
+    forall q: Int; add(mul(TWO, q), mul(TWO, q)) = mul(FOUR, q)
+    [using polynomial_quantified(int_divides)]
+qed
+
+// the aata/2.3 square fold: (2q)·(2q) = 4·q². The numeral product 2·2 folds to 4.
+theorem twoQSquared: forall q: Int;
+  mul(mul(TWO, q), mul(TWO, q)) = mul(FOUR, mul(q, q))
+proof
+  @conclusion |
+    forall q: Int; mul(mul(TWO, q), mul(TWO, q)) = mul(FOUR, mul(q, q))
+    [using polynomial_quantified(int_divides)]
+qed
+
+// the odd-square expansion (2q+1)² = 4q² + 4q + 1 — the "hard part" of Ex 20:
+// needs distribution AND both the 2·2→4 product fold and the 2q+2q→4q additive
+// fold together.
+theorem oddSquare: forall q: Int;
+  mul(add(mul(TWO, q), ONE), add(mul(TWO, q), ONE)) =
+  add(mul(FOUR, mul(q, q)), add(mul(FOUR, q), ONE))
+proof
+  @conclusion |
+    forall q: Int;
+      mul(add(mul(TWO, q), ONE), add(mul(TWO, q), ONE)) =
+      add(mul(FOUR, mul(q, q)), add(mul(FOUR, q), ONE))
+    [using polynomial_quantified(int_divides)]
+qed

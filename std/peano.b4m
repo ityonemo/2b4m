@@ -1,0 +1,1139 @@
+// std/peano.b4m — Peano arithmetic: naturals with addition and
+// multiplication, under the full PA axiomatization (successor injectivity,
+// zero-is-not-a-successor, induction, and the recursive definitions).
+//
+// This is the ARITHMETIC core: Nat, add, mul, and their algebra. The strict
+// order (`less_than`) and everything built on it — trichotomy, monotonicity,
+// and strong induction — live in std/peano/order.b4m, which imports this
+// file. (Addition-only would be Presburger arithmetic; multiplication is what
+// makes this Peano, so both live here — most users want both.)
+//
+// The induction schema is a stored FORM (comptime semantics): it is checked
+// per instantiation, monomorphized into plain first-order logic.
+//
+// NOTE — this file is the arithmetic FLOOR: the `polynomial`/`arithmetic`
+// tactics resolve their ring/order lemmas against it (e.g. `polynomial(peano)`).
+// Using those tactics HERE to prove peano's own algebra is not forbidden — the
+// kernel re-checks every emitted step, so a question-begging use can't yield a
+// valid certificate (it's caught when the certificate is generated, not trusted
+// silently). But it's the most likely place to go circular, so prefer raw
+// induction from the axioms for the core add/mul lemmas, and reach for a tactic
+// only when its citations plainly resolve to already-proven facts.
+
+// -- signature --------------------------------------------------------------
+
+sort Nat
+const ZERO: Nat
+func succ(n: Nat) => Nat
+func add(a: Nat, b: Nat) => Nat
+func mul(a: Nat, b: Nat) => Nat
+const ONE: Nat
+
+// -- axioms -----------------------------------------------------------------
+
+// the successor structure of the naturals
+axiom succInjective: forall a, b: Nat; succ(a) = succ(b) -> a = b
+axiom succNotZero: forall a: Nat; succ(a) != ZERO
+
+// addition and multiplication, by recursion on the first argument
+axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
+axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
+axiom mulZeroLeft: forall b: Nat; mul(ZERO, b) = ZERO
+axiom mulSuccLeft: forall a, b: Nat; mul(succ(a), b) = add(mul(a, b), b)
+
+// ONE is definitional sugar for succ(ZERO)
+axiom oneIsSuccZero: ONE = succ(ZERO)
+
+// nonneg(n) holds for every natural — trivial content over ℕ. This predicate
+// EXISTS ONLY FOR THE `arithmetic` CERTIFIER: that accelerant runs a pure-ℤ
+// Presburger engine (it never assumes variables are ≥ 0), so a ℕ theory must
+// SUPPLY its nonnegativity as a well-known predicate. `arithmetic` reads
+// nonneg(x) as `x ≥ 0` and injects it per ℕ-sorted variable. It is not meant
+// as general-purpose ℕ vocabulary — ordinary proofs never need it.
+pred nonneg(n: Nat)
+axiom nonnegAll: forall n: Nat; nonneg(n)
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory addZeroRight
+intheory addSuccRight
+intheory addIsCommutative
+intheory addIsAssociative
+
+// multiplication
+intheory mulZeroRight
+intheory mulSuccRight
+intheory mulIsCommutative
+intheory mulAddDistribRight
+intheory mulIsAssociative
+intheory mulOneLeft
+intheory mulOneRight
+intheory mulAddDistribLeft
+
+// ordering
+intheory addSuccNeverSelf
+intheory zeroOrSucc
+intheory addCancelLeft
+intheory addLeftSwap
+intheory mulLeftSwap
+
+// -- the induction schema (an axiom family: parameterized, no proof) --------
+axiom induction(prop: Nat -> Prop):
+  prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
+
+// -- addition ---------------------------------------------------------------
+
+// Strategy: induction on n with prop(k) := add(k, ZERO) = k.
+// (addZeroLeft reduces ZERO on the LEFT; this is the mirror-image fact.)
+theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
+proof
+  // base case: addZeroLeft specialized at b := ZERO
+  @base-case |
+    add(ZERO, ZERO) = ZERO
+    [using simplify addZeroLeft]
+
+  // inductive step: unfold add on succ(k), then rewrite with the IH
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume add(k, ZERO) = k {
+          @inductive-hypothesis |
+            add(k, ZERO) = k
+            [by hypothesis given-inductive-hypothesis]
+          @succ-case |
+            add(succ(k), ZERO) = succ(k)
+            [using simplify addSuccLeft inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
+qed
+
+// Strategy: fix b, then induct on the left argument with
+// prop(k) := add(k, succ(b)) = succ(add(k, b)). Induction binds its variable
+// innermost, so this yields `forall b, a`; a final swap re-quantifies it into
+// the canonical (first-appearance) `forall a, b` order.
+theorem addSuccRight: forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+proof
+  @add-succ-right-swapped |
+    fix b: Nat {
+      // base case: both sides reduce to succ(b) via addZeroLeft
+      @base-case |
+        add(ZERO, succ(b)) = succ(add(ZERO, b))
+        [using simplify addZeroLeft]
+
+      // inductive step: push succ through the left with addSuccLeft, rewrite the IH in,
+      // then fold the right-hand side back up
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume add(k, succ(b)) = succ(add(k, b)) {
+              @inductive-hypothesis |
+                add(k, succ(b)) = succ(add(k, b))
+                [by hypothesis given-inductive-hypothesis]
+              @succ-case |
+                add(succ(k), succ(b)) = succ(add(succ(k), b))
+                [using simplify addSuccLeft inductive-hypothesis]
+            }
+          @induction-step-at-k |
+            add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+        [by forall_intro induction-step]
+
+      @discharge-a |
+        forall a: Nat; add(a, succ(b)) = succ(add(a, b))
+        [using instantiation induction((fun k: Nat => add(k, succ(b)) = succ(add(k, b)))) base-case induction-step-for-all-k]
+    }
+  @swapped |
+    forall b, a: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro add-succ-right-swapped]
+  // swap the two leading universals into first-appearance order.
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @at-a-b |
+            add(a, succ(b)) = succ(add(a, b))
+            [by forall_elim(b, a) swapped]
+        }
+      @discharge-b |
+        forall b: Nat; add(a, succ(b)) = succ(add(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// Strategy: induction on b with prop(k) := forall a; add(a, k) = add(k, a);
+// each case handles all a at once (an inner fix). Induction yields `forall b, a`;
+// a final swap re-quantifies it into the canonical `forall a, b`.
+theorem addIsCommutative: forall a, b: Nat; add(a, b) = add(b, a)
+proof
+  // base case: both sides collapse to a via addZeroRight / addZeroLeft
+  @base-case-proof |
+    fix a: Nat {
+      @add-zero-right |
+        forall n: Nat; add(n, ZERO) = n
+        [by cite addZeroRight]
+      @chained |
+        add(a, ZERO) = add(ZERO, a)
+        [using simplify add-zero-right addZeroLeft]
+    }
+  @base-case |
+    forall a: Nat; add(a, ZERO) = add(ZERO, a)
+    [by forall_intro base-case-proof]
+
+  // inductive step: unfold via addSuccRight, swap with the IH, fold via addSuccLeft
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; add(a, k) = add(k, a) {
+          @pointwise |
+            fix a2: Nat {
+              @inductive-hypothesis |
+                forall a: Nat; add(a, k) = add(k, a)
+                [by hypothesis given-inductive-hypothesis]
+              @inductive-hypothesis-at-a2 |
+                add(a2, k) = add(k, a2)
+                [by forall_elim(a2) inductive-hypothesis]
+              @succ-case |
+                add(a2, succ(k)) = add(succ(k), a2)
+                [using simplify addSuccRight addSuccLeft inductive-hypothesis-at-a2]
+            }
+          @discharge-a |
+            forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+            [by forall_intro pointwise]
+        }
+      @induction-step-at-k |
+        (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+    [by forall_intro induction-step]
+
+  @add-is-commutative-swapped |
+    forall b, a: Nat; add(a, b) = add(b, a)
+    [using instantiation induction((fun k: Nat => forall a: Nat; add(a, k) = add(k, a))) base-case induction-step-for-all-k]
+  // swap the two leading universals into first-appearance order.
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @at-a-b |
+            add(a, b) = add(b, a)
+            [by forall_elim(b, a) add-is-commutative-swapped]
+        }
+      @discharge-b |
+        forall b: Nat; add(a, b) = add(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, b) = add(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// Strategy: fix c and b, induct on the leftmost summand with
+// prop(k) := add(add(k, b), c) = add(k, add(b, c)); every rewrite is
+// mechanical pushing of succ through addSuccLeft. Induction binds the leftmost
+// summand innermost, so this yields `forall c, b, a`; a final swap re-quantifies
+// it into the canonical `forall a, b, c`.
+theorem addIsAssociative: forall a, b, c: Nat; add(add(a, b), c) = add(a, add(b, c))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-b |
+        fix b: Nat {
+          // base case: both sides collapse through addZeroLeft
+          @base-case |
+            add(add(ZERO, b), c) = add(ZERO, add(b, c))
+            [using simplify addZeroLeft]
+
+          // inductive step: push succ out of both additions, rewrite the IH
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume add(add(k, b), c) = add(k, add(b, c)) {
+                  @inductive-hypothesis |
+                    add(add(k, b), c) = add(k, add(b, c))
+                    [by hypothesis given-inductive-hypothesis]
+                  @succ-case |
+                    add(add(succ(k), b), c) = add(succ(k), add(b, c))
+                    [using simplify addSuccLeft inductive-hypothesis]
+                }
+              @induction-step-at-k |
+                add(add(k, b), c) = add(k, add(b, c)) -> add(add(succ(k), b), c) = add(succ(k), add(b, c))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; add(add(k, b), c) = add(k, add(b, c)) -> add(add(succ(k), b), c) = add(succ(k), add(b, c))
+            [by forall_intro induction-step]
+
+          @discharge-a |
+            forall a: Nat; add(add(a, b), c) = add(a, add(b, c))
+            [using instantiation induction((fun k: Nat => add(add(k, b), c) = add(k, add(b, c)))) base-case induction-step-for-all-k]
+        }
+      @discharge-b |
+        forall b, a: Nat; add(add(a, b), c) = add(a, add(b, c))
+        [by forall_intro generalize-b]
+    }
+  @add-is-associative-swapped |
+    forall c, b, a: Nat; add(add(a, b), c) = add(a, add(b, c))
+    [by forall_intro generalize-c]
+  // swap the three leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @reorder-c |
+            fix c: Nat {
+              @at-a-b-c |
+                add(add(a, b), c) = add(a, add(b, c))
+                [by forall_elim(c, b, a) add-is-associative-swapped]
+            }
+          @reorder-discharge-c |
+            forall c: Nat; add(add(a, b), c) = add(a, add(b, c))
+            [by forall_intro reorder-c]
+        }
+      @reorder-discharge-b |
+        forall b, c: Nat; add(add(a, b), c) = add(a, add(b, c))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat; add(add(a, b), c) = add(a, add(b, c))
+    [by forall_intro reorder-a]
+qed
+
+// -- multiplication ---------------------------------------------------------
+
+// Strategy: induction on n with prop(k) := mul(k, ZERO) = ZERO.
+theorem mulZeroRight: forall n: Nat; mul(n, ZERO) = ZERO
+proof
+  @base-case |
+    mul(ZERO, ZERO) = ZERO
+    [using simplify mulZeroLeft]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume mul(k, ZERO) = ZERO {
+          @inductive-hypothesis |
+            mul(k, ZERO) = ZERO
+            [by hypothesis given-inductive-hypothesis]
+          @succ-case |
+            mul(succ(k), ZERO) = ZERO
+            [using simplify mulSuccLeft addZeroLeft inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        mul(k, ZERO) = ZERO -> mul(succ(k), ZERO) = ZERO
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; mul(k, ZERO) = ZERO -> mul(succ(k), ZERO) = ZERO
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall n: Nat; mul(n, ZERO) = ZERO
+    [using instantiation induction((fun k: Nat => mul(k, ZERO) = ZERO)) base-case induction-step-for-all-k]
+qed
+
+// Strategy: fix b, induct on a with prop(k) := mul(k, succ(b)) = add(mul(k, b), k)
+// — the mirror-image recursion for mul, as addSuccRight is for add. Induction
+// binds a innermost, yielding `forall b, a`; a final swap re-quantifies it into
+// the canonical `forall a, b`.
+theorem mulSuccRight: forall a, b: Nat; mul(a, succ(b)) = add(mul(a, b), a)
+proof
+  @mul-succ-right-swapped |
+    fix b: Nat {
+      // base case: both sides collapse to ZERO via mulZeroLeft / addZeroLeft
+      @base-case |
+        mul(ZERO, succ(b)) = add(mul(ZERO, b), ZERO)
+        [using simplify mulZeroLeft addZeroLeft]
+
+      // inductive step: normalize BOTH sides to succ(add(mul(k, b), add(b, k)))
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume mul(k, succ(b)) = add(mul(k, b), k) {
+              @mul-succ-left-at-k |
+                forall m: Nat; mul(succ(k), m) = add(mul(k, m), m)
+                [using specialize mulSuccLeft(k)]
+              @lhs-unfolded |
+                mul(succ(k), succ(b)) = add(mul(k, succ(b)), succ(b))
+                [by forall_elim(succ(b)) mul-succ-left-at-k]
+              @inductive-hypothesis |
+                mul(k, succ(b)) = add(mul(k, b), k)
+                [by hypothesis given-inductive-hypothesis]
+              @pull-succ-b |
+                add(add(mul(k, b), k), succ(b)) = succ(add(add(mul(k, b), k), b))
+                [using specialize addSuccRight(add(mul(k, b), k), b)]
+              @reassociated-lhs |
+                add(add(mul(k, b), k), b) = add(mul(k, b), add(k, b))
+                [using specialize addIsAssociative(mul(k, b), k, b)]
+              @summands-commuted |
+                add(k, b) = add(b, k)
+                [using specialize addIsCommutative(k, b)]
+              @rhs-unfolded |
+                mul(succ(k), b) = add(mul(k, b), b)
+                [by forall_elim(b) mul-succ-left-at-k]
+              @pull-succ-k |
+                add(add(mul(k, b), b), succ(k)) = succ(add(add(mul(k, b), b), k))
+                [using specialize addSuccRight(add(mul(k, b), b), k)]
+              @reassociated-rhs |
+                add(add(mul(k, b), b), k) = add(mul(k, b), add(b, k))
+                [using specialize addIsAssociative(mul(k, b), b, k)]
+
+              // both sides normalize to succ(add(mul(k, b), add(b, k))):
+              // LHS = add(mul(k, succ(b)), succ(b)) = add(add(mul(k, b), k), succ(b))
+              //     = succ(add(add(mul(k, b), k), b)) = succ(add(mul(k, b), add(k, b))) = succ(add(mul(k, b), add(b, k)))
+              // RHS = add(add(mul(k, b), b), succ(k)) = succ(add(add(mul(k, b), b), k)) = succ(add(mul(k, b), add(b, k)))
+              @succ-case |
+                mul(succ(k), succ(b)) = add(mul(succ(k), b), succ(k))
+                [using chain lhs-unfolded inductive-hypothesis pull-succ-b reassociated-lhs summands-commuted rhs-unfolded pull-succ-k reassociated-rhs]
+            }
+          @induction-step-at-k |
+            mul(k, succ(b)) = add(mul(k, b), k) -> mul(succ(k), succ(b)) = add(mul(succ(k), b), succ(k))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; mul(k, succ(b)) = add(mul(k, b), k) -> mul(succ(k), succ(b)) = add(mul(succ(k), b), succ(k))
+        [by forall_intro induction-step]
+
+      @discharge-a |
+        forall a: Nat; mul(a, succ(b)) = add(mul(a, b), a)
+        [using instantiation induction((fun k: Nat => mul(k, succ(b)) = add(mul(k, b), k))) base-case induction-step-for-all-k]
+    }
+  @mul-succ-right-in-swapped-order |
+    forall b, a: Nat; mul(a, succ(b)) = add(mul(a, b), a)
+    [by forall_intro mul-succ-right-swapped]
+  // swap the two leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @at-a-b |
+            mul(a, succ(b)) = add(mul(a, b), a)
+            [by forall_elim(b, a) mul-succ-right-in-swapped-order]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; mul(a, succ(b)) = add(mul(a, b), a)
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; mul(a, succ(b)) = add(mul(a, b), a)
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: induction on b with prop(k) := forall a; mul(a, k) = mul(k, a),
+// exactly the shape of addIsCommutative — mulSuccRight/mulSuccLeft unfold the
+// two sides to the same sum. Induction yields `forall b, a`; a final swap
+// re-quantifies it into the canonical `forall a, b`.
+theorem mulIsCommutative: forall a, b: Nat; mul(a, b) = mul(b, a)
+proof
+  // base case: both sides collapse to ZERO via mulZeroRight / mulZeroLeft
+  @base-case-proof |
+    fix a: Nat {
+      @mul-zero-right |
+        forall n: Nat; mul(n, ZERO) = ZERO
+        [by cite mulZeroRight]
+      @chained |
+        mul(a, ZERO) = mul(ZERO, a)
+        [using simplify mul-zero-right mulZeroLeft]
+    }
+  @base-case |
+    forall a: Nat; mul(a, ZERO) = mul(ZERO, a)
+    [by forall_intro base-case-proof]
+
+  // inductive step: mul(a, succ(k)) and mul(succ(k), a) both unfold to
+  // add(mul(k, a), a)
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; mul(a, k) = mul(k, a) {
+          @pointwise |
+            fix a2: Nat {
+              @inductive-hypothesis |
+                forall a: Nat; mul(a, k) = mul(k, a)
+                [by hypothesis given-inductive-hypothesis]
+              @inductive-hypothesis-at-a2 |
+                mul(a2, k) = mul(k, a2)
+                [by forall_elim(a2) inductive-hypothesis]
+              @succ-case |
+                mul(a2, succ(k)) = mul(succ(k), a2)
+                [using simplify mulSuccRight mulSuccLeft inductive-hypothesis-at-a2]
+            }
+          @discharge-a |
+            forall a: Nat; mul(a, succ(k)) = mul(succ(k), a)
+            [by forall_intro pointwise]
+        }
+      @induction-step-at-k |
+        (forall a: Nat; mul(a, k) = mul(k, a)) -> forall a: Nat; mul(a, succ(k)) = mul(succ(k), a)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Nat; mul(a, k) = mul(k, a)) -> forall a: Nat; mul(a, succ(k)) = mul(succ(k), a)
+    [by forall_intro induction-step]
+
+  @mul-is-commutative-swapped |
+    forall b, a: Nat; mul(a, b) = mul(b, a)
+    [using instantiation induction((fun k: Nat => forall a: Nat; mul(a, k) = mul(k, a))) base-case induction-step-for-all-k]
+  // swap the two leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @at-a-b |
+            mul(a, b) = mul(b, a)
+            [by forall_elim(b, a) mul-is-commutative-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; mul(a, b) = mul(b, a)
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; mul(a, b) = mul(b, a)
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: fix c and b, induct on a with
+// prop(k) := mul(add(k, b), c) = add(mul(k, c), mul(b, c)).
+// The inductive step needs the add-shuffle add(add(X, Y), c) = add(add(X, c), Y),
+// built from associativity and commutativity. This is the stepping stone to
+// mulIsAssociative. Induction binds a innermost, yielding `forall c, b, a`;
+// a final swap re-quantifies it into the canonical `forall a, b, c`.
+theorem mulAddDistribRight: forall a, b, c: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-b |
+        fix b: Nat {
+          // base case: both sides reduce to mul(b, c) via addZeroLeft / mulZeroLeft
+          @base-case |
+            mul(add(ZERO, b), c) = add(mul(ZERO, c), mul(b, c))
+            [using simplify addZeroLeft mulZeroLeft]
+
+          // inductive step
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume mul(add(k, b), c) = add(mul(k, c), mul(b, c)) {
+                  @add-succ-left-at-k-b |
+                    add(succ(k), b) = succ(add(k, b))
+                    [using specialize addSuccLeft(k, b)]
+                  @mul-succ-at-inner-sum |
+                    mul(succ(add(k, b)), c) = add(mul(add(k, b), c), c)
+                    [using specialize mulSuccLeft(add(k, b), c)]
+                  @inductive-hypothesis |
+                    mul(add(k, b), c) = add(mul(k, c), mul(b, c))
+                    [by hypothesis given-inductive-hypothesis]
+                  @reassociated |
+                    add(add(mul(k, c), mul(b, c)), c) = add(mul(k, c), add(mul(b, c), c))
+                    [using specialize addIsAssociative(mul(k, c), mul(b, c), c)]
+                  @product-and-c-commuted |
+                    add(mul(b, c), c) = add(c, mul(b, c))
+                    [using specialize addIsCommutative(mul(b, c), c)]
+                  @reassociated-back |
+                    add(add(mul(k, c), c), mul(b, c)) = add(mul(k, c), add(c, mul(b, c)))
+                    [using specialize addIsAssociative(mul(k, c), c, mul(b, c))]
+                  @mul-succ-at-k-c |
+                    mul(succ(k), c) = add(mul(k, c), c)
+                    [using specialize mulSuccLeft(k, c)]
+
+                  // mul(add(succ(k), b), c) = mul(succ(add(k, b)), c) = add(mul(add(k, b), c), c)
+                  //   = add(add(mul(k, c), mul(b, c)), c) = add(mul(k, c), add(mul(b, c), c)) = add(mul(k, c), add(c, mul(b, c)))
+                  //   = add(add(mul(k, c), c), mul(b, c)) = add(mul(succ(k), c), mul(b, c))
+                  @succ-case |
+                    mul(add(succ(k), b), c) = add(mul(succ(k), c), mul(b, c))
+                    [using chain add-succ-left-at-k-b mul-succ-at-inner-sum inductive-hypothesis reassociated product-and-c-commuted reassociated-back mul-succ-at-k-c]
+                }
+              @induction-step-at-k |
+                mul(add(k, b), c) = add(mul(k, c), mul(b, c)) -> mul(add(succ(k), b), c) = add(mul(succ(k), c), mul(b, c))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; mul(add(k, b), c) = add(mul(k, c), mul(b, c)) -> mul(add(succ(k), b), c) = add(mul(succ(k), c), mul(b, c))
+            [by forall_intro induction-step]
+
+          @discharge-a |
+            forall a: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+            [using instantiation induction((fun k: Nat => mul(add(k, b), c) = add(mul(k, c), mul(b, c)))) base-case induction-step-for-all-k]
+        }
+      @discharge-b |
+        forall b, a: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+        [by forall_intro generalize-b]
+    }
+  @mul-add-distrib-right-swapped |
+    forall c, b, a: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+    [by forall_intro generalize-c]
+  // swap the three leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @reorder-c |
+            fix c: Nat {
+              @at-a-b-c |
+                mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+                [by forall_elim(c, b, a) mul-add-distrib-right-swapped]
+            }
+          @reorder-discharge-c |
+            forall c: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+            [by forall_intro reorder-c]
+        }
+      @reorder-discharge-b |
+        forall b, c: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: fix c and b, induct on a with
+// prop(k) := mul(mul(k, b), c) = mul(k, mul(b, c)); distributivity carries
+// the inductive step. Induction binds a innermost, yielding `forall c, b, a`;
+// a final swap re-quantifies it into the canonical `forall a, b, c`.
+theorem mulIsAssociative: forall a, b, c: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-b |
+        fix b: Nat {
+          // base case: both sides collapse to ZERO via mulZeroLeft
+          @base-case |
+            mul(mul(ZERO, b), c) = mul(ZERO, mul(b, c))
+            [using simplify mulZeroLeft]
+
+          // inductive step: distribute, rewrite the IH, fold back up
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume mul(mul(k, b), c) = mul(k, mul(b, c)) {
+                  @mul-succ-left-at-k |
+                    forall m: Nat; mul(succ(k), m) = add(mul(k, m), m)
+                    [using specialize mulSuccLeft(k)]
+                  @inner-unfold |
+                    mul(succ(k), b) = add(mul(k, b), b)
+                    [by forall_elim(b) mul-succ-left-at-k]
+                  @product-of-sum-expanded |
+                    mul(add(mul(k, b), b), c) = add(mul(mul(k, b), c), mul(b, c))
+                    [using specialize mulAddDistribRight(mul(k, b), b, c)]
+                  @inductive-hypothesis |
+                    mul(mul(k, b), c) = mul(k, mul(b, c))
+                    [by hypothesis given-inductive-hypothesis]
+                  @mul-succ-at-k-product |
+                    mul(succ(k), mul(b, c)) = add(mul(k, mul(b, c)), mul(b, c))
+                    [by forall_elim(mul(b, c)) mul-succ-left-at-k]
+
+                  // mul(mul(succ(k), b), c) = mul(add(mul(k, b), b), c) = add(mul(mul(k, b), c), mul(b, c))
+                  //   = add(mul(k, mul(b, c)), mul(b, c)) = mul(succ(k), mul(b, c))
+                  @succ-case |
+                    mul(mul(succ(k), b), c) = mul(succ(k), mul(b, c))
+                    [using chain inner-unfold product-of-sum-expanded inductive-hypothesis mul-succ-at-k-product]
+                }
+              @induction-step-at-k |
+                mul(mul(k, b), c) = mul(k, mul(b, c)) -> mul(mul(succ(k), b), c) = mul(succ(k), mul(b, c))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; mul(mul(k, b), c) = mul(k, mul(b, c)) -> mul(mul(succ(k), b), c) = mul(succ(k), mul(b, c))
+            [by forall_intro induction-step]
+
+          @discharge-a |
+            forall a: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+            [using instantiation induction((fun k: Nat => mul(mul(k, b), c) = mul(k, mul(b, c)))) base-case induction-step-for-all-k]
+        }
+      @discharge-b |
+        forall b, a: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+        [by forall_intro generalize-b]
+    }
+  @mul-is-associative-swapped |
+    forall c, b, a: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+    [by forall_intro generalize-c]
+  // swap the three leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @reorder-c |
+            fix c: Nat {
+              @at-a-b-c |
+                mul(mul(a, b), c) = mul(a, mul(b, c))
+                [by forall_elim(c, b, a) mul-is-associative-swapped]
+            }
+          @reorder-discharge-c |
+            forall c: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+            [by forall_intro reorder-c]
+        }
+      @reorder-discharge-b |
+        forall b, c: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat; mul(mul(a, b), c) = mul(a, mul(b, c))
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: no induction — unfold ONE, one step of mulSuccRight, then collapse.
+theorem mulOneRight: forall n: Nat; mul(n, ONE) = n
+proof
+  @generalize-n |
+    fix n: Nat {
+      // unfold ONE, one step of mulSuccRight, then mulZeroRight / addZeroLeft collapse
+      @mul-succ-right |
+        forall m, c: Nat; mul(m, succ(c)) = add(mul(m, c), m)
+        [by cite mulSuccRight]
+      @mul-zero-right |
+        forall m: Nat; mul(m, ZERO) = ZERO
+        [by cite mulZeroRight]
+      @collapsed |
+        mul(n, ONE) = n
+        [using simplify oneIsSuccZero mul-succ-right mul-zero-right addZeroLeft]
+    }
+  @conclusion |
+    forall n: Nat; mul(n, ONE) = n
+    [by forall_intro generalize-n]
+qed
+
+// Strategy: mirror of mulOneRight through mulSuccLeft and mulZeroLeft.
+theorem mulOneLeft: forall n: Nat; mul(ONE, n) = n
+proof
+  @generalize-n |
+    fix n: Nat {
+      // unfold ONE, one step of mulSuccLeft, then mulZeroLeft / addZeroLeft collapse
+      @collapsed |
+        mul(ONE, n) = n
+        [using simplify oneIsSuccZero mulSuccLeft mulZeroLeft addZeroLeft]
+    }
+  @conclusion |
+    forall n: Nat; mul(ONE, n) = n
+    [by forall_intro generalize-n]
+qed
+
+// Strategy: no induction — swap with commutativity, apply right
+// distributivity, swap the products back.
+theorem mulAddDistribLeft: forall a, b, c: Nat; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @swap-outer |
+                mul(a, add(b, c)) = mul(add(b, c), a)
+                [using specialize mulIsCommutative(a, add(b, c))]
+              @sum-times-a-distributed |
+                mul(add(b, c), a) = add(mul(b, a), mul(c, a))
+                [using specialize mulAddDistribRight(b, c, a)]
+              @b-a-commuted |
+                mul(b, a) = mul(a, b)
+                [using specialize mulIsCommutative(b, a)]
+              @c-a-commuted |
+                mul(c, a) = mul(a, c)
+                [using specialize mulIsCommutative(c, a)]
+              // mul(a, add(b, c)) = mul(add(b, c), a) = add(mul(b, a), mul(c, a)) = add(mul(a, b), mul(a, c))
+              @both-fixed |
+                mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+                [using chain swap-outer sum-times-a-distributed b-a-commuted c-a-commuted]
+            }
+          @discharge-c |
+            forall c: Nat; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Nat; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+    [by forall_intro generalize-a]
+qed
+
+// -- order theory -----------------------------------------------------------
+
+// Strategy: fix d, induct on a with prop(k) := add(k, succ(d)) != k. The
+// first real use of succInjective and succNotZero. Induction binds a innermost,
+// yielding `forall d, a`; a final swap re-quantifies it into `forall a, d`.
+theorem addSuccNeverSelf: forall a, d: Nat; add(a, succ(d)) != a
+proof
+  @add-succ-never-self-swapped |
+    fix d: Nat {
+      // base case: add(ZERO, succ(d)) is succ(d), which is not ZERO
+      @suppose-base |
+        assume add(ZERO, succ(d)) = ZERO {
+          @add-zero-at-succ-d |
+            add(ZERO, succ(d)) = succ(d)
+            [using specialize addZeroLeft(succ(d))]
+          @got-h |
+            add(ZERO, succ(d)) = ZERO
+            [by hypothesis suppose-base]
+          // succ(d) = add(ZERO, succ(d)) = ZERO
+          @to-zero |
+            succ(d) = ZERO
+            [using chain add-zero-at-succ-d got-h]
+          @succ-d-is-nonzero |
+            succ(d) != ZERO
+            [using specialize succNotZero(d)]
+        }
+      @base-case |
+        add(ZERO, succ(d)) != ZERO
+        [by not_intro suppose-base to-zero succ-d-is-nonzero]
+
+      // inductive step: strip one succ with succInjective, contradict the IH
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume add(k, succ(d)) != k {
+              @suppose-succ |
+                assume add(succ(k), succ(d)) = succ(k) {
+                  @add-succ-at-k |
+                    add(succ(k), succ(d)) = succ(add(k, succ(d)))
+                    [using specialize addSuccLeft(k, succ(d))]
+                  @sum-at-succ-k-collapses |
+                    add(succ(k), succ(d)) = succ(k)
+                    [by hypothesis suppose-succ]
+                  // succ(add(k, succ(d))) = add(succ(k), succ(d)) = succ(k)
+                  @succ-eq |
+                    succ(add(k, succ(d))) = succ(k)
+                    [using chain add-succ-at-k sum-at-succ-k-collapses]
+                  @collapsed |
+                    add(k, succ(d)) = k
+                    [using specialize succInjective(add(k, succ(d)), k) succ-eq]
+                  @inductive-hypothesis |
+                    add(k, succ(d)) != k
+                    [by hypothesis given-inductive-hypothesis]
+                }
+              @succ-neg |
+                add(succ(k), succ(d)) != succ(k)
+                [by not_intro suppose-succ collapsed inductive-hypothesis]
+            }
+          @induction-step-at-k |
+            add(k, succ(d)) != k -> add(succ(k), succ(d)) != succ(k)
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; add(k, succ(d)) != k -> add(succ(k), succ(d)) != succ(k)
+        [by forall_intro induction-step]
+
+      @discharge-a |
+        forall a: Nat; add(a, succ(d)) != a
+        [using instantiation induction((fun k: Nat => add(k, succ(d)) != k)) base-case induction-step-for-all-k]
+    }
+  @add-succ-never-self-in-swapped-order |
+    forall d, a: Nat; add(a, succ(d)) != a
+    [by forall_intro add-succ-never-self-swapped]
+  // swap the two leading universals into first-appearance order.
+  @reorder-a |
+    fix a: Nat {
+      @reorder-d |
+        fix d: Nat {
+          @at-a-d |
+            add(a, succ(d)) != a
+            [by forall_elim(d, a) add-succ-never-self-in-swapped-order]
+        }
+      @reorder-discharge-d |
+        forall d: Nat; add(a, succ(d)) != a
+        [by forall_intro reorder-d]
+    }
+  @conclusion |
+    forall a, d: Nat; add(a, succ(d)) != a
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: unpack the witness of a < b and push succ through the sum.
+theorem zeroOrSucc: forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
+proof
+  @zero-eq |
+    ZERO = ZERO
+    [by reflexivity]
+  @base-case |
+    ZERO = ZERO or (exists m: Nat; ZERO = succ(m))
+    [by or_intro_left zero-eq]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume k = ZERO or (exists m: Nat; k = succ(m)) {
+          @succ-refl |
+            succ(k) = succ(k)
+            [by reflexivity]
+          @is-succ |
+            exists m: Nat; succ(k) = succ(m)
+            [by exists_intro(k) succ-refl]
+          @either |
+            succ(k) = ZERO or (exists m: Nat; succ(k) = succ(m))
+            [by or_intro_right is-succ]
+        }
+      @induction-step-at-k |
+        (k = ZERO or (exists m: Nat; k = succ(m))) -> (succ(k) = ZERO or (exists m: Nat; succ(k) = succ(m)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (k = ZERO or (exists m: Nat; k = succ(m))) -> (succ(k) = ZERO or (exists m: Nat; succ(k) = succ(m)))
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
+    [using instantiation induction((fun k: Nat => k = ZERO or (exists m: Nat; k = succ(m)))) base-case induction-step-for-all-k]
+qed
+
+// Strategy: a strictly positive multiplier succ(c) preserves the gap: the new
+// witness is add(mul(c, succ(u)), u), assembled through left distributivity.
+theorem addCancelLeft: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
+proof
+  @base-block |
+    fix a1: Nat {
+      @base-inner |
+        fix b1: Nat {
+          @base-assume |
+            assume add(ZERO, a1) = add(ZERO, b1) {
+              @padded-sums-are-equal |
+                add(ZERO, a1) = add(ZERO, b1)
+                [by hypothesis base-assume]
+              @red-a |
+                add(ZERO, a1) = a1
+                [using simplify addZeroLeft]
+              @red-b |
+                add(ZERO, b1) = b1
+                [using simplify addZeroLeft]
+              // a1 = add(ZERO, a1) = add(ZERO, b1) = b1
+              @a1-equals-b1 |
+                a1 = b1
+                [using chain red-a padded-sums-are-equal red-b]
+            }
+          @base-imp |
+            add(ZERO, a1) = add(ZERO, b1) -> a1 = b1
+            [by implies_intro base-assume]
+        }
+      @base-all-b |
+        forall b: Nat; add(ZERO, a1) = add(ZERO, b) -> a1 = b
+        [by forall_intro base-inner]
+    }
+  @base-case |
+    forall a, b: Nat; add(ZERO, a) = add(ZERO, b) -> a = b
+    [by forall_intro base-block]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a, b: Nat; add(k, a) = add(k, b) -> a = b {
+          @pointwise-a |
+            fix a2: Nat {
+              @pointwise-b |
+                fix b2: Nat {
+                  @succ-assume |
+                    assume add(succ(k), a2) = add(succ(k), b2) {
+                      @succ-padded-sums-are-equal |
+                        add(succ(k), a2) = add(succ(k), b2)
+                        [by hypothesis succ-assume]
+                      @push-a |
+                        add(succ(k), a2) = succ(add(k, a2))
+                        [using simplify addSuccLeft]
+                      @push-b |
+                        add(succ(k), b2) = succ(add(k, b2))
+                        [using simplify addSuccLeft]
+                      // succ(add(k, a2)) = add(succ(k), a2) = add(succ(k), b2) = succ(add(k, b2))
+                      @successors-are-equal |
+                        succ(add(k, a2)) = succ(add(k, b2))
+                        [using chain push-a succ-padded-sums-are-equal push-b]
+                      @unpadded-sums-are-equal |
+                        add(k, a2) = add(k, b2)
+                        [using specialize succInjective(add(k, a2), add(k, b2)) successors-are-equal]
+                      @inductive-hypothesis |
+                        forall a, b: Nat; add(k, a) = add(k, b) -> a = b
+                        [by hypothesis given-inductive-hypothesis]
+                      @a2-equals-b2 |
+                        a2 = b2
+                        [using specialize inductive-hypothesis(a2, b2) unpadded-sums-are-equal]
+                    }
+                  @succ-imp |
+                    add(succ(k), a2) = add(succ(k), b2) -> a2 = b2
+                    [by implies_intro succ-assume]
+                }
+              @succ-all-b |
+                forall b: Nat; add(succ(k), a2) = add(succ(k), b) -> a2 = b
+                [by forall_intro pointwise-b]
+            }
+          @succ-all-ab |
+            forall a, b: Nat; add(succ(k), a) = add(succ(k), b) -> a = b
+            [by forall_intro pointwise-a]
+        }
+      @induction-step-at-k |
+        (forall a, b: Nat; add(k, a) = add(k, b) -> a = b) -> forall a, b: Nat; add(succ(k), a) = add(succ(k), b) -> a = b
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a, b: Nat; add(k, a) = add(k, b) -> a = b) -> forall a, b: Nat; add(succ(k), a) = add(succ(k), b) -> a = b
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
+    [using instantiation induction((fun k: Nat => forall a, b: Nat; add(k, a) = add(k, b) -> a = b)) base-case induction-step-for-all-k]
+qed
+
+// Cancel a common left addend under the order: reassociate the witness
+// equation (simplify does the grind) and cancel with addCancelLeft.
+theorem addLeftSwap: forall x, y, r: Nat; add(x, add(y, r)) = add(y, add(x, r))
+proof
+  @generalize-x |
+    fix x: Nat {
+      @generalize-y |
+        fix y: Nat {
+          @generalize-r |
+            fix r: Nat {
+              @reassociated-x-y |
+                add(add(x, y), r) = add(x, add(y, r))
+                [using simplify addIsAssociative]
+              @reassociated-y-x |
+                add(add(y, x), r) = add(y, add(x, r))
+                [using simplify addIsAssociative]
+              @x-y-commuted |
+                add(x, y) = add(y, x)
+                [using specialize addIsCommutative(x, y)]
+              // add(x, add(y, r)) = add(add(x, y), r) = add(add(y, x), r) = add(y, add(x, r))
+              @conclusion-add-left-swaps |
+                add(x, add(y, r)) = add(y, add(x, r))
+                [using chain reassociated-x-y x-y-commuted reassociated-y-x]
+            }
+          @discharge-r |
+            forall r: Nat; add(x, add(y, r)) = add(y, add(x, r))
+            [by forall_intro generalize-r]
+        }
+      @discharge-y |
+        forall y, r: Nat; add(x, add(y, r)) = add(y, add(x, r))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, r: Nat; add(x, add(y, r)) = add(y, add(x, r))
+    [by forall_intro generalize-x]
+qed
+
+// the multiplication analog of addLeftSwap: the sorting primitive for mul-AC.
+theorem mulLeftSwap: forall x, y, r: Nat; mul(x, mul(y, r)) = mul(y, mul(x, r))
+proof
+  @generalize-x |
+    fix x: Nat {
+      @generalize-y |
+        fix y: Nat {
+          @generalize-r |
+            fix r: Nat {
+              @reassociated-x-y |
+                mul(mul(x, y), r) = mul(x, mul(y, r))
+                [using simplify mulIsAssociative]
+              @reassociated-y-x |
+                mul(mul(y, x), r) = mul(y, mul(x, r))
+                [using simplify mulIsAssociative]
+              @x-y-commuted |
+                mul(x, y) = mul(y, x)
+                [using specialize mulIsCommutative(x, y)]
+              // mul(x, mul(y, r)) = mul(mul(x, y), r) = mul(mul(y, x), r) = mul(y, mul(x, r))
+              @conclusion-mul-left-swaps |
+                mul(x, mul(y, r)) = mul(y, mul(x, r))
+                [using chain reassociated-x-y x-y-commuted reassociated-y-x]
+            }
+          @discharge-r |
+            forall r: Nat; mul(x, mul(y, r)) = mul(y, mul(x, r))
+            [by forall_intro generalize-r]
+        }
+      @discharge-y |
+        forall y, r: Nat; mul(x, mul(y, r)) = mul(y, mul(x, r))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, r: Nat; mul(x, mul(y, r)) = mul(y, mul(x, r))
+    [by forall_intro generalize-x]
+qed
+
+// ============================================================================
+// THEORY OF ℕ — what the sub-theories under std/peano/ prove.
+//
+// `import peano <<< "std/peano.b4m"` reaches the ORDER, TRUNCATED SUBTRACTION,
+// DIVISIBILITY/GCD and PARITY without knowing which file proved which. The
+// `intheory` block above is the same promise for facts proved later in THIS
+// file; a forward is that promise kept in another file.
+//
+// What is forwarded is the TAKEAWAY RESULTS. The lemmas each sub-theory needed
+// on the way stay where they were proved — `import peano/order` (etc.) is still
+// the honest way to reach those, and the sub-theories cite each other directly.
+// ============================================================================
+
+import order <<< "std/peano/order.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+import divides_theory <<< "std/peano/divides.b4m"
+import parity <<< "std/peano/parity.b4m"
+
+// -- the strict order (std/peano/order.b4m) ---------------------------------
+
+pred less_than = order.less_than
+axiom lessThanIntro = order.lessThanIntro
+axiom lessThanElim = order.lessThanElim
+define less_or_equal(a, b) = order.less_or_equal(a, b)
+
+theorem lessThanIrreflexive = order.lessThanIrreflexive
+theorem lessThanTransitive = order.lessThanTransitive
+theorem trichotomy = order.trichotomy
+theorem notLessThanZero = order.notLessThanZero
+theorem additionPreservesOrder = order.additionPreservesOrder
+theorem multiplicationPreservesOrder = order.multiplicationPreservesOrder
+theorem lessOrEqualRefl = order.lessOrEqualRefl
+theorem lessOrEqualTransitive = order.lessOrEqualTransitive
+theorem lessOrEqualAntisymmetric = order.lessOrEqualAntisymmetric
+theorem lessOrEqualSplit = order.lessOrEqualSplit
+theorem lessThanToLessOrEqual = order.lessThanToLessOrEqual
+theorem mulCancelLeft = order.mulCancelLeft
+theorem strongInduction = order.strongInduction
+theorem wellOrdering = order.wellOrdering
+
+// -- truncated subtraction (std/peano/subtraction.b4m) ----------------------
+// The measure lemma `subStrictlyDecreases` is what makes subtractive recursion
+// (Euclid's gcd) terminate.
+
+func sub = subtraction.sub
+axiom subZeroRight = subtraction.subZeroRight
+axiom subSuccSucc = subtraction.subSuccSucc
+axiom subZeroLeft = subtraction.subZeroLeft
+
+theorem subSelf = subtraction.subSelf
+theorem subAddCancel = subtraction.subAddCancel
+theorem addSubCancel = subtraction.addSubCancel
+theorem subStrictlyDecreases = subtraction.subStrictlyDecreases
+theorem mulSubDistribLeft = subtraction.mulSubDistribLeft
+
+// -- divisibility, division, gcd (std/peano/divides.b4m) --------------------
+
+define divides(d, n) = divides_theory.divides(d, n)
+func div = divides_theory.div
+func mod = divides_theory.mod
+func gcd = divides_theory.gcd
+
+theorem dividesRefl = divides_theory.dividesRefl
+theorem dividesZero = divides_theory.dividesZero
+theorem dividesAdd = divides_theory.dividesAdd
+theorem dividesMul = divides_theory.dividesMul
+theorem dividesSub = divides_theory.dividesSub
+theorem dividesTransitive = divides_theory.dividesTransitive
+theorem modIntro = divides_theory.modIntro
+theorem gcdDividesBoth = divides_theory.gcdDividesBoth
+theorem gcdGreatest = divides_theory.gcdGreatest
+
+// -- parity (std/peano/parity.b4m) ------------------------------------------
+// Even/odd is `divides(TWO, ·)`; the crux 2 | p² → 2 | p is the number-theoretic
+// heart of √2's irrationality.
+
+theorem evenOrOdd = parity.evenOrOdd
+theorem oddForm = parity.oddForm
+theorem evenSquareEven = parity.evenSquareEven
+theorem twoNotDivideOne = parity.twoNotDivideOne

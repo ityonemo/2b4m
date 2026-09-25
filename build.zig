@@ -5,25 +5,25 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Core library module: all proof-checking logic lives here; main.zig is a thin CLI.
-    const mod = b.addModule("bpa", .{
+    const mod = b.addModule("b4m", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
 
     const exe = b.addExecutable(.{
-        .name = "bpa",
+        .name = "2b4m",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "bpa", .module = mod },
+                .{ .name = "b4m", .module = mod },
             },
         }),
     });
     b.installArtifact(exe);
 
-    const run_step = b.step("run", "Run bpa");
+    const run_step = b.step("run", "Run 2b4m");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
-    // Integration test gates (spawn `bpa`, assert stdout/stderr/exit) live in
+    // Integration test gates (spawn `2b4m`, assert stdout/stderr/exit) live in
     // tests/ grouped by subject; build.zig stays build configuration.
     const tests = @import("tests/test_all.zig");
     tests.addTests(b, exe, test_step);
@@ -51,21 +51,21 @@ pub fn build(b: *std.Build) void {
     // produces numbers that send you optimizing the wrong thing. This is why the step
     // builds its own binary instead of reusing `exe`.
     const bench_exe = b.addExecutable(.{
-        .name = "bpa-bench",
+        .name = "2b4m-bench",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = .ReleaseFast,
-            .imports = &.{.{ .name = "bpa", .module = mod }},
+            .imports = &.{.{ .name = "b4m", .module = mod }},
         }),
     });
     const bench_step = b.step("bench", "Time the corpus (always ReleaseFast)");
     // The two whole-corpus sweeps plus the heaviest single file. (`examples/` is excluded:
-    // it carries `incorrect.bpa`, a deliberate negative that exits 1 by design.)
+    // it carries `incorrect.b4m`, a deliberate negative that exits 1 by design.)
     for ([_][]const []const u8{
         &.{ "check", "std" },
         &.{ "check", "aata" },
-        &.{ "check", "std/integer/divides.bpa" },
+        &.{ "check", "std/integer/divides.b4m" },
     }) |argv| {
         const r = b.addRunArtifact(bench_exe);
         r.has_side_effects = true; // never cached: the point is to actually run it

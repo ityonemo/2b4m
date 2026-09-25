@@ -1,0 +1,39 @@
+// FAILURE BOUNDARY — case split / hypothesis. Transferring `unitByCases` (whose
+// proof splits on a disjunction and uses arm hypotheses) to a guarded model. The
+// re-emitter does not yet handle `or_elim` / assume-arm blocks or bare
+// `hypothesis` steps (the group corpus uses none), so this hits the boundary —
+// a documented limitation, not a soundness hole.
+import source <<< "model_guarded_case_source.b4m"
+
+sort Thing
+const ZED: Thing
+func combine(a: Thing, b: Thing) => Thing
+pred good(x: Thing)
+pred pp(x: Thing)
+pred qq(x: Thing)
+
+axiom combineZedLeftGuarded: forall a: Thing; good(a) -> combine(ZED, a) = a
+axiom ppOrQq: forall a: Thing; good(a) -> (pp(a) or qq(a))
+axiom ppGives: forall a: Thing; good(a) -> pp(a) -> combine(ZED, a) = a
+axiom qqGives: forall a: Thing; good(a) -> qq(a) -> combine(ZED, a) = a
+
+sort ThingGood = Thing where good
+
+model ThingModel {
+  source.Sort: ThingGood
+  source.UNIT: ZED
+  source.op: combine
+  source.p: pp
+  source.q: qq
+  source.opUnitLeft <- combineZedLeftGuarded
+  source.pOrQ <- ppOrQq
+  source.pGivesUnit <- ppGives
+  source.qGivesUnit <- qqGives
+  }
+
+theorem combineZedByCases: forall a: Thing; good(a) -> combine(ZED, a) = a
+proof
+  @conclusion |
+    forall a: Thing; good(a) -> combine(ZED, a) = a
+    [using model(ThingModel) source.unitByCases]
+qed

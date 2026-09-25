@@ -1,6 +1,6 @@
-# Debugging a bpa run
+# Debugging a 2b4m run
 
-`bpa check` tells you *that* a proof failed and where. These flags and commands tell you
+`2b4m check` tells you *that* a proof failed and where. These flags and commands tell you
 *why* — what the engine actually did. Reach for them when the diagnostic describes a state
 you cannot account for from the source: a fact with the wrong sort, a step that fails only
 in some larger run, a proof that passes alone and fails in a sweep.
@@ -8,7 +8,7 @@ in some larger run, a proof that passes alone and fails in a sweep.
 ## `--trace-facts` — what did this citation resolve to?
 
 ```
-bpa check --trace-facts <file | dir> [theorem]
+2b4m check --trace-facts <file | dir> [theorem]
 ```
 
 Prints, for every fact citation the prover resolves, **which fact it got**: the namespace it
@@ -16,13 +16,13 @@ resolved in, the site the fact was declared at, its kind and statement, and whic
 path produced it.
 
 ```
-std/ring.bpa:212:22: cite additiveInverseUnique
-    -> resolved in ns=universe, declared at std/ring.bpa:176:9
+std/ring.b4m:212:22: cite additiveInverseUnique
+    -> resolved in ns=universe, declared at std/ring.b4m:176:9
        theorem additiveInverseUnique
        forall x: Ring; forall y: Ring; add(x, y) = ZERO -> y = neg(x)
        via direct lookup
-std/ring.bpa:212:22: cite additiveInverseUnique
-    -> resolved in ns=model#10371, declared at std/ring.bpa:176:9
+std/ring.b4m:212:22: cite additiveInverseUnique
+    -> resolved in ns=model#10371, declared at std/ring.b4m:176:9
        theorem additiveInverseUnique
        forall x: Ring; forall y: Ring; add(x, y) = ZERO -> y = neg(x)
        via overlay (applyModel) under the citing task's model
@@ -54,7 +54,7 @@ order with the citations — because a resolution is only wrong relative to what
 flight at that moment:
 
 ```
-[parse] task#19 = std/group.bpa
+[parse] task#19 = std/group.b4m
 [model] task#475 = model AdditiveGroup in file#120
 [prove] task#447 = additiveInverseUnique in ns#10372 (model#10371)
 [engine] rack task#447 (on task#43)        racked BY task#43
@@ -78,39 +78,39 @@ completion above it. Do not reason about interleavings from source order; read t
 To follow a suspicious task: find its `[prove]` line, then `grep -n "task#N\b"` for its
 rack/run/park/wake/done, then identify what it parks on the same way.
 
-**Scale.** A whole-corpus sweep produces thousands of lines (`bpa check std --trace-facts` is
-~60,000 with the lifecycle lines). Narrow first — `bpa check <file> <theorem> --trace-facts` traces one proof — or pipe
+**Scale.** A whole-corpus sweep produces thousands of lines (`2b4m check std --trace-facts` is
+~60,000 with the lifecycle lines). Narrow first — `2b4m check <file> <theorem> --trace-facts` traces one proof — or pipe
 to `grep -A4 "cite <name>"`.
 
 ## `--axioms` — what does this proof rest on?
 
 ```
-bpa check <file> [theorem] --axioms
+2b4m check <file> [theorem] --axioms
 ```
 
 Every axiom the checked theorem(s) transitively bottom out in, with declaration sites. It
 follows the demand graph, so it sees axioms reached through accelerant certificates,
-`instantiation`, model transfers and imports — which `bpa query uses`, a syntactic scan,
+`instantiation`, model transfers and imports — which `2b4m query uses`, a syntactic scan,
 cannot. A `hole` is an axiom to the kernel, so it is listed and marked, and therefore only
 appears under `--draft`. Useful beyond auditing: if a proof rests on something surprising,
 the surprise is usually the bug.
 
-## `bpa debug accelerant` — what proof did this tactic generate?
+## `2b4m debug accelerant` — what proof did this tactic generate?
 
 ```
-bpa debug accelerant <file> <line | theorem step-label>
+2b4m debug accelerant <file> <line | theorem step-label>
 ```
 
 Reprints the synthetic theorem an accelerated step produced — statement and proof, as valid
-bpa that round-trips through `check`. When a `[using arithmetic …]` step fails for reasons the
+2b4m that round-trips through `check`. When a `[using arithmetic …]` step fails for reasons the
 message does not explain, this shows the certificate the tactic actually built, including
 which lemmas it cited by name (a frequent cause: a well-known lemma the citing file does not
 have in scope).
 
-## `bpa debug taint` — where does trust enter?
+## `2b4m debug taint` — where does trust enter?
 
 ```
-bpa debug taint <file> [theorem]
+2b4m debug taint <file> [theorem]
 ```
 
 Per proof, every step whose rule *can* fall back to an accelerated verdict, at its
@@ -120,7 +120,7 @@ report guarantees every step is kernel-checked, while a flagged one is only a ca
 ## `--chaos[=SEED]` — does the output depend on the schedule?
 
 ```
-bpa check --chaos=42 <file | dir>
+2b4m check --chaos=42 <file | dir>
 ```
 
 Shuffles the engine's scheduling order under a fixed seed. The run does the same WORK in a
@@ -132,8 +132,8 @@ of scheduling — that is what the goldens encode, and what lets the engine reor
 So the check is a diff:
 
 ```
-bpa check std > base.txt
-for s in 1 2 3 7 42 99; do bpa check std --chaos=$s | diff base.txt - || echo "seed $s DIFFERS"; done
+2b4m check std > base.txt
+for s in 1 2 3 7 42 99; do 2b4m check std --chaos=$s | diff base.txt - || echo "seed $s DIFFERS"; done
 ```
 
 Any difference is a determinism BUG — something leaked task order into output (an
@@ -150,7 +150,7 @@ Note `--trace-facts` is deliberately exempt: it is a view OF the schedule, so it
 |---|---|
 | a fact has the wrong sort, or a name seems to mean two things | `--trace-facts` |
 | passes alone, fails in a directory sweep | `--trace-facts` on the sweep, grep the name |
-| "reference not found" inside a generated proof | `bpa debug accelerant` on the step |
+| "reference not found" inside a generated proof | `2b4m debug accelerant` on the step |
 | a proof depends on something it shouldn't | `--axioms` |
-| is this really kernel-checked? | `bpa debug taint`, then plain `bpa check` |
+| is this really kernel-checked? | `2b4m debug taint`, then plain `2b4m check` |
 | output changed and the source didn't | `--chaos` sweep: if seeds disagree, it's a determinism bug |

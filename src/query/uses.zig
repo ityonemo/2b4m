@@ -1,4 +1,4 @@
-//! `bpa query uses <file> [theorem]` — the citation/dependency audit of a proof.
+//! `2b4m query uses <file> [theorem]` — the citation/dependency audit of a proof.
 //!
 //! Walks the parsed AST (never elaborates) and reports, per proof, what each
 //! one leans on:

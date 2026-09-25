@@ -1,6 +1,6 @@
-//! `bpa query claims <file> [theorem]` — the CLAIMS skeleton of a proof.
+//! `2b4m query claims <file> [theorem]` — the CLAIMS skeleton of a proof.
 //!
-//! The companion to `bpa query outline`: same structure (one line per step,
+//! The companion to `2b4m query outline`: same structure (one line per step,
 //! block nesting shown by indentation), but each plain step shows its CLAIM
 //! FORMULA instead of its label. So where `outline` reads as a table of contents
 //! (what each step is CALLED), `claims` reads as the sequence of PROPOSITIONS the
@@ -38,7 +38,7 @@ pub const Result = struct {
 
 /// Parse `source` and render the claims skeleton. On a parse error, `ok` is
 /// false and `text` is the rendered diagnostics (same `path:line:col: error:`
-/// form as `bpa check`). `theorem` null => every proof in the file.
+/// form as `2b4m check`). `theorem` null => every proof in the file.
 pub fn claims(
     arena: Allocator,
     path: []const u8,

@@ -1,0 +1,54 @@
+// std/equivalence.b4m — the bridge between relations and sets: the equivalence
+// CLASS of an element as a Set.
+//
+// Sets (std/set.b4m) and relations (std/relation.b4m) both range over the SAME
+// shared element sort (std/element.b4m) — so they COMPOSE, and this file
+// imports BOTH rather than re-declaring anything. A class is then a Set of the
+// elements the relation relates, via a class constructor:
+//
+//   classOf(x) : Set   with   member(y, classOf(x)) <-> related(y, x)
+//
+// i.e. classOf(x) = [x] = { y : y ~ x }. With this one axiom the tractable heart
+// of the equivalence/partition theorem — classes are nonempty, [x]=[y] iff x~y,
+// and any two classes are equal or disjoint — becomes provable by extensionality
+// over the membership/relation axioms. Because the relation is the SAME
+// std/relation.b4m relation, its theorems (reflexive/symmetric/transitive
+// projections, etc.) apply here directly.
+
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import relation <<< "std/relation.b4m"
+
+sort Element = set.Element
+sort Set = set.Set
+
+// re-exported set vocabulary
+const emptyset = set.emptyset
+func union = set.union
+func intersection = set.intersection
+pred member = set.member
+axiom unionMember = set.unionMember
+axiom intersectionMember = set.intersectionMember
+axiom emptysetMember = set.emptysetMember
+axiom extensionality = set.extensionality
+
+// re-exported relation vocabulary (the SAME relation as std/relation.b4m).
+// `related` is an opaque pred (the theory parameter); the four properties are
+// now transparent `define`s — re-aliased as defines, and their old `*Def`
+// axioms are GONE (the body is transparent, so there is nothing to cite).
+pred related = relation.related
+define reflexive = relation.reflexive
+define symmetric = relation.symmetric
+define transitive = relation.transitive
+define equivalence = relation.equivalence
+
+// -- equivalence classes as sets --------------------------------------------
+
+// the class constructor: classOf(x) = [x] = { y : y ~ x }.
+func classOf(x: Element) => Set
+
+// y is in the class of x exactly when y ~ x. (Element = Element = the shared
+// element sort, so `member(y, ·)` and `related(y, x)` speak of the same y.)
+axiom classMember: forall x: Element; forall y: Element;
+  (member(y, classOf(x)) -> related(y, x))
+  and (related(y, x) -> member(y, classOf(x)))

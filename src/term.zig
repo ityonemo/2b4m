@@ -801,7 +801,7 @@ pub const Pool = struct {
 
     // === DURABLE serialization: scratchpad <-> InternPool `extra` ===================
     //
-    // Terms are NOT interned Items (bpa is explicit — no term dedup). A DURABLE term (a
+    // Terms are NOT interned Items (2b4m is explicit — no term dedup). A DURABLE term (a
     // fact's formula, a callable's guard, a define's body) lives as a SELF-CONTAINED u32
     // run in the InternPool's `extra`; this Pool is the per-task SCRATCHPAD where terms are
     // constructed (TermId = index into `nodes`). `reify` serializes a scratchpad term into

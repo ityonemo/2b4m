@@ -1,0 +1,17 @@
+// A define whose body CALLS an alias to a REMOTE define (`does_divide` → the imported
+// `divides`). Expanding the outer define resolves the callee in the outer define's HOME
+// file, where it is an alias; following that alias needs the alias's own import resolved,
+// which may still be in flight. The expansion pass must then report PENDING (suspend and
+// retry), not fall through and demand the name as an identifier — a define is never an
+// identifier, so that demand hits FetchTask's misuse arm ("'divides' is a define — it
+// expands where it is used and cannot be named here") against the wrong file's offsets.
+import src <<< "define_alias_nested_src.b4m"
+
+sort Int = src.Int
+func mul = src.mul
+func sub = src.sub
+pred does_divide = src.divides
+
+define congruent(x, y, n) = does_divide(n, sub(x, y))
+
+axiom congruentSelf: forall x, n: Int; congruent(x, x, n)

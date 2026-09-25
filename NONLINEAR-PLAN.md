@@ -22,7 +22,7 @@ Key facts that shape everything below:
   algorithm for the linear fragment. So the goal is *useful incomplete
   fragments*, disclosed honestly where they fall back.
 - **Polynomial normalization is equational rewriting** — commutativity,
-  associativity, and distributivity are all proven `std/peano.bpa` theorems.
+  associativity, and distributivity are all proven `std/peano.b4m` theorems.
   So a large class of nonlinear *identities* proves with **every step kernel-checked**, with zero new
   trust surface, using exactly the fabricated-rewrite-trace machinery the
   `ac` tactic already uses. This is the high-value, low-risk rung.
@@ -44,8 +44,8 @@ Key facts that shape everything below:
 `liftMonoTrace`, outer sum right-nested first). It is **theory-parameterized**
 like `arithmetic` (`polynomial(peano)`), NOT well-known-name in local scope —
 the parser's theory-arg gate generalized to an `isTheoryRule` set. Elaborated by
-construction (no accelerated step). Fixtures: `tests/cases/polynomial.bpa` (green, incl.
-`(a+b)²`) + `polynomial_bad.bpa` (located "sides expand differently"). The
+construction (no accelerated step). Fixtures: `tests/cases/polynomial.b4m` (green, incl.
+`(a+b)²`) + `polynomial_bad.b4m` (located "sides expand differently"). The
 Gauss `target` payoff was deferred: it needs `succ`-expansion, and `succ` is
 kept opaque (a deliberate non-privileging decision) — √2's algebra is pure
 `add`/`mul`/`ONE` and needs no `succ`. The description below is the original
@@ -113,7 +113,7 @@ axiom divMod: forall a, b: Nat; b != ZERO ->
 axiom modBound: forall a, b: Nat; b != ZERO -> less_than(mod(a, b), b)
 ```
 
-The `b != ZERO` guards are ordinary TCC obligations (the `div_ok.bpa` /
+The `b != ZERO` guards are ordinary TCC obligations (the `div_ok.b4m` /
 `requires` pattern already in the kernel). Reasoning about `div`/`mod` then
 reduces to linear arithmetic plus the two defining facts — and Cooper's
 algorithm in `src/presburger.zig` **already** decides divisibility atoms
@@ -121,7 +121,7 @@ algorithm in `src/presburger.zig` **already** decides divisibility atoms
 goals once the vocabulary and axioms exist. Certificate coverage grows
 incrementally as with the other C2 stages.
 
-Placement: a new `std/division.bpa` importing `std/peano.bpa`, so it's
+Placement: a new `std/division.b4m` importing `std/peano.b4m`, so it's
 opt-in and the core theory stays minimal. Add `div`/`mod`/`divMod`/`modBound`
 to the well-known-name set the `arithmetic` symbol resolver looks up.
 
@@ -151,17 +151,17 @@ to the well-known-name set the `arithmetic` symbol resolver looks up.
    `poly_bad` (different expansions), `--pure` gate, unit tests. Rewrite
    Gauss's `target` step as `[by polynomial]` as the payoff.
 4. **`polynomial_quantified`** — compose `peelUniversal` + `polynomial`.
-5. **`std/division.bpa`** + `div`/`mod` in the arithmetic vocabulary; RED
+5. **`std/division.b4m`** + `div`/`mod` in the arithmetic vocabulary; RED
    fixtures for a `div`/`mod` identity and a guarded-division TCC.
 
-Each rung is RED-first (integration `.bpa` fixture + `build.zig` golden with
+Each rung is RED-first (integration `.b4m` fixture + `build.zig` golden with
 `has_side_effects`/`--pure`/exact stdout-stderr) per the fractal-TDD
 directive, with unit tests in the touched modules.
 
 ## Verification
 
 - `zig build test` — all existing goldens green + new gates.
-- `bpa check --pure` green on every new fixture (rungs 1–2 are kernel-checked; the
+- `2b4m check --pure` green on every new fixture (rungs 1–2 are kernel-checked; the
   `div`/`mod` accelerated uses are disclosed if any fall outside certificate
   coverage).
 - Payoff: Gauss's `target` step collapses to `[by polynomial]`; a

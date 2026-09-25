@@ -1,3 +1,3 @@
 # Notes
 
-Prose only — no bpa block. A directory check parses this to nothing and moves on.
+Prose only — no 2b4m block. A directory check parses this to nothing and moves on.

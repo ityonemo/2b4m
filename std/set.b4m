@@ -1,0 +1,1292 @@
+// std/set.b4m — a set algebra over a fixed universe: sets of elements drawn
+// from a universe, with union, intersection, difference, complement, and the
+// empty set, characterized entirely by MEMBERSHIP.
+//
+// A reusable abstract theory (like std/peano, std/group), imported by the
+// literate translation aata/sets.md, which drives it by these membership
+// axioms: every set identity `S = T` is proved by extensionality — fix an
+// element x, unfold `member(x, ·)` on both sides via the operator axioms, and
+// discharge the resulting propositional biconditional with `[using tautology]`.
+//
+// each membership biconditional is written with the `iff` connective.
+// `complement` needs no explicit "universal set" object — it is fixed purely by
+// its double-negation membership rule, and every theorem is proved
+// membershipwise.
+//
+// `Element` is the SHARED element sort (std/element.b4m), so sets compose
+// with any theory over the same elements (e.g. relations, std/relation.b4m):
+// aliasing identifies the sorts, so those theories' theorems apply directly.
+
+import element <<< "std/element.b4m"
+
+sort Element = element.Element
+sort Set
+const emptyset: Set
+func union(a: Set, b: Set) => Set
+func intersection(a: Set, b: Set) => Set
+func difference(a: Set, b: Set) => Set
+func complement(a: Set) => Set
+pred member(x: Element, s: Set)
+
+// x ∈ a∪b  iff  x∈a or x∈b
+axiom unionMember: forall a, b: Set; forall x: Element;
+  member(x, union(a, b)) iff (member(x, a) or member(x, b))
+
+// x ∈ a∩b  iff  x∈a and x∈b
+axiom intersectionMember: forall a, b: Set; forall x: Element;
+  member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+
+// x ∈ a\b  iff  x∈a and x∉b
+axiom differenceMember: forall a, b: Set; forall x: Element;
+  member(x, difference(a, b)) iff (member(x, a) and (not member(x, b)))
+
+// x ∈ a'  iff  x∉a
+axiom complementMember: forall a: Set; forall x: Element;
+  member(x, complement(a)) iff (not member(x, a))
+
+// nothing is a member of the empty set
+axiom emptysetMember: forall x: Element; not member(x, emptyset)
+
+// extensionality: sets with the same members are equal (each inclusion is a
+// plain forall; the two chain to `a = b`).
+axiom extensionality: forall a, b: Set;
+  (forall x: Element; member(x, a) -> member(x, b)) ->
+  (forall x: Element; member(x, b) -> member(x, a)) ->
+  a = b
+
+// -- the algebra of sets ----------------------------------------------------
+// The set identities proved from the membership axioms + extensionality: each
+// reduces `a = b` to pointwise membership and closes the propositional residue.
+// Available for reuse: a structure whose operations obey these membership laws
+// can `model` set and inherit the whole algebra (De Morgan, distributivity, …).
+
+theorem unionIdempotent: forall a: Set; union(a, a) = a
+proof
+  @generalize-a |
+    fix a: Set {
+      @a-union-a-membership |
+        forall x: Element;
+          member(x, union(a, a)) iff (member(x, a) or member(x, a))
+        [using specialize unionMember(a, a)]
+      @forward-inclusion |
+        fix x: Element {
+          @a-union-a-membership-at-x |
+            member(x, union(a, a)) iff (member(x, a) or member(x, a))
+            [by forall_elim(x) a-union-a-membership]
+          @given-x-in-a-union-a |
+            assume member(x, union(a, a)) {
+              @x-in-a-union-a |
+                member(x, union(a, a))
+                [by hypothesis given-x-in-a-union-a]
+              @x-in-a |
+                member(x, a)
+                [using tautology a-union-a-membership-at-x x-in-a-union-a]
+            }
+          @x-in-a-union-a-gives-x-in-a |
+            member(x, union(a, a)) -> member(x, a)
+            [by implies_intro given-x-in-a-union-a]
+        }
+      @a-union-a-included-in-a |
+        forall x: Element; member(x, union(a, a)) -> member(x, a)
+        [by forall_intro forward-inclusion]
+      @backward-inclusion |
+        fix y: Element {
+          @a-union-a-membership-at-y |
+            member(y, union(a, a)) iff (member(y, a) or member(y, a))
+            [by forall_elim(y) a-union-a-membership]
+          @given-y-in-a |
+            assume member(y, a) {
+              @y-in-a |
+                member(y, a)
+                [by hypothesis given-y-in-a]
+              @y-in-a-union-a |
+                member(y, union(a, a))
+                [using tautology a-union-a-membership-at-y y-in-a]
+            }
+          @y-in-a-gives-y-in-a-union-a |
+            member(y, a) -> member(y, union(a, a))
+            [by implies_intro given-y-in-a]
+        }
+      @a-included-in-a-union-a |
+        forall y: Element; member(y, a) -> member(y, union(a, a))
+        [by forall_intro backward-inclusion]
+      @a-union-a-equals-a |
+        union(a, a) = a
+        [using specialize extensionality(union(a, a), a) a-union-a-included-in-a a-included-in-a-union-a]
+    }
+  @conclusion |
+    forall a: Set; union(a, a) = a
+    [by forall_intro generalize-a]
+qed
+
+theorem intersectionIdempotent: forall a: Set; intersection(a, a) = a
+proof
+  @generalize-a |
+    fix a: Set {
+      @a-intersect-a-membership |
+        forall x: Element;
+          member(x, intersection(a, a)) iff (member(x, a) and member(x, a))
+        [using specialize intersectionMember(a, a)]
+      @forward-inclusion |
+        fix x: Element {
+          @a-intersect-a-membership-at-x |
+            member(x, intersection(a, a)) iff (member(x, a) and member(x, a))
+            [by forall_elim(x) a-intersect-a-membership]
+          @given-x-in-a-intersect-a |
+            assume member(x, intersection(a, a)) {
+              @x-in-a-intersect-a |
+                member(x, intersection(a, a))
+                [by hypothesis given-x-in-a-intersect-a]
+              @x-in-a |
+                member(x, a)
+                [using tautology a-intersect-a-membership-at-x x-in-a-intersect-a]
+            }
+          @x-in-a-intersect-a-gives-x-in-a |
+            member(x, intersection(a, a)) -> member(x, a)
+            [by implies_intro given-x-in-a-intersect-a]
+        }
+      @a-intersect-a-included-in-a |
+        forall x: Element; member(x, intersection(a, a)) -> member(x, a)
+        [by forall_intro forward-inclusion]
+      @backward-inclusion |
+        fix y: Element {
+          @a-intersect-a-membership-at-y |
+            member(y, intersection(a, a)) iff (member(y, a) and member(y, a))
+            [by forall_elim(y) a-intersect-a-membership]
+          @given-y-in-a |
+            assume member(y, a) {
+              @y-in-a |
+                member(y, a)
+                [by hypothesis given-y-in-a]
+              @y-in-a-intersect-a |
+                member(y, intersection(a, a))
+                [using tautology a-intersect-a-membership-at-y y-in-a]
+            }
+          @y-in-a-gives-y-in-a-intersect-a |
+            member(y, a) -> member(y, intersection(a, a))
+            [by implies_intro given-y-in-a]
+        }
+      @a-included-in-a-intersect-a |
+        forall y: Element; member(y, a) -> member(y, intersection(a, a))
+        [by forall_intro backward-inclusion]
+      @a-intersect-a-equals-a |
+        intersection(a, a) = a
+        [using specialize extensionality(intersection(a, a), a) a-intersect-a-included-in-a a-included-in-a-intersect-a]
+    }
+  @conclusion |
+    forall a: Set; intersection(a, a) = a
+    [by forall_intro generalize-a]
+qed
+
+theorem differenceSelf: forall a: Set; difference(a, a) = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @a-minus-a-membership |
+        forall x: Element;
+          member(x, difference(a, a)) iff (member(x, a) and (not member(x, a)))
+        [using specialize differenceMember(a, a)]
+      @forward-inclusion |
+        fix x: Element {
+          @a-minus-a-membership-at-x |
+            member(x, difference(a, a)) iff (member(x, a) and (not member(x, a)))
+            [by forall_elim(x) a-minus-a-membership]
+          @empty-membership-at-x |
+            not member(x, emptyset)
+            [using specialize emptysetMember(x)]
+          @given-x-in-a-minus-a |
+            assume member(x, difference(a, a)) {
+              @x-in-a-minus-a |
+                member(x, difference(a, a))
+                [by hypothesis given-x-in-a-minus-a]
+              @x-in-empty |
+                member(x, emptyset)
+                [using tautology a-minus-a-membership-at-x empty-membership-at-x x-in-a-minus-a]
+            }
+          @x-in-a-minus-a-gives-x-in-empty |
+            member(x, difference(a, a)) -> member(x, emptyset)
+            [by implies_intro given-x-in-a-minus-a]
+        }
+      @a-minus-a-included-in-empty |
+        forall x: Element; member(x, difference(a, a)) -> member(x, emptyset)
+        [by forall_intro forward-inclusion]
+      @backward-inclusion |
+        fix y: Element {
+          @a-minus-a-membership-at-y |
+            member(y, difference(a, a)) iff (member(y, a) and (not member(y, a)))
+            [by forall_elim(y) a-minus-a-membership]
+          @empty-membership-at-y |
+            not member(y, emptyset)
+            [using specialize emptysetMember(y)]
+          @given-y-in-empty |
+            assume member(y, emptyset) {
+              @y-in-empty |
+                member(y, emptyset)
+                [by hypothesis given-y-in-empty]
+              @y-in-a-minus-a |
+                member(y, difference(a, a))
+                [using tautology a-minus-a-membership-at-y empty-membership-at-y y-in-empty]
+            }
+          @y-in-empty-gives-y-in-a-minus-a |
+            member(y, emptyset) -> member(y, difference(a, a))
+            [by implies_intro given-y-in-empty]
+        }
+      @empty-included-in-a-minus-a |
+        forall y: Element; member(y, emptyset) -> member(y, difference(a, a))
+        [by forall_intro backward-inclusion]
+      @a-minus-a-equals-empty |
+        difference(a, a) = emptyset
+        [using specialize extensionality(difference(a, a), emptyset) a-minus-a-included-in-empty empty-included-in-a-minus-a]
+    }
+  @conclusion |
+    forall a: Set; difference(a, a) = emptyset
+    [by forall_intro generalize-a]
+qed
+
+theorem unionEmpty: forall a: Set; union(a, emptyset) = a
+proof
+  @generalize-a |
+    fix a: Set {
+      @a-union-empty-membership |
+        forall x: Element;
+          member(x, union(a, emptyset)) iff (member(x, a) or member(x, emptyset))
+        [using specialize unionMember(a, emptyset)]
+      @forward-inclusion |
+        fix x: Element {
+          @a-union-empty-membership-at-x |
+            member(x, union(a, emptyset)) iff (member(x, a) or member(x, emptyset))
+            [by forall_elim(x) a-union-empty-membership]
+          @empty-membership-at-x |
+            not member(x, emptyset)
+            [using specialize emptysetMember(x)]
+          @given-x-in-a-union-empty |
+            assume member(x, union(a, emptyset)) {
+              @x-in-a-union-empty |
+                member(x, union(a, emptyset))
+                [by hypothesis given-x-in-a-union-empty]
+              @x-in-a |
+                member(x, a)
+                [using tautology a-union-empty-membership-at-x empty-membership-at-x x-in-a-union-empty]
+            }
+          @x-in-a-union-empty-gives-x-in-a |
+            member(x, union(a, emptyset)) -> member(x, a)
+            [by implies_intro given-x-in-a-union-empty]
+        }
+      @a-union-empty-included-in-a |
+        forall x: Element; member(x, union(a, emptyset)) -> member(x, a)
+        [by forall_intro forward-inclusion]
+      @backward-inclusion |
+        fix y: Element {
+          @a-union-empty-membership-at-y |
+            member(y, union(a, emptyset)) iff (member(y, a) or member(y, emptyset))
+            [by forall_elim(y) a-union-empty-membership]
+          @empty-membership-at-y |
+            not member(y, emptyset)
+            [using specialize emptysetMember(y)]
+          @given-y-in-a |
+            assume member(y, a) {
+              @y-in-a |
+                member(y, a)
+                [by hypothesis given-y-in-a]
+              @y-in-a-union-empty |
+                member(y, union(a, emptyset))
+                [using tautology a-union-empty-membership-at-y empty-membership-at-y y-in-a]
+            }
+          @y-in-a-gives-y-in-a-union-empty |
+            member(y, a) -> member(y, union(a, emptyset))
+            [by implies_intro given-y-in-a]
+        }
+      @a-included-in-a-union-empty |
+        forall y: Element; member(y, a) -> member(y, union(a, emptyset))
+        [by forall_intro backward-inclusion]
+      @a-union-empty-equals-a |
+        union(a, emptyset) = a
+        [using specialize extensionality(union(a, emptyset), a) a-union-empty-included-in-a a-included-in-a-union-empty]
+    }
+  @conclusion |
+    forall a: Set; union(a, emptyset) = a
+    [by forall_intro generalize-a]
+qed
+
+theorem intersectionEmpty: forall a: Set; intersection(a, emptyset) = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @a-intersect-empty-membership |
+        forall x: Element;
+          member(x, intersection(a, emptyset)) iff (member(x, a) and member(x, emptyset))
+        [using specialize intersectionMember(a, emptyset)]
+      @forward-inclusion |
+        fix x: Element {
+          @a-intersect-empty-membership-at-x |
+            member(x, intersection(a, emptyset)) iff (member(x, a) and member(x, emptyset))
+            [by forall_elim(x) a-intersect-empty-membership]
+          @empty-membership-at-x |
+            not member(x, emptyset)
+            [using specialize emptysetMember(x)]
+          @given-x-in-a-intersect-empty |
+            assume member(x, intersection(a, emptyset)) {
+              @x-in-a-intersect-empty |
+                member(x, intersection(a, emptyset))
+                [by hypothesis given-x-in-a-intersect-empty]
+              @x-in-empty |
+                member(x, emptyset)
+                [using tautology a-intersect-empty-membership-at-x empty-membership-at-x x-in-a-intersect-empty]
+            }
+          @x-in-a-intersect-empty-gives-x-in-empty |
+            member(x, intersection(a, emptyset)) -> member(x, emptyset)
+            [by implies_intro given-x-in-a-intersect-empty]
+        }
+      @a-intersect-empty-included-in-empty |
+        forall x: Element; member(x, intersection(a, emptyset)) -> member(x, emptyset)
+        [by forall_intro forward-inclusion]
+      @backward-inclusion |
+        fix y: Element {
+          @a-intersect-empty-membership-at-y |
+            member(y, intersection(a, emptyset)) iff (member(y, a) and member(y, emptyset))
+            [by forall_elim(y) a-intersect-empty-membership]
+          @empty-membership-at-y |
+            not member(y, emptyset)
+            [using specialize emptysetMember(y)]
+          @given-y-in-empty |
+            assume member(y, emptyset) {
+              @y-in-empty |
+                member(y, emptyset)
+                [by hypothesis given-y-in-empty]
+              @y-in-a-intersect-empty |
+                member(y, intersection(a, emptyset))
+                [using tautology a-intersect-empty-membership-at-y empty-membership-at-y y-in-empty]
+            }
+          @y-in-empty-gives-y-in-a-intersect-empty |
+            member(y, emptyset) -> member(y, intersection(a, emptyset))
+            [by implies_intro given-y-in-empty]
+        }
+      @empty-included-in-a-intersect-empty |
+        forall y: Element; member(y, emptyset) -> member(y, intersection(a, emptyset))
+        [by forall_intro backward-inclusion]
+      @a-intersect-empty-equals-empty |
+        intersection(a, emptyset) = emptyset
+        [using specialize extensionality(intersection(a, emptyset), emptyset) a-intersect-empty-included-in-empty empty-included-in-a-intersect-empty]
+    }
+  @conclusion |
+    forall a: Set; intersection(a, emptyset) = emptyset
+    [by forall_intro generalize-a]
+qed
+
+theorem unionAssociative: forall a, b, c: Set; union(a, union(b, c)) = union(union(a, b), c)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @b-union-c-membership |
+                forall x: Element;
+                  member(x, union(b, c)) iff (member(x, b) or member(x, c))
+                [using specialize unionMember(b, c)]
+              @a-union-b-union-c-right-membership |
+                forall x: Element;
+                  member(x, union(a, union(b, c))) iff (member(x, a) or member(x, union(b, c)))
+                [using specialize unionMember(a, union(b, c))]
+              @a-union-b-membership |
+                forall x: Element;
+                  member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                [using specialize unionMember(a, b)]
+              @a-union-b-union-c-left-membership |
+                forall x: Element;
+                  member(x, union(union(a, b), c)) iff (member(x, union(a, b)) or member(x, c))
+                [using specialize unionMember(union(a, b), c)]
+              @forward-inclusion |
+                fix x: Element {
+                  @b-union-c-membership-at-x |
+                    member(x, union(b, c)) iff (member(x, b) or member(x, c))
+                    [by forall_elim(x) b-union-c-membership]
+                  @a-union-b-union-c-right-membership-at-x |
+                    member(x, union(a, union(b, c))) iff (member(x, a) or member(x, union(b, c)))
+                    [by forall_elim(x) a-union-b-union-c-right-membership]
+                  @a-union-b-membership-at-x |
+                    member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                    [by forall_elim(x) a-union-b-membership]
+                  @a-union-b-union-c-left-membership-at-x |
+                    member(x, union(union(a, b), c)) iff (member(x, union(a, b)) or member(x, c))
+                    [by forall_elim(x) a-union-b-union-c-left-membership]
+                  @given-x-in-a-union-b-union-c-right |
+                    assume member(x, union(a, union(b, c))) {
+                      @x-in-a-union-b-union-c-right |
+                        member(x, union(a, union(b, c)))
+                        [by hypothesis given-x-in-a-union-b-union-c-right]
+                      @x-in-a-union-b-union-c-left |
+                        member(x, union(union(a, b), c))
+                        [using tautology b-union-c-membership-at-x a-union-b-union-c-right-membership-at-x a-union-b-membership-at-x a-union-b-union-c-left-membership-at-x x-in-a-union-b-union-c-right]
+                    }
+                  @x-in-a-union-b-union-c-right-gives-x-in-left |
+                    member(x, union(a, union(b, c))) -> member(x, union(union(a, b), c))
+                    [by implies_intro given-x-in-a-union-b-union-c-right]
+                }
+              @a-union-b-union-c-right-included-in-left |
+                forall x: Element; member(x, union(a, union(b, c))) -> member(x, union(union(a, b), c))
+                [by forall_intro forward-inclusion]
+              @backward-inclusion |
+                fix y: Element {
+                  @b-union-c-membership-at-y |
+                    member(y, union(b, c)) iff (member(y, b) or member(y, c))
+                    [by forall_elim(y) b-union-c-membership]
+                  @a-union-b-union-c-right-membership-at-y |
+                    member(y, union(a, union(b, c))) iff (member(y, a) or member(y, union(b, c)))
+                    [by forall_elim(y) a-union-b-union-c-right-membership]
+                  @a-union-b-membership-at-y |
+                    member(y, union(a, b)) iff (member(y, a) or member(y, b))
+                    [by forall_elim(y) a-union-b-membership]
+                  @a-union-b-union-c-left-membership-at-y |
+                    member(y, union(union(a, b), c)) iff (member(y, union(a, b)) or member(y, c))
+                    [by forall_elim(y) a-union-b-union-c-left-membership]
+                  @given-y-in-a-union-b-union-c-left |
+                    assume member(y, union(union(a, b), c)) {
+                      @y-in-a-union-b-union-c-left |
+                        member(y, union(union(a, b), c))
+                        [by hypothesis given-y-in-a-union-b-union-c-left]
+                      @y-in-a-union-b-union-c-right |
+                        member(y, union(a, union(b, c)))
+                        [using tautology b-union-c-membership-at-y a-union-b-union-c-right-membership-at-y a-union-b-membership-at-y a-union-b-union-c-left-membership-at-y y-in-a-union-b-union-c-left]
+                    }
+                  @y-in-a-union-b-union-c-left-gives-y-in-right |
+                    member(y, union(union(a, b), c)) -> member(y, union(a, union(b, c)))
+                    [by implies_intro given-y-in-a-union-b-union-c-left]
+                }
+              @a-union-b-union-c-left-included-in-right |
+                forall y: Element; member(y, union(union(a, b), c)) -> member(y, union(a, union(b, c)))
+                [by forall_intro backward-inclusion]
+              @union-is-associative |
+                union(a, union(b, c)) = union(union(a, b), c)
+                [using specialize extensionality(union(a, union(b, c)), union(union(a, b), c)) a-union-b-union-c-right-included-in-left a-union-b-union-c-left-included-in-right]
+            }
+          @discharge-c |
+            forall c: Set; union(a, union(b, c)) = union(union(a, b), c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; union(a, union(b, c)) = union(union(a, b), c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; union(a, union(b, c)) = union(union(a, b), c)
+    [by forall_intro generalize-a]
+qed
+
+theorem intersectionAssociative: forall a, b, c: Set; intersection(a, intersection(b, c)) = intersection(intersection(a, b), c)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @b-intersect-c-membership |
+                forall x: Element;
+                  member(x, intersection(b, c)) iff (member(x, b) and member(x, c))
+                [using specialize intersectionMember(b, c)]
+              @a-intersect-b-intersect-c-right-membership |
+                forall x: Element;
+                  member(x, intersection(a, intersection(b, c))) iff (member(x, a) and member(x, intersection(b, c)))
+                [using specialize intersectionMember(a, intersection(b, c))]
+              @a-intersect-b-membership |
+                forall x: Element;
+                  member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                [using specialize intersectionMember(a, b)]
+              @a-intersect-b-intersect-c-left-membership |
+                forall x: Element;
+                  member(x, intersection(intersection(a, b), c)) iff (member(x, intersection(a, b)) and member(x, c))
+                [using specialize intersectionMember(intersection(a, b), c)]
+              @forward-inclusion |
+                fix x: Element {
+                  @b-intersect-c-membership-at-x |
+                    member(x, intersection(b, c)) iff (member(x, b) and member(x, c))
+                    [by forall_elim(x) b-intersect-c-membership]
+                  @a-intersect-b-intersect-c-right-membership-at-x |
+                    member(x, intersection(a, intersection(b, c))) iff (member(x, a) and member(x, intersection(b, c)))
+                    [by forall_elim(x) a-intersect-b-intersect-c-right-membership]
+                  @a-intersect-b-membership-at-x |
+                    member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                    [by forall_elim(x) a-intersect-b-membership]
+                  @a-intersect-b-intersect-c-left-membership-at-x |
+                    member(x, intersection(intersection(a, b), c)) iff (member(x, intersection(a, b)) and member(x, c))
+                    [by forall_elim(x) a-intersect-b-intersect-c-left-membership]
+                  @given-x-in-a-intersect-b-intersect-c-right |
+                    assume member(x, intersection(a, intersection(b, c))) {
+                      @x-in-a-intersect-b-intersect-c-right |
+                        member(x, intersection(a, intersection(b, c)))
+                        [by hypothesis given-x-in-a-intersect-b-intersect-c-right]
+                      @x-in-a-intersect-b-intersect-c-left |
+                        member(x, intersection(intersection(a, b), c))
+                        [using tautology b-intersect-c-membership-at-x a-intersect-b-intersect-c-right-membership-at-x a-intersect-b-membership-at-x a-intersect-b-intersect-c-left-membership-at-x x-in-a-intersect-b-intersect-c-right]
+                    }
+                  @x-in-a-intersect-b-intersect-c-right-gives-x-in-left |
+                    member(x, intersection(a, intersection(b, c))) -> member(x, intersection(intersection(a, b), c))
+                    [by implies_intro given-x-in-a-intersect-b-intersect-c-right]
+                }
+              @a-intersect-b-intersect-c-right-included-in-left |
+                forall x: Element; member(x, intersection(a, intersection(b, c))) -> member(x, intersection(intersection(a, b), c))
+                [by forall_intro forward-inclusion]
+              @backward-inclusion |
+                fix y: Element {
+                  @b-intersect-c-membership-at-y |
+                    member(y, intersection(b, c)) iff (member(y, b) and member(y, c))
+                    [by forall_elim(y) b-intersect-c-membership]
+                  @a-intersect-b-intersect-c-right-membership-at-y |
+                    member(y, intersection(a, intersection(b, c))) iff (member(y, a) and member(y, intersection(b, c)))
+                    [by forall_elim(y) a-intersect-b-intersect-c-right-membership]
+                  @a-intersect-b-membership-at-y |
+                    member(y, intersection(a, b)) iff (member(y, a) and member(y, b))
+                    [by forall_elim(y) a-intersect-b-membership]
+                  @a-intersect-b-intersect-c-left-membership-at-y |
+                    member(y, intersection(intersection(a, b), c)) iff (member(y, intersection(a, b)) and member(y, c))
+                    [by forall_elim(y) a-intersect-b-intersect-c-left-membership]
+                  @given-y-in-a-intersect-b-intersect-c-left |
+                    assume member(y, intersection(intersection(a, b), c)) {
+                      @y-in-a-intersect-b-intersect-c-left |
+                        member(y, intersection(intersection(a, b), c))
+                        [by hypothesis given-y-in-a-intersect-b-intersect-c-left]
+                      @y-in-a-intersect-b-intersect-c-right |
+                        member(y, intersection(a, intersection(b, c)))
+                        [using tautology b-intersect-c-membership-at-y a-intersect-b-intersect-c-right-membership-at-y a-intersect-b-membership-at-y a-intersect-b-intersect-c-left-membership-at-y y-in-a-intersect-b-intersect-c-left]
+                    }
+                  @y-in-a-intersect-b-intersect-c-left-gives-y-in-right |
+                    member(y, intersection(intersection(a, b), c)) -> member(y, intersection(a, intersection(b, c)))
+                    [by implies_intro given-y-in-a-intersect-b-intersect-c-left]
+                }
+              @a-intersect-b-intersect-c-left-included-in-right |
+                forall y: Element; member(y, intersection(intersection(a, b), c)) -> member(y, intersection(a, intersection(b, c)))
+                [by forall_intro backward-inclusion]
+              @intersection-is-associative |
+                intersection(a, intersection(b, c)) = intersection(intersection(a, b), c)
+                [using specialize extensionality(intersection(a, intersection(b, c)), intersection(intersection(a, b), c)) a-intersect-b-intersect-c-right-included-in-left a-intersect-b-intersect-c-left-included-in-right]
+            }
+          @discharge-c |
+            forall c: Set; intersection(a, intersection(b, c)) = intersection(intersection(a, b), c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; intersection(a, intersection(b, c)) = intersection(intersection(a, b), c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; intersection(a, intersection(b, c)) = intersection(intersection(a, b), c)
+    [by forall_intro generalize-a]
+qed
+
+theorem unionCommutative: forall a, b: Set; union(a, b) = union(b, a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @a-union-b-membership |
+            forall x: Element;
+              member(x, union(a, b)) iff (member(x, a) or member(x, b))
+            [using specialize unionMember(a, b)]
+          @b-union-a-membership |
+            forall x: Element;
+              member(x, union(b, a)) iff (member(x, b) or member(x, a))
+            [using specialize unionMember(b, a)]
+          @forward-inclusion |
+            fix x: Element {
+              @a-union-b-membership-at-x |
+                member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                [by forall_elim(x) a-union-b-membership]
+              @b-union-a-membership-at-x |
+                member(x, union(b, a)) iff (member(x, b) or member(x, a))
+                [by forall_elim(x) b-union-a-membership]
+              @given-x-in-a-union-b |
+                assume member(x, union(a, b)) {
+                  @x-in-a-union-b |
+                    member(x, union(a, b))
+                    [by hypothesis given-x-in-a-union-b]
+                  @x-in-b-union-a |
+                    member(x, union(b, a))
+                    [using tautology a-union-b-membership-at-x b-union-a-membership-at-x x-in-a-union-b]
+                }
+              @x-in-a-union-b-gives-x-in-b-union-a |
+                member(x, union(a, b)) -> member(x, union(b, a))
+                [by implies_intro given-x-in-a-union-b]
+            }
+          @a-union-b-included-in-b-union-a |
+            forall x: Element; member(x, union(a, b)) -> member(x, union(b, a))
+            [by forall_intro forward-inclusion]
+          @backward-inclusion |
+            fix y: Element {
+              @a-union-b-membership-at-y |
+                member(y, union(a, b)) iff (member(y, a) or member(y, b))
+                [by forall_elim(y) a-union-b-membership]
+              @b-union-a-membership-at-y |
+                member(y, union(b, a)) iff (member(y, b) or member(y, a))
+                [by forall_elim(y) b-union-a-membership]
+              @given-y-in-b-union-a |
+                assume member(y, union(b, a)) {
+                  @y-in-b-union-a |
+                    member(y, union(b, a))
+                    [by hypothesis given-y-in-b-union-a]
+                  @y-in-a-union-b |
+                    member(y, union(a, b))
+                    [using tautology a-union-b-membership-at-y b-union-a-membership-at-y y-in-b-union-a]
+                }
+              @y-in-b-union-a-gives-y-in-a-union-b |
+                member(y, union(b, a)) -> member(y, union(a, b))
+                [by implies_intro given-y-in-b-union-a]
+            }
+          @b-union-a-included-in-a-union-b |
+            forall y: Element; member(y, union(b, a)) -> member(y, union(a, b))
+            [by forall_intro backward-inclusion]
+          @unions-are-equal |
+            union(a, b) = union(b, a)
+            [using specialize extensionality(union(a, b), union(b, a)) a-union-b-included-in-b-union-a b-union-a-included-in-a-union-b]
+        }
+      @discharge-b |
+        forall b: Set; union(a, b) = union(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; union(a, b) = union(b, a)
+    [by forall_intro generalize-a]
+qed
+
+theorem intersectionCommutative: forall a, b: Set; intersection(a, b) = intersection(b, a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @a-intersect-b-membership |
+            forall x: Element;
+              member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+            [using specialize intersectionMember(a, b)]
+          @b-intersect-a-membership |
+            forall x: Element;
+              member(x, intersection(b, a)) iff (member(x, b) and member(x, a))
+            [using specialize intersectionMember(b, a)]
+          @forward-inclusion |
+            fix x: Element {
+              @a-intersect-b-membership-at-x |
+                member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                [by forall_elim(x) a-intersect-b-membership]
+              @b-intersect-a-membership-at-x |
+                member(x, intersection(b, a)) iff (member(x, b) and member(x, a))
+                [by forall_elim(x) b-intersect-a-membership]
+              @given-x-in-a-intersect-b |
+                assume member(x, intersection(a, b)) {
+                  @x-in-a-intersect-b |
+                    member(x, intersection(a, b))
+                    [by hypothesis given-x-in-a-intersect-b]
+                  @x-in-b-intersect-a |
+                    member(x, intersection(b, a))
+                    [using tautology a-intersect-b-membership-at-x b-intersect-a-membership-at-x x-in-a-intersect-b]
+                }
+              @x-in-a-intersect-b-gives-x-in-b-intersect-a |
+                member(x, intersection(a, b)) -> member(x, intersection(b, a))
+                [by implies_intro given-x-in-a-intersect-b]
+            }
+          @a-intersect-b-included-in-b-intersect-a |
+            forall x: Element; member(x, intersection(a, b)) -> member(x, intersection(b, a))
+            [by forall_intro forward-inclusion]
+          @backward-inclusion |
+            fix y: Element {
+              @a-intersect-b-membership-at-y |
+                member(y, intersection(a, b)) iff (member(y, a) and member(y, b))
+                [by forall_elim(y) a-intersect-b-membership]
+              @b-intersect-a-membership-at-y |
+                member(y, intersection(b, a)) iff (member(y, b) and member(y, a))
+                [by forall_elim(y) b-intersect-a-membership]
+              @given-y-in-b-intersect-a |
+                assume member(y, intersection(b, a)) {
+                  @y-in-b-intersect-a |
+                    member(y, intersection(b, a))
+                    [by hypothesis given-y-in-b-intersect-a]
+                  @y-in-a-intersect-b |
+                    member(y, intersection(a, b))
+                    [using tautology a-intersect-b-membership-at-y b-intersect-a-membership-at-y y-in-b-intersect-a]
+                }
+              @y-in-b-intersect-a-gives-y-in-a-intersect-b |
+                member(y, intersection(b, a)) -> member(y, intersection(a, b))
+                [by implies_intro given-y-in-b-intersect-a]
+            }
+          @b-intersect-a-included-in-a-intersect-b |
+            forall y: Element; member(y, intersection(b, a)) -> member(y, intersection(a, b))
+            [by forall_intro backward-inclusion]
+          @intersections-are-equal |
+            intersection(a, b) = intersection(b, a)
+            [using specialize extensionality(intersection(a, b), intersection(b, a)) a-intersect-b-included-in-b-intersect-a b-intersect-a-included-in-a-intersect-b]
+        }
+      @discharge-b |
+        forall b: Set; intersection(a, b) = intersection(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; intersection(a, b) = intersection(b, a)
+    [by forall_intro generalize-a]
+qed
+
+theorem unionDistributesOverIntersection: forall a, b, c: Set; union(a, intersection(b, c)) = intersection(union(a, b), union(a, c))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @b-intersect-c-membership |
+                forall x: Element;
+                  member(x, intersection(b, c)) iff (member(x, b) and member(x, c))
+                [using specialize intersectionMember(b, c)]
+              @a-union-b-intersect-c-membership |
+                forall x: Element;
+                  member(x, union(a, intersection(b, c))) iff (member(x, a) or member(x, intersection(b, c)))
+                [using specialize unionMember(a, intersection(b, c))]
+              @a-union-b-membership |
+                forall x: Element;
+                  member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                [using specialize unionMember(a, b)]
+              @a-union-c-membership |
+                forall x: Element;
+                  member(x, union(a, c)) iff (member(x, a) or member(x, c))
+                [using specialize unionMember(a, c)]
+              @a-union-b-intersect-a-union-c-membership |
+                forall x: Element;
+                  member(x, intersection(union(a, b), union(a, c))) iff (member(x, union(a, b)) and member(x, union(a, c)))
+                [using specialize intersectionMember(union(a, b), union(a, c))]
+              @forward-inclusion |
+                fix x: Element {
+                  @b-intersect-c-membership-at-x |
+                    member(x, intersection(b, c)) iff (member(x, b) and member(x, c))
+                    [by forall_elim(x) b-intersect-c-membership]
+                  @a-union-b-intersect-c-membership-at-x |
+                    member(x, union(a, intersection(b, c))) iff (member(x, a) or member(x, intersection(b, c)))
+                    [by forall_elim(x) a-union-b-intersect-c-membership]
+                  @a-union-b-membership-at-x |
+                    member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                    [by forall_elim(x) a-union-b-membership]
+                  @a-union-c-membership-at-x |
+                    member(x, union(a, c)) iff (member(x, a) or member(x, c))
+                    [by forall_elim(x) a-union-c-membership]
+                  @a-union-b-intersect-a-union-c-membership-at-x |
+                    member(x, intersection(union(a, b), union(a, c))) iff (member(x, union(a, b)) and member(x, union(a, c)))
+                    [by forall_elim(x) a-union-b-intersect-a-union-c-membership]
+                  @given-x-in-a-union-b-intersect-c |
+                    assume member(x, union(a, intersection(b, c))) {
+                      @x-in-a-union-b-intersect-c |
+                        member(x, union(a, intersection(b, c)))
+                        [by hypothesis given-x-in-a-union-b-intersect-c]
+                      @x-in-a-union-b-intersect-a-union-c |
+                        member(x, intersection(union(a, b), union(a, c)))
+                        [using tautology b-intersect-c-membership-at-x a-union-b-intersect-c-membership-at-x a-union-b-membership-at-x a-union-c-membership-at-x a-union-b-intersect-a-union-c-membership-at-x x-in-a-union-b-intersect-c]
+                    }
+                  @x-in-a-union-b-intersect-c-gives-x-in-a-union-b-intersect-a-union-c |
+                    member(x, union(a, intersection(b, c))) -> member(x, intersection(union(a, b), union(a, c)))
+                    [by implies_intro given-x-in-a-union-b-intersect-c]
+                }
+              @a-union-b-intersect-c-included-in-a-union-b-intersect-a-union-c |
+                forall x: Element; member(x, union(a, intersection(b, c))) -> member(x, intersection(union(a, b), union(a, c)))
+                [by forall_intro forward-inclusion]
+              @backward-inclusion |
+                fix y: Element {
+                  @b-intersect-c-membership-at-y |
+                    member(y, intersection(b, c)) iff (member(y, b) and member(y, c))
+                    [by forall_elim(y) b-intersect-c-membership]
+                  @a-union-b-intersect-c-membership-at-y |
+                    member(y, union(a, intersection(b, c))) iff (member(y, a) or member(y, intersection(b, c)))
+                    [by forall_elim(y) a-union-b-intersect-c-membership]
+                  @a-union-b-membership-at-y |
+                    member(y, union(a, b)) iff (member(y, a) or member(y, b))
+                    [by forall_elim(y) a-union-b-membership]
+                  @a-union-c-membership-at-y |
+                    member(y, union(a, c)) iff (member(y, a) or member(y, c))
+                    [by forall_elim(y) a-union-c-membership]
+                  @a-union-b-intersect-a-union-c-membership-at-y |
+                    member(y, intersection(union(a, b), union(a, c))) iff (member(y, union(a, b)) and member(y, union(a, c)))
+                    [by forall_elim(y) a-union-b-intersect-a-union-c-membership]
+                  @given-y-in-a-union-b-intersect-a-union-c |
+                    assume member(y, intersection(union(a, b), union(a, c))) {
+                      @y-in-a-union-b-intersect-a-union-c |
+                        member(y, intersection(union(a, b), union(a, c)))
+                        [by hypothesis given-y-in-a-union-b-intersect-a-union-c]
+                      @y-in-a-union-b-intersect-c |
+                        member(y, union(a, intersection(b, c)))
+                        [using tautology b-intersect-c-membership-at-y a-union-b-intersect-c-membership-at-y a-union-b-membership-at-y a-union-c-membership-at-y a-union-b-intersect-a-union-c-membership-at-y y-in-a-union-b-intersect-a-union-c]
+                    }
+                  @y-in-a-union-b-intersect-a-union-c-gives-y-in-a-union-b-intersect-c |
+                    member(y, intersection(union(a, b), union(a, c))) -> member(y, union(a, intersection(b, c)))
+                    [by implies_intro given-y-in-a-union-b-intersect-a-union-c]
+                }
+              @a-union-b-intersect-a-union-c-included-in-a-union-b-intersect-c |
+                forall y: Element; member(y, intersection(union(a, b), union(a, c))) -> member(y, union(a, intersection(b, c)))
+                [by forall_intro backward-inclusion]
+              @union-distributes-over-intersection |
+                union(a, intersection(b, c)) = intersection(union(a, b), union(a, c))
+                [using specialize extensionality(union(a, intersection(b, c)), intersection(union(a, b), union(a, c))) a-union-b-intersect-c-included-in-a-union-b-intersect-a-union-c a-union-b-intersect-a-union-c-included-in-a-union-b-intersect-c]
+            }
+          @discharge-c |
+            forall c: Set; union(a, intersection(b, c)) = intersection(union(a, b), union(a, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; union(a, intersection(b, c)) = intersection(union(a, b), union(a, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; union(a, intersection(b, c)) = intersection(union(a, b), union(a, c))
+    [by forall_intro generalize-a]
+qed
+
+theorem intersectionDistributesOverUnion: forall a, b, c: Set; intersection(a, union(b, c)) = union(intersection(a, b), intersection(a, c))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @b-union-c-membership |
+                forall x: Element;
+                  member(x, union(b, c)) iff (member(x, b) or member(x, c))
+                [using specialize unionMember(b, c)]
+              @a-intersect-b-union-c-membership |
+                forall x: Element;
+                  member(x, intersection(a, union(b, c))) iff (member(x, a) and member(x, union(b, c)))
+                [using specialize intersectionMember(a, union(b, c))]
+              @a-intersect-b-membership |
+                forall x: Element;
+                  member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                [using specialize intersectionMember(a, b)]
+              @a-intersect-c-membership |
+                forall x: Element;
+                  member(x, intersection(a, c)) iff (member(x, a) and member(x, c))
+                [using specialize intersectionMember(a, c)]
+              @a-intersect-b-union-a-intersect-c-membership |
+                forall x: Element;
+                  member(x, union(intersection(a, b), intersection(a, c))) iff (member(x, intersection(a, b)) or member(x, intersection(a, c)))
+                [using specialize unionMember(intersection(a, b), intersection(a, c))]
+              @forward-inclusion |
+                fix x: Element {
+                  @b-union-c-membership-at-x |
+                    member(x, union(b, c)) iff (member(x, b) or member(x, c))
+                    [by forall_elim(x) b-union-c-membership]
+                  @a-intersect-b-union-c-membership-at-x |
+                    member(x, intersection(a, union(b, c))) iff (member(x, a) and member(x, union(b, c)))
+                    [by forall_elim(x) a-intersect-b-union-c-membership]
+                  @a-intersect-b-membership-at-x |
+                    member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                    [by forall_elim(x) a-intersect-b-membership]
+                  @a-intersect-c-membership-at-x |
+                    member(x, intersection(a, c)) iff (member(x, a) and member(x, c))
+                    [by forall_elim(x) a-intersect-c-membership]
+                  @a-intersect-b-union-a-intersect-c-membership-at-x |
+                    member(x, union(intersection(a, b), intersection(a, c))) iff (member(x, intersection(a, b)) or member(x, intersection(a, c)))
+                    [by forall_elim(x) a-intersect-b-union-a-intersect-c-membership]
+                  @given-x-in-a-intersect-b-union-c |
+                    assume member(x, intersection(a, union(b, c))) {
+                      @x-in-a-intersect-b-union-c |
+                        member(x, intersection(a, union(b, c)))
+                        [by hypothesis given-x-in-a-intersect-b-union-c]
+                      @x-in-a-intersect-b-union-a-intersect-c |
+                        member(x, union(intersection(a, b), intersection(a, c)))
+                        [using tautology b-union-c-membership-at-x a-intersect-b-union-c-membership-at-x a-intersect-b-membership-at-x a-intersect-c-membership-at-x a-intersect-b-union-a-intersect-c-membership-at-x x-in-a-intersect-b-union-c]
+                    }
+                  @x-in-a-intersect-b-union-c-gives-x-in-a-intersect-b-union-a-intersect-c |
+                    member(x, intersection(a, union(b, c))) -> member(x, union(intersection(a, b), intersection(a, c)))
+                    [by implies_intro given-x-in-a-intersect-b-union-c]
+                }
+              @a-intersect-b-union-c-included-in-a-intersect-b-union-a-intersect-c |
+                forall x: Element; member(x, intersection(a, union(b, c))) -> member(x, union(intersection(a, b), intersection(a, c)))
+                [by forall_intro forward-inclusion]
+              @backward-inclusion |
+                fix y: Element {
+                  @b-union-c-membership-at-y |
+                    member(y, union(b, c)) iff (member(y, b) or member(y, c))
+                    [by forall_elim(y) b-union-c-membership]
+                  @a-intersect-b-union-c-membership-at-y |
+                    member(y, intersection(a, union(b, c))) iff (member(y, a) and member(y, union(b, c)))
+                    [by forall_elim(y) a-intersect-b-union-c-membership]
+                  @a-intersect-b-membership-at-y |
+                    member(y, intersection(a, b)) iff (member(y, a) and member(y, b))
+                    [by forall_elim(y) a-intersect-b-membership]
+                  @a-intersect-c-membership-at-y |
+                    member(y, intersection(a, c)) iff (member(y, a) and member(y, c))
+                    [by forall_elim(y) a-intersect-c-membership]
+                  @a-intersect-b-union-a-intersect-c-membership-at-y |
+                    member(y, union(intersection(a, b), intersection(a, c))) iff (member(y, intersection(a, b)) or member(y, intersection(a, c)))
+                    [by forall_elim(y) a-intersect-b-union-a-intersect-c-membership]
+                  @given-y-in-a-intersect-b-union-a-intersect-c |
+                    assume member(y, union(intersection(a, b), intersection(a, c))) {
+                      @y-in-a-intersect-b-union-a-intersect-c |
+                        member(y, union(intersection(a, b), intersection(a, c)))
+                        [by hypothesis given-y-in-a-intersect-b-union-a-intersect-c]
+                      @y-in-a-intersect-b-union-c |
+                        member(y, intersection(a, union(b, c)))
+                        [using tautology b-union-c-membership-at-y a-intersect-b-union-c-membership-at-y a-intersect-b-membership-at-y a-intersect-c-membership-at-y a-intersect-b-union-a-intersect-c-membership-at-y y-in-a-intersect-b-union-a-intersect-c]
+                    }
+                  @y-in-a-intersect-b-union-a-intersect-c-gives-y-in-a-intersect-b-union-c |
+                    member(y, union(intersection(a, b), intersection(a, c))) -> member(y, intersection(a, union(b, c)))
+                    [by implies_intro given-y-in-a-intersect-b-union-a-intersect-c]
+                }
+              @a-intersect-b-union-a-intersect-c-included-in-a-intersect-b-union-c |
+                forall y: Element; member(y, union(intersection(a, b), intersection(a, c))) -> member(y, intersection(a, union(b, c)))
+                [by forall_intro backward-inclusion]
+              @intersection-distributes-over-union |
+                intersection(a, union(b, c)) = union(intersection(a, b), intersection(a, c))
+                [using specialize extensionality(intersection(a, union(b, c)), union(intersection(a, b), intersection(a, c))) a-intersect-b-union-c-included-in-a-intersect-b-union-a-intersect-c a-intersect-b-union-a-intersect-c-included-in-a-intersect-b-union-c]
+            }
+          @discharge-c |
+            forall c: Set; intersection(a, union(b, c)) = union(intersection(a, b), intersection(a, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; intersection(a, union(b, c)) = union(intersection(a, b), intersection(a, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; intersection(a, union(b, c)) = union(intersection(a, b), intersection(a, c))
+    [by forall_intro generalize-a]
+qed
+
+theorem deMorganUnion: forall a, b: Set; complement(union(a, b)) = intersection(complement(a), complement(b))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @a-union-b-membership |
+            forall x: Element;
+              member(x, union(a, b)) iff (member(x, a) or member(x, b))
+            [using specialize unionMember(a, b)]
+          @complement-of-a-union-b-membership |
+            forall x: Element;
+              member(x, complement(union(a, b))) iff (not member(x, union(a, b)))
+            [using specialize complementMember(union(a, b))]
+          @complement-of-a-membership |
+            forall x: Element;
+              member(x, complement(a)) iff (not member(x, a))
+            [using specialize complementMember(a)]
+          @complement-of-b-membership |
+            forall x: Element;
+              member(x, complement(b)) iff (not member(x, b))
+            [using specialize complementMember(b)]
+          @complement-of-a-intersect-complement-of-b-membership |
+            forall x: Element;
+              member(x, intersection(complement(a), complement(b))) iff (member(x, complement(a)) and member(x, complement(b)))
+            [using specialize intersectionMember(complement(a), complement(b))]
+          @forward-inclusion |
+            fix x: Element {
+              @a-union-b-membership-at-x |
+                member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                [by forall_elim(x) a-union-b-membership]
+              @complement-of-a-union-b-membership-at-x |
+                member(x, complement(union(a, b))) iff (not member(x, union(a, b)))
+                [by forall_elim(x) complement-of-a-union-b-membership]
+              @complement-of-a-membership-at-x |
+                member(x, complement(a)) iff (not member(x, a))
+                [by forall_elim(x) complement-of-a-membership]
+              @complement-of-b-membership-at-x |
+                member(x, complement(b)) iff (not member(x, b))
+                [by forall_elim(x) complement-of-b-membership]
+              @complement-of-a-intersect-complement-of-b-membership-at-x |
+                member(x, intersection(complement(a), complement(b))) iff (member(x, complement(a)) and member(x, complement(b)))
+                [by forall_elim(x) complement-of-a-intersect-complement-of-b-membership]
+              @given-x-in-complement-of-a-union-b |
+                assume member(x, complement(union(a, b))) {
+                  @x-in-complement-of-a-union-b |
+                    member(x, complement(union(a, b)))
+                    [by hypothesis given-x-in-complement-of-a-union-b]
+                  @x-in-complement-of-a-intersect-complement-of-b |
+                    member(x, intersection(complement(a), complement(b)))
+                    [using tautology a-union-b-membership-at-x complement-of-a-union-b-membership-at-x complement-of-a-membership-at-x complement-of-b-membership-at-x complement-of-a-intersect-complement-of-b-membership-at-x x-in-complement-of-a-union-b]
+                }
+              @x-in-complement-of-a-union-b-gives-x-in-complement-of-a-intersect-complement-of-b |
+                member(x, complement(union(a, b))) -> member(x, intersection(complement(a), complement(b)))
+                [by implies_intro given-x-in-complement-of-a-union-b]
+            }
+          @complement-of-a-union-b-included-in-complement-of-a-intersect-complement-of-b |
+            forall x: Element; member(x, complement(union(a, b))) -> member(x, intersection(complement(a), complement(b)))
+            [by forall_intro forward-inclusion]
+          @backward-inclusion |
+            fix y: Element {
+              @a-union-b-membership-at-y |
+                member(y, union(a, b)) iff (member(y, a) or member(y, b))
+                [by forall_elim(y) a-union-b-membership]
+              @complement-of-a-union-b-membership-at-y |
+                member(y, complement(union(a, b))) iff (not member(y, union(a, b)))
+                [by forall_elim(y) complement-of-a-union-b-membership]
+              @complement-of-a-membership-at-y |
+                member(y, complement(a)) iff (not member(y, a))
+                [by forall_elim(y) complement-of-a-membership]
+              @complement-of-b-membership-at-y |
+                member(y, complement(b)) iff (not member(y, b))
+                [by forall_elim(y) complement-of-b-membership]
+              @complement-of-a-intersect-complement-of-b-membership-at-y |
+                member(y, intersection(complement(a), complement(b))) iff (member(y, complement(a)) and member(y, complement(b)))
+                [by forall_elim(y) complement-of-a-intersect-complement-of-b-membership]
+              @given-y-in-complement-of-a-intersect-complement-of-b |
+                assume member(y, intersection(complement(a), complement(b))) {
+                  @y-in-complement-of-a-intersect-complement-of-b |
+                    member(y, intersection(complement(a), complement(b)))
+                    [by hypothesis given-y-in-complement-of-a-intersect-complement-of-b]
+                  @y-in-complement-of-a-union-b |
+                    member(y, complement(union(a, b)))
+                    [using tautology a-union-b-membership-at-y complement-of-a-union-b-membership-at-y complement-of-a-membership-at-y complement-of-b-membership-at-y complement-of-a-intersect-complement-of-b-membership-at-y y-in-complement-of-a-intersect-complement-of-b]
+                }
+              @y-in-complement-of-a-intersect-complement-of-b-gives-y-in-complement-of-a-union-b |
+                member(y, intersection(complement(a), complement(b))) -> member(y, complement(union(a, b)))
+                [by implies_intro given-y-in-complement-of-a-intersect-complement-of-b]
+            }
+          @complement-of-a-intersect-complement-of-b-included-in-complement-of-a-union-b |
+            forall y: Element; member(y, intersection(complement(a), complement(b))) -> member(y, complement(union(a, b)))
+            [by forall_intro backward-inclusion]
+          @de-morgan-for-union |
+            complement(union(a, b)) = intersection(complement(a), complement(b))
+            [using specialize extensionality(complement(union(a, b)), intersection(complement(a), complement(b))) complement-of-a-union-b-included-in-complement-of-a-intersect-complement-of-b complement-of-a-intersect-complement-of-b-included-in-complement-of-a-union-b]
+        }
+      @discharge-b |
+        forall b: Set; complement(union(a, b)) = intersection(complement(a), complement(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; complement(union(a, b)) = intersection(complement(a), complement(b))
+    [by forall_intro generalize-a]
+qed
+
+theorem deMorganIntersection: forall a, b: Set; complement(intersection(a, b)) = union(complement(a), complement(b))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @a-intersect-b-membership |
+            forall x: Element;
+              member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+            [using specialize intersectionMember(a, b)]
+          @complement-of-a-intersect-b-membership |
+            forall x: Element;
+              member(x, complement(intersection(a, b))) iff (not member(x, intersection(a, b)))
+            [using specialize complementMember(intersection(a, b))]
+          @complement-of-a-membership |
+            forall x: Element;
+              member(x, complement(a)) iff (not member(x, a))
+            [using specialize complementMember(a)]
+          @complement-of-b-membership |
+            forall x: Element;
+              member(x, complement(b)) iff (not member(x, b))
+            [using specialize complementMember(b)]
+          @complement-of-a-union-complement-of-b-membership |
+            forall x: Element;
+              member(x, union(complement(a), complement(b))) iff (member(x, complement(a)) or member(x, complement(b)))
+            [using specialize unionMember(complement(a), complement(b))]
+          @forward-inclusion |
+            fix x: Element {
+              @a-intersect-b-membership-at-x |
+                member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                [by forall_elim(x) a-intersect-b-membership]
+              @complement-of-a-intersect-b-membership-at-x |
+                member(x, complement(intersection(a, b))) iff (not member(x, intersection(a, b)))
+                [by forall_elim(x) complement-of-a-intersect-b-membership]
+              @complement-of-a-membership-at-x |
+                member(x, complement(a)) iff (not member(x, a))
+                [by forall_elim(x) complement-of-a-membership]
+              @complement-of-b-membership-at-x |
+                member(x, complement(b)) iff (not member(x, b))
+                [by forall_elim(x) complement-of-b-membership]
+              @complement-of-a-union-complement-of-b-membership-at-x |
+                member(x, union(complement(a), complement(b))) iff (member(x, complement(a)) or member(x, complement(b)))
+                [by forall_elim(x) complement-of-a-union-complement-of-b-membership]
+              @given-x-in-complement-of-a-intersect-b |
+                assume member(x, complement(intersection(a, b))) {
+                  @x-in-complement-of-a-intersect-b |
+                    member(x, complement(intersection(a, b)))
+                    [by hypothesis given-x-in-complement-of-a-intersect-b]
+                  @x-in-complement-of-a-union-complement-of-b |
+                    member(x, union(complement(a), complement(b)))
+                    [using tautology a-intersect-b-membership-at-x complement-of-a-intersect-b-membership-at-x complement-of-a-membership-at-x complement-of-b-membership-at-x complement-of-a-union-complement-of-b-membership-at-x x-in-complement-of-a-intersect-b]
+                }
+              @x-in-complement-of-a-intersect-b-gives-x-in-complement-of-a-union-complement-of-b |
+                member(x, complement(intersection(a, b))) -> member(x, union(complement(a), complement(b)))
+                [by implies_intro given-x-in-complement-of-a-intersect-b]
+            }
+          @complement-of-a-intersect-b-included-in-complement-of-a-union-complement-of-b |
+            forall x: Element; member(x, complement(intersection(a, b))) -> member(x, union(complement(a), complement(b)))
+            [by forall_intro forward-inclusion]
+          @backward-inclusion |
+            fix y: Element {
+              @a-intersect-b-membership-at-y |
+                member(y, intersection(a, b)) iff (member(y, a) and member(y, b))
+                [by forall_elim(y) a-intersect-b-membership]
+              @complement-of-a-intersect-b-membership-at-y |
+                member(y, complement(intersection(a, b))) iff (not member(y, intersection(a, b)))
+                [by forall_elim(y) complement-of-a-intersect-b-membership]
+              @complement-of-a-membership-at-y |
+                member(y, complement(a)) iff (not member(y, a))
+                [by forall_elim(y) complement-of-a-membership]
+              @complement-of-b-membership-at-y |
+                member(y, complement(b)) iff (not member(y, b))
+                [by forall_elim(y) complement-of-b-membership]
+              @complement-of-a-union-complement-of-b-membership-at-y |
+                member(y, union(complement(a), complement(b))) iff (member(y, complement(a)) or member(y, complement(b)))
+                [by forall_elim(y) complement-of-a-union-complement-of-b-membership]
+              @given-y-in-complement-of-a-union-complement-of-b |
+                assume member(y, union(complement(a), complement(b))) {
+                  @y-in-complement-of-a-union-complement-of-b |
+                    member(y, union(complement(a), complement(b)))
+                    [by hypothesis given-y-in-complement-of-a-union-complement-of-b]
+                  @y-in-complement-of-a-intersect-b |
+                    member(y, complement(intersection(a, b)))
+                    [using tautology a-intersect-b-membership-at-y complement-of-a-intersect-b-membership-at-y complement-of-a-membership-at-y complement-of-b-membership-at-y complement-of-a-union-complement-of-b-membership-at-y y-in-complement-of-a-union-complement-of-b]
+                }
+              @y-in-complement-of-a-union-complement-of-b-gives-y-in-complement-of-a-intersect-b |
+                member(y, union(complement(a), complement(b))) -> member(y, complement(intersection(a, b)))
+                [by implies_intro given-y-in-complement-of-a-union-complement-of-b]
+            }
+          @complement-of-a-union-complement-of-b-included-in-complement-of-a-intersect-b |
+            forall y: Element; member(y, union(complement(a), complement(b))) -> member(y, complement(intersection(a, b)))
+            [by forall_intro backward-inclusion]
+          @de-morgan-for-intersection |
+            complement(intersection(a, b)) = union(complement(a), complement(b))
+            [using specialize extensionality(complement(intersection(a, b)), union(complement(a), complement(b))) complement-of-a-intersect-b-included-in-complement-of-a-union-complement-of-b complement-of-a-union-complement-of-b-included-in-complement-of-a-intersect-b]
+        }
+      @discharge-b |
+        forall b: Set; complement(intersection(a, b)) = union(complement(a), complement(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; complement(intersection(a, b)) = union(complement(a), complement(b))
+    [by forall_intro generalize-a]
+qed
+
+theorem disjointDifferences: forall a, b: Set; intersection(difference(a, b), difference(b, a)) = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @a-minus-b-membership |
+            forall x: Element;
+              member(x, difference(a, b)) iff (member(x, a) and (not member(x, b)))
+            [using specialize differenceMember(a, b)]
+          @b-minus-a-membership |
+            forall x: Element;
+              member(x, difference(b, a)) iff (member(x, b) and (not member(x, a)))
+            [using specialize differenceMember(b, a)]
+          @a-minus-b-intersect-b-minus-a-membership |
+            forall x: Element;
+              member(x, intersection(difference(a, b), difference(b, a))) iff (member(x, difference(a, b)) and member(x, difference(b, a)))
+            [using specialize intersectionMember(difference(a, b), difference(b, a))]
+          @forward-inclusion |
+            fix x: Element {
+              @a-minus-b-membership-at-x |
+                member(x, difference(a, b)) iff (member(x, a) and (not member(x, b)))
+                [by forall_elim(x) a-minus-b-membership]
+              @b-minus-a-membership-at-x |
+                member(x, difference(b, a)) iff (member(x, b) and (not member(x, a)))
+                [by forall_elim(x) b-minus-a-membership]
+              @a-minus-b-intersect-b-minus-a-membership-at-x |
+                member(x, intersection(difference(a, b), difference(b, a))) iff (member(x, difference(a, b)) and member(x, difference(b, a)))
+                [by forall_elim(x) a-minus-b-intersect-b-minus-a-membership]
+              @empty-membership-at-x |
+                not member(x, emptyset)
+                [using specialize emptysetMember(x)]
+              @given-x-in-a-minus-b-intersect-b-minus-a |
+                assume member(x, intersection(difference(a, b), difference(b, a))) {
+                  @x-in-a-minus-b-intersect-b-minus-a |
+                    member(x, intersection(difference(a, b), difference(b, a)))
+                    [by hypothesis given-x-in-a-minus-b-intersect-b-minus-a]
+                  @x-in-empty |
+                    member(x, emptyset)
+                    [using tautology a-minus-b-membership-at-x b-minus-a-membership-at-x a-minus-b-intersect-b-minus-a-membership-at-x empty-membership-at-x x-in-a-minus-b-intersect-b-minus-a]
+                }
+              @x-in-a-minus-b-intersect-b-minus-a-gives-x-in-empty |
+                member(x, intersection(difference(a, b), difference(b, a))) -> member(x, emptyset)
+                [by implies_intro given-x-in-a-minus-b-intersect-b-minus-a]
+            }
+          @a-minus-b-intersect-b-minus-a-included-in-empty |
+            forall x: Element; member(x, intersection(difference(a, b), difference(b, a))) -> member(x, emptyset)
+            [by forall_intro forward-inclusion]
+          @backward-inclusion |
+            fix y: Element {
+              @a-minus-b-membership-at-y |
+                member(y, difference(a, b)) iff (member(y, a) and (not member(y, b)))
+                [by forall_elim(y) a-minus-b-membership]
+              @b-minus-a-membership-at-y |
+                member(y, difference(b, a)) iff (member(y, b) and (not member(y, a)))
+                [by forall_elim(y) b-minus-a-membership]
+              @a-minus-b-intersect-b-minus-a-membership-at-y |
+                member(y, intersection(difference(a, b), difference(b, a))) iff (member(y, difference(a, b)) and member(y, difference(b, a)))
+                [by forall_elim(y) a-minus-b-intersect-b-minus-a-membership]
+              @empty-membership-at-y |
+                not member(y, emptyset)
+                [using specialize emptysetMember(y)]
+              @given-y-in-empty |
+                assume member(y, emptyset) {
+                  @y-in-empty |
+                    member(y, emptyset)
+                    [by hypothesis given-y-in-empty]
+                  @y-in-a-minus-b-intersect-b-minus-a |
+                    member(y, intersection(difference(a, b), difference(b, a)))
+                    [using tautology a-minus-b-membership-at-y b-minus-a-membership-at-y a-minus-b-intersect-b-minus-a-membership-at-y empty-membership-at-y y-in-empty]
+                }
+              @y-in-empty-gives-y-in-a-minus-b-intersect-b-minus-a |
+                member(y, emptyset) -> member(y, intersection(difference(a, b), difference(b, a)))
+                [by implies_intro given-y-in-empty]
+            }
+          @empty-included-in-a-minus-b-intersect-b-minus-a |
+            forall y: Element; member(y, emptyset) -> member(y, intersection(difference(a, b), difference(b, a)))
+            [by forall_intro backward-inclusion]
+          @differences-are-disjoint |
+            intersection(difference(a, b), difference(b, a)) = emptyset
+            [using specialize extensionality(intersection(difference(a, b), difference(b, a)), emptyset) a-minus-b-intersect-b-minus-a-included-in-empty empty-included-in-a-minus-b-intersect-b-minus-a]
+        }
+      @discharge-b |
+        forall b: Set; intersection(difference(a, b), difference(b, a)) = emptyset
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; intersection(difference(a, b), difference(b, a)) = emptyset
+    [by forall_intro generalize-a]
+qed
+
+theorem unionMinusRight: forall a, b: Set; difference(union(a, b), b) = difference(a, b)
+proof
+  @conclusion |
+    forall a, b: Set; difference(union(a, b), b) = difference(a, b)
+    [using extensionality_quantified(extensionality) differenceMember unionMember]
+qed
+
+theorem unionAsThreePieces: forall a, b: Set;
+  union(a, b) = union(union(intersection(a, b), difference(a, b)), difference(b, a))
+proof
+  @conclusion |
+    forall a, b: Set;
+      union(a, b) = union(union(intersection(a, b), difference(a, b)), difference(b, a))
+    [using extensionality_quantified(extensionality) unionMember intersectionMember differenceMember]
+qed
+
+theorem differenceOverUnion: forall a, b, c: Set;
+  difference(a, union(b, c)) = intersection(difference(a, b), difference(a, c))
+proof
+  @conclusion |
+    forall a, b, c: Set;
+      difference(a, union(b, c)) = intersection(difference(a, b), difference(a, c))
+    [using extensionality_quantified(extensionality) differenceMember unionMember intersectionMember]
+qed
+
+theorem intersectionOverDifference: forall a, b, c: Set;
+  intersection(a, difference(b, c)) = difference(intersection(a, b), intersection(a, c))
+proof
+  @conclusion |
+    forall a, b, c: Set;
+      intersection(a, difference(b, c)) = difference(intersection(a, b), intersection(a, c))
+    [using extensionality_quantified(extensionality) intersectionMember differenceMember]
+qed
+
+theorem symmetricDifference: forall a, b: Set;
+  union(difference(a, b), difference(b, a)) = difference(union(a, b), intersection(a, b))
+proof
+  @conclusion |
+    forall a, b: Set;
+      union(difference(a, b), difference(b, a)) = difference(union(a, b), intersection(a, b))
+    [using extensionality_quantified(extensionality) unionMember differenceMember intersectionMember]
+qed

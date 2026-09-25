@@ -2,7 +2,7 @@
 
 An **accelerated tactic** is a decision procedure whose verdict the checker can
 accept without a kernel derivation. Accelerated tactics are the deliberate
-exception to bpa's otherwise-closed trust story: the kernel checks every
+exception to 2b4m's otherwise-closed trust story: the kernel checks every
 ordinary step, but an `.accelerated` step stands on the named procedure being
 correct. Each invocation either **emits kernel steps** (a full chain of
 kernel steps, staying kernel-checked) or **accelerates** (it trusted the procedure without a chain).
@@ -16,7 +16,7 @@ The trust is disclosed, never silent:
   inherits the accelerated-tactic names **transitively**;
 - the summary line reports the split, e.g.
   `OK: 9 declarations, 5 theorems proven (4 accelerated: tautology)`;
-- by default `bpa check` **rejects every accelerated step with a located
+- by default `2b4m check` **rejects every accelerated step with a located
   error** — the goal must be kernel-checked. The accelerated verdict is accepted only
   under `--fast` (which then discloses it under a loud accelerated banner).
 
@@ -56,7 +56,7 @@ lemmas are named EXPLICITLY as args, so there is no expected name to couple on.)
 invariant is not "no hardcoded strings"; it is:
 
 > **Every name an accelerator expects MUST be overridable — the user must be
-> able to satisfy the expectation from a bpa file, never from editing the
+> able to satisfy the expectation from a 2b4m file, never from editing the
 > checker.** A hardcoded name that is *neither* overridable *nor* structurally
 > derivable is a silent, unescapable coupling, and is forbidden.
 
@@ -66,7 +66,7 @@ argument on each tactic:
 - **`alias`** overrides a single name. Your theory proves set-equality as `setEq`?
   `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
   what the `aata/*.md` files do — aliasing the book's notation onto the std
-  names — and what `set.bpa` did aliasing the element sort.)
+  names — and what `set.b4m` did aliasing the element sort.)
 - **`model`** overrides a whole signature at once — the industrial-strength
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
@@ -130,7 +130,7 @@ rule.
   **kernel-checked** (not accelerated), and any accelerated-tactic names `<thm>`
   itself carries are inherited. This is for goals the Presburger procedure
   *decides* but no certifier can *emit* — e.g. multi-fixed-variable `∀∀∃`
-  (`tests/cases/cooper_gap.bpa`: `sumParity` reduces to the cooper-certified
+  (`tests/cases/cooper_gap.b4m`: `sumParity` reduces to the cooper-certified
   single-variable `evenOrOddArith` via a hand proof, and `fallback` cites it).
   The matcher accepts `<thm>` in either of two forms — **every goal `arithmetic`
   can decide is fallback-supportable**:
@@ -142,8 +142,8 @@ rule.
      matches it (order-independent; the step's other refs are the `arithmetic`
      decision premises), and EMITS a `theorem_ref → forall_elim(x⃗) →
      modus_ponens(refs)` chain the KERNEL re-checks — so a mis-inferred witness
-     can never pass. (`tests/cases/arithmetic_fallback_specialize.bpa`;
-     `std/integer/divides.bpa`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
+     can never pass. (`tests/cases/arithmetic_fallback_specialize.b4m`;
+     `std/integer/divides.b4m`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
      from `aata/2.2-division-algorithm-exercises.md`.)
   `fallback` is a contextual modifier on `arithmetic` only (not a keyword —
   `fallback` is an ordinary identifier elsewhere); it is the
@@ -253,7 +253,7 @@ rule.
   not to hand-prove around it. So there is no decision-vs-certification gap for
   `polynomial` to bridge, and it carries no `fallback`. (The audit also
   surfaced — and fixed — a stale-slice OOB crash in the accelerated normalizer
-  on large expansions: `tests/cases/polynomial_oob.bpa`.)
+  on large expansions: `tests/cases/polynomial_oob.b4m`.)
 
 ### `extensionality` — extensionality-reduction
 
@@ -278,7 +278,7 @@ rule.
     `apply(f, x) = apply(g, x)` → closed by the rewrite join (the `simplify`
     machinery over the cited `<op>Apply` lemmas).
   Then `forall_intro` each obligation and `modus_ponens` the chain to the equation.
-  Like every accelerant it is a generated schema the kernel re-checks; `bpa debug
+  Like every accelerant it is a generated schema the kernel re-checks; `2b4m debug
   accelerant` prints it.
 
 ### `assoc_commut` — associative-commutative reordering

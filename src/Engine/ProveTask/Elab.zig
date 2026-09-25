@@ -1076,7 +1076,7 @@ const World = struct {
         };
         walk.* = Walk.init(arena, interner, "", sink);
 
-        const file = try interner.intern(.{ .file = .{ .path = try interner.internString("/t/w.bpa") } });
+        const file = try interner.intern(.{ .file = .{ .path = try interner.internString("/t/w.b4m") } });
         w.ns = try interner.namespace(.universe, file);
 
         const nat_name = try interner.internString("Nat");

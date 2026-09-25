@@ -1,0 +1,46 @@
+// GUARD: one sequence, BOTH folds. Before std/integer/sequence.b4m split the `Seq`
+// sort out, std/integer/product.b4m and std/integer/sum.b4m each declared their own
+// — two incompatible sorts both meaning "a sequence of integers" — so this file
+// could not be written: `at` would be ill-typed against one of the two folds, and
+// the sum's sequences had no construction axioms at all. If the sorts ever drift
+// apart again, this stops compiling.
+import product <<< "std/integer/product.b4m"
+import sum <<< "std/integer/sum.b4m"
+import integer <<< "std/integer.b4m"
+import order <<< "std/integer/order.b4m"
+
+sort Int = integer.Int
+sort Seq = product.Seq
+sort NonNegZ = integer.NonNeg
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func at = product.at
+func productUpTo = product.productUpTo
+func sumUpTo = sum.sumUpTo
+axiom productUpToZero = product.productUpToZero
+axiom sumUpToZero = sum.sumUpToZero
+axiom nonnegZero = order.nonnegZero
+pred is_nonneg = order.nonneg
+
+// ONE sequence, BOTH folds, in a single statement.
+theorem emptyFoldsAreTheIdentities: forall s: Seq; productUpTo(s, ZERO) = ONE and sumUpTo(s, ZERO) = ZERO
+proof
+  @zero-is-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @generalize-s |
+    fix s: Seq {
+      @empty-product-is-one |
+        productUpTo(s, ZERO) = ONE
+        [using specialize productUpToZero(s)]
+      @empty-sum-is-zero |
+        sumUpTo(s, ZERO) = ZERO
+        [using specialize sumUpToZero(s)]
+      @conclusion-both |
+        productUpTo(s, ZERO) = ONE and sumUpTo(s, ZERO) = ZERO
+        [by and_intro empty-product-is-one empty-sum-is-zero]
+    }
+  @conclusion |
+    forall s: Seq; productUpTo(s, ZERO) = ONE and sumUpTo(s, ZERO) = ZERO
+    [by forall_intro generalize-s]
+qed

@@ -1,0 +1,543 @@
+// std/peano/subtraction.b4m — truncated subtraction on Nat.
+//
+// `sub(a, b)` is a - b, truncated to ZERO when b >= a. Defined by its
+// recursion equations; the theorems are the inverse/cancellation laws and —
+// the payoff — `subStrictlyDecreases`, the measure lemma that makes
+// subtractive recursion (Euclid's gcd) terminate: subtracting a positive b
+// that is <= a strictly shrinks a. Everything here is PURE.
+//
+// Imports the arithmetic core (peano) and the order theory (peano-order);
+// per convention, names used more than once are aliased, single uses are
+// qualified inline.
+
+import peano <<< "std/peano.b4m"
+import ordering <<< "std/peano/order.b4m"
+
+// -- vocabulary -------------------------------------------------------------
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+axiom induction = peano.induction
+pred less_than = ordering.less_than
+axiom lessThanIntro = ordering.lessThanIntro
+axiom lessThanElim = ordering.lessThanElim
+theorem addZeroRight = peano.addZeroRight
+theorem addSuccRight = peano.addSuccRight
+theorem mulZeroRight = peano.mulZeroRight
+theorem mulSuccRight = peano.mulSuccRight
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem notLessThanZero = ordering.notLessThanZero
+theorem lessThanSuccSplit = ordering.lessThanSuccSplit
+theorem succReflectsOrder = ordering.succReflectsOrder
+
+// -- the subtraction function -----------------------------------------------
+
+func sub(a: Nat, b: Nat) => Nat
+axiom subZeroRight: forall a: Nat; sub(a, ZERO) = a
+axiom subSuccSucc: forall a, b: Nat; sub(succ(a), succ(b)) = sub(a, b)
+axiom subZeroLeft: forall b: Nat; sub(ZERO, b) = ZERO
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory subSelf
+intheory subAddCancel
+intheory addSubCancel
+intheory subStrictlyDecreases
+intheory subAddSameRight
+intheory mulSubDistribLeft
+
+// -- theorems ---------------------------------------------------------------
+
+// sub(a, a) = ZERO, by induction on a.
+theorem subSelf: forall a: Nat; sub(a, a) = ZERO
+proof
+  @base-case |
+    sub(ZERO, ZERO) = ZERO
+    [using simplify subZeroRight]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume sub(k, k) = ZERO {
+          @inductive-hypothesis |
+            sub(k, k) = ZERO
+            [by hypothesis given-inductive-hypothesis]
+          @sub-succ-succ-is-zero |
+            sub(succ(k), succ(k)) = ZERO
+            [using simplify subSuccSucc inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        sub(k, k) = ZERO -> sub(succ(k), succ(k)) = ZERO
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; sub(k, k) = ZERO -> sub(succ(k), succ(k)) = ZERO
+    [by forall_intro induction-step]
+  @conclusion |
+    forall a: Nat; sub(a, a) = ZERO
+    [using instantiation induction((fun j: Nat => sub(j, j) = ZERO)) base-case induction-step-for-all-k]
+qed
+
+// sub(add(a, b), b) = a — the left inverse of adding b. Induction on b.
+theorem subAddCancel: forall a, b: Nat; sub(add(a, b), b) = a
+proof
+  @generalize-a |
+    fix a: Nat {
+      @base-case-at-a |
+        sub(add(a, ZERO), ZERO) = a
+        [using simplify subZeroRight addZeroRight]
+    }
+  @base-case |
+    forall a: Nat; sub(add(a, ZERO), ZERO) = a
+    [by forall_intro generalize-a]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; sub(add(a, k), k) = a {
+          @inductive-hypothesis |
+            forall a: Nat; sub(add(a, k), k) = a
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-a2 |
+            fix a2: Nat {
+              @inductive-hypothesis-at-a2 |
+                sub(add(a2, k), k) = a2
+                [by forall_elim(a2) inductive-hypothesis]
+              @sub-succ-cancels-at-a2 |
+                sub(add(a2, succ(k)), succ(k)) = a2
+                [using simplify addSuccRight subSuccSucc inductive-hypothesis-at-a2]
+            }
+          @sub-succ-cancels-discharge-a |
+            forall a: Nat; sub(add(a, succ(k)), succ(k)) = a
+            [by forall_intro generalize-a2]
+        }
+      @induction-step-at-k |
+        (forall a: Nat; sub(add(a, k), k) = a) -> forall a: Nat; sub(add(a, succ(k)), succ(k)) = a
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Nat; sub(add(a, k), k) = a) -> forall a: Nat; sub(add(a, succ(k)), succ(k)) = a
+    [by forall_intro induction-step]
+  @cancel-holds-swapped |
+    forall b, a: Nat; sub(add(a, b), b) = a
+    [using instantiation induction((fun j: Nat => forall a: Nat; sub(add(a, j), j) = a)) base-case induction-step-for-all-k]
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @cancel-at-a-b |
+            sub(add(a, b), b) = a
+            [by forall_elim(b, a) cancel-holds-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; sub(add(a, b), b) = a
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; sub(add(a, b), b) = a
+    [by forall_intro reorder-a]
+qed
+
+// b <= a  ->  add(sub(a, b), b) = a  (recovering a from a - b). Here b <= a is
+// spelled less_than(b, succ(a)). Induction on a; inner case-split on b.
+theorem addSubCancel: forall b, a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+proof
+  @generalize-b |
+    fix bb: Nat {
+      @given-b-below-one |
+        assume less_than(bb, succ(ZERO)) {
+          @b-below-one |
+            less_than(bb, succ(ZERO))
+            [by hypothesis given-b-below-one]
+          @b-below-zero-or-zero |
+            less_than(bb, ZERO) or bb = ZERO
+            [using specialize lessThanSuccSplit(bb, ZERO) b-below-one]
+          @when-b-below-zero |
+            assume less_than(bb, ZERO) {
+              @b-below-zero |
+                less_than(bb, ZERO)
+                [by hypothesis when-b-below-zero]
+              @b-not-below-zero |
+                not less_than(bb, ZERO)
+                [using specialize notLessThanZero(bb)]
+              @absurd-below-zero |
+                add(sub(ZERO, bb), bb) = ZERO
+                [by absurd b-below-zero b-not-below-zero]
+            }
+          @when-b-is-zero |
+            assume bb = ZERO {
+              @b-is-zero |
+                bb = ZERO
+                [by hypothesis when-b-is-zero]
+              @cancel-both-b |
+                add(sub(ZERO, bb), bb) = ZERO
+                [using simplify b-is-zero subZeroRight addZeroRight]
+            }
+          @cancel-holds-at-zero |
+            add(sub(ZERO, bb), bb) = ZERO
+            [by or_elim b-below-zero-or-zero when-b-below-zero when-b-is-zero]
+        }
+      @base-case-at-b |
+        less_than(bb, succ(ZERO)) -> add(sub(ZERO, bb), bb) = ZERO
+        [by implies_intro given-b-below-one]
+    }
+  @base-case |
+    forall b: Nat; less_than(b, succ(ZERO)) -> add(sub(ZERO, b), b) = ZERO
+    [by forall_intro generalize-b]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k {
+          @inductive-hypothesis |
+            forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-b2 |
+            fix cc: Nat {
+              @given-b-below-succ-succ-k |
+                assume less_than(cc, succ(succ(k))) {
+                  @b-below-succ-succ-k |
+                    less_than(cc, succ(succ(k)))
+                    [by hypothesis given-b-below-succ-succ-k]
+                  @b-is-zero-or-successor |
+                    cc = ZERO or (exists m: Nat; cc = succ(m))
+                    [using specialize zeroOrSucc(cc)]
+                  @when-b-is-zero |
+                    assume cc = ZERO {
+                      @b-is-zero |
+                        cc = ZERO
+                        [by hypothesis when-b-is-zero]
+                      @cancel-both-when-zero |
+                        add(sub(succ(k), cc), cc) = succ(k)
+                        [using simplify b-is-zero subZeroRight addZeroRight]
+                    }
+                  @when-b-is-successor |
+                    assume exists m: Nat; cc = succ(m) {
+                      @predecessor-exists |
+                        exists m: Nat; cc = succ(m)
+                        [by hypothesis when-b-is-successor]
+                      @with-predecessor-cp |
+                        unpack cp: Nat from predecessor-exists {
+                          @b-is-succ-cp |
+                            cc = succ(cp)
+                            [by hypothesis with-predecessor-cp]
+                          @succ-cp-below-succ-succ-k |
+                            less_than(succ(cp), succ(succ(k)))
+                            [by rewrite b-is-succ-cp b-below-succ-succ-k]
+                          @cp-below-succ-k |
+                            less_than(cp, succ(k))
+                            [using specialize succReflectsOrder(cp, succ(k)) succ-cp-below-succ-succ-k]
+                          @cancel-at-cp |
+                            add(sub(k, cp), cp) = k
+                            [using specialize inductive-hypothesis(cp) cp-below-succ-k]
+                          @cancel-both-when-successor |
+                            add(sub(succ(k), cc), cc) = succ(k)
+                            [using simplify b-is-succ-cp subSuccSucc addSuccRight cancel-at-cp]
+                        }
+                      @cancel-both-when-successor-exported |
+                        add(sub(succ(k), cc), cc) = succ(k)
+                        [by exists_elim with-predecessor-cp]
+                    }
+                  @cancel-holds-at-succ-k |
+                    add(sub(succ(k), cc), cc) = succ(k)
+                    [by or_elim b-is-zero-or-successor when-b-is-zero when-b-is-successor]
+                }
+              @cancel-at-succ-k-if-below |
+                less_than(cc, succ(succ(k))) -> add(sub(succ(k), cc), cc) = succ(k)
+                [by implies_intro given-b-below-succ-succ-k]
+            }
+          @cancel-holds-at-succ-k-discharge-b |
+            forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+            [by forall_intro generalize-b2]
+        }
+      @induction-step-at-k |
+        (forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k) -> forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k) -> forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+    [by forall_intro induction-step]
+  @cancel-holds-swapped |
+    forall a, b: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+    [using instantiation induction((fun j: Nat => forall b: Nat; less_than(b, succ(j)) -> add(sub(j, b), b) = j)) base-case induction-step-for-all-k]
+  @reorder-b |
+    fix b: Nat {
+      @reorder-a |
+        fix a: Nat {
+          @cancel-at-b-a |
+            less_than(b, succ(a)) -> add(sub(a, b), b) = a
+            [by forall_elim(a, b) cancel-holds-swapped]
+        }
+      @reorder-discharge-a |
+        forall a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+        [by forall_intro reorder-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+    [by forall_intro reorder-b]
+qed
+
+// THE MEASURE LEMMA: 0 < b and b <= a  ->  a - b < a. This is what makes
+// subtractive gcd terminate (each step's first argument strictly drops).
+theorem subStrictlyDecreases: forall b, a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-b-positive |
+            assume less_than(ZERO, b) {
+              @given-b-below-succ-a |
+                assume less_than(b, succ(a)) {
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  @b-below-succ-a |
+                    less_than(b, succ(a))
+                    [by hypothesis given-b-below-succ-a]
+                  @cancel-recovers-a |
+                    add(sub(a, b), b) = a
+                    [using specialize addSubCancel(b, a) b-below-succ-a]
+                  @gap-exists |
+                    exists d: Nat; add(ZERO, succ(d)) = b
+                    [using specialize lessThanElim(ZERO, b) b-positive]
+                  @with-gap-d |
+                    unpack d0: Nat from gap-exists {
+                      @gap-sums-to-b |
+                        add(ZERO, succ(d0)) = b
+                        [by hypothesis with-gap-d]
+                      @gap-is-succ-d |
+                        add(ZERO, succ(d0)) = succ(d0)
+                        [using simplify peano.addZeroLeft]
+                      @succ-d-is-b |
+                        succ(d0) = b
+                        [by rewrite gap-is-succ-d gap-sums-to-b]
+                      @cancel-recovers-a-via-gap |
+                        add(sub(a, b), succ(d0)) = a
+                        [by rewrite succ-d-is-b cancel-recovers-a]
+                      @sub-is-below-a |
+                        less_than(sub(a, b), a)
+                        [using specialize lessThanIntro(sub(a, b), d0, a) cancel-recovers-a-via-gap]
+                    }
+                  @sub-is-below-a-exported |
+                    less_than(sub(a, b), a)
+                    [by exists_elim with-gap-d]
+                }
+              @below-implies-sub-decreases |
+                less_than(b, succ(a)) -> less_than(sub(a, b), a)
+                [by implies_intro given-b-below-succ-a]
+            }
+          @positive-implies-sub-decreases |
+            less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+            [by implies_intro given-b-positive]
+        }
+      @sub-decreases-discharge-a |
+        forall a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+    [by forall_intro generalize-b]
+qed
+
+// sub(add(x, d), add(y, d)) = sub(x, y): a common right addend cancels under
+// subtraction. By induction on d.
+theorem subAddSameRight: forall x, d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+proof
+  @generalize-x |
+    fix bx: Nat {
+      @generalize-y |
+        fix by2: Nat {
+          @base-case-at-x-y |
+            sub(add(bx, ZERO), add(by2, ZERO)) = sub(bx, by2)
+            [using simplify addZeroRight]
+        }
+      @base-case-discharge-y |
+        forall y: Nat; sub(add(bx, ZERO), add(y, ZERO)) = sub(bx, y)
+        [by forall_intro generalize-y]
+    }
+  @base-case |
+    forall x, y: Nat; sub(add(x, ZERO), add(y, ZERO)) = sub(x, y)
+    [by forall_intro generalize-x]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y) {
+          @inductive-hypothesis |
+            forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-x2 |
+            fix x: Nat {
+              @generalize-y2 |
+                fix y: Nat {
+                  // both addends unfold via addSuccRight, subSuccSucc peels, IH closes
+                  @inductive-hypothesis-at-x-y |
+                    sub(add(x, k), add(y, k)) = sub(x, y)
+                    [by forall_elim(x, y) inductive-hypothesis]
+                  @same-right-cancels-at-x-y |
+                    sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+                    [using simplify addSuccRight subSuccSucc inductive-hypothesis-at-x-y]
+                }
+              @same-right-cancels-discharge-y |
+                forall y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+                [by forall_intro generalize-y2]
+            }
+          @same-right-cancels-discharge-x-y |
+            forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+            [by forall_intro generalize-x2]
+        }
+      @induction-step-at-k |
+        (forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)) -> forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)) -> forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+    [by forall_intro induction-step]
+  @same-right-cancels-swapped |
+    forall d, x, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+    [using instantiation induction((fun j: Nat => forall x, y: Nat; sub(add(x, j), add(y, j)) = sub(x, y))) base-case induction-step-for-all-k]
+  @reorder-x |
+    fix x: Nat {
+      @reorder-d |
+        fix d: Nat {
+          @reorder-y |
+            fix y: Nat {
+              @same-right-cancels-at-x-d-y |
+                sub(add(x, d), add(y, d)) = sub(x, y)
+                [by forall_elim(d, x, y) same-right-cancels-swapped]
+            }
+          @reorder-discharge-y |
+            forall y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+            [by forall_intro reorder-y]
+        }
+      @reorder-discharge-d |
+        forall d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+        [by forall_intro reorder-d]
+    }
+  @conclusion |
+    forall x, d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+    [by forall_intro reorder-x]
+qed
+
+// mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b)): multiplication distributes over
+// truncated subtraction. Induction on b with an inner case-split on a.
+theorem mulSubDistribLeft: forall d, a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+proof
+  @generalize-a |
+    fix ba: Nat {
+      @generalize-d |
+        fix bd: Nat {
+          @base-case-at-a-d |
+            mul(bd, sub(ba, ZERO)) = sub(mul(bd, ba), mul(bd, ZERO))
+            [using simplify subZeroRight mulZeroRight]
+        }
+      @base-case-discharge-d |
+        forall d: Nat; mul(d, sub(ba, ZERO)) = sub(mul(d, ba), mul(d, ZERO))
+        [by forall_intro generalize-d]
+    }
+  @base-case |
+    forall a, d: Nat; mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+    [by forall_intro generalize-a]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k)) {
+          @inductive-hypothesis |
+            forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-a2 |
+            fix a: Nat {
+              @generalize-d2 |
+                fix d: Nat {
+                  @a-is-zero-or-successor |
+                    a = ZERO or (exists m: Nat; a = succ(m))
+                    [using specialize zeroOrSucc(a)]
+                  @when-a-is-zero |
+                    assume a = ZERO {
+                      @a-is-zero |
+                        a = ZERO
+                        [by hypothesis when-a-is-zero]
+                      // both sides collapse to ZERO via subZeroLeft, mulZeroRight
+                      @distributes-when-a-zero |
+                        mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                        [using simplify a-is-zero subZeroLeft mulZeroRight]
+                    }
+                  @when-a-is-successor |
+                    assume exists m: Nat; a = succ(m) {
+                      @predecessor-exists |
+                        exists m: Nat; a = succ(m)
+                        [by hypothesis when-a-is-successor]
+                      @with-predecessor-ap |
+                        unpack ap: Nat from predecessor-exists {
+                          @a-is-succ-ap |
+                            a = succ(ap)
+                            [by hypothesis with-predecessor-ap]
+                          // LHS peels via subSuccSucc to mul(d, sub(ap, k)), then the IH
+                          @inductive-hypothesis-at-ap-d |
+                            mul(d, sub(ap, k)) = sub(mul(d, ap), mul(d, k))
+                            [by forall_elim(ap, d) inductive-hypothesis]
+                          // RHS: both multiplications unfold via mulSuccRight to add(_, d)
+                          @mul-d-succ-ap-unfolds |
+                            mul(d, succ(ap)) = add(mul(d, ap), d)
+                            [using specialize mulSuccRight(d, ap)]
+                          @mul-d-succ-k-unfolds |
+                            mul(d, succ(k)) = add(mul(d, k), d)
+                            [using specialize mulSuccRight(d, k)]
+                          // and the common right addend d cancels via subAddSameRight
+                          @same-right-cancels-here |
+                            sub(add(mul(d, ap), d), add(mul(d, k), d)) = sub(mul(d, ap), mul(d, k))
+                            [using specialize subAddSameRight(mul(d, ap), d, mul(d, k))]
+                          // both sides normalize to sub(mul(d,ap), mul(d,k))
+                          @distributes-when-a-successor |
+                            mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                            [using simplify a-is-succ-ap subSuccSucc inductive-hypothesis-at-ap-d mul-d-succ-ap-unfolds mul-d-succ-k-unfolds same-right-cancels-here]
+                        }
+                      @distributes-when-a-successor-exported |
+                        mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                        [by exists_elim with-predecessor-ap]
+                    }
+                  @distributes-at-succ-k |
+                    mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                    [by or_elim a-is-zero-or-successor when-a-is-zero when-a-is-successor]
+                }
+              @distributes-discharge-d |
+                forall d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                [by forall_intro generalize-d2]
+            }
+          @distributes-discharge-a-d |
+            forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+            [by forall_intro generalize-a2]
+        }
+      @induction-step-at-k |
+        (forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) -> forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) -> forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+    [by forall_intro induction-step]
+  @distributes-swapped |
+    forall b, a, d: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+    [using instantiation induction((fun j: Nat => forall a, d: Nat; mul(d, sub(a, j)) = sub(mul(d, a), mul(d, j)))) base-case induction-step-for-all-k]
+  @reorder-d |
+    fix d: Nat {
+      @reorder-a |
+        fix a: Nat {
+          @reorder-b |
+            fix b: Nat {
+              @distributes-at-d-a-b |
+                mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+                [by forall_elim(b, a, d) distributes-swapped]
+            }
+          @reorder-discharge-b |
+            forall b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+            [by forall_intro reorder-b]
+        }
+      @reorder-discharge-a |
+        forall a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+        [by forall_intro reorder-a]
+    }
+  @conclusion |
+    forall d, a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+    [by forall_intro reorder-d]
+qed

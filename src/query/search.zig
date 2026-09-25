@@ -1,5 +1,5 @@
-//! `bpa query search <path> <query>` — fuzzy/token search over theorem and
-//! axiom names + statements. `<path>` is a directory (search every `.bpa`
+//! `2b4m query search <path> <query>` — fuzzy/token search over theorem and
+//! axiom names + statements. `<path>` is a directory (search every `.b4m`
 //! under it — corpus discovery) or a file (search it + everything it
 //! transitively imports — scope-aware, citable-from-here). Ranks by name
 //! substring/token hits, then statement token overlap. One line per hit,

@@ -1,7 +1,7 @@
 # A literate proof
 
-`bpa check` runs on Markdown: it checks the proofs inside ` ```bpa ` fenced
-blocks and ignores everything else. This document *is* a checkable bpa file —
+`2b4m check` runs on Markdown: it checks the proofs inside ` ```2b4m ` fenced
+blocks and ignores everything else. This document *is* a checkable 2b4m file —
 the prose you're reading is masked out, the code blocks concatenate into one
 proof in order, and a later block can cite an earlier one.
 
@@ -10,7 +10,7 @@ proof in order, and a later block can cite an earlier one.
 We work over a tiny theory: a sort with a binary operation `op` and two
 axioms — `op` is commutative, and it has a right identity `E`.
 
-```bpa
+```2b4m
 sort T
 const E: T
 func op(a: T, b: T) => T
@@ -26,7 +26,7 @@ commuting turns the right identity into the left. Note the proof below cites
 `opComm` and `opIdRight`, declared in the earlier block: the blocks share one
 scope.
 
-```bpa
+```2b4m
 theorem opIdLeft: forall a: T; op(E, a) = a
 proof
   @generalize-a |
@@ -47,5 +47,5 @@ proof
 qed
 ```
 
-That's it — `bpa check examples/literate.md` verifies the proof above, and any
+That's it — `2b4m check examples/literate.md` verifies the proof above, and any
 error would report a line number pointing straight into this `.md` file.

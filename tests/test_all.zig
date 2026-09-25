@@ -1,6 +1,6 @@
 //! Aggregates every integration-test group. build.zig calls this one
 //! `addTests`, which fans out to each subject file. Gates spawn the built
-//! `bpa` binary and assert stdout / stderr / exit against goldens.
+//! `2b4m` binary and assert stdout / stderr / exit against goldens.
 
 const std = @import("std");
 

@@ -147,7 +147,7 @@ test "IdentKV demand table: claim -> in_flight -> publish -> done, deduped per k
     var threaded: std.Io.Threaded = .init(arena_state.allocator(), .{});
     const io = threaded.io();
 
-    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.b4m") } });
     const ns = try pool.namespace(.universe, f);
     const nat = try pool.internString("Nat");
     const k = IdentKV.Key{ .namespace = ns, .name = nat };

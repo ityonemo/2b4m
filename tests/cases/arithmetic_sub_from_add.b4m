@@ -1,0 +1,71 @@
+// `arithmetic` rearranging a linear ℤ equation against a cited premise:
+// `sub(y, x) = succ(d)` from `add(x, succ(d)) = y`. The premise's sides never
+// occur in the goal, so the equation certifier's PREMISE-COMBINATION path takes
+// it: prove the pure identity `add(add(x, succ(d)), sub(y, x)) = add(y, succ(d))`,
+// rewrite the premise into it, cancel with addCancelLeft.
+//
+// That identity normalizes to a SUCC TOWER on both sides (addSuccRight floats the
+// succ to the root: `succ(add(add(x, d), add(y, neg(x))))` vs `succ(add(y, d))`),
+// and the additive canonicalizer must AC-sort and inverse-cancel UNDER the tower —
+// a root-only sort leaves the sides unsorted, and a cancel that rebuilds without
+// the tower turns `succ(…)` into `d`. Both silently declined this goal.
+//
+// This is std/integer/divides.b4m:1073 (lessThanGivesNonnegDifference), which the
+// pre-refactor engine certified through its tower-aware `planEquation`.
+import integer <<< "std/integer.b4m"
+import order <<< "std/integer/order.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+func add = integer.add
+func sub = integer.sub
+func neg = integer.neg
+func succ = integer.succ
+
+// the well-known lemmas the certificate cites (a rule whose lemma this file does not
+// declare is never pushed).
+axiom addZeroLeft = integer.addZeroLeft
+theorem addZeroRight = integer.addZeroRight
+axiom addSuccLeft = integer.addSuccLeft
+theorem addSuccRight = integer.addSuccRight
+axiom definitionOfSubtraction = integer.definitionOfSubtraction
+theorem addNegRight = integer.addNegRight
+theorem addNegLeft = integer.addNegLeft
+theorem addIsAssociative = integer.addIsAssociative
+theorem addIsCommutative = integer.addIsCommutative
+theorem addLeftSwap = integer.addLeftSwap
+theorem addCancelLeft = order.addCancelLeft
+
+theorem subFromAdd: forall x, y, d: Int; add(x, succ(d)) = y -> sub(y, x) = succ(d)
+proof
+  @generalize-x |
+    fix x: Int {
+      @generalize-y |
+        fix y: Int {
+          @generalize-d |
+            fix d: Int {
+              @given |
+                assume add(x, succ(d)) = y {
+                  @reaches |
+                    add(x, succ(d)) = y
+                    [by hypothesis given]
+                  @conclusion-difference |
+                    sub(y, x) = succ(d)
+                    [using arithmetic reaches]
+                }
+              @discharge |
+                add(x, succ(d)) = y -> sub(y, x) = succ(d)
+                [by implies_intro given]
+            }
+          @all-d |
+            forall d: Int; add(x, succ(d)) = y -> sub(y, x) = succ(d)
+            [by forall_intro generalize-d]
+        }
+      @all-y |
+        forall y, d: Int; add(x, succ(d)) = y -> sub(y, x) = succ(d)
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, d: Int; add(x, succ(d)) = y -> sub(y, x) = succ(d)
+    [by forall_intro generalize-x]
+qed

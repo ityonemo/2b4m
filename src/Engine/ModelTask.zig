@@ -467,7 +467,7 @@ test "model: overlay populated from same-file symbol + obligation mappings; dedu
 
     // a self-contained model: a `.symbol` map (func srcF -> tgtF) and an `.obligation`
     // (axiom srcAx <- tgtAx). All same-file so no import qualifier is needed.
-    const ctx = try fixtureCtx(arena, io, "/t/m.bpa",
+    const ctx = try fixtureCtx(arena, io, "/t/m.b4m",
         \\sort T
         \\func srcF(a: T) => T
         \\func tgtF(a: T) => T
@@ -478,7 +478,7 @@ test "model: overlay populated from same-file symbol + obligation mappings; dedu
         \\  srcAx <- tgtAx
         \\  }
     );
-    const f = try ctx.fileIndex("/t/m.bpa");
+    const f = try ctx.fileIndex("/t/m.b4m");
     const mname = try ctx.interner.internString("M");
 
     var eng = Engine.init(arena, ctx, ctx.io);

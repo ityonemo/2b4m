@@ -961,8 +961,8 @@ pub const Rig = struct {
 
     pub fn init(arena: std.mem.Allocator, io: std.Io) !Rig {
         const FetchTask = @import("../FetchTask.zig");
-        const ctx = try FetchTask.fixtureCtx(arena, io, "/t/ring.bpa", source);
-        const file = try ctx.fileIndex("/t/ring.bpa");
+        const ctx = try FetchTask.fixtureCtx(arena, io, "/t/ring.b4m", source);
+        const file = try ctx.fileIndex("/t/ring.b4m");
         const ns = try ctx.interner.namespace(.universe, file);
         const eng = try arena.create(Engine);
         eng.* = Engine.init(arena, ctx, ctx.io);

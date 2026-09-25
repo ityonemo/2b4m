@@ -1,8 +1,8 @@
-//! bpa CLI: `bpa check <file.bpa>`.
+//! 2b4m CLI: `2b4m check <file.b4m>`.
 
 const std = @import("std");
 const Io = std.Io;
-const bpa = @import("bpa");
+const b4m = @import("b4m");
 
 // User program, not a library: io lives in a global for convenience.
 pub var io: Io = undefined;
@@ -16,7 +16,7 @@ fn fail(comptime fmt: []const u8, args: anytype) u8 {
     return 1;
 }
 
-/// `bpa fmt [--check] <file>`: whitespace/indentation normalizer.
+/// `2b4m fmt [--check] <file>`: whitespace/indentation normalizer.
 /// In place by default; --check reports (exit 1) instead of rewriting.
 fn fmtCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     var check_only = false;
@@ -27,21 +27,21 @@ fn fmtCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
         } else if (path == null) {
             path = arg;
         } else {
-            return fail("usage: bpa fmt [--check] <file.bpa|.md>\n", .{});
+            return fail("usage: 2b4m fmt [--check] <file.b4m|.md>\n", .{});
         }
     }
-    const p = path orelse return fail("usage: bpa fmt [--check] <file.bpa|.md>\n", .{});
+    const p = path orelse return fail("usage: 2b4m fmt [--check] <file.b4m|.md>\n", .{});
 
     const source = Io.Dir.cwd().readFileAlloc(io, p, arena, .limited(64 << 20)) catch |e| switch (e) {
         error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
         else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
     };
-    // A `.md` is a literate document: reformat only the ```bpa blocks, leaving
-    // prose verbatim. A `.bpa` is formatted whole.
+    // A `.md` is a literate document: reformat only the ```2b4m blocks, leaving
+    // prose verbatim. A `.b4m` is formatted whole.
     const formatted = if (std.mem.endsWith(u8, p, ".md"))
-        try bpa.literate.formatLiterate(arena, source)
+        try b4m.literate.formatLiterate(arena, source)
     else
-        try bpa.fmt.format(arena, source);
+        try b4m.fmt.format(arena, source);
     if (std.mem.eql(u8, source, formatted)) return 0;
     if (check_only) {
         return fail("{s}: not formatted\n", .{p});
@@ -50,41 +50,41 @@ fn fmtCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     return 0;
 }
 
-/// `bpa lint <file>`: convention checks (binder order, later casing/labels).
+/// `2b4m lint <file>`: convention checks (binder order, later casing/labels).
 /// Reports violations with locations; exit 1 if any (or a parse error). Reads
 /// `.md` through the literate extractor and tells the linter the input was
 /// literate so source-mirroring rules stay suspended.
 fn lintCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     var path: ?[]const u8 = null;
     for (rest) |arg| {
-        if (path == null) path = arg else return fail("usage: bpa lint <file.bpa|.md>\n", .{});
+        if (path == null) path = arg else return fail("usage: 2b4m lint <file.b4m|.md>\n", .{});
     }
-    const p = path orelse return fail("usage: bpa lint <file.bpa|.md>\n", .{});
+    const p = path orelse return fail("usage: 2b4m lint <file.b4m|.md>\n", .{});
     const is_literate = std.mem.endsWith(u8, p, ".md");
     const source = readSource(arena, p) catch |e| switch (e) {
         error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
         else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
     };
-    const result = try bpa.lint.lint(arena, p, source, is_literate);
+    const result = try b4m.lint.lint(arena, p, source, is_literate);
     return emitQuery(result.text, result.ok);
 }
 
-/// `bpa debug accelerant <file> <line>` | `<file> <theorem> <step-label>`: reprint the
-/// synthetic theorem the named accelerant step produced, as re-parseable bpa source. Reads
+/// `2b4m debug accelerant <file> <line>` | `<file> <theorem> <step-label>`: reprint the
+/// synthetic theorem the named accelerant step produced, as re-parseable 2b4m source. Reads
 /// `.md` through the literate extractor.
 const debug_usage =
-    "usage: bpa debug accelerant <file> <line>\n" ++
-    "       bpa debug accelerant <file> <theorem> <step-label>\n" ++
-    "       bpa debug taint <file> [theorem]\n";
+    "usage: 2b4m debug accelerant <file> <line>\n" ++
+    "       2b4m debug accelerant <file> <theorem> <step-label>\n" ++
+    "       2b4m debug taint <file> [theorem]\n";
 
-/// `bpa debug <op>` — proof-machinery introspection.
+/// `2b4m debug <op>` — proof-machinery introspection.
 ///   accelerant — reprint the synthetic theorem an accelerated step produced.
 ///   taint      — per proof, every accelerated step at its file:line:col.
 fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:0]const u8) !u8 {
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "accelerant")) {
         if (rest.len < 3) return fail(debug_usage, .{});
         const p = rest[1];
-        const selector: bpa.debug.accelerant.Selector = if (rest.len == 3)
+        const selector: b4m.debug.accelerant.Selector = if (rest.len == 3)
             (if (std.fmt.parseInt(usize, rest[2], 10)) |ln| .{ .line = ln } else |_| return fail(debug_usage, .{}))
         else if (rest.len == 4)
             .{ .step = .{ .theorem = rest[2], .label = rest[3] } }
@@ -94,7 +94,7 @@ fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
         };
-        const result = try bpa.debug.accelerant.accelerant(io, arena, p, source, selector, null, readRaw, std_root);
+        const result = try b4m.debug.accelerant.accelerant(io, arena, p, source, selector, null, readRaw, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "taint")) {
@@ -105,19 +105,19 @@ fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.debug.taint.taint(arena, path, source, thm);
+        const result = try b4m.debug.taint.taint(arena, path, source, thm);
         return emitQuery(result.text, result.ok);
     }
     return fail(debug_usage, .{});
 }
 
 const query_usage =
-    "usage: bpa query outline <file.bpa> [theorem]\n" ++
-    "       bpa query claims <file.bpa> [theorem]\n" ++
-    "       bpa query theorem <file.bpa> <theorem> [--sig]\n" ++
-    "       bpa query whereis <file.bpa> <identifier>\n" ++
-    "       bpa query search <file.bpa|dir> <query>\n" ++
-    "       bpa query uses <file.bpa> [theorem]\n";
+    "usage: 2b4m query outline <file.b4m> [theorem]\n" ++
+    "       2b4m query claims <file.b4m> [theorem]\n" ++
+    "       2b4m query theorem <file.b4m> <theorem> [--sig]\n" ++
+    "       2b4m query whereis <file.b4m> <identifier>\n" ++
+    "       2b4m query search <file.b4m|dir> <query>\n" ++
+    "       2b4m query uses <file.b4m> [theorem]\n";
 
 /// Print a query op's result (stdout when ok, stderr otherwise) and map to an
 /// exit code.
@@ -138,16 +138,16 @@ fn readFile(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     };
 }
 
-/// Read a file as bpa SOURCE: a `.md` is a literate document, so extract its
-/// ```bpa blocks (prose masked, offsets preserved). Used by `check` and the
+/// Read a file as 2b4m SOURCE: a `.md` is a literate document, so extract its
+/// ```2b4m blocks (prose masked, offsets preserved). Used by `check` and the
 /// `query` commands so both operate on the same extracted source.
 fn readSource(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     const raw = try readFile(arena, path);
-    if (std.mem.endsWith(u8, path, ".md")) return bpa.literate.extract(arena, raw);
+    if (std.mem.endsWith(u8, path, ".md")) return b4m.literate.extract(arena, raw);
     return raw;
 }
 
-/// `bpa query <op> …` — read-only inspection.
+/// `2b4m query <op> …` — read-only inspection.
 ///   outline <file> [theorem]  — proof skeleton (labels + block headers)
 ///   claims  <file> [theorem]  — proof skeleton (claim formulas, label-free)
 ///   theorem <file> <name>     — full source of a theorem (aliases followed)
@@ -160,7 +160,7 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.query.outline.outline(arena, path, source, thm);
+        const result = try b4m.query.outline.outline(arena, path, source, thm);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "claims")) {
@@ -171,7 +171,7 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.query.claims.claims(arena, path, source, thm);
+        const result = try b4m.query.claims.claims(arena, path, source, thm);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "theorem")) {
@@ -197,7 +197,7 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
         };
-        const result = try bpa.query.theorem.theorem(arena, p, source, n, null, queryReadFile, std_root, sig_only);
+        const result = try b4m.query.theorem.theorem(arena, p, source, n, null, queryReadFile, std_root, sig_only);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "whereis")) {
@@ -208,7 +208,7 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.query.whereis.whereis(arena, path, source, ident, null, queryReadFile, std_root);
+        const result = try b4m.query.whereis.whereis(arena, path, source, ident, null, queryReadFile, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "uses")) {
@@ -219,7 +219,7 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.query.uses.uses(arena, path, source, thm);
+        const result = try b4m.query.uses.uses(arena, path, source, thm);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "search")) {
@@ -230,13 +230,13 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             error.FileNotFound => return fail("error: cannot open '{s}': not found\n", .{path}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
-        const result = try bpa.query.search.search(arena, files, q);
+        const result = try b4m.query.search.search(arena, files, q);
         return emitQuery(result.text, result.ok);
     }
     return fail(query_usage, .{});
 }
 
-/// Every `.bpa` and `.md` under `dir`, recursively, as paths joined onto `dir` (so diagnostics
+/// Every `.b4m` and `.md` under `dir`, recursively, as paths joined onto `dir` (so diagnostics
 /// print the path the user would type), sorted for a stable run order.
 fn collectCheckFiles(arena: std.mem.Allocator, dir_path: []const u8) ![]const []const u8 {
     var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
@@ -246,9 +246,9 @@ fn collectCheckFiles(arena: std.mem.Allocator, dir_path: []const u8) ![]const []
     var paths: std.ArrayList([]const u8) = .empty;
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
-        const is_bpa = std.mem.endsWith(u8, entry.path, ".bpa");
+        const is_b4m = std.mem.endsWith(u8, entry.path, ".b4m");
         const is_md = std.mem.endsWith(u8, entry.path, ".md");
-        if (!(is_bpa or is_md)) continue;
+        if (!(is_b4m or is_md)) continue;
         try paths.append(arena, try std.fs.path.join(arena, &.{ dir_path, entry.path }));
     }
     std.mem.sort([]const u8, paths.items, {}, struct {
@@ -260,21 +260,21 @@ fn collectCheckFiles(arena: std.mem.Allocator, dir_path: []const u8) ![]const []
 }
 
 /// Build the `{path, source}` set `query search` runs over. A DIRECTORY yields
-/// its top-level `.bpa` files (corpus discovery); a FILE yields that file plus
+/// its top-level `.b4m` files (corpus discovery); a FILE yields that file plus
 /// everything it transitively imports (scope-aware).
-fn collectSearchFiles(arena: std.mem.Allocator, path: []const u8, std_root: []const u8) ![]const bpa.query.search.File {
+fn collectSearchFiles(arena: std.mem.Allocator, path: []const u8, std_root: []const u8) ![]const b4m.query.search.File {
     const cwd = Io.Dir.cwd();
     const st = try cwd.statFile(io, path, .{});
-    var files: std.ArrayList(bpa.query.search.File) = .empty;
+    var files: std.ArrayList(b4m.query.search.File) = .empty;
     if (st.kind == .directory) {
         var dir = try cwd.openDir(io, path, .{ .iterate = true });
         var it = dir.iterate();
         while (try it.next(io)) |entry| {
-            // `.bpa` proofs and `.md` literate documents (readSource extracts
-            // the ```bpa blocks from the latter).
-            const is_bpa = std.mem.endsWith(u8, entry.name, ".bpa");
+            // `.b4m` proofs and `.md` literate documents (readSource extracts
+            // the ```2b4m blocks from the latter).
+            const is_b4m = std.mem.endsWith(u8, entry.name, ".b4m");
             const is_md = std.mem.endsWith(u8, entry.name, ".md");
-            if (entry.kind != .file or !(is_bpa or is_md)) continue;
+            if (entry.kind != .file or !(is_b4m or is_md)) continue;
             const full = try std.fs.path.join(arena, &.{ path, entry.name });
             const src = readSource(arena, full) catch continue;
             try files.append(arena, .{ .path = full, .source = src });
@@ -303,7 +303,7 @@ fn collectSearchFiles(arena: std.mem.Allocator, path: []const u8, std_root: []co
 /// std/-prefix + relative rule).
 fn importPaths(arena: std.mem.Allocator, source: []const u8, from: []const u8, std_root: []const u8) ![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
-    var lex: bpa.lexer.Lexer = .init(source);
+    var lex: b4m.lexer.Lexer = .init(source);
     var after_import = false;
     while (true) {
         const t = lex.next();
@@ -339,23 +339,23 @@ pub fn main(init: std.process.Init) !u8 {
         var fw: Io.File.Writer = .init(.stdout(), io, &buf);
         const out = &fw.interface;
         try out.writeAll(
-            \\bpa — a proof checker
+            \\2b4m — a proof checker
             \\
-            \\usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.bpa | dir> [theorem]
-            \\       bpa fmt [--check] <file.bpa|.md>
-            \\       bpa lint <file.bpa|.md>
-            \\       bpa debug accelerant <file> <line | theorem step-label>
-            \\       bpa debug taint <file> [theorem]
-            \\       bpa query outline <file.bpa> [theorem]
-            \\       bpa query claims <file.bpa> [theorem]
-            \\       bpa query theorem <file.bpa> <theorem> [--sig]
-            \\       bpa query whereis <file.bpa> <identifier>
-            \\       bpa query search <file.bpa|dir> <query>
-            \\       bpa query uses <file.bpa> [theorem]
+            \\usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]
+            \\       2b4m fmt [--check] <file.b4m|.md>
+            \\       2b4m lint <file.b4m|.md>
+            \\       2b4m debug accelerant <file> <line | theorem step-label>
+            \\       2b4m debug taint <file> [theorem]
+            \\       2b4m query outline <file.b4m> [theorem]
+            \\       2b4m query claims <file.b4m> [theorem]
+            \\       2b4m query theorem <file.b4m> <theorem> [--sig]
+            \\       2b4m query whereis <file.b4m> <identifier>
+            \\       2b4m query search <file.b4m|dir> <query>
+            \\       2b4m query uses <file.b4m> [theorem]
             \\
             \\check proves every theorem of the file; with a theorem name it proves
             \\only that one (and what it cites) — the rest of the file is not run.
-            \\A DIRECTORY checks every .bpa and .md under it (recursively) in one
+            \\A DIRECTORY checks every .b4m and .md under it (recursively) in one
             \\pass — a fact two files cite is proved once — and prints one line.
             \\--library (a directory) additionally FAILS on any axiom declared in the
             \\directory that no theorem in it rests on: a library ships no unused
@@ -372,7 +372,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\  file:line:col: error: <message>
             \\on stderr (exit 1), or a summary line on stdout (exit 0).
             \\Import paths beginning "std/" resolve in the standard library
-            \\($BPA_STD_DIR, default ./std).
+            \\($B4M_STD_DIR, default ./std).
             \\
             \\By default check VERIFIES EVERYTHING: every `using` step (an
             \\accelerant, or a model/import citation) produces a checkable
@@ -385,18 +385,18 @@ pub fn main(init: std.process.Init) !u8 {
             \\Words are accelerant tactics (arithmetic, tautology, polynomial,
             \\simplify, …, plus their `_quantified` variants) and the engine
             \\words model / import (group word `engine`); `instantiation` is
-            \\never trustable. Re-run plain `bpa check` to fully verify.
+            \\never trustable. Re-run plain `2b4m check` to fully verify.
             \\
             \\fmt normalizes whitespace and indentation in place; --check
             \\reports instead of rewriting. On a literate `.md` it reformats
-            \\only the ```bpa blocks, leaving prose verbatim.
+            \\only the ```2b4m blocks, leaving prose verbatim.
             \\
             \\lint reports convention violations check ignores (they don't affect
             \\validity) — currently canonical binder order (a leading forall
             \\must bind in first-appearance order). See CONVENTIONS.md.
             \\
             \\debug accelerant reprints the synthetic theorem an accelerated step
-            \\produced (statement + proof, as valid bpa that round-trips through
+            \\produced (statement + proof, as valid 2b4m that round-trips through
             \\check). Select the step by line number, or by enclosing theorem +
             \\step-label.
             \\debug taint flags, per proof, every step whose rule can fall back to
@@ -422,7 +422,7 @@ pub fn main(init: std.process.Init) !u8 {
         try out.flush();
         return 0;
     }
-    const std_root = init.environ_map.get("BPA_STD_DIR") orelse "std";
+    const std_root = init.environ_map.get("B4M_STD_DIR") orelse "std";
     if (args.len >= 2 and std.mem.eql(u8, args[1], "fmt")) {
         return fmtCommand(arena, args[2..]);
     }
@@ -435,7 +435,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: bpa check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.bpa | dir> [theorem]\n       bpa fmt [--check] <file.bpa|.md>\n       bpa lint <file.bpa|.md>\n       bpa debug accelerant <file> <line | theorem step-label>\n       bpa debug taint <file> [theorem]\n       bpa query outline <file.bpa> [theorem]\n       bpa query claims <file.bpa> [theorem]\n       bpa query theorem <file.bpa> <theorem> [--sig]\n       bpa query whereis <file.bpa> <identifier>\n       bpa query search <file.bpa|dir> <query>\n       bpa query uses <file.bpa> [theorem]\n";
+    const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
@@ -449,14 +449,14 @@ pub fn main(init: std.process.Init) !u8 {
     // (the six tactics that have a `_quantified` variant). See src/Verify.zig `Word.parse`.
     // `--draft` (allows holes / relaxes author-hygiene; NOT a trust bypass) is orthogonal.
     const Mode = enum { none, all, only, except };
-    var verify: bpa.Verify = .{};
+    var verify: b4m.Verify = .{};
     var draft = false;
     var axioms = false;
     var library = false;
     var mode: Mode = .none;
-    var listed: bpa.Verify.Word.Set = bpa.Verify.Word.Set.initEmpty(); // the W… allow/deny list
+    var listed: b4m.Verify.Word.Set = b4m.Verify.Word.Set.initEmpty(); // the W… allow/deny list
     // Non-flag positionals: the trust WORDS (only valid with --fast-only/--fast-except), the
-    // PATH (the first positional naming a .bpa/.md source), then an optional THEOREM name —
+    // PATH (the first positional naming a .b4m/.md source), then an optional THEOREM name —
     // see `splitCheckArgs`.
     var positionals: std.ArrayList([]const u8) = .empty;
     for (args[2..]) |arg| {
@@ -480,7 +480,7 @@ pub fn main(init: std.process.Init) !u8 {
             verify.io_threads = std.fmt.parseInt(usize, arg["--io-threads=".len..], 10) catch
                 return fail("error: --io-threads= takes a thread count, e.g. --io-threads=16\n", .{});
             if (verify.io_threads.? == 0) return fail("error: --io-threads needs at least one thread (use --sync-io for no pool)\n", .{});
-            if (verify.io_threads.? > bpa.Verify.max_io_threads) return fail("error: --io-threads is capped at {d}\n", .{bpa.Verify.max_io_threads});
+            if (verify.io_threads.? > b4m.Verify.max_io_threads) return fail("error: --io-threads is capped at {d}\n", .{b4m.Verify.max_io_threads});
         } else if (std.mem.eql(u8, arg, "--sync-io")) {
             verify.sync_io = true;
         } else if (std.mem.startsWith(u8, arg, "--io-delay=")) {
@@ -498,7 +498,7 @@ pub fn main(init: std.process.Init) !u8 {
             try positionals.append(arena, arg);
         }
     }
-    const split = bpa.splitCheckArgs(positionals.items) orelse return fail(usage, .{});
+    const split = b4m.splitCheckArgs(positionals.items) orelse return fail(usage, .{});
     const root_path = split.path;
     const words = split.words;
     // bare --fast (and no-fast) take no trust words; --fast-only/--fast-except require them.
@@ -507,16 +507,16 @@ pub fn main(init: std.process.Init) !u8 {
         .only, .except => if (words.len == 0) return fail("error: {s} needs at least one word (e.g. `--fast-only tautology`)\n", .{if (mode == .only) "--fast-only" else "--fast-except"}),
     }
     for (words) |wtext| {
-        const set = bpa.Verify.Word.parse(wtext) orelse
-            return fail("error: unknown trust word '{s}' (see `bpa check` help)\n", .{wtext});
+        const set = b4m.Verify.Word.parse(wtext) orelse
+            return fail("error: unknown trust word '{s}' (see `2b4m check` help)\n", .{wtext});
         listed = listed.unionWith(set);
     }
     // resolve the trusted set from the mode.
     verify.trusted = switch (mode) {
-        .none => bpa.Verify.Word.Set.initEmpty(),
-        .all => bpa.Verify.Word.all(),
+        .none => b4m.Verify.Word.Set.initEmpty(),
+        .all => b4m.Verify.Word.all(),
         .only => listed, // allowlist
-        .except => bpa.Verify.Word.all().differenceWith(listed), // denylist
+        .except => b4m.Verify.Word.all().differenceWith(listed), // denylist
     };
     // --draft is for WIP proofs: allow holes AND relax author-hygiene checks
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
@@ -528,21 +528,21 @@ pub fn main(init: std.process.Init) !u8 {
         error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{root_path}),
         else => return fail("error: cannot open '{s}': {t}\n", .{ root_path, e }),
     };
-    // A DIRECTORY is every `.bpa` and `.md` under it, recursively, each a root of the same
-    // engine pass (a fact two of them cite is proved once). A `.md` with no bpa is a root
+    // A DIRECTORY is every `.b4m` and `.md` under it, recursively, each a root of the same
+    // engine pass (a fact two of them cite is proved once). A `.md` with no 2b4m is a root
     // that parses to nothing. A theorem selector needs one file.
     const is_dir = root_stat.kind == .directory;
     if (library and !is_dir) return fail("error: --library checks a directory (a library is its whole file set); '{s}' is a file\n", .{root_path});
-    const roots: []const bpa.Context.Root = if (is_dir) blk: {
+    const roots: []const b4m.Context.Root = if (is_dir) blk: {
         if (split.theorem != null) return fail("error: a theorem selects within one file; '{s}' is a directory\n", .{root_path});
         const paths = try collectCheckFiles(arena, root_path);
-        if (paths.len == 0) return fail("error: no .bpa or .md files under '{s}'\n", .{root_path});
-        const rs = try arena.alloc(bpa.Context.Root, paths.len);
+        if (paths.len == 0) return fail("error: no .b4m or .md files under '{s}'\n", .{root_path});
+        const rs = try arena.alloc(b4m.Context.Root, paths.len);
         for (paths, rs) |pth, *r| r.* = .{ .path = pth };
         break :blk rs;
     } else &.{.{ .path = root_path, .theorem = split.theorem }};
 
-    var result = try bpa.checkProject(io, arena, roots, null, readRaw, .filesystem, verify, std_root, axioms, library);
+    var result = try b4m.checkProject(io, arena, roots, null, readRaw, .filesystem, verify, std_root, axioms, library);
     // `--trace-facts`: the citation trace, printed as one block BEFORE the verdict so it is
     // readable even when the run then fails (which is the case it exists for).
     if (verify.trace_facts) {
@@ -661,7 +661,7 @@ pub fn main(init: std.process.Init) !u8 {
         for (result.holes) |h| {
             try out.print(" {s}", .{h.name});
         }
-        try out.writeAll("; re-run `bpa check` (no --draft) once filled.");
+        try out.writeAll("; re-run `2b4m check` (no --draft) once filled.");
     }
     try out.writeAll("\n");
     try out.flush();

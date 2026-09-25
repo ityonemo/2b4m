@@ -1,8 +1,8 @@
-# bpa proof-writing conventions
+# 2b4m proof-writing conventions
 
-These conventions optimize for the two audiences of a `.bpa` file: an LLM
+These conventions optimize for the two audiences of a `.b4m` file: an LLM
 writing it and a human reviewing it. Most are style (normalized by the planned
-`bpa fmt`); a few are checker-enforced where noted. `examples/pa.bpa` is the
+`2b4m fmt`); a few are checker-enforced where noted. `examples/pa.b4m` is the
 living exemplar.
 
 ## File layout
@@ -12,8 +12,8 @@ predicates → axioms → theorems. Separate the groups with blank lines; in
 larger files, use section comments (`// -- axioms ----`).
 
 **A theory and its sub-theories.** A theory that grows past one file becomes a
-parent `std/X.bpa` beside a directory `std/X/` holding its sub-theories
-(`std/integer.bpa` + `std/integer/order.bpa`, `std/integer/divides.bpa`, …). The
+parent `std/X.b4m` beside a directory `std/X/` holding its sub-theories
+(`std/integer.b4m` + `std/integer/order.b4m`, `std/integer/divides.b4m`, …). The
 parent ends with a commented `// THEORY OF X` section that FORWARDS its
 sub-theories' results by alias (`theorem gcdGreatest = divides_theory.gcdGreatest`),
 grouped with the `intheory` block: `intheory` promises a fact proved later in this
@@ -26,23 +26,23 @@ for. A lemma does not belong in the forwarding section any more than it belongs 
 `intheory`; a consumer that genuinely wants one keeps the honest
 `import integer/order`.
 
-**Name an import after its PATH, with `/` written `_`**: `std/function/invertible.bpa`
-is imported as `function_invertible`, `std/integer/divides.bpa` as
-`integer_divides`, `std/peano.bpa` as `peano`. The name is then mechanical — you
+**Name an import after its PATH, with `/` written `_`**: `std/function/invertible.b4m`
+is imported as `function_invertible`, `std/integer/divides.b4m` as
+`integer_divides`, `std/peano.b4m` as `peano`. The name is then mechanical — you
 can write it without opening the file, and a reader recovers the path from the
 name.
 
 The reason is not tidiness. An import binds a **namespace** in the same
 declaration space as every sort, constant, function and predicate, so a theory
 named after its subject collides with the subject itself: `import invertible <<<
-"std/function/invertible.bpa"` beside the natural alias `pred invertible =
+"std/function/invertible.b4m"` beside the natural alias `pred invertible =
 function.invertible` is a hard `duplicate declaration` error — and, because the
 name then resolves to the namespace, it is followed by unrelated-looking errors
 at every *use* of the predicate (`'invertible' is not callable`). Deriving the
 name from the path sidesteps the whole class: a path-shaped name is never the
 name of a symbol the theory declares.
 
-A `-` in a path becomes `_` as well (`std/integer/mod-n.bpa` →
+A `-` in a path becomes `_` as well (`std/integer/mod-n.b4m` →
 `integer_mod_n`), since a hyphen is not an identifier character. Where a name
 would be intolerably long, shorten from the FRONT — drop leading path segments
 the context makes obvious (`function_invertible`, not `std_function_invertible`)
@@ -61,10 +61,10 @@ checked at declaration, only at use).
 schemas: an axiom no derivation ever rests on is one whose binders, guards and
 direction have never been checked, and "a caller will exercise it" is not the
 library's to assume. So each theory that states axioms nothing else in the
-library consumes ships a `std/<namespace>/examples.bpa` — one file per
-top-level namespace (`std/integer/examples.bpa` covers `integer/divides`,
+library consumes ships a `std/<namespace>/examples.b4m` — one file per
+top-level namespace (`std/integer/examples.b4m` covers `integer/divides`,
 `integer/mod-n` and `integer/product`), each theorem the smallest derivation
-that genuinely needs the axiom it names. `bpa check <dir> --library` enforces
+that genuinely needs the axiom it names. `2b4m check <dir> --library` enforces
 this: it fails on any axiom declared in the directory that no theorem there
 rests on. Prefer arguments that give every clause content — an existence axiom
 exercised only at zero leaves its index arithmetic untested.
@@ -73,15 +73,15 @@ The header comment states what the file is and what it proves.
 
 ## Literate `.md` structure — introduce components as the prose reaches them
 
-The front-loaded layout above is for `.bpa` files. A literate `.md`
+The front-loaded layout above is for `.b4m` files. A literate `.md`
 transliteration (`aata/*.md`) does **not** ape it. Prose is the spine; the
-```bpa fence blocks are woven into it, and each component is introduced **where
+```2b4m fence blocks are woven into it, and each component is introduced **where
 it belongs in the exposition** — imports, aliases, and declarations sit at the
 top of the fence block that *first needs* them, not hoisted into one preamble
 block at the top of the file. The reader should never meet a name before the
 text has introduced it.
 
-This is sound because the literate checker concatenates every ```bpa block into
+This is sound because the literate checker concatenates every ```2b4m block into
 one logical file **in document order, sharing one scope** (`src/literate.zig`) —
 so document order = declaration order (declare-before-use, reading downward), and
 an import in one section's block is visible to every later block. There is no
@@ -172,12 +172,12 @@ Every category has a distinct look:
 - **Element-domain sorts — prefer `Element`.** When a theory is built over an
   ambient domain of *underlying individuals* it quantifies over — sets over their
   members, functions over their points, relations over their relata — name that
-  element-domain sort **`Element`** (as `std/element.bpa` does). Reserve it for the
+  element-domain sort **`Element`** (as `std/element.b4m` does). Reserve it for the
   underlying individuals, NOT the structure's own sort: a group is `Grp`, ℤ is
   `Int`, a set is `Set` — those *are* the objects the theory is about, not a domain
   beneath them. A shared canonical name lets element-domains compose (and `model`
   onto each other) without an aliasing layer. This is a *recommendation*: the older
-  `set.bpa`/`function.bpa` spell the same concept `Universe` and are reconciled to
+  `set.b4m`/`function.b4m` spell the same concept `Universe` and are reconciled to
   `element.Element` by alias — a working split, not a bug; **do not retrofit them**.
   The guideline is for new theories, where the name is free.
 
@@ -197,8 +197,8 @@ discharge needs a local fact to alpha-match the (remapped) abstract axiom. Keep
 every statement canonical and a local fact discharges the abstract axiom
 directly, with no binder-reordering adapter theorem in between.
 
-`bpa lint <file>` flags every violation (`'forall c, b, a' should be 'forall a,
-b, c'`). Run it on new `.bpa`; it also reads `.md` (only source-agnostic rules
+`2b4m lint <file>` flags every violation (`'forall c, b, a' should be 'forall a,
+b, c'`). Run it on new `.b4m`; it also reads `.md` (only source-agnostic rules
 like this one apply to a literate transliteration — its naming mirrors the book).
 
 ## Left-axiomatic — pick the LEFT law as the primitive
@@ -207,12 +207,12 @@ When a two-sided/symmetric operation has a **Left/Right pair** of laws and one
 side is **derivable from the other**, make the **LEFT** law the axiom and prove
 the RIGHT law as a theorem. This is the convention across `std`:
 
-- **Identity / inverse** (`op(E, a) = a` vs `op(a, E) = a`): `group.bpa`,
-  `subgroup.bpa`, `ring.bpa` axiomatize `opIdentityLeft` / `addZeroLeft` /
+- **Identity / inverse** (`op(E, a) = a` vs `op(a, E) = a`): `group.b4m`,
+  `subgroup.b4m`, `ring.b4m` axiomatize `opIdentityLeft` / `addZeroLeft` /
   `addNegLeft` and *prove* the `…Right` versions (via associativity +
   commutativity). Matches conventional algebra: `ea = a`, `a⁻¹a = e`.
-- **Recursion** (which argument a recursive `func` recurses on): `peano.bpa` and
-  `integer.bpa` recurse on the **first** argument — `add(ZERO, b) = b`,
+- **Recursion** (which argument a recursive `func` recurses on): `peano.b4m` and
+  `integer.b4m` recurse on the **first** argument — `add(ZERO, b) = b`,
   `add(succ(a), b) = succ(add(a, b))` are the axioms; `addZeroRight` /
   `addSuccRight` are theorems proved by induction. For a recursive definition,
   "left-axiomatic" means the recursion equations themselves are left-recursive:
@@ -221,16 +221,16 @@ the RIGHT law as a theorem. This is the convention across `std`:
   side: left `mul(succ(a), b) = add(mul(a, b), b)` adds the *second* factor,
   where the right mirror `mul(a, succ(b)) = add(mul(a, b), a)` adds the first.)
 
-Why LEFT: it is the foundational choice (`peano.bpa` sets it, everything above
+Why LEFT: it is the foundational choice (`peano.b4m` sets it, everything above
 inherits), it matches the textbook statements, and one primitive side keeps the
 axiom set minimal — a `model` that discharges the theory then supplies only the
-LEFT laws and the RIGHT laws materialize for free (see `ring.bpa`'s
+LEFT laws and the RIGHT laws materialize for free (see `ring.b4m`'s
 `AdditiveGroup`, which maps `opIdentityLeft`/`opInverseLeft` only).
 
 **Exception — genuinely independent sides.** The rule applies only when one side
 is *derivable*. When the Left and Right laws are **independent facts**, both stay
-axioms: `function.bpa`'s `inverseLeft`/`inverseRight` (a map can have a
-one-sided inverse without the other) and `peano-subtraction.bpa`'s
+axioms: `function.b4m`'s `inverseLeft`/`inverseRight` (a map can have a
+one-sided inverse without the other) and `peano-subtraction.b4m`'s
 `subZeroLeft`/`subZeroRight` (`sub(ZERO, a) = ZERO` vs `sub(a, ZERO) = a`, not
 mirror images since truncated subtraction is not commutative) are correctly
 two-axiom pairs. Don't collapse a pair you cannot actually derive.
@@ -331,7 +331,7 @@ steps, no filler:
 
 ## Imports
 
-- `import peano <<< "peano.bpa"` binds a namespace to a file (path relative to
+- `import peano <<< "peano.b4m"` binds a namespace to a file (path relative to
   the importing file). Imports come first in the file.
 - Everything imported is referenced **qualified** (`peano.Nat`,
   `[by cite peano.addIsCommutative]`) or via an **explicit alias**:
@@ -347,20 +347,20 @@ steps, no filler:
 - **Naming the arithmetic theory**: `by arithmetic` resolves its vocabulary
   and certificate lemmas in **local scope**; `by arithmetic(<module>)`
   resolves them against an imported theory module (e.g.
-  `by arithmetic(ordering)` after `import ordering <<< "std/peano-ordering.bpa"`).
+  `by arithmetic(ordering)` after `import ordering <<< "std/peano-ordering.b4m"`).
   Prefer the named form in a file that is layers above the primitives or is a
   subdomain still building its own vocabulary: it certifies against the solid
   theory beneath it without aliasing `add`/`less_than`/the order lemmas into
-  the local namespace. `std/peano-ordering.bpa` is the canonical theory module
+  the local namespace. `std/peano-ordering.b4m` is the canonical theory module
   (it carries the full order + Farkas lemma set). A named theory must supply
   every symbol the goal uses, or the check hard-errors naming the gap.
-- **Trust model**: `bpa check` verifies everything by default — every `using`
+- **Trust model**: `2b4m check` verifies everything by default — every `using`
   step (accelerant / model / import) produces a kernel-checked certificate.
   `--fast` defers that per `using` WORD for iteration, admitting the trusted
   words (`--fast` = all, `--fast-only W…` = allowlist, `--fast-except W…` =
   denylist), always with a loud accelerated banner. `instantiation` is never
   trustable (the per-instance proof is the only soundness gate). Re-run plain
-  `bpa check` before finalizing.
+  `2b4m check` before finalizing.
 
 ## Layout of steps
 
@@ -377,14 +377,14 @@ steps, no filler:
   The `@` marks a definition and sits at the left margin, so labels form a
   scannable gutter column; citations of a label stay bare. (The brackets are
   syntax — the justification is a delimited unit — but the line breaks are
-  convention; the checker is whitespace-insensitive. `bpa fmt` produces this
+  convention; the checker is whitespace-insensitive. `2b4m fmt` produces this
   shape.)
 - Two-space indent per block depth.
 - Blank line between proof phases; none within a phase.
 - Soft limit ~100 columns.
 - Layout tokens are not "overhead": structure gives both the reviewer and a
   generating LLM room to think. Do not compress for token frugality.
-- `bpa fmt <file>` normalizes all of this mechanically (in place;
+- `2b4m fmt <file>` normalizes all of this mechanically (in place;
   `--check` reports instead of rewriting). It is strictly a whitespace and
   indentation tool: it preserves comments, blank-line placement (collapsed to
   one), and the author's line breaks within statements (re-indenting

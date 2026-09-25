@@ -1,0 +1,54 @@
+// `simplify` cited with a local rewrite rule that never FIRES: `a = b` rewrites the
+// goal's sides to a shared normal form; `c = ZERO` is a well-formed rule whose lhs
+// never occurs, so the join's trace never uses it. Its restated-hypothesis step must
+// not be left orphaned inside the generated schema (see arithmetic_unused_premise —
+// the same shared premise wrapper).
+import peano <<< "std/peano.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func add = peano.add
+theorem simplifyUnusedPremise: forall a, b, c: Nat; a = b -> c = ZERO -> add(a, ZERO) = add(b, ZERO)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-ab |
+                assume a = b {
+                  @given-c |
+                    assume c = ZERO {
+                      @a-is-b |
+                        a = b
+                        [by hypothesis given-ab]
+                      @c-is-zero |
+                        c = ZERO
+                        [by hypothesis given-c]
+                      @sum-before |
+                        add(a, ZERO) = add(b, ZERO)
+                        [using simplify a-is-b c-is-zero]
+                      @conclusion-sum |
+                        add(a, ZERO) = add(b, ZERO)
+                        [using tautology sum-before c-is-zero]
+                    }
+                  @discharge-c |
+                    c = ZERO -> add(a, ZERO) = add(b, ZERO)
+                    [by implies_intro given-c]
+                }
+              @discharge-ab |
+                a = b -> c = ZERO -> add(a, ZERO) = add(b, ZERO)
+                [by implies_intro given-ab]
+            }
+          @all-c |
+            forall c: Nat; a = b -> c = ZERO -> add(a, ZERO) = add(b, ZERO)
+            [by forall_intro generalize-c]
+        }
+      @all-b |
+        forall b, c: Nat; a = b -> c = ZERO -> add(a, ZERO) = add(b, ZERO)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat; a = b -> c = ZERO -> add(a, ZERO) = add(b, ZERO)
+    [by forall_intro generalize-a]
+qed

@@ -2301,7 +2301,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL. Under a model
     // transfer `goal` (from the ambient Elab) is relativized to the target; a synthetic built
     // from it would delaborate TARGET names (`Int`) into a schema registered in the SOURCE file
-    // (`group.bpa`), where they don't resolve. So the producer sees the goal re-elaborated with
+    // (`group.b4m`), where they don't resolve. So the producer sees the goal re-elaborated with
     // the model OFF (from `c.formula` — the SAME term on every pass, so the hash-name is
     // re-entry stable), its local premises from `source_formulas`, and its cited global facts
     // RAW (`resolveFactRef` skips the transfer/overlay redirection while `self.model` is the
@@ -3067,7 +3067,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     // The premises' ORDER is part of the identity: the instance's antecedents are discharged
     // positionally against the call site's refs, so two steps with the same premises in a
     // different order are DIFFERENT schemas (an order-blind XOR combine once conflated them —
-    // set.bpa's forward/backward union-commutativity halves).
+    // set.b4m's forward/backward union-commutativity halves).
     const prem_formulae_p = try self.ctx.arena.alloc(TermId, prems_p.len);
     for (prems_p, prem_formulae_p) |p, *f| f.* = p.formula;
     const full_prop = try self.impliesChain(goal_p, prem_formulae_p);
@@ -6444,7 +6444,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
     // connect goal to premise (`sub(y,x) = succ(d)` from `add(x, succ(d)) = y`: the premise
     // rule fires on a term the goal does not contain), while the skeleton decides it
     // semantically. Gating on `bin`/`not` refused exactly that and declined the whole chain —
-    // the pre-refactor engine's mixed certifier had no such gate (std/integer/divides.bpa:1073).
+    // the pre-refactor engine's mixed certifier had no such gate (std/integer/divides.b4m:1073).
     if (!self.mixedCertShape(body)) return false;
 
     // collect the atoms (premises + stripped antecedents + body); decide validity.
@@ -9143,7 +9143,7 @@ test "mixedCertShape: a bare equation/order atom is in scope for the mixed skele
     const p = rig.prove;
     const a = try rig.v("a");
     const b = try rig.v("b");
-    // `a = b` — the std/integer/divides.bpa:1073 shape (a bare equation the equation cert
+    // `a = b` — the std/integer/divides.b4m:1073 shape (a bare equation the equation cert
     // cannot reach by rewriting, decided semantically by the skeleton instead).
     try testing.expect(p.mixedCertShape(try rig.eq(a, b)));
     // a boolean combination is in scope too (the original motivating shape).

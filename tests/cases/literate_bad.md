@@ -1,12 +1,12 @@
 # A literate proof with a bug
 
-The `bpa` block below has a wrong step. `bpa check` must report the error at
+The `2b4m` block below has a wrong step. `2b4m check` must report the error at
 the line number **in this `.md` file** (proving prose-masking preserves line
 numbers), not at some extracted position.
 
 Prose here pads the line count, so the error line is unambiguous.
 
-```bpa
+```2b4m
 sort T
 const A: T
 const B: T

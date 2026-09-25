@@ -771,7 +771,7 @@ test "proof tree: a cited theorem records its CITER as parent; a root records no
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
 
-    const ctx = try FetchTask.fixtureCtx(arena, io, "/t/p.bpa",
+    const ctx = try FetchTask.fixtureCtx(arena, io, "/t/p.b4m",
         \\sort T
         \\pred p(a: T)
         \\axiom base: forall a: T; p(a)
@@ -788,7 +788,7 @@ test "proof tree: a cited theorem records its CITER as parent; a root records no
         \\    [by cite inner]
         \\qed
     );
-    const f = try ctx.fileIndex("/t/p.bpa");
+    const f = try ctx.fileIndex("/t/p.b4m");
     const ns = try ctx.interner.namespace(.universe, f);
 
     var eng = Engine.init(arena, ctx, ctx.io);

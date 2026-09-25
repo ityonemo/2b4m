@@ -1,0 +1,114 @@
+// std/function.b4m — the theory of MAPPINGS between sets: functions as objects
+// with application, composition, an identity map, and the injective /
+// surjective / invertible properties.
+//
+// A reusable abstract theory (like std/group, std/set), imported by the
+// literate translation aata/functions.md. Every function here maps a fixed
+// element domain `Element` to itself (f : Element -> Element); that single
+// sort is enough for composition-associativity and the invertible/bijective
+// results, and keeps the theory small. Functions are opaque `Fn` objects
+// characterized by what `apply` does to them, so two functions are equal
+// exactly when they agree pointwise (funcExtensionality) — the mapping analogue
+// of set extensionality.
+//
+// injective / surjective are transparent `define`s (their body IS their meaning);
+// invertible stays an opaque `pred` (+ `iff` axiom) because it guards a refined
+// sort `Fn where invertible` in std/function/invertible.b4m.
+
+import element <<< "std/element.b4m"
+
+// The SHARED element sort (std/element.b4m), the same one std/set.b4m and
+// std/relation.b4m range over — so a function's points ARE a set's elements and the
+// theories compose. Sort aliasing is real identification, so "f maps set a onto set b"
+// is expressible without a second function theory (std/set/finite.b4m needs exactly that).
+//
+// TRADEOFF, deliberate: aliasing PINS this sort, so `Element` can no longer be a model
+// PARAMETER — a caller wanting functions over some other sort (permutations of group
+// elements, say) can no longer `model` this theory at it, the way std/sequence.b4m's
+// `Value` is modeled at Grp/Int/…. Nothing does today, and sets/relations/functions sharing
+// one domain is what std/element.b4m exists for. If a second domain is ever wanted, the fix
+// is to re-parameterize here and have the SET theory model it, not to copy the file.
+sort Element = element.Element
+sort Fn
+const identityFn: Fn
+func apply(f: Fn, x: Element) => Element
+func compose(g: Fn, f: Fn) => Fn
+pred invertible(f: Fn)
+
+// (g ∘ f)(x) = g(f(x)) — the defining law of composition.
+axiom composeApply: forall g, f: Fn; forall x: Element;
+  apply(compose(g, f), x) = apply(g, apply(f, x))
+
+// id(x) = x — the identity map does nothing.
+axiom identityApply: forall x: Element; apply(identityFn, x) = x
+
+// function extensionality: maps agreeing at every point are equal.
+axiom funcExtensionality: forall f, g: Fn;
+  (forall x: Element; apply(f, x) = apply(g, x)) -> f = g
+
+// injective (one-to-one): f(a) = f(b) implies a = b. Transparent (macro):
+// injective(f) IS this body, so a proof gets it for free (no injectiveDef unfold).
+define injective(f) = forall a, b: Element; apply(f, a) = apply(f, b) -> a = b
+
+// surjective (onto): every codomain element y is hit by some x. Transparent.
+define surjective(f) = forall y: Element; exists x: Element; apply(f, x) = y
+
+// invertible: there is a two-sided inverse g (g∘f = id and f∘g = id).
+axiom invertibleDef: forall f: Fn;
+  invertible(f) iff
+  (exists g: Fn; compose(g, f) = identityFn and compose(f, g) = identityFn)
+
+// the inverse map. `inverse` is a TOTAL symbol (every Fn has some `inverse(f)`),
+// but its behavior is only PINNED when f is invertible: then inverse(f) is the
+// two-sided inverse. For a non-invertible f, inverse(f) is an unconstrained
+// junk value (never reasoned about) — the standard way to name "f⁻¹" without a
+// choice/definite-description operator. The two axioms below say inverse(f) IS
+// a two-sided inverse whenever one exists; two-sided inverses are unique
+// (provable), so this determines inverse(f) exactly on the invertibles.
+func inverse(f: Fn) => Fn
+
+// f invertible ⇒ inverse(f) ∘ f = id
+axiom inverseLeft: forall f: Fn; invertible(f) -> compose(inverse(f), f) = identityFn
+
+// f invertible ⇒ f ∘ inverse(f) = id
+axiom inverseRight: forall f: Fn; invertible(f) -> compose(f, inverse(f)) = identityFn
+
+// -- definite description (the tame ι) --------------------------------------
+//
+// A total, single-valued RELATION on Element determines a function. This is what
+// the book's "define g by g(b) = the unique a with f(a) = b" needs — constructing
+// an `Fn` from a per-point spec. It is DEFINITE DESCRIPTION, not choice: it fires
+// only under a PROVEN total-and-unique hypothesis, so it is conservative over that
+// fragment (strictly weaker than choice — it cannot pick from a non-unique set, only
+// realize a proven-unique spec; no well-ordering, no AC). Any theorem that uses it
+// rests on this one axiom-schema, disclosed here.
+//
+// Shaped as an axiom-SCHEMA yielding `exists g` (rather than a named `theFn` term)
+// because a `func` cannot take a `-> Prop` parameter; the existential is exactly what
+// a "construct the witness" obligation (e.g. invertibleDef's `exists g`) consumes.
+axiom functionFromGraph(spec: Element -> Element -> Prop):
+  (forall y: Element; exists x: Element;
+  spec(y, x) and (forall x2: Element; spec(y, x2) -> x = x2))
+  -> (exists g: Fn; forall y: Element; spec(y, apply(g, y)))
+
+// ============================================================================
+// THEORY OF MAPPINGS — what the sub-theory under std/function/ proves.
+//
+// std/function/invertible.b4m shows the INVERTIBLE maps on a set form a GROUP
+// under composition (the symmetric/automorphism group of a set), and models
+// std/group.b4m onto them so the whole group corpus transfers.
+// ============================================================================
+
+import invertible_theory <<< "std/function/invertible.b4m"
+
+sort InvFn = invertible_theory.InvFn
+
+theorem composeAssoc = invertible_theory.composeAssoc
+theorem composeIdentityLeft = invertible_theory.composeIdentityLeft
+theorem composeIdentityRight = invertible_theory.composeIdentityRight
+theorem identityInvertible = invertible_theory.identityInvertible
+theorem inverseInvertible = invertible_theory.inverseInvertible
+theorem composeInvertible = invertible_theory.composeInvertible
+theorem invInvolution = invertible_theory.invInvolution
+theorem invCancelLeft = invertible_theory.invCancelLeft
+theorem invCancelRight = invertible_theory.invCancelRight
