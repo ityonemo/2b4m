@@ -46,6 +46,8 @@ theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
 theorem lessThanSuccRight = peano_order.lessThanSuccRight
 theorem lessThanSelf = peano_order.lessThanSelf
 theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem zeroOrSucc = peano.zeroOrSucc
+axiom induction = peano.induction
 
 // -- maps between sets ------------------------------------------------------
 
@@ -2036,4 +2038,291 @@ proof
       apply(f, numeral(m)) = numeral(n) ->
       bijectsOnto(f, segment(m), segment(n))
     [by forall_intro generalize-f]
+qed
+
+// SIZE IS UNIQUE: equinumerous segments have the same length. Induction on m, with n
+// universally quantified INSIDE the induction predicate so the step can pick n's
+// predecessor. Base: segment(ZERO) is empty, so it bijects onto nothing but segment(ZERO).
+// Step: a bijection segment(succ k) -> segment(succ j), composed with the swap that moves
+// wherever the top landed onto numeral(j), sends top to top — so it restricts to a
+// bijection segment(k) -> segment(j), and the inductive hypothesis gives k = j.
+theorem segmentSizeIsUnique: forall m: Nat; forall n: Nat;
+  equinumerous(segment(m), segment(n)) -> m = n
+proof
+  // base case: nothing in segment(ZERO) can cover a member of a nonempty segment(n)
+  @base-case-proof |
+    fix n: Nat {
+      @given-equinumerous-with-zero |
+        assume equinumerous(segment(ZERO), segment(n)) {
+          @the-bijection-exists |
+            exists f: Fn; bijectsOnto(f, segment(ZERO), segment(n))
+            [by hypothesis given-equinumerous-with-zero]
+          @n-is-zero-or-a-successor |
+            n = ZERO or (exists j: Nat; n = succ(j))
+            [using specialize zeroOrSucc(n)]
+          @conclusion-zero-is-n |
+            ZERO = n
+            case n-is-zero-or-a-successor {
+              @when-zero |
+                assume n = ZERO {
+                  @n-is-zero |
+                    n = ZERO
+                    [by hypothesis when-zero]
+                  @conclusion-flipped |
+                    ZERO = n
+                    [by symmetry n-is-zero]
+                }
+              @when-successor |
+                assume exists j: Nat; n = succ(j) {
+                  @successor-exists |
+                    exists j: Nat; n = succ(j)
+                    [by hypothesis when-successor]
+                  @with-predecessor-j |
+                    unpack j: Nat from successor-exists {
+                      @n-is-succ-j |
+                        n = succ(j)
+                        [by hypothesis with-predecessor-j]
+                      @top-in-segment-succ-j |
+                        member(numeral(j), segment(succ(j)))
+                        [using specialize topIsInTheBiggerSegment(j)]
+                      @top-in-segment-n |
+                        member(numeral(j), segment(n))
+                        [by rewrite n-is-succ-j top-in-segment-succ-j]
+                      @with-bijection-g |
+                        unpack g: Fn from the-bijection-exists {
+                          @bijection-facts |
+                            mapsInto(g, segment(ZERO), segment(n)) and injectiveOn(g, segment(ZERO)) and surjectiveOnto(g, segment(ZERO), segment(n))
+                            [by hypothesis with-bijection-g]
+                          @covers |
+                            surjectiveOnto(g, segment(ZERO), segment(n))
+                            [by and_elim_right bijection-facts]
+                          @preimage-exists |
+                            exists x: Element; member(x, segment(ZERO)) and apply(g, x) = numeral(j)
+                            [using specialize covers(numeral(j)) top-in-segment-n]
+                          @with-preimage-x |
+                            unpack x: Element from preimage-exists {
+                              @preimage-facts |
+                                member(x, segment(ZERO)) and apply(g, x) = numeral(j)
+                                [by hypothesis with-preimage-x]
+                              @x-in-segment-zero |
+                                member(x, segment(ZERO))
+                                [by and_elim_left preimage-facts]
+                              @segment-zero-is-empty |
+                                segment(ZERO) = emptyset
+                                [by cite segmentZeroIsEmpty]
+                              @x-in-emptyset |
+                                member(x, emptyset)
+                                [by rewrite segment-zero-is-empty x-in-segment-zero]
+                              @nothing-in-emptyset |
+                                not member(x, emptyset)
+                                [using specialize emptysetMember(x)]
+                              @conclusion-absurd |
+                                ZERO = n
+                                [by absurd x-in-emptyset nothing-in-emptyset]
+                            }
+                          @conclusion-no-preimage |
+                            ZERO = n
+                            [by exists_elim with-preimage-x]
+                        }
+                      @conclusion-no-bijection |
+                        ZERO = n
+                        [by exists_elim with-bijection-g]
+                    }
+                  @conclusion-no-predecessor |
+                    ZERO = n
+                    [by exists_elim with-predecessor-j]
+                }
+            }
+        }
+      @conclusion-base-implication |
+        equinumerous(segment(ZERO), segment(n)) -> ZERO = n
+        [by implies_intro given-equinumerous-with-zero]
+    }
+  @base-case |
+    forall n: Nat; equinumerous(segment(ZERO), segment(n)) -> ZERO = n
+    [by forall_intro base-case-proof]
+
+  // inductive step: straighten the bijection with a swap, restrict, apply the hypothesis
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n {
+          @inductive-hypothesis |
+            forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-n |
+            fix n: Nat {
+              @given-equinumerous |
+                assume equinumerous(segment(succ(k)), segment(n)) {
+                  @the-bijection-exists |
+                    exists f: Fn; bijectsOnto(f, segment(succ(k)), segment(n))
+                    [by hypothesis given-equinumerous]
+                  @n-is-zero-or-a-successor |
+                    n = ZERO or (exists j: Nat; n = succ(j))
+                    [using specialize zeroOrSucc(n)]
+                  @top-in-segment-succ-k |
+                    member(numeral(k), segment(succ(k)))
+                    [using specialize topIsInTheBiggerSegment(k)]
+                  @conclusion-succ-k-is-n |
+                    succ(k) = n
+                    case n-is-zero-or-a-successor {
+                      @when-zero |
+                        assume n = ZERO {
+                          // the top of segment(succ k) would have to land in the empty segment
+                          @n-is-zero |
+                            n = ZERO
+                            [by hypothesis when-zero]
+                          @with-bijection-g |
+                            unpack g: Fn from the-bijection-exists {
+                              @bijection-facts |
+                                mapsInto(g, segment(succ(k)), segment(n)) and injectiveOn(g, segment(succ(k))) and surjectiveOnto(g, segment(succ(k)), segment(n))
+                                [by hypothesis with-bijection-g]
+                              @into-and-injective |
+                                mapsInto(g, segment(succ(k)), segment(n)) and injectiveOn(g, segment(succ(k)))
+                                [by and_elim_left bijection-facts]
+                              @into |
+                                mapsInto(g, segment(succ(k)), segment(n))
+                                [by and_elim_left into-and-injective]
+                              @top-lands-in-segment-n |
+                                member(apply(g, numeral(k)), segment(n))
+                                [using specialize into(numeral(k)) top-in-segment-succ-k]
+                              @top-lands-in-segment-zero |
+                                member(apply(g, numeral(k)), segment(ZERO))
+                                [by rewrite n-is-zero top-lands-in-segment-n]
+                              @segment-zero-is-empty |
+                                segment(ZERO) = emptyset
+                                [by cite segmentZeroIsEmpty]
+                              @top-lands-in-emptyset |
+                                member(apply(g, numeral(k)), emptyset)
+                                [by rewrite segment-zero-is-empty top-lands-in-segment-zero]
+                              @nothing-in-emptyset |
+                                not member(apply(g, numeral(k)), emptyset)
+                                [using specialize emptysetMember(apply(g, numeral(k)))]
+                              @conclusion-absurd |
+                                succ(k) = n
+                                [by absurd top-lands-in-emptyset nothing-in-emptyset]
+                            }
+                          @conclusion-no-bijection-onto-empty |
+                            succ(k) = n
+                            [by exists_elim with-bijection-g]
+                        }
+                      @when-successor |
+                        assume exists j: Nat; n = succ(j) {
+                          @successor-exists |
+                            exists j: Nat; n = succ(j)
+                            [by hypothesis when-successor]
+                          @with-predecessor-j |
+                            unpack j: Nat from successor-exists {
+                              @n-is-succ-j |
+                                n = succ(j)
+                                [by hypothesis with-predecessor-j]
+                              @with-bijection-g |
+                                unpack g: Fn from the-bijection-exists {
+                                  @bijection-facts-in-n |
+                                    mapsInto(g, segment(succ(k)), segment(n)) and injectiveOn(g, segment(succ(k))) and surjectiveOnto(g, segment(succ(k)), segment(n))
+                                    [by hypothesis with-bijection-g]
+                                  @bijection-facts |
+                                    mapsInto(g, segment(succ(k)), segment(succ(j))) and injectiveOn(g, segment(succ(k))) and surjectiveOnto(g, segment(succ(k)), segment(succ(j)))
+                                    [by rewrite n-is-succ-j bijection-facts-in-n]
+                                  @into-and-injective |
+                                    mapsInto(g, segment(succ(k)), segment(succ(j))) and injectiveOn(g, segment(succ(k)))
+                                    [by and_elim_left bijection-facts]
+                                  @into |
+                                    mapsInto(g, segment(succ(k)), segment(succ(j)))
+                                    [by and_elim_left into-and-injective]
+                                  @injective |
+                                    injectiveOn(g, segment(succ(k)))
+                                    [by and_elim_right into-and-injective]
+                                  @covers |
+                                    surjectiveOnto(g, segment(succ(k)), segment(succ(j)))
+                                    [by and_elim_right bijection-facts]
+
+                                  // where the top lands, and the swap that moves it onto numeral(j)
+                                  @top-lands-in-segment-succ-j |
+                                    member(apply(g, numeral(k)), segment(succ(j)))
+                                    [using specialize into(numeral(k)) top-in-segment-succ-k]
+                                  @top-in-segment-succ-j |
+                                    member(numeral(j), segment(succ(j)))
+                                    [using specialize topIsInTheBiggerSegment(j)]
+                                  @swap-maps-into |
+                                    mapsInto(swap(apply(g, numeral(k)), numeral(j)), segment(succ(j)), segment(succ(j)))
+                                    [using specialize swapMapsInto(apply(g, numeral(k)), numeral(j), segment(succ(j))) top-lands-in-segment-succ-j top-in-segment-succ-j]
+                                  @swap-is-injective |
+                                    injectiveOn(swap(apply(g, numeral(k)), numeral(j)), segment(succ(j)))
+                                    [using specialize swapIsInjectiveOn(apply(g, numeral(k)), numeral(j), segment(succ(j)))]
+                                  @swap-covers |
+                                    surjectiveOnto(swap(apply(g, numeral(k)), numeral(j)), segment(succ(j)), segment(succ(j)))
+                                    [using specialize swapCoversItsImage(apply(g, numeral(k)), numeral(j), segment(succ(j)), segment(succ(j))) swap-maps-into]
+
+                                  // the composite is a bijection that sends top to top
+                                  @composite-maps-into |
+                                    mapsInto(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)), segment(succ(j)))
+                                    [using specialize composeMapsInto(g, swap(apply(g, numeral(k)), numeral(j)), segment(succ(k)), segment(succ(j)), segment(succ(j))) into swap-maps-into]
+                                  @composite-is-injective |
+                                    injectiveOn(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)))
+                                    [using specialize composeIsInjectiveOn(g, swap(apply(g, numeral(k)), numeral(j)), segment(succ(k)), segment(succ(j))) into injective swap-is-injective]
+                                  @composite-covers |
+                                    surjectiveOnto(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)), segment(succ(j)))
+                                    [using specialize composeIsSurjectiveOnto(g, swap(apply(g, numeral(k)), numeral(j)), segment(succ(k)), segment(succ(j)), segment(succ(j))) covers swap-covers]
+                                  @composite-into-and-injective |
+                                    mapsInto(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)), segment(succ(j))) and injectiveOn(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)))
+                                    [by and_intro composite-maps-into composite-is-injective]
+                                  @composite-bijects |
+                                    bijectsOnto(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(succ(k)), segment(succ(j)))
+                                    [by and_intro composite-into-and-injective composite-covers]
+                                  @composite-at-top |
+                                    apply(compose(swap(apply(g, numeral(k)), numeral(j)), g), numeral(k)) = apply(swap(apply(g, numeral(k)), numeral(j)), apply(g, numeral(k)))
+                                    [using specialize composeApply(swap(apply(g, numeral(k)), numeral(j)), g, numeral(k))]
+                                  @swap-moves-the-image-to-top |
+                                    apply(swap(apply(g, numeral(k)), numeral(j)), apply(g, numeral(k))) = numeral(j)
+                                    [using specialize swapAtFirst(apply(g, numeral(k)), numeral(j))]
+                                  @composite-sends-top-to-top |
+                                    apply(compose(swap(apply(g, numeral(k)), numeral(j)), g), numeral(k)) = numeral(j)
+                                    [by rewrite swap-moves-the-image-to-top composite-at-top]
+
+                                  // restrict, and the inductive hypothesis finishes
+                                  @restriction-bijects |
+                                    bijectsOnto(compose(swap(apply(g, numeral(k)), numeral(j)), g), segment(k), segment(j))
+                                    [using specialize restrictionBijects(compose(swap(apply(g, numeral(k)), numeral(j)), g), k, j) composite-bijects composite-sends-top-to-top]
+                                  @segments-k-and-j-are-equinumerous |
+                                    equinumerous(segment(k), segment(j))
+                                    [by exists_intro(compose(swap(apply(g, numeral(k)), numeral(j)), g)) restriction-bijects]
+                                  @k-is-j |
+                                    k = j
+                                    [using specialize inductive-hypothesis(j) segments-k-and-j-are-equinumerous]
+                                  @n-is-succ-k |
+                                    n = succ(k)
+                                    [by rewrite k-is-j n-is-succ-j]
+                                  @conclusion-flipped |
+                                    succ(k) = n
+                                    [by symmetry n-is-succ-k]
+                                }
+                              @conclusion-via-bijection |
+                                succ(k) = n
+                                [by exists_elim with-bijection-g]
+                            }
+                          @conclusion-via-predecessor |
+                            succ(k) = n
+                            [by exists_elim with-predecessor-j]
+                        }
+                    }
+                }
+              @conclusion-step-implication |
+                equinumerous(segment(succ(k)), segment(n)) -> succ(k) = n
+                [by implies_intro given-equinumerous]
+            }
+          @discharge-n |
+            forall n: Nat; equinumerous(segment(succ(k)), segment(n)) -> succ(k) = n
+            [by forall_intro generalize-n]
+        }
+      @induction-step-at-k |
+        (forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n) -> (forall n: Nat; equinumerous(segment(succ(k)), segment(n)) -> succ(k) = n)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n) -> (forall n: Nat; equinumerous(segment(succ(k)), segment(n)) -> succ(k) = n)
+    [by forall_intro induction-step]
+  @conclusion |
+    forall m: Nat; forall n: Nat; equinumerous(segment(m), segment(n)) -> m = n
+    [using instantiation induction((fun k: Nat => forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n)) base-case induction-step-for-all-k]
 qed
