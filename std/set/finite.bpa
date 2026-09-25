@@ -21,6 +21,7 @@ import set <<< "std/set.bpa"
 import element <<< "std/element.bpa"
 import function <<< "std/function.bpa"
 import peano <<< "std/peano.bpa"
+import peano_order <<< "std/peano/order.bpa"
 
 sort Element = element.Element
 sort Set = set.Set
@@ -41,6 +42,10 @@ const ZERO = peano.ZERO
 func succ = peano.succ
 pred less_than = peano.less_than
 theorem notLessThanZero = peano.notLessThanZero
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
 
 // -- maps between sets ------------------------------------------------------
 
@@ -1317,4 +1322,196 @@ proof
       (forall y: Element; member(y, b) -> member(apply(swap(u, v), y), a)) ->
       surjectiveOnto(swap(u, v), a, b)
     [by forall_intro generalize-u]
+qed
+
+// -- segment STRUCTURE (what the counting induction peels) -------------------
+
+// SEGMENT DECOMPOSITION: a member of segment(succ n) is either a member of segment(n) or
+// the top element numeral(n). This is what lets the induction PEEL the top off.
+theorem segmentSuccSplits: forall n: Nat; forall x: Element;
+  member(x, segment(succ(n))) -> (member(x, segment(n)) or x = numeral(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-x |
+        fix x: Element {
+          @given-member |
+            assume member(x, segment(succ(n))) {
+              @is-member |
+                member(x, segment(succ(n)))
+                [by hypothesis given-member]
+              @unfold |
+                member(x, segment(succ(n))) iff (exists k: Nat; less_than(k, succ(n)) and x = numeral(k))
+                [using specialize segmentMember(succ(n), x)]
+              @the-witness |
+                exists k: Nat; less_than(k, succ(n)) and x = numeral(k)
+                [using tautology unfold is-member]
+              @with-witness |
+                unpack k: Nat from the-witness {
+                  @facts |
+                    less_than(k, succ(n)) and x = numeral(k)
+                    [by hypothesis with-witness]
+                  @k-below-succ |
+                    less_than(k, succ(n))
+                    [by and_elim_left facts]
+                  @x-is-numeral-k |
+                    x = numeral(k)
+                    [by and_elim_right facts]
+                  @split |
+                    less_than(k, n) or k = n
+                    [using specialize lessThanSuccSplit(k, n) k-below-succ]
+                  @conclusion-split |
+                    member(x, segment(n)) or x = numeral(n)
+                    case split {
+                      @when-below |
+                        assume less_than(k, n) {
+                          @k-below-n |
+                            less_than(k, n)
+                            [by hypothesis when-below]
+                          @numeral-is-in |
+                            member(numeral(k), segment(n)) iff less_than(k, n)
+                            [using specialize numeralInSegment(n, k)]
+                          @in-segment |
+                            member(numeral(k), segment(n))
+                            [using tautology numeral-is-in k-below-n]
+                          @x-in-segment |
+                            member(x, segment(n))
+                            [by rewrite x-is-numeral-k in-segment]
+                          @conclusion-below |
+                            member(x, segment(n)) or x = numeral(n)
+                            [by or_intro_left x-in-segment]
+                        }
+                      @when-equal |
+                        assume k = n {
+                          @k-is-n |
+                            k = n
+                            [by hypothesis when-equal]
+                          @x-is-numeral-n |
+                            x = numeral(n)
+                            [by rewrite k-is-n x-is-numeral-k]
+                          @conclusion-equal |
+                            member(x, segment(n)) or x = numeral(n)
+                            [by or_intro_right x-is-numeral-n]
+                        }
+                    }
+                }
+              @conclusion-unpacked |
+                member(x, segment(n)) or x = numeral(n)
+                [by exists_elim with-witness]
+            }
+          @conclusion-implication |
+            member(x, segment(succ(n))) -> (member(x, segment(n)) or x = numeral(n))
+            [by implies_intro given-member]
+        }
+      @discharge-x |
+        forall x: Element; member(x, segment(succ(n))) -> (member(x, segment(n)) or x = numeral(n))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall n: Nat; forall x: Element;
+      member(x, segment(succ(n))) -> (member(x, segment(n)) or x = numeral(n))
+    [by forall_intro generalize-n]
+qed
+
+// ...and the converse: segment(n) sits inside segment(succ n), and so does its top.
+theorem segmentGrows: forall n: Nat; forall x: Element;
+  member(x, segment(n)) -> member(x, segment(succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-x |
+        fix x: Element {
+          @given-member |
+            assume member(x, segment(n)) {
+              @is-member |
+                member(x, segment(n))
+                [by hypothesis given-member]
+              @unfold-n |
+                member(x, segment(n)) iff (exists k: Nat; less_than(k, n) and x = numeral(k))
+                [using specialize segmentMember(n, x)]
+              @the-witness |
+                exists k: Nat; less_than(k, n) and x = numeral(k)
+                [using tautology unfold-n is-member]
+              @with-witness |
+                unpack k: Nat from the-witness {
+                  @facts |
+                    less_than(k, n) and x = numeral(k)
+                    [by hypothesis with-witness]
+                  @k-below-n |
+                    less_than(k, n)
+                    [by and_elim_left facts]
+                  @x-is-numeral-k |
+                    x = numeral(k)
+                    [by and_elim_right facts]
+                  @k-below-succ |
+                    less_than(k, succ(n))
+                    [using specialize lessThanSuccRight(k, n) k-below-n]
+                  @still-a-witness |
+                    less_than(k, succ(n)) and x = numeral(k)
+                    [by and_intro k-below-succ x-is-numeral-k]
+                  @witness-exists |
+                    exists j: Nat; less_than(j, succ(n)) and x = numeral(j)
+                    [by exists_intro(k) still-a-witness]
+                  @unfold-succ |
+                    member(x, segment(succ(n))) iff (exists j: Nat; less_than(j, succ(n)) and x = numeral(j))
+                    [using specialize segmentMember(succ(n), x)]
+                  @conclusion-member |
+                    member(x, segment(succ(n)))
+                    [using tautology unfold-succ witness-exists]
+                }
+              @conclusion-unpacked |
+                member(x, segment(succ(n)))
+                [by exists_elim with-witness]
+            }
+          @conclusion-implication |
+            member(x, segment(n)) -> member(x, segment(succ(n)))
+            [by implies_intro given-member]
+        }
+      @discharge-x |
+        forall x: Element; member(x, segment(n)) -> member(x, segment(succ(n)))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall n: Nat; forall x: Element; member(x, segment(n)) -> member(x, segment(succ(n)))
+    [by forall_intro generalize-n]
+qed
+
+// the TOP element is in the bigger segment but not the smaller — what makes the peel a
+// genuine split rather than a no-op.
+theorem topIsInTheBiggerSegment: forall n: Nat; member(numeral(n), segment(succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @n-below-succ |
+        less_than(n, succ(n))
+        [using specialize lessThanSelf(n)]
+      @characterization |
+        member(numeral(n), segment(succ(n))) iff less_than(n, succ(n))
+        [using specialize numeralInSegment(succ(n), n)]
+      @conclusion-n |
+        member(numeral(n), segment(succ(n)))
+        [using tautology characterization n-below-succ]
+    }
+  @conclusion |
+    forall n: Nat; member(numeral(n), segment(succ(n)))
+    [by forall_intro generalize-n]
+qed
+
+theorem topIsNotInTheSmallerSegment: forall n: Nat; not member(numeral(n), segment(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @not-below-self |
+        not less_than(n, n)
+        [using specialize lessThanIrreflexive(n)]
+      @characterization |
+        member(numeral(n), segment(n)) iff less_than(n, n)
+        [using specialize numeralInSegment(n, n)]
+      @conclusion-n |
+        not member(numeral(n), segment(n))
+        [using tautology characterization not-below-self]
+    }
+  @conclusion |
+    forall n: Nat; not member(numeral(n), segment(n))
+    [by forall_intro generalize-n]
 qed
