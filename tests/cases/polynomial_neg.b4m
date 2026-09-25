@@ -1,0 +1,44 @@
+// `polynomial` expanding `sub`/`neg`: with the ring's neg/sub lemmas in the
+// theory module, the canonicalizer pushes `neg` to the leaves and eliminates
+// `sub` (via definitionOfSubtraction) before comparing sorted monomials. Every
+// neg/sub fold is a kernel-rechecked rewrite in the emitted certificate.
+//
+// Resolves the neg/sub vocabulary against `int_divides` (integer-divides.b4m),
+// which re-exports add/mul/neg/sub + negAdd/negNeg/mulNegLeft/mulNegRight/
+// definitionOfSubtraction — Judson's ℤ ring.
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Int = int_divides.Int
+func add = int_divides.add
+func mul = int_divides.mul
+func neg = int_divides.neg
+func sub = int_divides.sub
+
+// neg distributes over a sum: neg(a+b) = neg(a) + neg(b). Both sides canonicalize
+// to the same sorted sum of neg-atoms.
+theorem negOverSum: forall a, b: Int;
+  neg(add(a, b)) = add(neg(a), neg(b))
+proof
+  @conclusion |
+    forall a, b: Int; neg(add(a, b)) = add(neg(a), neg(b))
+    [using polynomial_quantified(int_divides)]
+qed
+
+// sub expands and distributes: a·(b − c) = a·b − a·c. LHS unfolds sub to
+// add(b, neg(c)), distributes, pushes neg through mul; RHS likewise.
+theorem mulDistributesOverSub: forall a, b, c: Int;
+  mul(a, sub(b, c)) = sub(mul(a, b), mul(a, c))
+proof
+  @conclusion |
+    forall a, b, c: Int; mul(a, sub(b, c)) = sub(mul(a, b), mul(a, c))
+    [using polynomial_quantified(int_divides)]
+qed
+
+// mixed sub + neg + distribution: (a − b)·c = a·c + neg(b·c).
+theorem subTimesDistributes: forall a, b, c: Int;
+  mul(sub(a, b), c) = add(mul(a, c), neg(mul(b, c)))
+proof
+  @conclusion |
+    forall a, b, c: Int; mul(sub(a, b), c) = add(mul(a, c), neg(mul(b, c)))
+    [using polynomial_quantified(int_divides)]
+qed

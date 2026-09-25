@@ -1,0 +1,888 @@
+// std/group/power.b4m — integer powers g^n over a ℤ exponent, layered on top of
+// std/group.b4m (the pure abstract group theory) and std/integer.b4m (the
+// integers). This is the group analogue of std/integer-ring.b4m's layering over
+// std/integer.b4m: the primitive group theory stays untouched, and the power
+// function plus its exponent laws are defined and proved here.
+//
+// The EXPONENT is an integer, not a group element — g^n for n ∈ ℤ, where a
+// NEGATIVE exponent means repeated multiplication by the inverse. So the power
+// is ℤ-recursive in BOTH directions: g^0 = E, g^(n+1) = g^n · g (step up by g),
+// g^(n−1) = g^n · g⁻¹ (step down by the inverse). Judson defines it piecewise
+// over ℕ (g^n = n copies of g, g^{−n} = n copies of g⁻¹); this single two-sided
+// ℤ-recursive function is the equivalent, and it is what the laws — stated for
+// all m, n ∈ ℤ — quantify over. The laws are proved by bidirectional integer
+// induction (base + successor step + predecessor step).
+
+import group <<< "std/group.b4m"
+import integer <<< "std/integer.b4m"
+
+// -- the group structure ----------------------------------------------------
+
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+axiom opAssoc = group.opAssoc
+axiom opIdentityLeft = group.opIdentityLeft
+axiom opInverseLeft = group.opInverseLeft
+theorem opIdentityRight = group.opIdentityRight
+theorem opInverseRight = group.opInverseRight
+theorem inverseUnique = group.inverseUnique
+theorem invProduct = group.invProduct
+theorem invInvolution = group.invInvolution
+axiom opCommutative = group.opCommutative
+
+// -- the integer exponents --------------------------------------------------
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+func succ = integer.succ
+func prev = integer.prev
+func add = integer.add
+func mul = integer.mul
+func neg = integer.neg
+axiom negZero = integer.negZero
+axiom negSucc = integer.negSucc
+axiom negPrev = integer.negPrev
+theorem negNeg = integer.negNeg
+theorem induction = integer.induction
+theorem addZeroRight = integer.addZeroRight
+theorem addSuccRight = integer.addSuccRight
+theorem addPrevRight = integer.addPrevRight
+theorem addNegRight = integer.addNegRight
+theorem mulZeroRight = integer.mulZeroRight
+theorem mulSuccRight = integer.mulSuccRight
+theorem mulPrevRight = integer.mulPrevRight
+
+// -- group powers over a ℤ exponent -----------------------------------------
+
+func power(g: Grp, n: Int) => Grp
+axiom powerZero: forall g: Grp; power(g, ZERO) = E
+axiom powerSucc: forall g: Grp; forall n: Int; power(g, succ(n)) = op(power(g, n), g)
+axiom powerPrev: forall g: Grp; forall n: Int; power(g, prev(n)) = op(power(g, n), inverse(g))
+
+// -- sanity: g^1 = g -------------------------------------------------------
+// ONE = succ(ZERO), so g^1 = g^(succ 0) = op(g^0, g) = op(E, g) = g.
+theorem powerOne: forall g: Grp; power(g, succ(ZERO)) = g
+proof
+  @generalize-g |
+    fix g: Grp {
+      @power-succ-zero |
+        power(g, succ(ZERO)) = op(power(g, ZERO), g)
+        [using specialize powerSucc(g, ZERO)]
+      @power-zero-is-identity |
+        power(g, ZERO) = E
+        [using specialize powerZero(g)]
+      @identity-left |
+        op(E, g) = g
+        [using specialize opIdentityLeft(g)]
+      // g^(succ 0) = op(g^0, g) = op(E, g) = g. chain folds g^0 → E (congruence)
+      // and then op(E, g) → g.
+      @conclusion-power-one |
+        power(g, succ(ZERO)) = g
+        [using chain power-succ-zero power-zero-is-identity identity-left]
+    }
+  @conclusion |
+    forall g: Grp; power(g, succ(ZERO)) = g
+    [by forall_intro generalize-g]
+qed
+
+// -- Law (1): g^(m+n) = g^m · g^n -------------------------------------------
+// Bidirectional induction on n (g, m fixed). base n=0: add(m,0)=m and g^0=E
+// cancels on the right. succ step: add(m, succ k) = succ(add(m,k)); unfold power
+// twice and reassociate so the IH g^(m+k)=g^m·g^k lands. prev step: add(m, prev
+// k) = prev(add(m,k)); unfold power via powerPrev twice and reassociate the same
+// way, with inverse(g) as the trailing factor.
+theorem powerAdd: forall g: Grp; forall m, n: Int; op(power(g, m), power(g, n)) = power(g, add(m, n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-m |
+        fix m: Int {
+          // base case n = ZERO.
+          @power-zero |
+            power(g, ZERO) = E
+            [using specialize powerZero(g)]
+          @op-with-identity |
+            op(power(g, m), E) = power(g, m)
+            [using specialize opIdentityRight(power(g, m))]
+          // op(g^m, g^0) = op(g^m, E) = g^m = g^(m+0).
+          @base-lhs-collapses |
+            op(power(g, m), power(g, ZERO)) = power(g, m)
+            [using chain power-zero op-with-identity]
+          @add-m-zero-flipped |
+            m = add(m, ZERO)
+            [using arithmetic]
+          @base-case |
+            op(power(g, m), power(g, ZERO)) = power(g, add(m, ZERO))
+            [using chain base-lhs-collapses add-m-zero-flipped]
+
+          // reusable recursion facts.
+          @power-at-successor |
+            forall a: Grp; forall n: Int; power(a, succ(n)) = op(power(a, n), a)
+            [by cite powerSucc]
+          @power-at-predecessor |
+            forall a: Grp; forall n: Int; power(a, prev(n)) = op(power(a, n), inverse(a))
+            [by cite powerPrev]
+
+          // -- successor step: from n=k to n=succ(k) ---------------------------
+          @successor-step |
+            fix k: Int {
+              @given-ih-succ |
+                assume op(power(g, m), power(g, k)) = power(g, add(m, k)) {
+                  @ih-succ |
+                    op(power(g, m), power(g, k)) = power(g, add(m, k))
+                    [by hypothesis given-ih-succ]
+                  @exponent-succ |
+                    add(m, succ(k)) = succ(add(m, k))
+                    [using arithmetic]
+                  // g^(m + succ k) = g^(succ(m+k)) = op(g^(m+k), g).
+                  @rhs-unfolds |
+                    power(g, succ(add(m, k))) = op(power(g, add(m, k)), g)
+                    [by forall_elim(g, add(m, k)) power-at-successor]
+                  // g^(succ k) = op(g^k, g).
+                  @right-factor |
+                    power(g, succ(k)) = op(power(g, k), g)
+                    [by forall_elim(g, k) power-at-successor]
+                  // op(g^m, g^(succ k)) = op(g^m, op(g^k, g)) = op(op(g^m, g^k), g)
+                  //   = op(g^(m+k), g) = g^(succ(m+k)) = g^(m + succ k).
+                  @reassociates |
+                    op(power(g, m), op(power(g, k), g)) = op(op(power(g, m), power(g, k)), g)
+                    [by symmetry op-assoc-succ]
+                  @op-assoc-succ |
+                    op(op(power(g, m), power(g, k)), g) = op(power(g, m), op(power(g, k), g))
+                    [using specialize opAssoc(power(g, m), power(g, k), g)]
+                  @lhs-expands |
+                    op(power(g, m), power(g, succ(k))) = op(power(g, m), op(power(g, k), g))
+                    [by rewrite right-factor op-refl-succ]
+                  @op-refl-succ |
+                    op(power(g, m), power(g, succ(k))) = op(power(g, m), power(g, succ(k)))
+                    [by reflexivity]
+                  @conclusion-succ |
+                    op(power(g, m), power(g, succ(k))) = power(g, add(m, succ(k)))
+                    [using chain lhs-expands reassociates ih-succ rhs-unfolds exponent-succ]
+                }
+              @ih-implies-succ |
+                op(power(g, m), power(g, k)) = power(g, add(m, k)) -> op(power(g, m), power(g, succ(k))) = power(g, add(m, succ(k)))
+                [by implies_intro given-ih-succ]
+            }
+          @successor-step-all-k |
+            forall k: Int; op(power(g, m), power(g, k)) = power(g, add(m, k)) -> op(power(g, m), power(g, succ(k))) = power(g, add(m, succ(k)))
+            [by forall_intro successor-step]
+
+          // -- predecessor step: from n=k to n=prev(k) ------------------------
+          @predecessor-step |
+            fix k: Int {
+              @given-ih-prev |
+                assume op(power(g, m), power(g, k)) = power(g, add(m, k)) {
+                  @ih-prev |
+                    op(power(g, m), power(g, k)) = power(g, add(m, k))
+                    [by hypothesis given-ih-prev]
+                  @exponent-prev |
+                    add(m, prev(k)) = prev(add(m, k))
+                    [using arithmetic]
+                  // g^(m + prev k) = g^(prev(m+k)) = op(g^(m+k), g⁻¹).
+                  @rhs-unfolds |
+                    power(g, prev(add(m, k))) = op(power(g, add(m, k)), inverse(g))
+                    [by forall_elim(g, add(m, k)) power-at-predecessor]
+                  // g^(prev k) = op(g^k, g⁻¹).
+                  @right-factor |
+                    power(g, prev(k)) = op(power(g, k), inverse(g))
+                    [by forall_elim(g, k) power-at-predecessor]
+                  @op-assoc-prev |
+                    op(op(power(g, m), power(g, k)), inverse(g)) = op(power(g, m), op(power(g, k), inverse(g)))
+                    [using specialize opAssoc(power(g, m), power(g, k), inverse(g))]
+                  @reassociates |
+                    op(power(g, m), op(power(g, k), inverse(g))) = op(op(power(g, m), power(g, k)), inverse(g))
+                    [by symmetry op-assoc-prev]
+                  @lhs-expands |
+                    op(power(g, m), power(g, prev(k))) = op(power(g, m), op(power(g, k), inverse(g)))
+                    [by rewrite right-factor op-refl-prev]
+                  @op-refl-prev |
+                    op(power(g, m), power(g, prev(k))) = op(power(g, m), power(g, prev(k)))
+                    [by reflexivity]
+                  @conclusion-prev |
+                    op(power(g, m), power(g, prev(k))) = power(g, add(m, prev(k)))
+                    [using chain lhs-expands reassociates ih-prev rhs-unfolds exponent-prev]
+                }
+              @ih-implies-prev |
+                op(power(g, m), power(g, k)) = power(g, add(m, k)) -> op(power(g, m), power(g, prev(k))) = power(g, add(m, prev(k)))
+                [by implies_intro given-ih-prev]
+            }
+          @predecessor-step-all-k |
+            forall k: Int; op(power(g, m), power(g, k)) = power(g, add(m, k)) -> op(power(g, m), power(g, prev(k))) = power(g, add(m, prev(k)))
+            [by forall_intro predecessor-step]
+
+          @powers-add-over-all-n |
+            forall n: Int; op(power(g, m), power(g, n)) = power(g, add(m, n))
+            [using instantiation induction((fun n: Int => op(power(g, m), power(g, n)) = power(g, add(m, n)))) base-case successor-step-all-k predecessor-step-all-k]
+        }
+      @discharge-m |
+        forall m, n: Int; op(power(g, m), power(g, n)) = power(g, add(m, n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall g: Grp; forall m, n: Int; op(power(g, m), power(g, n)) = power(g, add(m, n))
+    [by forall_intro generalize-g]
+qed
+
+// -- helper: g^(−m) is the inverse of g^m -----------------------------------
+// From powerAdd: op(g^m, g^(−m)) = g^(m + (−m)) = g^0 = E, so g^(−m) is a right
+// inverse of g^m, hence equals inverse(g^m) by inverseUnique. (Avoids a direct
+// induction, which would trip on non-commutativity of g^{−1}·g^{−k}.)
+theorem powerNegInverse: forall g: Grp; forall m: Int; power(g, neg(m)) = inverse(power(g, m))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-m |
+        fix m: Int {
+          @powers-add |
+            op(power(g, m), power(g, neg(m))) = power(g, add(m, neg(m)))
+            [using specialize powerAdd(g, m, neg(m))]
+          @exponent-cancels |
+            add(m, neg(m)) = ZERO
+            [using arithmetic]
+          @power-zero |
+            power(g, ZERO) = E
+            [using specialize powerZero(g)]
+          // op(g^m, g^(−m)) = g^(m + (−m)) = g^0 = E.
+          @product-is-identity |
+            op(power(g, m), power(g, neg(m))) = E
+            [using chain powers-add exponent-cancels power-zero]
+          @conclusion-neg-inverse |
+            power(g, neg(m)) = inverse(power(g, m))
+            [using specialize inverseUnique(power(g, m), power(g, neg(m))) product-is-identity]
+        }
+      @discharge-m |
+        forall m: Int; power(g, neg(m)) = inverse(power(g, m))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall g: Grp; forall m: Int; power(g, neg(m)) = inverse(power(g, m))
+    [by forall_intro generalize-g]
+qed
+
+// -- Law (2): (g^m)^n = g^(mn) ----------------------------------------------
+// Induction on n (g, m fixed), using powerAdd for the step. base n=0: both sides
+// E (mul(m,0)=0). succ: (g^m)^(succ k) = op((g^m)^k, g^m) = op(g^(mk), g^m) =
+// g^(mk+m) = g^(m·succ k) via mulSuccRight. prev: (g^m)^(prev k) = op((g^m)^k,
+// inverse(g^m)) = op(g^(mk), g^(−m)) [powerNegInverse] = g^(mk + (−m)) =
+// g^(m·prev k) via mulPrevRight.
+theorem powerMul: forall g: Grp; forall m, n: Int; power(power(g, m), n) = power(g, mul(m, n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-m |
+        fix m: Int {
+          // base n = ZERO: (g^m)^0 = E = g^0 = g^(m·0).
+          @gm-power-zero |
+            power(power(g, m), ZERO) = E
+            [using specialize powerZero(power(g, m))]
+          @g-power-zero |
+            power(g, ZERO) = E
+            [using specialize powerZero(g)]
+          @mul-m-zero |
+            mul(m, ZERO) = ZERO
+            [using specialize mulZeroRight(m)]
+          @g-power-mul-m-zero |
+            power(g, mul(m, ZERO)) = E
+            [using chain mul-m-zero g-power-zero]
+          @e-is-g-power-mul-m-zero |
+            E = power(g, mul(m, ZERO))
+            [by symmetry g-power-mul-m-zero]
+          @base-case |
+            power(power(g, m), ZERO) = power(g, mul(m, ZERO))
+            [using chain gm-power-zero e-is-g-power-mul-m-zero]
+
+          @gm-at-successor |
+            forall n: Int; power(power(g, m), succ(n)) = op(power(power(g, m), n), power(g, m))
+            [by forall_elim(power(g, m)) power-at-successor-generic]
+          @power-at-successor-generic |
+            forall a: Grp; forall n: Int; power(a, succ(n)) = op(power(a, n), a)
+            [by cite powerSucc]
+          @gm-at-predecessor |
+            forall n: Int; power(power(g, m), prev(n)) = op(power(power(g, m), n), inverse(power(g, m)))
+            [by forall_elim(power(g, m)) power-at-predecessor-generic]
+          @power-at-predecessor-generic |
+            forall a: Grp; forall n: Int; power(a, prev(n)) = op(power(a, n), inverse(a))
+            [by cite powerPrev]
+
+          // -- successor step ------------------------------------------------
+          @successor-step |
+            fix k: Int {
+              @given-ih-succ |
+                assume power(power(g, m), k) = power(g, mul(m, k)) {
+                  @ih-succ |
+                    power(power(g, m), k) = power(g, mul(m, k))
+                    [by hypothesis given-ih-succ]
+                  // (g^m)^(succ k) = op((g^m)^k, g^m) = op(g^(mk), g^m).
+                  @lhs-unfolds |
+                    power(power(g, m), succ(k)) = op(power(power(g, m), k), power(g, m))
+                    [by forall_elim(k) gm-at-successor]
+                  @fold-ih |
+                    op(power(power(g, m), k), power(g, m)) = op(power(g, mul(m, k)), power(g, m))
+                    [by rewrite ih-succ gm-succ-refl]
+                  @gm-succ-refl |
+                    op(power(power(g, m), k), power(g, m)) = op(power(power(g, m), k), power(g, m))
+                    [by reflexivity]
+                  // op(g^(mk), g^m) = g^(mk + m).
+                  @powers-combine |
+                    op(power(g, mul(m, k)), power(g, m)) = power(g, add(mul(m, k), m))
+                    [using specialize powerAdd(g, mul(m, k), m)]
+                  // mul(m, succ k) = add(mul(m,k), m).
+                  @mul-succ |
+                    mul(m, succ(k)) = add(mul(m, k), m)
+                    [using specialize mulSuccRight(m, k)]
+                  @exponent-succ |
+                    power(g, add(mul(m, k), m)) = power(g, mul(m, succ(k)))
+                    [by rewrite mul-succ exponent-succ-refl]
+                  @exponent-succ-refl |
+                    power(g, add(mul(m, k), m)) = power(g, add(mul(m, k), m))
+                    [by reflexivity]
+                  @conclusion-succ |
+                    power(power(g, m), succ(k)) = power(g, mul(m, succ(k)))
+                    [using chain lhs-unfolds fold-ih powers-combine exponent-succ]
+                }
+              @ih-implies-succ |
+                power(power(g, m), k) = power(g, mul(m, k)) -> power(power(g, m), succ(k)) = power(g, mul(m, succ(k)))
+                [by implies_intro given-ih-succ]
+            }
+          @successor-step-all-k |
+            forall k: Int; power(power(g, m), k) = power(g, mul(m, k)) -> power(power(g, m), succ(k)) = power(g, mul(m, succ(k)))
+            [by forall_intro successor-step]
+
+          // -- predecessor step ----------------------------------------------
+          @predecessor-step |
+            fix k: Int {
+              @given-ih-prev |
+                assume power(power(g, m), k) = power(g, mul(m, k)) {
+                  @ih-prev |
+                    power(power(g, m), k) = power(g, mul(m, k))
+                    [by hypothesis given-ih-prev]
+                  // (g^m)^(prev k) = op((g^m)^k, inverse(g^m)) = op(g^(mk), g^(−m)).
+                  @lhs-unfolds |
+                    power(power(g, m), prev(k)) = op(power(power(g, m), k), inverse(power(g, m)))
+                    [by forall_elim(k) gm-at-predecessor]
+                  @neg-inverse |
+                    power(g, neg(m)) = inverse(power(g, m))
+                    [using specialize powerNegInverse(g, m)]
+                  @inverse-as-neg-power |
+                    inverse(power(g, m)) = power(g, neg(m))
+                    [by symmetry neg-inverse]
+                  @fold-ih |
+                    op(power(power(g, m), k), inverse(power(g, m))) = op(power(g, mul(m, k)), power(g, neg(m)))
+                    [using chain ih-prev inverse-as-neg-power]
+                  // op(g^(mk), g^(−m)) = g^(mk + (−m)).
+                  @powers-combine |
+                    op(power(g, mul(m, k)), power(g, neg(m))) = power(g, add(mul(m, k), neg(m)))
+                    [using specialize powerAdd(g, mul(m, k), neg(m))]
+                  // mul(m, prev k) = add(mul(m,k), neg m).
+                  @mul-prev |
+                    mul(m, prev(k)) = add(mul(m, k), neg(m))
+                    [using specialize mulPrevRight(m, k)]
+                  @exponent-prev |
+                    power(g, add(mul(m, k), neg(m))) = power(g, mul(m, prev(k)))
+                    [by rewrite mul-prev exponent-prev-refl]
+                  @exponent-prev-refl |
+                    power(g, add(mul(m, k), neg(m))) = power(g, add(mul(m, k), neg(m)))
+                    [by reflexivity]
+                  @conclusion-prev |
+                    power(power(g, m), prev(k)) = power(g, mul(m, prev(k)))
+                    [using chain lhs-unfolds fold-ih powers-combine exponent-prev]
+                }
+              @ih-implies-prev |
+                power(power(g, m), k) = power(g, mul(m, k)) -> power(power(g, m), prev(k)) = power(g, mul(m, prev(k)))
+                [by implies_intro given-ih-prev]
+            }
+          @predecessor-step-all-k |
+            forall k: Int; power(power(g, m), k) = power(g, mul(m, k)) -> power(power(g, m), prev(k)) = power(g, mul(m, prev(k)))
+            [by forall_intro predecessor-step]
+
+          @powers-mul-over-all-n |
+            forall n: Int; power(power(g, m), n) = power(g, mul(m, n))
+            [using instantiation induction((fun n: Int => power(power(g, m), n) = power(g, mul(m, n)))) base-case successor-step-all-k predecessor-step-all-k]
+        }
+      @discharge-m |
+        forall m, n: Int; power(power(g, m), n) = power(g, mul(m, n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall g: Grp; forall m, n: Int; power(power(g, m), n) = power(g, mul(m, n))
+    [by forall_intro generalize-g]
+qed
+
+// -- helper: (g⁻¹)^n = g^(−n) -----------------------------------------------
+// The inverse base pulls out as a sign on the exponent. Bidirectional induction
+// on n (g fixed). base n=0: both are E. succ: (g⁻¹)^(succ k) = op((g⁻¹)^k, g⁻¹)
+// = op(g^(−k), g⁻¹) [IH]; and g^(−succ k) = g^(prev(−k)) [negSucc] = op(g^(−k),
+// g⁻¹) [powerPrev] — they match. prev: (g⁻¹)^(prev k) = op((g⁻¹)^k, (g⁻¹)⁻¹) =
+// op((g⁻¹)^k, g) [invInvolution] = op(g^(−k), g) [IH]; and g^(−prev k) =
+// g^(succ(−k)) [negPrev] = op(g^(−k), g) [powerSucc]. This works in a non-abelian
+// group precisely because it never reverses a product order.
+theorem powerInverseIsNegExponent: forall g: Grp; forall n: Int; power(inverse(g), n) = power(g, neg(n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      // base case n = ZERO: both (g⁻¹)^0 and g^(−0) collapse to E.
+      @inverse-power-zero |
+        power(inverse(g), ZERO) = E
+        [using specialize powerZero(inverse(g))]
+      @neg-zero-is-zero |
+        neg(ZERO) = ZERO
+        [by cite negZero]
+      @base-power-zero |
+        power(g, ZERO) = E
+        [using specialize powerZero(g)]
+      @base-case |
+        power(inverse(g), ZERO) = power(g, neg(ZERO))
+        [using chain inverse-power-zero neg-zero-is-zero base-power-zero]
+
+      // -- successor step: from n=k to n=succ(k) ---------------------------
+      @successor-step |
+        fix k: Int {
+          @given-inductive-hypothesis |
+            assume power(inverse(g), k) = power(g, neg(k)) {
+              @inductive-hypothesis |
+                power(inverse(g), k) = power(g, neg(k))
+                [by hypothesis given-inductive-hypothesis]
+              // (g⁻¹)^(succ k) = op((g⁻¹)^k, g⁻¹).
+              @inverse-power-unfolds |
+                power(inverse(g), succ(k)) = op(power(inverse(g), k), inverse(g))
+                [using specialize powerSucc(inverse(g), k)]
+              // g^(−succ k) = g^(prev(−k)) = op(g^(−k), g⁻¹).
+              @negated-exponent-steps-down |
+                neg(succ(k)) = prev(neg(k))
+                [using arithmetic]
+              @negated-power-unfolds |
+                power(g, prev(neg(k))) = op(power(g, neg(k)), inverse(g))
+                [using specialize powerPrev(g, neg(k))]
+              @conclusion-successor |
+                power(inverse(g), succ(k)) = power(g, neg(succ(k)))
+                [using chain inverse-power-unfolds inductive-hypothesis negated-power-unfolds negated-exponent-steps-down]
+            }
+          @inductive-hypothesis-implies-successor |
+            power(inverse(g), k) = power(g, neg(k)) -> power(inverse(g), succ(k)) = power(g, neg(succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @successor-step-all-k |
+        forall k: Int; power(inverse(g), k) = power(g, neg(k)) -> power(inverse(g), succ(k)) = power(g, neg(succ(k)))
+        [by forall_intro successor-step]
+
+      // -- predecessor step: from n=k to n=prev(k) ------------------------
+      @predecessor-step |
+        fix k: Int {
+          @given-inductive-hypothesis |
+            assume power(inverse(g), k) = power(g, neg(k)) {
+              @inductive-hypothesis |
+                power(inverse(g), k) = power(g, neg(k))
+                [by hypothesis given-inductive-hypothesis]
+              // (g⁻¹)^(prev k) = op((g⁻¹)^k, (g⁻¹)⁻¹) = op((g⁻¹)^k, g).
+              @inverse-power-unfolds |
+                power(inverse(g), prev(k)) = op(power(inverse(g), k), inverse(inverse(g)))
+                [using specialize powerPrev(inverse(g), k)]
+              @double-inverse-cancels |
+                inverse(inverse(g)) = g
+                [using specialize invInvolution(g)]
+              // g^(−prev k) = g^(succ(−k)) = op(g^(−k), g).
+              @negated-exponent-steps-up |
+                neg(prev(k)) = succ(neg(k))
+                [using arithmetic]
+              @negated-power-unfolds |
+                power(g, succ(neg(k))) = op(power(g, neg(k)), g)
+                [using specialize powerSucc(g, neg(k))]
+              @conclusion-predecessor |
+                power(inverse(g), prev(k)) = power(g, neg(prev(k)))
+                [using chain inverse-power-unfolds double-inverse-cancels inductive-hypothesis negated-power-unfolds negated-exponent-steps-up]
+            }
+          @inductive-hypothesis-implies-predecessor |
+            power(inverse(g), k) = power(g, neg(k)) -> power(inverse(g), prev(k)) = power(g, neg(prev(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @predecessor-step-all-k |
+        forall k: Int; power(inverse(g), k) = power(g, neg(k)) -> power(inverse(g), prev(k)) = power(g, neg(prev(k)))
+        [by forall_intro predecessor-step]
+
+      @inverse-base-is-neg-exponent-over-all-n |
+        forall n: Int; power(inverse(g), n) = power(g, neg(n))
+        [using instantiation induction((fun n: Int => power(inverse(g), n) = power(g, neg(n)))) base-case successor-step-all-k predecessor-step-all-k]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Int; power(inverse(g), n) = power(g, neg(n))
+    [by forall_intro generalize-g]
+qed
+
+// -- Law: (g⁻¹)^n = (g^n)⁻¹ --------------------------------------------------
+// Immediate from the two helpers: (g⁻¹)^n = g^(−n) [powerInverseIsNegExponent]
+// and g^(−n) = (g^n)⁻¹ [powerNegInverse]. No induction needed.
+theorem powerInverseBase: forall g: Grp; forall n: Int; power(inverse(g), n) = inverse(power(g, n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Int {
+          @inverse-base-is-neg-exponent |
+            power(inverse(g), n) = power(g, neg(n))
+            [using specialize powerInverseIsNegExponent(g, n)]
+          @neg-exponent-is-inverse |
+            power(g, neg(n)) = inverse(power(g, n))
+            [using specialize powerNegInverse(g, n)]
+          @conclusion-inverse-base |
+            power(inverse(g), n) = inverse(power(g, n))
+            [using chain inverse-base-is-neg-exponent neg-exponent-is-inverse]
+        }
+      @discharge-n |
+        forall n: Int; power(inverse(g), n) = inverse(power(g, n))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Int; power(inverse(g), n) = inverse(power(g, n))
+    [by forall_intro generalize-g]
+qed
+
+// -- Law: (gh)^n = (h⁻¹g⁻¹)^(−n) --------------------------------------------
+// The general (non-abelian) product law: reversing the factors flips the sign of
+// the exponent. Purely algebraic, no induction. invProduct rewrites the reversed
+// product (h⁻¹g⁻¹) as (gh)⁻¹; powerInverseIsNegExponent pulls that inverse base
+// out as a negated exponent, giving (gh)^(−(−n)); and negNeg collapses the double
+// negation back to n.
+theorem powerOfProduct: forall g, h: Grp; forall n: Int; power(op(g, h), n) = power(op(inverse(h), inverse(g)), neg(n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-h |
+        fix h: Grp {
+          @generalize-n |
+            fix n: Int {
+              // (h⁻¹g⁻¹) is the inverse of (gh).
+              @reversed-product-is-inverse |
+                inverse(op(g, h)) = op(inverse(h), inverse(g))
+                [using specialize invProduct(g, h)]
+              // ((gh)⁻¹)^(−n) = (gh)^(−(−n)).
+              @inverse-base-pulls-out-sign |
+                power(inverse(op(g, h)), neg(n)) = power(op(g, h), neg(neg(n)))
+                [using specialize powerInverseIsNegExponent(op(g, h), neg(n))]
+              // −(−n) = n.
+              @double-negation-cancels |
+                neg(neg(n)) = n
+                [using arithmetic]
+              @conclusion-power-of-product |
+                power(op(g, h), n) = power(op(inverse(h), inverse(g)), neg(n))
+                [using chain double-negation-cancels inverse-base-pulls-out-sign reversed-product-is-inverse]
+            }
+          @discharge-n |
+            forall n: Int; power(op(g, h), n) = power(op(inverse(h), inverse(g)), neg(n))
+            [by forall_intro generalize-n]
+        }
+      @discharge-h |
+        forall h: Grp; forall n: Int; power(op(g, h), n) = power(op(inverse(h), inverse(g)), neg(n))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: Grp; forall n: Int; power(op(g, h), n) = power(op(inverse(h), inverse(g)), neg(n))
+    [by forall_intro generalize-g]
+qed
+
+// -- helper: swap the two middle factors of a four-fold product -------------
+// In a commutative group, op(op(a,b), op(c,d)) = op(op(a,c), op(b,d)) — the two
+// inner factors b and c trade places. Pure associativity/commutativity: flatten
+// to op(op(op(a,b),c),d), commute b past c inside, and re-nest. Used to align the
+// abelian power-of-product induction step, where the group and its power factor
+// must be regrouped by base.
+theorem opMiddleSwap: forall a, b, c, d: Grp; op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-c |
+            fix c: Grp {
+              @generalize-d |
+                fix d: Grp {
+                  // flatten the left product to a fully left-nested chain.
+                  @left-product-flattens |
+                    op(op(op(a, b), c), d) = op(op(a, b), op(c, d))
+                    [using specialize opAssoc(op(a, b), c, d)]
+                  // op(op(a,b),c) = op(a,op(b,c)).
+                  @regroup-first-three |
+                    op(op(a, b), c) = op(a, op(b, c))
+                    [using specialize opAssoc(a, b, c)]
+                  // commute the middle pair b and c.
+                  @middle-pair-commutes |
+                    op(b, c) = op(c, b)
+                    [using specialize opCommutative(b, c)]
+                  // op(op(a,c),b) = op(a,op(c,b)).
+                  @regroup-swapped-three |
+                    op(op(a, c), b) = op(a, op(c, b))
+                    [using specialize opAssoc(a, c, b)]
+                  // flatten the right product the same way.
+                  @right-product-flattens |
+                    op(op(op(a, c), b), d) = op(op(a, c), op(b, d))
+                    [using specialize opAssoc(op(a, c), b, d)]
+                  @conclusion-middle-swap |
+                    op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+                    [using chain left-product-flattens regroup-first-three middle-pair-commutes regroup-swapped-three right-product-flattens]
+                }
+              @discharge-d |
+                forall d: Grp; op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Grp; op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Grp; op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Grp; op(op(a, b), op(c, d)) = op(op(a, c), op(b, d))
+    [by forall_intro generalize-a]
+qed
+
+// -- Law (abelian): (gh)^n = g^n · h^n --------------------------------------
+// In a COMMUTATIVE group the exponent distributes over a product. This is the
+// one law that genuinely needs opCommutative (that is what makes the group
+// abelian). Bidirectional induction on n (g, h fixed). base n=0: both sides E.
+// succ: unfold each side by powerSucc and use the IH; the resulting four-fold
+// product op(op(g^k,h^k), op(g,h)) is regrouped to op(op(g^k,g), op(h^k,h)) by
+// opMiddleSwap. prev: symmetric, with powerPrev and invProduct turning the
+// trailing inverse(gh) into op(g⁻¹,h⁻¹) (commuting the reversed pair) before the
+// same middle-swap regroup.
+theorem powerProductAbelian: forall g, h: Grp; forall n: Int; power(op(g, h), n) = op(power(g, n), power(h, n))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-h |
+        fix h: Grp {
+          // base case n = ZERO: (gh)^0 = E = op(E, E) = op(g^0, h^0).
+          @product-power-zero |
+            power(op(g, h), ZERO) = E
+            [using specialize powerZero(op(g, h))]
+          @g-power-zero |
+            power(g, ZERO) = E
+            [using specialize powerZero(g)]
+          @h-power-zero |
+            power(h, ZERO) = E
+            [using specialize powerZero(h)]
+          @identity-times-identity |
+            op(E, E) = E
+            [using specialize opIdentityLeft(E)]
+          @base-case |
+            power(op(g, h), ZERO) = op(power(g, ZERO), power(h, ZERO))
+            [using simplify product-power-zero identity-times-identity g-power-zero h-power-zero]
+
+          // -- successor step: from n=k to n=succ(k) ---------------------------
+          @successor-step |
+            fix k: Int {
+              @given-inductive-hypothesis |
+                assume power(op(g, h), k) = op(power(g, k), power(h, k)) {
+                  @inductive-hypothesis |
+                    power(op(g, h), k) = op(power(g, k), power(h, k))
+                    [by hypothesis given-inductive-hypothesis]
+                  // (gh)^(succ k) = op((gh)^k, gh) = op(op(g^k,h^k), op(g,h)).
+                  @product-power-unfolds |
+                    power(op(g, h), succ(k)) = op(power(op(g, h), k), op(g, h))
+                    [using specialize powerSucc(op(g, h), k)]
+                  // fold the IH into the unfolded product: op(op(g^k,h^k), op(g,h)).
+                  @product-with-inductive-hypothesis |
+                    power(op(g, h), succ(k)) = op(op(power(g, k), power(h, k)), op(g, h))
+                    [by rewrite inductive-hypothesis product-power-unfolds]
+                  // regroup op(op(g^k,h^k), op(g,h)) = op(op(g^k,g), op(h^k,h)).
+                  @factors-regroup |
+                    op(op(power(g, k), power(h, k)), op(g, h)) = op(op(power(g, k), g), op(power(h, k), h))
+                    [using specialize opMiddleSwap(power(g, k), power(h, k), g, h)]
+                  @product-regrouped-by-base |
+                    power(op(g, h), succ(k)) = op(op(power(g, k), g), op(power(h, k), h))
+                    [by rewrite factors-regroup product-with-inductive-hypothesis]
+                  // g^(succ k) = op(g^k, g); h^(succ k) = op(h^k, h) — refold each base.
+                  @g-power-succ |
+                    power(g, succ(k)) = op(power(g, k), g)
+                    [using specialize powerSucc(g, k)]
+                  @h-power-succ |
+                    power(h, succ(k)) = op(power(h, k), h)
+                    [using specialize powerSucc(h, k)]
+                  @g-factor-refolded |
+                    power(op(g, h), succ(k)) = op(power(g, succ(k)), op(power(h, k), h))
+                    [by rewrite g-power-succ product-regrouped-by-base]
+                  @conclusion-successor |
+                    power(op(g, h), succ(k)) = op(power(g, succ(k)), power(h, succ(k)))
+                    [by rewrite h-power-succ g-factor-refolded]
+                }
+              @inductive-hypothesis-implies-successor |
+                power(op(g, h), k) = op(power(g, k), power(h, k)) -> power(op(g, h), succ(k)) = op(power(g, succ(k)), power(h, succ(k)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @successor-step-all-k |
+            forall k: Int; power(op(g, h), k) = op(power(g, k), power(h, k)) -> power(op(g, h), succ(k)) = op(power(g, succ(k)), power(h, succ(k)))
+            [by forall_intro successor-step]
+
+          // -- predecessor step: from n=k to n=prev(k) ------------------------
+          @predecessor-step |
+            fix k: Int {
+              @given-inductive-hypothesis |
+                assume power(op(g, h), k) = op(power(g, k), power(h, k)) {
+                  @inductive-hypothesis |
+                    power(op(g, h), k) = op(power(g, k), power(h, k))
+                    [by hypothesis given-inductive-hypothesis]
+                  // (gh)^(prev k) = op((gh)^k, (gh)⁻¹) = op(op(g^k,h^k), (gh)⁻¹).
+                  @product-power-unfolds |
+                    power(op(g, h), prev(k)) = op(power(op(g, h), k), inverse(op(g, h)))
+                    [using specialize powerPrev(op(g, h), k)]
+                  // fold the IH into the unfolded product: op(op(g^k,h^k), (gh)⁻¹).
+                  @product-with-inductive-hypothesis |
+                    power(op(g, h), prev(k)) = op(op(power(g, k), power(h, k)), inverse(op(g, h)))
+                    [by rewrite inductive-hypothesis product-power-unfolds]
+                  // (gh)⁻¹ = h⁻¹g⁻¹.
+                  @inverse-of-product |
+                    inverse(op(g, h)) = op(inverse(h), inverse(g))
+                    [using specialize invProduct(g, h)]
+                  @product-with-reversed-inverses |
+                    power(op(g, h), prev(k)) = op(op(power(g, k), power(h, k)), op(inverse(h), inverse(g)))
+                    [by rewrite inverse-of-product product-with-inductive-hypothesis]
+                  // h⁻¹g⁻¹ = g⁻¹h⁻¹ (commutative).
+                  @inverses-commute |
+                    op(inverse(h), inverse(g)) = op(inverse(g), inverse(h))
+                    [using specialize opCommutative(inverse(h), inverse(g))]
+                  @product-with-ordered-inverses |
+                    power(op(g, h), prev(k)) = op(op(power(g, k), power(h, k)), op(inverse(g), inverse(h)))
+                    [by rewrite inverses-commute product-with-reversed-inverses]
+                  // regroup op(op(g^k,h^k), op(g⁻¹,h⁻¹)) = op(op(g^k,g⁻¹), op(h^k,h⁻¹)).
+                  @factors-regroup |
+                    op(op(power(g, k), power(h, k)), op(inverse(g), inverse(h))) = op(op(power(g, k), inverse(g)), op(power(h, k), inverse(h)))
+                    [using specialize opMiddleSwap(power(g, k), power(h, k), inverse(g), inverse(h))]
+                  @product-regrouped-by-base |
+                    power(op(g, h), prev(k)) = op(op(power(g, k), inverse(g)), op(power(h, k), inverse(h)))
+                    [by rewrite factors-regroup product-with-ordered-inverses]
+                  // g^(prev k) = op(g^k, g⁻¹); h^(prev k) = op(h^k, h⁻¹) — refold each base.
+                  @g-power-prev |
+                    power(g, prev(k)) = op(power(g, k), inverse(g))
+                    [using specialize powerPrev(g, k)]
+                  @h-power-prev |
+                    power(h, prev(k)) = op(power(h, k), inverse(h))
+                    [using specialize powerPrev(h, k)]
+                  @conclusion-predecessor-g |
+                    power(op(g, h), prev(k)) = op(power(g, prev(k)), op(power(h, k), inverse(h)))
+                    [by rewrite g-power-prev product-regrouped-by-base]
+                  @conclusion-predecessor |
+                    power(op(g, h), prev(k)) = op(power(g, prev(k)), power(h, prev(k)))
+                    [by rewrite h-power-prev conclusion-predecessor-g]
+                }
+              @inductive-hypothesis-implies-predecessor |
+                power(op(g, h), k) = op(power(g, k), power(h, k)) -> power(op(g, h), prev(k)) = op(power(g, prev(k)), power(h, prev(k)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @predecessor-step-all-k |
+            forall k: Int; power(op(g, h), k) = op(power(g, k), power(h, k)) -> power(op(g, h), prev(k)) = op(power(g, prev(k)), power(h, prev(k)))
+            [by forall_intro predecessor-step]
+
+          @product-power-distributes-over-all-n |
+            forall n: Int; power(op(g, h), n) = op(power(g, n), power(h, n))
+            [using instantiation induction((fun n: Int => power(op(g, h), n) = op(power(g, n), power(h, n)))) base-case successor-step-all-k predecessor-step-all-k]
+        }
+      @discharge-h |
+        forall h: Grp; forall n: Int; power(op(g, h), n) = op(power(g, n), power(h, n))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: Grp; forall n: Int; power(op(g, h), n) = op(power(g, n), power(h, n))
+    [by forall_intro generalize-g]
+qed
+
+// inverse of the identity is the identity: op(E,E)=E, so by inverseUnique E = inverse(E).
+theorem inverseOfIdentity: inverse(E) = E
+proof
+  @op-e-e |
+    op(E, E) = E
+    [using specialize opIdentityLeft(E)]
+  @e-is-inverse-e |
+    E = inverse(E)
+    [using specialize inverseUnique(E, E) op-e-e]
+  @conclusion |
+    inverse(E) = E
+    [by symmetry e-is-inverse-e]
+qed
+
+// the identity to any integer power is the identity: E^n = E. Bidirectional induction —
+// E^0 = E; E^(succ k) = op(E^k, E) = op(E, E) = E; E^(prev k) = op(E^k, E⁻¹) = op(E, E) = E.
+theorem powerOfIdentity: forall n: Int; power(E, n) = E
+proof
+  // base case: E^0 = E.
+  @base-case |
+    power(E, ZERO) = E
+    [using specialize powerZero(E)]
+
+  @power-at-successor |
+    forall a: Grp; forall n: Int; power(a, succ(n)) = op(power(a, n), a)
+    [by cite powerSucc]
+  @power-at-predecessor |
+    forall a: Grp; forall n: Int; power(a, prev(n)) = op(power(a, n), inverse(a))
+    [by cite powerPrev]
+  @inverse-e |
+    inverse(E) = E
+    [by cite inverseOfIdentity]
+
+  // successor step.
+  @successor-step |
+    fix k: Int {
+      @given-ih |
+        assume power(E, k) = E {
+          @ih |
+            power(E, k) = E
+            [by hypothesis given-ih]
+          @succ-unfolds |
+            power(E, succ(k)) = op(power(E, k), E)
+            [by forall_elim(E, k) power-at-successor]
+          @with-ih |
+            power(E, succ(k)) = op(E, E)
+            [by rewrite ih succ-unfolds]
+          @op-e-e |
+            op(E, E) = E
+            [using specialize opIdentityLeft(E)]
+          @conclusion-succ |
+            power(E, succ(k)) = E
+            [using chain with-ih op-e-e]
+        }
+      @ih-implies-succ |
+        power(E, k) = E -> power(E, succ(k)) = E
+        [by implies_intro given-ih]
+    }
+  @successor-step-all-k |
+    forall k: Int; power(E, k) = E -> power(E, succ(k)) = E
+    [by forall_intro successor-step]
+
+  // predecessor step.
+  @predecessor-step |
+    fix k: Int {
+      @given-ih |
+        assume power(E, k) = E {
+          @ih |
+            power(E, k) = E
+            [by hypothesis given-ih]
+          @prev-unfolds |
+            power(E, prev(k)) = op(power(E, k), inverse(E))
+            [by forall_elim(E, k) power-at-predecessor]
+          @with-ih |
+            power(E, prev(k)) = op(E, inverse(E))
+            [by rewrite ih prev-unfolds]
+          @with-inverse-e |
+            power(E, prev(k)) = op(E, E)
+            [by rewrite inverse-e with-ih]
+          @op-e-e |
+            op(E, E) = E
+            [using specialize opIdentityLeft(E)]
+          @conclusion-prev |
+            power(E, prev(k)) = E
+            [using chain with-inverse-e op-e-e]
+        }
+      @ih-implies-prev |
+        power(E, k) = E -> power(E, prev(k)) = E
+        [by implies_intro given-ih]
+    }
+  @predecessor-step-all-k |
+    forall k: Int; power(E, k) = E -> power(E, prev(k)) = E
+    [by forall_intro predecessor-step]
+
+  @conclusion |
+    forall n: Int; power(E, n) = E
+    [using instantiation induction((fun n: Int => power(E, n) = E)) base-case successor-step-all-k predecessor-step-all-k]
+qed

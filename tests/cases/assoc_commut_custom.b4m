@@ -1,0 +1,48 @@
+// `assoc_commut(assoc, comm, swap)` — the explicit-triple form, for a CUSTOM
+// operator whose AC lemmas are NOT named by the well-known convention. The
+// three lemmas are supplied directly; the operator is recovered from the
+// commutativity lemma's shape. Elaborated (the triple is kernel-checked).
+//
+// Two forms only: bare `assoc_commut` (well-known add/mul) or exactly three
+// args. No partials — see tests/cases/assoc_commut_bad_arity.b4m.
+
+sort T
+func join(a: T, b: T) => T
+axiom joinAssoc: forall a, b, c: T; join(join(a, b), c) = join(a, join(b, c))
+axiom joinComm: forall a, b: T; join(a, b) = join(b, a)
+axiom joinSwap: forall x, y, r: T; join(x, join(y, r)) = join(y, join(x, r))
+
+// reorder a join-sum with the explicit triple (no add/mul, no well-known names)
+theorem reorderQuantified: forall a, b, c, d: T;
+  join(join(a, b), join(c, d)) = join(join(a, c), join(b, d))
+proof
+  @conclusion |
+    forall a, b, c, d: T; join(join(a, b), join(c, d)) = join(join(a, c), join(b, d))
+    [using assoc_commut_quantified(joinAssoc, joinComm, joinSwap)]
+qed
+
+// the bare (non-quantified) form under a hand fix-block
+theorem reorderBare: forall a, b, c: T; join(join(a, b), c) = join(join(c, b), a)
+proof
+  @open |
+    fix a: T {
+      @inner |
+        fix b: T {
+          @innermost |
+            fix c: T {
+              @eq |
+                join(join(a, b), c) = join(join(c, b), a)
+                [using assoc_commut(joinAssoc, joinComm, joinSwap)]
+            }
+          @close-c |
+            forall c: T; join(join(a, b), c) = join(join(c, b), a)
+            [by forall_intro innermost]
+        }
+      @close-b |
+        forall b, c: T; join(join(a, b), c) = join(join(c, b), a)
+        [by forall_intro inner]
+    }
+  @conclusion |
+    forall a, b, c: T; join(join(a, b), c) = join(join(c, b), a)
+    [by forall_intro open]
+qed

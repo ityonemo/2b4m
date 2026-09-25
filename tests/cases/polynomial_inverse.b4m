@@ -1,0 +1,51 @@
+// `polynomial` cancelling additive inverses: a `t + neg(t)` pair (for any atom or
+// monomial `t`) folds to ZERO via addNegRight/addNegLeft + zero-drop, reusing the
+// same kernel-traced cancellation the linear engine uses. This is the residual
+// move behind aata/3.1 mult-well-definedness (ar + neg(ar) vanishes).
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Int = int_divides.Int
+const ZERO = int_divides.ZERO
+const ONE = int_divides.ONE
+func add = int_divides.add
+func mul = int_divides.mul
+func neg = int_divides.neg
+func sub = int_divides.sub
+
+// a monomial plus its negation cancels: a·r + neg(a·r) = 0.
+theorem monomialCancelsItsNegation: forall a, r: Int;
+  add(mul(a, r), neg(mul(a, r))) = ZERO
+proof
+  @conclusion |
+    forall a, r: Int; add(mul(a, r), neg(mul(a, r))) = ZERO
+    [using polynomial_quantified(int_divides)]
+qed
+
+// cancellation surrounded by a surviving term: x + (a·r + neg(a·r)) = x.
+theorem cancelLeavesRemainder: forall a, r, x: Int;
+  add(x, add(mul(a, r), neg(mul(a, r)))) = x
+proof
+  @conclusion |
+    forall a, r, x: Int; add(x, add(mul(a, r), neg(mul(a, r)))) = x
+    [using polynomial_quantified(int_divides)]
+qed
+
+// a cancelling pair BURIED under a numeral: 1 + (a·r + neg(a·r)) = 1. The strict
+// cancellation must treat ONE as an opaque leaf (not a tower offset) or it skips
+// the pair — the boundary the corpus sweep surfaced.
+theorem cancelUnderNumeral: forall a, r: Int;
+  add(ONE, add(mul(a, r), neg(mul(a, r)))) = ONE
+proof
+  @conclusion |
+    forall a, r: Int; add(ONE, add(mul(a, r), neg(mul(a, r)))) = ONE
+    [using polynomial_quantified(int_divides)]
+qed
+
+// the (P+1) − P = 1 shape (sub-expansion THEN a neg-first buried cancellation).
+theorem successorMinusSelf: forall p: Int;
+  sub(add(mul(p, p), ONE), mul(p, p)) = ONE
+proof
+  @conclusion |
+    forall p: Int; sub(add(mul(p, p), ONE), mul(p, p)) = ONE
+    [using polynomial_quantified(int_divides)]
+qed

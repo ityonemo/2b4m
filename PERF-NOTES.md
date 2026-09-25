@@ -15,7 +15,7 @@ exactly this reason. Timings taken 2026-09-16 (16 cores):
 |---|---|---|
 | `check std` (48 files, 468 theorems) | 61.7 s | **1.82 s** |
 | `check aata` (25 files, 165 theorems) | 69.9 s | **2.24 s** |
-| `std/integer/divides.bpa` (547 decls) | 11.9 s | **0.34 s** |
+| `std/integer/divides.b4m` (547 decls) | 11.9 s | **0.34 s** |
 
 This supersedes the 2026-08-01 numbers below, and with them the conclusion that
 the suite is *"process-spawn-bound, not compute-bound"* — a single file now runs
@@ -25,12 +25,12 @@ corpus has NOT crossed it.
 
 ## Superseded measurements (2026-08-01)
 
-- Full `zig build test`: **~0.82 s** wall — ~137 cold `bpa` spawns at ~8 ms
+- Full `zig build test`: **~0.82 s** wall — ~137 cold `2b4m` spawns at ~8 ms
   each. The suite is **process-spawn-bound**, not compute-bound.
-- Largest single file (`examples/sqrt2.bpa`, 291 decls / 62 theorems):
+- Largest single file (`examples/sqrt2.b4m`, 291 decls / 62 theorems):
   **~55 ms**, of which ~8 ms is spawn. Parse time is invisible everywhere.
 - Redundancy: every gate re-elaborates and re-proves its **whole import
-  closure** (`euclid.bpa`'s 236 decls include the entire peano chain; peano's
+  closure** (`euclid.b4m`'s 236 decls include the entire peano chain; peano's
   theorems are re-proven dozens of times per suite run). Sum-of-closures vs.
   distinct declarations is roughly a 5–10× compute redundancy.
 - The term pool is **pure append** (`Pool.add` appends and returns the index —
@@ -224,7 +224,7 @@ remains useful as a *scheduling hint* that makes suspensions rare.
 
 ## Determinism (hard requirement — user ruling)
 
-A cold `bpa check` of the same tree MUST produce byte-identical output
+A cold `2b4m check` of the same tree MUST produce byte-identical output
 regardless of worker count and cache state:
 
 - diagnostics buffered per declaration and emitted in **source order** within
@@ -250,7 +250,7 @@ is to never need one, which keeps byte-determinism universal.
 
 ## Caching
 
-**INVARIANT (user ruling 2026-08-09): plain `bpa check` is ALWAYS strict** —
+**INVARIANT (user ruling 2026-08-09): plain `2b4m check` is ALWAYS strict** —
 full kernel certificates, no imported-proof/schema trust, and NO cache. The
 maximal guarantee is the default and is never silently weakened. All caching /
 trust-shortcutting is OPT-IN, disclosed, and non-default. Corollaries:
@@ -310,14 +310,14 @@ read ≈ ~10 ms; one-file-edited = + re-check of that file (≤55 ms for the
 largest file today; with per-statement memoization, only the edited theorem +
 its intra-file dependents, likely <10 ms) + ms-scale declaration
 re-elaboration. All end-to-end latencies land at ~10–60 ms from a cold start —
-below human perception, and irrelevant to bpa's primary author, an LLM agent
+below human perception, and irrelevant to 2b4m's primary author, an LLM agent
 running discrete CLI commands.
 
 What a daemon would uniquely buy, and why we decline each:
 
 - a resident env (matters only if declaration-closure elaboration gets
   expensive at very large scale; an env-snapshot cache could cover even that);
-- push-based re-check on save — workflow, not perf: a thin `bpa watch` wrapper
+- push-based re-check on save — workflow, not perf: a thin `2b4m watch` wrapper
   (inotify → re-exec the cold cached path) delivers the UX with **zero
   resident state**;
 - LSP-style editor features — a different project, not a perf plan.
@@ -337,7 +337,7 @@ cache is content-addressed and self-validating; a daemon is neither.
    work-stealing pool is a knob to turn on later, not a prerequisite.
 2. **Durable statement-hash memoization** — the cache layer over the same
    engine; warm runs ~free; the lockfile/trust story rides along.
-3. **(optional) `bpa watch`** — a stateless wrapper: on file change, re-exec
+3. **(optional) `2b4m watch`** — a stateless wrapper: on file change, re-exec
    the cold cached path. No resident daemon; see the section above.
 
 (A trivial multi-file batch driver could cut the suite's spawn tax even

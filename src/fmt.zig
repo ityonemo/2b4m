@@ -1,4 +1,4 @@
-//! `bpa fmt`: strictly a whitespace and indentation normalizer.
+//! `2b4m fmt`: strictly a whitespace and indentation normalizer.
 //!
 //! It reflows the token stream — line structure, indent depth, spacing
 //! between tokens — and nothing else. It never checks or rewrites names and

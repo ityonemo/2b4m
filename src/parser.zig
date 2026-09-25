@@ -1,4 +1,4 @@
-//! Recursive-descent parser for .bpa files.
+//! Recursive-descent parser for .b4m files.
 //! Error recovery: on a parse error inside a declaration, record one diagnostic
 //! and skip to the next top-level declaration keyword.
 //!

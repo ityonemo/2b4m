@@ -1,15 +1,15 @@
 ---
 paths:
-  - "**/*.bpa"
+  - "**/*.b4m"
   - "aata/**/*.md"
   - "examples/**/*.md"
 ---
 
-# Writing bpa proofs — the drift-prone conventions
+# Writing 2b4m proofs — the drift-prone conventions
 
 `CONVENTIONS.md` is canonical. This rule surfaces the parts that erode over a
 long generation session — chiefly **proof labels**. When writing or reviewing a
-`.bpa` proof (or a ```bpa block in a literate `.md`), hold these in mind.
+`.b4m` proof (or a ```2b4m block in a literate `.md`), hold these in mind.
 
 **Transcription exception.** When transcribing material from an external source
 (e.g. an AATA textbook chapter into `aata/`), use discretion to match the
@@ -28,7 +28,7 @@ and justification line, and the remaining `@labels` must let a reader
 reconstruct the argument. Every label is judged by what it contributes to that
 skeleton. If the skeleton reads like noise, the labels are wrong.
 
-`bpa query outline <file> <theorem>` prints exactly this skeleton — the labels
+`2b4m query outline <file> <theorem>` prints exactly this skeleton — the labels
 plus block headers, nothing else. **Read the outline as the acceptance test:**
 it should be *narrative* — reading it top to bottom should convey the shape and
 flow of the proof (what is assumed, what is derived, how it concludes) to
@@ -117,7 +117,7 @@ form is a fine content label: `@add-is-commutative`.)
   ring is constrained by its axioms, not defined by them. Use `define` only for
   an abbreviation you never need to cite, model-map, or name.
 - **Imports**: name an import after its PATH with `/` written `_`
-  (`std/function/invertible.bpa` → `function_invertible`) — a namespace shares a
+  (`std/function/invertible.b4m` → `function_invertible`) — a namespace shares a
   declaration space with every symbol, so naming a theory after its subject
   collides with the subject (`import invertible` beside `pred invertible = …` is
   a hard duplicate-declaration error, plus confusing follow-on errors at each
@@ -126,5 +126,5 @@ form is a fine content label: `@add-is-commutative`.)
   files layered above the primitives.
 - **Layout**: three lines per step — `@label |`, then the formula, then
   `[by …]`, formula/justification indented two spaces under the label; two-space
-  indent per block depth; blank line between phases; `bpa fmt` normalizes
+  indent per block depth; blank line between phases; `2b4m fmt` normalizes
   whitespace only (never names).

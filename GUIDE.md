@@ -1,4 +1,4 @@
-# bpa language guide
+# 2b4m language guide
 
 This guide covers the whole surface: every keyword, the proof rules, how
 the kernel establishes trust, and the built-in automation. For naming and
@@ -78,7 +78,7 @@ base tactic's leaf; it peels a leading `forall` prefix without a hand `fix`.)
 
 ## Files and checking
 
-A `.bpa` file is a sequence of declarations. `bpa check file.bpa` verifies
+A `.b4m` file is a sequence of declarations. `2b4m check file.b4m` verifies
 them in order; every failure is reported as `file:line:col: error:
 <message>` on stderr, and success prints one summary line:
 
@@ -86,14 +86,14 @@ them in order; every failure is reported as `file:line:col: error:
 OK: 18 declarations, 6 theorems proven
 ```
 
-**One theorem.** `bpa check <file> <theorem>` proves only that theorem and
+**One theorem.** `2b4m check <file> <theorem>` proves only that theorem and
 whatever it cites — the file's other proofs never run. That is the iteration
 loop for a long file (pair it with `--fast`). A name that is not there is
 `reference not found`; a SCHEMA is reported as checked at its instantiations
 (it has no proof of its own to run); an axiom is a legitimate target — its
 statement is elaborated, and the run says `0 theorems proven`.
 
-**A directory.** `bpa check <dir>` checks every `.bpa` and `.md` under it,
+**A directory.** `2b4m check <dir>` checks every `.b4m` and `.md` under it,
 recursively, in ONE engine pass — so a fact two files cite is proved once, not
 once per file — and prints one aggregate line:
 
@@ -101,7 +101,7 @@ once per file — and prints one aggregate line:
 OK: 47 files, 1862 declarations, 468 theorems proven
 ```
 
-A `.md` with no ```` ```bpa ```` block parses to nothing and costs nothing. A
+A `.md` with no ```` ```2b4m ```` block parses to nothing and costs nothing. A
 theorem argument selects within one file, so it cannot be combined with a
 directory.
 
@@ -112,17 +112,17 @@ certificates, `instantiation`, model transfers and imports — things `query
 uses` cannot:
 
 ```
-$ bpa check examples/gauss.bpa gaussSum --axioms
+$ 2b4m check examples/gauss.b4m gaussSum --axioms
 OK: 72 declarations, 1 theorems proven
   — rests on 7 axiom(s):
-      sumToZero  (examples/gauss.bpa:44)
-      sumToSucc  (examples/gauss.bpa:45)
-      addZeroLeft  (std/peano.bpa:39)
+      sumToZero  (examples/gauss.b4m:44)
+      sumToSucc  (examples/gauss.b4m:45)
+      addZeroLeft  (std/peano.b4m:39)
       …
-      induction  (std/peano.bpa:81)
+      induction  (std/peano.b4m:81)
 ```
 
-(`bpa query uses` shows `gaussSum` citing five facts by name; the other two —
+(`2b4m query uses` shows `gaussSum` citing five facts by name; the other two —
 `addSuccLeft`, `mulSuccLeft` — arrive only inside the certificates its
 `arithmetic` steps generate, which is exactly the gap a syntactic scan leaves.)
 
@@ -133,7 +133,7 @@ marked hole appears only under `--draft`.
 **A library owes its own examples.** `--library` (a directory) additionally
 FAILS on any axiom declared in that directory that no theorem in it rests on.
 An axiom no derivation ever touches is one whose binders, guards and direction
-have never been checked, so `std/` carries a `<namespace>/examples.bpa` per
+have never been checked, so `std/` carries a `<namespace>/examples.b4m` per
 theory demonstrating exactly those axioms nothing else exercises. A fact a
 `model` names as a discharger (`src <- local`, a `@`-projection, a guard
 witness) counts as used — that is consumption by the model machinery rather
@@ -144,7 +144,7 @@ which fact each citation actually resolved to, and in which namespace — the qu
 alone cannot answer once model transfers have published second copies of a theory's theorems.
 See `agents/debug-guide.md` for that flag and the other diagnostics.
 
-By default `bpa check` **verifies everything**: `by arithmetic`/`by
+By default `2b4m check` **verifies everything**: `by arithmetic`/`by
 tautology` must produce a checkable certificate (an accelerated fallback is a hard
 error), and every `using` step (accelerant / model / import) is verified.
 `--fast` defers that verification per `using` WORD during development and says
@@ -159,7 +159,7 @@ its own cheap check / statement match) rather than kernel-checked:
 - `--draft` — allow `hole`s (aspirational placeholders); orthogonal to the
   above. Default mode rejects any file with holes and lists them.
 
-Re-run plain `bpa check` to fully verify before finalizing. `bpa fmt`
+Re-run plain `2b4m check` to fully verify before finalizing. `2b4m fmt`
 normalizes whitespace and indentation (`--check` reports instead of
 rewriting).
 
@@ -171,7 +171,7 @@ Declares a sort (a domain of discourse). `Prop`, the sort of propositions,
 is currently the only built-in. Sorts are typically capitalized; the
 following declares "Natural Numbers":
 
-```bpa
+```2b4m
 sort Nat
 ```
 
@@ -183,7 +183,7 @@ nonnegatives, …). It introduces no new kernel sort: `H` *is* `G`, and every us
 or a postcondition, depending on position. Pure sugar; everything stays
 kernel-checked.
 
-```bpa
+```2b4m
 pred inH(g: G)
 sort H = G where inH          // H is "G where inH holds"
 sort HK = G where inH and inK // several qualifiers: the guard is their CONJUNCTION
@@ -214,7 +214,7 @@ The guard appears at each position `H` is used:
 An **anonymous** predicated sort may be written inline anywhere a sort appears,
 without a named `sort` declaration:
 
-```bpa
+```2b4m
 func f(x: G where inH) => R              // inline-refined argument
 theorem t: forall h: G where inH; P(h) // inline-refined binder
 ```
@@ -226,7 +226,7 @@ conjunction of conditions, `define` a predicate for it and refine by that name.
 
 Declares an uninterpreted constant of a sort.
 
-```bpa
+```2b4m
 const ZERO: Nat
 ```
 
@@ -237,7 +237,7 @@ elaboration — the kernel only ever sees the underlying term, so definitions ad
 nothing to the trusted surface and work everywhere a term does, including inside
 automation. Definitions may build on each other. The sort is inferred.
 
-```bpa
+```2b4m
 define TWO = succ(succ(ZERO))
 define FOUR = succ(succ(TWO))
 ```
@@ -248,7 +248,7 @@ arrive already elaborated at each use, and the body's own elaboration types ever
 use of them. A declared param sort would be a second source of the same fact, able
 only to agree (noise) or to disagree (a spurious error). Writing one is an error.
 
-```bpa
+```2b4m
 define divides(d, n) = exists k: Int; n = mul(d, k)   // parameters are bare names
 define even(n) = divides(TWO, n)                      // defines build on defines
 ```
@@ -275,7 +275,7 @@ Declares a function symbol with argument and result sorts. An optional
 obligation that the guard holds, discharged against facts available at the
 use site (an undischarged obligation is an error).
 
-```bpa
+```2b4m
 func succ(n: Nat) => Nat
 func div(a: Nat, b: Nat) => Nat requires b != ZERO
 ```
@@ -290,7 +290,7 @@ clauses (`func sub(a: Int, b: Int) => Int:` followed by `sub(a, b) = …`).
 Declares a predicate (a function into `Prop`). Zero-argument predicates
 are atomic propositions and may be written bare.
 
-```bpa
+```2b4m
 pred less_than(a: Nat, b: Nat)
 pred raining
 ```
@@ -307,7 +307,7 @@ is written **exactly as the axiom it becomes** — the checker wraps it in the
 declaration's binders and emits an ordinary axiom, so there is nothing to learn
 about how it desugars.
 
-```bpa
+```2b4m
 pred isZero(n: Nat):
   isZero(n) iff n = ZERO
 
@@ -326,7 +326,7 @@ case, and neither clause alone is the definition.
 **Clause guards.** When the heads do not themselves distinguish the cases, a
 clause may carry a guard, `when` after the head:
 
-```bpa
+```2b4m
 func gcd(a: Nat, b: Nat) => Nat:
   gcd(a, b) = a                  when b = ZERO;
   gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
@@ -341,7 +341,7 @@ that, exactly as it does not for hand-written axiom pairs.
 **Citing a clause** uses `by definition`, with the clause number for a function
 (zero-indexed; a predicate has one clause and cites bare):
 
-```bpa
+```2b4m
 @definition-of-is-zero |
   forall n: Nat; isZero(n) iff n = ZERO
   [by definition isZero]
@@ -354,7 +354,7 @@ that, exactly as it does not for hand-written axiom pairs.
 **This is sugar.** Declaring the symbol and stating its axiom separately stays
 legal and means the same thing:
 
-```bpa
+```2b4m
 pred isZero(n: Nat)
 axiom isZeroDef: forall n: Nat; isZero(n) iff n = ZERO
 ```
@@ -380,9 +380,9 @@ that must exist in its own right.
 ### KEYWORD: axiom
 
 Asserts a formula without proof. Axioms are the file's assumptions; a proof cites
-one with `[by cite NAME]`, and `bpa query uses` lists every fact a proof cites.
+one with `[by cite NAME]`, and `2b4m query uses` lists every fact a proof cites.
 
-```bpa
+```2b4m
 axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
 ```
 
@@ -390,7 +390,7 @@ axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
 
 Asserts a formula with a `proof ... qed` block, which the kernel checks.
 
-```bpa
+```2b4m
 theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
 proof
   ...
@@ -405,7 +405,7 @@ build the proof that needs it, fill it in later) or to **reason conditionally**
 ("suppose an odd perfect number exists; here is what follows"). Cited exactly
 like an axiom: `[by cite myHole]`.
 
-```bpa
+```2b4m
 hole zeroIsEven: even(ZERO)
 ```
 
@@ -425,7 +425,7 @@ a stored form with `comptime` semantics. Each `instantiate` use substitutes
 concrete, written-out arguments and (for theorem schemas) re-checks the proof at
 that instance. Formula-valued parameters are supplied as `fun` lambdas.
 
-```bpa
+```2b4m
 axiom induction(prop: Nat -> Prop):
   prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
 
@@ -474,7 +474,7 @@ proved later in this file — a verified table of contents. (The name reads as
 "in theory it holds — you're on the hook to prove it later.") A missing or
 wrongly-kinded definition is an error at the `intheory` line.
 
-```bpa
+```2b4m
 intheory addIsCommutative
 ```
 
@@ -482,8 +482,8 @@ A theory whose proofs live in sub-theory files makes the same promise with a
 FORWARD — an alias to the fact another file proved — grouped in the same
 section:
 
-```bpa
-import divides_theory <<< "std/integer/divides.bpa"
+```2b4m
+import divides_theory <<< "std/integer/divides.b4m"
 theorem gcdGreatest = divides_theory.gcdGreatest
 ```
 
@@ -497,11 +497,11 @@ import so it cannot collide with what it forwards (`divides_theory`, not
 
 Loads another file under a namespace. Members are referenced with
 qualified names (`peano.Nat`, `peano.addZeroLeft`). Paths beginning
-`std/` resolve in the standard library (`$BPA_STD_DIR`, default `./std`);
+`std/` resolve in the standard library (`$B4M_STD_DIR`, default `./std`);
 other paths resolve relative to the importing file.
 
-```bpa
-import peano <<< "std/peano.bpa"
+```2b4m
+import peano <<< "std/peano.b4m"
 ```
 
 A cross-file citation is an `import` `using` step. By default it is fully
@@ -518,7 +518,7 @@ Any declaration keyword followed by `= qualified.name` creates a
 kind-checked **view** of an imported entity — a local name for the same
 thing, not a copy, so facts proved through either spelling interoperate.
 
-```bpa
+```2b4m
 sort Nat = peano.Nat
 func add = peano.add
 axiom addZeroLeft = peano.addZeroLeft
@@ -539,8 +539,8 @@ you map each of the theory's primitives (its sorts, operations, constants) and
 discharge each of its axioms, and in exchange every theorem the theory proves becomes
 citable at your sort.
 
-```bpa
-import group <<< "std/group.bpa"
+```2b4m
+import group <<< "std/group.b4m"
 
 model AdditiveGroup {
   group.Grp:      Rat               // `:` — a sort interpretation
@@ -592,7 +592,7 @@ fact, a `fix`-bound variable uses its block guard, a composite `op(a, b)` applie
 source axiom mapped to itself is auto-WEAKENED (`∀a; P ⊢ ∀a; inH(a) -> P`), no
 hand-written relativized copy needed.
 
-```bpa
+```2b4m
 // the subgroup H ⊆ G is a group: map group's sort onto `Grp where inH`, nominate
 // the membership facts, and the whole group corpus transfers relativized to H.
 sort GrpH = Grp where inH
@@ -610,7 +610,7 @@ model SubgroupIsGroup {
 
 A `<- OtherModel@src.thm` projection discharges an obligation by transferring a
 theorem THROUGH another model — the composition that layers `subgroup`-is-a-group
-onto `group`-is-a-group (see `tests/cases/model_subgroup_transfer.bpa`).
+onto `group`-is-a-group (see `tests/cases/model_subgroup_transfer.b4m`).
 
 A model **may leave some axioms unmapped**. Citing a transferred theorem whose
 proof depends on an unmapped axiom is **rejected**: under the transfer the unmapped
@@ -628,7 +628,7 @@ keeps its own mapping; a use names which.
 mapping the source theory's sort onto a **predicated (refined) sort** — the guard is
 inferred from that sort's qualifier:
 
-```bpa
+```2b4m
 sort NonzeroRat = Rat where nonzero   // the refined (predicated) sort
 model MultiplicativeGroup {
   group.Grp:      NonzeroRat          // predicated target → the model is guarded by `nonzero`
@@ -649,7 +649,7 @@ condition, `pred`-declare it (and, once where-reification lands, a `define` too)
 **Using a transferred theorem** — cite it through the model with the `model`
 justification rule (see *Justification rules* / *Automation*):
 
-```bpa
+```2b4m
 theorem addCancelLeft: forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
 proof
   @conclusion |
@@ -673,7 +673,7 @@ predicate). Add an ordinary mapping line whose source is the schema and whose
 target is a **locally-declared schema** of the same shape — an axiom *or* a
 theorem:
 
-```bpa
+```2b4m
 model NonNegInt {
   peano.Nat: NonNeg          // NonNeg = Int where non_neg  (guards the transfer)
   peano.succ: succ
@@ -697,7 +697,7 @@ nonneg model gives only the conditional nonneg schema — so ℤ still axiomatiz
 its induction; the transfer just guarantees the nonneg schema is exactly ℕ's,
 relativized.
 
-> `model` is bpa's lightweight take on what typeclasses (Lean), locales
+> `model` is 2b4m's lightweight take on what typeclasses (Lean), locales
 > (Isabelle), and module functors (Rocq) do — but explicit and search-free: you
 > name the instance at every use, the mapping is one level deep, and the transfer
 > is a checked source-to-source rewrite that never enters the kernel. No instance
@@ -728,7 +728,7 @@ precedence-memory footgun: a formula reads one way to everyone, or it doesn't
 parse. (`=` / `!=` are comparisons, not boolean operators, so they never need
 parens against a connective: `x = y and p` is `(x = y) and p`.)
 
-```bpa
+```2b4m
 forall a, b: Nat; add(a, b) = add(b, a)
 exists w: Nat; add(x, succ(w)) = y
 (not (p or q)) -> ((not p) and (not q))
@@ -743,7 +743,7 @@ A proof is a sequence of steps. Each step is an `@`-sigiled label on its own
 line, then — indented beneath it — the formula and its bracketed
 justification:
 
-```bpa
+```2b4m
 @have-imp |
   p -> q
   [by cite pImpliesQ]
@@ -763,7 +763,7 @@ earlier steps and enclosing blocks by (bare) label.
 **`assume`** opens a block under a hypothesis; discharging it with
 `implies_intro` yields the implication, with `not_intro` the negation.
 
-```bpa
+```2b4m
 @hyp |
   assume less_than(a, b) {
     ...
@@ -777,7 +777,7 @@ earlier steps and enclosing blocks by (bare) label.
 with `forall_intro` yields the universal. Fix variables must be globally
 fresh within the proof.
 
-```bpa
+```2b4m
 @gen |
   fix n: Nat {
     ...
@@ -790,7 +790,7 @@ fresh within the proof.
 **`unpack ... from`** opens a block naming the witness of a previously
 established existential; `exists_elim` exports any witness-free conclusion.
 
-```bpa
+```2b4m
 @use-witness |
   unpack u: Nat from witnessed {
     @hu |
@@ -809,7 +809,7 @@ nested) `or_elim`. Each arm is an `assume`-block over one disjunct that must
 conclude the goal. A left-nested `(A or B) or C` fans out automatically; you
 write N arms, not a hand-nested `or_elim` tree.
 
-```bpa
+```2b4m
 @result |
   q1 = q2
   case tri-q1q2 {
@@ -934,7 +934,7 @@ old forms; they are no longer rule words — use `cite`.)
 `[by hypothesis BLOCK]` — restate an enclosing `assume` block's assumption, or the
 witness fact of an enclosing `unpack` block. One ref: the block label.
 
-```bpa
+```2b4m
 assume less_than(a, b) {
   @h |
     less_than(a, b)
@@ -953,7 +953,7 @@ the fact `inH(h)` that the refined sort `H = G where inH` provides. One ref: the
 `[by modus_ponens IMP ANT]` — two refs: a step proving `P -> Q` and a step proving
 `P`; concludes `Q`.
 
-```bpa
+```2b4m
 @q |
   q
   [by modus_ponens have-imp have-p]
@@ -979,7 +979,7 @@ term list**. The **multi-arg form peels several binders in one step**:
 intermediate `forall y; P(A, y)` chain is synthesized for you. Supply one term per
 binder you want to peel.
 
-```bpa
+```2b4m
 @specialized |
   P(A, B)
   [by forall_elim(A, B) universal-step]
@@ -996,7 +996,7 @@ in parens; concludes `exists x; P[x]`.
 last step is **witness-free** (does not mention `u`); exports that conclusion. The
 eigenvariable `u` may not escape — a conclusion mentioning `u` is a kernel error.
 
-```bpa
+```2b4m
 @exported |
   less_than(a, b)          // no `u` here
   [by exists_elim use-witness]
@@ -1026,7 +1026,7 @@ biconditional-shaped goal** `(X -> Y) and (Y -> X)` — that shape is canonicall
 rejects that shape, and `iff_intro` rejects a plain conjunction — the two are
 complementary. `iff` is surface sugar for `(P -> Q) and (Q -> P)`.
 
-```bpa
+```2b4m
 @bicond |
   P iff Q
   [by iff_intro forward-imp backward-imp]
@@ -1057,7 +1057,7 @@ right disjunct `Q`. (`or_intro_right` proves `Q` to conclude `P or Q`.)
 `A or B`, then two `assume` blocks — `assume A { … }` and `assume B { … }` — **each
 of which must conclude the same goal**. That shared conclusion is the result.
 
-```bpa
+```2b4m
 @goal-from-cases |
   R
   or_elim disj {
@@ -1078,7 +1078,7 @@ its steps `S1`, `S2` that contradict each other (`S1 = X`, `S2 = not X`). Conclu
 `not P`. The contradiction pair is named explicitly; both steps must live inside the
 block.
 
-```bpa
+```2b4m
 @neg |
   not even(ONE)
   [by not_intro assumed-block contra-a contra-b]
@@ -1111,7 +1111,7 @@ step just to reorient the equation (a true `a = b` licenses substituting either
 way). A claim reachable in NEITHER direction is rejected. (The tactic `simplify`
 rewrites both sides to a common form when many rewrites would be needed.)
 
-```bpa
+```2b4m
 @rewritten |
   P(b)
   [by rewrite eq-a-b target-Pa]
@@ -1125,7 +1125,7 @@ step; the **propositional analogue of `rewrite`**. It replaces the sub-propositi
 the target, **under connectives and quantifiers**, which plain `rewrite` (a
 term-equation rule) cannot reach. A kernel-checked rule with **no accelerant taint**.
 
-```bpa
+```2b4m
 @rewritten |
   R(Q)
   [by iff_rewrite bicond-P-Q target-R-of-P]
@@ -1139,7 +1139,7 @@ discharge the instance's **leading antecedents** (its `->` premises), left to ri
 The proof body is re-checked at this instance (see `KEYWORD: schematic`). Reusing an
 expensive instance? Realize it into a named theorem and cite that instead.
 
-```bpa
+```2b4m
 @applied |
   (not q) -> (not p)
   [using instantiation contrapositive(fun => p, fun => q) have-p-imp-q]
@@ -1162,7 +1162,7 @@ ritual (`@rule | ∀…; P->Q [by cite L]` / `@at-a | P(a)->Q(a) [by forall_elim
 rule]` / `@got | Q(a) [by modus_ponens at-a hyp]`) into a single step with no
 throwaway `-rule`/`-at-args` labels.
 
-```bpa
+```2b4m
 // forall a, d; d>0 -> exists q,r; a = dq+r ∧ 0≤r<d, applied at (a, d):
 @decomposed |
   exists q: Int; exists r: Int; a = add(mul(d, q), r) and (is_nonneg(r) and less_than(r, d))
@@ -1189,7 +1189,7 @@ normal form (and FAILS when the equations must point in conflicting directions),
 chain (`A = B`, `C = B`, `D = C` ⊢ `A = D`). It emits a `reflexivity` +
 `symmetry`/`rewrite` certificate the kernel re-checks (no `--fast` taint).
 
-```bpa
+```2b4m
 // A = B, C = B (backwards), D = C ⊢ A = D, plus a congruence in one:
 @a-equals-d |
   mul(pu(s, k), at(s, k)) = mul(pu(t2, lprev), at(s, k))
@@ -1206,7 +1206,7 @@ guarded-induction shape `forall k; guard(k) -> forall s, t; …` is applied in o
 step — the args `(k, s, t)` and the hyps thread through the interleaved binders and
 antecedents automatically:
 
-```bpa
+```2b4m
 // forall k; is_nonneg(k) -> forall s,t,l; is_nonneg(l) -> … -> k = l
 @k-equals-l |
   k = l
@@ -1220,7 +1220,7 @@ to a sort that models it. It takes the source theorem, rewrites it through the n
 model's mapping (relativizing by the guard if the model is guarded), and checks the
 result equals the goal. See `KEYWORD: model` for the mapping block.
 
-```bpa
+```2b4m
 @conclusion |
   forall a, x, y: Rat; add(a, x) = add(a, y) -> x = y
   [using model(AdditiveGroup) group.cancelLeft]
@@ -1239,8 +1239,8 @@ obligation (named in the error); `--fast` passes it provisionally.
 boundary. `I` names an `import` in scope; `thm` is a theorem (or axiom) that file
 proves; the goal must equal its formula (up to α-equivalence).
 
-```bpa
-import lib <<< "std/lib.bpa"
+```2b4m
+import lib <<< "std/lib.b4m"
 // ...
 @conclusion |
   forall n: Nat; succ(n) = succ(n)
@@ -1315,7 +1315,7 @@ or equation steps) as left-to-right rules. The certificate *is* the
 rewrite chain; there is no accelerated path. Cycling rule sets hit a hard rewrite cap
 instead of hanging.
 
-```bpa
+```2b4m
 @succ-case |
   add(succ(k), ZERO) = succ(k)
   [using simplify addSuccLeft inductive-hypothesis]
@@ -1339,7 +1339,7 @@ declines. It re-associates each side to a canonical form and emits the swap
 chain as kernel steps; different multisets are a located `assoc_commut: sides
 have different summands` error.
 
-```bpa
+```2b4m
 @swapped |
   add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
   [using assoc_commut]
@@ -1357,7 +1357,7 @@ the well-known one:
   convention. The operator is recovered from the commutativity lemma's shape
   (`f(a, b) = f(b, a)` → `f`). Exactly three args, or a located error.
 
-```bpa
+```2b4m
 // a custom operator `join` with its own (non-conventionally-named) AC laws
 @reorder |
   join(join(a, b), join(c, d)) = join(join(a, c), join(b, d))
@@ -1372,7 +1372,7 @@ refs and `assoc_commut` applies them L→R to each side as pre-normalization
 *before* the reorder — so `mul(add(a, b), c) = add(mul(b, c), mul(a, c))`
 certifies in one step (distribute, then AC-sort the resulting sum of products):
 
-```bpa
+```2b4m
 @conclusion |
   forall a, b, c: Nat; mul(add(a, b), c) = add(mul(b, c), mul(a, c))
   [using assoc_commut_quantified mulAddDistribRight]
@@ -1398,7 +1398,7 @@ right-nesting is a canonical form) and compares; no reordering, no
 commutativity. This is what you reach for in **non-commutative** algebra (group
 theory: rearranging `(ab)c` ↔ `a(bc)`), where `assoc_commut` does not apply.
 
-```bpa
+```2b4m
 // a custom group operator `op` with its associativity axiom `opAssoc`
 @rearrange |
   op(op(op(a, b), c), d) = op(a, op(b, op(c, d)))
@@ -1434,7 +1434,7 @@ variables is opaque) can do. It emits a ring-rewrite certificate the kernel
 re-checks; different expansions are a located `polynomial: sides expand
 differently: '<nf(s)>' vs '<nf(t)>'` error.
 
-```bpa
+```2b4m
 @square |
   forall a, b: Nat;
     mul(add(a, b), add(a, b)) = add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))
@@ -1485,7 +1485,7 @@ set equations and function equations (and any extensional theory), selected by t
 lemmas you cite. Under a `forall` prefix, use `extensionality_quantified`.
 (Prior art: Lean's `ext`.)
 
-```bpa
+```2b4m
 @intersection-commutes |
   forall a, b: Set; intersection(a, b) = intersection(b, a)
   [using extensionality_quantified(extensionality) intersectionMember]
@@ -1528,7 +1528,7 @@ propositional atom in an SMT-style combination. The vocabulary is
 recognized by those well-known names in the current scope, and
 certificates additionally use the standard peano lemmas
 (`addZeroRight`, `addIsCommutative`, `addLeftSwap`, `lessThanIntro`,
-`lessThanElim`, ...) when they resolve — import them from `std/peano.bpa`
+`lessThanElim`, ...) when they resolve — import them from `std/peano.b4m`
 to keep uses emitting kernel steps. Certificates cover ground and universally quantified
 linear goals, order goals, constant-witness existentials, hypothesis
 chains, and mixed skeletons; goals whose replay would itself require
@@ -1537,7 +1537,7 @@ values: `arithmetic: false at a := 0, b := 0`; a relation that is only
 undecidable because it hides a nonlinear term (e.g. `mul(a, b) = mul(b, a)`)
 reports `'mul(a, b)' is outside linear arithmetic` rather than a countermodel.
 
-```bpa
+```2b4m
 @conc-in |
   less_than(a, succ(b))
   [using arithmetic have]
@@ -1545,37 +1545,37 @@ reports `'mul(a, b)' is outside linear arithmetic` rather than a countermodel.
 
 > [!WARNING]
 > This may be expanded in the future to support signed integers (exact, as
-> everything in bpa).
+> everything in 2b4m).
 
 The full trust statement for each accelerated tactic — module, verdict semantics,
 certificate coverage — lives in `ACCELERATION.md`.
 
 ## Query commands (read-only inspection)
 
-`bpa query <op>` inspects `.bpa` files (and `.md` literate documents — the
-`bpa` blocks are extracted the same way `check` does) without checking them,
+`2b4m query <op>` inspects `.b4m` files (and `.md` literate documents — the
+`2b4m` blocks are extracted the same way `check` does) without checking them,
 for navigating a proof corpus. grep is the right tool for most searches (label
 audits, "who uses `[using arithmetic]`", counting); these cover the cases grep
 can't do cleanly.
 
 | Command | What it does |
 |---|---|
-| `bpa query outline <file> [theorem]` | the proof *skeleton*: one line per step (bare label), with a header on each block opener (`fix`/`assume`/`unpack`/`case`). No theorem arg = every proof in the file. |
-| `bpa query claims <file> [theorem]` | the same skeleton as `outline`, but each step shows its **claim formula** instead of its label — the propositions the proof establishes, label-free (block openers keep their `fix`/`assume`/`case` headers). Reads as the mathematical content; `outline` reads as the table of contents. Works on proof-carrying schemas too. |
-| `bpa query theorem <file> <name> [--sig]` | the full verbatim source of one declaration — statement + `proof … qed` + leading doc-comment. Follows aliases across files to the real proof; axioms are marked. `--sig` prints **just the statement** (kind + name + formula), wrap-collapsed to one line — handy for reading binder order/arity before a `forall_elim`. |
-| `bpa query whereis <file> <identifier>` | trace an identifier through every alias/import hop to its **origin** — the file-chase as one command. Works for any named decl (theorem/axiom/func/pred/sort/const/define/schema) and for import namespaces. Each hop shows `file:line` + the source line; the origin is marked. |
-| `bpa query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.bpa` under it — corpus discovery) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
+| `2b4m query outline <file> [theorem]` | the proof *skeleton*: one line per step (bare label), with a header on each block opener (`fix`/`assume`/`unpack`/`case`). No theorem arg = every proof in the file. |
+| `2b4m query claims <file> [theorem]` | the same skeleton as `outline`, but each step shows its **claim formula** instead of its label — the propositions the proof establishes, label-free (block openers keep their `fix`/`assume`/`case` headers). Reads as the mathematical content; `outline` reads as the table of contents. Works on proof-carrying schemas too. |
+| `2b4m query theorem <file> <name> [--sig]` | the full verbatim source of one declaration — statement + `proof … qed` + leading doc-comment. Follows aliases across files to the real proof; axioms are marked. `--sig` prints **just the statement** (kind + name + formula), wrap-collapsed to one line — handy for reading binder order/arity before a `forall_elim`. |
+| `2b4m query whereis <file> <identifier>` | trace an identifier through every alias/import hop to its **origin** — the file-chase as one command. Works for any named decl (theorem/axiom/func/pred/sort/const/define/schema) and for import namespaces. Each hop shows `file:line` + the source line; the origin is marked. |
+| `2b4m query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.b4m` under it — corpus discovery) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
 
 ```
-$ bpa query whereis std/peano/parity.bpa addZeroRight
+$ 2b4m query whereis std/peano/parity.b4m addZeroRight
 addZeroRight
-  std/peano/parity.bpa:30:  theorem addZeroRight = peano.addZeroRight
-  std/peano.bpa:79:  theorem addZeroRight: forall n: Nat; add(n, ZERO) = n  [origin]
+  std/peano/parity.b4m:30:  theorem addZeroRight = peano.addZeroRight
+  std/peano.b4m:79:  theorem addZeroRight: forall n: Nat; add(n, ZERO) = n  [origin]
 ```
 
 ## Lint
 
-`bpa lint <file>` reports **convention** violations that `check` deliberately
+`2b4m lint <file>` reports **convention** violations that `check` deliberately
 ignores because they don't affect validity — the point is corpus consistency, so
 mechanisms that match on syntactic shape stay frictionless. Today it enforces one
 rule: **canonical binder order** — a leading `forall` must bind its variables in
@@ -1587,15 +1587,15 @@ which mirror their source's notation. See `CONVENTIONS.md`.
 
 ## Debug (inspect an accelerant's output)
 
-`bpa debug accelerant <file> <selector>` reprints the **synthetic theorem** an
-accelerated step produced — statement + proof, as valid bpa. In strict mode every
+`2b4m debug accelerant <file> <selector>` reprints the **synthetic theorem** an
+accelerated step produced — statement + proof, as valid 2b4m. In strict mode every
 `[by <tactic> …]` wraps its certificate into a kernel-checked, count-suppressed
 theorem (`<tactic>$n`, context-free — it cites nothing from the environment; see
 `ACCELERATION.md`); `debug` materializes and prints it. The selector is a **line
 number** or an enclosing **theorem + step-label** pair.
 
 ```
-$ bpa debug accelerant tests/cases/farkas.bpa belowBothWaysIsAbsurd conclusion
+$ 2b4m debug accelerant tests/cases/farkas.b4m belowBothWaysIsAbsurd conclusion
 theorem arithmetic: forall a: Nat; forall b: Nat; less_than(a, b) -> less_than(b, a) -> less_than(a, a)
 proof
   ...
@@ -1606,13 +1606,13 @@ proof
 qed
 ```
 
-The output round-trips: fed back through `bpa check` it re-verifies from scratch.
+The output round-trips: fed back through `2b4m check` it re-verifies from scratch.
 It loads through the full multi-file loader, so it works on files with imports
 (and on recursive synthetics like a `model` materialization citing another). The
-kernel-steps → bpa-source renderer underneath is also the IR a mechanical
+kernel-steps → 2b4m-source renderer underneath is also the IR a mechanical
 Lean/Isabelle/Rocq export would consume.
 
-`bpa debug taint <file> [theorem]` is the companion trust-entry audit: per proof,
+`2b4m debug taint <file> [theorem]` is the companion trust-entry audit: per proof,
 every step whose rule can fall back to an accelerated verdict (`arithmetic`,
 `tautology`, `polynomial`, `assoc_commut`, `assoc`, `extensionality`, and quantified
 variants), at its `file:line:col`. A syntactic upper bound — a flagged step may

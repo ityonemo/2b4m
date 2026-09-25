@@ -1,0 +1,24 @@
+// NEGATIVE — the guard cannot be established, so the refined-sort elim must be REJECTED
+// (soundness: `forall h: H` may not be eliminated at a witness not shown to be in H).
+// `c` is a plain G and NOTHING establishes `good(c)` — no axiom, no step. So
+// `forall_elim(c) the-law` owes `good(c)`, the auto-discharge finds nothing locally, and it
+// falls back to the plain elim which derives the guarded `good(c) -> f(c) = c` while the
+// step claims bare `f(c) = c` → rejected. (2b4m is explicit: an undischarged guard is a
+// hard error, never silently accepted.)
+sort G
+pred good(x: G)
+sort H = G where good
+const c: G
+func f(x: G) => G
+
+axiom fLaw: forall h: H; f(h) = h
+
+theorem fAtUnprovenConst: f(c) = c
+proof
+  @the-law |
+    forall h: H; f(h) = h
+    [by cite fLaw]
+  @conclusion |
+    f(c) = c
+    [by forall_elim(c) the-law]
+qed

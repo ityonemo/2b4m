@@ -1,6 +1,6 @@
 //! Integration gates — the AATA literate transliterations (aata/*.md).
 //!
-//! Each gate spawns the built `bpa` binary and asserts its stdout / stderr /
+//! Each gate spawns the built `2b4m` binary and asserts its stdout / stderr /
 //! exit code; wired into the `test` step via `test_step.dependOn`.
 
 const std = @import("std");
@@ -24,7 +24,7 @@ pub fn addTests(
 
     // AATA group theory: the literate translation of Groups basic-properties (5
     // propositions) + 5 in-scope exercises. The 10 theorems now ALIAS the library
-    // proofs in std/group.bpa (the .md is book-notation presentation; the checked
+    // proofs in std/group.b4m (the .md is book-notation presentation; the checked
     // derivations live in std) — verified (proven; no accelerated tactic).
     ctx.okSilent(&.{ "check", "aata/3.2-groups.md" });
     // §3.2 exercises: migrated out of the main text. Proves Ex 25 (conjugation
@@ -35,7 +35,7 @@ pub fn addTests(
 
     // AATA §3.3 Subgroups: the literate transliteration of the subgroup definition,
     // the one-step subgroup test (both directions), and the intersection-of-
-    // subgroups exercise. Aliases std/subgroup.bpa to the book's H ≤ G notation;
+    // subgroups exercise. Aliases std/subgroup.b4m to the book's H ≤ G notation;
     // concrete example subgroups (ℚ*, SL₂, ℤ₄, ℤ₂×ℤ₂) are summarized, not formalized
     // (Tier-3 carriers). Proven; no accelerated tactic.
     ctx.okSilent(&.{ "check", "aata/3.3-subgroups.md" });
@@ -54,7 +54,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups.md" });
     ctx.okSilent(&.{ "check", "aata/4.1-cyclic-subgroups-exercises.md" });
     // §4.2 "The Multiplicative Group of ℂ": ℂ arithmetic + the modulus identities
-    // (real proofs via std/complex/modulus.bpa); polar/DeMoivre/roots-of-unity deferred
+    // (real proofs via std/complex/modulus.b4m); polar/DeMoivre/roots-of-unity deferred
     // as prose on the trigonometry gap. Exercises: Ex 19 a/b/f proved; rest skip/defer.
     ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group.md" });
     ctx.okSilent(&.{ "check", "aata/4.2-complex-multiplicative-group-exercises.md" });
@@ -108,7 +108,7 @@ pub fn addTests(
     // iff x~y, any two are equal-or-disjoint, AND the classes FORM A PARTITION —
     // covers the universe (⋃[x] = universe) and are pairwise-disjoint, discharging
     // isPartition. The partition packaging (a set of sets) is now stateable via
-    // std/collection.bpa (a Collection = a set of Sets, modeling std/set.bpa one
+    // std/collection.b4m (a Collection = a set of Sets, modeling std/set.b4m one
     // level up). Fully proven, no holes.
     ctx.okSilent(&.{ "check", "aata/1.2.3-partitions.md" });
 
@@ -116,7 +116,7 @@ pub fn addTests(
     // the base case AND the ∀n≥0 3|(4ⁿ−1) nonneg-induction (its inductive step
     // splits 4^(k+1)−1 = 4(4ᵏ−1)+3 and uses dividesMul/dividesAdd), plus the
     // Second Principle (strong induction) and the Principle of Well-Ordering,
-    // both aliased from std/integer/wellordering.bpa (proved there from ordinary
+    // both aliased from std/integer/wellordering.b4m (proved there from ordinary
     // induction). No hole; the file checks WITHOUT --draft.
     ctx.okSilent(&.{ "check", "aata/2.1-induction.md" });
     // §2.1 exercises: Judson's Ch2 induction exercises segregated out. Ex 5
@@ -125,7 +125,7 @@ pub fn addTests(
     // deferred (Σ / factorial / reals / cardinality). std used liberally.
     ctx.okSilent(&.{ "check", "aata/2.1-induction-exercises.md" });
     // §2.2 The Division Algorithm: Ch1-style — the proofs now live in
-    // std/integer/divides.bpa; this file aliases them and narrates. Existence
+    // std/integer/divides.b4m; this file aliases them and narrates. Existence
     // over all of ℤ + uniqueness.
     ctx.okSilent(&.{ "check", "aata/2.2-division-algorithm.md" });
     // §2.2 exercises: Ex 16/18 (Bézout ⟹ coprime, all three coprimality claims),
@@ -139,7 +139,7 @@ pub fn addTests(
     // §2.3 exercises: Ex 20 (every perfect square is 4k or 4k+1, via the division
     // algorithm at divisor 2 + the odd-square identity). Ex 27 forwarded (Euclid's
     // Lemma, in the main text / std/primes). Deferred: Fibonacci, FTA perfect
-    // squares, Mersenne, Dirichlet forms, √2 (see examples/sqrt2.bpa). std used
+    // squares, Mersenne, Dirichlet forms, √2 (see examples/sqrt2.b4m). std used
     // liberally.
     ctx.okSilent(&.{ "check", "aata/2.3-primes-exercises.md" });
 }

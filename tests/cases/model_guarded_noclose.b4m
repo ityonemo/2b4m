@@ -1,0 +1,32 @@
+// GUARDED model, CLEAN-ERROR case: the transferred proof instantiates the
+// guarded axiom at a term (WOT) for which no fact `good(WOT)` is in scope, so
+// materialization fails cleanly with "cannot prove 'good(WOT)' — supply an axiom
+// or theorem establishing it" — the graceful boundary (a required obligation the
+// author must discharge, by axiom or theorem).
+import source <<< "model_guarded_source.b4m"
+
+sort Thing
+const ZED: Thing
+const WOT: Thing
+func combine(a: Thing, b: Thing) => Thing
+pred good(x: Thing)
+
+axiom combineZedLeftGuarded: forall a: Thing; good(a) -> combine(ZED, a) = a
+// NOTE: no `good(WOT)` fact — so discharging good(WOT) must fail cleanly.
+
+sort ThingGood = Thing where good
+
+model ThingModel {
+  source.Sort: ThingGood
+  source.UNIT: ZED
+  source.op: combine
+  source.opUnitLeft <- combineZedLeftGuarded
+  }
+
+// opUnitAtUnit instantiates at UNIT→ZED, needing good(ZED) — absent here.
+theorem combineZedAtZed: combine(ZED, ZED) = ZED
+proof
+  @conclusion |
+    combine(ZED, ZED) = ZED
+    [using model(ThingModel) source.opUnitAtUnit]
+qed

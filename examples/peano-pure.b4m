@@ -1,0 +1,257 @@
+// Peano arithmetic, proved entirely by hand: every induction case is spelled
+// out in primitive rules. The automation-assisted version of this same
+// theory lives in peano.b4m — diff them to see what the tactics buy.
+//
+// The induction schema is a stored FORM (comptime semantics): it is not
+// checked until instantiated with a concrete, written-out predicate, at which
+// point it is monomorphized into plain first-order logic.
+
+// -- signature --------------------------------------------------------------
+
+sort Nat
+const ZERO: Nat
+func succ(n: Nat) => Nat
+func add(a: Nat, b: Nat) => Nat
+
+// -- axioms: addition by recursion on the first argument --------------------
+
+axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
+axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory addZeroRight
+intheory addSuccRight
+intheory addIsCommutative
+
+// -- the induction schema (an axiom family: parameterized, no proof) --------
+
+axiom induction(prop: Nat -> Prop):
+  prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
+
+// -- theorems ---------------------------------------------------------------
+
+// Strategy: induction on n with prop(k) := add(k, ZERO) = k.
+// (addZeroLeft reduces ZERO on the LEFT; this is the mirror-image fact.)
+theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
+proof
+  // base case: addZeroLeft specialized at b := ZERO
+  @base-case |
+    add(ZERO, ZERO) = ZERO
+    [using specialize addZeroLeft(ZERO)]
+
+  // inductive step: unfold add on succ(k), then rewrite with the IH
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume add(k, ZERO) = k {
+          @add-succ-left-at-k |
+            forall b: Nat; add(succ(k), b) = succ(add(k, b))
+            [using specialize addSuccLeft(k)]
+          @unfolded |
+            add(succ(k), ZERO) = succ(add(k, ZERO))
+            [by forall_elim(ZERO) add-succ-left-at-k]
+          @inductive-hypothesis |
+            add(k, ZERO) = k
+            [by hypothesis given-inductive-hypothesis]
+          @succ-case |
+            add(succ(k), ZERO) = succ(k)
+            [by rewrite inductive-hypothesis unfolded]
+        }
+      @induction-step-at-k |
+        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
+qed
+
+// Strategy: fix b, then induct on the left argument with
+// prop(k) := add(k, succ(b)) = succ(add(k, b)).
+// Induction binds its variable innermost, so the proof discharges forall b, a
+// and then re-quantifies into the canonical forall a, b at the end.
+theorem addSuccRight: forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+proof
+  @generalize-b |
+    fix b: Nat {
+      // base case: reduce both sides with addZeroLeft, then chain via symmetry
+      @add-zero-left |
+        forall c: Nat; add(ZERO, c) = c
+        [by cite addZeroLeft]
+      @at-succ-b |
+        add(ZERO, succ(b)) = succ(b)
+        [by forall_elim(succ(b)) add-zero-left]
+      @at-b |
+        add(ZERO, b) = b
+        [by forall_elim(b) add-zero-left]
+      @at-b-refl |
+        add(ZERO, b) = add(ZERO, b)
+        [by reflexivity]
+      @at-b-sym |
+        b = add(ZERO, b)
+        [by rewrite at-b at-b-refl]
+      @base-case |
+        add(ZERO, succ(b)) = succ(add(ZERO, b))
+        [by rewrite at-b-sym at-succ-b]
+
+      // inductive step: push succ through the left with addSuccLeft, rewrite the IH in,
+      // then fold the right-hand side back up
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume add(k, succ(b)) = succ(add(k, b)) {
+              @add-succ-left-at-k |
+                forall c: Nat; add(succ(k), c) = succ(add(k, c))
+                [using specialize addSuccLeft(k)]
+              @unfolded |
+                add(succ(k), succ(b)) = succ(add(k, succ(b)))
+                [by forall_elim(succ(b)) add-succ-left-at-k]
+              @inductive-hypothesis |
+                add(k, succ(b)) = succ(add(k, b))
+                [by hypothesis given-inductive-hypothesis]
+              @rewritten |
+                add(succ(k), succ(b)) = succ(succ(add(k, b)))
+                [by rewrite inductive-hypothesis unfolded]
+              @fold-target |
+                add(succ(k), b) = succ(add(k, b))
+                [by forall_elim(b) add-succ-left-at-k]
+              @fold-refl |
+                add(succ(k), b) = add(succ(k), b)
+                [by reflexivity]
+              @fold-sym |
+                succ(add(k, b)) = add(succ(k), b)
+                [by rewrite fold-target fold-refl]
+              @succ-case |
+                add(succ(k), succ(b)) = succ(add(succ(k), b))
+                [by rewrite fold-sym rewritten]
+            }
+          @induction-step-at-k |
+            add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+        [by forall_intro induction-step]
+
+      @discharge-a |
+        forall a: Nat; add(a, succ(b)) = succ(add(a, b))
+        [using instantiation induction((fun k: Nat => add(k, succ(b)) = succ(add(k, b)))) base-case induction-step-for-all-k]
+    }
+  @add-succ-right-swapped |
+    forall b, a: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro generalize-b]
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @add-succ-right-at-a-b |
+            add(a, succ(b)) = succ(add(a, b))
+            [by forall_elim(b, a) add-succ-right-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; add(a, succ(b)) = succ(add(a, b))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: induction on b with prop(k) := forall a; add(a, k) = add(k, a);
+// each case handles all a at once (an inner fix).
+theorem addIsCommutative: forall a, b: Nat; add(a, b) = add(b, a)
+proof
+  // base case: add(a, ZERO) = a = add(ZERO, a), chaining the two ZERO facts
+  @base-case-proof |
+    fix a: Nat {
+      @right-zero |
+        add(a, ZERO) = a
+        [using specialize addZeroRight(a)]
+      @left-zero |
+        add(ZERO, a) = a
+        [using specialize addZeroLeft(a)]
+      @left-zero-refl |
+        add(ZERO, a) = add(ZERO, a)
+        [by reflexivity]
+      @left-zero-sym |
+        a = add(ZERO, a)
+        [by rewrite left-zero left-zero-refl]
+      @chained |
+        add(a, ZERO) = add(ZERO, a)
+        [by rewrite left-zero-sym right-zero]
+    }
+  @base-case |
+    forall a: Nat; add(a, ZERO) = add(ZERO, a)
+    [by forall_intro base-case-proof]
+
+  // inductive step: unfold via addSuccRight, swap with the IH, fold via addSuccLeft
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; add(a, k) = add(k, a) {
+          @pointwise |
+            fix a2: Nat {
+              @left-unfold |
+                add(a2, succ(k)) = succ(add(a2, k))
+                [using specialize addSuccRight(a2, k)]
+              @inductive-hypothesis |
+                forall a: Nat; add(a, k) = add(k, a)
+                [by hypothesis given-inductive-hypothesis]
+              @inductive-hypothesis-at-a2 |
+                add(a2, k) = add(k, a2)
+                [by forall_elim(a2) inductive-hypothesis]
+              @swapped |
+                add(a2, succ(k)) = succ(add(k, a2))
+                [by rewrite inductive-hypothesis-at-a2 left-unfold]
+              @add-succ-left-at-k |
+                forall b: Nat; add(succ(k), b) = succ(add(k, b))
+                [using specialize addSuccLeft(k)]
+              @right-unfold |
+                add(succ(k), a2) = succ(add(k, a2))
+                [by forall_elim(a2) add-succ-left-at-k]
+              @right-refl |
+                add(succ(k), a2) = add(succ(k), a2)
+                [by reflexivity]
+              @right-sym |
+                succ(add(k, a2)) = add(succ(k), a2)
+                [by rewrite right-unfold right-refl]
+              @succ-case |
+                add(a2, succ(k)) = add(succ(k), a2)
+                [by rewrite right-sym swapped]
+            }
+          @discharge-a |
+            forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+            [by forall_intro pointwise]
+        }
+      @induction-step-at-k |
+        (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+    [by forall_intro induction-step]
+
+  @add-is-commutative-swapped |
+    forall b, a: Nat; add(a, b) = add(b, a)
+    [using instantiation induction((fun k: Nat => forall a: Nat; add(a, k) = add(k, a))) base-case induction-step-for-all-k]
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @add-is-commutative-at-a-b |
+            add(a, b) = add(b, a)
+            [by forall_elim(b, a) add-is-commutative-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; add(a, b) = add(b, a)
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, b) = add(b, a)
+    [by forall_intro reorder-a]
+qed

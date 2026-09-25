@@ -127,7 +127,7 @@ parsed: Segmented(ast.File) = .empty,
 ast_index: std.AutoHashMapUnmanaged(DeclKey, *const ast.Decl) = .empty,
 /// SYNTHETIC decl by STEP: `(FileId, the citing step's rule-token offset) -> the registry key
 /// of the accelerant-generated decl that step produced` (filled by `Prove.demandUsing` beside
-/// `registerDecl`, keep-first). The debug reprint (`bpa debug accelerant`) locates a step's
+/// `registerDecl`, keep-first). The debug reprint (`2b4m debug accelerant`) locates a step's
 /// synthetic through this; the engine itself resolves synthetics by NAME via `ast_index`.
 synthetic_at: std.AutoHashMapUnmanaged(SyntheticKey, DeclKey) = .empty,
 import_maps: Segmented(ImportMap) = .empty,
@@ -264,7 +264,7 @@ pub fn discover(self: *Context, resolved_path: []const u8, origin: ?Origin) !Fil
 
     const file_id: FileId = @enumFromInt(self.files.len);
     // the SOURCE is not read here: the file's ParseTask reads it (and extracts a literate
-    // document's bpa blocks) when the file is actually parsed. Until then it is empty.
+    // document's 2b4m blocks) when the file is actually parsed. Until then it is empty.
     _ = try self.files.append(self.arena, .{ .path = resolved_path, .source = "" });
     _ = try self.origins.append(self.arena, origin);
     _ = try self.parsed.append(self.arena, .{ .decls = &.{} });
@@ -379,7 +379,7 @@ pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Dec
 /// another thread can see `.parsed` while `declOf` still misses. In `Expand.resolveDeclDefine`
 /// a miss means "not a define", the guard is left opaque, and a FetchTask later hits the
 /// define-misuse arm: `'isBig' is a define — it expands where it is used` on
-/// `define_guard_nested.bpa`, 2 runs in 20 at `-j8` and never under `--chaos` (which
+/// `define_guard_nested.b4m`, 2 runs in 20 at `-j8` and never under `--chaos` (which
 /// reorders the schedule without threads — this needs two).
 pub fn markParsed(self: *Context, fid: FileId) void {
     self.files_lock.lock();
@@ -586,7 +586,7 @@ pub fn loadRoots(self: *Context, roots: []const Root) !FileId {
 /// would add an error to every failing file. `Engine.Wedged.in_cycle` is exactly that split.
 ///
 /// Why this must exist: without it a citation cycle is SILENT — the theorems are simply never
-/// proved, the run looks quiescent, and `bpa check` prints `OK: 0 theorems proven` and exits
+/// proved, the run looks quiescent, and `2b4m check` prints `OK: 0 theorems proven` and exits
 /// 0. Silence must never imply verification.
 fn reportWedge(self: *Context, eng: *Engine) !void {
     const stuck = try eng.wedged(self.arena);

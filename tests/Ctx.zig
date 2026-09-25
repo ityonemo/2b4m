@@ -1,12 +1,12 @@
 //! Shared context + declarative helpers for the integration gates.
 //!
-//! Each gate spawns the built `bpa` binary with some arguments and asserts its
+//! Each gate spawns the built `2b4m` binary with some arguments and asserts its
 //! stdout / stderr / exit code against goldens. The raw `b.addRunArtifact` form
 //! is 6–8 lines of boilerplate per gate; these helpers collapse a gate to a
 //! single call:
 //!
-//!   ctx.okSilent(&.{ "check", "std/peano.bpa" });               // checks OK, exit 0
-//!   ctx.fail(&.{ "check", "tests/cases/mp_bad.bpa" }, "…:16:22: error: …\n");
+//!   ctx.okSilent(&.{ "check", "std/peano.b4m" });               // checks OK, exit 0
+//!   ctx.fail(&.{ "check", "tests/cases/mp_bad.b4m" }, "…:16:22: error: …\n");
 //!
 //! Prefer `okSilent` for "this file checks" gates — do NOT pin declaration/theorem
 //! COUNTS in the golden (they churn on every edit and are noise, not a regression
@@ -37,7 +37,7 @@ pub fn init(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Build.S
     return .{ .b = b, .exe = exe, .test_step = test_step };
 }
 
-/// A run of the built `bpa` with `args`, pinned to the repo root and always
+/// A run of the built `2b4m` with `args`, pinned to the repo root and always
 /// re-executed (paths are not tracked as inputs), wired into the test step.
 pub fn run(self: Ctx, args: []const []const u8) *Run {
     const r = self.b.addRunArtifact(self.exe);

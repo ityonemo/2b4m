@@ -79,12 +79,12 @@ test "render: an offset past its file's end is CLAMPED, not a panic" {
     const arena = arena_state.allocator();
     var sink: Sink = .init(arena);
     // an offset from a LONGER file, recorded against a short one (a demand-engine mispairing).
-    const files = [_]FileSrc{.{ .path = "/t/short.bpa", .source = "sort Nat\n" }};
+    const files = [_]FileSrc{.{ .path = "/t/short.b4m", .source = "sort Nat\n" }};
     try sink.add(0, 9_999, "stale offset", .{});
     var out: std.Io.Writer.Allocating = .init(arena);
     try sink.render(&out.writer, &files);
     // renders (no crash) and names the right file.
-    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/short.bpa") != null);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/short.b4m") != null);
     try testing.expect(std.mem.indexOf(u8, out.written(), "stale offset") != null);
 }
 
@@ -93,9 +93,9 @@ test "render: an in-range offset still reports its true line and column" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var sink: Sink = .init(arena);
-    const files = [_]FileSrc{.{ .path = "/t/a.bpa", .source = "sort Nat\nconst Z: Nat\n" }};
+    const files = [_]FileSrc{.{ .path = "/t/a.b4m", .source = "sort Nat\nconst Z: Nat\n" }};
     try sink.add(0, 9, "second line", .{}); // the 'c' of `const`
     var out: std.Io.Writer.Allocating = .init(arena);
     try sink.render(&out.writer, &files);
-    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/a.bpa:2:1:") != null);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "/t/a.b4m:2:1:") != null);
 }

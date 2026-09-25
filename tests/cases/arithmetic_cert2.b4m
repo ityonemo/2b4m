@@ -1,0 +1,92 @@
+// C2b: universally-quantified linear goals replay as elaborated certificates —
+// normalization to sorted sums (addLeftSwap/addIsCommutative handle the
+// residual permutation) and a synthesized lessThanIntro witness for order
+// goals. No accelerated tactic, so --pure is satisfied. The vocabulary arrives by
+// alias from std/peano.
+import peano <<< "std/peano.b4m"
+import ordering <<< "std/peano/order.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+pred less_than = ordering.less_than
+pred nonneg = peano.nonneg
+axiom addZeroLeft = peano.addZeroLeft
+axiom addSuccLeft = peano.addSuccLeft
+axiom mulZeroLeft = peano.mulZeroLeft
+axiom mulSuccLeft = peano.mulSuccLeft
+axiom oneIsSuccZero = peano.oneIsSuccZero
+axiom lessThanIntro = ordering.lessThanIntro
+axiom lessThanElim = ordering.lessThanElim
+theorem addZeroRight = peano.addZeroRight
+theorem addSuccRight = peano.addSuccRight
+theorem mulZeroRight = peano.mulZeroRight
+theorem mulSuccRight = peano.mulSuccRight
+theorem addIsAssociative = peano.addIsAssociative
+theorem addIsCommutative = peano.addIsCommutative
+theorem addLeftSwap = peano.addLeftSwap
+
+theorem sumRearranges: forall a, b, c: Nat; add(add(a, b), c) = add(b, add(c, a))
+proof
+  @conclusion |
+    forall a, b, c: Nat; add(add(a, b), c) = add(b, add(c, a))
+    [using arithmetic]
+qed
+
+theorem boundGrows: forall a, b: Nat; less_than(a, add(a, succ(b)))
+proof
+  @conclusion |
+    forall a, b: Nat; less_than(a, add(a, succ(b)))
+    [using arithmetic]
+qed
+
+theorem groundOrder: less_than(succ(ZERO), succ(succ(succ(ZERO))))
+proof
+  @conclusion |
+    less_than(succ(ZERO), succ(succ(succ(ZERO))))
+    [using arithmetic]
+qed
+
+theorem doubling: forall n: Nat; mul(succ(succ(ZERO)), n) = add(n, n)
+proof
+  @conclusion |
+    forall n: Nat; mul(succ(succ(ZERO)), n) = add(n, n)
+    [using arithmetic]
+qed
+
+theorem twoIsEven: exists y: Nat; add(y, y) = succ(succ(ZERO))
+proof
+  @conclusion |
+    exists y: Nat; add(y, y) = succ(succ(ZERO))
+    [using arithmetic]
+qed
+
+theorem stepUpPure: forall a, b: Nat; less_than(a, b) -> less_than(a, succ(b))
+proof
+  @gen-a |
+    fix a: Nat {
+      @gen-b |
+        fix b: Nat {
+          @hyp |
+            assume less_than(a, b) {
+              @have |
+                less_than(a, b)
+                [by hypothesis hyp]
+              @conc-in |
+                less_than(a, succ(b))
+                [using arithmetic have]
+            }
+          @imp |
+            less_than(a, b) -> less_than(a, succ(b))
+            [by implies_intro hyp]
+        }
+      @all-b |
+        forall b: Nat; less_than(a, b) -> less_than(a, succ(b))
+        [by forall_intro gen-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_than(a, b) -> less_than(a, succ(b))
+    [by forall_intro gen-a]
+qed

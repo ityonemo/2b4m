@@ -330,7 +330,7 @@ const Expander = struct {
     /// another worker finished the parse/fetch before this binder was rebuilt. The pass is
     /// being redone from the AST regardless (`finish` suspends on the blocker), so leave the
     /// token as written and let the re-run desugar it. Single-threaded, a resolution cannot
-    /// change mid-pass and this arm is unreachable — `define_guard_nested.bpa` at `-j8` is
+    /// change mid-pass and this arm is unreachable — `define_guard_nested.b4m` at `-j8` is
     /// the repro (was ~1 in 15 runs).
     fn guardTok(self: *Expander, env: *const Env, tok: Token) Allocator.Error!Token {
         if (tok.tag != .symbol) switch (try self.resolveDefine(env, tok)) {

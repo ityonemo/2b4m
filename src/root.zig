@@ -1,4 +1,4 @@
-//! bpa core library. All proof-checking logic is exposed from here;
+//! 2b4m core library. All proof-checking logic is exposed from here;
 //! src/main.zig is a thin CLI wrapper.
 //!
 //! POST-FLIP (Step 8 W5): checking runs on the DEMAND ENGINE — parse tasks discover the
@@ -181,7 +181,7 @@ pub fn checkSources(arena: std.mem.Allocator, files: []const MemFile, library: b
     return summarize(arena, loaded, roots, true, library);
 }
 
-/// Check a .bpa source (single file; imports unresolvable). All allocations go into
+/// Check a .b4m source (single file; imports unresolvable). All allocations go into
 /// `arena`; diagnostics are collected in the result's sink (rendered by the caller).
 pub fn checkSource(arena: std.mem.Allocator, source: []const u8) !CheckResult {
     return checkSourceTheorem(arena, source, null);
@@ -193,9 +193,9 @@ pub fn checkSourceTheorem(arena: std.mem.Allocator, source: []const u8, theorem:
     var threaded: std.Io.Threaded = .init(arena, .{});
     const io = threaded.io();
     const mem = try arena.create(MemFiles);
-    mem.* = .{ .files = try arena.dupe(MemFile, &.{.{ .path = "/check/source.bpa", .source = source }}) };
+    mem.* = .{ .files = try arena.dupe(MemFile, &.{.{ .path = "/check/source.b4m", .source = source }}) };
     const context = try newContext(io, arena, @ptrCast(mem), &readMem, .{}, "");
-    _ = try context.loadRoots(&.{.{ .path = "/check/source.bpa", .theorem = theorem }});
+    _ = try context.loadRoots(&.{.{ .path = "/check/source.b4m", .theorem = theorem }});
     try noteSchemaRoot(context, theorem);
     const counts = try countRoot(context, theorem);
     return .{
@@ -567,7 +567,7 @@ fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const Project
     return out.items;
 }
 
-/// `bpa check`'s non-flag positionals: `[trust words…] <file | dir> [theorem]`. The trust words
+/// `2b4m check`'s non-flag positionals: `[trust words…] <file | dir> [theorem]`. The trust words
 /// are a closed vocabulary (`Verify.Word.parse`), so the path is the FIRST positional that is
 /// not one of them — a file or a directory, whatever it is named; at most one positional may
 /// follow it — the theorem to check alone. Null = the shape is wrong (usage).
@@ -583,17 +583,17 @@ pub fn splitCheckArgs(positionals: []const []const u8) ?CheckArgs {
 }
 
 test "splitCheckArgs: words before the file, an optional theorem after it" {
-    const one = splitCheckArgs(&.{"a.bpa"}).?;
-    try std.testing.expectEqualStrings("a.bpa", one.path);
+    const one = splitCheckArgs(&.{"a.b4m"}).?;
+    try std.testing.expectEqualStrings("a.b4m", one.path);
     try std.testing.expectEqual(@as(usize, 0), one.words.len);
     try std.testing.expect(one.theorem == null);
-    const thm = splitCheckArgs(&.{ "a.bpa", "foo" }).?;
+    const thm = splitCheckArgs(&.{ "a.b4m", "foo" }).?;
     try std.testing.expectEqualStrings("foo", thm.theorem.?);
     const words = splitCheckArgs(&.{ "tautology", "model", "lit.md", "foo" }).?;
     try std.testing.expectEqual(@as(usize, 2), words.words.len);
     try std.testing.expectEqualStrings("lit.md", words.path);
     try std.testing.expectEqualStrings("foo", words.theorem.?);
-    try std.testing.expect(splitCheckArgs(&.{ "a.bpa", "foo", "bar" }) == null);
+    try std.testing.expect(splitCheckArgs(&.{ "a.b4m", "foo", "bar" }) == null);
     try std.testing.expect(splitCheckArgs(&.{}) == null);
     // a DIRECTORY has no suffix: it is the first non-word positional, and may take no theorem
     // at the split level (the CLI rejects that pairing with its own message).
@@ -661,8 +661,8 @@ test "a single-theorem check: a missing name is the racked task's diagnostic; an
 test "splitCheckArgs: --axioms is a flag, not a positional" {
     // the flag is stripped by main's loop before splitCheckArgs sees the positionals, so
     // the file + theorem shape is unaffected by it.
-    const a = splitCheckArgs(&.{ "f.bpa", "thm" }).?;
-    try std.testing.expectEqualStrings("f.bpa", a.path);
+    const a = splitCheckArgs(&.{ "f.b4m", "thm" }).?;
+    try std.testing.expectEqualStrings("f.b4m", a.path);
     try std.testing.expectEqualStrings("thm", a.theorem.?);
 }
 
@@ -671,7 +671,7 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const files = [_]MemFile{
-        .{ .path = "/lib/base.bpa", .source =
+        .{ .path = "/lib/base.b4m", .source =
         \\sort Nat
         \\const ZERO: Nat
         \\pred even(n: Nat)
@@ -686,8 +686,8 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
         \\qed
         \\
         },
-        .{ .path = "/lib/client.bpa", .source =
-        \\import base <<< "base.bpa"
+        .{ .path = "/lib/client.b4m", .source =
+        \\import base <<< "base.b4m"
         \\sort Nat = base.Nat
         \\const ZERO = base.ZERO
         \\pred even = base.even
@@ -723,7 +723,7 @@ test "library: a fact a model names as a discharger is USED, not unused" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const files = [_]MemFile{
-        .{ .path = "/lib/theory.bpa", .source =
+        .{ .path = "/lib/theory.b4m", .source =
         \\sort Elem
         \\const UNIT: Elem
         \\func op(a: Elem, b: Elem) => Elem
@@ -745,8 +745,8 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\qed
         \\
         },
-        .{ .path = "/lib/concrete.bpa", .source =
-        \\import theory <<< "theory.bpa"
+        .{ .path = "/lib/concrete.b4m", .source =
+        \\import theory <<< "theory.b4m"
         \\sort Thing
         \\const ZED: Thing
         \\func combine(a: Thing, b: Thing) => Thing

@@ -1,10 +1,10 @@
-//! `bpa debug taint <file> [theorem]` — the acceleration (trust-entry) audit of
+//! `2b4m debug taint <file> [theorem]` — the acceleration (trust-entry) audit of
 //! a proof: where does trust enter, if anywhere?
 //!
 //! Walks the parsed AST (never elaborates) and reports every step whose
 //! justification rule is an **accelerated tactic** — one that, when it cannot
 //! emit a certificate, falls back to a decision-procedure verdict the kernel
-//! does not re-derive (and that `bpa check` rejects by default, admitting only
+//! does not re-derive (and that `2b4m check` rejects by default, admitting only
 //! under `--fast`). Those rules are `arithmetic`, `tautology`, `polynomial`,
 //! `assoc_commut`, and `assoc` (the ACCELERATION.md registry) plus the
 //! quantified variants `assoc_commut_quantified` / `assoc_quantified`, which run
@@ -16,7 +16,7 @@
 //! `file:line` of every step that *could* be accelerated. It is a syntactic
 //! upper bound — a step may still certify and stay kernel-checked — so a clean
 //! report (no accelerated tactics) guarantees every step is kernel-checked, while a flagged
-//! step is "check this one under a real `bpa check`". Pure over the AST, like
+//! step is "check this one under a real `2b4m check`". Pure over the AST, like
 //! `outline`/`uses`: no elaboration.
 //!
 //! With a theorem argument, audits that one proof; without, audits EVERY

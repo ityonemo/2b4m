@@ -11,7 +11,7 @@
 //! stop flag) baked in, but runs SINGLE-THREADED for now — so adding multi-core
 //! work-stealing later is a wiring change, not a rewrite.
 //!
-//! CONCRETE, not generic. The engine owns exactly the task shapes bpa's checker needs
+//! CONCRETE, not generic. The engine owns exactly the task shapes 2b4m's checker needs
 //! (today: parse; later: prove). A `Task` is a payload plus a `run` function closing
 //! over the `Context` context. The engine pulls a task off the run queue, runs it (the
 //! task may `rack` more tasks via the handle it is given), and repeats until QUIESCENT

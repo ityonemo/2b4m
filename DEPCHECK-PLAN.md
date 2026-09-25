@@ -1,11 +1,11 @@
-# Dependency-narrowed checking (`bpa check`)
+# Dependency-narrowed checking (`2b4m check`)
 
 ## New default semantics (user-decided)
 
-`bpa check <file> [theorem]` verifies **only the theorems reachable from a set of
+`2b4m check <file> [theorem]` verifies **only the theorems reachable from a set of
 roots**, following citation edges (and alias / qualified-name / import hops to
 their origin declarations). This is the DEFAULT — it changes what a bare
-`bpa check A` guarantees.
+`2b4m check A` guarantees.
 
 - **Roots, no theorem argument:** every theorem *declared with its own proof* in
   the queried file (`theorem t: … proof … qed`). NOT pure aliases
@@ -33,9 +33,9 @@ re-checked per instance as today) — reached schemas are in the closure.
     file B:  thm t1 (correct),  thm t2 (INCORRECT)
     file A:  t1 = B.t1;  t2 = B.t2;  thm t3 uses t1     // t2 unused
 
-`bpa check A` PASSES: `t2` is not reachable from A's roots (t3 → t1), so
+`2b4m check A` PASSES: `t2` is not reachable from A's roots (t3 → t1), so
 `B.t2`'s bad proof is never kernel-verified. A vouches for the theory it
-*builds*, not for everything it can see. To vouch for `t2`, `bpa check B`.
+*builds*, not for everything it can see. To vouch for `t2`, `2b4m check B`.
 
 This is a deliberate weakening of the old "verify everything reachable in the
 whole import graph" default, chosen for laziness/speed. It must be understood:
@@ -44,12 +44,12 @@ merely re-exports or ignores it.
 
 ### `--total` — the exhaustive escape hatch (reserved)
 
-`bpa check --total <file>` verifies **everything**: every theorem declared in the
+`2b4m check --total <file>` verifies **everything**: every theorem declared in the
 queried file AND every theorem in every (transitive) dependency file, whether or
 not it is reachable from the file's roots. This is the OLD default semantics,
 kept as an explicit opt-in. Use it to vouch for a whole file + its imports
 (e.g. CI over a library), where narrowing's "unused ⇒ unchecked" is exactly what
-you DON'T want. In the scenario above, `bpa check --total A` FAILS on `B.t2`.
+you DON'T want. In the scenario above, `2b4m check --total A` FAILS on `B.t2`.
 
 So the check spectrum is:
 - `check A t3`   — narrowest: one theorem's closure.

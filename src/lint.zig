@@ -1,4 +1,4 @@
-//! `bpa lint <file>` — convention checks over the parsed AST (never elaborates,
+//! `2b4m lint <file>` — convention checks over the parsed AST (never elaborates,
 //! never checks soundness). Reports style/consistency violations that `check`
 //! deliberately ignores because they don't affect validity; the point is to keep
 //! the corpus internally consistent so mechanisms that rely on SYNTACTIC shape
@@ -48,7 +48,7 @@ pub const Result = struct {
 };
 
 /// `is_literate` = the input came from a `.md` transliteration; naming/casing/
-/// label rules (which mirror the source's notation, not bpa's) are suspended for
+/// label rules (which mirror the source's notation, not 2b4m's) are suspended for
 /// it. Rule 1 (binder order) is source-agnostic and always applies.
 pub fn lint(arena: Allocator, path: []const u8, source: []const u8, is_literate: bool) Allocator.Error!Result {
     const sink = try arena.create(diagnostics.Sink);

@@ -1,5 +1,5 @@
-//! `bpa debug accelerant <file> <line>` (or `<file> <theorem> <step-label>`): reprint, as
-//! RE-PARSEABLE BPA SOURCE, the synthetic theorem an accelerant produced for a step.
+//! `2b4m debug accelerant <file> <line>` (or `<file> <theorem> <step-label>`): reprint, as
+//! RE-PARSEABLE 2B4M SOURCE, the synthetic theorem an accelerant produced for a step.
 //!
 //! Every `[using <tactic> …]` step is sugar for a GENERATED synthetic schema that the ordinary
 //! demand pipeline proves and the kernel re-checks (`Prove.demandUsing`). That decl is plain
@@ -115,9 +115,9 @@ fn displayName(name: []const u8) []const u8 {
     return name[0..end];
 }
 
-// --- the AST → bpa renderer --------------------------------------------------------------
+// --- the AST → 2b4m renderer --------------------------------------------------------------
 
-/// Render a fact declaration (theorem/axiom/hole, local or alias) as bpa source:
+/// Render a fact declaration (theorem/axiom/hole, local or alias) as 2b4m source:
 /// `theorem <name>[(params)]: <formula>\nproof\n  …\nqed\n`. Non-fact decls render a comment.
 pub fn renderDecl(arena: Allocator, interner: *const InternPool, source: []const u8, decl: *const ast.Decl) Allocator.Error![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);

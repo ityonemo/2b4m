@@ -1,0 +1,123 @@
+// std/real/sqrt.b4m — the NONNEGATIVE SQUARE ROOT on ℝ.
+//
+// ℝ is a complete ordered field (std/real.b4m), so every nonnegative real has a
+// unique nonnegative square root. Constructing it from `completeness` (the sup of
+// {t : t² ≤ x}) is a real analysis exercise beyond what we need here; following the
+// tower's practice for the embeddings, we adjoin `sqrt` as a function pinned by its
+// defining axioms on the nonnegatives (`sqrt(x)·sqrt(x) = x`, `sqrt(x) ≥ 0`) and
+// derive the algebraic facts the modulus needs (multiplicativity, sqrt 1 = 1).
+//
+// `sqrt` is total as a symbol, but every axiom is GUARDED by `0 ≤ x`; nothing is
+// asserted about `sqrt` of a negative real (it is an unconstrained value there).
+
+import real <<< "std/real.b4m"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+func neg = real.neg
+pred less_than = real.less_than
+pred less_or_equal = real.less_or_equal
+
+func sqrt(x: Real) => Real
+
+// -- defining axioms (all guarded by nonnegativity) -------------------------
+// on the nonnegatives, sqrt lands in the nonnegatives and squares back to x.
+axiom sqrtNonneg: forall x: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, sqrt(x))
+axiom sqrtSquare: forall x: Real; less_or_equal(ZERO, x) -> mul(sqrt(x), sqrt(x)) = x
+// the section of a nonnegative square: sqrt(x·x) = x for x ≥ 0.
+axiom sqrtOfSquare: forall x: Real; less_or_equal(ZERO, x) -> sqrt(mul(x, x)) = x
+
+// -- derived ----------------------------------------------------------------
+
+// sqrt(1) = 1: since 0 ≤ 1 and 1·1 = 1, sqrtOfSquare at 1 gives sqrt(1·1) = 1,
+// and 1·1 = 1 rewrites the argument to 1.
+theorem sqrtOne: sqrt(ONE) = ONE
+proof
+  @zero-le-one |
+    less_or_equal(ZERO, ONE)
+    [using import(real) zeroLessOrEqualOne]
+  @sqrt-of-one-squared |
+    sqrt(mul(ONE, ONE)) = ONE
+    [using specialize sqrtOfSquare(ONE) zero-le-one]
+  @one-times-one |
+    mul(ONE, ONE) = ONE
+    [using specialize real.mulOneRight(ONE)]
+  @conclusion |
+    sqrt(ONE) = ONE
+    [by rewrite one-times-one sqrt-of-one-squared]
+qed
+
+// multiplicativity on the nonnegatives: sqrt(x·y) = sqrt(x)·sqrt(y) for x, y ≥ 0.
+// Proof: let p = sqrt(x)·sqrt(y). Then p ≥ 0 (product of nonnegatives) and
+// p·p = (sqrt x·sqrt x)·(sqrt y·sqrt y) = x·y (reassociate, sqrtSquare twice).
+// So p is a nonnegative real with p² = x·y; sqrtOfSquare-style uniqueness gives
+// sqrt(x·y) = p — obtained here by rewriting x·y = p·p under sqrt and folding.
+theorem sqrtMulNonneg: forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+proof
+  @generalize-x |
+    fix x: Real {
+      @generalize-y |
+        fix y: Real {
+          @given-x-nonneg |
+            assume less_or_equal(ZERO, x) {
+              @given-y-nonneg |
+                assume less_or_equal(ZERO, y) {
+                  @x-nonneg |
+                    less_or_equal(ZERO, x)
+                    [by hypothesis given-x-nonneg]
+                  @y-nonneg |
+                    less_or_equal(ZERO, y)
+                    [by hypothesis given-y-nonneg]
+                  // the candidate root p = sqrt(x)·sqrt(y) is nonnegative
+                  @sqrt-x-nonneg |
+                    less_or_equal(ZERO, sqrt(x))
+                    [using specialize sqrtNonneg(x) x-nonneg]
+                  @sqrt-y-nonneg |
+                    less_or_equal(ZERO, sqrt(y))
+                    [using specialize sqrtNonneg(y) y-nonneg]
+                  @product-nonneg |
+                    less_or_equal(ZERO, mul(sqrt(x), sqrt(y)))
+                    [using specialize real.mulNonneg(sqrt(x), sqrt(y)) sqrt-x-nonneg sqrt-y-nonneg]
+                  // its square is x·y: (sqrt x·sqrt y)·(sqrt x·sqrt y) = (sqrt x·sqrt x)·(sqrt y·sqrt y)
+                  @square-reassociates |
+                    mul(mul(sqrt(x), sqrt(y)), mul(sqrt(x), sqrt(y))) = mul(mul(sqrt(x), sqrt(x)), mul(sqrt(y), sqrt(y)))
+                    [using polynomial(real)]
+                  @sqrt-x-squared |
+                    mul(sqrt(x), sqrt(x)) = x
+                    [using specialize sqrtSquare(x) x-nonneg]
+                  @sqrt-y-squared |
+                    mul(sqrt(y), sqrt(y)) = y
+                    [using specialize sqrtSquare(y) y-nonneg]
+                  @square-is-xy-step |
+                    mul(mul(sqrt(x), sqrt(y)), mul(sqrt(x), sqrt(y))) = mul(x, mul(sqrt(y), sqrt(y)))
+                    [by rewrite sqrt-x-squared square-reassociates]
+                  @square-is-xy |
+                    mul(mul(sqrt(x), sqrt(y)), mul(sqrt(x), sqrt(y))) = mul(x, y)
+                    [by rewrite sqrt-y-squared square-is-xy-step]
+                  // sqrt(p·p) = p (sqrtOfSquare at the nonnegative p), then rewrite p·p = x·y
+                  @sqrt-of-product-squared |
+                    sqrt(mul(mul(sqrt(x), sqrt(y)), mul(sqrt(x), sqrt(y)))) = mul(sqrt(x), sqrt(y))
+                    [using specialize sqrtOfSquare(mul(sqrt(x), sqrt(y))) product-nonneg]
+                  @conclusion-sqrt-mul |
+                    sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+                    [by rewrite square-is-xy sqrt-of-product-squared]
+                }
+              @y-nonneg-implies |
+                less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+                [by implies_intro given-y-nonneg]
+            }
+          @x-nonneg-implies |
+            less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+            [by implies_intro given-x-nonneg]
+        }
+      @discharge-y |
+        forall y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
+    [by forall_intro generalize-x]
+qed

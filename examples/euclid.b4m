@@ -1,0 +1,85 @@
+// Euclid's algorithm, as a consumer sees it. The algorithm and its
+// correctness proofs live in std/peano/divides.b4m (built on the ordering /
+// subtraction layers); this file IMPORTS that verified library and cites
+// its theorems to derive concrete facts — no re-proving.
+//
+// Everything here is pure: gcd's correctness was established once, in the
+// standard library, and every use is an ordinary kernel-checked citation
+// across the import boundary.
+
+import peano_divides <<< "std/peano/divides.b4m"
+
+// -- vocabulary (aliased from the divides/gcd library and what it re-exports) --
+
+sort Nat = peano_divides.Nat
+const ZERO = peano_divides.ZERO
+func succ = peano_divides.succ
+func gcd = peano_divides.gcd
+pred divides = peano_divides.divides
+
+// -- gcd is a common divisor ------------------------------------------------
+
+// From gcdDividesBoth, gcd(a, b) divides a. (Project the left conjunct.)
+theorem gcdDividesLeft: forall a, b: Nat; divides(gcd(a, b), a)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          // gcdDividesBoth is stated `forall a, b`; specialize it at these
+          // fixed a, b, then take the left conjunct
+          @specialized-to-this-a-b |
+            divides(gcd(a, b), a) and divides(gcd(a, b), b)
+            [using specialize peano_divides.gcdDividesBoth(a, b)]
+          @keep-left-conjunct |
+            divides(gcd(a, b), a)
+            [by and_elim_left specialized-to-this-a-b]
+        }
+      @discharge-b |
+        forall b: Nat; divides(gcd(a, b), a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; divides(gcd(a, b), a)
+    [by forall_intro generalize-a]
+qed
+
+// -- gcd with ZERO computes ------------------------------------------------
+
+// gcd(a, 0) = a, straight from the base equation — the "identity" case of the
+// recursion, useful as a sanity check that the library's gcd behaves.
+theorem gcdRightZero: forall a: Nat; gcd(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: Nat; gcd(a, ZERO) = a
+    [using import(peano_divides) gcdZero]
+qed
+
+// -- the greatest-common-divisor property, in one line ----------------------
+
+// The headline: any d dividing both a and b divides their gcd. This is
+// exactly gcdGreatest, re-exported here as the consumer-facing statement.
+theorem gcdIsGreatest: forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+proof
+  @generalize-d |
+    fix d: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @generalize-b |
+            fix b: Nat {
+              @specialized-to-this-d-a-b |
+                divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+                [using specialize peano_divides.gcdGreatest(d, a, b)]
+            }
+          @discharge-b |
+            forall b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+    [by forall_intro generalize-d]
+qed

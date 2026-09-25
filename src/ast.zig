@@ -1,4 +1,4 @@
-//! Surface AST for .bpa files. Arena-allocated tree; nodes reference source
+//! Surface AST for .b4m files. Arena-allocated tree; nodes reference source
 //! tokens for diagnostics. Terms and formulas share one Expr type — the
 //! elaborator sorts them out by sort. Lambdas exist only here, never in
 //! kernel terms.
@@ -148,7 +148,7 @@ pub const Theorem = union(enum) {
 };
 
 pub const Decl = union(enum) {
-    /// `import ns <<< "path.bpa"` — binds a namespace to a loaded file
+    /// `import ns <<< "path.b4m"` — binds a namespace to a loaded file
     import: struct { ns: Token, path: Token },
     /// `forward name` — a manifest entry: promises `name` is defined later in
     /// this file as a theorem (checked at end of file; nothing else)

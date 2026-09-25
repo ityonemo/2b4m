@@ -1,0 +1,46 @@
+// DIAGNOSTIC test: when the arithmetic equation certifier DECIDES a goal valid
+// but cannot build the kernel certificate because a rule lemma it needs is not
+// imported into the theory scope, the strict error must NAME the missing lemma
+// ("theory lacks lemma 'addLeftSwap'"), NOT report the generic "form not in
+// certification scope" (which reads as "I can't solve this shape" and hides the
+// one-line fix).
+//
+// This is arithmetic_cert_neg_cancel.b4m with `addLeftSwap` deliberately OMITTED:
+// `add(a, sub(b, a)) = b` normalizes to the summand multiset {a, b, neg(a)}, and
+// cancelling a with neg(a) across the intervening b requires addLeftSwap to bubble
+// the pair adjacent. Without it the certifier declines — and must say so usefully.
+import integer <<< "std/integer.b4m"
+import order <<< "std/integer/order.b4m"
+sort Int = integer.Int
+const ZERO = integer.ZERO
+func add = integer.add
+func neg = integer.neg
+func sub = order.sub
+axiom definitionOfSubtraction = integer.definitionOfSubtraction
+theorem addNegRight = integer.addNegRight
+theorem addNegLeft = integer.addNegLeft
+theorem negNeg = integer.negNeg
+axiom addZeroLeft = integer.addZeroLeft
+theorem addZeroRight = integer.addZeroRight
+theorem addIsAssociative = integer.addIsAssociative
+theorem addIsCommutative = integer.addIsCommutative
+// NOTE: addLeftSwap intentionally NOT aliased — that is what this test exercises.
+
+theorem diffReaches: forall a, b: Int; add(a, sub(b, a)) = b
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @conclusion-diff-reaches |
+            add(a, sub(b, a)) = b
+            [using arithmetic]
+        }
+      @discharge-b |
+        forall b: Int; add(a, sub(b, a)) = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; add(a, sub(b, a)) = b
+    [by forall_intro generalize-a]
+qed

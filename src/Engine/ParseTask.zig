@@ -8,7 +8,7 @@
 //!
 //! A FileId is assigned at DISCOVERY time (so a child's id exists before its parse runs —
 //! cyclic-import safe); the SOURCE is read HERE, by the file's own ParseTask — nobody hands
-//! it in (a `.md` is a literate document: its ```bpa blocks are extracted here too).
+//! it in (a `.md` is a literate document: its ```2b4m blocks are extracted here too).
 //!
 //! THE READ IS OFF-WORKER when the run has a loader (`Engine/Loader.zig`, the default): the
 //! first entry hands the file to the I/O pool and SUSPENDS ON ITSELF — the blocker is an
@@ -69,7 +69,7 @@ pub fn readSource(ctx: *Context, path: []const u8) LoadResult {
         var scratch: std.heap.ArenaAllocator = .init(ctx.gpa);
         defer scratch.deinit();
         const raw = ctx.read_fn(ctx.read_ctx, scratch.allocator(), path) catch |e| return .{ .failed = e };
-        // ```bpa blocks with every other line blanked, so offsets index the document as written
+        // ```2b4m blocks with every other line blanked, so offsets index the document as written
         const source = literate.extract(ctx.arena, raw) catch |e| return .{ .failed = e };
         return .{ .bytes = source };
     }

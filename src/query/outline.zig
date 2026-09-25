@@ -1,4 +1,4 @@
-//! `bpa query outline <file> [theorem]` — the structural skeleton of a proof.
+//! `2b4m query outline <file> [theorem]` — the structural skeleton of a proof.
 //!
 //! Walks the parsed AST (never elaborates) and prints, per proof, one line per
 //! step: the bare label, and — only for steps that OPEN A NESTING BLOCK — a
@@ -33,7 +33,7 @@ pub const Result = struct {
 
 /// Parse `source` and render the outline. On a parse error, `ok` is false and
 /// `text` is the rendered diagnostics (same `path:line:col: error:` form as
-/// `bpa check`). `theorem` null => outline every proof in the file.
+/// `2b4m check`). `theorem` null => outline every proof in the file.
 pub fn outline(
     arena: Allocator,
     path: []const u8,

@@ -2,7 +2,7 @@
 
 Its one theorem counts like any other.
 
-```bpa
+```2b4m
 pred p
 axiom pHolds: p
 

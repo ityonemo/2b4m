@@ -1,0 +1,49 @@
+// SAME-FILE guarded model. A subgroup lives on the SAME sort as its group, so
+// the paradigm case wants the source theory and the guarded model in ONE file —
+// no import needed. The source symbols are referenced by their bare (unqualified)
+// names in the model mapping; left-of-`:` is the source, right is the target.
+//
+// This exercises the elaborator's same-file path (previously rejected with "model
+// mapping source must name the abstract theory", which forced an artificial
+// two-file split).
+
+// --- the source theory (would be std/group.b4m; inlined here) ---------------
+sort Grp
+const E: Grp
+func op(a: Grp, b: Grp) => Grp
+
+axiom opIdentityLeft: forall a: Grp; op(E, a) = a
+
+// a source theorem whose proof instantiates the axiom at the constant E.
+theorem opFixesIdentity: op(E, E) = E
+proof
+  @identity-law |
+    forall a: Grp; op(E, a) = a
+    [by cite opIdentityLeft]
+  @conclusion |
+    op(E, E) = E
+    [by forall_elim(E) identity-law]
+qed
+
+// --- the guarded subset + its closure/relativized facts ---------------------
+pred inH(g: Grp)
+
+axiom hasIdentity: inH(E)                                       // base closure
+axiom identityLeftOnH: forall a: Grp; inH(a) -> op(E, a) = a    // relativized axiom
+
+// --- the guarded model, over the SAME sort -------------------------------
+sort GrpH = Grp where inH
+
+model SubgroupIsGroup {
+  Grp: GrpH
+  E: E(hasIdentity)                 // E ∈ H, established by hasIdentity (base membership)
+  opIdentityLeft <- identityLeftOnH
+  }
+
+// transferred (relativized) theorem: op(E, E) = E holds on H, discharging inH(E).
+theorem transferred: op(E, E) = E
+proof
+  @conclusion |
+    op(E, E) = E
+    [using model(SubgroupIsGroup) opFixesIdentity]
+qed

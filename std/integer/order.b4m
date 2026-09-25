@@ -1,0 +1,2139 @@
+// std/integer/order.b4m — subtraction and the order on ℤ, over std/integer.b4m
+// and its ring algebra (std/integer-ring.b4m).
+//
+// Over ℤ subtraction is TOTAL and trivial: `sub(a, b) = a + (-b)` (no
+// truncation, unlike Peano) — one defining axiom, and the useful facts
+// (sub(a,a)=0, add(sub(a,b),b)=a, ...) are proven from the ring algebra with no
+// induction. The order `less_than(a, b)` is `∃d; nonneg(d) and b = a + succ(d)`
+// — a is less_than b iff b exceeds a by a positive amount. Unlike Peano, the gap
+// witness `d` must be pinned NONNEGATIVE: over ℤ an unconstrained `d` may be
+// negative, which would make `succ(d)` reach 0 or less_than and collapse `less_than`
+// into the total relation (`less_than(ZERO, ZERO)` would be provable). So we
+// carry `std/integer-nonneg.b4m`'s `nonneg` predicate through the gap.
+
+import integer <<< "std/integer.b4m"
+import ring <<< "std/integer.b4m"
+import nonnegatives <<< "std/integer.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func succ = integer.succ
+func prev = integer.prev
+func add = integer.add
+func mul = integer.mul
+func neg = integer.neg
+axiom addZeroLeft = integer.addZeroLeft
+axiom addSuccLeft = integer.addSuccLeft
+axiom oneIsSuccZero = integer.oneIsSuccZero
+theorem addZeroRight = ring.addZeroRight
+theorem addSuccRight = ring.addSuccRight
+theorem addIsCommutative = ring.addIsCommutative
+theorem addIsAssociative = ring.addIsAssociative
+theorem addNegRight = ring.addNegRight
+theorem additiveInverseUnique = integer.additiveInverseUnique
+
+theorem addNegLeft = ring.addNegLeft
+// addLeftSwap feeds the `arithmetic` equation certifier (reorders a sum to bring
+// an inverse pair adjacent); needed for the sub-cancellation goals below.
+theorem addLeftSwap = ring.addLeftSwap
+theorem induction = integer.induction
+
+// mul recursion + negation axioms/lemmas, for the sign lemmas less_than.
+axiom mulZeroLeft = integer.mulZeroLeft
+axiom mulSuccLeft = integer.mulSuccLeft
+axiom mulPrevLeft = integer.mulPrevLeft
+axiom negZero = integer.negZero
+axiom negSucc = integer.negSucc
+axiom negPrev = integer.negPrev
+theorem mulZeroRight = ring.mulZeroRight
+theorem mulSuccRight = ring.mulSuccRight
+theorem mulPrevRight = ring.mulPrevRight
+theorem mulNegRight = ring.mulNegRight
+theorem negNeg = ring.negNeg
+theorem negAdd = ring.negAdd
+
+pred nonneg = nonnegatives.nonneg
+axiom nonnegZero = nonnegatives.nonnegZero
+axiom nonnegSucc = nonnegatives.nonnegSucc
+axiom nonnegInduction = nonnegatives.nonnegInduction
+axiom nonnegSuccNotZero = nonnegatives.nonnegSuccNotZero
+theorem nonnegCases = nonnegatives.nonnegCases
+
+// -- subtraction: sub(a, b) = a + (-b) --------------------------------------
+// Subtraction is RING vocabulary (`a + (-b)`), so it now lives in the ring
+// layer, std/integer.b4m. Re-aliased here so the order theory below and
+// downstream files keep seeing `order.sub`.
+
+func sub = integer.sub
+axiom definitionOfSubtraction = integer.definitionOfSubtraction
+
+// -- the strict order: a < b iff b = a + succ(d) for some NONNEGATIVE d ------
+
+// `less_than` stays an OPAQUE `pred` (NOT a define): the arithmetic/Farkas
+// accelerator pattern-matches on the `less_than` symbol + its `lessThanElim`
+// fact, which an eager-`define` expansion would dissolve. So it keeps the
+// intro/elim axiom pair. The gap witness `d` is pinned NONNEGATIVE (see the
+// header) so `less_than` does not collapse into the total relation.
+pred less_than(a: Int, b: Int)
+axiom lessThanIntro: forall a, d, b: Int; nonneg(d) -> add(a, succ(d)) = b -> less_than(a, b)
+axiom lessThanElim: forall a, b: Int; less_than(a, b) -> exists d: Int; nonneg(d) and add(a, succ(d)) = b
+
+// -- the non-strict order: a ≤ b iff a < b or a = b --------------------------
+// The honest definition, built transparently ON TOP of `less_than`.
+// `less_or_equal` is a `define` (nothing pattern-matches on it; Farkas depends
+// only on `less_than`), so a proof sees `less_than(a, b) or a = b` directly.
+// `lessOrEqualIsGapExistential` (less_than) proves this body is identical to the old
+// nonnegative-gap-existential characterization `exists d; nonneg(d) and add(a, d) = b`.
+define less_or_equal(a, b) = less_than(a, b) or a = b
+
+// -- the order theory -------------------------------------------------------
+
+// Left cancellation, from the additive inverse (no induction, unlike Peano):
+// add neg(c) on the left of both sides, associate, and neg(c)+c collapses to
+// ZERO, leaving a = b.
+theorem addCancelLeft: forall c, a, b: Int; add(c, a) = add(c, b) -> a = b
+proof
+  @generalize-c |
+    fix c: Int {
+      @generalize-a |
+        fix a: Int {
+          @generalize-b |
+            fix b: Int {
+              @given-sums-equal |
+                assume add(c, a) = add(c, b) {
+                  @sums-equal |
+                    add(c, a) = add(c, b)
+                    [by hypothesis given-sums-equal]
+                  @prefix-both-with-neg-c |
+                    add(neg(c), add(c, a)) = add(neg(c), add(c, b))
+                    [by rewrite sums-equal refl-prefixed]
+                  @refl-prefixed |
+                    add(neg(c), add(c, a)) = add(neg(c), add(c, a))
+                    [by reflexivity]
+                  // regroup both sides so neg(c)+c sits together and vanishes.
+                  @regroup-left |
+                    add(add(neg(c), c), a) = add(neg(c), add(c, a))
+                    [using specialize addIsAssociative(neg(c), c, a)]
+                  @regroup-right |
+                    add(add(neg(c), c), b) = add(neg(c), add(c, b))
+                    [using specialize addIsAssociative(neg(c), c, b)]
+                  @grouped-sums-equal |
+                    add(add(neg(c), c), a) = add(add(neg(c), c), b)
+                    [using simplify regroup-left regroup-right prefix-both-with-neg-c]
+                  @neg-c-plus-c-vanishes |
+                    add(neg(c), c) = ZERO
+                    [using specialize addNegLeft(c)]
+                  @zero-plus-a-equals-zero-plus-b |
+                    add(ZERO, a) = add(ZERO, b)
+                    [by rewrite neg-c-plus-c-vanishes grouped-sums-equal]
+                  @a-is-zero-plus-a |
+                    add(ZERO, a) = a
+                    [using specialize addZeroLeft(a)]
+                  @b-is-zero-plus-b |
+                    add(ZERO, b) = b
+                    [using specialize addZeroLeft(b)]
+                  @a-equals-zero-plus-b |
+                    a = add(ZERO, b)
+                    [by rewrite a-is-zero-plus-a zero-plus-a-equals-zero-plus-b]
+                  @conclusion-a-equals-b |
+                    a = b
+                    [by rewrite b-is-zero-plus-b a-equals-zero-plus-b]
+                }
+              @sums-equal-implies-equal |
+                add(c, a) = add(c, b) -> a = b
+                [by implies_intro given-sums-equal]
+            }
+          @discharge-b |
+            forall b: Int; add(c, a) = add(c, b) -> a = b
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a, b: Int; add(c, a) = add(c, b) -> a = b
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall c, a, b: Int; add(c, a) = add(c, b) -> a = b
+    [by forall_intro generalize-c]
+qed
+
+// nonneg is closed under addition: a, b ≥ 0 gives a + b ≥ 0. Proved by
+// upward induction on b — the base is add(a, ZERO) = a, and the step turns
+// add(a, succ k) into succ(add(a, k)) so nonnegSucc carries the property up.
+theorem nonnegAdd: forall a, b: Int; nonneg(a) -> nonneg(b) -> nonneg(add(a, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @given-a-nonneg |
+        assume nonneg(a) {
+          @a-nonneg |
+            nonneg(a)
+            [by hypothesis given-a-nonneg]
+          // base: nonneg(add(a, ZERO)), since add(a, ZERO) = a.
+          @a-plus-zero-is-a |
+            add(a, ZERO) = a
+            [using specialize addZeroRight(a)]
+          @base-case |
+            nonneg(add(a, ZERO))
+            [by rewrite a-plus-zero-is-a a-nonneg]
+          // step: nonneg(add(a, k)) -> nonneg(add(a, succ k)).
+          @induction-step |
+            fix k: Int {
+              @given-k-nonneg |
+                assume nonneg(k) {
+                  @given-sum-nonneg |
+                    assume nonneg(add(a, k)) {
+                      @sum-nonneg |
+                        nonneg(add(a, k))
+                        [by hypothesis given-sum-nonneg]
+                      @succ-sum-nonneg |
+                        nonneg(succ(add(a, k)))
+                        [using specialize nonnegSucc(add(a, k)) sum-nonneg]
+                      @grown-sum-is-successor |
+                        add(a, succ(k)) = succ(add(a, k))
+                        [using specialize addSuccRight(a, k)]
+                      @grown-sum-nonneg |
+                        nonneg(add(a, succ(k)))
+                        [by rewrite grown-sum-is-successor succ-sum-nonneg]
+                    }
+                  @sum-nonneg-implies-grown-sum-nonneg |
+                    nonneg(add(a, k)) -> nonneg(add(a, succ(k)))
+                    [by implies_intro given-sum-nonneg]
+                }
+              @induction-step-at-k |
+                nonneg(k) -> nonneg(add(a, k)) -> nonneg(add(a, succ(k)))
+                [by implies_intro given-k-nonneg]
+            }
+          @induction-step-for-all-k |
+            forall k: Int; nonneg(k) -> nonneg(add(a, k)) -> nonneg(add(a, succ(k)))
+            [by forall_intro induction-step]
+          @sum-nonneg-for-nonneg-b |
+            forall b: Int; nonneg(b) -> nonneg(add(a, b))
+            [using instantiation nonnegInduction((fun b: Int => nonneg(add(a, b)))) base-case induction-step-for-all-k]
+        }
+      @a-nonneg-implies-sum-nonneg |
+        nonneg(a) -> forall b: Int; nonneg(b) -> nonneg(add(a, b))
+        [by implies_intro given-a-nonneg]
+    }
+  @a-nonneg-gives-sum-nonneg |
+    forall a: Int; nonneg(a) -> forall b: Int; nonneg(b) -> nonneg(add(a, b))
+    [by forall_intro generalize-a]
+  // reshape `forall a; nonneg(a) -> forall b; ...` into the flat header shape.
+  @flatten |
+    fix a: Int {
+      @flatten-b |
+        fix bb: Int {
+          @given-a-nonneg |
+            assume nonneg(a) {
+              @given-b-nonneg |
+                assume nonneg(bb) {
+                  @a-nonneg |
+                    nonneg(a)
+                    [by hypothesis given-a-nonneg]
+                  @b-nonneg |
+                    nonneg(bb)
+                    [by hypothesis given-b-nonneg]
+                  @conclusion-sum-nonneg |
+                    nonneg(add(a, bb))
+                    [using specialize a-nonneg-gives-sum-nonneg(a, bb) a-nonneg b-nonneg]
+                }
+              @b-nonneg-implies-sum-nonneg |
+                nonneg(bb) -> nonneg(add(a, bb))
+                [by implies_intro given-b-nonneg]
+            }
+          @both-nonneg-imply-sum-nonneg |
+            nonneg(a) -> nonneg(bb) -> nonneg(add(a, bb))
+            [by implies_intro given-a-nonneg]
+        }
+      @discharge-b |
+        forall bb: Int; nonneg(a) -> nonneg(bb) -> nonneg(add(a, bb))
+        [by forall_intro flatten-b]
+    }
+  @conclusion |
+    forall a, b: Int; nonneg(a) -> nonneg(b) -> nonneg(add(a, b))
+    [by forall_intro flatten]
+qed
+
+// Irreflexivity: a witness for n < n gives a nonneg d with add(n, succ d) = n =
+// add(n, ZERO); cancel n on the left to get succ(d) = ZERO, which nonnegSuccNotZero
+// forbids for a nonnegative d.
+theorem lessThanIrreflexive: forall n: Int; not less_than(n, n)
+proof
+  @generalize-n |
+    fix n: Int {
+      @given-n-less_than-n |
+        assume less_than(n, n) {
+          @n-less_than-n |
+            less_than(n, n)
+            [by hypothesis given-n-less_than-n]
+          @self-gap-exists |
+            exists d: Int; nonneg(d) and add(n, succ(d)) = n
+            [using specialize lessThanElim(n, n) n-less_than-n]
+          @with-gap-d |
+            unpack d0: Int from self-gap-exists {
+              @gap-is-nonneg-and-witnesses-self |
+                nonneg(d0) and add(n, succ(d0)) = n
+                [by hypothesis with-gap-d]
+              @gap-is-nonneg |
+                nonneg(d0)
+                [by and_elim_left gap-is-nonneg-and-witnesses-self]
+              @gap-witnesses-self |
+                add(n, succ(d0)) = n
+                [by and_elim_right gap-is-nonneg-and-witnesses-self]
+              // add(n, ZERO) = n, so add(n, succ d0) = add(n, ZERO); cancel n.
+              @n-plus-zero-is-n |
+                add(n, ZERO) = n
+                [using specialize addZeroRight(n)]
+              @gap-equals-zero-suffix |
+                add(n, succ(d0)) = add(n, ZERO)
+                [by rewrite n-plus-zero-is-n gap-witnesses-self]
+              @succ-gap-is-zero |
+                succ(d0) = ZERO
+                [using specialize addCancelLeft(n, succ(d0), ZERO) gap-equals-zero-suffix]
+              @succ-gap-is-nonzero |
+                succ(d0) != ZERO
+                [using specialize nonnegSuccNotZero(d0) gap-is-nonneg]
+              @not-n-less_than-n |
+                not less_than(n, n)
+                [by absurd succ-gap-is-zero succ-gap-is-nonzero]
+            }
+          @not-n-less_than-n |
+            not less_than(n, n)
+            [by exists_elim with-gap-d]
+          @n-less_than-n-restated |
+            less_than(n, n)
+            [by hypothesis given-n-less_than-n]
+        }
+      @no-n-less_than-n |
+        not less_than(n, n)
+        [by not_intro given-n-less_than-n n-less_than-n-restated not-n-less_than-n]
+    }
+  @conclusion |
+    forall n: Int; not less_than(n, n)
+    [by forall_intro generalize-n]
+qed
+
+// Transitivity: compose the two gaps. From add(a, succ u) = b and add(b, succ v) = c
+// assemble add(a, succ(add(u, succ v))) = c; the new gap add(u, succ v) is nonneg by
+// nonnegAdd (u nonneg, succ v nonneg via nonnegSucc).
+theorem lessThanTransitive: forall a, b, c: Int; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-c |
+            fix c: Int {
+              @given-a-less_than-b |
+                assume less_than(a, b) {
+                  @given-b-less_than-c |
+                    assume less_than(b, c) {
+                      @a-less_than-b |
+                        less_than(a, b)
+                        [by hypothesis given-a-less_than-b]
+                      @b-less_than-c |
+                        less_than(b, c)
+                        [by hypothesis given-b-less_than-c]
+                      @gap-ab-exists |
+                        exists d: Int; nonneg(d) and add(a, succ(d)) = b
+                        [using specialize lessThanElim(a, b) a-less_than-b]
+                      @gap-bc-exists |
+                        exists d: Int; nonneg(d) and add(b, succ(d)) = c
+                        [using specialize lessThanElim(b, c) b-less_than-c]
+                      @with-gap-u |
+                        unpack u: Int from gap-ab-exists {
+                          @with-gap-v |
+                            unpack v: Int from gap-bc-exists {
+                              @gap-u-nonneg-and-witnesses-b |
+                                nonneg(u) and add(a, succ(u)) = b
+                                [by hypothesis with-gap-u]
+                              @gap-u-nonneg |
+                                nonneg(u)
+                                [by and_elim_left gap-u-nonneg-and-witnesses-b]
+                              @gap-u-witnesses-b |
+                                add(a, succ(u)) = b
+                                [by and_elim_right gap-u-nonneg-and-witnesses-b]
+                              @gap-v-nonneg-and-witnesses-c |
+                                nonneg(v) and add(b, succ(v)) = c
+                                [by hypothesis with-gap-v]
+                              @gap-v-nonneg |
+                                nonneg(v)
+                                [by and_elim_left gap-v-nonneg-and-witnesses-c]
+                              @gap-v-witnesses-c |
+                                add(b, succ(v)) = c
+                                [by and_elim_right gap-v-nonneg-and-witnesses-c]
+                              // combine the gaps: add(a, succ(add(u, succ v))) = c.
+                              @nested-gaps-regroup |
+                                add(add(a, succ(u)), succ(v)) = add(a, add(succ(u), succ(v)))
+                                [using simplify addIsAssociative]
+                              @combined-gap-is-successor |
+                                add(succ(u), succ(v)) = succ(add(u, succ(v)))
+                                [using simplify addSuccLeft]
+                              // a+succ(u+succ v) = a+(succ u+succ v) = (a+succ u)+succ v = b+succ v = c
+                              @successor-gap-reaches-c |
+                                add(a, succ(add(u, succ(v)))) = c
+                                [using chain combined-gap-is-successor nested-gaps-regroup gap-u-witnesses-b gap-v-witnesses-c]
+                              // the new gap add(u, succ v) is nonneg.
+                              @succ-v-nonneg |
+                                nonneg(succ(v))
+                                [using specialize nonnegSucc(v) gap-v-nonneg]
+                              @combined-gap-nonneg |
+                                nonneg(add(u, succ(v)))
+                                [using specialize nonnegAdd(u, succ(v)) gap-u-nonneg succ-v-nonneg]
+                              @a-less_than-c |
+                                less_than(a, c)
+                                [using specialize lessThanIntro(a, add(u, succ(v)), c) combined-gap-nonneg successor-gap-reaches-c]
+                            }
+                          @a-less_than-c |
+                            less_than(a, c)
+                            [by exists_elim with-gap-v]
+                        }
+                      @a-less_than-c |
+                        less_than(a, c)
+                        [by exists_elim with-gap-u]
+                    }
+                  @b-less_than-c-implies-a-less_than-c |
+                    less_than(b, c) -> less_than(a, c)
+                    [by implies_intro given-b-less_than-c]
+                }
+              @a-less_than-b-implies-transitively-less_than-c |
+                less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+                [by implies_intro given-a-less_than-b]
+            }
+          @discharge-c |
+            forall c: Int; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Int; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Int; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+    [by forall_intro generalize-a]
+qed
+
+// Addition preserves order: the same nonneg gap works after prefixing c, once
+// add(add(c, a), succ u) is regrouped to add(c, add(a, succ u)) = add(c, b).
+theorem additionPreservesOrder: forall a, b, c: Int; less_than(a, b) -> less_than(add(c, a), add(c, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-c |
+            fix c: Int {
+              @given-a-less_than-b |
+                assume less_than(a, b) {
+                  @a-less_than-b |
+                    less_than(a, b)
+                    [by hypothesis given-a-less_than-b]
+                  @gap-exists |
+                    exists d: Int; nonneg(d) and add(a, succ(d)) = b
+                    [using specialize lessThanElim(a, b) a-less_than-b]
+                  @with-gap-u |
+                    unpack u: Int from gap-exists {
+                      @gap-nonneg-and-witnesses-b |
+                        nonneg(u) and add(a, succ(u)) = b
+                        [by hypothesis with-gap-u]
+                      @gap-nonneg |
+                        nonneg(u)
+                        [by and_elim_left gap-nonneg-and-witnesses-b]
+                      @gap-witnesses-b |
+                        add(a, succ(u)) = b
+                        [by and_elim_right gap-nonneg-and-witnesses-b]
+                      // add(add(c, a), succ u) = add(c, add(a, succ u)) = add(c, b).
+                      @gap-inside-regroups |
+                        add(c, add(a, succ(u))) = add(add(c, a), succ(u))
+                        [using simplify addIsAssociative]
+                      @gap-inside-reaches-c-plus-b |
+                        add(c, add(a, succ(u))) = add(c, b)
+                        [using simplify gap-witnesses-b]
+                      @shifted-gap-witnesses-c-plus-b |
+                        add(add(c, a), succ(u)) = add(c, b)
+                        [by rewrite gap-inside-regroups gap-inside-reaches-c-plus-b]
+                      @shifted-preserves-order |
+                        less_than(add(c, a), add(c, b))
+                        [using specialize lessThanIntro(add(c, a), u, add(c, b)) gap-nonneg shifted-gap-witnesses-c-plus-b]
+                    }
+                  @shifted-preserves-order |
+                    less_than(add(c, a), add(c, b))
+                    [by exists_elim with-gap-u]
+                }
+              @a-less_than-b-implies-shifted-less_than |
+                less_than(a, b) -> less_than(add(c, a), add(c, b))
+                [by implies_intro given-a-less_than-b]
+            }
+          @discharge-c |
+            forall c: Int; less_than(a, b) -> less_than(add(c, a), add(c, b))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Int; less_than(a, b) -> less_than(add(c, a), add(c, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Int; less_than(a, b) -> less_than(add(c, a), add(c, b))
+    [by forall_intro generalize-a]
+qed
+
+// Cancelling a common left summand reflects order: regroup the shifted gap to
+// add(c, add(a, succ u)) = add(c, b), cancel c with addCancelLeft to recover
+// add(a, succ u) = b, and the nonneg gap carries a < b.
+theorem lessThanAddCancelLeft: forall c, a, b: Int; less_than(add(c, a), add(c, b)) -> less_than(a, b)
+proof
+  @generalize-c |
+    fix c: Int {
+      @generalize-a |
+        fix a: Int {
+          @generalize-b |
+            fix b: Int {
+              @given-shifted-less_than |
+                assume less_than(add(c, a), add(c, b)) {
+                  @shifted-less_than |
+                    less_than(add(c, a), add(c, b))
+                    [by hypothesis given-shifted-less_than]
+                  @shifted-gap-exists |
+                    exists d: Int; nonneg(d) and add(add(c, a), succ(d)) = add(c, b)
+                    [using specialize lessThanElim(add(c, a), add(c, b)) shifted-less_than]
+                  @with-gap-u |
+                    unpack u: Int from shifted-gap-exists {
+                      @gap-nonneg-and-witnesses-shifted-b |
+                        nonneg(u) and add(add(c, a), succ(u)) = add(c, b)
+                        [by hypothesis with-gap-u]
+                      @gap-nonneg |
+                        nonneg(u)
+                        [by and_elim_left gap-nonneg-and-witnesses-shifted-b]
+                      @shifted-gap-witnesses-c-plus-b |
+                        add(add(c, a), succ(u)) = add(c, b)
+                        [by and_elim_right gap-nonneg-and-witnesses-shifted-b]
+                      // regroup the left side under c, then cancel c.
+                      @shifted-gap-regroups |
+                        add(add(c, a), succ(u)) = add(c, add(a, succ(u)))
+                        [using simplify addIsAssociative]
+                      @c-plus-gap-is-c-plus-b |
+                        add(c, add(a, succ(u))) = add(c, b)
+                        [by rewrite shifted-gap-regroups shifted-gap-witnesses-c-plus-b]
+                      @gap-witnesses-b |
+                        add(a, succ(u)) = b
+                        [using specialize addCancelLeft(c, add(a, succ(u)), b) c-plus-gap-is-c-plus-b]
+                      @a-less_than-b |
+                        less_than(a, b)
+                        [using specialize lessThanIntro(a, u, b) gap-nonneg gap-witnesses-b]
+                    }
+                  @a-less_than-b |
+                    less_than(a, b)
+                    [by exists_elim with-gap-u]
+                }
+              @shifted-less_than-implies-a-less_than-b |
+                less_than(add(c, a), add(c, b)) -> less_than(a, b)
+                [by implies_intro given-shifted-less_than]
+            }
+          @discharge-b |
+            forall b: Int; less_than(add(c, a), add(c, b)) -> less_than(a, b)
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a, b: Int; less_than(add(c, a), add(c, b)) -> less_than(a, b)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall c, a, b: Int; less_than(add(c, a), add(c, b)) -> less_than(a, b)
+    [by forall_intro generalize-c]
+qed
+
+// less_than implies less_or_equal: the strict gap succ(d) (nonneg, since succ of a
+// nonneg is nonneg) is itself a valid non-strict gap.
+// less_than implies less_or_equal — the left disjunct directly.
+theorem lessThanToLessOrEqual: forall a, b: Int; less_than(a, b) -> less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-less_than-b |
+            assume less_than(a, b) {
+              @a-less_than-b |
+                less_than(a, b)
+                [by hypothesis given-a-less_than-b]
+              @a-less_than-b-or-equal |
+                less_than(a, b) or a = b
+                [by or_intro_left a-less_than-b]
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [using tautology a-less_than-b-or-equal]
+            }
+          @less_than-b-implies-at-most-b |
+            less_than(a, b) -> less_or_equal(a, b)
+            [by implies_intro given-a-less_than-b]
+        }
+      @discharge-b |
+        forall b: Int; less_than(a, b) -> less_or_equal(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(a, b) -> less_or_equal(a, b)
+    [by forall_intro generalize-a]
+qed
+
+// Reflexivity of ≤: the right disjunct a = a holds by reflexivity.
+theorem lessOrEqualRefl: forall a: Int; less_or_equal(a, a)
+proof
+  @generalize-a |
+    fix a: Int {
+      @a-equals-a |
+        a = a
+        [by reflexivity]
+      @a-less_than-a-or-equal |
+        less_than(a, a) or a = a
+        [by or_intro_right a-equals-a]
+      @a-at-most-a |
+        less_or_equal(a, a)
+        [using tautology a-less_than-a-or-equal]
+    }
+  @conclusion |
+    forall a: Int; less_or_equal(a, a)
+    [by forall_intro generalize-a]
+qed
+
+// Transitivity of ≤: split le(a,b) and le(b,c) each into strict-or-equal; the
+// three nontrivial combinations chain via lessThanTransitive / rewriting, then
+// re-wrap with lessThanToLessOrEqual.
+theorem lessOrEqualTransitive: forall a, b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-c |
+            fix c: Int {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @given-b-at-most-c |
+                    assume less_or_equal(b, c) {
+                      @a-less_than-b-or-equal |
+                        less_than(a, b) or a = b
+                        [by hypothesis given-a-at-most-b]
+                      @b-less_than-c-or-equal |
+                        less_than(b, c) or b = c
+                        [by hypothesis given-b-at-most-c]
+                      @a-at-most-c |
+                        less_or_equal(a, c)
+                        case a-less_than-b-or-equal {
+                          @when-a-less_than-b |
+                            assume less_than(a, b) {
+                              @a-less_than-b |
+                                less_than(a, b)
+                                [by hypothesis when-a-less_than-b]
+                              @conclusion-a-at-most-c |
+                                less_or_equal(a, c)
+                                case b-less_than-c-or-equal {
+                                  @when-b-less_than-c |
+                                    assume less_than(b, c) {
+                                      @b-less_than-c |
+                                        less_than(b, c)
+                                        [by hypothesis when-b-less_than-c]
+                                      @a-less_than-c |
+                                        less_than(a, c)
+                                        [using specialize lessThanTransitive(a, b, c) a-less_than-b b-less_than-c]
+                                      @conclusion-a-at-most-c |
+                                        less_or_equal(a, c)
+                                        [using specialize lessThanToLessOrEqual(a, c) a-less_than-c]
+                                    }
+                                  @when-b-equals-c |
+                                    assume b = c {
+                                      @b-equals-c |
+                                        b = c
+                                        [by hypothesis when-b-equals-c]
+                                      @a-less_than-c |
+                                        less_than(a, c)
+                                        [by rewrite b-equals-c a-less_than-b]
+                                      @conclusion-a-at-most-c |
+                                        less_or_equal(a, c)
+                                        [using specialize lessThanToLessOrEqual(a, c) a-less_than-c]
+                                    }
+                                }
+                            }
+                          @when-a-equals-b |
+                            assume a = b {
+                              @a-equals-b |
+                                a = b
+                                [by hypothesis when-a-equals-b]
+                              @b-at-most-c |
+                                less_or_equal(b, c)
+                                [by hypothesis given-b-at-most-c]
+                              @conclusion-a-at-most-c |
+                                less_or_equal(a, c)
+                                [by rewrite a-equals-b b-at-most-c]
+                            }
+                        }
+                    }
+                  @b-at-most-c-implies-a-at-most-c |
+                    less_or_equal(b, c) -> less_or_equal(a, c)
+                    [by implies_intro given-b-at-most-c]
+                }
+              @a-at-most-b-implies-transitively-at-most-c |
+                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+                [by implies_intro given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+    [by forall_intro generalize-a]
+qed
+
+// Splitting ≤ into < or =: now definitional — the body of less_or_equal IS this
+// disjunction.
+theorem lessOrEqualSplit: forall a, b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @less_than-or-equal |
+                less_than(a, b) or a = b
+                [by hypothesis given-a-at-most-b]
+            }
+          @at-most-b-implies-less_than-or-equal |
+            less_or_equal(a, b) -> (less_than(a, b) or a = b)
+            [by implies_intro given-a-at-most-b]
+        }
+      @discharge-b |
+        forall b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+    [by forall_intro generalize-a]
+qed
+
+// The redefinition of less_or_equal (from an opaque nonneg-gap-existential pred to
+// `less_than or =`) is faithful: this anchor theorem proves the new body is EXACTLY
+// the old characterization `exists d; nonneg(d) and add(a, d) = b`. Forward: split
+// less_than or =; a strict gap (from lessThanElim) has a nonneg succ witness, and
+// equality is the nonneg ZERO gap. Backward: unpack the nonneg gap and case on
+// nonnegCases — a ZERO gap forces a = b, a succ gap gives less_than via lessThanIntro.
+theorem lessOrEqualIsGapExistential: forall a, b: Int; less_or_equal(a, b) iff (exists d: Int; nonneg(d) and add(a, d) = b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          // forward: less_than(a, b) or a = b  ->  exists d; nonneg(d) and add(a, d) = b
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @a-less_than-b-or-equal |
+                less_than(a, b) or a = b
+                [by hypothesis given-a-at-most-b]
+              @gap-exists |
+                exists d: Int; nonneg(d) and add(a, d) = b
+                case a-less_than-b-or-equal {
+                  @when-a-less_than-b |
+                    assume less_than(a, b) {
+                      @a-less_than-b |
+                        less_than(a, b)
+                        [by hypothesis when-a-less_than-b]
+                      @strict-gap-exists |
+                        exists d: Int; nonneg(d) and add(a, succ(d)) = b
+                        [using specialize lessThanElim(a, b) a-less_than-b]
+                      @with-strict-gap-d |
+                        unpack d0: Int from strict-gap-exists {
+                          @strict-gap-nonneg-and-witnesses-b |
+                            nonneg(d0) and add(a, succ(d0)) = b
+                            [by hypothesis with-strict-gap-d]
+                          @strict-gap-nonneg |
+                            nonneg(d0)
+                            [by and_elim_left strict-gap-nonneg-and-witnesses-b]
+                          @strict-gap-witnesses-b |
+                            add(a, succ(d0)) = b
+                            [by and_elim_right strict-gap-nonneg-and-witnesses-b]
+                          @succ-gap-nonneg |
+                            nonneg(succ(d0))
+                            [using specialize nonnegSucc(d0) strict-gap-nonneg]
+                          @succ-gap-nonneg-and-witnesses-b |
+                            nonneg(succ(d0)) and add(a, succ(d0)) = b
+                            [by and_intro succ-gap-nonneg strict-gap-witnesses-b]
+                          @conclusion-gap-exists |
+                            exists d: Int; nonneg(d) and add(a, d) = b
+                            [by exists_intro(succ(d0)) succ-gap-nonneg-and-witnesses-b]
+                        }
+                      @conclusion-gap-exists |
+                        exists d: Int; nonneg(d) and add(a, d) = b
+                        [by exists_elim with-strict-gap-d]
+                    }
+                  @when-a-equals-b |
+                    assume a = b {
+                      @a-equals-b |
+                        a = b
+                        [by hypothesis when-a-equals-b]
+                      @zero-is-nonneg |
+                        nonneg(ZERO)
+                        [by cite nonnegZero]
+                      @zero-gap-reaches-a |
+                        add(a, ZERO) = a
+                        [using simplify addZeroRight]
+                      @zero-gap-reaches-b |
+                        add(a, ZERO) = b
+                        [by rewrite a-equals-b zero-gap-reaches-a]
+                      @zero-gap-nonneg-and-witnesses-b |
+                        nonneg(ZERO) and add(a, ZERO) = b
+                        [by and_intro zero-is-nonneg zero-gap-reaches-b]
+                      @conclusion-gap-exists |
+                        exists d: Int; nonneg(d) and add(a, d) = b
+                        [by exists_intro(ZERO) zero-gap-nonneg-and-witnesses-b]
+                    }
+                }
+            }
+          @at-most-implies-gap-exists |
+            less_or_equal(a, b) -> (exists d: Int; nonneg(d) and add(a, d) = b)
+            [by implies_intro given-a-at-most-b]
+
+          // backward: exists d; nonneg(d) and add(a, d) = b  ->  less_than(a, b) or a = b
+          @given-gap-exists |
+            assume exists d: Int; nonneg(d) and add(a, d) = b {
+              @gap-exists |
+                exists d: Int; nonneg(d) and add(a, d) = b
+                [by hypothesis given-gap-exists]
+              @with-gap-d |
+                unpack d0: Int from gap-exists {
+                  @gap-nonneg-and-witnesses-b |
+                    nonneg(d0) and add(a, d0) = b
+                    [by hypothesis with-gap-d]
+                  @gap-nonneg |
+                    nonneg(d0)
+                    [by and_elim_left gap-nonneg-and-witnesses-b]
+                  @gap-witnesses-b |
+                    add(a, d0) = b
+                    [by and_elim_right gap-nonneg-and-witnesses-b]
+                  @gap-is-zero-or-successor |
+                    d0 = ZERO or (exists m: Int; nonneg(m) and d0 = succ(m))
+                    [using specialize nonnegCases(d0) gap-nonneg]
+                  @a-less_than-b-or-equal |
+                    less_than(a, b) or a = b
+                    case gap-is-zero-or-successor {
+                      @when-gap-is-zero |
+                        assume d0 = ZERO {
+                          @gap-is-zero |
+                            d0 = ZERO
+                            [by hypothesis when-gap-is-zero]
+                          @zero-gap-reaches-b |
+                            add(a, ZERO) = b
+                            [by rewrite gap-is-zero gap-witnesses-b]
+                          @zero-gap-is-a |
+                            add(a, ZERO) = a
+                            [using simplify addZeroRight]
+                          @a-equals-b |
+                            a = b
+                            [by rewrite zero-gap-is-a zero-gap-reaches-b]
+                          @conclusion-less_than-or-equal |
+                            less_than(a, b) or a = b
+                            [by or_intro_right a-equals-b]
+                        }
+                      @when-gap-is-successor |
+                        assume exists m: Int; nonneg(m) and d0 = succ(m) {
+                          @gap-is-some-successor |
+                            exists m: Int; nonneg(m) and d0 = succ(m)
+                            [by hypothesis when-gap-is-successor]
+                          @with-predecessor-m |
+                            unpack m0: Int from gap-is-some-successor {
+                              @predecessor-nonneg-and-gap-is-succ |
+                                nonneg(m0) and d0 = succ(m0)
+                                [by hypothesis with-predecessor-m]
+                              @predecessor-nonneg |
+                                nonneg(m0)
+                                [by and_elim_left predecessor-nonneg-and-gap-is-succ]
+                              @gap-is-succ-m |
+                                d0 = succ(m0)
+                                [by and_elim_right predecessor-nonneg-and-gap-is-succ]
+                              @strict-gap-witnesses-b |
+                                add(a, succ(m0)) = b
+                                [by rewrite gap-is-succ-m gap-witnesses-b]
+                              @a-less_than-b |
+                                less_than(a, b)
+                                [using specialize lessThanIntro(a, m0, b) predecessor-nonneg strict-gap-witnesses-b]
+                              @conclusion-less_than-or-equal |
+                                less_than(a, b) or a = b
+                                [by or_intro_left a-less_than-b]
+                            }
+                          @conclusion-less_than-or-equal |
+                            less_than(a, b) or a = b
+                            [by exists_elim with-predecessor-m]
+                        }
+                    }
+                  @a-at-most-b |
+                    less_or_equal(a, b)
+                    [using tautology a-less_than-b-or-equal]
+                }
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [by exists_elim with-gap-d]
+            }
+          @gap-exists-implies-at-most |
+            (exists d: Int; nonneg(d) and add(a, d) = b) -> less_or_equal(a, b)
+            [by implies_intro given-gap-exists]
+
+          @at-most-iff-gap-exists |
+            less_or_equal(a, b) iff (exists d: Int; nonneg(d) and add(a, d) = b)
+            [by iff_intro at-most-implies-gap-exists gap-exists-implies-at-most]
+        }
+      @discharge-b |
+        forall b: Int; less_or_equal(a, b) iff (exists d: Int; nonneg(d) and add(a, d) = b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_or_equal(a, b) iff (exists d: Int; nonneg(d) and add(a, d) = b)
+    [by forall_intro generalize-a]
+qed
+
+// Antisymmetry of ≤: split le(a, b) into a < b or a = b. In the a < b case, split
+// le(b, a) too; if b < a then a < a by transitivity, contradicting irreflexivity, so
+// the equal branches are all that survive.
+theorem lessOrEqualAntisymmetric: forall a, b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @given-b-at-most-a |
+                assume less_or_equal(b, a) {
+                  @a-at-most-b |
+                    less_or_equal(a, b)
+                    [by hypothesis given-a-at-most-b]
+                  @b-at-most-a |
+                    less_or_equal(b, a)
+                    [by hypothesis given-b-at-most-a]
+                  @a-less_than-b-or-equal |
+                    less_than(a, b) or a = b
+                    [using specialize lessOrEqualSplit(a, b) a-at-most-b]
+                  @a-equals-b |
+                    a = b
+                    case a-less_than-b-or-equal {
+                      @when-a-less_than-b |
+                        assume less_than(a, b) {
+                          @a-less_than-b |
+                            less_than(a, b)
+                            [by hypothesis when-a-less_than-b]
+                          @b-less_than-a-or-equal |
+                            less_than(b, a) or b = a
+                            [using specialize lessOrEqualSplit(b, a) b-at-most-a]
+                          @conclusion-a-equals-b |
+                            a = b
+                            case b-less_than-a-or-equal {
+                              @when-b-less_than-a |
+                                assume less_than(b, a) {
+                                  @b-less_than-a |
+                                    less_than(b, a)
+                                    [by hypothesis when-b-less_than-a]
+                                  // a < b and b < a give a < a, impossible.
+                                  @a-less_than-a |
+                                    less_than(a, a)
+                                    [using specialize lessThanTransitive(a, b, a) a-less_than-b b-less_than-a]
+                                  @not-a-less_than-a |
+                                    not less_than(a, a)
+                                    [using specialize lessThanIrreflexive(a)]
+                                  @conclusion-a-equals-b |
+                                    a = b
+                                    [by absurd a-less_than-a not-a-less_than-a]
+                                }
+                              @when-b-equals-a |
+                                assume b = a {
+                                  @b-equals-a |
+                                    b = a
+                                    [by hypothesis when-b-equals-a]
+                                  @conclusion-a-equals-b |
+                                    a = b
+                                    [by symmetry b-equals-a]
+                                }
+                            }
+                        }
+                      @when-a-equals-b |
+                        assume a = b {
+                          @conclusion-a-equals-b |
+                            a = b
+                            [by hypothesis when-a-equals-b]
+                        }
+                    }
+                }
+              @b-at-most-a-implies-equal |
+                less_or_equal(b, a) -> a = b
+                [by implies_intro given-b-at-most-a]
+            }
+          @at-most-both-ways-implies-equal |
+            less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+            [by implies_intro given-a-at-most-b]
+        }
+      @discharge-b |
+        forall b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// Growing the upper bound preserves order: a < b gives a < succ b. The gap succ d
+// becomes succ(succ d), still nonneg (nonnegSucc).
+theorem lessThanSuccRight: forall a, b: Int; less_than(a, b) -> less_than(a, succ(b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-less_than-b |
+            assume less_than(a, b) {
+              @a-less_than-b |
+                less_than(a, b)
+                [by hypothesis given-a-less_than-b]
+              @gap-exists |
+                exists d: Int; nonneg(d) and add(a, succ(d)) = b
+                [using specialize lessThanElim(a, b) a-less_than-b]
+              @with-gap-d |
+                unpack d0: Int from gap-exists {
+                  @gap-nonneg-and-witnesses-b |
+                    nonneg(d0) and add(a, succ(d0)) = b
+                    [by hypothesis with-gap-d]
+                  @gap-nonneg |
+                    nonneg(d0)
+                    [by and_elim_left gap-nonneg-and-witnesses-b]
+                  @gap-witnesses-b |
+                    add(a, succ(d0)) = b
+                    [by and_elim_right gap-nonneg-and-witnesses-b]
+                  // grow the gap by one; succ(d0) is nonneg, and add(a, succ(succ d0)) = succ b.
+                  @grown-gap-is-successor |
+                    add(a, succ(succ(d0))) = succ(add(a, succ(d0)))
+                    [using specialize addSuccRight(a, succ(d0))]
+                  @grown-gap-reaches-succ-b |
+                    add(a, succ(succ(d0))) = succ(b)
+                    [by rewrite gap-witnesses-b grown-gap-is-successor]
+                  @grown-gap-nonneg |
+                    nonneg(succ(d0))
+                    [using specialize nonnegSucc(d0) gap-nonneg]
+                  @a-less_than-succ-b |
+                    less_than(a, succ(b))
+                    [using specialize lessThanIntro(a, succ(d0), succ(b)) grown-gap-nonneg grown-gap-reaches-succ-b]
+                }
+              @a-less_than-succ-b |
+                less_than(a, succ(b))
+                [by exists_elim with-gap-d]
+            }
+          @a-less_than-b-implies-a-less_than-succ-b |
+            less_than(a, b) -> less_than(a, succ(b))
+            [by implies_intro given-a-less_than-b]
+        }
+      @discharge-b |
+        forall b: Int; less_than(a, b) -> less_than(a, succ(b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(a, b) -> less_than(a, succ(b))
+    [by forall_intro generalize-a]
+qed
+
+// If k < 0, then either succ(k) < 0 or succ(k) = 0. Unpack the gap d in k < 0
+// (add(k, succ d) = 0). Case on d: if d = 0 the gap collapses so succ(k) = 0; if
+// d = succ(m) the gap add(succ k, succ m) = 0 witnesses succ(k) < 0.
+theorem lessThanZeroSuccSplit: forall k: Int; less_than(k, ZERO) -> (less_than(succ(k), ZERO) or succ(k) = ZERO)
+proof
+  @generalize-k |
+    fix k: Int {
+      @given-k-less_than-zero |
+        assume less_than(k, ZERO) {
+          @k-less_than-zero |
+            less_than(k, ZERO)
+            [by hypothesis given-k-less_than-zero]
+          @gap-exists |
+            exists d: Int; nonneg(d) and add(k, succ(d)) = ZERO
+            [using specialize lessThanElim(k, ZERO) k-less_than-zero]
+          @with-gap-d |
+            unpack d0: Int from gap-exists {
+              @gap-nonneg-and-witnesses-zero |
+                nonneg(d0) and add(k, succ(d0)) = ZERO
+                [by hypothesis with-gap-d]
+              @gap-nonneg |
+                nonneg(d0)
+                [by and_elim_left gap-nonneg-and-witnesses-zero]
+              @gap-witnesses-zero |
+                add(k, succ(d0)) = ZERO
+                [by and_elim_right gap-nonneg-and-witnesses-zero]
+              @gap-is-zero-or-successor |
+                d0 = ZERO or (exists m: Int; nonneg(m) and d0 = succ(m))
+                [using specialize nonnegCases(d0) gap-nonneg]
+              @succ-less_than-or-equal-zero |
+                less_than(succ(k), ZERO) or succ(k) = ZERO
+                case gap-is-zero-or-successor {
+                  @when-gap-is-zero |
+                    assume d0 = ZERO {
+                      @gap-is-zero |
+                        d0 = ZERO
+                        [by hypothesis when-gap-is-zero]
+                      @succ-k-witnesses-zero |
+                        add(k, succ(ZERO)) = ZERO
+                        [by rewrite gap-is-zero gap-witnesses-zero]
+                      @succ-of-k-plus-zero |
+                        add(k, succ(ZERO)) = succ(add(k, ZERO))
+                        [using specialize addSuccRight(k, ZERO)]
+                      @k-plus-zero-is-k |
+                        add(k, ZERO) = k
+                        [using specialize addZeroRight(k)]
+                      @succ-of-k-plus-zero-is-succ-k |
+                        add(k, succ(ZERO)) = succ(k)
+                        [by rewrite k-plus-zero-is-k succ-of-k-plus-zero]
+                      @succ-k-is-zero |
+                        succ(k) = ZERO
+                        [by rewrite succ-of-k-plus-zero-is-succ-k succ-k-witnesses-zero]
+                      @conclusion-succ-less_than-or-equal-zero |
+                        less_than(succ(k), ZERO) or succ(k) = ZERO
+                        [by or_intro_right succ-k-is-zero]
+                    }
+                  @when-gap-is-successor |
+                    assume exists m: Int; nonneg(m) and d0 = succ(m) {
+                      @gap-is-some-successor |
+                        exists m: Int; nonneg(m) and d0 = succ(m)
+                        [by hypothesis when-gap-is-successor]
+                      @with-predecessor-m |
+                        unpack m0: Int from gap-is-some-successor {
+                          @predecessor-nonneg-and-gap-is-succ |
+                            nonneg(m0) and d0 = succ(m0)
+                            [by hypothesis with-predecessor-m]
+                          @predecessor-nonneg |
+                            nonneg(m0)
+                            [by and_elim_left predecessor-nonneg-and-gap-is-succ]
+                          @gap-is-succ-m |
+                            d0 = succ(m0)
+                            [by and_elim_right predecessor-nonneg-and-gap-is-succ]
+                          @gap-succ-succ-witnesses-zero |
+                            add(k, succ(succ(m0))) = ZERO
+                            [by rewrite gap-is-succ-m gap-witnesses-zero]
+                          @right-succ-pulls-out |
+                            add(k, succ(succ(m0))) = succ(add(k, succ(m0)))
+                            [using specialize addSuccRight(k, succ(m0))]
+                          @left-succ-pulls-out |
+                            add(succ(k), succ(m0)) = succ(add(k, succ(m0)))
+                            [using specialize addSuccLeft(k, succ(m0))]
+                          // succ(k)+succ(m) = succ(k+succ m) = k+succ(succ m)
+                          @left-equals-right-succ |
+                            add(succ(k), succ(m0)) = add(k, succ(succ(m0)))
+                            [using chain left-succ-pulls-out right-succ-pulls-out]
+                          // succ(k)+succ(m) = k+succ(succ m) = 0
+                          @succ-k-gap-witnesses-zero |
+                            add(succ(k), succ(m0)) = ZERO
+                            [using chain left-equals-right-succ gap-succ-succ-witnesses-zero]
+                          @succ-k-less_than-zero |
+                            less_than(succ(k), ZERO)
+                            [using specialize lessThanIntro(succ(k), m0, ZERO) predecessor-nonneg succ-k-gap-witnesses-zero]
+                          @conclusion-succ-less_than-or-equal-zero |
+                            less_than(succ(k), ZERO) or succ(k) = ZERO
+                            [by or_intro_left succ-k-less_than-zero]
+                        }
+                      @conclusion-succ-less_than-or-equal-zero |
+                        less_than(succ(k), ZERO) or succ(k) = ZERO
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @succ-less_than-or-equal-zero |
+            less_than(succ(k), ZERO) or succ(k) = ZERO
+            [by exists_elim with-gap-d]
+        }
+      @k-less_than-zero-implies-succ-split |
+        less_than(k, ZERO) -> (less_than(succ(k), ZERO) or succ(k) = ZERO)
+        [by implies_intro given-k-less_than-zero]
+    }
+  @conclusion |
+    forall k: Int; less_than(k, ZERO) -> (less_than(succ(k), ZERO) or succ(k) = ZERO)
+    [by forall_intro generalize-k]
+qed
+
+// If 0 < k, then either 0 < prev(k) or prev(k) = 0. Unpack the gap d in 0 < k, so
+// add(0, succ d) = k, i.e. succ(d) = k and prev(k) = d. Case on d: d = 0 gives
+// prev(k) = 0; d = succ(m) with nonneg(m) gives 0 < d = prev(k).
+theorem lessThanZeroPrevSplit: forall k: Int; less_than(ZERO, k) -> (less_than(ZERO, prev(k)) or prev(k) = ZERO)
+proof
+  @generalize-k |
+    fix k: Int {
+      @given-zero-less_than-k |
+        assume less_than(ZERO, k) {
+          @zero-less_than-k |
+            less_than(ZERO, k)
+            [by hypothesis given-zero-less_than-k]
+          @gap-exists |
+            exists d: Int; nonneg(d) and add(ZERO, succ(d)) = k
+            [using specialize lessThanElim(ZERO, k) zero-less_than-k]
+          @with-gap-d |
+            unpack d0: Int from gap-exists {
+              @gap-nonneg-and-witnesses-k |
+                nonneg(d0) and add(ZERO, succ(d0)) = k
+                [by hypothesis with-gap-d]
+              @gap-nonneg |
+                nonneg(d0)
+                [by and_elim_left gap-nonneg-and-witnesses-k]
+              @gap-witnesses-k |
+                add(ZERO, succ(d0)) = k
+                [by and_elim_right gap-nonneg-and-witnesses-k]
+              @zero-plus-succ-d-is-succ-d |
+                add(ZERO, succ(d0)) = succ(d0)
+                [using specialize addZeroLeft(succ(d0))]
+              @succ-d-is-k |
+                succ(d0) = k
+                [by rewrite zero-plus-succ-d-is-succ-d gap-witnesses-k]
+              @prev-of-succ-d-is-d |
+                prev(succ(d0)) = d0
+                [using specialize integer.prevSucc(d0)]
+              @prev-k-is-d |
+                prev(k) = d0
+                [by rewrite succ-d-is-k prev-of-succ-d-is-d]
+              @gap-is-zero-or-successor |
+                d0 = ZERO or (exists m: Int; nonneg(m) and d0 = succ(m))
+                [using specialize nonnegCases(d0) gap-nonneg]
+              @zero-less_than-or-equal-prev |
+                less_than(ZERO, prev(k)) or prev(k) = ZERO
+                case gap-is-zero-or-successor {
+                  @when-gap-is-zero |
+                    assume d0 = ZERO {
+                      @gap-is-zero |
+                        d0 = ZERO
+                        [by hypothesis when-gap-is-zero]
+                      @prev-k-is-zero |
+                        prev(k) = ZERO
+                        [by rewrite gap-is-zero prev-k-is-d]
+                      @conclusion-zero-less_than-or-equal-prev |
+                        less_than(ZERO, prev(k)) or prev(k) = ZERO
+                        [by or_intro_right prev-k-is-zero]
+                    }
+                  @when-gap-is-successor |
+                    assume exists m: Int; nonneg(m) and d0 = succ(m) {
+                      @gap-is-some-successor |
+                        exists m: Int; nonneg(m) and d0 = succ(m)
+                        [by hypothesis when-gap-is-successor]
+                      @with-predecessor-m |
+                        unpack m0: Int from gap-is-some-successor {
+                          @predecessor-nonneg-and-gap-is-succ |
+                            nonneg(m0) and d0 = succ(m0)
+                            [by hypothesis with-predecessor-m]
+                          @predecessor-nonneg |
+                            nonneg(m0)
+                            [by and_elim_left predecessor-nonneg-and-gap-is-succ]
+                          @gap-is-succ-m |
+                            d0 = succ(m0)
+                            [by and_elim_right predecessor-nonneg-and-gap-is-succ]
+                          @prev-k-is-succ-m |
+                            prev(k) = succ(m0)
+                            [by rewrite gap-is-succ-m prev-k-is-d]
+                          @zero-plus-succ-m |
+                            add(ZERO, succ(m0)) = succ(m0)
+                            [using specialize addZeroLeft(succ(m0))]
+                          // 0+succ(m) = succ(m) = prev(k)
+                          @zero-gap-reaches-prev-k |
+                            add(ZERO, succ(m0)) = prev(k)
+                            [using chain zero-plus-succ-m prev-k-is-succ-m]
+                          @zero-less_than-prev-k |
+                            less_than(ZERO, prev(k))
+                            [using specialize lessThanIntro(ZERO, m0, prev(k)) predecessor-nonneg zero-gap-reaches-prev-k]
+                          @conclusion-zero-less_than-or-equal-prev |
+                            less_than(ZERO, prev(k)) or prev(k) = ZERO
+                            [by or_intro_left zero-less_than-prev-k]
+                        }
+                      @conclusion-zero-less_than-or-equal-prev |
+                        less_than(ZERO, prev(k)) or prev(k) = ZERO
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @zero-less_than-or-equal-prev |
+            less_than(ZERO, prev(k)) or prev(k) = ZERO
+            [by exists_elim with-gap-d]
+        }
+      @zero-less_than-k-implies-prev-split |
+        less_than(ZERO, k) -> (less_than(ZERO, prev(k)) or prev(k) = ZERO)
+        [by implies_intro given-zero-less_than-k]
+    }
+  @conclusion |
+    forall k: Int; less_than(ZERO, k) -> (less_than(ZERO, prev(k)) or prev(k) = ZERO)
+    [by forall_intro generalize-k]
+qed
+
+// prev(n) < n: the gap 0 suffices, since add(prev n, succ 0) = succ(prev n) = n.
+theorem prevLessThanSelf: forall n: Int; less_than(prev(n), n)
+proof
+  @generalize-n |
+    fix n: Int {
+      @prev-plus-succ-zero |
+        add(prev(n), succ(ZERO)) = succ(add(prev(n), ZERO))
+        [using specialize addSuccRight(prev(n), ZERO)]
+      @prev-plus-zero-is-prev |
+        add(prev(n), ZERO) = prev(n)
+        [using specialize addZeroRight(prev(n))]
+      @prev-plus-succ-zero-is-succ-prev |
+        add(prev(n), succ(ZERO)) = succ(prev(n))
+        [by rewrite prev-plus-zero-is-prev prev-plus-succ-zero]
+      @succ-prev-n-is-n |
+        succ(prev(n)) = n
+        [using specialize integer.succPrev(n)]
+      @gap-reaches-n |
+        add(prev(n), succ(ZERO)) = n
+        [by rewrite succ-prev-n-is-n prev-plus-succ-zero-is-succ-prev]
+      @zero-is-nonneg |
+        nonneg(ZERO)
+        [by cite nonnegZero]
+      @prev-less_than-n |
+        less_than(prev(n), n)
+        [using specialize lessThanIntro(prev(n), ZERO, n) zero-is-nonneg gap-reaches-n]
+    }
+  @conclusion |
+    forall n: Int; less_than(prev(n), n)
+    [by forall_intro generalize-n]
+qed
+
+// Sign trichotomy: every n is positive, zero, or negative. Bidirectional
+// induction on n. Base: n = 0 is the middle disjunct. Succ step: from the sign
+// of k determine the sign of succ(k), using lessThanSuccRight (positive stays
+// positive), a direct gap for 0 < succ(0), and lessThanZeroSuccSplit (negative k
+// gives succ(k) < 0 or succ(k) = 0). Prev step is the mirror image, using
+// prevLessThanSelf/lessThanTransitive (negative stays negative), a direct gap for
+// prev(0) < 0, and lessThanZeroPrevSplit (positive k gives 0 < prev(k) or = 0).
+theorem signTrichotomy: forall n: Int; less_than(ZERO, n) or n = ZERO or less_than(n, ZERO)
+proof
+  // base case: n = ZERO -- middle disjunct.
+  @zero-equals-zero |
+    ZERO = ZERO
+    [by reflexivity]
+  @base-less_than-or-equal |
+    less_than(ZERO, ZERO) or ZERO = ZERO
+    [by or_intro_right zero-equals-zero]
+  @base-case |
+    less_than(ZERO, ZERO) or ZERO = ZERO or less_than(ZERO, ZERO)
+    [by or_intro_left base-less_than-or-equal]
+
+  // succ step: from prop(k) derive prop(succ k).
+  @induction-step |
+    fix k: Int {
+      @given-inductive-hypothesis |
+        assume less_than(ZERO, k) or k = ZERO or less_than(k, ZERO) {
+          @inductive-hypothesis |
+            less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)
+            [by hypothesis given-inductive-hypothesis]
+          @sign-of-succ-k |
+            less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+            case inductive-hypothesis {
+              @when-k-nonneg |
+                assume less_than(ZERO, k) or k = ZERO {
+                  @k-positive-or-zero |
+                    less_than(ZERO, k) or k = ZERO
+                    [by hypothesis when-k-nonneg]
+                  @sign-of-succ-k |
+                    less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                    case k-positive-or-zero {
+                      @when-k-positive |
+                        assume less_than(ZERO, k) {
+                          @k-positive |
+                            less_than(ZERO, k)
+                            [by hypothesis when-k-positive]
+                          @zero-less_than-succ-k |
+                            less_than(ZERO, succ(k))
+                            [using specialize lessThanSuccRight(ZERO, k) k-positive]
+                          @less_than-or-equal |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO
+                            [by or_intro_left zero-less_than-succ-k]
+                          @conclusion-sign-of-succ-k |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                            [by or_intro_left less_than-or-equal]
+                        }
+                      @when-k-zero |
+                        assume k = ZERO {
+                          @k-is-zero |
+                            k = ZERO
+                            [by hypothesis when-k-zero]
+                          @zero-plus-succ-zero |
+                            add(ZERO, succ(ZERO)) = succ(ZERO)
+                            [using specialize addZeroLeft(succ(ZERO))]
+                          @zero-is-nonneg |
+                            nonneg(ZERO)
+                            [by cite nonnegZero]
+                          @zero-less_than-succ-zero |
+                            less_than(ZERO, succ(ZERO))
+                            [using specialize lessThanIntro(ZERO, ZERO, succ(ZERO)) zero-is-nonneg zero-plus-succ-zero]
+                          @zero-less_than-succ-k |
+                            less_than(ZERO, succ(k))
+                            [by rewrite k-is-zero zero-less_than-succ-zero]
+                          @less_than-or-equal |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO
+                            [by or_intro_left zero-less_than-succ-k]
+                          @conclusion-sign-of-succ-k |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                            [by or_intro_left less_than-or-equal]
+                        }
+                    }
+                }
+              @when-k-negative |
+                assume less_than(k, ZERO) {
+                  @k-negative |
+                    less_than(k, ZERO)
+                    [by hypothesis when-k-negative]
+                  @succ-k-less_than-or-equal-zero |
+                    less_than(succ(k), ZERO) or succ(k) = ZERO
+                    [using specialize lessThanZeroSuccSplit(k) k-negative]
+                  @sign-of-succ-k |
+                    less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                    case succ-k-less_than-or-equal-zero {
+                      @when-succ-k-negative |
+                        assume less_than(succ(k), ZERO) {
+                          @succ-k-negative |
+                            less_than(succ(k), ZERO)
+                            [by hypothesis when-succ-k-negative]
+                          @conclusion-sign-of-succ-k |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                            [by or_intro_right succ-k-negative]
+                        }
+                      @when-succ-k-zero |
+                        assume succ(k) = ZERO {
+                          @succ-k-is-zero |
+                            succ(k) = ZERO
+                            [by hypothesis when-succ-k-zero]
+                          @less_than-or-equal |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO
+                            [by or_intro_right succ-k-is-zero]
+                          @conclusion-sign-of-succ-k |
+                            less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO)
+                            [by or_intro_left less_than-or-equal]
+                        }
+                    }
+                }
+            }
+        }
+      @sign-of-k-implies-sign-of-succ-k |
+        (less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)) -> (less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @succ-step-for-all-k |
+    forall k: Int; (less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)) -> (less_than(ZERO, succ(k)) or succ(k) = ZERO or less_than(succ(k), ZERO))
+    [by forall_intro induction-step]
+
+  // prev step: from prop(k) derive prop(prev k).
+  @prev-induction-step |
+    fix k: Int {
+      @given-inductive-hypothesis-prev |
+        assume less_than(ZERO, k) or k = ZERO or less_than(k, ZERO) {
+          @inductive-hypothesis |
+            less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)
+            [by hypothesis given-inductive-hypothesis-prev]
+          @sign-of-prev-k |
+            less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO)
+            case inductive-hypothesis {
+              @when-k-nonneg |
+                assume less_than(ZERO, k) or k = ZERO {
+                  @k-positive-or-zero |
+                    less_than(ZERO, k) or k = ZERO
+                    [by hypothesis when-k-nonneg]
+                  @sign-of-prev-k |
+                    less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO)
+                    case k-positive-or-zero {
+                      @when-k-positive |
+                        assume less_than(ZERO, k) {
+                          @k-positive |
+                            less_than(ZERO, k)
+                            [by hypothesis when-k-positive]
+                          @prev-k-nonneg |
+                            less_than(ZERO, prev(k)) or prev(k) = ZERO
+                            [using specialize lessThanZeroPrevSplit(k) k-positive]
+                          @conclusion-sign-of-prev-k |
+                            less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO)
+                            [by or_intro_left prev-k-nonneg]
+                        }
+                      @when-k-zero |
+                        assume k = ZERO {
+                          @k-is-zero |
+                            k = ZERO
+                            [by hypothesis when-k-zero]
+                          @prev-zero-less_than-zero |
+                            less_than(prev(ZERO), ZERO)
+                            [using specialize prevLessThanSelf(ZERO)]
+                          @prev-k-reflexive |
+                            prev(k) = prev(k)
+                            [by reflexivity]
+                          @prev-zero-is-prev-k |
+                            prev(ZERO) = prev(k)
+                            [by rewrite k-is-zero prev-k-reflexive]
+                          @prev-k-less_than-zero |
+                            less_than(prev(k), ZERO)
+                            [by rewrite prev-zero-is-prev-k prev-zero-less_than-zero]
+                          @conclusion-sign-of-prev-k |
+                            less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO)
+                            [by or_intro_right prev-k-less_than-zero]
+                        }
+                    }
+                }
+              @when-k-negative |
+                assume less_than(k, ZERO) {
+                  @k-negative |
+                    less_than(k, ZERO)
+                    [by hypothesis when-k-negative]
+                  @prev-k-less_than-k |
+                    less_than(prev(k), k)
+                    [using specialize prevLessThanSelf(k)]
+                  @prev-k-less_than-zero |
+                    less_than(prev(k), ZERO)
+                    [using specialize lessThanTransitive(prev(k), k, ZERO) prev-k-less_than-k k-negative]
+                  @conclusion-sign-of-prev-k |
+                    less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO)
+                    [by or_intro_right prev-k-less_than-zero]
+                }
+            }
+        }
+      @sign-of-k-implies-sign-of-prev-k |
+        (less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)) -> (less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO))
+        [by implies_intro given-inductive-hypothesis-prev]
+    }
+  @prev-step-for-all-k |
+    forall k: Int; (less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)) -> (less_than(ZERO, prev(k)) or prev(k) = ZERO or less_than(prev(k), ZERO))
+    [by forall_intro prev-induction-step]
+
+  @conclusion |
+    forall n: Int; less_than(ZERO, n) or n = ZERO or less_than(n, ZERO)
+    [using instantiation induction((fun n: Int => less_than(ZERO, n) or n = ZERO or less_than(n, ZERO))) base-case succ-step-for-all-k prev-step-for-all-k]
+qed
+
+// Full trichotomy on Int: reduce to the sign of the difference sub(b, a). By
+// signTrichotomy the difference is positive, zero, or negative. Since
+// add(a, sub(b, a)) = b and add(a, 0) = a, additionPreservesOrder lifts each case
+// to a < b, a = b, or b < a respectively.
+theorem trichotomy: forall a, b: Int; less_than(a, b) or a = b or less_than(b, a)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @sign-of-difference |
+            less_than(ZERO, sub(b, a)) or sub(b, a) = ZERO or less_than(sub(b, a), ZERO)
+            [using specialize signTrichotomy(sub(b, a))]
+          @a-plus-difference-is-b |
+            add(a, sub(b, a)) = b
+            [using arithmetic]
+          @a-plus-zero-is-a |
+            add(a, ZERO) = a
+            [using specialize addZeroRight(a)]
+          @trichotomy-at-a-b |
+            less_than(a, b) or a = b or less_than(b, a)
+            case sign-of-difference {
+              @when-difference-positive-or-zero |
+                assume less_than(ZERO, sub(b, a)) or sub(b, a) = ZERO {
+                  @difference-positive-or-zero |
+                    less_than(ZERO, sub(b, a)) or sub(b, a) = ZERO
+                    [by hypothesis when-difference-positive-or-zero]
+                  @trichotomy-at-a-b |
+                    less_than(a, b) or a = b or less_than(b, a)
+                    case difference-positive-or-zero {
+                      @when-difference-positive |
+                        assume less_than(ZERO, sub(b, a)) {
+                          @difference-positive |
+                            less_than(ZERO, sub(b, a))
+                            [by hypothesis when-difference-positive]
+                          @a-plus-zero-less_than-a-plus-difference |
+                            less_than(add(a, ZERO), add(a, sub(b, a)))
+                            [using specialize additionPreservesOrder(ZERO, sub(b, a), a) difference-positive]
+                          @a-less_than-a-plus-difference |
+                            less_than(a, add(a, sub(b, a)))
+                            [by rewrite a-plus-zero-is-a a-plus-zero-less_than-a-plus-difference]
+                          @a-less_than-b |
+                            less_than(a, b)
+                            [by rewrite a-plus-difference-is-b a-less_than-a-plus-difference]
+                          @less_than-or-equal |
+                            less_than(a, b) or a = b
+                            [by or_intro_left a-less_than-b]
+                          @conclusion-trichotomy-at-a-b |
+                            less_than(a, b) or a = b or less_than(b, a)
+                            [by or_intro_left less_than-or-equal]
+                        }
+                      @when-difference-zero |
+                        assume sub(b, a) = ZERO {
+                          @difference-zero |
+                            sub(b, a) = ZERO
+                            [by hypothesis when-difference-zero]
+                          @a-plus-zero-is-b |
+                            add(a, ZERO) = b
+                            [by rewrite difference-zero a-plus-difference-is-b]
+                          @a-is-b |
+                            a = b
+                            [by rewrite a-plus-zero-is-a a-plus-zero-is-b]
+                          @less_than-or-equal |
+                            less_than(a, b) or a = b
+                            [by or_intro_right a-is-b]
+                          @conclusion-trichotomy-at-a-b |
+                            less_than(a, b) or a = b or less_than(b, a)
+                            [by or_intro_left less_than-or-equal]
+                        }
+                    }
+                }
+              @when-difference-negative |
+                assume less_than(sub(b, a), ZERO) {
+                  @difference-negative |
+                    less_than(sub(b, a), ZERO)
+                    [by hypothesis when-difference-negative]
+                  @a-plus-difference-less_than-a-plus-zero |
+                    less_than(add(a, sub(b, a)), add(a, ZERO))
+                    [using specialize additionPreservesOrder(sub(b, a), ZERO, a) difference-negative]
+                  @a-plus-difference-less_than-a |
+                    less_than(add(a, sub(b, a)), a)
+                    [by rewrite a-plus-zero-is-a a-plus-difference-less_than-a-plus-zero]
+                  @b-less_than-a |
+                    less_than(b, a)
+                    [by rewrite a-plus-difference-is-b a-plus-difference-less_than-a]
+                  @conclusion-trichotomy-at-a-b |
+                    less_than(a, b) or a = b or less_than(b, a)
+                    [by or_intro_right b-less_than-a]
+                }
+            }
+        }
+      @discharge-b |
+        forall b: Int; less_than(a, b) or a = b or less_than(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(a, b) or a = b or less_than(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// -- sign lemmas: multiplication and negation interact with the order --------
+
+// mul(neg(a), b) = neg(mul(a, b)) — negation on the LEFT factor pulls out.
+// integer-ring proves the RIGHT-factor mirror (mulNegRight) but not this one,
+// and ℤ has no proven mul-commutativity to swap them, so it needs its own
+// bidirectional induction on a. Each step unfolds the left mul-recursion on one
+// side and negAdd/negSucc/negPrev on the other; `simplify` closes the algebra.
+theorem mulNegLeft: forall a, b: Int; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @generalize-b |
+    fix b: Int {
+      @base-case |
+        mul(neg(ZERO), b) = neg(mul(ZERO, b))
+        [using simplify negZero mulZeroLeft]
+      @induction-step-succ |
+        fix a: Int {
+          @given-inductive-hypothesis |
+            assume mul(neg(a), b) = neg(mul(a, b)) {
+              @inductive-hypothesis |
+                mul(neg(a), b) = neg(mul(a, b))
+                [by hypothesis given-inductive-hypothesis]
+              @successor-case |
+                mul(neg(succ(a)), b) = neg(mul(succ(a), b))
+                [using simplify negSucc mulPrevLeft mulSuccLeft negAdd negNeg inductive-hypothesis]
+            }
+          @inductive-hypothesis-implies-successor |
+            mul(neg(a), b) = neg(mul(a, b)) -> mul(neg(succ(a)), b) = neg(mul(succ(a), b))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-succ |
+        forall a: Int; mul(neg(a), b) = neg(mul(a, b)) -> mul(neg(succ(a)), b) = neg(mul(succ(a), b))
+        [by forall_intro induction-step-succ]
+      @induction-step-prev |
+        fix a: Int {
+          @given-inductive-hypothesis |
+            assume mul(neg(a), b) = neg(mul(a, b)) {
+              @inductive-hypothesis |
+                mul(neg(a), b) = neg(mul(a, b))
+                [by hypothesis given-inductive-hypothesis]
+              @predecessor-case |
+                mul(neg(prev(a)), b) = neg(mul(prev(a), b))
+                [using simplify negPrev mulSuccLeft mulPrevLeft negAdd negNeg inductive-hypothesis]
+            }
+          @inductive-hypothesis-implies-predecessor |
+            mul(neg(a), b) = neg(mul(a, b)) -> mul(neg(prev(a)), b) = neg(mul(prev(a), b))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-prev |
+        forall a: Int; mul(neg(a), b) = neg(mul(a, b)) -> mul(neg(prev(a)), b) = neg(mul(prev(a), b))
+        [by forall_intro induction-step-prev]
+      @conclusion-for-b |
+        forall a: Int; mul(neg(a), b) = neg(mul(a, b))
+        [using instantiation induction((fun m: Int => mul(neg(m), b) = neg(mul(m, b)))) base-case induction-step-for-all-succ induction-step-for-all-prev]
+    }
+  @swapped-binders |
+    forall b, a: Int; mul(neg(a), b) = neg(mul(a, b))
+    [by forall_intro generalize-b]
+  // swap the two leading universals into first-appearance (a, b) order.
+  @reorder-a |
+    fix a: Int {
+      @reorder-b |
+        fix b: Int {
+          @at-a-b |
+            mul(neg(a), b) = neg(mul(a, b))
+            [by forall_elim(b, a) swapped-binders]
+        }
+      @discharge-reorder-b |
+        forall b: Int; mul(neg(a), b) = neg(mul(a, b))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Int; mul(neg(a), b) = neg(mul(a, b))
+    [by forall_intro reorder-a]
+qed
+
+// A product of nonnegatives is nonnegative. By upward induction on the second
+// factor b: the base mul(a, ZERO) = ZERO is nonneg, and the step turns
+// mul(a, succ k) into add(mul(a, k), a) — a sum of nonnegatives (nonnegAdd).
+theorem nonnegMul: forall a, b: Int; nonneg(a) -> nonneg(b) -> nonneg(mul(a, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @given-a-nonneg |
+        assume nonneg(a) {
+          @a-nonneg |
+            nonneg(a)
+            [by hypothesis given-a-nonneg]
+          // base: mul(a, ZERO) = ZERO is nonneg.
+          @a-times-zero-is-zero |
+            mul(a, ZERO) = ZERO
+            [using specialize mulZeroRight(a)]
+          @zero-is-nonneg |
+            nonneg(ZERO)
+            [by cite nonnegZero]
+          @base-case |
+            nonneg(mul(a, ZERO))
+            [by rewrite a-times-zero-is-zero zero-is-nonneg]
+          // step: nonneg(mul(a, k)) -> nonneg(mul(a, succ k)), since
+          // mul(a, succ k) = add(mul(a, k), a), a sum of nonnegatives.
+          @induction-step |
+            fix k: Int {
+              @given-k-nonneg |
+                assume nonneg(k) {
+                  @given-product-nonneg |
+                    assume nonneg(mul(a, k)) {
+                      @product-nonneg |
+                        nonneg(mul(a, k))
+                        [by hypothesis given-product-nonneg]
+                      @a-times-successor-k |
+                        mul(a, succ(k)) = add(mul(a, k), a)
+                        [using specialize mulSuccRight(a, k)]
+                      @product-plus-a-nonneg |
+                        nonneg(add(mul(a, k), a))
+                        [using specialize nonnegAdd(mul(a, k), a) product-nonneg a-nonneg]
+                      @grown-product-nonneg |
+                        nonneg(mul(a, succ(k)))
+                        [by rewrite a-times-successor-k product-plus-a-nonneg]
+                    }
+                  @product-nonneg-implies-grown-product-nonneg |
+                    nonneg(mul(a, k)) -> nonneg(mul(a, succ(k)))
+                    [by implies_intro given-product-nonneg]
+                }
+              @induction-step-at-k |
+                nonneg(k) -> nonneg(mul(a, k)) -> nonneg(mul(a, succ(k)))
+                [by implies_intro given-k-nonneg]
+            }
+          @induction-step-for-all-k |
+            forall k: Int; nonneg(k) -> nonneg(mul(a, k)) -> nonneg(mul(a, succ(k)))
+            [by forall_intro induction-step]
+          @product-nonneg-for-nonneg-b |
+            forall b: Int; nonneg(b) -> nonneg(mul(a, b))
+            [using instantiation nonnegInduction((fun b: Int => nonneg(mul(a, b)))) base-case induction-step-for-all-k]
+        }
+      @a-nonneg-implies-product-nonneg |
+        nonneg(a) -> forall b: Int; nonneg(b) -> nonneg(mul(a, b))
+        [by implies_intro given-a-nonneg]
+    }
+  @a-nonneg-gives-product-nonneg |
+    forall a: Int; nonneg(a) -> forall b: Int; nonneg(b) -> nonneg(mul(a, b))
+    [by forall_intro generalize-a]
+  // reshape `forall a; nonneg(a) -> forall b; ...` into the flat header shape.
+  @flatten |
+    fix a: Int {
+      @flatten-b |
+        fix bb: Int {
+          @given-a-nonneg |
+            assume nonneg(a) {
+              @given-b-nonneg |
+                assume nonneg(bb) {
+                  @a-nonneg |
+                    nonneg(a)
+                    [by hypothesis given-a-nonneg]
+                  @b-nonneg |
+                    nonneg(bb)
+                    [by hypothesis given-b-nonneg]
+                  @conclusion-product-nonneg |
+                    nonneg(mul(a, bb))
+                    [using specialize a-nonneg-gives-product-nonneg(a, bb) a-nonneg b-nonneg]
+                }
+              @b-nonneg-implies-product-nonneg |
+                nonneg(bb) -> nonneg(mul(a, bb))
+                [by implies_intro given-b-nonneg]
+            }
+          @both-nonneg-imply-product-nonneg |
+            nonneg(a) -> nonneg(bb) -> nonneg(mul(a, bb))
+            [by implies_intro given-a-nonneg]
+        }
+      @discharge-b |
+        forall bb: Int; nonneg(a) -> nonneg(bb) -> nonneg(mul(a, bb))
+        [by forall_intro flatten-b]
+    }
+  @conclusion |
+    forall a, b: Int; nonneg(a) -> nonneg(b) -> nonneg(mul(a, b))
+    [by forall_intro flatten]
+qed
+
+// n < 0 implies -n is nonnegative. The strict-order witness gives a nonneg d
+// with add(n, succ(d)) = ZERO = add(n, neg(n)); cancelling n on the left pins
+// neg(n) = succ(d), which is nonneg since d is (nonnegSucc).
+theorem negLessThanZero: forall n: Int; less_than(n, ZERO) -> nonneg(neg(n))
+proof
+  @generalize-n |
+    fix n: Int {
+      @given-n-less_than-zero |
+        assume less_than(n, ZERO) {
+          @n-less_than-zero |
+            less_than(n, ZERO)
+            [by hypothesis given-n-less_than-zero]
+          @gap-exists |
+            exists d: Int; nonneg(d) and add(n, succ(d)) = ZERO
+            [using specialize lessThanElim(n, ZERO) n-less_than-zero]
+          @with-gap-d |
+            unpack d0: Int from gap-exists {
+              @gap-nonneg-and-witnesses-zero |
+                nonneg(d0) and add(n, succ(d0)) = ZERO
+                [by hypothesis with-gap-d]
+              @gap-nonneg |
+                nonneg(d0)
+                [by and_elim_left gap-nonneg-and-witnesses-zero]
+              @gap-witnesses-zero |
+                add(n, succ(d0)) = ZERO
+                [by and_elim_right gap-nonneg-and-witnesses-zero]
+              // add(n, succ d0) = 0 ⟹ succ d0 = neg n; certifier gap marked via
+              // additiveInverseUnique.
+              @negation-is-gap |
+                succ(d0) = neg(n)
+                [using arithmetic fallback(additiveInverseUnique) gap-witnesses-zero]
+              @succ-gap-nonneg |
+                nonneg(succ(d0))
+                [using specialize nonnegSucc(d0) gap-nonneg]
+              @conclusion-negation-nonneg |
+                nonneg(neg(n))
+                [by rewrite negation-is-gap succ-gap-nonneg]
+            }
+          @negation-nonneg |
+            nonneg(neg(n))
+            [by exists_elim with-gap-d]
+        }
+      @less_than-zero-implies-negation-nonneg |
+        less_than(n, ZERO) -> nonneg(neg(n))
+        [by implies_intro given-n-less_than-zero]
+    }
+  @conclusion |
+    forall n: Int; less_than(n, ZERO) -> nonneg(neg(n))
+    [by forall_intro generalize-n]
+qed
+
+// A product of two nonpositive factors is nonnegative: mul(x, y) equals
+// mul(neg(x), neg(y)) (mulNegLeft then mulNegRight then negNeg collapse the two
+// sign flips), and both -x and -y are nonneg, so nonnegMul finishes.
+theorem productOfNonpositiveFactorsIsNonneg: forall x, y: Int; nonneg(neg(x)) -> nonneg(neg(y)) -> nonneg(mul(x, y))
+proof
+  @generalize-x |
+    fix x: Int {
+      @generalize-y |
+        fix y: Int {
+          @given-neg-x-nonneg |
+            assume nonneg(neg(x)) {
+              @given-neg-y-nonneg |
+                assume nonneg(neg(y)) {
+                  @neg-x-nonneg |
+                    nonneg(neg(x))
+                    [by hypothesis given-neg-x-nonneg]
+                  @neg-y-nonneg |
+                    nonneg(neg(y))
+                    [by hypothesis given-neg-y-nonneg]
+                  // product of the two nonneg negations is nonneg.
+                  @neg-product-nonneg |
+                    nonneg(mul(neg(x), neg(y)))
+                    [using specialize nonnegMul(neg(x), neg(y)) neg-x-nonneg neg-y-nonneg]
+                  // mul(neg x, neg y) = neg(mul(x, neg y)) = neg(neg(mul(x, y))) = mul(x, y).
+                  @left-flip |
+                    mul(neg(x), neg(y)) = neg(mul(x, neg(y)))
+                    [using specialize mulNegLeft(x, neg(y))]
+                  @right-flip |
+                    mul(x, neg(y)) = neg(mul(x, y))
+                    [using specialize mulNegRight(x, y)]
+                  @double-negation-of-product |
+                    neg(neg(mul(x, y))) = mul(x, y)
+                    [using specialize negNeg(mul(x, y))]
+                  // rewrite mul(neg x, neg y) down to mul(x, y).
+                  @neg-product-is-neg-neg-product |
+                    mul(neg(x), neg(y)) = neg(neg(mul(x, y)))
+                    [by rewrite right-flip left-flip]
+                  @neg-product-is-product |
+                    mul(neg(x), neg(y)) = mul(x, y)
+                    [by rewrite double-negation-of-product neg-product-is-neg-neg-product]
+                  @conclusion-product-nonneg |
+                    nonneg(mul(x, y))
+                    [by rewrite neg-product-is-product neg-product-nonneg]
+                }
+              @neg-y-nonneg-implies-product-nonneg |
+                nonneg(neg(y)) -> nonneg(mul(x, y))
+                [by implies_intro given-neg-y-nonneg]
+            }
+          @nonpositive-factors-imply-product-nonneg |
+            nonneg(neg(x)) -> nonneg(neg(y)) -> nonneg(mul(x, y))
+            [by implies_intro given-neg-x-nonneg]
+        }
+      @discharge-y |
+        forall y: Int; nonneg(neg(x)) -> nonneg(neg(y)) -> nonneg(mul(x, y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Int; nonneg(neg(x)) -> nonneg(neg(y)) -> nonneg(mul(x, y))
+    [by forall_intro generalize-x]
+qed
+
+// mul(a, b) = mul(b, a). integer-ring bootstraps the RIGHT mul-recursion but
+// leaves commutativity for a consumer; the sign lemmas and the division
+// algorithm need it to reassociate products. Bidirectional induction on the
+// second factor (with a fixed): each step unfolds mulSuccRight/mulPrevLeft (and
+// mirrors) onto the shared normal form add(mul(k, a), a) / ..., closed by
+// `simplify` against the inductive hypothesis.
+// mul commutativity is a pure ring fact — it now lives in integer.b4m's
+// ring layer (no order needed); alias it here.
+theorem mulIsCommutative = integer.mulIsCommutative
+
+// -- small sign/order facts consumed by the division and prime chapters ------
+
+// 0 < 1: the gap succ(ZERO) = ONE witnesses it (add(ZERO, succ ZERO) = ONE).
+theorem zeroLessThanOne: less_than(ZERO, ONE)
+proof
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @zero-nonneg |
+    nonneg(ZERO)
+    [by cite nonnegZero]
+  @zero-plus-succ-zero-is-succ-zero |
+    add(ZERO, succ(ZERO)) = succ(ZERO)
+    [using specialize addZeroLeft(succ(ZERO))]
+  @zero-plus-succ-zero-is-one |
+    add(ZERO, succ(ZERO)) = ONE
+    [by rewrite one-is-succ-zero zero-plus-succ-zero-is-succ-zero]
+  @conclusion |
+    less_than(ZERO, ONE)
+    [using specialize lessThanIntro(ZERO, ZERO, ONE) zero-nonneg zero-plus-succ-zero-is-one]
+qed
+
+// -1 < 0: add(neg(ONE), succ(ZERO)) = ZERO with nonneg gap ZERO, so lessThanIntro
+// gives less_than(neg(ONE), ZERO). Used by coprimeBezout to reject d = -1.
+theorem negOneLessThanZero: less_than(neg(ONE), ZERO)
+proof
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @neg-one-plus-one-is-zero |
+    add(neg(ONE), ONE) = ZERO
+    [using specialize addNegLeft(ONE)]
+  @neg-one-plus-succ-zero-is-zero |
+    add(neg(ONE), succ(ZERO)) = ZERO
+    [by rewrite one-is-succ-zero neg-one-plus-one-is-zero]
+  @zero-is-nonneg |
+    nonneg(ZERO)
+    [by cite nonnegZero]
+  @conclusion |
+    less_than(neg(ONE), ZERO)
+    [using specialize lessThanIntro(neg(ONE), ZERO, ZERO) zero-is-nonneg neg-one-plus-succ-zero-is-zero]
+qed
+
+// A positive integer is nonnegative: unfold less_than(ZERO, x) to a gap succ(d) = x
+// with d nonneg (add(ZERO, succ d) = x collapses to succ d = x), and the
+// successor of a nonneg is nonneg.
+theorem positiveIsNonneg: forall x: Int; less_than(ZERO, x) -> nonneg(x)
+proof
+  @generalize-x |
+    fix x: Int {
+      @given-x-positive |
+        assume less_than(ZERO, x) {
+          @x-positive |
+            less_than(ZERO, x)
+            [by hypothesis given-x-positive]
+          @gap-exists |
+            exists d: Int; nonneg(d) and add(ZERO, succ(d)) = x
+            [using specialize lessThanElim(ZERO, x) x-positive]
+          @with-gap-d |
+            unpack d: Int from gap-exists {
+              @gap-nonneg-and-reaches-x |
+                nonneg(d) and add(ZERO, succ(d)) = x
+                [by hypothesis with-gap-d]
+              @gap-nonneg |
+                nonneg(d)
+                [using tautology gap-nonneg-and-reaches-x]
+              @gap-reaches-x |
+                add(ZERO, succ(d)) = x
+                [using tautology gap-nonneg-and-reaches-x]
+              @zero-plus-succ-gap-is-succ-gap |
+                add(ZERO, succ(d)) = succ(d)
+                [using specialize addZeroLeft(succ(d))]
+              @succ-gap-is-x |
+                succ(d) = x
+                [by rewrite zero-plus-succ-gap-is-succ-gap gap-reaches-x]
+              @succ-gap-nonneg |
+                nonneg(succ(d))
+                [using specialize nonnegSucc(d) gap-nonneg]
+              @x-nonneg |
+                nonneg(x)
+                [by rewrite succ-gap-is-x succ-gap-nonneg]
+            }
+          @x-nonneg |
+            nonneg(x)
+            [by exists_elim with-gap-d]
+        }
+      @positive-implies-nonneg |
+        less_than(ZERO, x) -> nonneg(x)
+        [by implies_intro given-x-positive]
+    }
+  @conclusion |
+    forall x: Int; less_than(ZERO, x) -> nonneg(x)
+    [by forall_intro generalize-x]
+qed
+
+// A negative integer negates to a positive one. Unfold less_than(a, ZERO) to a
+// nonneg gap d with add(a, succ(d)) = ZERO; add -a on the left, regroup and
+// cancel a to get add(ZERO, succ(d)) = neg(a), off which lessThanIntro reads
+// less_than(ZERO, neg(a)).
+theorem negativeNegIsPositive: forall a: Int; less_than(a, ZERO) -> less_than(ZERO, neg(a))
+proof
+  @generalize-a |
+    fix a: Int {
+      @given-a-negative |
+        assume less_than(a, ZERO) {
+          @a-negative |
+            less_than(a, ZERO)
+            [by hypothesis given-a-negative]
+          @gap-exists |
+            exists d: Int; nonneg(d) and add(a, succ(d)) = ZERO
+            [using specialize lessThanElim(a, ZERO) a-negative]
+          @with-gap-d |
+            unpack d: Int from gap-exists {
+              @gap-nonneg-and-sums |
+                nonneg(d) and add(a, succ(d)) = ZERO
+                [by hypothesis with-gap-d]
+              @gap-nonneg |
+                nonneg(d)
+                [by and_elim_left gap-nonneg-and-sums]
+              @a-plus-successor-is-zero |
+                add(a, succ(d)) = ZERO
+                [by and_elim_right gap-nonneg-and-sums]
+              @add-is-associative |
+                forall x, y, z: Int; add(add(x, y), z) = add(x, add(y, z))
+                [by cite addIsAssociative]
+              @regroup |
+                add(add(neg(a), a), succ(d)) = add(neg(a), add(a, succ(d)))
+                [by forall_elim(neg(a), a, succ(d)) add-is-associative]
+              @neg-a-plus-a-is-zero |
+                add(neg(a), a) = ZERO
+                [using specialize addNegLeft(a)]
+              @add-zero-right-lemma |
+                forall n: Int; add(n, ZERO) = n
+                [by cite addZeroRight]
+              @neg-a-plus-zero-is-neg-a |
+                add(neg(a), ZERO) = neg(a)
+                [by forall_elim(neg(a)) add-zero-right-lemma]
+              @zero-plus-successor-is-neg-a |
+                add(ZERO, succ(d)) = neg(a)
+                [using chain neg-a-plus-a-is-zero regroup a-plus-successor-is-zero neg-a-plus-zero-is-neg-a]
+              @conclusion-neg-a-positive |
+                less_than(ZERO, neg(a))
+                [using specialize lessThanIntro(ZERO, d, neg(a)) gap-nonneg zero-plus-successor-is-neg-a]
+            }
+          @neg-a-positive |
+            less_than(ZERO, neg(a))
+            [by exists_elim with-gap-d]
+        }
+      @negative-implies-neg-positive |
+        less_than(a, ZERO) -> less_than(ZERO, neg(a))
+        [by implies_intro given-a-negative]
+    }
+  @conclusion |
+    forall a: Int; less_than(a, ZERO) -> less_than(ZERO, neg(a))
+    [by forall_intro generalize-a]
+qed
+
+// A nonnegative integer that is not positive must be ZERO. nonnegCases splits it
+// into ZERO or a nonneg successor; a successor is positive, so the non-positive
+// hypothesis kills that arm.
+theorem nonnegNotPositiveIsZero: forall x: Int; nonneg(x) -> (not less_than(ZERO, x)) -> x = ZERO
+proof
+  @generalize-x |
+    fix x: Int {
+      @given-x-nonneg |
+        assume nonneg(x) {
+          @given-x-not-positive |
+            assume not less_than(ZERO, x) {
+              @x-nonneg |
+                nonneg(x)
+                [by hypothesis given-x-nonneg]
+              @x-not-positive |
+                not less_than(ZERO, x)
+                [by hypothesis given-x-not-positive]
+              @x-zero-or-successor |
+                x = ZERO or (exists m: Int; nonneg(m) and x = succ(m))
+                [using specialize nonnegCases(x) x-nonneg]
+              @conclusion-x-is-zero |
+                x = ZERO
+                case x-zero-or-successor {
+                  @when-x-is-zero |
+                    assume x = ZERO {
+                      @conclusion-x-is-zero |
+                        x = ZERO
+                        [by hypothesis when-x-is-zero]
+                    }
+                  @when-x-is-successor |
+                    assume exists m: Int; nonneg(m) and x = succ(m) {
+                      @successor-exists |
+                        exists m: Int; nonneg(m) and x = succ(m)
+                        [by hypothesis when-x-is-successor]
+                      @with-predecessor-m |
+                        unpack m: Int from successor-exists {
+                          @gap-nonneg-and-x-is-successor |
+                            nonneg(m) and x = succ(m)
+                            [by hypothesis with-predecessor-m]
+                          @gap-nonneg |
+                            nonneg(m)
+                            [by and_elim_left gap-nonneg-and-x-is-successor]
+                          @x-is-successor |
+                            x = succ(m)
+                            [by and_elim_right gap-nonneg-and-x-is-successor]
+                          @add-zero-left |
+                            forall n: Int; add(ZERO, n) = n
+                            [by cite addZeroLeft]
+                          @zero-plus-successor-is-successor |
+                            add(ZERO, succ(m)) = succ(m)
+                            [by forall_elim(succ(m)) add-zero-left]
+                          @zero-plus-successor-is-x |
+                            add(ZERO, succ(m)) = x
+                            [by rewrite x-is-successor zero-plus-successor-is-successor]
+                          @x-is-positive |
+                            less_than(ZERO, x)
+                            [using specialize lessThanIntro(ZERO, m, x) gap-nonneg zero-plus-successor-is-x]
+                          @conclusion-x-is-zero |
+                            x = ZERO
+                            [by absurd x-is-positive x-not-positive]
+                        }
+                      @conclusion-x-is-zero |
+                        x = ZERO
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @not-positive-implies-zero |
+            (not less_than(ZERO, x)) -> x = ZERO
+            [by implies_intro given-x-not-positive]
+        }
+      @nonneg-implies-not-positive-implies-zero |
+        nonneg(x) -> (not less_than(ZERO, x)) -> x = ZERO
+        [by implies_intro given-x-nonneg]
+    }
+  @conclusion |
+    forall x: Int; nonneg(x) -> (not less_than(ZERO, x)) -> x = ZERO
+    [by forall_intro generalize-x]
+qed

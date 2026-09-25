@@ -1,0 +1,70 @@
+// ac: proves that two sums differ only by associativity and commutativity
+// of add, over ARBITRARY opaque atoms — the reordering that simplify loops
+// on and arithmetic bails on. Elaborated (kernel-checked); --pure accepts it.
+// The AC lemmas (addIsAssociative / addIsCommutative / addLeftSwap) are
+// looked up by well-known name in scope.
+import peano <<< "std/peano.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+theorem addIsAssociative = peano.addIsAssociative
+theorem addIsCommutative = peano.addIsCommutative
+theorem addLeftSwap = peano.addLeftSwap
+
+// the four-summand middle exchange that needed a hand-proved lemma in
+// gauss-pure.b4m — now one step, over opaque atoms a, b, c, d
+theorem exchange: forall a, b, c, d: Nat;
+  add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+proof
+  @gen-a |
+    fix a: Nat {
+      @gen-b |
+        fix b: Nat {
+          @gen-c |
+            fix c: Nat {
+              @gen-d |
+                fix d: Nat {
+                  @swapped |
+                    add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+                    [using assoc_commut]
+                }
+              @all-d |
+                forall d: Nat; add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+                [by forall_intro gen-d]
+            }
+          @all-c |
+            forall c, d: Nat; add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+            [by forall_intro gen-c]
+        }
+      @all-b |
+        forall b, c, d: Nat; add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+        [by forall_intro gen-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Nat; add(add(a, b), add(c, d)) = add(add(a, c), add(b, d))
+    [by forall_intro gen-a]
+qed
+
+// reordering over compound opaque atoms (mul terms are opaque to add-AC)
+theorem compound: forall a, b: Nat;
+  add(mul(a, a), add(mul(b, b), a)) = add(a, add(mul(a, a), mul(b, b)))
+proof
+  @gen-a |
+    fix a: Nat {
+      @gen-b |
+        fix b: Nat {
+          @reordered |
+            add(mul(a, a), add(mul(b, b), a)) = add(a, add(mul(a, a), mul(b, b)))
+            [using assoc_commut]
+        }
+      @all-b |
+        forall b: Nat; add(mul(a, a), add(mul(b, b), a)) = add(a, add(mul(a, a), mul(b, b)))
+        [by forall_intro gen-b]
+    }
+  @conclusion |
+    forall a, b: Nat;
+      add(mul(a, a), add(mul(b, b), a)) = add(a, add(mul(a, a), mul(b, b)))
+    [by forall_intro gen-a]
+qed

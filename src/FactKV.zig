@@ -144,7 +144,7 @@ test "FactKV demand table: claim -> in_flight -> publish -> proven; the entry pr
     var threaded: std.Io.Threaded = .init(arena_state.allocator(), .{});
     const io = threaded.io();
 
-    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.b4m") } });
     const ns = try pool.namespace(.universe, f);
     const comm = try pool.internString("addIsCommutative");
     const k = FactKV.Key{ .namespace = ns, .name = comm };

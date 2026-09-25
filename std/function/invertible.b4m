@@ -1,0 +1,367 @@
+// std/function/invertible.b4m — the INVERTIBLE functions on a set form a GROUP.
+//
+// Under composition, the invertible maps `Element -> Element` are a group: identity
+// = identityFn, inverse = the function inverse, associativity = composition-assoc.
+// This is the (symmetric/automorphism) group structure of a set's bijections.
+//
+// It is a CANARY + a reusable MODEL: we prove the group axioms hold on the invertible
+// functions, then `model` std/group.b4m (guarded by `invertible`) to transfer the
+// whole group corpus onto them for free. The guard exercises the guarded-model
+// materializer (closure of `invertible` under compose/inverse discharges the guards).
+
+import function <<< "std/function.b4m"
+import group <<< "std/group.b4m"
+
+sort Element = function.Element
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+pred invertible = function.invertible
+func inverse = function.inverse
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+axiom funcExtensionality = function.funcExtensionality
+axiom invertibleDef = function.invertibleDef
+axiom inverseLeft = function.inverseLeft
+axiom inverseRight = function.inverseRight
+
+// the predicated sort: the invertible functions.
+sort InvFn = Fn where invertible
+
+// ── the group axioms, over the invertible functions ──────────────────────────
+
+// associativity of composition (holds for ALL functions; funcExt from the
+// pointwise (h∘g)∘f = h∘(g∘f), both = h(g(f(x)))).
+theorem composeAssoc: forall h, g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
+proof
+  @generalize-h |
+    fix h: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-f |
+            fix f: Fn {
+              @pointwise |
+                fix x: Element {
+                  // LHS: ((h∘g)∘f)(x) = (h∘g)(f(x)) = h(g(f(x)))
+                  @lhs-outer |
+                    apply(compose(compose(h, g), f), x) = apply(compose(h, g), apply(f, x))
+                    [using specialize composeApply(compose(h, g), f, x)]
+                  @lhs-inner |
+                    apply(compose(h, g), apply(f, x)) = apply(h, apply(g, apply(f, x)))
+                    [using specialize composeApply(h, g, apply(f, x))]
+                  // RHS: (h∘(g∘f))(x) = h((g∘f)(x)) = h(g(f(x)))
+                  @rhs-outer |
+                    apply(compose(h, compose(g, f)), x) = apply(h, apply(compose(g, f), x))
+                    [using specialize composeApply(h, compose(g, f), x)]
+                  @rhs-inner |
+                    apply(compose(g, f), x) = apply(g, apply(f, x))
+                    [using specialize composeApply(g, f, x)]
+                  // ((h∘g)∘f)(x) = (h∘g)(f(x)) = h(g(f(x))) = h((g∘f)(x)) = (h∘(g∘f))(x)
+                  @agree-at-x |
+                    apply(compose(compose(h, g), f), x) = apply(compose(h, compose(g, f)), x)
+                    [using chain lhs-outer lhs-inner rhs-inner rhs-outer]
+                }
+              @agree |
+                forall x: Element; apply(compose(compose(h, g), f), x) = apply(compose(h, compose(g, f)), x)
+                [by forall_intro pointwise]
+              @conclusion-f |
+                compose(compose(h, g), f) = compose(h, compose(g, f))
+                [using specialize funcExtensionality(compose(compose(h, g), f), compose(h, compose(g, f))) agree]
+            }
+          @discharge-f |
+            forall f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
+            [by forall_intro generalize-f]
+        }
+      @discharge-g |
+        forall g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall h, g, f: Fn; compose(compose(h, g), f) = compose(h, compose(g, f))
+    [by forall_intro generalize-h]
+qed
+
+// left identity: id ∘ f = f, by funcExt from the pointwise (id∘f)(x) = f(x).
+theorem composeIdentityLeft: forall f: Fn; compose(identityFn, f) = f
+proof
+  @generalize-f |
+    fix f: Fn {
+      @pointwise |
+        fix x: Element {
+          @compose-id-f-at-x |
+            apply(compose(identityFn, f), x) = apply(identityFn, apply(f, x))
+            [using specialize composeApply(identityFn, f, x)]
+          @id-at-fx |
+            apply(identityFn, apply(f, x)) = apply(f, x)
+            [using specialize identityApply(apply(f, x))]
+          @agree-at-x |
+            apply(compose(identityFn, f), x) = apply(f, x)
+            [by rewrite id-at-fx compose-id-f-at-x]
+        }
+      @agree |
+        forall x: Element; apply(compose(identityFn, f), x) = apply(f, x)
+        [by forall_intro pointwise]
+      @conclusion-f |
+        compose(identityFn, f) = f
+        [using specialize funcExtensionality(compose(identityFn, f), f) agree]
+    }
+  @conclusion |
+    forall f: Fn; compose(identityFn, f) = f
+    [by forall_intro generalize-f]
+qed
+
+// right identity: f ∘ id = f, by funcExt from the pointwise (f∘id)(x) = f(x).
+theorem composeIdentityRight: forall f: Fn; compose(f, identityFn) = f
+proof
+  @generalize-f |
+    fix f: Fn {
+      @pointwise |
+        fix x: Element {
+          @compose-f-id-at-x |
+            apply(compose(f, identityFn), x) = apply(f, apply(identityFn, x))
+            [using specialize composeApply(f, identityFn, x)]
+          @id-at-x |
+            apply(identityFn, x) = x
+            [using specialize identityApply(x)]
+          // (f∘id)(x) = f(id(x)) = f(x)
+          @agree-at-x |
+            apply(compose(f, identityFn), x) = apply(f, x)
+            [using chain compose-f-id-at-x id-at-x]
+        }
+      @agree |
+        forall x: Element; apply(compose(f, identityFn), x) = apply(f, x)
+        [by forall_intro pointwise]
+      @conclusion-f |
+        compose(f, identityFn) = f
+        [using specialize funcExtensionality(compose(f, identityFn), f) agree]
+    }
+  @conclusion |
+    forall f: Fn; compose(f, identityFn) = f
+    [by forall_intro generalize-f]
+qed
+
+// ── closure: the invertible functions are closed under the group operations ──
+
+// id is its own two-sided inverse (id ∘ id = id), so it is invertible.
+theorem identityInvertible: invertible(identityFn)
+proof
+  @id-left |
+    compose(identityFn, identityFn) = identityFn
+    [using specialize composeIdentityLeft(identityFn)]
+  @two-sided |
+    compose(identityFn, identityFn) = identityFn and compose(identityFn, identityFn) = identityFn
+    [by and_intro id-left id-left]
+  @inverse-exists |
+    exists h: Fn; compose(h, identityFn) = identityFn and compose(identityFn, h) = identityFn
+    [by exists_intro(identityFn) two-sided]
+  @invertible-def-at-id |
+    invertible(identityFn) iff (exists h: Fn; compose(h, identityFn) = identityFn and compose(identityFn, h) = identityFn)
+    [using specialize invertibleDef(identityFn)]
+  @backward |
+    (exists h: Fn; compose(h, identityFn) = identityFn and compose(identityFn, h) = identityFn) -> invertible(identityFn)
+    [by iff_elim_backward invertible-def-at-id]
+  @conclusion |
+    invertible(identityFn)
+    [by modus_ponens backward inverse-exists]
+qed
+
+// the inverse of an invertible f is itself invertible (with inverse f), since
+// inverse(f)∘f = id and f∘inverse(f) = id are exactly the two-sided-inverse witness.
+theorem inverseInvertible: forall f: Fn; invertible(f) -> invertible(inverse(f))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-invertible |
+        assume invertible(f) {
+          @f-invertible |
+            invertible(f)
+            [by hypothesis given-invertible]
+          @inverse-f-left |
+            compose(inverse(f), f) = identityFn
+            [using specialize inverseLeft(f) f-invertible]
+          @inverse-f-right |
+            compose(f, inverse(f)) = identityFn
+            [using specialize inverseRight(f) f-invertible]
+          // f is a two-sided inverse OF inverse(f): (f ∘ inverse(f) = id) and
+          // (inverse(f) ∘ f = id) — witness with h := f.
+          @two-sided |
+            compose(f, inverse(f)) = identityFn and compose(inverse(f), f) = identityFn
+            [by and_intro inverse-f-right inverse-f-left]
+          @inverse-exists |
+            exists h: Fn; compose(h, inverse(f)) = identityFn and compose(inverse(f), h) = identityFn
+            [by exists_intro(f) two-sided]
+          @invertible-def-at-inv |
+            invertible(inverse(f)) iff (exists h: Fn; compose(h, inverse(f)) = identityFn and compose(inverse(f), h) = identityFn)
+            [using specialize invertibleDef(inverse(f))]
+          @backward |
+            (exists h: Fn; compose(h, inverse(f)) = identityFn and compose(inverse(f), h) = identityFn) -> invertible(inverse(f))
+            [by iff_elim_backward invertible-def-at-inv]
+          @inv-f-invertible |
+            invertible(inverse(f))
+            [by modus_ponens backward inverse-exists]
+        }
+      @implies |
+        invertible(f) -> invertible(inverse(f))
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> invertible(inverse(f))
+    [by forall_intro generalize-f]
+qed
+
+// the composite of two invertible functions is invertible, with two-sided inverse
+// compose(inverse(f), inverse(g)) (note the ORDER reversal). Each side collapses by
+// reassociating with composeAssoc and cancelling the adjacent inverse pairs:
+// (g∘f)∘(f⁻¹∘g⁻¹) = g∘(f∘f⁻¹)∘g⁻¹ = g∘id∘g⁻¹ = g∘g⁻¹ = id, and dually on the other side.
+theorem composeInvertible: forall g, f: Fn; invertible(g) -> invertible(f) -> invertible(compose(g, f))
+proof
+  @generalize-g |
+    fix g: Fn {
+      @generalize-f |
+        fix f: Fn {
+          @given-g-invertible |
+            assume invertible(g) {
+              @given-f-invertible |
+                assume invertible(f) {
+                  @g-invertible |
+                    invertible(g)
+                    [by hypothesis given-g-invertible]
+                  @f-invertible |
+                    invertible(f)
+                    [by hypothesis given-f-invertible]
+                  // the cancellation facts: f∘f⁻¹ = id, f⁻¹∘f = id, g∘g⁻¹ = id, g⁻¹∘g = id.
+                  @f-cancels-on-the-right |
+                    compose(f, inverse(f)) = identityFn
+                    [using specialize inverseRight(f) f-invertible]
+                  @f-cancels-on-the-left |
+                    compose(inverse(f), f) = identityFn
+                    [using specialize inverseLeft(f) f-invertible]
+                  @g-cancels-on-the-right |
+                    compose(g, inverse(g)) = identityFn
+                    [using specialize inverseRight(g) g-invertible]
+                  @g-cancels-on-the-left |
+                    compose(inverse(g), g) = identityFn
+                    [using specialize inverseLeft(g) g-invertible]
+                  // ── the RIGHT inverse: (g∘f)∘(f⁻¹∘g⁻¹) = id ──
+                  // reassociate to g∘(f∘(f⁻¹∘g⁻¹)), then g∘((f∘f⁻¹)∘g⁻¹).
+                  @right-reassociate-outer |
+                    compose(compose(g, f), compose(inverse(f), inverse(g)))
+                      = compose(g, compose(f, compose(inverse(f), inverse(g))))
+                    [using specialize composeAssoc(g, f, compose(inverse(f), inverse(g)))]
+                  @f-then-inverses-reassociate |
+                    compose(compose(f, inverse(f)), inverse(g)) = compose(f, compose(inverse(f), inverse(g)))
+                    [using specialize composeAssoc(f, inverse(f), inverse(g))]
+                  @identity-then-inverse-g |
+                    compose(identityFn, inverse(g)) = inverse(g)
+                    [using specialize composeIdentityLeft(inverse(g))]
+                  // (g∘f)∘(f⁻¹∘g⁻¹) = g∘(f∘(f⁻¹∘g⁻¹)) = g∘((f∘f⁻¹)∘g⁻¹)
+                  //   = g∘(id∘g⁻¹) = g∘g⁻¹ = id
+                  @right-composite-is-identity |
+                    compose(compose(g, f), compose(inverse(f), inverse(g))) = identityFn
+                    [using chain right-reassociate-outer f-then-inverses-reassociate f-cancels-on-the-right identity-then-inverse-g g-cancels-on-the-right]
+
+                  // ── the LEFT inverse: (f⁻¹∘g⁻¹)∘(g∘f) = id ──
+                  // reassociate to f⁻¹∘(g⁻¹∘(g∘f)), then f⁻¹∘((g⁻¹∘g)∘f).
+                  @left-reassociate-outer |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f))
+                      = compose(inverse(f), compose(inverse(g), compose(g, f)))
+                    [using specialize composeAssoc(inverse(f), inverse(g), compose(g, f))]
+                  @g-inverse-then-g-reassociate |
+                    compose(compose(inverse(g), g), f) = compose(inverse(g), compose(g, f))
+                    [using specialize composeAssoc(inverse(g), g, f)]
+                  @identity-then-f |
+                    compose(identityFn, f) = f
+                    [using specialize composeIdentityLeft(f)]
+                  // (f⁻¹∘g⁻¹)∘(g∘f) = f⁻¹∘(g⁻¹∘(g∘f)) = f⁻¹∘((g⁻¹∘g)∘f)
+                  //   = f⁻¹∘(id∘f) = f⁻¹∘f = id
+                  @left-composite-is-identity |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = identityFn
+                    [using chain left-reassociate-outer g-inverse-then-g-reassociate g-cancels-on-the-left identity-then-f f-cancels-on-the-left]
+
+                  // ── discharge invertibleDef with witness h := f⁻¹∘g⁻¹ ──
+                  @two-sided |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = identityFn
+                      and compose(compose(g, f), compose(inverse(f), inverse(g))) = identityFn
+                    [by and_intro left-composite-is-identity right-composite-is-identity]
+                  @inverse-exists |
+                    exists h: Fn; compose(h, compose(g, f)) = identityFn and compose(compose(g, f), h) = identityFn
+                    [by exists_intro(compose(inverse(f), inverse(g))) two-sided]
+                  @invertible-def-at-composite |
+                    invertible(compose(g, f)) iff (exists h: Fn; compose(h, compose(g, f)) = identityFn and compose(compose(g, f), h) = identityFn)
+                    [using specialize invertibleDef(compose(g, f))]
+                  @backward |
+                    (exists h: Fn; compose(h, compose(g, f)) = identityFn and compose(compose(g, f), h) = identityFn) -> invertible(compose(g, f))
+                    [by iff_elim_backward invertible-def-at-composite]
+                  @composite-invertible |
+                    invertible(compose(g, f))
+                    [by modus_ponens backward inverse-exists]
+                }
+              @f-invertible-implies-composite-invertible |
+                invertible(f) -> invertible(compose(g, f))
+                [by implies_intro given-f-invertible]
+            }
+          @g-invertible-implies-rest |
+            invertible(g) -> invertible(f) -> invertible(compose(g, f))
+            [by implies_intro given-g-invertible]
+        }
+      @discharge-f |
+        forall f: Fn; invertible(g) -> invertible(f) -> invertible(compose(g, f))
+        [by forall_intro generalize-f]
+    }
+  @conclusion |
+    forall g, f: Fn; invertible(g) -> invertible(f) -> invertible(compose(g, f))
+    [by forall_intro generalize-g]
+qed
+
+// ── the model: invertible functions ARE a group ─────────────────────────────
+model InvertibleFunctionsGroup {
+  group.Grp: InvFn
+  group.E: identityFn(identityInvertible)
+  group.op: compose -| composeInvertible
+  group.inverse: inverse -| inverseInvertible
+  group.opAssoc <- composeAssoc
+  group.opIdentityLeft <- composeIdentityLeft
+  group.opInverseLeft <- inverseLeft
+}
+
+// ── the payoff: the group corpus, transferred onto the invertible functions ──
+// Each is one line — the whole group theory holds on the bijections of the set,
+// relativized to `invertible`. (group.invProduct / squareIdImpliesAbelian use the
+// `assoc` accelerated tactic, whose synthesized steps don't re-emit under a guarded
+// transfer — a separate boundary — so they are omitted here.)
+
+theorem invIdentityUnique: forall x: InvFn; (forall g: InvFn; compose(x, g) = g) -> x = identityFn
+proof
+  @conclusion |
+    forall x: InvFn; (forall g: InvFn; compose(x, g) = g) -> x = identityFn
+    [using model(InvertibleFunctionsGroup) group.identityUnique]
+qed
+
+theorem invInverseUnique: forall a, b: InvFn; compose(a, b) = identityFn -> b = inverse(a)
+proof
+  @conclusion |
+    forall a, b: InvFn; compose(a, b) = identityFn -> b = inverse(a)
+    [using model(InvertibleFunctionsGroup) group.inverseUnique]
+qed
+
+theorem invInvolution: forall a: InvFn; inverse(inverse(a)) = a
+proof
+  @conclusion |
+    forall a: InvFn; inverse(inverse(a)) = a
+    [using model(InvertibleFunctionsGroup) group.invInvolution]
+qed
+
+theorem invCancelLeft: forall a, b, c: InvFn; compose(a, b) = compose(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: InvFn; compose(a, b) = compose(a, c) -> b = c
+    [using model(InvertibleFunctionsGroup) group.cancelLeft]
+qed
+
+theorem invCancelRight: forall b, a, c: InvFn; compose(b, a) = compose(c, a) -> b = c
+proof
+  @conclusion |
+    forall b, a, c: InvFn; compose(b, a) = compose(c, a) -> b = c
+    [using model(InvertibleFunctionsGroup) group.cancelRight]
+qed

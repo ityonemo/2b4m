@@ -1,0 +1,473 @@
+// std/peano/parity.b4m — even/odd (divisibility by 2) and the parity crux
+// `2 | p² → 2 | p`, the number-theoretic heart of √2's irrationality.
+//
+// Everything here is PURE. Even/odd is `divides(TWO, ·)` — no new predicate.
+// TWO is `add(ONE, ONE)` (not a succ-tower) so the `polynomial` tactic can
+// expand the odd-square identity `(2j+1)² = 2(2j²+2j)+1`.
+
+import peano <<< "std/peano.b4m"
+import ordering <<< "std/peano/order.b4m"
+import peano_divides <<< "std/peano/divides.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+func sub = subtraction.sub
+define divides(d, n) = peano_divides.divides(d, n)
+
+axiom induction = peano.induction
+axiom succInjective = peano.succInjective
+axiom succNotZero = peano.succNotZero
+axiom oneIsSuccZero = peano.oneIsSuccZero
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem mulSuccRight = peano.mulSuccRight
+theorem mulZeroRight = peano.mulZeroRight
+theorem addSuccRight = peano.addSuccRight
+theorem addZeroRight = peano.addZeroRight
+theorem addIsCommutative = peano.addIsCommutative
+theorem dividesZero = peano_divides.dividesZero
+theorem dividesRefl = peano_divides.dividesRefl
+theorem dividesAdd = peano_divides.dividesAdd
+theorem dividesSub = peano_divides.dividesSub
+theorem subAddCancel = subtraction.subAddCancel
+
+// TWO = 1 + 1, in add/ONE form (so `polynomial` treats it as the numeral 2,
+// not an opaque succ-tower).
+define TWO = add(ONE, ONE)
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory evenOrOdd
+intheory oddForm
+intheory oddSquare
+intheory twoNotDivideOne
+intheory evenSquareEven
+
+// -- even/odd dichotomy (pure, by induction) --------------------------------
+
+// Each step shifts which disjunct holds: n even ⇒ succ(n) odd; n odd ⇒
+// succ(n) even. TWO = add(ONE,ONE) collapses to succ(succ(ZERO)) by simplify.
+theorem evenOrOdd: forall n: Nat; divides(TWO, n) or divides(TWO, succ(n))
+proof
+  @base-even |
+    divides(TWO, ZERO)
+    [using specialize dividesZero(TWO)]
+  @base-case |
+    divides(TWO, ZERO) or divides(TWO, succ(ZERO))
+    [by or_intro_left base-even]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume divides(TWO, k) or divides(TWO, succ(k)) {
+          @inductive-hypothesis |
+            divides(TWO, k) or divides(TWO, succ(k))
+            [by hypothesis given-inductive-hypothesis]
+          @conclusion-succ-k-or-succ-succ-k-even |
+            divides(TWO, succ(k)) or divides(TWO, succ(succ(k)))
+            case inductive-hypothesis {
+              @k-even |
+                assume divides(TWO, k) {
+                  @k-div |
+                    divides(TWO, k)
+                    [by hypothesis k-even]
+                  @two-divides-two |
+                    divides(TWO, TWO)
+                    [using specialize dividesRefl(TWO)]
+                  @k-plus-two-even |
+                    divides(TWO, add(k, TWO))
+                    [using specialize dividesAdd(TWO, k, TWO) k-div two-divides-two]
+                  @sum-is-succ-succ |
+                    add(k, TWO) = succ(succ(k))
+                    [using simplify addSuccRight addZeroRight oneIsSuccZero]
+                  @succ-succ-even |
+                    divides(TWO, succ(succ(k)))
+                    [by rewrite sum-is-succ-succ k-plus-two-even]
+                  @right |
+                    divides(TWO, succ(k)) or divides(TWO, succ(succ(k)))
+                    [by or_intro_right succ-succ-even]
+                }
+              @k-odd |
+                assume divides(TWO, succ(k)) {
+                  @succ-k-div |
+                    divides(TWO, succ(k))
+                    [by hypothesis k-odd]
+                  @left |
+                    divides(TWO, succ(k)) or divides(TWO, succ(succ(k)))
+                    [by or_intro_left succ-k-div]
+                }
+            }
+        }
+      @induction-step-at-k |
+        (divides(TWO, k) or divides(TWO, succ(k))) -> (divides(TWO, succ(k)) or divides(TWO, succ(succ(k))))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (divides(TWO, k) or divides(TWO, succ(k))) -> (divides(TWO, succ(k)) or divides(TWO, succ(succ(k))))
+    [by forall_intro induction-step]
+
+  @conclusion |
+    forall n: Nat; divides(TWO, n) or divides(TWO, succ(n))
+    [using instantiation induction((fun k: Nat => divides(TWO, k) or divides(TWO, succ(k)))) base-case induction-step-for-all-k]
+qed
+
+// -- odd form: an odd number is 2j+1 ----------------------------------------
+
+// succ(p) even ⇒ p = succ(2j). succ(p)=2m, m≠0, m=succ(mp),
+// 2·succ(mp) = succ(succ(2·mp)), succInjective gives p = succ(2·mp).
+theorem oddForm: forall p: Nat; divides(TWO, succ(p)) -> exists j: Nat; p = succ(mul(TWO, j))
+proof
+  @generalize-p |
+    fix p: Nat {
+      @given-succ-even |
+        assume divides(TWO, succ(p)) {
+          @m-exists |
+            divides(TWO, succ(p))
+            [by hypothesis given-succ-even]
+          @with-m |
+            unpack m: Nat from m-exists {
+              @succ-p-is-two-m |
+                succ(p) = mul(TWO, m)
+                [by hypothesis with-m]
+              @m-zero-or-succ |
+                m = ZERO or (exists mm: Nat; m = succ(mm))
+                [using specialize zeroOrSucc(m)]
+              @suppose-m-zero |
+                assume m = ZERO {
+                  @succ-p-via-m |
+                    succ(p) = mul(TWO, m)
+                    [by hypothesis with-m]
+                  @two-times-zero |
+                    mul(TWO, ZERO) = ZERO
+                    [using simplify mulZeroRight]
+                  @m-is-zero |
+                    m = ZERO
+                    [by hypothesis suppose-m-zero]
+                  @succ-p-zero |
+                    succ(p) = ZERO
+                    [using simplify succ-p-via-m m-is-zero two-times-zero]
+                  @succ-p-not-zero |
+                    succ(p) != ZERO
+                    [using specialize succNotZero(p)]
+                }
+              @m-not-zero |
+                m != ZERO
+                [by not_intro suppose-m-zero succ-p-zero succ-p-not-zero]
+              @m-is-succ |
+                exists mm: Nat; m = succ(mm)
+                [using tautology m-zero-or-succ m-not-zero]
+              @with-mp |
+                unpack mp: Nat from m-is-succ {
+                  @m-is-succ-mp |
+                    m = succ(mp)
+                    [by hypothesis with-mp]
+                  @unfold-mul |
+                    mul(TWO, succ(mp)) = add(mul(TWO, mp), TWO)
+                    [using specialize mulSuccRight(TWO, mp)]
+                  @collapse |
+                    add(mul(TWO, mp), TWO) = succ(succ(mul(TWO, mp)))
+                    [using simplify addSuccRight addZeroRight oneIsSuccZero]
+                  // succ(p) = mul(TWO, m) = mul(TWO, succ(mp)) = add(mul(TWO, mp), TWO) = succ(succ(mul(TWO, mp)))
+                  @succ-p-eq3 |
+                    succ(p) = succ(succ(mul(TWO, mp)))
+                    [using chain succ-p-is-two-m m-is-succ-mp unfold-mul collapse]
+                  @p-is-odd |
+                    p = succ(mul(TWO, mp))
+                    [using specialize succInjective(p, succ(mul(TWO, mp))) succ-p-eq3]
+                  @witness |
+                    exists j: Nat; p = succ(mul(TWO, j))
+                    [by exists_intro(mp) p-is-odd]
+                }
+              @odd-form-inner |
+                exists j: Nat; p = succ(mul(TWO, j))
+                [by exists_elim with-mp]
+            }
+          @odd-form |
+            exists j: Nat; p = succ(mul(TWO, j))
+            [by exists_elim with-m]
+        }
+      @discharge |
+        divides(TWO, succ(p)) -> exists j: Nat; p = succ(mul(TWO, j))
+        [by implies_intro given-succ-even]
+    }
+  @conclusion |
+    forall p: Nat; divides(TWO, succ(p)) -> exists j: Nat; p = succ(mul(TWO, j))
+    [by forall_intro generalize-p]
+qed
+
+// -- odd square is odd: (2j+1)² = 2(2j²+2j) + 1 -----------------------------
+
+// Written with succ for the +1s. Bridge succ(x) = add(x, ONE), then the
+// pure-polynomial expansion. TWO = add(ONE,ONE) so polynomial expands 2·2 = 4.
+theorem oddSquare: forall j: Nat;
+  mul(succ(mul(TWO, j)), succ(mul(TWO, j)))
+  = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+proof
+  @generalize-j |
+    fix j: Nat {
+      // succ(mul(TWO,j)) = add(mul(TWO,j), ONE)
+      @succ-as-add |
+        succ(mul(TWO, j)) = add(mul(TWO, j), ONE)
+        [using simplify addSuccRight addZeroRight oneIsSuccZero]
+      @lhs-poly |
+        mul(add(mul(TWO, j), ONE), add(mul(TWO, j), ONE))
+          = add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)
+        [using polynomial(peano)]
+      // rewrite both add(_,ONE) forms back to succ
+      @rhs-as-succ |
+        add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)
+          = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+        [using simplify addSuccRight addZeroRight oneIsSuccZero]
+      @conclusion-odd-squared-is-odd |
+        mul(succ(mul(TWO, j)), succ(mul(TWO, j)))
+          = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+        [using simplify succ-as-add lhs-poly rhs-as-succ]
+    }
+  @conclusion |
+    forall j: Nat;
+      mul(succ(mul(TWO, j)), succ(mul(TWO, j)))
+      = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+    [by forall_intro generalize-j]
+qed
+
+// -- 2 does not divide 1 ----------------------------------------------------
+
+theorem twoNotDivideOne: not divides(TWO, ONE)
+proof
+  @suppose |
+    assume divides(TWO, ONE) {
+      @x-exists |
+        divides(TWO, ONE)
+        [by hypothesis suppose]
+      // ONE != ZERO, derived at suppose level for the final not_intro
+      @suppose-one-zero |
+        assume ONE = ZERO {
+          @one-succ |
+            ONE = succ(ZERO)
+            [by cite oneIsSuccZero]
+          @one-is-zero-h |
+            ONE = ZERO
+            [by hypothesis suppose-one-zero]
+          @zero-is-succ-zero |
+            ZERO = succ(ZERO)
+            [by rewrite one-is-zero-h one-succ]
+          @succ-zero-is-zero |
+            succ(ZERO) = ZERO
+            [by symmetry zero-is-succ-zero]
+          @succ-zero-not-zero |
+            succ(ZERO) != ZERO
+            [using specialize succNotZero(ZERO)]
+        }
+      @one-eq-zero-is-false |
+        ONE != ZERO
+        [by not_intro suppose-one-zero succ-zero-is-zero succ-zero-not-zero]
+      @with-x |
+        unpack x: Nat from x-exists {
+          @one-is-two-x |
+            ONE = mul(TWO, x)
+            [by hypothesis with-x]
+          @x-cases |
+            x = ZERO or (exists mm: Nat; x = succ(mm))
+            [using specialize zeroOrSucc(x)]
+          @one-is-zero |
+            ONE = ZERO
+            case x-cases {
+              @x-zero |
+                assume x = ZERO {
+                  // ONE = 2*0 = 0
+                  @x-is-zero |
+                    x = ZERO
+                    [by hypothesis x-zero]
+                  @two-x-zero |
+                    mul(TWO, ZERO) = ZERO
+                    [using simplify mulZeroRight]
+                  @one-is-two-zero |
+                    ONE = mul(TWO, ZERO)
+                    [by rewrite x-is-zero one-is-two-x]
+                  @arm-one-is-zero |
+                    ONE = ZERO
+                    [by rewrite two-x-zero one-is-two-zero]
+                }
+              @x-succ |
+                assume exists mm: Nat; x = succ(mm) {
+                  @x-succ-exists |
+                    exists mm: Nat; x = succ(mm)
+                    [by hypothesis x-succ]
+                  @with-xp |
+                    unpack xp: Nat from x-succ-exists {
+                      @x-is-succ |
+                        x = succ(xp)
+                        [by hypothesis with-xp]
+                      // 2*succ(xp) = succ(succ(2*xp)); ONE = succ(ZERO) so
+                      // succ(ZERO) = succ(succ(2xp)) ⇒ ZERO = succ(2xp), absurd
+                      @unfold |
+                        mul(TWO, succ(xp)) = add(mul(TWO, xp), TWO)
+                        [using specialize mulSuccRight(TWO, xp)]
+                      @collapse |
+                        add(mul(TWO, xp), TWO) = succ(succ(mul(TWO, xp)))
+                        [using simplify addSuccRight addZeroRight oneIsSuccZero]
+                      @one-succ |
+                        ONE = succ(ZERO)
+                        [by cite oneIsSuccZero]
+                      // succ(ZERO) = ONE = mul(TWO, x) = mul(TWO, succ(xp)) = add(mul(TWO, xp), TWO) = succ(succ(mul(TWO, xp)))
+                      @succ-zero-eq |
+                        succ(ZERO) = succ(succ(mul(TWO, xp)))
+                        [using chain one-succ one-is-two-x x-is-succ unfold collapse]
+                      @zero-is-succ |
+                        ZERO = succ(mul(TWO, xp))
+                        [using specialize succInjective(ZERO, succ(mul(TWO, xp))) succ-zero-eq]
+                      @this-succ-not-zero |
+                        succ(mul(TWO, xp)) != ZERO
+                        [using specialize succNotZero(mul(TWO, xp))]
+                      @zero-eq-succ |
+                        succ(mul(TWO, xp)) = ZERO
+                        [by symmetry zero-is-succ]
+                      // arbitrary conclusion from the contradiction
+                      @arm-one-is-zero |
+                        ONE = ZERO
+                        [by absurd zero-eq-succ this-succ-not-zero]
+                    }
+                  @arm-succ-one-is-zero |
+                    ONE = ZERO
+                    [by exists_elim with-xp]
+                }
+            }
+        }
+      @one-is-zero-final |
+        ONE = ZERO
+        [by exists_elim with-x]
+    }
+  @conclusion |
+    not divides(TWO, ONE)
+    [by not_intro suppose one-is-zero-final one-eq-zero-is-false]
+qed
+
+// -- THE CRUX: 2 | p² → 2 | p -----------------------------------------------
+
+// Contrapositive via evenOrOdd: if p is odd (p = 2j+1), then p² = 2(2j²+2j)+1
+// is odd (¬ 2|p²), contradicting the hypothesis. The even arm is the goal.
+theorem evenSquareEven: forall p: Nat; divides(TWO, mul(p, p)) -> divides(TWO, p)
+proof
+  @generalize-p |
+    fix p: Nat {
+      @given-square-even |
+        assume divides(TWO, mul(p, p)) {
+          @square-even |
+            divides(TWO, mul(p, p))
+            [by hypothesis given-square-even]
+          @parity |
+            forall n: Nat; divides(TWO, n) or divides(TWO, succ(n))
+            [by cite evenOrOdd]
+          @p-parity |
+            divides(TWO, p) or divides(TWO, succ(p))
+            [by forall_elim(p) parity]
+          @conclusion-two-divides-p |
+            divides(TWO, p)
+            case p-parity {
+              @p-even |
+                assume divides(TWO, p) {
+                  @two-divides-p |
+                    divides(TWO, p)
+                    [by hypothesis p-even]
+                }
+              @p-odd |
+                assume divides(TWO, succ(p)) {
+                  @succ-p-even |
+                    divides(TWO, succ(p))
+                    [by hypothesis p-odd]
+                  // p = succ(2j)
+                  @p-odd-exists |
+                    exists j: Nat; p = succ(mul(TWO, j))
+                    [using specialize oddForm(p) succ-p-even]
+                  @with-j |
+                    unpack j: Nat from p-odd-exists {
+                      @p-is-odd |
+                        p = succ(mul(TWO, j))
+                        [by hypothesis with-j]
+                      // p² = succ(2·M),  M = 2j²+2j
+                      @odd-sq-at |
+                        mul(succ(mul(TWO, j)), succ(mul(TWO, j)))
+                          = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                        [using specialize oddSquare(j)]
+                      // rewrite p into the square, then apply the odd-square identity
+                      @sq-is-odd |
+                        mul(p, p) = succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                        [using simplify p-is-odd odd-sq-at]
+                      // now 2 | succ(2M) with M = ...; subtract 2M ⇒ 2 | 1
+                      @two-m-refl |
+                        mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))) = mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))
+                        [by reflexivity]
+                      @two-m-even |
+                        divides(TWO, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                        [by exists_intro(add(mul(TWO, mul(j, j)), mul(TWO, j))) two-m-refl]
+                      // hypothesis 2 | p² becomes 2 | succ(2M) = 2 | add(2M, ONE)
+                      @succ-as-add |
+                        succ(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                          = add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)
+                        [using simplify addSuccRight addZeroRight oneIsSuccZero]
+                      @sq-is-add |
+                        mul(p, p) = add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)
+                        [by rewrite succ-as-add sq-is-odd]
+                      @two-div-sum |
+                        divides(TWO, add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
+                        [by rewrite sq-is-add square-even]
+                      // 2 | (2M + 1) and 2 | 2M ⇒ 2 | sub(2M+1, 2M) = 1
+                      @sub-closed |
+                        forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+                        [by cite dividesSub]
+                      @sub-at |
+                        divides(TWO, add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
+                          -> divides(TWO, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                          -> divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [by forall_elim(TWO, add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))) sub-closed]
+                      @sub-step |
+                        divides(TWO, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                          -> divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [by modus_ponens sub-at two-div-sum]
+                      @two-div-sub |
+                        divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [by modus_ponens sub-step two-m-even]
+                      // sub(add(2M, ONE), 2M) = ONE  (subAddCancel needs add(ONE, 2M); commute first)
+                      @cancel |
+                        forall a, b: Nat; sub(add(a, b), b) = a
+                        [by cite subAddCancel]
+                      @cancel-at |
+                        sub(add(ONE, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))) = ONE
+                        [by forall_elim(ONE, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))) cancel]
+                      @comm |
+                        forall a, b: Nat; add(a, b) = add(b, a)
+                        [by cite addIsCommutative]
+                      @comm-at |
+                        add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE) = add(ONE, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                        [by forall_elim(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE) comm]
+                      @sub-commuted |
+                        divides(TWO, sub(add(ONE, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [by rewrite comm-at two-div-sub]
+                      @two-div-one |
+                        divides(TWO, ONE)
+                        [by rewrite cancel-at sub-commuted]
+                      @not-two-div-one |
+                        not divides(TWO, ONE)
+                        [by cite twoNotDivideOne]
+                      @absurd-odd |
+                        divides(TWO, p)
+                        [by absurd two-div-one not-two-div-one]
+                    }
+                  @odd-conclusion |
+                    divides(TWO, p)
+                    [by exists_elim with-j]
+                }
+            }
+        }
+      @discharge |
+        divides(TWO, mul(p, p)) -> divides(TWO, p)
+        [by implies_intro given-square-even]
+    }
+  @conclusion |
+    forall p: Nat; divides(TWO, mul(p, p)) -> divides(TWO, p)
+    [by forall_intro generalize-p]
+qed

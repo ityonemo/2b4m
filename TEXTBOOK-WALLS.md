@@ -1,8 +1,8 @@
 # Functions as sets of pairs — the payoff plan (future work)
 
 The two Chapter-1 ontology walls (collections / sets-of-sets, and choice /
-definite description) are both closed: `std/collection.bpa` handles collections,
-and `functionFromGraph` (the tame ι) in `std/function.bpa` handles definite
+definite description) are both closed: `std/collection.b4m` handles collections,
+and `functionFromGraph` (the tame ι) in `std/function.b4m` handles definite
 description. What remains is the payoff those unlocks enable.
 
 ## The plan
@@ -16,11 +16,11 @@ concrete pair-set sort, and the abstract corpus flows DOWN onto the concrete
 objects.
 
 Build order (each layer additive, no kernel change):
-1. **`std/pair.bpa`** — a `Pair` sort, `pair(a, b)`, `fst`/`snd`, projection axioms.
-2. **Sets of pairs** — alias `set.Element = pair.Pair`; `std/set.bpa` then gives
+1. **`std/pair.b4m`** — a `Pair` sort, `pair(a, b)`, `fst`/`snd`, projection axioms.
+2. **Sets of pairs** — alias `set.Element = pair.Pair`; `std/set.b4m` then gives
    `member(Pair, Set)` for free (the shared-`Element` design paying off exactly as
    intended).
-3. **`std/function-pairs.bpa`** — the concrete pair-set layer the model maps onto:
+3. **`std/function-pairs.b4m`** — the concrete pair-set layer the model maps onto:
    `isFunction(S)` (single-valued guard), `applyPair(S, a)` = the unique `b` with
    `pair(a, b) ∈ S` (an ι-term — uses `functionFromGraph`), `composePair`,
    `identityPair`. Prove each `Fn` axiom as a LOCAL theorem over pair-sets — notably

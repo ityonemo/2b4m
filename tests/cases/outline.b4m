@@ -1,0 +1,54 @@
+// fixture for `2b4m query outline`: exercises every step shape the outline
+// renders — bare claims, and the four block openers (fix / assume / unpack /
+// case, the last with multi-statement arms). A real, checkable proof so the
+// file also passes `2b4m check`.
+sort Nat
+const ZERO: Nat
+func succ(n: Nat) => Nat
+pred p(n: Nat)
+pred q(n: Nat)
+
+axiom either: forall m: Nat; p(m) or q(m)
+axiom pImpliesQ: forall m: Nat; p(m) -> q(m)
+
+// fix + case with two multi-statement arms; the p-arm also runs a modus_ponens
+theorem everyoneIsQ: forall n: Nat; q(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @cases |
+        forall m: Nat; p(m) or q(m)
+        [by cite either]
+      @p-or-q |
+        p(n) or q(n)
+        [by forall_elim(n) cases]
+      @conclusion-inner |
+        q(n)
+        case p-or-q {
+          @from-p |
+            assume p(n) {
+              @p-holds |
+                p(n)
+                [by hypothesis from-p]
+              @p-gives-q |
+                forall m: Nat; p(m) -> q(m)
+                [by cite pImpliesQ]
+              @p-gives-q-at-n |
+                p(n) -> q(n)
+                [by forall_elim(n) p-gives-q]
+              @q-from-p |
+                q(n)
+                [by modus_ponens p-gives-q-at-n p-holds]
+            }
+          @from-q |
+            assume q(n) {
+              @q-holds |
+                q(n)
+                [by hypothesis from-q]
+            }
+        }
+    }
+  @conclusion |
+    forall n: Nat; q(n)
+    [by forall_intro generalize-n]
+qed

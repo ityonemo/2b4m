@@ -1,4 +1,4 @@
-//! The interned entity pool — a uniform, deduplicated store for the denotations bpa's
+//! The interned entity pool — a uniform, deduplicated store for the denotations 2b4m's
 //! checker works with (types/sorts/symbols/statements/models/files), modeled on the Zig
 //! compiler's `InternPool` (src/InternPool.zig in the zig tree).
 //!
@@ -43,7 +43,7 @@ pub const StrId = Index;
 
 /// A DURABLE TERM's location: an offset into `extra` where a term is serialized as a
 /// self-contained u32 run (see `appendExtraRun` + term.zig `reify`/`copyIn`). NOT an
-/// `Index` — a term is not an interned entity (bpa is explicit; no term dedup). Named
+/// `Index` — a term is not an interned entity (2b4m is explicit; no term dedup). Named
 /// distinctly so a term-offset is never confused with an entity `Index` at a field.
 pub const TermOff = u32;
 
@@ -230,7 +230,7 @@ pub const Tag = enum(u8) {
     /// guarantee single-mint per `(ns,name)`.
     fact,
 
-    // NOTE: terms are NOT interned Items (bpa is an explicit prover — no term dedup, so
+    // NOTE: terms are NOT interned Items (2b4m is an explicit prover — no term dedup, so
     // α-equality-as-Index-equality buys nothing). A DURABLE term lives as a self-contained
     // u32 run in `extra` (see `appendExtraRun`/`extraRun` + term.zig `reify`/`copyIn`); a
     // WORKING term is a scratchpad `term.Pool` node. See memory `terms-not-interned`.
@@ -840,7 +840,7 @@ pub fn mintSchema(self: *InternPool, s: Key.Schema) std.mem.Allocator.Error!Inde
 }
 
 // -- raw `extra` u32-run API (term serialization rests on this) ------------------------
-// Terms are NOT interned Items (bpa is an explicit prover — no term dedup); a DURABLE term
+// Terms are NOT interned Items (2b4m is an explicit prover — no term dedup); a DURABLE term
 // is a self-contained u32 run in `extra`, written/read by term.zig's `reify`/`copyIn`. The
 // pool stays term-AGNOSTIC: it just stores and hands back the run. (term.zig imports
 // InternPool, not the reverse, so the term-shaped encode/decode lives there.)
@@ -1267,7 +1267,7 @@ test "import: data = the .namespace it binds; minted (two imports of one ns are 
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.b4m") } });
     const ns = try pool.namespace(.universe, f);
 
     const nm = try pool.internString("P");
@@ -1282,7 +1282,7 @@ test "schema: locator [name, file, loc] minted fresh, round-trips" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/ind.bpa") } });
+    const f = try pool.intern(.{ .file = .{ .path = try pool.internString("std/ind.b4m") } });
     const nm = try pool.internString("induction");
     const s = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 });
     const s2 = try pool.mintSchema(.{ .name = nm, .file = f, .loc = 42 }); // distinct
@@ -1393,8 +1393,8 @@ test "namespace = (model, file), deduped per pair" {
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const f_int = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.bpa") } });
-    const f_nat = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.bpa") } });
+    const f_int = try pool.intern(.{ .file = .{ .path = try pool.internString("std/integer.b4m") } });
+    const f_nat = try pool.intern(.{ .file = .{ .path = try pool.internString("std/peano.b4m") } });
 
     // universe-namespace of each file (distinct non-universe models need overlays, deferred)
     const u_int = try pool.namespace(.universe, f_int);
@@ -1441,8 +1441,8 @@ test "file interns by path: same path -> same Index, distinct paths -> distinct"
     defer arena_state.deinit();
     var pool: InternPool = try .init(arena_state.allocator());
 
-    const p_int = try pool.internString("std/integer.bpa");
-    const p_nat = try pool.internString("std/peano.bpa");
+    const p_int = try pool.internString("std/integer.b4m");
+    const p_nat = try pool.internString("std/peano.b4m");
 
     const a = try pool.intern(.{ .file = .{ .path = p_int } });
     const b = try pool.intern(.{ .file = .{ .path = p_nat } });
@@ -1463,7 +1463,7 @@ test "dedup: lock-free readers never see a torn slot while a writer interns" {
     // `std.HashMapUnmanaged` while `intern` inserted into it on another thread; a rehash
     // swaps the map's header non-atomically and slots are written non-atomically, so a
     // reader could pull a torn `Index` out of a slot and fault inside `keyOf` — 2 runs in 6
-    // on `check tests/cases/iff.bpa -j8`, debug build. Release hid it (no safety checks).
+    // on `check tests/cases/iff.b4m -j8`, debug build. Release hid it (no safety checks).
     //
     // Readers spin on keys interned BEFORE they started and must always get the same Index
     // back; meanwhile the writer interns thousands of fresh keys, forcing several growths.

@@ -1,4 +1,4 @@
-//! `bpa query whereis <file> <identifier>` — trace an identifier to its origin.
+//! `2b4m query whereis <file> <identifier>` — trace an identifier to its origin.
 //!
 //! Given a file and a name, follow every alias/import hop from where the name is
 //! referenced to its ORIGINAL definition, printing the chain: each hop's

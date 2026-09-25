@@ -1,4 +1,4 @@
-//! `bpa query <op>` — read-only proof-corpus navigation (never elaborates,
+//! `2b4m query <op>` — read-only proof-corpus navigation (never elaborates,
 //! never checks). Each op is its own module under `query/`; this file is the
 //! namespace that groups them (a data-less Zig struct is a module).
 

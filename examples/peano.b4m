@@ -1,0 +1,213 @@
+// Peano arithmetic: the living demo, and the exemplar for CONVENTIONS.md.
+// This is the automation-assisted version of examples/peano-pure.b4m — same
+// signature, same theorems, a fraction of the steps. Three rungs appear:
+//
+//   1. `simplify` collapses each induction case's equational grind into one
+//      step citing the rewrite rules (still elaborated: it emits kernel steps);
+//   2. `arithmetic` proves decidable goals in one step, emitting an elaborated
+//      certificate when the recursion facts above are in scope;
+//   3. where a goal genuinely needs induction (evenOrOdd), no certificate
+//      exists — the accelerated tactic decides it, the theorem is marked
+//      accelerated, and the summary line discloses it. `2b4m check --pure`
+//      rejects exactly that step. See ACCELERATION.md.
+
+// -- signature --------------------------------------------------------------
+
+sort Nat
+const ZERO: Nat
+func succ(n: Nat) => Nat
+func add(a: Nat, b: Nat) => Nat
+
+// -- axioms: addition by recursion on the first argument --------------------
+
+axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
+axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory addZeroRight
+intheory addSuccRight
+intheory addIsCommutative
+
+// -- the induction schema (an axiom family: parameterized, no proof) --------
+
+axiom induction(prop: Nat -> Prop):
+  prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
+
+// -- theorems ---------------------------------------------------------------
+
+// Strategy: induction on n with prop(k) := add(k, ZERO) = k. The induction
+// skeleton is unavoidable; simplify does everything inside it.
+theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
+proof
+  @base-case |
+    add(ZERO, ZERO) = ZERO
+    [using simplify addZeroLeft]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume add(k, ZERO) = k {
+          @inductive-hypothesis |
+            add(k, ZERO) = k
+            [by hypothesis given-inductive-hypothesis]
+          @succ-case |
+            add(succ(k), ZERO) = succ(k)
+            [using simplify addSuccLeft inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using instantiation induction((fun k: Nat => add(k, ZERO) = k)) base-case induction-step-for-all-k]
+qed
+
+// Strategy: fix b, induct on the left argument with
+// prop(k) := add(k, succ(b)) = succ(add(k, b)). The hypothesis step is
+// cited as a rewrite rule alongside the axiom.
+theorem addSuccRight: forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+proof
+  @generalize-b |
+    fix b: Nat {
+      @base-case |
+        add(ZERO, succ(b)) = succ(add(ZERO, b))
+        [using simplify addZeroLeft]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume add(k, succ(b)) = succ(add(k, b)) {
+              @inductive-hypothesis |
+                add(k, succ(b)) = succ(add(k, b))
+                [by hypothesis given-inductive-hypothesis]
+              @succ-case |
+                add(succ(k), succ(b)) = succ(add(succ(k), b))
+                [using simplify addSuccLeft inductive-hypothesis]
+            }
+          @induction-step-at-k |
+            add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; add(k, succ(b)) = succ(add(k, b)) -> add(succ(k), succ(b)) = succ(add(succ(k), b))
+        [by forall_intro induction-step]
+      @discharge-a |
+        forall a: Nat; add(a, succ(b)) = succ(add(a, b))
+        [using instantiation induction((fun k: Nat => add(k, succ(b)) = succ(add(k, b)))) base-case induction-step-for-all-k]
+    }
+  @add-succ-right-swapped |
+    forall b, a: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro generalize-b]
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @add-succ-right-at-a-b |
+            add(a, succ(b)) = succ(add(a, b))
+            [by forall_elim(b, a) add-succ-right-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; add(a, succ(b)) = succ(add(a, b))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, succ(b)) = succ(add(a, b))
+    [by forall_intro reorder-a]
+qed
+
+// Strategy: induction on b with prop(k) := forall a; add(a, k) = add(k, a).
+// Each case that took seven primitive steps by hand is one simplify.
+theorem addIsCommutative: forall a, b: Nat; add(a, b) = add(b, a)
+proof
+  @base-case-proof |
+    fix a: Nat {
+      @chained |
+        add(a, ZERO) = add(ZERO, a)
+        [using simplify addZeroRight addZeroLeft]
+    }
+  @base-case |
+    forall a: Nat; add(a, ZERO) = add(ZERO, a)
+    [by forall_intro base-case-proof]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; add(a, k) = add(k, a) {
+          @pointwise |
+            fix a2: Nat {
+              @inductive-hypothesis |
+                forall a: Nat; add(a, k) = add(k, a)
+                [by hypothesis given-inductive-hypothesis]
+              @inductive-hypothesis-at-a2 |
+                add(a2, k) = add(k, a2)
+                [by forall_elim(a2) inductive-hypothesis]
+              @succ-case |
+                add(a2, succ(k)) = add(succ(k), a2)
+                [using simplify addSuccRight addSuccLeft inductive-hypothesis-at-a2]
+            }
+          @discharge-a |
+            forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+            [by forall_intro pointwise]
+        }
+      @induction-step-at-k |
+        (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Nat; add(a, k) = add(k, a)) -> forall a: Nat; add(a, succ(k)) = add(succ(k), a)
+    [by forall_intro induction-step]
+  @add-is-commutative-swapped |
+    forall b, a: Nat; add(a, b) = add(b, a)
+    [using instantiation induction((fun k: Nat => forall a: Nat; add(a, k) = add(k, a))) base-case induction-step-for-all-k]
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @add-is-commutative-at-a-b |
+            add(a, b) = add(b, a)
+            [by forall_elim(b, a) add-is-commutative-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; add(a, b) = add(b, a)
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, b) = add(b, a)
+    [by forall_intro reorder-a]
+qed
+
+// `define` names a term: uses expand transparently at elaboration, so the
+// kernel (and the tactics) see only the succ towers underneath.
+define TWO = succ(succ(ZERO))
+define FOUR = succ(succ(TWO))
+
+// Decidable and in the certificate fragment: `arithmetic` replays the
+// computation as a pure simplify chain over the recursion facts above.
+theorem twoPlusTwo: add(TWO, TWO) = FOUR
+proof
+  @conclusion |
+    add(TWO, TWO) = FOUR
+    [using arithmetic]
+qed
+
+// An existential with a concrete witness: the certificate finds y = TWO and
+// closes with exists_intro. Still pure.
+theorem fourIsEven: exists y: Nat; add(y, y) = FOUR
+proof
+  @conclusion |
+    exists y: Nat; add(y, y) = FOUR
+    [using arithmetic]
+qed
+
+// Decidable, but the quantifier alternation needs induction to replay — no
+// certificate exists, so the accelerated tactic decides it and this theorem is
+// marked accelerated. The summary discloses it; `2b4m check --pure
+// examples/peano.b4m` rejects exactly this step.
+theorem evenOrOdd: forall x: Nat; exists y: Nat; x = add(y, y) or x = succ(add(y, y))
+proof
+  @conclusion |
+    forall x: Nat; exists y: Nat; x = add(y, y) or x = succ(add(y, y))
+    [using arithmetic]
+qed

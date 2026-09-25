@@ -1,0 +1,52 @@
+// The `polynomial` tactic: proves an add/mul identity `s = t` when both sides
+// expand to the same sorted sum of sorted monomials. The nonlinear analogue of
+// `ac` — it distributes, sorts monomials, sorts the sum, and folds. Elaborated: it
+// emits a ring-rewrite certificate the kernel re-checks (no accelerated step).
+//
+// `polynomial(peano)` resolves the ring vocabulary + lemmas against the named
+// theory module (peano) — no local aliasing of add/mul/the ring lemmas needed.
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+func add = peano.add
+func mul = peano.mul
+
+// (a+b)*(a+b) = a*a + a*b + a*b + b*b  — the square-of-a-sum expansion.
+// LHS distributes to a*a + a*b + b*a + b*b; RHS is a permutation of that; both
+// canonicalize to the same sorted polynomial.
+theorem squareOfSum: forall a, b: Nat;
+  mul(add(a, b), add(a, b)) = add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))
+proof
+  @conclusion |
+    forall a, b: Nat;
+      mul(add(a, b), add(a, b)) = add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))
+    [using polynomial_quantified(peano)]
+qed
+
+// a bare (non-quantified) identity: distribute one product over a sum and
+// reorder. mul(a, add(b, c)) = c*a + b*a  (distribute, commute factors, sort).
+theorem distributeAndReorder: forall a, b, c: Nat;
+  mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
+proof
+  @open |
+    fix a: Nat {
+      @inner |
+        fix b: Nat {
+          @innermost |
+            fix c: Nat {
+              @eq |
+                mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
+                [using polynomial(peano)]
+            }
+          @close-c |
+            forall c: Nat; mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
+            [by forall_intro innermost]
+        }
+      @close-b |
+        forall b, c: Nat; mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
+        [by forall_intro inner]
+    }
+  @conclusion |
+    forall a, b, c: Nat; mul(a, add(b, c)) = add(mul(c, a), mul(b, a))
+    [by forall_intro open]
+qed

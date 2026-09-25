@@ -1,0 +1,953 @@
+// std/peano/divides.b4m — ℕ divisibility, the division algorithm, and the
+// Euclidean algorithm / gcd (the whole ℕ number-theory unit).
+//
+// gcd(a, b) is defined by the Euclidean recursion (gcd(a, 0) = a;
+// gcd(a, b) = gcd(b, a mod b) for b != 0). Correctness is the pair:
+//   gcdDividesBoth — gcd(a, b) divides both a and b (it IS a common divisor)
+//   gcdGreatest    — every common divisor of a and b divides gcd(a, b)
+//                    (it is the GREATEST such, in the divisibility order)
+// Together these characterize gcd up to the divisibility order. Both are
+// proved PURE, by strong induction on the second argument (which strictly
+// decreases: a mod b < b), using dividesModStep + modBound from the division
+// layer and strongInduction from the ordering layer.
+
+import peano <<< "std/peano.b4m"
+import ordering <<< "std/peano/order.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+import divisibility <<< "std/divisibility.b4m"
+
+// -- vocabulary -------------------------------------------------------------
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+func sub = subtraction.sub
+pred less_than = ordering.less_than
+theorem mulOneRight = peano.mulOneRight
+theorem mulZeroRight = peano.mulZeroRight
+theorem mulIsAssociative = peano.mulIsAssociative
+theorem mulAddDistribLeft = peano.mulAddDistribLeft
+theorem subAddCancel = subtraction.subAddCancel
+theorem mulSubDistribLeft = subtraction.mulSubDistribLeft
+theorem mulSuccRight = peano.mulSuccRight
+theorem addIsAssociative = peano.addIsAssociative
+theorem addZeroRight = peano.addZeroRight
+theorem addIsCommutative = peano.addIsCommutative
+theorem addCancelLeft = peano.addCancelLeft
+theorem addLeftSwap = peano.addLeftSwap
+theorem trichotomy = ordering.trichotomy
+theorem lessThanAddCancelLeft = ordering.lessThanAddCancelLeft
+theorem notLessThanZero = ordering.notLessThanZero
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem strongInduction = ordering.strongInduction
+axiom succNotZero = peano.succNotZero
+
+// -- divisibility -----------------------------------------------------------
+
+// divides(d, n) iff n = d * k for some k. Transparent: divides(d, n) IS this
+// existential, produced with exists_intro and consumed with unpack.
+define divides(d, n) = exists k: Nat; n = mul(d, k)
+
+// ℕ models the abstract divisibility theory (std/divisibility.b4m): mul/ONE/add
+// with the multiplicative axioms discharge its obligations, so the basic facts
+// (dividesRefl/dividesMul/dividesAdd/dividesTransitive) TRANSFER onto ℕ instead
+// of being re-proved. ℤ models it the same way (std/integer/divides.b4m) — that
+// shared reuse is what earns the abstract theory its keep.
+model PeanoDivisibility {
+  divisibility.Dividable: Nat
+  divisibility.ONE: ONE
+  divisibility.mul: mul
+  divisibility.add: add
+  divisibility.mulOneRight <- mulOneRight
+  divisibility.mulIsAssociative <- mulIsAssociative
+  divisibility.mulAddDistribLeft <- mulAddDistribLeft
+}
+
+// -- guarded Euclidean division ---------------------------------------------
+
+func div(a: Nat, b: Nat) => Nat requires b != ZERO
+func mod(a: Nat, b: Nat) => Nat requires b != ZERO
+axiom divModProperty: forall b, a: Nat; b != ZERO -> add(mul(b, div(a, b)), mod(a, b)) = a
+axiom modBound: forall b, a: Nat; b != ZERO -> less_than(mod(a, b), b)
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory dividesRefl
+intheory dividesZero
+intheory dividesTransitive
+intheory dividesAdd
+intheory dividesSub
+intheory dividesMul
+intheory dividesModStep
+intheory quotientCannotBeLess
+intheory quotientUnique
+intheory modIntro
+
+// -- theorems ---------------------------------------------------------------
+
+// divides(d, d): witness k = ONE.
+// transferred from the abstract divisibility theory via PeanoDivisibility.
+theorem dividesRefl: forall d: Nat; divides(d, d)
+proof
+  @conclusion |
+    forall d: Nat; divides(d, d)
+    [using model(PeanoDivisibility) divisibility.dividesRefl]
+qed
+
+// divides(d, ZERO): witness k = ZERO.
+theorem dividesZero: forall d: Nat; divides(d, ZERO)
+proof
+  @generalize-d |
+    fix d: Nat {
+      @d-times-zero-is-zero |
+        mul(d, ZERO) = ZERO
+        [using specialize mulZeroRight(d)]
+      @zero-is-d-times-zero |
+        ZERO = mul(d, ZERO)
+        [by symmetry d-times-zero-is-zero]
+      @d-divides-zero |
+        divides(d, ZERO)
+        [by exists_intro(ZERO) zero-is-d-times-zero]
+    }
+  @conclusion |
+    forall d: Nat; divides(d, ZERO)
+    [by forall_intro generalize-d]
+qed
+
+// transferred from the abstract divisibility theory via PeanoDivisibility.
+theorem dividesTransitive: forall a, b, c: Nat; divides(a, b) -> divides(b, c) -> divides(a, c)
+proof
+  @conclusion |
+    forall a, b, c: Nat; divides(a, b) -> divides(b, c) -> divides(a, c)
+    [using model(PeanoDivisibility) divisibility.dividesTransitive]
+qed
+
+// divides(d,a) -> divides(d,b) -> divides(d, add(a,b)): a=d*j, b=d*k => a+b=d*(j+k).
+// transferred from the abstract divisibility theory via PeanoDivisibility.
+theorem dividesAdd: forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, add(a, b))
+proof
+  @conclusion |
+    forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, add(a, b))
+    [using model(PeanoDivisibility) divisibility.dividesAdd]
+qed
+
+// divides(d,a) -> divides(d,b) -> divides(d, sub(a,b)): via mulSubDistribLeft.
+theorem dividesSub: forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+proof
+  @generalize-d |
+    fix d: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @generalize-b |
+            fix b: Nat {
+              @given-d-divides-a |
+                assume divides(d, a) {
+                  @given-d-divides-b |
+                    assume divides(d, b) {
+                      @d-divides-a |
+                        divides(d, a)
+                        [by hypothesis given-d-divides-a]
+                      @d-divides-b |
+                        divides(d, b)
+                        [by hypothesis given-d-divides-b]
+                      @with-a-quotient-j |
+                        unpack j: Nat from d-divides-a {
+                          @a-equals-d-times-j |
+                            a = mul(d, j)
+                            [by hypothesis with-a-quotient-j]
+                          @with-b-quotient-k |
+                            unpack kk: Nat from d-divides-b {
+                              @b-equals-d-times-k |
+                                b = mul(d, kk)
+                                [by hypothesis with-b-quotient-k]
+                              @difference-is-d-multiple |
+                                sub(a, b) = mul(d, sub(j, kk))
+                                [using simplify a-equals-d-times-j b-equals-d-times-k mulSubDistribLeft]
+                              @d-divides-difference-under-witness |
+                                divides(d, sub(a, b))
+                                [by exists_intro(sub(j, kk)) difference-is-d-multiple]
+                            }
+                          @d-divides-difference-after-k |
+                            divides(d, sub(a, b))
+                            [by exists_elim with-b-quotient-k]
+                        }
+                      @d-divides-difference |
+                        divides(d, sub(a, b))
+                        [by exists_elim with-a-quotient-j]
+                    }
+                  @d-divides-b-implies-d-divides-difference |
+                    divides(d, b) -> divides(d, sub(a, b))
+                    [by implies_intro given-d-divides-b]
+                }
+              @common-divisor-divides-difference |
+                divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+                [by implies_intro given-d-divides-a]
+            }
+          @discharge-b |
+            forall b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+    [by forall_intro generalize-d]
+qed
+
+// divides(d, a) -> divides(d, mul(a, k)): a = d*j => a*k = d*(j*k).
+// transferred from the abstract divisibility theory via PeanoDivisibility.
+theorem dividesMul: forall d, a, k: Nat; divides(d, a) -> divides(d, mul(a, k))
+proof
+  @conclusion |
+    forall d, a, k: Nat; divides(d, a) -> divides(d, mul(a, k))
+    [using model(PeanoDivisibility) divisibility.dividesMul]
+qed
+
+// THE gcd BRIDGE: for b != ZERO with d | b, d | a  iff  d | mod(a, b).
+// Writing q = div(a,b), r = mod(a,b): divModProperty gives mul(b,q) + r = a,
+// so r = sub(a, mul(b,q)) [subAddCancel] and a = add(mul(b,q), r).
+// d | b -> d | mul(b, q) [dividesMul].  Forward: d|a and d|mul(b,q) -> d|r
+// [dividesSub on r = a - mul(b,q)].  Backward: d|mul(b,q) and d|r -> d|a
+// [dividesAdd on a = mul(b,q) + r].
+theorem dividesModStep: forall b, d, a: Nat; b != ZERO -> divides(d, b) ->
+  (divides(d, a) iff divides(d, mod(a, b)))
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-d |
+        fix d: Nat {
+          @generalize-a |
+            fix a: Nat {
+              @given-b-nonzero |
+                assume b != ZERO {
+                  @given-d-divides-b |
+                    assume divides(d, b) {
+                      @b-nonzero |
+                        b != ZERO
+                        [by hypothesis given-b-nonzero]
+                      @d-divides-b |
+                        divides(d, b)
+                        [by hypothesis given-d-divides-b]
+                      // mul(b, q) + r = a  where q = div(a,b), r = mod(a,b)
+                      @a-decomposes |
+                        add(mul(b, div(a, b)), mod(a, b)) = a
+                        [using specialize divModProperty(b, a) b-nonzero]
+                      // d | mul(b, q)  [dividesMul: d|b -> d|mul(b, q)]
+                      @d-divides-b-times-quotient |
+                        divides(d, mul(b, div(a, b)))
+                        [using specialize dividesMul(d, b, div(a, b)) d-divides-b]
+                      // r = sub(a, mul(b, q)): commute divModProperty to add(r, mul(b,q)) = a
+                      // then subAddCancel gives sub(a, mul(b,q)) = r.
+                      @a-is-remainder-plus-multiple |
+                        a = add(mod(a, b), mul(b, div(a, b)))
+                        [using arithmetic a-decomposes]
+                      // sac: sub(add(r, x), x) = r  with x = mul(b,q)
+                      @remainder-recovered-by-subtraction |
+                        sub(add(mod(a, b), mul(b, div(a, b))), mul(b, div(a, b))) = mod(a, b)
+                        [using specialize subAddCancel(mod(a, b), mul(b, div(a, b)))]
+                      // rewrite add(r, x) -> a using a-is-remainder-plus-multiple (backwards)
+                      @remainder-is-a-minus-multiple |
+                        sub(a, mul(b, div(a, b))) = mod(a, b)
+                        [by rewrite a-is-remainder-plus-multiple remainder-recovered-by-subtraction]
+
+                      // FORWARD: d|a -> d|r.  d|a, d|mul(b,q) -> d|sub(a, mul(b,q)) = d|r.
+                      @when-d-divides-a |
+                        assume divides(d, a) {
+                          @d-divides-a |
+                            divides(d, a)
+                            [by hypothesis when-d-divides-a]
+                          @d-divides-a-minus-multiple |
+                            divides(d, sub(a, mul(b, div(a, b))))
+                            [using specialize dividesSub(d, a, mul(b, div(a, b))) d-divides-a d-divides-b-times-quotient]
+                          @d-divides-remainder |
+                            divides(d, mod(a, b))
+                            [by rewrite remainder-is-a-minus-multiple d-divides-a-minus-multiple]
+                        }
+                      @dividing-a-implies-dividing-remainder |
+                        divides(d, a) -> divides(d, mod(a, b))
+                        [by implies_intro when-d-divides-a]
+
+                      // BACKWARD: d|r -> d|a.  d|mul(b,q), d|r -> d|add(mul(b,q), r) = d|a.
+                      @when-d-divides-remainder |
+                        assume divides(d, mod(a, b)) {
+                          @d-divides-remainder |
+                            divides(d, mod(a, b))
+                            [by hypothesis when-d-divides-remainder]
+                          @d-divides-multiple-plus-remainder |
+                            divides(d, add(mul(b, div(a, b)), mod(a, b)))
+                            [using specialize dividesAdd(d, mul(b, div(a, b)), mod(a, b)) d-divides-b-times-quotient d-divides-remainder]
+                          @d-divides-a |
+                            divides(d, a)
+                            [by rewrite a-decomposes d-divides-multiple-plus-remainder]
+                        }
+                      @dividing-remainder-implies-dividing-a |
+                        divides(d, mod(a, b)) -> divides(d, a)
+                        [by implies_intro when-d-divides-remainder]
+
+                      @divisibility-transfers-both-ways |
+                        divides(d, a) iff divides(d, mod(a, b))
+                        [by iff_intro dividing-a-implies-dividing-remainder dividing-remainder-implies-dividing-a]
+                    }
+                  @dividing-b-implies-transfer |
+                    divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+                    [by implies_intro given-d-divides-b]
+                }
+              @nonzero-implies-transfer |
+                b != ZERO -> divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+                [by implies_intro given-b-nonzero]
+            }
+          @discharge-a |
+            forall a: Nat; b != ZERO -> divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+            [by forall_intro generalize-a]
+        }
+      @discharge-d |
+        forall d, a: Nat; b != ZERO -> divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall b, d, a: Nat; b != ZERO -> divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+    [by forall_intro generalize-b]
+qed
+
+// -- remainder uniqueness (modIntro) ----------------------------------------
+//
+// If you exhibit q, r with r < b and b*q + r = a, then mod(a, b) = r. The
+// heart is quotientCannotBeLess: a strictly larger quotient overshoots the
+// remainder bound. This turns each concrete mod fact into a one-line
+// citation (see examples/euclid-compute.b4m).
+
+theorem quotientCannotBeLess: forall b, r1, q1, q2, r2: Nat;
+  b != ZERO -> less_than(r1, b) ->
+  add(mul(b, q1), r1) = add(mul(b, q2), r2) ->
+  (not less_than(q1, q2))
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-r1 |
+        fix r1: Nat {
+          @generalize-q1 |
+            fix q1: Nat {
+              @generalize-q2 |
+                fix q2: Nat {
+                  @generalize-r2 |
+                    fix r2: Nat {
+                      @given-b-nonzero |
+                        assume b != ZERO {
+                          @given-r1-below-b |
+                            assume less_than(r1, b) {
+                              @given-decompositions-equal |
+                                assume add(mul(b, q1), r1) = add(mul(b, q2), r2) {
+                                  @given-q1-below-q2 |
+                                    assume less_than(q1, q2) {
+                                      @decompositions-equal |
+                                        add(mul(b, q1), r1) = add(mul(b, q2), r2)
+                                        [by hypothesis given-decompositions-equal]
+                                      @q1-below-q2 |
+                                        less_than(q1, q2)
+                                        [by hypothesis given-q1-below-q2]
+                                      // q1 < q2 -> exists k: add(q1, succ(k)) = q2
+                                      @gap-exists |
+                                        exists w: Nat; add(q1, succ(w)) = q2
+                                        [using specialize ordering.lessThanElim(q1, q2) q1-below-q2]
+                                      @with-gap-k |
+                                        unpack k: Nat from gap-exists {
+                                          @q2-is-q1-plus-successor-gap |
+                                            add(q1, succ(k)) = q2
+                                            [by hypothesis with-gap-k]
+                                          // mul(b, q2) = mul(b, add(q1, succ(k)))
+                                          //            = add(mul(b, q1), mul(b, succ(k)))     [distrib left]
+                                          //            = add(mul(b, q1), add(mul(b, k), b))   [mulSuccRight]
+                                          @q2-as-gap-sum |
+                                            q2 = add(q1, succ(k))
+                                            [by symmetry q2-is-q1-plus-successor-gap]
+                                          // expand mul(b, q2) over the gap: distribute, then mulSuccRight.
+                                          @b-times-q2-includes-a-full-b |
+                                            mul(b, q2) = add(mul(b, q1), add(mul(b, k), b))
+                                            [using simplify q2-as-gap-sum mulAddDistribLeft mulSuccRight]
+                                          // add(mul(b, q1), r1) = add(mul(b, q2), r2) = add(add(mul(b, q1), add(mul(b, k), b)), r2)
+                                          //   = add(mul(b, q1), add(add(mul(b, k), b), r2))
+                                          @decomposition-over-common-prefix |
+                                            add(mul(b, q1), r1) = add(mul(b, q1), add(add(mul(b, k), b), r2))
+                                            [using arithmetic decompositions-equal b-times-q2-includes-a-full-b]
+                                          // cancel mul(b, q1): r1 = add(add(mul(b,k), b), r2)
+                                          @r1-contains-a-full-b |
+                                            r1 = add(add(mul(b, k), b), r2)
+                                            [using specialize addCancelLeft(mul(b, q1), r1, add(add(mul(b, k), b), r2)) decomposition-over-common-prefix]
+                                          // now r1 contains a full b as a summand; rearrange to the
+                                          // form add(b, Y) so the assumed less_than(r1, b) collapses.
+                                          // r1 = add(add(mul(b, k), b), r2) = add(b, add(mul(b, k), r2))
+                                          @r1-is-b-plus-remainder |
+                                            r1 = add(b, add(mul(b, k), r2))
+                                            [using arithmetic r1-contains-a-full-b]
+                                          // less_than(r1, b) with r1 = add(b, Y): substitute, then cancel b.
+                                          @r1-below-b-restated |
+                                            less_than(r1, b)
+                                            [by hypothesis given-r1-below-b]
+                                          @b-plus-remainder-below-b |
+                                            less_than(add(b, add(mul(b, k), r2)), b)
+                                            [by rewrite r1-is-b-plus-remainder r1-below-b-restated]
+                                          @b-equals-b-plus-zero |
+                                            add(b, ZERO) = b
+                                            [using specialize addZeroRight(b)]
+                                          @b-plus-remainder-below-b-plus-zero |
+                                            less_than(add(b, add(mul(b, k), r2)), add(b, ZERO))
+                                            [by rewrite b-equals-b-plus-zero b-plus-remainder-below-b]
+                                          @remainder-below-zero |
+                                            less_than(add(mul(b, k), r2), ZERO)
+                                            [using specialize lessThanAddCancelLeft(b, add(mul(b, k), r2), ZERO) b-plus-remainder-below-b-plus-zero]
+                                          @remainder-not-below-zero |
+                                            not less_than(add(mul(b, k), r2), ZERO)
+                                            [using specialize notLessThanZero(add(mul(b, k), r2))]
+                                          @q1-not-below-q2-under-gap |
+                                            not less_than(q1, q2)
+                                            [by absurd remainder-below-zero remainder-not-below-zero]
+                                        }
+                                      @q1-not-below-q2-discharged |
+                                        not less_than(q1, q2)
+                                        [by exists_elim with-gap-k]
+                                      @q1-below-q2-restated |
+                                        less_than(q1, q2)
+                                        [by hypothesis given-q1-below-q2]
+                                    }
+                                  @q1-not-below-q2 |
+                                    not less_than(q1, q2)
+                                    [by not_intro given-q1-below-q2 q1-below-q2-restated q1-not-below-q2-discharged]
+                                }
+                              @equal-decompositions-force-not-below |
+                                add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+                                [by implies_intro given-decompositions-equal]
+                            }
+                          @bounded-remainder-forces-not-below |
+                            less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+                            [by implies_intro given-r1-below-b]
+                        }
+                      @nonzero-forces-not-below |
+                        b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+                        [by implies_intro given-b-nonzero]
+                    }
+                  @discharge-r2 |
+                    forall r2: Nat; b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+                    [by forall_intro generalize-r2]
+                }
+              @discharge-q2 |
+                forall q2, r2: Nat; b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+                [by forall_intro generalize-q2]
+            }
+          @discharge-q1 |
+            forall q1, q2, r2: Nat; b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+            [by forall_intro generalize-q1]
+        }
+      @discharge-r1 |
+        forall r1, q1, q2, r2: Nat; b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+        [by forall_intro generalize-r1]
+    }
+  @conclusion |
+    forall b, r1, q1, q2, r2: Nat; b != ZERO -> less_than(r1, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> (not less_than(q1, q2))
+    [by forall_intro generalize-b]
+qed
+
+// Symmetric contradiction packaged: with both r1<b and r2<b, neither quotient
+// can be strictly less than the other -> quotients are equal.
+theorem quotientUnique: forall b, r1, r2, q1, q2: Nat;
+  b != ZERO -> less_than(r1, b) -> less_than(r2, b) ->
+  add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-r1 |
+        fix r1: Nat {
+          @generalize-r2 |
+            fix r2: Nat {
+              @generalize-q1 |
+                fix q1: Nat {
+                  @generalize-q2 |
+                    fix q2: Nat {
+                      @given-b-nonzero |
+                        assume b != ZERO {
+                          @given-r1-below-b |
+                            assume less_than(r1, b) {
+                              @given-r2-below-b |
+                                assume less_than(r2, b) {
+                                  @given-decompositions-equal |
+                                    assume add(mul(b, q1), r1) = add(mul(b, q2), r2) {
+                                      @b-nonzero |
+                                        b != ZERO
+                                        [by hypothesis given-b-nonzero]
+                                      @r1-below-b |
+                                        less_than(r1, b)
+                                        [by hypothesis given-r1-below-b]
+                                      @r2-below-b |
+                                        less_than(r2, b)
+                                        [by hypothesis given-r2-below-b]
+                                      @decompositions-equal |
+                                        add(mul(b, q1), r1) = add(mul(b, q2), r2)
+                                        [by hypothesis given-decompositions-equal]
+                                      // neither quotient can be strictly below the other
+                                      @q1-not-below-q2 |
+                                        not less_than(q1, q2)
+                                        [using specialize quotientCannotBeLess(b, r1, q1, q2, r2) b-nonzero r1-below-b decompositions-equal]
+                                      // swapped roles, with the equation flipped
+                                      @decompositions-equal-flipped |
+                                        add(mul(b, q2), r2) = add(mul(b, q1), r1)
+                                        [by symmetry decompositions-equal]
+                                      @q2-not-below-q1 |
+                                        not less_than(q2, q1)
+                                        [using specialize quotientCannotBeLess(b, r2, q2, q1, r1) b-nonzero r2-below-b decompositions-equal-flipped]
+                                      // trichotomy(q1, q2): q1<q2 or q1=q2 or q2<q1
+                                      @q1-q2-trichotomy |
+                                        less_than(q1, q2) or q1 = q2 or less_than(q2, q1)
+                                        [using specialize trichotomy(q1, q2)]
+                                      // three-way case-split on trichotomy; the < arms are
+                                      // impossible (they contradict the not-below facts).
+                                      @quotients-are-equal |
+                                        q1 = q2
+                                        case q1-q2-trichotomy {
+                                          @when-q1-below-q2 |
+                                            assume less_than(q1, q2) {
+                                              @q1-below-q2 |
+                                                less_than(q1, q2)
+                                                [by hypothesis when-q1-below-q2]
+                                              @equal-by-contradiction |
+                                                q1 = q2
+                                                [by absurd q1-below-q2 q1-not-below-q2]
+                                            }
+                                          @when-quotients-equal |
+                                            assume q1 = q2 {
+                                              @equal-directly |
+                                                q1 = q2
+                                                [by hypothesis when-quotients-equal]
+                                            }
+                                          @when-q2-below-q1 |
+                                            assume less_than(q2, q1) {
+                                              @q2-below-q1 |
+                                                less_than(q2, q1)
+                                                [by hypothesis when-q2-below-q1]
+                                              @equal-by-reverse-contradiction |
+                                                q1 = q2
+                                                [by absurd q2-below-q1 q2-not-below-q1]
+                                            }
+                                        }
+                                    }
+                                  @equal-decompositions-force-equal-quotients |
+                                    add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                                    [by implies_intro given-decompositions-equal]
+                                }
+                              @bounded-r2-forces-equal-quotients |
+                                less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                                [by implies_intro given-r2-below-b]
+                            }
+                          @bounded-r1-forces-equal-quotients |
+                            less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                            [by implies_intro given-r1-below-b]
+                        }
+                      @nonzero-forces-equal-quotients |
+                        b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                        [by implies_intro given-b-nonzero]
+                    }
+                  @discharge-q2 |
+                    forall q2: Nat; b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                    [by forall_intro generalize-q2]
+                }
+              @discharge-q1 |
+                forall q1, q2: Nat; b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+                [by forall_intro generalize-q1]
+            }
+          @discharge-r2 |
+            forall r2, q1, q2: Nat; b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+            [by forall_intro generalize-r2]
+        }
+      @discharge-r1 |
+        forall r1, r2, q1, q2: Nat; b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+        [by forall_intro generalize-r1]
+    }
+  @conclusion |
+    forall b, r1, r2, q1, q2: Nat; b != ZERO -> less_than(r1, b) -> less_than(r2, b) -> add(mul(b, q1), r1) = add(mul(b, q2), r2) -> q1 = q2
+    [by forall_intro generalize-b]
+qed
+
+// modIntro / remainder uniqueness: the payoff. If you exhibit a quotient q and
+// remainder r < b with b*q + r = a, then mod(a, b) = r (and, en route, div = q).
+// This turns each concrete mod fact into a one-line citation.
+theorem modIntro: forall b, r, q, a: Nat;
+  b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-r |
+        fix r: Nat {
+          @generalize-q |
+            fix q: Nat {
+              @generalize-a |
+                fix a: Nat {
+                  @given-b-nonzero |
+                    assume b != ZERO {
+                      @given-r-below-b |
+                        assume less_than(r, b) {
+                          @given-decomposition-equals-a |
+                            assume add(mul(b, q), r) = a {
+                              @b-nonzero |
+                                b != ZERO
+                                [by hypothesis given-b-nonzero]
+                              @r-below-b |
+                                less_than(r, b)
+                                [by hypothesis given-r-below-b]
+                              @decomposition-equals-a |
+                                add(mul(b, q), r) = a
+                                [by hypothesis given-decomposition-equals-a]
+                              // the canonical decomposition: b*div(a,b) + mod(a,b) = a
+                              @a-canonically-decomposes |
+                                add(mul(b, div(a, b)), mod(a, b)) = a
+                                [using specialize divModProperty(b, a) b-nonzero]
+                              // mod(a, b) < b
+                              @canonical-remainder-below-b |
+                                less_than(mod(a, b), b)
+                                [using specialize modBound(b, a) b-nonzero]
+                              // equate the two decompositions: b*q + r = a = b*div(a,b) + mod(a,b)
+                              @decompositions-agree |
+                                add(mul(b, q), r) = add(mul(b, div(a, b)), mod(a, b))
+                                [using simplify decomposition-equals-a a-canonically-decomposes]
+                              // quotientUnique gives q = div(a, b)
+                              @quotient-equals-canonical |
+                                q = div(a, b)
+                                [using specialize quotientUnique(b, r, mod(a, b), q, div(a, b)) b-nonzero r-below-b canonical-remainder-below-b decompositions-agree]
+                              // now cancel to get r = mod(a, b), then symmetry.
+                              // add(mul(b, q), r) = add(mul(b, div(a, b)), mod(a, b)) = add(mul(b, q), mod(a, b))
+                              @decompositions-share-multiple |
+                                add(mul(b, q), r) = add(mul(b, q), mod(a, b))
+                                [using chain decompositions-agree quotient-equals-canonical]
+                              @r-equals-remainder |
+                                r = mod(a, b)
+                                [using specialize addCancelLeft(mul(b, q), r, mod(a, b)) decompositions-share-multiple]
+                              @remainder-equals-r |
+                                mod(a, b) = r
+                                [by symmetry r-equals-remainder]
+                            }
+                          @decomposition-determines-remainder |
+                            add(mul(b, q), r) = a -> mod(a, b) = r
+                            [by implies_intro given-decomposition-equals-a]
+                        }
+                      @bounded-remainder-determines-remainder |
+                        less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+                        [by implies_intro given-r-below-b]
+                    }
+                  @nonzero-determines-remainder |
+                    b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+                    [by implies_intro given-b-nonzero]
+                }
+              @discharge-a |
+                forall a: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+                [by forall_intro generalize-a]
+            }
+          @discharge-q |
+            forall q, a: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+            [by forall_intro generalize-q]
+        }
+      @discharge-r |
+        forall r, q, a: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+        [by forall_intro generalize-r]
+    }
+  @conclusion |
+    forall b, r, q, a: Nat; b != ZERO -> less_than(r, b) -> add(mul(b, q), r) = a -> mod(a, b) = r
+    [by forall_intro generalize-b]
+qed
+
+// -- the Euclidean algorithm ------------------------------------------------
+
+func gcd(a: Nat, b: Nat) => Nat
+axiom gcdZero: forall a: Nat; gcd(a, ZERO) = a
+axiom gcdStep: forall b, a: Nat; b != ZERO -> gcd(a, b) = gcd(b, mod(a, b))
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory gcdDividesBoth
+intheory gcdGreatest
+
+// -- correctness ------------------------------------------------------------
+
+theorem gcdDividesBoth: forall a, b: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+proof
+  // step of strong induction: (forall m; m<b -> P(m)) -> P(b),
+  // where P(n) = forall a; divides(gcd(a,n),a) and divides(gcd(a,n),n)
+  @induction-step |
+    fix b: Nat {
+      @given-strong-inductive-hypothesis |
+        assume forall m: Nat; less_than(m, b) -> (forall a: Nat; divides(gcd(a, m), a) and divides(gcd(a, m), m)) {
+          @strong-inductive-hypothesis |
+            forall m: Nat; less_than(m, b) -> (forall a: Nat; divides(gcd(a, m), a) and divides(gcd(a, m), m))
+            [by hypothesis given-strong-inductive-hypothesis]
+          @generalize-a |
+            fix a: Nat {
+              @b-is-zero-or-successor |
+                b = ZERO or (exists mm: Nat; b = succ(mm))
+                [using specialize zeroOrSucc(b)]
+              @when-b-is-zero |
+                assume b = ZERO {
+                  @b-is-zero |
+                    b = ZERO
+                    [by hypothesis when-b-is-zero]
+                  @gcd-with-zero-is-itself |
+                    gcd(a, ZERO) = a
+                    [using specialize gcdZero(a)]
+                  @a-divides-a |
+                    divides(a, a)
+                    [using specialize dividesRefl(a)]
+                  @gcd-divides-a |
+                    divides(gcd(a, ZERO), a)
+                    [by rewrite gcd-with-zero-is-itself a-divides-a]
+                  @gcd-divides-zero |
+                    divides(gcd(a, ZERO), ZERO)
+                    [using specialize dividesZero(gcd(a, ZERO))]
+                  @gcd-divides-a-at-b |
+                    divides(gcd(a, b), a)
+                    [by rewrite b-is-zero gcd-divides-a]
+                  @gcd-divides-b |
+                    divides(gcd(a, b), b)
+                    [by rewrite b-is-zero gcd-divides-zero]
+                  @gcd-divides-both-when-zero |
+                    divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                    [by and_intro gcd-divides-a-at-b gcd-divides-b]
+                }
+              @when-b-is-successor |
+                assume exists mm: Nat; b = succ(mm) {
+                  @predecessor-exists |
+                    exists mm: Nat; b = succ(mm)
+                    [by hypothesis when-b-is-successor]
+                  @with-predecessor-bp |
+                    unpack bp: Nat from predecessor-exists {
+                      @b-is-successor-of-bp |
+                        b = succ(bp)
+                        [by hypothesis with-predecessor-bp]
+                      @successor-bp-is-nonzero |
+                        succ(bp) != ZERO
+                        [using specialize succNotZero(bp)]
+                      @b-is-nonzero |
+                        b != ZERO
+                        [by rewrite b-is-successor-of-bp successor-bp-is-nonzero]
+                      @gcd-recurses |
+                        gcd(a, b) = gcd(b, mod(a, b))
+                        [using specialize gcdStep(b, a) b-is-nonzero]
+                      @mod-is-below-b |
+                        less_than(mod(a, b), b)
+                        [using specialize modBound(b, a) b-is-nonzero]
+                      @gcd-divides-both-at-mod |
+                        forall aa: Nat; divides(gcd(aa, mod(a, b)), aa) and divides(gcd(aa, mod(a, b)), mod(a, b))
+                        [using specialize strong-inductive-hypothesis(mod(a, b)) mod-is-below-b]
+                      @gcd-b-mod-divides-both |
+                        divides(gcd(b, mod(a, b)), b) and divides(gcd(b, mod(a, b)), mod(a, b))
+                        [by forall_elim(b) gcd-divides-both-at-mod]
+                      @gcd-b-mod-divides-b |
+                        divides(gcd(b, mod(a, b)), b)
+                        [by and_elim_left gcd-b-mod-divides-both]
+                      @gcd-b-mod-divides-mod |
+                        divides(gcd(b, mod(a, b)), mod(a, b))
+                        [by and_elim_right gcd-b-mod-divides-both]
+                      @gcd-divides-b |
+                        divides(gcd(a, b), b)
+                        [by rewrite gcd-recurses gcd-b-mod-divides-b]
+                      @gcd-divides-mod |
+                        divides(gcd(a, b), mod(a, b))
+                        [by rewrite gcd-recurses gcd-b-mod-divides-mod]
+                      @mod-crossing-holds-if-divides-b |
+                        divides(gcd(a, b), b) -> (divides(gcd(a, b), a) iff divides(gcd(a, b), mod(a, b)))
+                        [using specialize dividesModStep(b, gcd(a, b), a) b-is-nonzero]
+                      @mod-crossing-holds |
+                        divides(gcd(a, b), a) iff divides(gcd(a, b), mod(a, b))
+                        [by modus_ponens mod-crossing-holds-if-divides-b gcd-divides-b]
+                      @divides-mod-implies-divides-a |
+                        divides(gcd(a, b), mod(a, b)) -> divides(gcd(a, b), a)
+                        [by iff_elim_backward mod-crossing-holds]
+                      @gcd-divides-a |
+                        divides(gcd(a, b), a)
+                        [by modus_ponens divides-mod-implies-divides-a gcd-divides-mod]
+                      @gcd-divides-both-when-successor |
+                        divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                        [by and_intro gcd-divides-a gcd-divides-b]
+                    }
+                  @gcd-divides-both-in-successor-case |
+                    divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                    [by exists_elim with-predecessor-bp]
+                }
+              @gcd-divides-both-at-a-and-b |
+                divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                [by or_elim b-is-zero-or-successor when-b-is-zero when-b-is-successor]
+            }
+          @discharge-a |
+            forall a: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+            [by forall_intro generalize-a]
+        }
+      @induction-step-at-b |
+        (forall m: Nat; less_than(m, b) -> (forall a: Nat; divides(gcd(a, m), a) and divides(gcd(a, m), m))) -> forall a: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+        [by implies_intro given-strong-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall b: Nat; (forall m: Nat; less_than(m, b) -> (forall a: Nat; divides(gcd(a, m), a) and divides(gcd(a, m), m))) -> forall a: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+    [by forall_intro induction-step]
+  // strong induction gives forall b; P(b)
+  @gcd-divides-both-swapped |
+    forall b, a: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+    [using instantiation strongInduction((fun n: Nat => forall a: Nat; divides(gcd(a, n), a) and divides(gcd(a, n), n))) induction-step-for-all-k]
+  // re-quantify in first-appearance order (a before b)
+  @reorder-a |
+    fix a: Nat {
+      @reorder-b |
+        fix b: Nat {
+          @gcd-divides-both-reordered |
+            divides(gcd(a, b), a) and divides(gcd(a, b), b)
+            [by forall_elim(b, a) gcd-divides-both-swapped]
+        }
+      @reorder-discharge-b |
+        forall b: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
+    [by forall_intro reorder-a]
+qed
+
+theorem gcdGreatest: forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+proof
+  @induction-step |
+    fix b: Nat {
+      @given-strong-inductive-hypothesis |
+        assume forall m: Nat; less_than(m, b) -> (forall a, d: Nat; divides(d, a) -> divides(d, m) -> divides(d, gcd(a, m))) {
+          @strong-inductive-hypothesis |
+            forall m: Nat; less_than(m, b) -> (forall a, d: Nat; divides(d, a) -> divides(d, m) -> divides(d, gcd(a, m)))
+            [by hypothesis given-strong-inductive-hypothesis]
+          @generalize-a |
+            fix a: Nat {
+              @generalize-d |
+                fix d: Nat {
+                  @given-d-divides-a |
+                    assume divides(d, a) {
+                      @given-d-divides-b |
+                        assume divides(d, b) {
+                          @d-divides-a |
+                            divides(d, a)
+                            [by hypothesis given-d-divides-a]
+                          @d-divides-b |
+                            divides(d, b)
+                            [by hypothesis given-d-divides-b]
+                          @b-is-zero-or-successor |
+                            b = ZERO or (exists mm: Nat; b = succ(mm))
+                            [using specialize zeroOrSucc(b)]
+                          @when-b-is-zero |
+                            assume b = ZERO {
+                              @b-is-zero |
+                                b = ZERO
+                                [by hypothesis when-b-is-zero]
+                              @gcd-with-zero-is-itself |
+                                gcd(a, ZERO) = a
+                                [using specialize gcdZero(a)]
+                              @d-divides-gcd-with-zero |
+                                divides(d, gcd(a, ZERO))
+                                [by rewrite gcd-with-zero-is-itself d-divides-a]
+                              @d-divides-gcd-when-zero |
+                                divides(d, gcd(a, b))
+                                [by rewrite b-is-zero d-divides-gcd-with-zero]
+                            }
+                          @when-b-is-successor |
+                            assume exists mm: Nat; b = succ(mm) {
+                              @predecessor-exists |
+                                exists mm: Nat; b = succ(mm)
+                                [by hypothesis when-b-is-successor]
+                              @with-predecessor-bp |
+                                unpack bp: Nat from predecessor-exists {
+                                  @b-is-successor-of-bp |
+                                    b = succ(bp)
+                                    [by hypothesis with-predecessor-bp]
+                                  @successor-bp-is-nonzero |
+                                    succ(bp) != ZERO
+                                    [using specialize succNotZero(bp)]
+                                  @b-is-nonzero |
+                                    b != ZERO
+                                    [by rewrite b-is-successor-of-bp successor-bp-is-nonzero]
+                                  @gcd-recurses |
+                                    gcd(a, b) = gcd(b, mod(a, b))
+                                    [using specialize gcdStep(b, a) b-is-nonzero]
+                                  @mod-crossing-holds-if-divides-b |
+                                    divides(d, b) -> (divides(d, a) iff divides(d, mod(a, b)))
+                                    [using specialize dividesModStep(b, d, a) b-is-nonzero]
+                                  @mod-crossing-holds |
+                                    divides(d, a) iff divides(d, mod(a, b))
+                                    [by modus_ponens mod-crossing-holds-if-divides-b d-divides-b]
+                                  @divides-a-implies-divides-mod |
+                                    divides(d, a) -> divides(d, mod(a, b))
+                                    [by iff_elim_forward mod-crossing-holds]
+                                  @d-divides-mod |
+                                    divides(d, mod(a, b))
+                                    [by modus_ponens divides-a-implies-divides-mod d-divides-a]
+                                  @mod-is-below-b |
+                                    less_than(mod(a, b), b)
+                                    [using specialize modBound(b, a) b-is-nonzero]
+                                  @greatest-at-mod |
+                                    forall aa, dd: Nat; divides(dd, aa) -> divides(dd, mod(a, b)) -> divides(dd, gcd(aa, mod(a, b)))
+                                    [using specialize strong-inductive-hypothesis(mod(a, b)) mod-is-below-b]
+                                  @d-divides-gcd-b-mod |
+                                    divides(d, gcd(b, mod(a, b)))
+                                    [using specialize greatest-at-mod(b, d) d-divides-b d-divides-mod]
+                                  @d-divides-gcd-when-successor |
+                                    divides(d, gcd(a, b))
+                                    [by rewrite gcd-recurses d-divides-gcd-b-mod]
+                                }
+                              @d-divides-gcd-in-successor-case |
+                                divides(d, gcd(a, b))
+                                [by exists_elim with-predecessor-bp]
+                            }
+                          @d-divides-gcd |
+                            divides(d, gcd(a, b))
+                            [by or_elim b-is-zero-or-successor when-b-is-zero when-b-is-successor]
+                        }
+                      @d-divides-b-implies-d-divides-gcd |
+                        divides(d, b) -> divides(d, gcd(a, b))
+                        [by implies_intro given-d-divides-b]
+                    }
+                  @d-common-divisor-implies-d-divides-gcd |
+                    divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+                    [by implies_intro given-d-divides-a]
+                }
+              @discharge-d |
+                forall d: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+                [by forall_intro generalize-d]
+            }
+          @discharge-a |
+            forall a, d: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+            [by forall_intro generalize-a]
+        }
+      @induction-step-at-b |
+        (forall m: Nat; less_than(m, b) -> (forall a, d: Nat; divides(d, a) -> divides(d, m) -> divides(d, gcd(a, m)))) -> forall a, d: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+        [by implies_intro given-strong-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall b: Nat; (forall m: Nat; less_than(m, b) -> (forall a, d: Nat; divides(d, a) -> divides(d, m) -> divides(d, gcd(a, m)))) -> forall a, d: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+    [by forall_intro induction-step]
+  @gcd-greatest-swapped |
+    forall b, a, d: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+    [using instantiation strongInduction((fun n: Nat => forall a, d: Nat; divides(d, a) -> divides(d, n) -> divides(d, gcd(a, n)))) induction-step-for-all-k]
+  // re-quantify in first-appearance order (d before a before b)
+  @reorder-d |
+    fix d: Nat {
+      @reorder-a |
+        fix a: Nat {
+          @reorder-b |
+            fix b: Nat {
+              @greatest-at-d-a-b |
+                divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+                [by forall_elim(b, a, d) gcd-greatest-swapped]
+            }
+          @reorder-discharge-b |
+            forall b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+            [by forall_intro reorder-b]
+        }
+      @reorder-discharge-a |
+        forall a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+        [by forall_intro reorder-a]
+    }
+  @conclusion |
+    forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
+    [by forall_intro reorder-d]
+qed
