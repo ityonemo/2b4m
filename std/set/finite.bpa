@@ -1515,3 +1515,129 @@ proof
     forall n: Nat; not member(numeral(n), segment(n))
     [by forall_intro generalize-n]
 qed
+
+// -- restriction: peeling the top off a bijection ----------------------------
+
+// THE RESTRICTION LEMMA. A bijection segment(succ m) -> segment(succ n) that sends the top
+// to the top restricts to a bijection segment(m) -> segment(n).
+//
+// INTO is the delicate half: x in segment(m) goes somewhere in segment(succ n), and it
+// cannot be the top — if it were, injectivity would force x = numeral(m), which is not in
+// segment(m). So it lands in segment(n).
+theorem restrictionMapsInto: forall f: Fn; forall m: Nat; forall n: Nat;
+  mapsInto(f, segment(succ(m)), segment(succ(n))) ->
+  injectiveOn(f, segment(succ(m))) ->
+  apply(f, numeral(m)) = numeral(n) ->
+  mapsInto(f, segment(m), segment(n))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-into |
+                assume mapsInto(f, segment(succ(m)), segment(succ(n))) {
+                  @given-injective |
+                    assume injectiveOn(f, segment(succ(m))) {
+                      @given-top |
+                        assume apply(f, numeral(m)) = numeral(n) {
+                          @into |
+                            forall x: Element; member(x, segment(succ(m))) -> member(apply(f, x), segment(succ(n)))
+                            [by hypothesis given-into]
+                          @injective |
+                            forall x: Element; forall y: Element;
+                              member(x, segment(succ(m))) -> member(y, segment(succ(m))) ->
+                              apply(f, x) = apply(f, y) -> x = y
+                            [by hypothesis given-injective]
+                          @top-to-top |
+                            apply(f, numeral(m)) = numeral(n)
+                            [by hypothesis given-top]
+                          @pointwise |
+                            fix x: Element {
+                              @given-x |
+                                assume member(x, segment(m)) {
+                                  @x-in-small |
+                                    member(x, segment(m))
+                                    [by hypothesis given-x]
+                                  @x-in-big |
+                                    member(x, segment(succ(m)))
+                                    [using specialize segmentGrows(m, x) x-in-small]
+                                  @image-in-big |
+                                    member(apply(f, x), segment(succ(n)))
+                                    [using specialize into(x) x-in-big]
+                                  @image-splits |
+                                    member(apply(f, x), segment(n)) or apply(f, x) = numeral(n)
+                                    [using specialize segmentSuccSplits(n, apply(f, x)) image-in-big]
+                                  @conclusion-x |
+                                    member(apply(f, x), segment(n))
+                                    case image-splits {
+                                      @when-in-small |
+                                        assume member(apply(f, x), segment(n)) {
+                                          @conclusion-small |
+                                            member(apply(f, x), segment(n))
+                                            [by hypothesis when-in-small]
+                                        }
+                                      @when-at-top |
+                                        assume apply(f, x) = numeral(n) {
+                                          // x would have to BE the top, which is not in segment(m)
+                                          @x-image-is-top |
+                                            apply(f, x) = numeral(n)
+                                            [by hypothesis when-at-top]
+                                          @top-in-big |
+                                            member(numeral(m), segment(succ(m)))
+                                            [using specialize topIsInTheBiggerSegment(m)]
+                                          @same-image |
+                                            apply(f, x) = apply(f, numeral(m))
+                                            [by rewrite top-to-top x-image-is-top]
+                                          @x-is-top |
+                                            x = numeral(m)
+                                            [using specialize injective(x, numeral(m)) x-in-big top-in-big same-image]
+                                          @top-not-in-small |
+                                            not member(numeral(m), segment(m))
+                                            [using specialize topIsNotInTheSmallerSegment(m)]
+                                          @x-not-in-small |
+                                            not member(x, segment(m))
+                                            [by rewrite x-is-top top-not-in-small]
+                                          @conclusion-absurd |
+                                            member(apply(f, x), segment(n))
+                                            [by absurd x-in-small x-not-in-small]
+                                        }
+                                    }
+                                }
+                              @conclusion-implication |
+                                member(x, segment(m)) -> member(apply(f, x), segment(n))
+                                [by implies_intro given-x]
+                            }
+                          @conclusion-into |
+                            forall x: Element; member(x, segment(m)) -> member(apply(f, x), segment(n))
+                            [by forall_intro pointwise]
+                        }
+                      @conclusion-top |
+                        apply(f, numeral(m)) = numeral(n) -> mapsInto(f, segment(m), segment(n))
+                        [by implies_intro given-top]
+                    }
+                  @conclusion-injective |
+                    injectiveOn(f, segment(succ(m))) -> apply(f, numeral(m)) = numeral(n) -> mapsInto(f, segment(m), segment(n))
+                    [by implies_intro given-injective]
+                }
+              @conclusion-into-hyp |
+                mapsInto(f, segment(succ(m)), segment(succ(n))) -> injectiveOn(f, segment(succ(m))) -> apply(f, numeral(m)) = numeral(n) -> mapsInto(f, segment(m), segment(n))
+                [by implies_intro given-into]
+            }
+          @discharge-n |
+            forall n: Nat; mapsInto(f, segment(succ(m)), segment(succ(n))) -> injectiveOn(f, segment(succ(m))) -> apply(f, numeral(m)) = numeral(n) -> mapsInto(f, segment(m), segment(n))
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m: Nat; forall n: Nat; mapsInto(f, segment(succ(m)), segment(succ(n))) -> injectiveOn(f, segment(succ(m))) -> apply(f, numeral(m)) = numeral(n) -> mapsInto(f, segment(m), segment(n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall f: Fn; forall m: Nat; forall n: Nat;
+      mapsInto(f, segment(succ(m)), segment(succ(n))) ->
+      injectiveOn(f, segment(succ(m))) ->
+      apply(f, numeral(m)) = numeral(n) ->
+      mapsInto(f, segment(m), segment(n))
+    [by forall_intro generalize-f]
+qed
