@@ -1,0 +1,1304 @@
+// std/permutation/orbit-cycle.b4m — the CYCLE OF AN ORBIT.
+//
+// An orbit, read in order, is a cycle: list the iterates x, f(x), …, f^p(x) up to the least
+// period, and the cycle on that list does exactly what f does on the orbit and nothing
+// elsewhere. This is the bridge from the period (std/permutation/period.b4m) to cycle
+// notation (std/permutation/cycle.b4m), and the one-orbit case of the decomposition theorem.
+
+import permutation <<< "std/permutation.b4m"
+import cycle_theory <<< "std/permutation/cycle.b4m"
+import orbit_theory <<< "std/permutation/orbit.b4m"
+import period_theory <<< "std/permutation/period.b4m"
+import function <<< "std/function.b4m"
+import function_iterate <<< "std/function/iterate.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+
+sort Fn = function.Fn
+func apply = function.apply
+sort Perm = permutation.Perm
+func support = permutation.support
+func iterate = function_iterate.iterate
+axiom iterateZero = function_iterate.iterateZero
+axiom iterateSucc = function_iterate.iterateSucc
+theorem iterateSuccInside = function_iterate.iterateSuccInside
+theorem iterateAdd = function_iterate.iterateAdd
+theorem iterateIsInjective = function_iterate.iterateIsInjective
+theorem permutationIsInjective = permutation.permutationIsInjective
+
+sort Points = cycle_theory.Points
+func at = cycle_theory.at
+axiom pointsSingleton = cycle_theory.pointsSingleton
+axiom pointsPrepend = cycle_theory.pointsPrepend
+func cycle = cycle_theory.cycle
+define distinct(s, n) = cycle_theory.distinct(s, n)
+define avoids(x, s, n) = cycle_theory.avoids(x, s, n)
+theorem cycleAdvances = cycle_theory.cycleAdvances
+theorem cycleWrapsAround = cycle_theory.cycleWrapsAround
+theorem cycleFixesTheUnlisted = cycle_theory.cycleFixesTheUnlisted
+theorem zeroBelowSucc = cycle_theory.zeroBelowSucc
+
+func orbit = orbit_theory.orbit
+axiom orbitMember = orbit_theory.orbitMember
+theorem leastPeriodExists = period_theory.leastPeriodExists
+define isFinite(a) = set_finite.isFinite(a)
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+axiom induction = peano.induction
+theorem addIsCommutative = peano.addIsCommutative
+axiom lessThanElim = peano_order.lessThanElim
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanTransitive = peano_order.lessThanTransitive
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem succReflectsOrder = peano_order.succReflectsOrder
+theorem succPreservesOrder = peano_order.succPreservesOrder
+theorem trichotomy = peano_order.trichotomy
+theorem lessOrEqualIsGapExistential = peano_order.lessOrEqualIsGapExistential
+theorem lessOrEqualSplit = peano_order.lessOrEqualSplit
+theorem lessOrEqualAntisymmetric = peano_order.lessOrEqualAntisymmetric
+theorem lessThanToLessOrEqual = peano_order.lessThanToLessOrEqual
+theorem notLessThanZero = peano_order.notLessThanZero
+
+// -- the list of iterates ------------------------------------------------------------------
+
+// For every bound n there is a list whose first n+1 entries are x, f(x), …, f^n(x).
+// Induction on n with the starting point quantified inside: the list for f(x) and bound n,
+// with x prepended, is the list for x and bound n+1 (the successor applied first).
+theorem iterateListExists: forall f: Fn; forall n: Nat; forall x: Element;
+  exists s: Points; forall i: Nat; less_than(i, succ(n)) -> at(s, i) = iterate(f, i, x)
+proof
+  @generalize-f |
+    fix f: Fn {
+      // base case: the one-element list [x]
+      @base-case-proof |
+        fix x: Element {
+          @singleton-exists |
+            exists s: Points; at(s, ZERO) = x
+            [using specialize pointsSingleton(x)]
+          @with-singleton-s |
+            unpack s: Points from singleton-exists {
+              @head-is-x |
+                at(s, ZERO) = x
+                [by hypothesis with-singleton-s]
+              @generalize-i |
+                fix i: Nat {
+                  @given-i-below-one |
+                    assume less_than(i, succ(ZERO)) {
+                      @i-below-one |
+                        less_than(i, succ(ZERO))
+                        [by hypothesis given-i-below-one]
+                      @i-below-zero-or-is-zero |
+                        less_than(i, ZERO) or i = ZERO
+                        [using specialize lessThanSuccSplit(i, ZERO) i-below-one]
+                      @conclusion-entry |
+                        at(s, i) = iterate(f, i, x)
+                        case i-below-zero-or-is-zero {
+                          @when-below-zero |
+                            assume less_than(i, ZERO) {
+                              @i-below-zero |
+                                less_than(i, ZERO)
+                                [by hypothesis when-below-zero]
+                              @nothing-below-zero |
+                                not less_than(i, ZERO)
+                                [using specialize notLessThanZero(i)]
+                              @conclusion-absurd |
+                                at(s, i) = iterate(f, i, x)
+                                [by absurd i-below-zero nothing-below-zero]
+                            }
+                          @when-zero |
+                            assume i = ZERO {
+                              @i-is-zero |
+                                i = ZERO
+                                [by hypothesis when-zero]
+                              @zeroth-iterate-is-x |
+                                iterate(f, ZERO, x) = x
+                                [using specialize iterateZero(f, x)]
+                              @x-is-the-zeroth-iterate |
+                                x = iterate(f, ZERO, x)
+                                [by symmetry zeroth-iterate-is-x]
+                              @head-is-the-zeroth-iterate |
+                                at(s, ZERO) = iterate(f, ZERO, x)
+                                [using chain head-is-x x-is-the-zeroth-iterate]
+                              @conclusion-at-zero |
+                                at(s, i) = iterate(f, i, x)
+                                [by rewrite i-is-zero head-is-the-zeroth-iterate]
+                            }
+                        }
+                    }
+                  @conclusion-i |
+                    less_than(i, succ(ZERO)) -> at(s, i) = iterate(f, i, x)
+                    [by implies_intro given-i-below-one]
+                }
+              @singleton-lists-the-iterates |
+                forall i: Nat; less_than(i, succ(ZERO)) -> at(s, i) = iterate(f, i, x)
+                [by forall_intro generalize-i]
+              @conclusion-base-witness |
+                exists s2: Points; forall i: Nat; less_than(i, succ(ZERO)) -> at(s2, i) = iterate(f, i, x)
+                [by exists_intro(s) singleton-lists-the-iterates]
+            }
+          @conclusion-base-at-x |
+            exists s2: Points; forall i: Nat; less_than(i, succ(ZERO)) -> at(s2, i) = iterate(f, i, x)
+            [by exists_elim with-singleton-s]
+        }
+      @base-case |
+        forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(ZERO)) -> at(s, i) = iterate(f, i, x)
+        [by forall_intro base-case-proof]
+
+      // inductive step: prepend x to the list of iterates of f(x)
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, x) {
+              @inductive-hypothesis |
+                forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, x)
+                [by hypothesis given-inductive-hypothesis]
+              @generalize-x |
+                fix x: Element {
+                  @tail-exists |
+                    exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, apply(f, x))
+                    [using specialize inductive-hypothesis(apply(f, x))]
+                  @with-tail-s |
+                    unpack s: Points from tail-exists {
+                      @tail-lists-the-iterates-of-the-image |
+                        forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, apply(f, x))
+                        [by hypothesis with-tail-s]
+                      @prepended-exists |
+                        exists u: Points; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+                        [using specialize pointsPrepend(x, s)]
+                      @with-prepended-u |
+                        unpack u: Points from prepended-exists {
+                          @prepend-facts |
+                            at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+                            [by hypothesis with-prepended-u]
+                          @head-is-x |
+                            at(u, ZERO) = x
+                            [by and_elim_left prepend-facts]
+                          @tail-shifts |
+                            forall i: Nat; at(u, succ(i)) = at(s, i)
+                            [by and_elim_right prepend-facts]
+                          @generalize-j |
+                            fix j: Nat {
+                              @given-j-in-range |
+                                assume less_than(j, succ(succ(k))) {
+                                  @j-in-range |
+                                    less_than(j, succ(succ(k)))
+                                    [by hypothesis given-j-in-range]
+                                  @j-is-zero-or-a-successor |
+                                    j = ZERO or (exists i: Nat; j = succ(i))
+                                    [using specialize peano.zeroOrSucc(j)]
+                                  @conclusion-entry-j |
+                                    at(u, j) = iterate(f, j, x)
+                                    case j-is-zero-or-a-successor {
+                                      @when-head |
+                                        assume j = ZERO {
+                                          @j-is-zero |
+                                            j = ZERO
+                                            [by hypothesis when-head]
+                                          @zeroth-iterate-is-x |
+                                            iterate(f, ZERO, x) = x
+                                            [using specialize iterateZero(f, x)]
+                                          @x-is-the-zeroth-iterate |
+                                            x = iterate(f, ZERO, x)
+                                            [by symmetry zeroth-iterate-is-x]
+                                          @head-is-the-zeroth-iterate |
+                                            at(u, ZERO) = iterate(f, ZERO, x)
+                                            [using chain head-is-x x-is-the-zeroth-iterate]
+                                          @conclusion-head |
+                                            at(u, j) = iterate(f, j, x)
+                                            [by rewrite j-is-zero head-is-the-zeroth-iterate]
+                                        }
+                                      @when-in-tail |
+                                        assume exists i: Nat; j = succ(i) {
+                                          @predecessor-exists |
+                                            exists i: Nat; j = succ(i)
+                                            [by hypothesis when-in-tail]
+                                          @with-predecessor-i |
+                                            unpack i: Nat from predecessor-exists {
+                                              @j-is-succ-i |
+                                                j = succ(i)
+                                                [by hypothesis with-predecessor-i]
+                                              @succ-i-in-range |
+                                                less_than(succ(i), succ(succ(k)))
+                                                [by rewrite j-is-succ-i j-in-range]
+                                              @i-in-tail-range |
+                                                less_than(i, succ(k))
+                                                [using specialize succReflectsOrder(i, succ(k)) succ-i-in-range]
+                                              @tail-entry |
+                                                at(s, i) = iterate(f, i, apply(f, x))
+                                                [using specialize tail-lists-the-iterates-of-the-image(i) i-in-tail-range]
+                                              @shifted-entry |
+                                                at(u, succ(i)) = at(s, i)
+                                                [using specialize tail-shifts(i)]
+                                              @entry-is-the-inner-iterate |
+                                                at(u, succ(i)) = iterate(f, i, apply(f, x))
+                                                [using chain shifted-entry tail-entry]
+                                              @successor-inside |
+                                                iterate(f, succ(i), x) = iterate(f, i, apply(f, x))
+                                                [using specialize iterateSuccInside(f, x, i)]
+                                              @inner-iterate-is-the-successor-iterate |
+                                                iterate(f, i, apply(f, x)) = iterate(f, succ(i), x)
+                                                [by symmetry successor-inside]
+                                              @entry-is-the-successor-iterate |
+                                                at(u, succ(i)) = iterate(f, succ(i), x)
+                                                [using chain entry-is-the-inner-iterate inner-iterate-is-the-successor-iterate]
+                                              @conclusion-tail-entry |
+                                                at(u, j) = iterate(f, j, x)
+                                                [by rewrite j-is-succ-i entry-is-the-successor-iterate]
+                                            }
+                                          @conclusion-in-tail |
+                                            at(u, j) = iterate(f, j, x)
+                                            [by exists_elim with-predecessor-i]
+                                        }
+                                    }
+                                }
+                              @conclusion-j |
+                                less_than(j, succ(succ(k))) -> at(u, j) = iterate(f, j, x)
+                                [by implies_intro given-j-in-range]
+                            }
+                          @prepended-lists-the-iterates |
+                            forall j: Nat; less_than(j, succ(succ(k))) -> at(u, j) = iterate(f, j, x)
+                            [by forall_intro generalize-j]
+                          @conclusion-witness-u |
+                            exists s2: Points; forall j: Nat; less_than(j, succ(succ(k))) -> at(s2, j) = iterate(f, j, x)
+                            [by exists_intro(u) prepended-lists-the-iterates]
+                        }
+                      @conclusion-with-u |
+                        exists s2: Points; forall j: Nat; less_than(j, succ(succ(k))) -> at(s2, j) = iterate(f, j, x)
+                        [by exists_elim with-prepended-u]
+                    }
+                  @conclusion-step-at-x |
+                    exists s2: Points; forall j: Nat; less_than(j, succ(succ(k))) -> at(s2, j) = iterate(f, j, x)
+                    [by exists_elim with-tail-s]
+                }
+              @discharge-x |
+                forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(succ(k))) -> at(s, i) = iterate(f, i, x)
+                [by forall_intro generalize-x]
+            }
+          @induction-step-at-k |
+            (forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, x)) -> (forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(succ(k))) -> at(s, i) = iterate(f, i, x))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; (forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, x)) -> (forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(succ(k))) -> at(s, i) = iterate(f, i, x))
+        [by forall_intro induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(n)) -> at(s, i) = iterate(f, i, x)
+        [using instantiation induction((fun k: Nat => forall x: Element; exists s: Points; forall i: Nat; less_than(i, succ(k)) -> at(s, i) = iterate(f, i, x))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall f: Fn; forall n: Nat; forall x: Element;
+      exists s: Points; forall i: Nat; less_than(i, succ(n)) -> at(s, i) = iterate(f, i, x)
+    [by forall_intro generalize-f]
+qed
+
+// -- the iterates below the period cover the orbit, and are distinct -------------------------
+
+// Once f^(p+1)(x) = x, every iterate is one of the first p+1: induction on n, stepping the
+// index unless it is p, where the return sends it back to ZERO.
+theorem everyIterateIsAnEarlyOne: forall f: Fn; forall x: Element; forall p: Nat;
+  iterate(f, succ(p), x) = x ->
+  forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @given-return |
+                assume iterate(f, succ(p), x) = x {
+                  @return |
+                    iterate(f, succ(p), x) = x
+                    [by hypothesis given-return]
+                  @zero-is-early |
+                    less_than(ZERO, succ(p))
+                    [using specialize zeroBelowSucc(p)]
+                  // base case: the zeroth iterate is its own early one
+                  @zeroth-is-itself |
+                    iterate(f, ZERO, x) = iterate(f, ZERO, x)
+                    [by reflexivity]
+                  @base-clauses |
+                    less_than(ZERO, succ(p)) and iterate(f, ZERO, x) = iterate(f, ZERO, x)
+                    [by and_intro zero-is-early zeroth-is-itself]
+                  @base-case |
+                    exists i: Nat; less_than(i, succ(p)) and iterate(f, ZERO, x) = iterate(f, i, x)
+                    [by exists_intro(ZERO) base-clauses]
+                  // inductive step
+                  @induction-step |
+                    fix k: Nat {
+                      @given-inductive-hypothesis |
+                        assume exists i: Nat; less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x) {
+                          @inductive-hypothesis |
+                            exists i: Nat; less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x)
+                            [by hypothesis given-inductive-hypothesis]
+                          @with-early-index-i |
+                            unpack i: Nat from inductive-hypothesis {
+                              @early-facts |
+                                less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x)
+                                [by hypothesis with-early-index-i]
+                              @i-is-early |
+                                less_than(i, succ(p))
+                                [by and_elim_left early-facts]
+                              @k-th-is-i-th |
+                                iterate(f, k, x) = iterate(f, i, x)
+                                [by and_elim_right early-facts]
+                              @next-unfolds |
+                                iterate(f, succ(k), x) = apply(f, iterate(f, k, x))
+                                [using specialize iterateSucc(f, k, x)]
+                              @next-is-the-image-of-the-i-th |
+                                iterate(f, succ(k), x) = apply(f, iterate(f, i, x))
+                                [by rewrite k-th-is-i-th next-unfolds]
+                              @successor-of-i-unfolds |
+                                iterate(f, succ(i), x) = apply(f, iterate(f, i, x))
+                                [using specialize iterateSucc(f, i, x)]
+                              @image-of-the-i-th-is-the-next-of-i |
+                                apply(f, iterate(f, i, x)) = iterate(f, succ(i), x)
+                                [by symmetry successor-of-i-unfolds]
+                              @next-is-the-successor-of-i |
+                                iterate(f, succ(k), x) = iterate(f, succ(i), x)
+                                [using chain next-is-the-image-of-the-i-th image-of-the-i-th-is-the-next-of-i]
+                              @i-below-p-or-is-p |
+                                less_than(i, p) or i = p
+                                [using specialize lessThanSuccSplit(i, p) i-is-early]
+                              @conclusion-next-is-early |
+                                exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x)
+                                case i-below-p-or-is-p {
+                                  @when-below-p |
+                                    assume less_than(i, p) {
+                                      @i-below-p |
+                                        less_than(i, p)
+                                        [by hypothesis when-below-p]
+                                      @succ-i-is-early |
+                                        less_than(succ(i), succ(p))
+                                        [using specialize succPreservesOrder(i, p) i-below-p]
+                                      @step-clauses |
+                                        less_than(succ(i), succ(p)) and iterate(f, succ(k), x) = iterate(f, succ(i), x)
+                                        [by and_intro succ-i-is-early next-is-the-successor-of-i]
+                                      @conclusion-step-to-succ-i |
+                                        exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x)
+                                        [by exists_intro(succ(i)) step-clauses]
+                                    }
+                                  @when-at-p |
+                                    assume i = p {
+                                      @i-is-p |
+                                        i = p
+                                        [by hypothesis when-at-p]
+                                      @next-is-the-return |
+                                        iterate(f, succ(k), x) = iterate(f, succ(p), x)
+                                        [by rewrite i-is-p next-is-the-successor-of-i]
+                                      @next-is-x |
+                                        iterate(f, succ(k), x) = x
+                                        [using chain next-is-the-return return]
+                                      @zeroth-is-x |
+                                        iterate(f, ZERO, x) = x
+                                        [using specialize iterateZero(f, x)]
+                                      @x-is-the-zeroth |
+                                        x = iterate(f, ZERO, x)
+                                        [by symmetry zeroth-is-x]
+                                      @next-is-the-zeroth |
+                                        iterate(f, succ(k), x) = iterate(f, ZERO, x)
+                                        [using chain next-is-x x-is-the-zeroth]
+                                      @wrap-clauses |
+                                        less_than(ZERO, succ(p)) and iterate(f, succ(k), x) = iterate(f, ZERO, x)
+                                        [by and_intro zero-is-early next-is-the-zeroth]
+                                      @conclusion-wrap-to-zero |
+                                        exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x)
+                                        [by exists_intro(ZERO) wrap-clauses]
+                                    }
+                                }
+                            }
+                          @conclusion-step |
+                            exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x)
+                            [by exists_elim with-early-index-i]
+                        }
+                      @induction-step-at-k |
+                        (exists i: Nat; less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x)) -> (exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x))
+                        [by implies_intro given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat; (exists i: Nat; less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x)) -> (exists i2: Nat; less_than(i2, succ(p)) and iterate(f, succ(k), x) = iterate(f, i2, x))
+                    [by forall_intro induction-step]
+                  @conclusion-for-all-n |
+                    forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+                    [using instantiation induction((fun k: Nat => exists i: Nat; less_than(i, succ(p)) and iterate(f, k, x) = iterate(f, i, x))) base-case induction-step-for-all-k]
+                }
+              @conclusion-return-implication |
+                iterate(f, succ(p), x) = x -> forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+                [by implies_intro given-return]
+            }
+          @discharge-p |
+            forall p: Nat; iterate(f, succ(p), x) = x -> forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; iterate(f, succ(p), x) = x -> forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall p: Nat;
+      iterate(f, succ(p), x) = x ->
+      forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+    [by forall_intro generalize-f]
+qed
+
+// Two iterates with indices i < j ≤ p differ when p is the LEAST period: were they equal,
+// cancelling i applications would give a return after j-i ≤ p steps, below the least one.
+theorem earlyIteratesDiffer: forall f: Perm; forall x: Element; forall p: Nat; forall i: Nat; forall j: Nat;
+  iterate(f, succ(p), x) = x ->
+  (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) ->
+  less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @given-return |
+                        assume iterate(f, succ(p), x) = x {
+                          @given-least |
+                            assume forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q) {
+                              @given-i-below-j |
+                                assume less_than(i, j) {
+                                  @given-j-in-range |
+                                    assume less_than(j, succ(p)) {
+                                      @least |
+                                        forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)
+                                        [by hypothesis given-least]
+                                      @i-below-j |
+                                        less_than(i, j)
+                                        [by hypothesis given-i-below-j]
+                                      @j-in-range |
+                                        less_than(j, succ(p))
+                                        [by hypothesis given-j-in-range]
+                                      @f-is-injective |
+                                        forall a: Element; forall b: Element; apply(f, a) = apply(f, b) -> a = b
+                                        [using specialize permutationIsInjective(f)]
+                                      @iterates-are-injective |
+                                        forall n: Nat; forall u: Element; forall v: Element; iterate(f, n, u) = iterate(f, n, v) -> u = v
+                                        [using specialize iterateIsInjective(f) f-is-injective]
+                                      @gap-exists |
+                                        exists d: Nat; add(i, succ(d)) = j
+                                        [using specialize lessThanElim(i, j) i-below-j]
+                                      @with-gap-d |
+                                        unpack d: Nat from gap-exists {
+                                          @gap |
+                                            add(i, succ(d)) = j
+                                            [by hypothesis with-gap-d]
+                                          // the gap is at most p, so it is below the least period
+                                          @gap-commuted |
+                                            add(i, succ(d)) = add(succ(d), i)
+                                            [using specialize addIsCommutative(i, succ(d))]
+                                          @gap-from-the-right |
+                                            add(succ(d), i) = j
+                                            [by rewrite gap-commuted gap]
+                                          @gap-witnesses-at-most |
+                                            exists e: Nat; add(succ(d), e) = j
+                                            [by exists_intro(i) gap-from-the-right]
+                                          @at-most-means-a-gap |
+                                            less_or_equal(succ(d), j) iff (exists e: Nat; add(succ(d), e) = j)
+                                            [using specialize lessOrEqualIsGapExistential(succ(d), j)]
+                                          @succ-d-at-most-j |
+                                            less_or_equal(succ(d), j)
+                                            [using tautology at-most-means-a-gap gap-witnesses-at-most]
+                                          @succ-d-below-j-or-is-j |
+                                            less_than(succ(d), j) or succ(d) = j
+                                            [using specialize lessOrEqualSplit(succ(d), j) succ-d-at-most-j]
+                                          @succ-d-in-range |
+                                            less_than(succ(d), succ(p))
+                                            case succ-d-below-j-or-is-j {
+                                              @when-below-j |
+                                                assume less_than(succ(d), j) {
+                                                  @succ-d-below-j |
+                                                    less_than(succ(d), j)
+                                                    [by hypothesis when-below-j]
+                                                  @conclusion-below-through-j |
+                                                    less_than(succ(d), succ(p))
+                                                    [using specialize lessThanTransitive(succ(d), j, succ(p)) succ-d-below-j j-in-range]
+                                                }
+                                              @when-is-j |
+                                                assume succ(d) = j {
+                                                  @succ-d-is-j |
+                                                    succ(d) = j
+                                                    [by hypothesis when-is-j]
+                                                  @conclusion-is-j-in-range |
+                                                    less_than(succ(d), succ(p))
+                                                    [by rewrite succ-d-is-j j-in-range]
+                                                }
+                                            }
+                                          @d-below-p |
+                                            less_than(d, p)
+                                            [using specialize succReflectsOrder(d, p) succ-d-in-range]
+                                          // equal iterates would give a return after succ(d) steps
+                                          @suppose-equal |
+                                            assume iterate(f, i, x) = iterate(f, j, x) {
+                                              @iterates-equal |
+                                                iterate(f, i, x) = iterate(f, j, x)
+                                                [by hypothesis suppose-equal]
+                                              @sum-splits |
+                                                iterate(f, add(i, succ(d)), x) = iterate(f, i, iterate(f, succ(d), x))
+                                                [using specialize iterateAdd(f, x, succ(d), i)]
+                                              @j-th-splits |
+                                                iterate(f, j, x) = iterate(f, i, iterate(f, succ(d), x))
+                                                [by rewrite gap sum-splits]
+                                              @i-th-is-i-th-of-the-return |
+                                                iterate(f, i, x) = iterate(f, i, iterate(f, succ(d), x))
+                                                [by rewrite j-th-splits iterates-equal]
+                                              @i-th-of-the-return-is-i-th |
+                                                iterate(f, i, iterate(f, succ(d), x)) = iterate(f, i, x)
+                                                [by symmetry i-th-is-i-th-of-the-return]
+                                              @early-return |
+                                                iterate(f, succ(d), x) = x
+                                                [using specialize iterates-are-injective(i, iterate(f, succ(d), x), x) i-th-of-the-return-is-i-th]
+                                              @p-at-most-d |
+                                                less_or_equal(p, d)
+                                                [using specialize least(d) early-return]
+                                              @d-at-most-p |
+                                                less_or_equal(d, p)
+                                                [using specialize lessThanToLessOrEqual(d, p) d-below-p]
+                                              @p-is-d |
+                                                p = d
+                                                [using specialize lessOrEqualAntisymmetric(p, d) p-at-most-d d-at-most-p]
+                                              @d-below-d |
+                                                less_than(d, d)
+                                                [by rewrite p-is-d d-below-p]
+                                            }
+                                          @d-not-below-d |
+                                            not less_than(d, d)
+                                            [using specialize lessThanIrreflexive(d)]
+                                          @conclusion-iterates-differ |
+                                            iterate(f, i, x) != iterate(f, j, x)
+                                            [by not_intro suppose-equal d-below-d d-not-below-d]
+                                        }
+                                      @conclusion-with-gap |
+                                        iterate(f, i, x) != iterate(f, j, x)
+                                        [by exists_elim with-gap-d]
+                                    }
+                                  @conclusion-j-in-range |
+                                    less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                                    [by implies_intro given-j-in-range]
+                                }
+                              @conclusion-i-below-j |
+                                less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                                [by implies_intro given-i-below-j]
+                            }
+                          @conclusion-least |
+                            (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                            [by implies_intro given-least]
+                        }
+                      @conclusion-return |
+                        iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                        [by implies_intro given-return]
+                    }
+                  @discharge-j |
+                    forall j: Nat; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                    [by forall_intro generalize-j]
+                }
+              @discharge-i |
+                forall i: Nat; forall j: Nat; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+                [by forall_intro generalize-i]
+            }
+          @discharge-p |
+            forall p: Nat; forall i: Nat; forall j: Nat; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; forall i: Nat; forall j: Nat; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall p: Nat; forall i: Nat; forall j: Nat;
+      iterate(f, succ(p), x) = x ->
+      (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) ->
+      less_than(i, j) -> less_than(j, succ(p)) -> iterate(f, i, x) != iterate(f, j, x)
+    [by forall_intro generalize-f]
+qed
+
+// The list of the first p+1 iterates is DISTINCT when p is the least period.
+theorem iterateListIsDistinct: forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+  iterate(f, succ(p), x) = x ->
+  (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) ->
+  (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+  distinct(s, succ(p))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-s |
+                fix s: Points {
+                  @given-return |
+                    assume iterate(f, succ(p), x) = x {
+                      @given-least |
+                        assume forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q) {
+                          @given-lists |
+                            assume forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x) {
+                              @return |
+                                iterate(f, succ(p), x) = x
+                                [by hypothesis given-return]
+                              @least |
+                                forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)
+                                [by hypothesis given-least]
+                              @lists |
+                                forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                                [by hypothesis given-lists]
+                              @generalize-i |
+                                fix i: Nat {
+                                  @generalize-j |
+                                    fix j: Nat {
+                                      @given-i-in-range |
+                                        assume less_than(i, succ(p)) {
+                                          @given-j-in-range |
+                                            assume less_than(j, succ(p)) {
+                                              @given-entries-equal |
+                                                assume at(s, i) = at(s, j) {
+                                                  @i-in-range |
+                                                    less_than(i, succ(p))
+                                                    [by hypothesis given-i-in-range]
+                                                  @j-in-range |
+                                                    less_than(j, succ(p))
+                                                    [by hypothesis given-j-in-range]
+                                                  @entries-equal |
+                                                    at(s, i) = at(s, j)
+                                                    [by hypothesis given-entries-equal]
+                                                  @entry-i |
+                                                    at(s, i) = iterate(f, i, x)
+                                                    [using specialize lists(i) i-in-range]
+                                                  @entry-j |
+                                                    at(s, j) = iterate(f, j, x)
+                                                    [using specialize lists(j) j-in-range]
+                                                  @i-th-is-entry-j |
+                                                    iterate(f, i, x) = at(s, j)
+                                                    [by rewrite entry-i entries-equal]
+                                                  @iterates-equal |
+                                                    iterate(f, i, x) = iterate(f, j, x)
+                                                    [by rewrite entry-j i-th-is-entry-j]
+                                                  @order |
+                                                    less_than(i, j) or i = j or less_than(j, i)
+                                                    [using specialize trichotomy(i, j)]
+                                                  @conclusion-same-index |
+                                                    i = j
+                                                    case order {
+                                                      @when-i-below-j |
+                                                        assume less_than(i, j) {
+                                                          @i-below-j |
+                                                            less_than(i, j)
+                                                            [by hypothesis when-i-below-j]
+                                                          @iterates-differ |
+                                                            iterate(f, i, x) != iterate(f, j, x)
+                                                            [using specialize earlyIteratesDiffer(f, x, p, i, j) return least i-below-j j-in-range]
+                                                          @conclusion-absurd-below |
+                                                            i = j
+                                                            [by absurd iterates-equal iterates-differ]
+                                                        }
+                                                      @when-equal |
+                                                        assume i = j {
+                                                          @conclusion-equal |
+                                                            i = j
+                                                            [by hypothesis when-equal]
+                                                        }
+                                                      @when-j-below-i |
+                                                        assume less_than(j, i) {
+                                                          @j-below-i |
+                                                            less_than(j, i)
+                                                            [by hypothesis when-j-below-i]
+                                                          @iterates-differ-flipped |
+                                                            iterate(f, j, x) != iterate(f, i, x)
+                                                            [using specialize earlyIteratesDiffer(f, x, p, j, i) return least j-below-i i-in-range]
+                                                          @iterates-equal-flipped |
+                                                            iterate(f, j, x) = iterate(f, i, x)
+                                                            [by symmetry iterates-equal]
+                                                          @conclusion-absurd-above |
+                                                            i = j
+                                                            [by absurd iterates-equal-flipped iterates-differ-flipped]
+                                                        }
+                                                    }
+                                                }
+                                              @conclusion-entries |
+                                                at(s, i) = at(s, j) -> i = j
+                                                [by implies_intro given-entries-equal]
+                                            }
+                                          @conclusion-j |
+                                            less_than(j, succ(p)) -> at(s, i) = at(s, j) -> i = j
+                                            [by implies_intro given-j-in-range]
+                                        }
+                                      @conclusion-i |
+                                        less_than(i, succ(p)) -> less_than(j, succ(p)) -> at(s, i) = at(s, j) -> i = j
+                                        [by implies_intro given-i-in-range]
+                                    }
+                                  @discharge-j |
+                                    forall j: Nat; less_than(i, succ(p)) -> less_than(j, succ(p)) -> at(s, i) = at(s, j) -> i = j
+                                    [by forall_intro generalize-j]
+                                }
+                              @conclusion-distinct |
+                                distinct(s, succ(p))
+                                [by forall_intro generalize-i]
+                            }
+                          @conclusion-lists |
+                            (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+                            [by implies_intro given-lists]
+                        }
+                      @conclusion-least |
+                        (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+                        [by implies_intro given-least]
+                    }
+                  @conclusion-return |
+                    iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+                    [by implies_intro given-return]
+                }
+              @discharge-s |
+                forall s: Points; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+                [by forall_intro generalize-s]
+            }
+          @discharge-p |
+            forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+      iterate(f, succ(p), x) = x ->
+      (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)) ->
+      (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+      distinct(s, succ(p))
+    [by forall_intro generalize-f]
+qed
+
+// -- the cycle on the iterates does what f does -------------------------------------------------
+
+// On each listed iterate, the cycle agrees with f: before the last it advances to the next
+// iterate, which is f of this one; at the last it wraps to the first, which is x, which is
+// f^(p+1)(x), which is f of the last.
+theorem cycleOfIteratesAgreesOnEntries: forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+  iterate(f, succ(p), x) = x ->
+  (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+  distinct(s, succ(p)) ->
+  forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-s |
+                fix s: Points {
+                  @given-return |
+                    assume iterate(f, succ(p), x) = x {
+                      @given-lists |
+                        assume forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x) {
+                          @given-distinct |
+                            assume distinct(s, succ(p)) {
+                              @return |
+                                iterate(f, succ(p), x) = x
+                                [by hypothesis given-return]
+                              @lists |
+                                forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                                [by hypothesis given-lists]
+                              @distinct-entries |
+                                distinct(s, succ(p))
+                                [by hypothesis given-distinct]
+                              @advances |
+                                forall i: Nat; less_than(i, p) -> apply(cycle(s, succ(p)), at(s, i)) = at(s, succ(i))
+                                [using specialize cycleAdvances(s, p) distinct-entries]
+                              @wraps |
+                                apply(cycle(s, succ(p)), at(s, p)) = at(s, ZERO)
+                                [using specialize cycleWrapsAround(s, p) distinct-entries]
+                              @generalize-i |
+                                fix i: Nat {
+                                  @given-i-in-range |
+                                    assume less_than(i, succ(p)) {
+                                      @i-in-range |
+                                        less_than(i, succ(p))
+                                        [by hypothesis given-i-in-range]
+                                      @entry-i |
+                                        at(s, i) = iterate(f, i, x)
+                                        [using specialize lists(i) i-in-range]
+                                      @next-iterate-unfolds |
+                                        iterate(f, succ(i), x) = apply(f, iterate(f, i, x))
+                                        [using specialize iterateSucc(f, i, x)]
+                                      @f-of-entry-i |
+                                        apply(f, at(s, i)) = apply(f, iterate(f, i, x))
+                                        [by rewrite entry-i f-of-entry-i-raw]
+                                      @f-of-entry-i-raw |
+                                        apply(f, at(s, i)) = apply(f, at(s, i))
+                                        [by reflexivity]
+                                      @i-below-p-or-is-p |
+                                        less_than(i, p) or i = p
+                                        [using specialize lessThanSuccSplit(i, p) i-in-range]
+                                      @conclusion-agrees-at-i |
+                                        apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                        case i-below-p-or-is-p {
+                                          @when-before-last |
+                                            assume less_than(i, p) {
+                                              @i-below-p |
+                                                less_than(i, p)
+                                                [by hypothesis when-before-last]
+                                              @cycle-advances-i |
+                                                apply(cycle(s, succ(p)), at(s, i)) = at(s, succ(i))
+                                                [using specialize advances(i) i-below-p]
+                                              @succ-i-in-range |
+                                                less_than(succ(i), succ(p))
+                                                [using specialize succPreservesOrder(i, p) i-below-p]
+                                              @entry-succ-i |
+                                                at(s, succ(i)) = iterate(f, succ(i), x)
+                                                [using specialize lists(succ(i)) succ-i-in-range]
+                                              @cycle-gives-the-next-iterate |
+                                                apply(cycle(s, succ(p)), at(s, i)) = iterate(f, succ(i), x)
+                                                [using chain cycle-advances-i entry-succ-i]
+                                              @cycle-gives-f-of-the-i-th |
+                                                apply(cycle(s, succ(p)), at(s, i)) = apply(f, iterate(f, i, x))
+                                                [using chain cycle-gives-the-next-iterate next-iterate-unfolds]
+                                              @f-of-the-i-th-is-f-of-entry |
+                                                apply(f, iterate(f, i, x)) = apply(f, at(s, i))
+                                                [by symmetry f-of-entry-i]
+                                              @conclusion-before-last |
+                                                apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                                [using chain cycle-gives-f-of-the-i-th f-of-the-i-th-is-f-of-entry]
+                                            }
+                                          @when-last |
+                                            assume i = p {
+                                              @i-is-p |
+                                                i = p
+                                                [by hypothesis when-last]
+                                              @zero-in-range |
+                                                less_than(ZERO, succ(p))
+                                                [using specialize zeroBelowSucc(p)]
+                                              @entry-zero |
+                                                at(s, ZERO) = iterate(f, ZERO, x)
+                                                [using specialize lists(ZERO) zero-in-range]
+                                              @zeroth-iterate-is-x |
+                                                iterate(f, ZERO, x) = x
+                                                [using specialize iterateZero(f, x)]
+                                              @head-is-x |
+                                                at(s, ZERO) = x
+                                                [using chain entry-zero zeroth-iterate-is-x]
+                                              @x-is-the-return |
+                                                x = iterate(f, succ(p), x)
+                                                [by symmetry return]
+                                              @return-unfolds |
+                                                iterate(f, succ(p), x) = apply(f, iterate(f, p, x))
+                                                [using specialize iterateSucc(f, p, x)]
+                                              @cycle-at-last-is-x |
+                                                apply(cycle(s, succ(p)), at(s, p)) = x
+                                                [using chain wraps head-is-x]
+                                              @cycle-at-last-is-the-return |
+                                                apply(cycle(s, succ(p)), at(s, p)) = iterate(f, succ(p), x)
+                                                [using chain cycle-at-last-is-x x-is-the-return]
+                                              @cycle-at-last-is-f-of-the-p-th |
+                                                apply(cycle(s, succ(p)), at(s, p)) = apply(f, iterate(f, p, x))
+                                                [using chain cycle-at-last-is-the-return return-unfolds]
+                                              @entry-p |
+                                                at(s, p) = iterate(f, p, x)
+                                                [by rewrite i-is-p entry-i]
+                                              @cycle-at-last-is-f-of-entry-p |
+                                                apply(cycle(s, succ(p)), at(s, p)) = apply(f, at(s, p))
+                                                [by rewrite entry-p cycle-at-last-is-f-of-the-p-th]
+                                              @conclusion-last |
+                                                apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                                [by rewrite i-is-p cycle-at-last-is-f-of-entry-p]
+                                            }
+                                        }
+                                    }
+                                  @conclusion-i |
+                                    less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                    [by implies_intro given-i-in-range]
+                                }
+                              @conclusion-agrees-on-entries |
+                                forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                [by forall_intro generalize-i]
+                            }
+                          @conclusion-distinct |
+                            distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                            [by implies_intro given-distinct]
+                        }
+                      @conclusion-lists |
+                        (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                        [by implies_intro given-lists]
+                    }
+                  @conclusion-return |
+                    iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                    [by implies_intro given-return]
+                }
+              @discharge-s |
+                forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                [by forall_intro generalize-s]
+            }
+          @discharge-p |
+            forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+      iterate(f, succ(p), x) = x ->
+      (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+      distinct(s, succ(p)) ->
+      forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+    [by forall_intro generalize-f]
+qed
+
+// On the whole orbit: every orbit member is an early iterate, hence a listed entry.
+theorem cycleOfIteratesAgreesOnTheOrbit: forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+  iterate(f, succ(p), x) = x ->
+  (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+  distinct(s, succ(p)) ->
+  forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-s |
+                fix s: Points {
+                  @given-return |
+                    assume iterate(f, succ(p), x) = x {
+                      @given-lists |
+                        assume forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x) {
+                          @given-distinct |
+                            assume distinct(s, succ(p)) {
+                              @return |
+                                iterate(f, succ(p), x) = x
+                                [by hypothesis given-return]
+                              @lists |
+                                forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                                [by hypothesis given-lists]
+                              @distinct-entries |
+                                distinct(s, succ(p))
+                                [by hypothesis given-distinct]
+                              @agrees-on-entries |
+                                forall i: Nat; less_than(i, succ(p)) -> apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                [using specialize cycleOfIteratesAgreesOnEntries(f, x, p, s) return lists distinct-entries]
+                              @every-iterate-is-early |
+                                forall n: Nat; exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+                                [using specialize everyIterateIsAnEarlyOne(f, x, p) return]
+                              @generalize-y |
+                                fix y: Element {
+                                  @given-in-orbit |
+                                    assume member(y, orbit(f, x)) {
+                                      @y-in-orbit |
+                                        member(y, orbit(f, x))
+                                        [by hypothesis given-in-orbit]
+                                      @y-membership |
+                                        member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+                                        [using specialize orbitMember(f, x, y)]
+                                      @y-is-an-iterate |
+                                        exists n: Nat; y = iterate(f, n, x)
+                                        [using tautology y-membership y-in-orbit]
+                                      @with-index-n |
+                                        unpack n: Nat from y-is-an-iterate {
+                                          @y-is-the-n-th |
+                                            y = iterate(f, n, x)
+                                            [by hypothesis with-index-n]
+                                          @n-th-is-early |
+                                            exists i: Nat; less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+                                            [using specialize every-iterate-is-early(n)]
+                                          @with-early-index-i |
+                                            unpack i: Nat from n-th-is-early {
+                                              @early-facts |
+                                                less_than(i, succ(p)) and iterate(f, n, x) = iterate(f, i, x)
+                                                [by hypothesis with-early-index-i]
+                                              @i-in-range |
+                                                less_than(i, succ(p))
+                                                [by and_elim_left early-facts]
+                                              @n-th-is-i-th |
+                                                iterate(f, n, x) = iterate(f, i, x)
+                                                [by and_elim_right early-facts]
+                                              @entry-i |
+                                                at(s, i) = iterate(f, i, x)
+                                                [using specialize lists(i) i-in-range]
+                                              @y-is-the-i-th |
+                                                y = iterate(f, i, x)
+                                                [using chain y-is-the-n-th n-th-is-i-th]
+                                              @y-is-entry-i |
+                                                y = at(s, i)
+                                                [by rewrite entry-i y-is-the-i-th]
+                                              @agrees-at-entry-i |
+                                                apply(cycle(s, succ(p)), at(s, i)) = apply(f, at(s, i))
+                                                [using specialize agrees-on-entries(i) i-in-range]
+                                              @conclusion-agrees-at-y |
+                                                apply(cycle(s, succ(p)), y) = apply(f, y)
+                                                [by rewrite y-is-entry-i agrees-at-entry-i]
+                                            }
+                                          @conclusion-with-i |
+                                            apply(cycle(s, succ(p)), y) = apply(f, y)
+                                            [by exists_elim with-early-index-i]
+                                        }
+                                      @conclusion-with-n |
+                                        apply(cycle(s, succ(p)), y) = apply(f, y)
+                                        [by exists_elim with-index-n]
+                                    }
+                                  @conclusion-y |
+                                    member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                                    [by implies_intro given-in-orbit]
+                                }
+                              @conclusion-agrees-on-orbit |
+                                forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                                [by forall_intro generalize-y]
+                            }
+                          @conclusion-distinct |
+                            distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                            [by implies_intro given-distinct]
+                        }
+                      @conclusion-lists |
+                        (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                        [by implies_intro given-lists]
+                    }
+                  @conclusion-return |
+                    iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                    [by implies_intro given-return]
+                }
+              @discharge-s |
+                forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                [by forall_intro generalize-s]
+            }
+          @discharge-p |
+            forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; forall s: Points; iterate(f, succ(p), x) = x -> (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> distinct(s, succ(p)) -> forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall p: Nat; forall s: Points;
+      iterate(f, succ(p), x) = x ->
+      (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+      distinct(s, succ(p)) ->
+      forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+    [by forall_intro generalize-f]
+qed
+
+// Off the orbit, the cycle fixes: every listed entry is an orbit member, so a point outside
+// the orbit avoids the list.
+theorem cycleOfIteratesFixesOffTheOrbit: forall f: Fn; forall x: Element; forall p: Nat; forall s: Points;
+  (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+  forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-s |
+                fix s: Points {
+                  @given-lists |
+                    assume forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x) {
+                      @lists |
+                        forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                        [by hypothesis given-lists]
+                      @generalize-y |
+                        fix y: Element {
+                          @given-outside |
+                            assume not member(y, orbit(f, x)) {
+                              @y-outside |
+                                not member(y, orbit(f, x))
+                                [by hypothesis given-outside]
+                              @generalize-i |
+                                fix i: Nat {
+                                  @given-i-in-range |
+                                    assume less_than(i, succ(p)) {
+                                      @i-in-range |
+                                        less_than(i, succ(p))
+                                        [by hypothesis given-i-in-range]
+                                      @entry-i |
+                                        at(s, i) = iterate(f, i, x)
+                                        [using specialize lists(i) i-in-range]
+                                      @suppose-y-is-entry-i |
+                                        assume y = at(s, i) {
+                                          @y-is-entry-i |
+                                            y = at(s, i)
+                                            [by hypothesis suppose-y-is-entry-i]
+                                          @y-is-the-i-th |
+                                            y = iterate(f, i, x)
+                                            [using chain y-is-entry-i entry-i]
+                                          @y-is-an-iterate |
+                                            exists n: Nat; y = iterate(f, n, x)
+                                            [by exists_intro(i) y-is-the-i-th]
+                                          @y-membership |
+                                            member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+                                            [using specialize orbitMember(f, x, y)]
+                                          @y-in-orbit |
+                                            member(y, orbit(f, x))
+                                            [using tautology y-membership y-is-an-iterate]
+                                        }
+                                      @conclusion-y-is-not-entry-i |
+                                        y != at(s, i)
+                                        [by not_intro suppose-y-is-entry-i y-in-orbit y-outside]
+                                    }
+                                  @conclusion-i |
+                                    less_than(i, succ(p)) -> y != at(s, i)
+                                    [by implies_intro given-i-in-range]
+                                }
+                              @y-avoids-the-list |
+                                avoids(y, s, succ(p))
+                                [by forall_intro generalize-i]
+                              @conclusion-fixed |
+                                apply(cycle(s, succ(p)), y) = y
+                                [using specialize cycleFixesTheUnlisted(s, succ(p), y) y-avoids-the-list]
+                            }
+                          @conclusion-y |
+                            (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                            [by implies_intro given-outside]
+                        }
+                      @conclusion-fixes-off-orbit |
+                        forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                        [by forall_intro generalize-y]
+                    }
+                  @conclusion-lists |
+                    (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                    [by implies_intro given-lists]
+                }
+              @discharge-s |
+                forall s: Points; (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                [by forall_intro generalize-s]
+            }
+          @discharge-p |
+            forall p: Nat; forall s: Points; (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+            [by forall_intro generalize-p]
+        }
+      @discharge-x |
+        forall x: Element; forall p: Nat; forall s: Points; (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) -> forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall p: Nat; forall s: Points;
+      (forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)) ->
+      forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+    [by forall_intro generalize-f]
+qed
+
+// -- the one-orbit decomposition -----------------------------------------------------------------
+
+// AN ORBIT IS A CYCLE. For a permutation with finite support and any point x, there is a
+// list starting at x and a length p+1 such that the list is distinct and the cycle on it
+// agrees with f on the orbit of x and fixes every point outside it.
+theorem orbitIsACycle: forall f: Perm; forall x: Element;
+  isFinite(support(f)) ->
+  exists s: Points; exists p: Nat;
+  at(s, ZERO) = x and distinct(s, succ(p))
+  and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y))
+  and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @support-is-finite |
+                isFinite(support(f))
+                [by hypothesis given-finite]
+              @least-period-exists |
+                exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+                [using specialize leastPeriodExists(f, x) support-is-finite]
+              @with-period-p |
+                unpack p: Nat from least-period-exists {
+                  @period-facts |
+                    iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+                    [by hypothesis with-period-p]
+                  @return |
+                    iterate(f, succ(p), x) = x
+                    [by and_elim_left period-facts]
+                  @least |
+                    forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q)
+                    [by and_elim_right period-facts]
+                  @list-exists |
+                    exists s: Points; forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                    [using specialize iterateListExists(f, p, x)]
+                  @with-list-s |
+                    unpack s: Points from list-exists {
+                      @lists |
+                        forall i: Nat; less_than(i, succ(p)) -> at(s, i) = iterate(f, i, x)
+                        [by hypothesis with-list-s]
+                      @zero-in-range |
+                        less_than(ZERO, succ(p))
+                        [using specialize zeroBelowSucc(p)]
+                      @entry-zero |
+                        at(s, ZERO) = iterate(f, ZERO, x)
+                        [using specialize lists(ZERO) zero-in-range]
+                      @zeroth-iterate-is-x |
+                        iterate(f, ZERO, x) = x
+                        [using specialize iterateZero(f, x)]
+                      @head-is-x |
+                        at(s, ZERO) = x
+                        [using chain entry-zero zeroth-iterate-is-x]
+                      @distinct-entries |
+                        distinct(s, succ(p))
+                        [using specialize iterateListIsDistinct(f, x, p, s) return least lists]
+                      @agrees-on-orbit |
+                        forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                        [using specialize cycleOfIteratesAgreesOnTheOrbit(f, x, p, s) return lists distinct-entries]
+                      @fixes-off-orbit |
+                        forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                        [using specialize cycleOfIteratesFixesOffTheOrbit(f, x, p, s) lists]
+                      @head-and-distinct |
+                        at(s, ZERO) = x and distinct(s, succ(p))
+                        [by and_intro head-is-x distinct-entries]
+                      @head-distinct-and-agrees |
+                        at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y))
+                        [by and_intro head-and-distinct agrees-on-orbit]
+                      @all-four |
+                        at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+                        [by and_intro head-distinct-and-agrees fixes-off-orbit]
+                      @inner-witness |
+                        exists p2: Nat; at(s, ZERO) = x and distinct(s, succ(p2)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p2)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p2)), y) = y)
+                        [by exists_intro(p) all-four]
+                      @conclusion-witness |
+                        exists s2: Points; exists p2: Nat; at(s2, ZERO) = x and distinct(s2, succ(p2)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s2, succ(p2)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s2, succ(p2)), y) = y)
+                        [by exists_intro(s) inner-witness]
+                    }
+                  @conclusion-with-s |
+                    exists s2: Points; exists p2: Nat; at(s2, ZERO) = x and distinct(s2, succ(p2)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s2, succ(p2)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s2, succ(p2)), y) = y)
+                    [by exists_elim with-list-s]
+                }
+              @conclusion-with-p |
+                exists s2: Points; exists p2: Nat; at(s2, ZERO) = x and distinct(s2, succ(p2)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s2, succ(p2)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s2, succ(p2)), y) = y)
+                [by exists_elim with-period-p]
+            }
+          @conclusion-implication |
+            isFinite(support(f)) -> exists s: Points; exists p: Nat; at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> exists s: Points; exists p: Nat; at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element;
+      isFinite(support(f)) ->
+      exists s: Points; exists p: Nat;
+      at(s, ZERO) = x and distinct(s, succ(p))
+      and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y))
+      and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+    [by forall_intro generalize-f]
+qed
