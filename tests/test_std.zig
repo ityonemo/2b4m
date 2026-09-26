@@ -257,4 +257,15 @@ pub fn addTests(
     // inverse uniqueness, involution, cancellation) transfers onto them for free.
     // Exercises cross-sort guarded weakening (group.Grp -> Fn where invertible).
     ctx.okSilent(&.{ "check", "std/function/invertible.b4m" });
+
+    // permutations (std/permutation.b4m): the invertible maps as `Perm`, with what a
+    // bare group lacks — the SUPPORT of a permutation (a comprehension set), that a
+    // permutation preserves its support, disjoint-support permutations COMMUTE
+    // (Judson's "disjoint cycles commute", cycle-free), transpositions (= finite.b4m's
+    // swap: involution, permutation, own inverse), and `permutes(f, a)` — the
+    // permutations OF a set — closed under identity, composition, inverse, and
+    // containing every transposition of two members. Exercises aliasing a predicated
+    // sort (`sort Perm = function_invertible.InvFn`), a `func` alias of a
+    // definition-block symbol, and define-forwarding of another file's defines.
+    ctx.okSilent(&.{ "check", "std/permutation.b4m" });
 }
