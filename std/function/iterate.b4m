@@ -15,6 +15,7 @@ import peano <<< "std/peano.b4m"
 sort Element = element.Element
 sort Fn = function.Fn
 func apply = function.apply
+define injective(f) = function.injective(f)
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
@@ -190,5 +191,119 @@ proof
     }
   @conclusion |
     forall f: Fn; forall x: Element; forall n: Nat; forall m: Nat; iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+    [by forall_intro generalize-f]
+qed
+
+// Iterates of a one-to-one map are one-to-one: f^n(u) = f^n(v) forces u = v. Induction on n,
+// peeling the outer application each step (the successor applied FIRST, then injectivity).
+theorem iterateIsInjective: forall f: Fn; injective(f) -> forall n: Nat; forall u: Element; forall v: Element;
+  iterate(f, n, u) = iterate(f, n, v) -> u = v
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-injective |
+        assume injective(f) {
+          @injective |
+            forall a: Element; forall b: Element; apply(f, a) = apply(f, b) -> a = b
+            [by hypothesis given-injective]
+          // base case: zero iterates are the points themselves
+          @base-case-proof |
+            fix u: Element {
+              @inner-base |
+                fix v: Element {
+                  @given-equal-base |
+                    assume iterate(f, ZERO, u) = iterate(f, ZERO, v) {
+                      @zero-iterates-equal |
+                        iterate(f, ZERO, u) = iterate(f, ZERO, v)
+                        [by hypothesis given-equal-base]
+                      @u-is-its-zeroth |
+                        iterate(f, ZERO, u) = u
+                        [using specialize iterateZero(f, u)]
+                      @v-is-its-zeroth |
+                        iterate(f, ZERO, v) = v
+                        [using specialize iterateZero(f, v)]
+                      @u-is-v-zeroth |
+                        u = iterate(f, ZERO, v)
+                        [by rewrite u-is-its-zeroth zero-iterates-equal]
+                      @conclusion-base-equal |
+                        u = v
+                        [using chain u-is-v-zeroth v-is-its-zeroth]
+                    }
+                  @conclusion-base-implication |
+                    iterate(f, ZERO, u) = iterate(f, ZERO, v) -> u = v
+                    [by implies_intro given-equal-base]
+                }
+              @discharge-base-v |
+                forall v: Element; iterate(f, ZERO, u) = iterate(f, ZERO, v) -> u = v
+                [by forall_intro inner-base]
+            }
+          @base-case |
+            forall u: Element; forall v: Element; iterate(f, ZERO, u) = iterate(f, ZERO, v) -> u = v
+            [by forall_intro base-case-proof]
+          // inductive step
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume forall u: Element; forall v: Element; iterate(f, k, u) = iterate(f, k, v) -> u = v {
+                  @inductive-hypothesis |
+                    forall u: Element; forall v: Element; iterate(f, k, u) = iterate(f, k, v) -> u = v
+                    [by hypothesis given-inductive-hypothesis]
+                  @generalize-u |
+                    fix u: Element {
+                      @generalize-v |
+                        fix v: Element {
+                          @given-equal |
+                            assume iterate(f, succ(k), u) = iterate(f, succ(k), v) {
+                              @successor-iterates-equal |
+                                iterate(f, succ(k), u) = iterate(f, succ(k), v)
+                                [by hypothesis given-equal]
+                              @u-successor-inside |
+                                iterate(f, succ(k), u) = iterate(f, k, apply(f, u))
+                                [using specialize iterateSuccInside(f, u, k)]
+                              @v-successor-inside |
+                                iterate(f, succ(k), v) = iterate(f, k, apply(f, v))
+                                [using specialize iterateSuccInside(f, v, k)]
+                              @images-iterates-equal-left |
+                                iterate(f, k, apply(f, u)) = iterate(f, succ(k), v)
+                                [by rewrite u-successor-inside successor-iterates-equal]
+                              @images-iterates-equal |
+                                iterate(f, k, apply(f, u)) = iterate(f, k, apply(f, v))
+                                [by rewrite v-successor-inside images-iterates-equal-left]
+                              @images-equal |
+                                apply(f, u) = apply(f, v)
+                                [using specialize inductive-hypothesis(apply(f, u), apply(f, v)) images-iterates-equal]
+                              @conclusion-equal |
+                                u = v
+                                [using specialize injective(u, v) images-equal]
+                            }
+                          @conclusion-implication |
+                            iterate(f, succ(k), u) = iterate(f, succ(k), v) -> u = v
+                            [by implies_intro given-equal]
+                        }
+                      @discharge-v |
+                        forall v: Element; iterate(f, succ(k), u) = iterate(f, succ(k), v) -> u = v
+                        [by forall_intro generalize-v]
+                    }
+                  @discharge-u |
+                    forall u: Element; forall v: Element; iterate(f, succ(k), u) = iterate(f, succ(k), v) -> u = v
+                    [by forall_intro generalize-u]
+                }
+              @induction-step-at-k |
+                (forall u: Element; forall v: Element; iterate(f, k, u) = iterate(f, k, v) -> u = v) -> (forall u: Element; forall v: Element; iterate(f, succ(k), u) = iterate(f, succ(k), v) -> u = v)
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; (forall u: Element; forall v: Element; iterate(f, k, u) = iterate(f, k, v) -> u = v) -> (forall u: Element; forall v: Element; iterate(f, succ(k), u) = iterate(f, succ(k), v) -> u = v)
+            [by forall_intro induction-step]
+          @conclusion-for-all-n |
+            forall n: Nat; forall u: Element; forall v: Element; iterate(f, n, u) = iterate(f, n, v) -> u = v
+            [using instantiation induction((fun k: Nat => forall u: Element; forall v: Element; iterate(f, k, u) = iterate(f, k, v) -> u = v)) base-case induction-step-for-all-k]
+        }
+      @conclusion-injective-implication |
+        injective(f) -> forall n: Nat; forall u: Element; forall v: Element; iterate(f, n, u) = iterate(f, n, v) -> u = v
+        [by implies_intro given-injective]
+    }
+  @conclusion |
+    forall f: Fn; injective(f) -> forall n: Nat; forall u: Element; forall v: Element; iterate(f, n, u) = iterate(f, n, v) -> u = v
     [by forall_intro generalize-f]
 qed

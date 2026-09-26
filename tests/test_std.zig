@@ -297,4 +297,11 @@ pub fn addTests(
     // point or a moved point (so the orbit sits inside support ∪ {x}), hence FINITE when the
     // support is — the first use of subsetOfFiniteIsFinite and of adding one element.
     ctx.okSilent(&.{ "check", "std/permutation/orbit.b4m" });
+
+    // PERIODS (std/permutation/period.b4m): the family i ↦ f^i(x) packaged as a map on
+    // numerals (definite description), the PIGEONHOLE principle (finite.b4m: a map from size
+    // n+1 into size n collides — positive form, induction on n) applied to segment(m+1) → the
+    // orbit, the collision cancelled through injectivity of iterates to a RETURN
+    // f^(succ p)(x) = x, and a LEAST period by well-ordering.
+    ctx.okSilent(&.{ "check", "std/permutation/period.b4m" });
 }

@@ -4693,3 +4693,348 @@ proof
       hasSize(union(a, b), add(m, n))
     [by forall_intro generalize-a]
 qed
+
+// -- the pigeonhole principle -------------------------------------------------------------
+//
+// A map from a set of size n+1 into a set of size n sends two DIFFERENT points to the same
+// place. Induction on n: the smaller set is empty at the base, so the larger set's member has
+// nowhere to go; at the step, take a member t of the larger set and its image u — either
+// some other point already shares the image u (a collision), or removing t and u leaves a
+// map from size n+1 into size n, and the hypothesis finds a collision there.
+theorem pigeonhole: forall n: Nat; forall a: Set; forall b: Set; forall g: Fn;
+  hasSize(a, succ(n)) -> hasSize(b, n) -> mapsInto(g, a, b) ->
+  exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+proof
+  // base case: b is empty, so a's member has no image
+  @base-case-proof |
+    fix a: Set {
+      @inner-b |
+        fix b: Set {
+          @inner-g |
+            fix g: Fn {
+              @given-size-a |
+                assume hasSize(a, succ(ZERO)) {
+                  @given-size-b |
+                    assume hasSize(b, ZERO) {
+                      @given-into |
+                        assume mapsInto(g, a, b) {
+                          @a-has-size-one |
+                            hasSize(a, succ(ZERO))
+                            [by hypothesis given-size-a]
+                          @b-has-size-zero |
+                            hasSize(b, ZERO)
+                            [by hypothesis given-size-b]
+                          @into |
+                            forall x: Element; member(x, a) -> member(apply(g, x), b)
+                            [by hypothesis given-into]
+                          @b-is-empty |
+                            b = emptyset
+                            [using specialize sizeZeroIsEmpty(b) b-has-size-zero]
+                          @some-member-exists |
+                            exists t: Element; member(t, a)
+                            [using specialize sizedSetHasAMember(a, ZERO) a-has-size-one]
+                          @with-member-t |
+                            unpack t: Element from some-member-exists {
+                              @t-in-a |
+                                member(t, a)
+                                [by hypothesis with-member-t]
+                              @image-in-b |
+                                member(apply(g, t), b)
+                                [using specialize into(t) t-in-a]
+                              @image-in-emptyset |
+                                member(apply(g, t), emptyset)
+                                [by rewrite b-is-empty image-in-b]
+                              @nothing-in-emptyset |
+                                not member(apply(g, t), emptyset)
+                                [using specialize emptysetMember(apply(g, t))]
+                              @conclusion-absurd |
+                                exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                [by absurd image-in-emptyset nothing-in-emptyset]
+                            }
+                          @conclusion-base-collision |
+                            exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                            [by exists_elim with-member-t]
+                        }
+                      @conclusion-base-into |
+                        mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                        [by implies_intro given-into]
+                    }
+                  @conclusion-base-size-b |
+                    hasSize(b, ZERO) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                    [by implies_intro given-size-b]
+                }
+              @conclusion-base-size-a |
+                hasSize(a, succ(ZERO)) -> hasSize(b, ZERO) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                [by implies_intro given-size-a]
+            }
+          @discharge-base-g |
+            forall g: Fn; hasSize(a, succ(ZERO)) -> hasSize(b, ZERO) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+            [by forall_intro inner-g]
+        }
+      @discharge-base-b |
+        forall b: Set; forall g: Fn; hasSize(a, succ(ZERO)) -> hasSize(b, ZERO) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+        [by forall_intro inner-b]
+    }
+  @base-case |
+    forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(ZERO)) -> hasSize(b, ZERO) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+    [by forall_intro base-case-proof]
+
+  // inductive step
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y) {
+          @inductive-hypothesis |
+            forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @generalize-g |
+                    fix g: Fn {
+                      @given-size-a |
+                        assume hasSize(a, succ(succ(k))) {
+                          @given-size-b |
+                            assume hasSize(b, succ(k)) {
+                              @given-into |
+                                assume mapsInto(g, a, b) {
+                                  @a-has-size |
+                                    hasSize(a, succ(succ(k)))
+                                    [by hypothesis given-size-a]
+                                  @b-has-size |
+                                    hasSize(b, succ(k))
+                                    [by hypothesis given-size-b]
+                                  @into |
+                                    forall x: Element; member(x, a) -> member(apply(g, x), b)
+                                    [by hypothesis given-into]
+                                  @some-member-exists |
+                                    exists t: Element; member(t, a)
+                                    [using specialize sizedSetHasAMember(a, succ(k)) a-has-size]
+                                  @with-member-t |
+                                    unpack t: Element from some-member-exists {
+                                      @t-in-a |
+                                        member(t, a)
+                                        [by hypothesis with-member-t]
+                                      @image-of-t-in-b |
+                                        member(apply(g, t), b)
+                                        [using specialize into(t) t-in-a]
+                                      @rest-of-a-has-size |
+                                        hasSize(difference(a, singleton(t)), succ(k))
+                                        [using specialize removingAnElementDropsTheSize(a, t, succ(k)) a-has-size t-in-a]
+                                      @rest-of-b-has-size |
+                                        hasSize(difference(b, singleton(apply(g, t))), k)
+                                        [using specialize removingAnElementDropsTheSize(b, apply(g, t), k) b-has-size image-of-t-in-b]
+                                      @shares-image-or-not |
+                                        (exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)) or (not (exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)))
+                                        [using tautology]
+                                      @conclusion-collision |
+                                        exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                        case shares-image-or-not {
+                                          @when-shared |
+                                            assume exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t) {
+                                              // some other point already collides with t
+                                              @sharer-exists |
+                                                exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)
+                                                [by hypothesis when-shared]
+                                              @with-sharer-x |
+                                                unpack x: Element from sharer-exists {
+                                                  @sharer-facts |
+                                                    member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)
+                                                    [by hypothesis with-sharer-x]
+                                                  @x-in-rest |
+                                                    member(x, difference(a, singleton(t)))
+                                                    [by and_elim_left sharer-facts]
+                                                  @x-shares-image |
+                                                    apply(g, x) = apply(g, t)
+                                                    [by and_elim_right sharer-facts]
+                                                  @rest-membership |
+                                                    member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                                                    [using specialize differenceSingletonMember(a, t, x)]
+                                                  @x-in-a |
+                                                    member(x, a)
+                                                    [using tautology rest-membership x-in-rest]
+                                                  @x-is-not-t |
+                                                    x != t
+                                                    [using tautology rest-membership x-in-rest]
+                                                  @both-in-a |
+                                                    member(x, a) and member(t, a)
+                                                    [by and_intro x-in-a t-in-a]
+                                                  @both-in-and-different |
+                                                    member(x, a) and member(t, a) and x != t
+                                                    [by and_intro both-in-a x-is-not-t]
+                                                  @collision-clauses |
+                                                    member(x, a) and member(t, a) and x != t and apply(g, x) = apply(g, t)
+                                                    [by and_intro both-in-and-different x-shares-image]
+                                                  @inner-witness |
+                                                    exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                                    [by exists_intro(t) collision-clauses]
+                                                  @conclusion-witness-pair |
+                                                    exists x2: Element; exists y: Element; member(x2, a) and member(y, a) and x2 != y and apply(g, x2) = apply(g, y)
+                                                    [by exists_intro(x) inner-witness]
+                                                }
+                                              @conclusion-shared |
+                                                exists x2: Element; exists y: Element; member(x2, a) and member(y, a) and x2 != y and apply(g, x2) = apply(g, y)
+                                                [by exists_elim with-sharer-x]
+                                            }
+                                          @when-unshared |
+                                            assume not (exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)) {
+                                              // nothing else hits u = g(t), so g maps a \ {t} into b \ {u}
+                                              @no-sharer |
+                                                not (exists x: Element; member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t))
+                                                [by hypothesis when-unshared]
+                                              @pointwise-into-rest |
+                                                fix x: Element {
+                                                  @given-x-in-rest |
+                                                    assume member(x, difference(a, singleton(t))) {
+                                                      @x-in-rest |
+                                                        member(x, difference(a, singleton(t)))
+                                                        [by hypothesis given-x-in-rest]
+                                                      @rest-membership |
+                                                        member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                                                        [using specialize differenceSingletonMember(a, t, x)]
+                                                      @x-in-a |
+                                                        member(x, a)
+                                                        [using tautology rest-membership x-in-rest]
+                                                      @image-in-b |
+                                                        member(apply(g, x), b)
+                                                        [using specialize into(x) x-in-a]
+                                                      @suppose-x-shares-image |
+                                                        assume apply(g, x) = apply(g, t) {
+                                                          @x-shares-image |
+                                                            apply(g, x) = apply(g, t)
+                                                            [by hypothesis suppose-x-shares-image]
+                                                          @x-is-a-sharer |
+                                                            member(x, difference(a, singleton(t))) and apply(g, x) = apply(g, t)
+                                                            [by and_intro x-in-rest x-shares-image]
+                                                          @a-sharer-exists |
+                                                            exists x2: Element; member(x2, difference(a, singleton(t))) and apply(g, x2) = apply(g, t)
+                                                            [by exists_intro(x) x-is-a-sharer]
+                                                        }
+                                                      @image-is-not-u |
+                                                        apply(g, x) != apply(g, t)
+                                                        [by not_intro suppose-x-shares-image a-sharer-exists no-sharer]
+                                                      @rest-of-b-membership |
+                                                        member(apply(g, x), difference(b, singleton(apply(g, t)))) iff (member(apply(g, x), b) and apply(g, x) != apply(g, t))
+                                                        [using specialize differenceSingletonMember(b, apply(g, t), apply(g, x))]
+                                                      @conclusion-image-in-rest-of-b |
+                                                        member(apply(g, x), difference(b, singleton(apply(g, t))))
+                                                        [using tautology rest-of-b-membership image-in-b image-is-not-u]
+                                                    }
+                                                  @conclusion-into-rest-implication |
+                                                    member(x, difference(a, singleton(t))) -> member(apply(g, x), difference(b, singleton(apply(g, t))))
+                                                    [by implies_intro given-x-in-rest]
+                                                }
+                                              @g-maps-rest-into-rest |
+                                                mapsInto(g, difference(a, singleton(t)), difference(b, singleton(apply(g, t))))
+                                                [by forall_intro pointwise-into-rest]
+                                              @collision-in-rest |
+                                                exists x: Element; exists y: Element; member(x, difference(a, singleton(t))) and member(y, difference(a, singleton(t))) and x != y and apply(g, x) = apply(g, y)
+                                                [using specialize inductive-hypothesis(difference(a, singleton(t)), difference(b, singleton(apply(g, t))), g) rest-of-a-has-size rest-of-b-has-size g-maps-rest-into-rest]
+                                              @with-colliding-x |
+                                                unpack x: Element from collision-in-rest {
+                                                  @inner-collision |
+                                                    exists y: Element; member(x, difference(a, singleton(t))) and member(y, difference(a, singleton(t))) and x != y and apply(g, x) = apply(g, y)
+                                                    [by hypothesis with-colliding-x]
+                                                  @with-colliding-y |
+                                                    unpack y: Element from inner-collision {
+                                                      @collision-facts |
+                                                        member(x, difference(a, singleton(t))) and member(y, difference(a, singleton(t))) and x != y and apply(g, x) = apply(g, y)
+                                                        [by hypothesis with-colliding-y]
+                                                      @first-three |
+                                                        member(x, difference(a, singleton(t))) and member(y, difference(a, singleton(t))) and x != y
+                                                        [by and_elim_left collision-facts]
+                                                      @same-image |
+                                                        apply(g, x) = apply(g, y)
+                                                        [by and_elim_right collision-facts]
+                                                      @both-in-rest |
+                                                        member(x, difference(a, singleton(t))) and member(y, difference(a, singleton(t)))
+                                                        [by and_elim_left first-three]
+                                                      @different |
+                                                        x != y
+                                                        [by and_elim_right first-three]
+                                                      @x-in-rest |
+                                                        member(x, difference(a, singleton(t)))
+                                                        [by and_elim_left both-in-rest]
+                                                      @y-in-rest |
+                                                        member(y, difference(a, singleton(t)))
+                                                        [by and_elim_right both-in-rest]
+                                                      @x-rest-membership |
+                                                        member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                                                        [using specialize differenceSingletonMember(a, t, x)]
+                                                      @y-rest-membership |
+                                                        member(y, difference(a, singleton(t))) iff (member(y, a) and y != t)
+                                                        [using specialize differenceSingletonMember(a, t, y)]
+                                                      @x-in-a |
+                                                        member(x, a)
+                                                        [using tautology x-rest-membership x-in-rest]
+                                                      @y-in-a |
+                                                        member(y, a)
+                                                        [using tautology y-rest-membership y-in-rest]
+                                                      @both-in-a |
+                                                        member(x, a) and member(y, a)
+                                                        [by and_intro x-in-a y-in-a]
+                                                      @both-in-and-different |
+                                                        member(x, a) and member(y, a) and x != y
+                                                        [by and_intro both-in-a different]
+                                                      @collision-clauses |
+                                                        member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                                        [by and_intro both-in-and-different same-image]
+                                                      @inner-witness |
+                                                        exists y2: Element; member(x, a) and member(y2, a) and x != y2 and apply(g, x) = apply(g, y2)
+                                                        [by exists_intro(y) collision-clauses]
+                                                      @conclusion-witness-pair |
+                                                        exists x2: Element; exists y2: Element; member(x2, a) and member(y2, a) and x2 != y2 and apply(g, x2) = apply(g, y2)
+                                                        [by exists_intro(x) inner-witness]
+                                                    }
+                                                  @conclusion-with-x |
+                                                    exists x2: Element; exists y2: Element; member(x2, a) and member(y2, a) and x2 != y2 and apply(g, x2) = apply(g, y2)
+                                                    [by exists_elim with-colliding-y]
+                                                }
+                                              @conclusion-unshared |
+                                                exists x2: Element; exists y2: Element; member(x2, a) and member(y2, a) and x2 != y2 and apply(g, x2) = apply(g, y2)
+                                                [by exists_elim with-colliding-x]
+                                            }
+                                        }
+                                    }
+                                  @conclusion-with-member |
+                                    exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                    [by exists_elim with-member-t]
+                                }
+                              @conclusion-step-into |
+                                mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                                [by implies_intro given-into]
+                            }
+                          @conclusion-step-size-b |
+                            hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                            [by implies_intro given-size-b]
+                        }
+                      @conclusion-step-size-a |
+                        hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                        [by implies_intro given-size-a]
+                    }
+                  @discharge-g |
+                    forall g: Fn; hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                    [by forall_intro generalize-g]
+                }
+              @discharge-b |
+                forall b: Set; forall g: Fn; hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+            [by forall_intro generalize-a]
+        }
+      @induction-step-at-k |
+        (forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)) -> (forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)) -> (forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(succ(k))) -> hasSize(b, succ(k)) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; forall a: Set; forall b: Set; forall g: Fn;
+      hasSize(a, succ(n)) -> hasSize(b, n) -> mapsInto(g, a, b) ->
+      exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
+    [using instantiation induction((fun k: Nat => forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y))) base-case induction-step-for-all-k]
+qed

@@ -1,0 +1,653 @@
+// std/permutation/period.b4m — the PERIOD of a point under a permutation.
+//
+// On a finite orbit the iterates x, f(x), f²(x), … must repeat: there are only finitely
+// many places to go. A repeat f^i(x) = f^j(x) with i < j cancels (iterates of a one-to-one
+// map are one-to-one) to a RETURN f^(j-i)(x) = x, and among the returns there is a least
+// one — the period. This is the pigeonhole principle doing the work Judson leaves to
+// "since the set is finite".
+
+import permutation <<< "std/permutation.b4m"
+import orbit_theory <<< "std/permutation/orbit.b4m"
+import function <<< "std/function.b4m"
+import function_iterate <<< "std/function/iterate.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+
+sort Fn = function.Fn
+func apply = function.apply
+axiom functionFromGraph = function.functionFromGraph
+sort Perm = permutation.Perm
+func support = permutation.support
+theorem permutationIsInjective = permutation.permutationIsInjective
+func iterate = function_iterate.iterate
+theorem iterateAdd = function_iterate.iterateAdd
+theorem iterateIsInjective = function_iterate.iterateIsInjective
+func orbit = orbit_theory.orbit
+axiom orbitMember = orbit_theory.orbitMember
+theorem orbitOfFiniteSupportIsFinite = orbit_theory.orbitOfFiniteSupportIsFinite
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+axiom lessThanElim = peano_order.lessThanElim
+theorem trichotomy = peano_order.trichotomy
+theorem wellOrdering = peano_order.wellOrdering
+
+func numeral = set_finite.numeral
+axiom numeralInjective = set_finite.numeralInjective
+func segment = set_finite.segment
+axiom segmentMember = set_finite.segmentMember
+theorem equinumerousReflexive = set_finite.equinumerousReflexive
+theorem pigeonhole = set_finite.pigeonhole
+define mapsInto(f, a, b) = set_finite.mapsInto(f, a, b)
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define isFinite(a) = set_finite.isFinite(a)
+
+// -- the iterates, as a map on numerals ------------------------------------------------------
+//
+// The pigeonhole principle is stated for maps between sets, so the family i ↦ f^i(x) is
+// packaged as an Fn on the numerals: g(numeral(i)) = f^i(x), and g is the identity off the
+// numerals (which makes the spec total). Definite description realizes it.
+define iterateSpec(f, x, y, z) =
+  (exists i: Nat; y = numeral(i) and z = iterate(f, i, x)) or ((not (exists i: Nat; y = numeral(i))) and z = y)
+
+theorem iterateSpecIsTotalAndSingleValued: forall f: Fn; forall x: Element;
+  forall y: Element; exists z: Element;
+  iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @pointwise |
+            fix y: Element {
+              @y-is-a-numeral-or-not |
+                (exists i: Nat; y = numeral(i)) or (not (exists i: Nat; y = numeral(i)))
+                [using tautology]
+              @conclusion-unique-value |
+                exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+                case y-is-a-numeral-or-not {
+                  @when-a-numeral |
+                    assume exists i: Nat; y = numeral(i) {
+                      @y-is-a-numeral |
+                        exists i: Nat; y = numeral(i)
+                        [by hypothesis when-a-numeral]
+                      @with-index-i |
+                        unpack i: Nat from y-is-a-numeral {
+                          @y-is-numeral-i |
+                            y = numeral(i)
+                            [by hypothesis with-index-i]
+                          @iterate-is-itself |
+                            iterate(f, i, x) = iterate(f, i, x)
+                            [by reflexivity]
+                          @witness-pair |
+                            y = numeral(i) and iterate(f, i, x) = iterate(f, i, x)
+                            [by and_intro y-is-numeral-i iterate-is-itself]
+                          @iterate-meets-the-left-branch |
+                            exists i2: Nat; y = numeral(i2) and iterate(f, i, x) = iterate(f, i2, x)
+                            [by exists_intro(i) witness-pair]
+                          @iterate-meets-the-spec |
+                            iterateSpec(f, x, y, iterate(f, i, x))
+                            [using tautology iterate-meets-the-left-branch]
+                          @generalize-candidate |
+                            fix z2: Element {
+                              @given-candidate |
+                                assume iterateSpec(f, x, y, z2) {
+                                  @candidate-meets-spec |
+                                    iterateSpec(f, x, y, z2)
+                                    [by hypothesis given-candidate]
+                                  @candidate-meets-the-left-branch |
+                                    exists i2: Nat; y = numeral(i2) and z2 = iterate(f, i2, x)
+                                    [using tautology candidate-meets-spec y-is-a-numeral]
+                                  @with-candidate-index-i2 |
+                                    unpack i2: Nat from candidate-meets-the-left-branch {
+                                      @candidate-facts |
+                                        y = numeral(i2) and z2 = iterate(f, i2, x)
+                                        [by hypothesis with-candidate-index-i2]
+                                      @y-is-numeral-i2 |
+                                        y = numeral(i2)
+                                        [by and_elim_left candidate-facts]
+                                      @candidate-is-iterate-i2 |
+                                        z2 = iterate(f, i2, x)
+                                        [by and_elim_right candidate-facts]
+                                      @numerals-equal |
+                                        numeral(i) = numeral(i2)
+                                        [by rewrite y-is-numeral-i y-is-numeral-i2]
+                                      @indices-equal |
+                                        i = i2
+                                        [using specialize numeralInjective(i, i2) numerals-equal]
+                                      @candidate-is-iterate-i |
+                                        z2 = iterate(f, i, x)
+                                        [by rewrite indices-equal candidate-is-iterate-i2]
+                                      @conclusion-iterate-is-candidate |
+                                        iterate(f, i, x) = z2
+                                        [by symmetry candidate-is-iterate-i]
+                                    }
+                                  @conclusion-candidate-is-the-iterate |
+                                    iterate(f, i, x) = z2
+                                    [by exists_elim with-candidate-index-i2]
+                                }
+                              @conclusion-candidate-implication |
+                                iterateSpec(f, x, y, z2) -> iterate(f, i, x) = z2
+                                [by implies_intro given-candidate]
+                            }
+                          @iterate-is-the-only-value |
+                            forall z2: Element; iterateSpec(f, x, y, z2) -> iterate(f, i, x) = z2
+                            [by forall_intro generalize-candidate]
+                          @witness-clauses |
+                            iterateSpec(f, x, y, iterate(f, i, x)) and (forall z2: Element; iterateSpec(f, x, y, z2) -> iterate(f, i, x) = z2)
+                            [by and_intro iterate-meets-the-spec iterate-is-the-only-value]
+                          @conclusion-at-numeral-i |
+                            exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+                            [by exists_intro(iterate(f, i, x)) witness-clauses]
+                        }
+                      @conclusion-a-numeral |
+                        exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+                        [by exists_elim with-index-i]
+                    }
+                  @when-not-a-numeral |
+                    assume not (exists i: Nat; y = numeral(i)) {
+                      @y-is-not-a-numeral |
+                        not (exists i: Nat; y = numeral(i))
+                        [by hypothesis when-not-a-numeral]
+                      @y-is-y |
+                        y = y
+                        [by reflexivity]
+                      @y-meets-the-spec |
+                        iterateSpec(f, x, y, y)
+                        [using tautology y-is-not-a-numeral y-is-y]
+                      @generalize-candidate |
+                        fix z2: Element {
+                          @given-candidate |
+                            assume iterateSpec(f, x, y, z2) {
+                              @candidate-meets-spec |
+                                iterateSpec(f, x, y, z2)
+                                [by hypothesis given-candidate]
+                              @suppose-left-branch |
+                                assume exists i2: Nat; y = numeral(i2) and z2 = iterate(f, i2, x) {
+                                  @left-branch |
+                                    exists i2: Nat; y = numeral(i2) and z2 = iterate(f, i2, x)
+                                    [by hypothesis suppose-left-branch]
+                                  @with-index-i2 |
+                                    unpack i2: Nat from left-branch {
+                                      @left-facts |
+                                        y = numeral(i2) and z2 = iterate(f, i2, x)
+                                        [by hypothesis with-index-i2]
+                                      @y-is-numeral-i2 |
+                                        y = numeral(i2)
+                                        [by and_elim_left left-facts]
+                                      @conclusion-y-is-a-numeral-after-all |
+                                        exists i: Nat; y = numeral(i)
+                                        [by exists_intro(i2) y-is-numeral-i2]
+                                    }
+                                  @y-is-a-numeral-after-all |
+                                    exists i: Nat; y = numeral(i)
+                                    [by exists_elim with-index-i2]
+                                }
+                              @not-left-branch |
+                                not (exists i2: Nat; y = numeral(i2) and z2 = iterate(f, i2, x))
+                                [by not_intro suppose-left-branch y-is-a-numeral-after-all y-is-not-a-numeral]
+                              @candidate-is-y |
+                                z2 = y
+                                [using tautology candidate-meets-spec not-left-branch]
+                              @conclusion-y-is-candidate |
+                                y = z2
+                                [by symmetry candidate-is-y]
+                            }
+                          @conclusion-candidate-implication |
+                            iterateSpec(f, x, y, z2) -> y = z2
+                            [by implies_intro given-candidate]
+                        }
+                      @y-is-the-only-value |
+                        forall z2: Element; iterateSpec(f, x, y, z2) -> y = z2
+                        [by forall_intro generalize-candidate]
+                      @witness-clauses |
+                        iterateSpec(f, x, y, y) and (forall z2: Element; iterateSpec(f, x, y, z2) -> y = z2)
+                        [by and_intro y-meets-the-spec y-is-the-only-value]
+                      @conclusion-not-a-numeral |
+                        exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+                        [by exists_intro(y) witness-clauses]
+                    }
+                }
+            }
+          @conclusion-total-and-single-valued |
+            forall y: Element; exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+            [by forall_intro pointwise]
+        }
+      @discharge-x |
+        forall x: Element; forall y: Element; exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall y: Element; exists z: Element;
+      iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+    [by forall_intro generalize-f]
+qed
+
+// The family i ↦ f^i(x), as a map on numerals.
+theorem iterateIndexMapExists: forall f: Fn; forall x: Element;
+  exists g: Fn; forall i: Nat; apply(g, numeral(i)) = iterate(f, i, x)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @spec-is-total-and-single-valued |
+            forall y: Element; exists z: Element; iterateSpec(f, x, y, z) and (forall z2: Element; iterateSpec(f, x, y, z2) -> z = z2)
+            [using specialize iterateSpecIsTotalAndSingleValued(f, x)]
+          @a-realization-exists |
+            exists g: Fn; forall y: Element; iterateSpec(f, x, y, apply(g, y))
+            [using instantiation functionFromGraph(fun y, z: Element => iterateSpec(f, x, y, z)) spec-is-total-and-single-valued]
+          @with-realization-g |
+            unpack g: Fn from a-realization-exists {
+              @g-realizes-the-spec |
+                forall y: Element; iterateSpec(f, x, y, apply(g, y))
+                [by hypothesis with-realization-g]
+              @generalize-i |
+                fix i: Nat {
+                  @spec-at-numeral-i |
+                    iterateSpec(f, x, numeral(i), apply(g, numeral(i)))
+                    [using specialize g-realizes-the-spec(numeral(i))]
+                  @numeral-is-itself |
+                    numeral(i) = numeral(i)
+                    [by reflexivity]
+                  @numeral-is-a-numeral |
+                    exists i2: Nat; numeral(i) = numeral(i2)
+                    [by exists_intro(i) numeral-is-itself]
+                  @left-branch-holds |
+                    exists i2: Nat; numeral(i) = numeral(i2) and apply(g, numeral(i)) = iterate(f, i2, x)
+                    [using tautology spec-at-numeral-i numeral-is-a-numeral]
+                  @with-index-i2 |
+                    unpack i2: Nat from left-branch-holds {
+                      @left-facts |
+                        numeral(i) = numeral(i2) and apply(g, numeral(i)) = iterate(f, i2, x)
+                        [by hypothesis with-index-i2]
+                      @numerals-equal |
+                        numeral(i) = numeral(i2)
+                        [by and_elim_left left-facts]
+                      @g-at-numeral-is-iterate-i2 |
+                        apply(g, numeral(i)) = iterate(f, i2, x)
+                        [by and_elim_right left-facts]
+                      @indices-equal |
+                        i = i2
+                        [using specialize numeralInjective(i, i2) numerals-equal]
+                      @conclusion-g-at-numeral-is-iterate-i |
+                        apply(g, numeral(i)) = iterate(f, i, x)
+                        [by rewrite indices-equal g-at-numeral-is-iterate-i2]
+                    }
+                  @conclusion-g-at-numeral |
+                    apply(g, numeral(i)) = iterate(f, i, x)
+                    [by exists_elim with-index-i2]
+                }
+              @g-is-the-family |
+                forall i: Nat; apply(g, numeral(i)) = iterate(f, i, x)
+                [by forall_intro generalize-i]
+              @conclusion-witness |
+                exists g2: Fn; forall i: Nat; apply(g2, numeral(i)) = iterate(f, i, x)
+                [by exists_intro(g) g-is-the-family]
+            }
+          @conclusion-map-exists |
+            exists g2: Fn; forall i: Nat; apply(g2, numeral(i)) = iterate(f, i, x)
+            [by exists_elim with-realization-g]
+        }
+      @discharge-x |
+        forall x: Element; exists g2: Fn; forall i: Nat; apply(g2, numeral(i)) = iterate(f, i, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; exists g: Fn; forall i: Nat; apply(g, numeral(i)) = iterate(f, i, x)
+    [by forall_intro generalize-f]
+qed
+
+// -- a return, and the least one -----------------------------------------------------------
+
+// SOME ITERATE RETURNS. The orbit has some size m, so among the m+1 iterates f^0(x), …,
+// f^m(x) two coincide (pigeonhole, through the index map on segment(m+1)); with i < j,
+// f^j(x) = f^i(f^(j-i)(x)) and f^i(x) = f^i(x), and iterates of a permutation are one-to-one,
+// so f^(j-i)(x) = x — a return after j-i ≥ 1 steps.
+theorem someIterateReturns: forall f: Perm; forall x: Element;
+  isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @support-is-finite |
+                isFinite(support(f))
+                [by hypothesis given-finite]
+              @orbit-is-finite |
+                isFinite(orbit(f, x))
+                [using specialize orbitOfFiniteSupportIsFinite(f, x) support-is-finite]
+              @f-is-injective |
+                forall a: Element; forall b: Element; apply(f, a) = apply(f, b) -> a = b
+                [using specialize permutationIsInjective(f)]
+              @iterates-are-injective |
+                forall n: Nat; forall u: Element; forall v: Element; iterate(f, n, u) = iterate(f, n, v) -> u = v
+                [using specialize iterateIsInjective(f) f-is-injective]
+              @index-map-exists |
+                exists g: Fn; forall i: Nat; apply(g, numeral(i)) = iterate(f, i, x)
+                [using specialize iterateIndexMapExists(f, x)]
+              @with-orbit-size-m |
+                unpack m: Nat from orbit-is-finite {
+                  @orbit-has-size-m |
+                    hasSize(orbit(f, x), m)
+                    [by hypothesis with-orbit-size-m]
+                  @with-index-map-g |
+                    unpack g: Fn from index-map-exists {
+                      @g-is-the-family |
+                        forall i: Nat; apply(g, numeral(i)) = iterate(f, i, x)
+                        [by hypothesis with-index-map-g]
+                      @segment-has-size |
+                        hasSize(segment(succ(m)), succ(m))
+                        [using specialize equinumerousReflexive(segment(succ(m)))]
+                      // g sends the segment {0, …, m} into the orbit
+                      @pointwise-into |
+                        fix y: Element {
+                          @given-y-in-segment |
+                            assume member(y, segment(succ(m))) {
+                              @y-in-segment |
+                                member(y, segment(succ(m)))
+                                [by hypothesis given-y-in-segment]
+                              @segment-membership |
+                                member(y, segment(succ(m))) iff (exists k: Nat; less_than(k, succ(m)) and y = numeral(k))
+                                [using specialize segmentMember(succ(m), y)]
+                              @y-is-a-numeral-below |
+                                exists k: Nat; less_than(k, succ(m)) and y = numeral(k)
+                                [using tautology segment-membership y-in-segment]
+                              @with-index-k |
+                                unpack k: Nat from y-is-a-numeral-below {
+                                  @k-facts |
+                                    less_than(k, succ(m)) and y = numeral(k)
+                                    [by hypothesis with-index-k]
+                                  @y-is-numeral-k |
+                                    y = numeral(k)
+                                    [by and_elim_right k-facts]
+                                  @g-at-numeral-k |
+                                    apply(g, numeral(k)) = iterate(f, k, x)
+                                    [using specialize g-is-the-family(k)]
+                                  @g-at-y |
+                                    apply(g, y) = iterate(f, k, x)
+                                    [by rewrite y-is-numeral-k g-at-numeral-k]
+                                  @g-at-y-is-an-iterate |
+                                    exists n: Nat; apply(g, y) = iterate(f, n, x)
+                                    [by exists_intro(k) g-at-y]
+                                  @orbit-membership |
+                                    member(apply(g, y), orbit(f, x)) iff (exists n: Nat; apply(g, y) = iterate(f, n, x))
+                                    [using specialize orbitMember(f, x, apply(g, y))]
+                                  @conclusion-image-in-orbit |
+                                    member(apply(g, y), orbit(f, x))
+                                    [using tautology orbit-membership g-at-y-is-an-iterate]
+                                }
+                              @conclusion-y-into-orbit |
+                                member(apply(g, y), orbit(f, x))
+                                [by exists_elim with-index-k]
+                            }
+                          @conclusion-into-implication |
+                            member(y, segment(succ(m))) -> member(apply(g, y), orbit(f, x))
+                            [by implies_intro given-y-in-segment]
+                        }
+                      @g-maps-into |
+                        mapsInto(g, segment(succ(m)), orbit(f, x))
+                        [by forall_intro pointwise-into]
+                      @collision-exists |
+                        exists x1: Element; exists x2: Element; member(x1, segment(succ(m))) and member(x2, segment(succ(m))) and x1 != x2 and apply(g, x1) = apply(g, x2)
+                        [using specialize pigeonhole(m, segment(succ(m)), orbit(f, x), g) segment-has-size orbit-has-size-m g-maps-into]
+                      @with-colliding-x1 |
+                        unpack x1: Element from collision-exists {
+                          @inner-collision |
+                            exists x2: Element; member(x1, segment(succ(m))) and member(x2, segment(succ(m))) and x1 != x2 and apply(g, x1) = apply(g, x2)
+                            [by hypothesis with-colliding-x1]
+                          @with-colliding-x2 |
+                            unpack x2: Element from inner-collision {
+                              @collision-facts |
+                                member(x1, segment(succ(m))) and member(x2, segment(succ(m))) and x1 != x2 and apply(g, x1) = apply(g, x2)
+                                [by hypothesis with-colliding-x2]
+                              @first-three |
+                                member(x1, segment(succ(m))) and member(x2, segment(succ(m))) and x1 != x2
+                                [by and_elim_left collision-facts]
+                              @same-image |
+                                apply(g, x1) = apply(g, x2)
+                                [by and_elim_right collision-facts]
+                              @both-in-segment |
+                                member(x1, segment(succ(m))) and member(x2, segment(succ(m)))
+                                [by and_elim_left first-three]
+                              @different |
+                                x1 != x2
+                                [by and_elim_right first-three]
+                              @x1-in-segment |
+                                member(x1, segment(succ(m)))
+                                [by and_elim_left both-in-segment]
+                              @x2-in-segment |
+                                member(x2, segment(succ(m)))
+                                [by and_elim_right both-in-segment]
+                              @x1-membership |
+                                member(x1, segment(succ(m))) iff (exists k: Nat; less_than(k, succ(m)) and x1 = numeral(k))
+                                [using specialize segmentMember(succ(m), x1)]
+                              @x2-membership |
+                                member(x2, segment(succ(m))) iff (exists k: Nat; less_than(k, succ(m)) and x2 = numeral(k))
+                                [using specialize segmentMember(succ(m), x2)]
+                              @x1-is-a-numeral-below |
+                                exists k: Nat; less_than(k, succ(m)) and x1 = numeral(k)
+                                [using tautology x1-membership x1-in-segment]
+                              @x2-is-a-numeral-below |
+                                exists k: Nat; less_than(k, succ(m)) and x2 = numeral(k)
+                                [using tautology x2-membership x2-in-segment]
+                              @with-index-i |
+                                unpack i: Nat from x1-is-a-numeral-below {
+                                  @i-facts |
+                                    less_than(i, succ(m)) and x1 = numeral(i)
+                                    [by hypothesis with-index-i]
+                                  @x1-is-numeral-i |
+                                    x1 = numeral(i)
+                                    [by and_elim_right i-facts]
+                                  @with-index-j |
+                                    unpack j: Nat from x2-is-a-numeral-below {
+                                      @j-facts |
+                                        less_than(j, succ(m)) and x2 = numeral(j)
+                                        [by hypothesis with-index-j]
+                                      @x2-is-numeral-j |
+                                        x2 = numeral(j)
+                                        [by and_elim_right j-facts]
+                                      @g-at-numeral-i |
+                                        apply(g, numeral(i)) = iterate(f, i, x)
+                                        [using specialize g-is-the-family(i)]
+                                      @g-at-numeral-j |
+                                        apply(g, numeral(j)) = iterate(f, j, x)
+                                        [using specialize g-is-the-family(j)]
+                                      @g-at-x1 |
+                                        apply(g, x1) = iterate(f, i, x)
+                                        [by rewrite x1-is-numeral-i g-at-numeral-i]
+                                      @g-at-x2 |
+                                        apply(g, x2) = iterate(f, j, x)
+                                        [by rewrite x2-is-numeral-j g-at-numeral-j]
+                                      @i-th-is-g-at-x2 |
+                                        iterate(f, i, x) = apply(g, x2)
+                                        [by rewrite g-at-x1 same-image]
+                                      @iterates-equal |
+                                        iterate(f, i, x) = iterate(f, j, x)
+                                        [by rewrite g-at-x2 i-th-is-g-at-x2]
+                                      // the indices differ, since the points do
+                                      @suppose-same-index |
+                                        assume i = j {
+                                          @i-is-j |
+                                            i = j
+                                            [by hypothesis suppose-same-index]
+                                          @x1-is-numeral-j |
+                                            x1 = numeral(j)
+                                            [by rewrite i-is-j x1-is-numeral-i]
+                                          @x1-is-x2 |
+                                            x1 = x2
+                                            [by rewrite x2-is-numeral-j x1-is-numeral-j]
+                                        }
+                                      @indices-differ |
+                                        i != j
+                                        [by not_intro suppose-same-index x1-is-x2 different]
+                                      @order |
+                                        less_than(i, j) or i = j or less_than(j, i)
+                                        [using specialize trichotomy(i, j)]
+                                      @conclusion-return |
+                                        exists p: Nat; iterate(f, succ(p), x) = x
+                                        case order {
+                                          @when-i-below-j |
+                                            assume less_than(i, j) {
+                                              @i-below-j |
+                                                less_than(i, j)
+                                                [by hypothesis when-i-below-j]
+                                              @gap-exists |
+                                                exists d: Nat; add(i, succ(d)) = j
+                                                [using specialize lessThanElim(i, j) i-below-j]
+                                              @with-gap-d |
+                                                unpack d: Nat from gap-exists {
+                                                  @gap |
+                                                    add(i, succ(d)) = j
+                                                    [by hypothesis with-gap-d]
+                                                  @sum-splits |
+                                                    iterate(f, add(i, succ(d)), x) = iterate(f, i, iterate(f, succ(d), x))
+                                                    [using specialize iterateAdd(f, x, succ(d), i)]
+                                                  @j-th-splits |
+                                                    iterate(f, j, x) = iterate(f, i, iterate(f, succ(d), x))
+                                                    [by rewrite gap sum-splits]
+                                                  @i-th-is-i-th-of-the-return |
+                                                    iterate(f, i, x) = iterate(f, i, iterate(f, succ(d), x))
+                                                    [by rewrite j-th-splits iterates-equal]
+                                                  @i-th-of-the-return-is-i-th |
+                                                    iterate(f, i, iterate(f, succ(d), x)) = iterate(f, i, x)
+                                                    [by symmetry i-th-is-i-th-of-the-return]
+                                                  @return |
+                                                    iterate(f, succ(d), x) = x
+                                                    [using specialize iterates-are-injective(i, iterate(f, succ(d), x), x) i-th-of-the-return-is-i-th]
+                                                  @conclusion-witness-d |
+                                                    exists p: Nat; iterate(f, succ(p), x) = x
+                                                    [by exists_intro(d) return]
+                                                }
+                                              @conclusion-i-below-j |
+                                                exists p: Nat; iterate(f, succ(p), x) = x
+                                                [by exists_elim with-gap-d]
+                                            }
+                                          @when-equal |
+                                            assume i = j {
+                                              @i-is-j |
+                                                i = j
+                                                [by hypothesis when-equal]
+                                              @conclusion-absurd |
+                                                exists p: Nat; iterate(f, succ(p), x) = x
+                                                [by absurd i-is-j indices-differ]
+                                            }
+                                          @when-j-below-i |
+                                            assume less_than(j, i) {
+                                              @j-below-i |
+                                                less_than(j, i)
+                                                [by hypothesis when-j-below-i]
+                                              @gap-exists |
+                                                exists d: Nat; add(j, succ(d)) = i
+                                                [using specialize lessThanElim(j, i) j-below-i]
+                                              @with-gap-d |
+                                                unpack d: Nat from gap-exists {
+                                                  @gap |
+                                                    add(j, succ(d)) = i
+                                                    [by hypothesis with-gap-d]
+                                                  @sum-splits |
+                                                    iterate(f, add(j, succ(d)), x) = iterate(f, j, iterate(f, succ(d), x))
+                                                    [using specialize iterateAdd(f, x, succ(d), j)]
+                                                  @i-th-splits |
+                                                    iterate(f, i, x) = iterate(f, j, iterate(f, succ(d), x))
+                                                    [by rewrite gap sum-splits]
+                                                  @j-th-of-the-return-is-j-th |
+                                                    iterate(f, j, iterate(f, succ(d), x)) = iterate(f, j, x)
+                                                    [by rewrite i-th-splits iterates-equal]
+                                                  @return |
+                                                    iterate(f, succ(d), x) = x
+                                                    [using specialize iterates-are-injective(j, iterate(f, succ(d), x), x) j-th-of-the-return-is-j-th]
+                                                  @conclusion-witness-d |
+                                                    exists p: Nat; iterate(f, succ(p), x) = x
+                                                    [by exists_intro(d) return]
+                                                }
+                                              @conclusion-j-below-i |
+                                                exists p: Nat; iterate(f, succ(p), x) = x
+                                                [by exists_elim with-gap-d]
+                                            }
+                                        }
+                                    }
+                                  @conclusion-with-j |
+                                    exists p: Nat; iterate(f, succ(p), x) = x
+                                    [by exists_elim with-index-j]
+                                }
+                              @conclusion-with-i |
+                                exists p: Nat; iterate(f, succ(p), x) = x
+                                [by exists_elim with-index-i]
+                            }
+                          @conclusion-with-x2 |
+                            exists p: Nat; iterate(f, succ(p), x) = x
+                            [by exists_elim with-colliding-x2]
+                        }
+                      @conclusion-with-x1 |
+                        exists p: Nat; iterate(f, succ(p), x) = x
+                        [by exists_elim with-colliding-x1]
+                    }
+                  @conclusion-with-g |
+                    exists p: Nat; iterate(f, succ(p), x) = x
+                    [by exists_elim with-index-map-g]
+                }
+              @conclusion-with-m |
+                exists p: Nat; iterate(f, succ(p), x) = x
+                [by exists_elim with-orbit-size-m]
+            }
+          @conclusion-implication |
+            isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x
+    [by forall_intro generalize-f]
+qed
+
+// THE LEAST PERIOD: among the returns, well-ordering picks a least one.
+theorem leastPeriodExists: forall f: Perm; forall x: Element;
+  isFinite(support(f)) ->
+  exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @support-is-finite |
+                isFinite(support(f))
+                [by hypothesis given-finite]
+              @some-return |
+                exists p: Nat; iterate(f, succ(p), x) = x
+                [using specialize someIterateReturns(f, x) support-is-finite]
+              @conclusion-least |
+                exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+                [using instantiation wellOrdering((fun p: Nat => iterate(f, succ(p), x) = x)) some-return]
+            }
+          @conclusion-implication |
+            isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; isFinite(support(f)) ->
+      exists p: Nat; iterate(f, succ(p), x) = x and (forall q: Nat; iterate(f, succ(q), x) = x -> less_or_equal(p, q))
+    [by forall_intro generalize-f]
+qed
