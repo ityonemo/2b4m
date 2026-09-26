@@ -11,6 +11,7 @@
 //! invariant instead of documenting it.
 
 const std = @import("std");
+const InternPool = @import("InternPool.zig");
 
 pub const FileSrc = struct {
     path: []const u8,
@@ -28,6 +29,12 @@ pub const Diagnostic = struct {
 pub const Sink = struct {
     arena: std.mem.Allocator,
     list: std.ArrayList(Diagnostic) = .empty,
+    /// Guards `list`. Every engine worker thread reports into the ONE sink of its Context, so
+    /// `add` is a concurrent write: unguarded, two appends could land on the same slot (a
+    /// diagnostic silently LOST — a wrong proof going unreported) or race the list's regrowth
+    /// (a crash). The same spinlock the Context's side tables use; `render` runs after
+    /// quiescence and needs none. The arena itself is the thread-safe process arena.
+    lock: InternPool.Lock = .{},
 
     pub fn init(arena: std.mem.Allocator) Sink {
         return .{ .arena = arena };
@@ -37,6 +44,8 @@ pub const Sink = struct {
     /// MUST be the file `offset` refers to — see the note at the top on why it is explicit.
     pub fn add(self: *Sink, file: u32, offset: u32, comptime fmt: []const u8, args: anytype) !void {
         const msg = try std.fmt.allocPrint(self.arena, fmt, args);
+        self.lock.lock();
+        defer self.lock.unlock();
         try self.list.append(self.arena, .{ .file = file, .offset = offset, .message = msg });
     }
 
@@ -98,4 +107,27 @@ test "render: an in-range offset still reports its true line and column" {
     var out: std.Io.Writer.Allocating = .init(arena);
     try sink.render(&out.writer, &files);
     try testing.expect(std.mem.indexOf(u8, out.written(), "/t/a.b4m:2:1:") != null);
+}
+
+test "add: concurrent adds from worker threads lose nothing" {
+    // The engine's workers all report into ONE sink. Unguarded, two appends can land on the
+    // same slot (a diagnostic silently lost — a wrong proof unreported) or race a regrowth
+    // (a crash). Eight threads, many adds each: every one must be there afterwards.
+    const threads = 8;
+    const per_thread = 4000;
+    var sink: Sink = .init(testing.allocator);
+    defer {
+        for (sink.list.items) |d| testing.allocator.free(d.message);
+        sink.list.deinit(testing.allocator);
+    }
+    const Worker = struct {
+        fn run(sk: *Sink, id: u32) void {
+            var i: u32 = 0;
+            while (i < per_thread) : (i += 1) sk.add(id, i, "t{d}:{d}", .{ id, i }) catch unreachable;
+        }
+    };
+    var handles: [threads]std.Thread = undefined;
+    for (&handles, 0..) |*h, id| h.* = try std.Thread.spawn(.{}, Worker.run, .{ &sink, @as(u32, @intCast(id)) });
+    for (handles) |h| h.join();
+    try testing.expectEqual(@as(usize, threads * per_thread), sink.list.items.len);
 }
