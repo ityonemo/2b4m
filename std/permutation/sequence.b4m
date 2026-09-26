@@ -164,11 +164,15 @@ qed
 // The same shape as std/group/sequence.b4m's, with the group's element sort read as
 // "a permutation": a binder over a group element becomes a Fn binder guarded by
 // `invertible`. Only the postulates the parity theory of transpositions uses are stated
-// (singleton, concatenation, reversal); prepend and removal can be restated from the group
-// file's when a consumer needs them — a library carries no axiom nothing in it rests on.
+// (singleton, prepend, concatenation, reversal); removal can be restated from the group file's
+// when a consumer needs it — a library carries no axiom nothing in it rests on.
 
 axiom seqSingleton: forall x: Fn; invertible(x) ->
   exists s: Seq; at(s, ZERO) = x and productUpTo(s, succ(ZERO)) = x
+
+// the prepend x :: s: head x (a permutation), tail s shifted up by one
+axiom seqPrepend: forall x: Fn; invertible(x) -> forall s: Seq;
+  exists u: Seq; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
 
 axiom seqConcat: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
   exists u: Seq;
@@ -370,4 +374,129 @@ proof
   @conclusion |
     forall s: Seq; forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
     [using model(PermSeq) group_sequence.invOfProduct]
+qed
+
+// -- the product of a prepended sequence -------------------------------------------------------
+
+// The product of the first n+1 entries of x :: s is x times the product of s's first n: the
+// left fold peels its last factor, and associativity moves x to the front. Induction on n.
+theorem productOfPrepend: forall x: Fn; forall s: Seq; forall u: Seq;
+  at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) ->
+  forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+proof
+  @generalize-x |
+    fix x: Fn {
+      @generalize-s |
+        fix s: Seq {
+          @generalize-u |
+            fix u: Seq {
+              @given-head |
+                assume at(u, ZERO) = x {
+                  @given-tail |
+                    assume forall i: Nat; at(u, succ(i)) = at(s, i) {
+                      @head |
+                        at(u, ZERO) = x
+                        [by hypothesis given-head]
+                      @tail |
+                        forall i: Nat; at(u, succ(i)) = at(s, i)
+                        [by hypothesis given-tail]
+                      // base case: one entry, the head
+                      @one-unfolds |
+                        productUpTo(u, succ(ZERO)) = compose(productUpTo(u, ZERO), at(u, ZERO))
+                        [using specialize productUpToSucc(u, ZERO)]
+                      @empty-is-identity |
+                        productUpTo(u, ZERO) = identityFn
+                        [using specialize productUpToZero(u)]
+                      @one-is-identity-times-head |
+                        productUpTo(u, succ(ZERO)) = compose(identityFn, at(u, ZERO))
+                        [by rewrite empty-is-identity one-unfolds]
+                      @identity-drops |
+                        compose(identityFn, at(u, ZERO)) = at(u, ZERO)
+                        [using specialize composeIdentityLeft(at(u, ZERO))]
+                      @one-is-the-head |
+                        productUpTo(u, succ(ZERO)) = at(u, ZERO)
+                        [using chain one-is-identity-times-head identity-drops]
+                      @one-is-x |
+                        productUpTo(u, succ(ZERO)) = x
+                        [using chain one-is-the-head head]
+                      @tail-empty-is-identity |
+                        productUpTo(s, ZERO) = identityFn
+                        [using specialize productUpToZero(s)]
+                      @x-times-identity |
+                        compose(x, identityFn) = x
+                        [using specialize composeIdentityRight(x)]
+                      @x-is-x-times-identity |
+                        x = compose(x, identityFn)
+                        [by symmetry x-times-identity]
+                      @x-is-x-times-empty-tail |
+                        x = compose(x, productUpTo(s, ZERO))
+                        [by rewrite tail-empty-is-identity x-is-x-times-identity]
+                      @base-case |
+                        productUpTo(u, succ(ZERO)) = compose(x, productUpTo(s, ZERO))
+                        [using chain one-is-x x-is-x-times-empty-tail]
+                      // inductive step
+                      @induction-step |
+                        fix k: Nat {
+                          @given-inductive-hypothesis |
+                            assume productUpTo(u, succ(k)) = compose(x, productUpTo(s, k)) {
+                              @inductive-hypothesis |
+                                productUpTo(u, succ(k)) = compose(x, productUpTo(s, k))
+                                [by hypothesis given-inductive-hypothesis]
+                              @next-unfolds |
+                                productUpTo(u, succ(succ(k))) = compose(productUpTo(u, succ(k)), at(u, succ(k)))
+                                [using specialize productUpToSucc(u, succ(k))]
+                              @next-through-hypothesis |
+                                productUpTo(u, succ(succ(k))) = compose(compose(x, productUpTo(s, k)), at(u, succ(k)))
+                                [by rewrite inductive-hypothesis next-unfolds]
+                              @shifted-entry |
+                                at(u, succ(k)) = at(s, k)
+                                [using specialize tail(k)]
+                              @next-with-the-tail-entry |
+                                productUpTo(u, succ(succ(k))) = compose(compose(x, productUpTo(s, k)), at(s, k))
+                                [by rewrite shifted-entry next-through-hypothesis]
+                              @reassociated |
+                                compose(compose(x, productUpTo(s, k)), at(s, k)) = compose(x, compose(productUpTo(s, k), at(s, k)))
+                                [using specialize composeAssoc(x, productUpTo(s, k), at(s, k))]
+                              @next-reassociated |
+                                productUpTo(u, succ(succ(k))) = compose(x, compose(productUpTo(s, k), at(s, k)))
+                                [using chain next-with-the-tail-entry reassociated]
+                              @tail-next-unfolds |
+                                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                                [using specialize productUpToSucc(s, k)]
+                              @conclusion-next |
+                                productUpTo(u, succ(succ(k))) = compose(x, productUpTo(s, succ(k)))
+                                [by rewrite tail-next-unfolds next-reassociated]
+                            }
+                          @induction-step-at-k |
+                            productUpTo(u, succ(k)) = compose(x, productUpTo(s, k)) -> productUpTo(u, succ(succ(k))) = compose(x, productUpTo(s, succ(k)))
+                            [by implies_intro given-inductive-hypothesis]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat; productUpTo(u, succ(k)) = compose(x, productUpTo(s, k)) -> productUpTo(u, succ(succ(k))) = compose(x, productUpTo(s, succ(k)))
+                        [by forall_intro induction-step]
+                      @conclusion-for-all-n |
+                        forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+                        [using instantiation induction((fun k: Nat => productUpTo(u, succ(k)) = compose(x, productUpTo(s, k)))) base-case induction-step-for-all-k]
+                    }
+                  @conclusion-tail |
+                    (forall i: Nat; at(u, succ(i)) = at(s, i)) -> forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+                    [by implies_intro given-tail]
+                }
+              @conclusion-head |
+                at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) -> forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+                [by implies_intro given-head]
+            }
+          @discharge-u |
+            forall u: Seq; at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) -> forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+            [by forall_intro generalize-u]
+        }
+      @discharge-s |
+        forall s: Seq; forall u: Seq; at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) -> forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall x: Fn; forall s: Seq; forall u: Seq;
+      at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) ->
+      forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
+    [by forall_intro generalize-x]
 qed

@@ -48,6 +48,11 @@ theorem zeroBelowSucc = cycle_theory.zeroBelowSucc
 func orbit = orbit_theory.orbit
 axiom orbitMember = orbit_theory.orbitMember
 theorem leastPeriodExists = period_theory.leastPeriodExists
+theorem someIterateReturns = period_theory.someIterateReturns
+theorem orbitLiesInSupportOrPoint = orbit_theory.orbitLiesInSupportOrPoint
+theorem unionWithAMemberIsItself = set.unionWithAMemberIsItself
+func union = set.union
+func singleton = set.singleton
 define isFinite(a) = set_finite.isFinite(a)
 
 sort Nat = peano.Nat
@@ -1300,5 +1305,194 @@ proof
       at(s, ZERO) = x and distinct(s, succ(p))
       and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y))
       and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+    [by forall_intro generalize-f]
+qed
+
+// -- two more orbit facts, for peeling the cycle off ----------------------------------------------
+
+// A point whose IMAGE is in the orbit is in the orbit: the image is some iterate f^n(x); for
+// n = k+1 it is f(f^k(x)) and injectivity gives y = f^k(x); for n = 0 it is x itself, which
+// is f(f^p(x)) by a return, and injectivity gives y = f^p(x).
+theorem preimageOfAnOrbitMemberIsInTheOrbit: forall f: Perm; forall x: Element;
+  isFinite(support(f)) -> forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @support-is-finite |
+                isFinite(support(f))
+                [by hypothesis given-finite]
+              @f-is-injective |
+                forall a: Element; forall b: Element; apply(f, a) = apply(f, b) -> a = b
+                [using specialize permutationIsInjective(f)]
+              @some-return |
+                exists p: Nat; iterate(f, succ(p), x) = x
+                [using specialize someIterateReturns(f, x) support-is-finite]
+              @generalize-y |
+                fix y: Element {
+                  @given-image-in-orbit |
+                    assume member(apply(f, y), orbit(f, x)) {
+                      @image-in-orbit |
+                        member(apply(f, y), orbit(f, x))
+                        [by hypothesis given-image-in-orbit]
+                      @image-membership |
+                        member(apply(f, y), orbit(f, x)) iff (exists n: Nat; apply(f, y) = iterate(f, n, x))
+                        [using specialize orbitMember(f, x, apply(f, y))]
+                      @image-is-an-iterate |
+                        exists n: Nat; apply(f, y) = iterate(f, n, x)
+                        [using tautology image-membership image-in-orbit]
+                      @y-membership |
+                        member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+                        [using specialize orbitMember(f, x, y)]
+                      @with-index-n |
+                        unpack n: Nat from image-is-an-iterate {
+                          @image-is-the-n-th |
+                            apply(f, y) = iterate(f, n, x)
+                            [by hypothesis with-index-n]
+                          @n-is-zero-or-a-successor |
+                            n = ZERO or (exists k: Nat; n = succ(k))
+                            [using specialize peano.zeroOrSucc(n)]
+                          @conclusion-y-in-orbit |
+                            member(y, orbit(f, x))
+                            case n-is-zero-or-a-successor {
+                              @when-the-point |
+                                assume n = ZERO {
+                                  @n-is-zero |
+                                    n = ZERO
+                                    [by hypothesis when-the-point]
+                                  @image-is-the-zeroth |
+                                    apply(f, y) = iterate(f, ZERO, x)
+                                    [by rewrite n-is-zero image-is-the-n-th]
+                                  @zeroth-is-x |
+                                    iterate(f, ZERO, x) = x
+                                    [using specialize iterateZero(f, x)]
+                                  @image-is-x |
+                                    apply(f, y) = x
+                                    [using chain image-is-the-zeroth zeroth-is-x]
+                                  @with-period-p |
+                                    unpack p: Nat from some-return {
+                                      @return |
+                                        iterate(f, succ(p), x) = x
+                                        [by hypothesis with-period-p]
+                                      @return-unfolds |
+                                        iterate(f, succ(p), x) = apply(f, iterate(f, p, x))
+                                        [using specialize iterateSucc(f, p, x)]
+                                      @x-is-the-image-of-the-p-th |
+                                        x = apply(f, iterate(f, p, x))
+                                        [by rewrite return return-unfolds]
+                                      @images-equal |
+                                        apply(f, y) = apply(f, iterate(f, p, x))
+                                        [using chain image-is-x x-is-the-image-of-the-p-th]
+                                      @y-is-the-p-th |
+                                        y = iterate(f, p, x)
+                                        [using specialize f-is-injective(y, iterate(f, p, x)) images-equal]
+                                      @y-is-an-iterate |
+                                        exists n2: Nat; y = iterate(f, n2, x)
+                                        [by exists_intro(p) y-is-the-p-th]
+                                      @conclusion-via-the-return |
+                                        member(y, orbit(f, x))
+                                        [using tautology y-membership y-is-an-iterate]
+                                    }
+                                  @conclusion-when-the-point |
+                                    member(y, orbit(f, x))
+                                    [by exists_elim with-period-p]
+                                }
+                              @when-a-later-iterate |
+                                assume exists k: Nat; n = succ(k) {
+                                  @predecessor-exists |
+                                    exists k: Nat; n = succ(k)
+                                    [by hypothesis when-a-later-iterate]
+                                  @with-predecessor-k |
+                                    unpack k: Nat from predecessor-exists {
+                                      @n-is-succ-k |
+                                        n = succ(k)
+                                        [by hypothesis with-predecessor-k]
+                                      @image-is-the-succ-k-th |
+                                        apply(f, y) = iterate(f, succ(k), x)
+                                        [by rewrite n-is-succ-k image-is-the-n-th]
+                                      @succ-k-th-unfolds |
+                                        iterate(f, succ(k), x) = apply(f, iterate(f, k, x))
+                                        [using specialize iterateSucc(f, k, x)]
+                                      @images-equal |
+                                        apply(f, y) = apply(f, iterate(f, k, x))
+                                        [using chain image-is-the-succ-k-th succ-k-th-unfolds]
+                                      @y-is-the-k-th |
+                                        y = iterate(f, k, x)
+                                        [using specialize f-is-injective(y, iterate(f, k, x)) images-equal]
+                                      @y-is-an-iterate |
+                                        exists n2: Nat; y = iterate(f, n2, x)
+                                        [by exists_intro(k) y-is-the-k-th]
+                                      @conclusion-via-the-predecessor |
+                                        member(y, orbit(f, x))
+                                        [using tautology y-membership y-is-an-iterate]
+                                    }
+                                  @conclusion-when-later |
+                                    member(y, orbit(f, x))
+                                    [by exists_elim with-predecessor-k]
+                                }
+                            }
+                        }
+                      @conclusion-with-n |
+                        member(y, orbit(f, x))
+                        [by exists_elim with-index-n]
+                    }
+                  @conclusion-y |
+                    member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+                    [by implies_intro given-image-in-orbit]
+                }
+              @conclusion-preimages |
+                forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+                [by forall_intro generalize-y]
+            }
+          @conclusion-implication |
+            isFinite(support(f)) -> forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; isFinite(support(f)) -> forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+    [by forall_intro generalize-f]
+qed
+
+// The orbit of a MOVED point lies inside the support: it lies inside support ∪ {x}, and x
+// is already in the support.
+theorem orbitOfAMovedPointIsInTheSupport: forall f: Perm; forall x: Element;
+  member(x, support(f)) -> set.subset(orbit(f, x), support(f))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-moved |
+            assume member(x, support(f)) {
+              @x-in-support |
+                member(x, support(f))
+                [by hypothesis given-moved]
+              @orbit-in-support-or-point |
+                forall y: Element; member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+                [using specialize orbitLiesInSupportOrPoint(f, x)]
+              @adjoined-is-the-support |
+                union(support(f), singleton(x)) = support(f)
+                [using specialize unionWithAMemberIsItself(support(f), x) x-in-support]
+              @conclusion-orbit-in-support |
+                forall y: Element; member(y, orbit(f, x)) -> member(y, support(f))
+                [by rewrite adjoined-is-the-support orbit-in-support-or-point]
+            }
+          @conclusion-implication |
+            member(x, support(f)) -> set.subset(orbit(f, x), support(f))
+            [by implies_intro given-moved]
+        }
+      @discharge-x |
+        forall x: Element; member(x, support(f)) -> set.subset(orbit(f, x), support(f))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; member(x, support(f)) -> set.subset(orbit(f, x), support(f))
     [by forall_intro generalize-f]
 qed

@@ -312,4 +312,14 @@ pub fn addTests(
     // return), and the cycle on that list agrees with f on the orbit (advance = next iterate;
     // wrap = the return) and fixes off it. orbitIsACycle packages the one-orbit decomposition.
     ctx.okSilent(&.{ "check", "std/permutation/orbit-cycle.b4m" });
+
+    // THE DECOMPOSITION (std/permutation/decomposition.b4m): Judson's Theorem 5.8 — every
+    // permutation of a finite set is a product of disjoint cycles. Peel one orbit's cycle c
+    // off (f = c ∘ g with g = c⁻¹ ∘ f fixing the orbit and agreeing with f elsewhere, so
+    // support(g) = support(f) \ orbit — a PROPER subset), strong induction on the size of
+    // the support (properSubsetIsSmaller), prepend c to g's cycle sequence; c lives in the
+    // orbit and g's cycles outside it, so the cycles stay pairwise disjoint. Runs over Fn
+    // with `invertible` as a hypothesis and applies Perm-quantified theorems at those
+    // terms — the refined-sort guard discharged from the prior step.
+    ctx.okSilent(&.{ "check", "std/permutation/decomposition.b4m" });
 }
