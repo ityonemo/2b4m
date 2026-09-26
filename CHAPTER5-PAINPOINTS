@@ -52,10 +52,18 @@ a fresh one to size n gives n+1 (`removingAnElementDropsTheSize`,
 (`subsetOfFiniteIsFinite`), a PROPER subset is strictly smaller
 (`properSubsetIsSmaller`), and DISJOINT SIZES ADD (`disjointUnionSizesAdd`).
 
-What is still missing for cycle notation: a finite LIST of points (sequence over
-Element) to name a cycle by, and the decomposition induction on the support's size
-(the support of a permutation of a finite set is now finite by
-`subsetOfFiniteIsFinite`, once it is shown to sit inside the set). For the counts:
+2026-09-26, later still: CYCLE NOTATION landed as `std/permutation/cycle.b4m` —
+a `Points` list sort read by `at`, `distinct`/`avoids`, and `cycle(s, k)` =
+(a₀ … a_{k-1}) DEFINED by Judson's factorization (a₀ a_{k-1})∘(a₀ … a_{k-2}); a
+permutation by induction; the textbook action proved under distinctness
+(`cycleFixesTheUnlisted`, `cycleWrapsAround`, `cycleAdvances`); one-cycle =
+identity, two-cycle = transposition.
+
+What is still missing for the DECOMPOSITION theorem: orbits (iterates of a
+permutation at a point, the least period — a pigeonhole on the finite support),
+list-building postulates for `Points`, a sequence of cycles with pairwise
+disjoint supports, and the induction on `size(support)` using
+`properSubsetIsSmaller`. For the counts:
 a size of S_n — i.e. counting a set of FUNCTIONS, which needs sets of `Fn`
 (`element.Element` is the only member sort) or a Nat-indexed enumeration of the
 permutations — and a factorial.
@@ -101,7 +109,21 @@ like `a`), wrong for the membership style:
 
 The fix is to take the sort from USE (`member`'s first argument pins
 `x : Element`), which subsumes the first-param heuristic. Blocks TIER 2 of
-DEFINITION-MIGRATION-CANDIDATES.
+DEFINITION-MIGRATION-CANDIDATES. Hit again 2026-09-26 writing `cycle`:
+
+    func cycle(s: Points, k: Nat) => Fn:
+      cycle(s, ZERO) = identityFn;
+      cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+    -- error: expected sort 'Nat', got 'Points'   (at `k`)
+
+### A bare constant on a clause's RIGHT-HAND side is read as a clause variable
+
+Same probe, first clause: `cycle(s, ZERO) = identityFn` is rejected with
+"'identityFn' shadows a declaration; choose a fresh name" — the RHS constant is
+taken for a fresh clause variable. (`ZERO` in the HEAD is accepted as a pattern.)
+Resolution should look identifiers up before minting clause variables. Until
+both are fixed, `std/permutation/cycle.b4m` states its two clauses as plain
+axioms (`cycleZero`, `cycleSucc`).
 
 ---
 
