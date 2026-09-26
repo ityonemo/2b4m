@@ -36,6 +36,7 @@ func compose = function.compose
 axiom composeApply = function.composeApply
 const identityFn = function.identityFn
 axiom identityApply = function.identityApply
+axiom functionFromGraph = function.functionFromGraph
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
@@ -2325,4 +2326,590 @@ proof
   @conclusion |
     forall m: Nat; forall n: Nat; equinumerous(segment(m), segment(n)) -> m = n
     [using instantiation induction((fun k: Nat => forall n: Nat; equinumerous(segment(k), segment(n)) -> k = n)) base-case induction-step-for-all-k]
+qed
+
+// -- inverting a bijection between sets ----------------------------------------
+//
+// A bijection a -> b has an inverse b -> a. Nothing here needs choice: the inverse is
+// pinned POINTWISE by the spec below — on b, the unique preimage (unique by injectivity,
+// present by surjectivity); off b, the identity, which is what makes the spec total on
+// the whole Element sort — and `functionFromGraph` realizes a proven total-and-unique
+// spec as an Fn.
+define inverseSpec(f, a, b, y, x) =
+  (member(y, b) and member(x, a) and apply(f, x) = y) or ((not member(y, b)) and x = y)
+
+// The spec is TOTAL and SINGLE-VALUED: every y has exactly one x meeting it.
+theorem inverseSpecIsTotalAndSingleValued: forall f: Fn; forall a: Set; forall b: Set;
+  bijectsOnto(f, a, b) ->
+  forall y: Element; exists x: Element;
+  inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @generalize-b |
+            fix b: Set {
+              @given-bijection |
+                assume bijectsOnto(f, a, b) {
+                  @bijection-facts |
+                    mapsInto(f, a, b) and injectiveOn(f, a) and surjectiveOnto(f, a, b)
+                    [by hypothesis given-bijection]
+                  @into-and-injective |
+                    mapsInto(f, a, b) and injectiveOn(f, a)
+                    [by and_elim_left bijection-facts]
+                  @injective |
+                    injectiveOn(f, a)
+                    [by and_elim_right into-and-injective]
+                  @covers |
+                    surjectiveOnto(f, a, b)
+                    [by and_elim_right bijection-facts]
+                  @pointwise |
+                    fix y: Element {
+                      @y-in-b-or-not |
+                        member(y, b) or (not member(y, b))
+                        [using tautology]
+                      @conclusion-unique-witness |
+                        exists x: Element; inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+                        case y-in-b-or-not {
+                          @when-in-b |
+                            assume member(y, b) {
+                              // the witness is y's preimage, unique by injectivity
+                              @y-in-b |
+                                member(y, b)
+                                [by hypothesis when-in-b]
+                              @preimage-exists |
+                                exists x: Element; member(x, a) and apply(f, x) = y
+                                [using specialize covers(y) y-in-b]
+                              @with-preimage-x |
+                                unpack x: Element from preimage-exists {
+                                  @preimage-facts |
+                                    member(x, a) and apply(f, x) = y
+                                    [by hypothesis with-preimage-x]
+                                  @x-in-a |
+                                    member(x, a)
+                                    [by and_elim_left preimage-facts]
+                                  @x-maps-to-y |
+                                    apply(f, x) = y
+                                    [by and_elim_right preimage-facts]
+                                  @x-meets-the-spec |
+                                    inverseSpec(f, a, b, y, x)
+                                    [using tautology y-in-b x-in-a x-maps-to-y]
+                                  @generalize-candidate |
+                                    fix x2: Element {
+                                      @given-candidate-meets-spec |
+                                        assume inverseSpec(f, a, b, y, x2) {
+                                          @candidate-meets-spec |
+                                            inverseSpec(f, a, b, y, x2)
+                                            [by hypothesis given-candidate-meets-spec]
+                                          @candidate-in-a |
+                                            member(x2, a)
+                                            [using tautology candidate-meets-spec y-in-b]
+                                          @candidate-maps-to-y |
+                                            apply(f, x2) = y
+                                            [using tautology candidate-meets-spec y-in-b]
+                                          @same-image |
+                                            apply(f, x) = apply(f, x2)
+                                            [by rewrite candidate-maps-to-y x-maps-to-y]
+                                          @conclusion-candidate-is-x |
+                                            x = x2
+                                            [using specialize injective(x, x2) x-in-a candidate-in-a same-image]
+                                        }
+                                      @conclusion-candidate-implication |
+                                        inverseSpec(f, a, b, y, x2) -> x = x2
+                                        [by implies_intro given-candidate-meets-spec]
+                                    }
+                                  @x-is-the-only-one |
+                                    forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2
+                                    [by forall_intro generalize-candidate]
+                                  @witness-clauses |
+                                    inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+                                    [by and_intro x-meets-the-spec x-is-the-only-one]
+                                  @conclusion-preimage-is-the-witness |
+                                    exists x3: Element; inverseSpec(f, a, b, y, x3) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x3 = x2)
+                                    [by exists_intro(x) witness-clauses]
+                                }
+                              @conclusion-in-b |
+                                exists x3: Element; inverseSpec(f, a, b, y, x3) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x3 = x2)
+                                [by exists_elim with-preimage-x]
+                            }
+                          @when-not-in-b |
+                            assume not member(y, b) {
+                              // the witness is y itself
+                              @y-not-in-b |
+                                not member(y, b)
+                                [by hypothesis when-not-in-b]
+                              @y-is-y |
+                                y = y
+                                [by reflexivity]
+                              @y-meets-the-spec |
+                                inverseSpec(f, a, b, y, y)
+                                [using tautology y-not-in-b y-is-y]
+                              @generalize-candidate |
+                                fix x2: Element {
+                                  @given-candidate-meets-spec |
+                                    assume inverseSpec(f, a, b, y, x2) {
+                                      @candidate-meets-spec |
+                                        inverseSpec(f, a, b, y, x2)
+                                        [by hypothesis given-candidate-meets-spec]
+                                      @candidate-is-y |
+                                        x2 = y
+                                        [using tautology candidate-meets-spec y-not-in-b]
+                                      @conclusion-y-is-candidate |
+                                        y = x2
+                                        [by symmetry candidate-is-y]
+                                    }
+                                  @conclusion-candidate-implication |
+                                    inverseSpec(f, a, b, y, x2) -> y = x2
+                                    [by implies_intro given-candidate-meets-spec]
+                                }
+                              @y-is-the-only-one |
+                                forall x2: Element; inverseSpec(f, a, b, y, x2) -> y = x2
+                                [by forall_intro generalize-candidate]
+                              @witness-clauses |
+                                inverseSpec(f, a, b, y, y) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> y = x2)
+                                [by and_intro y-meets-the-spec y-is-the-only-one]
+                              @conclusion-not-in-b |
+                                exists x3: Element; inverseSpec(f, a, b, y, x3) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x3 = x2)
+                                [by exists_intro(y) witness-clauses]
+                            }
+                        }
+                    }
+                  @conclusion-total-and-single-valued |
+                    forall y: Element; exists x: Element;
+                      inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+                    [by forall_intro pointwise]
+                }
+              @conclusion-bijection-implication |
+                bijectsOnto(f, a, b) -> forall y: Element; exists x: Element; inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+                [by implies_intro given-bijection]
+            }
+          @discharge-b |
+            forall b: Set; bijectsOnto(f, a, b) -> forall y: Element; exists x: Element; inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a: Set; forall b: Set; bijectsOnto(f, a, b) -> forall y: Element; exists x: Element; inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a: Set; forall b: Set;
+      bijectsOnto(f, a, b) ->
+      forall y: Element; exists x: Element;
+      inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+    [by forall_intro generalize-f]
+qed
+
+// Any map realizing the spec bijects b onto a. Into and injective read straight off the
+// spec's b-branch; surjective sends x in a to y = f(x), whose spec-value is x by
+// injectivity of f.
+theorem inverseSpecBijects: forall f: Fn; forall g: Fn; forall a: Set; forall b: Set;
+  bijectsOnto(f, a, b) ->
+  (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) ->
+  bijectsOnto(g, b, a)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-a |
+            fix a: Set {
+              @generalize-b |
+                fix b: Set {
+                  @given-bijection |
+                    assume bijectsOnto(f, a, b) {
+                      @given-spec |
+                        assume forall y: Element; inverseSpec(f, a, b, y, apply(g, y)) {
+                          @bijection-facts |
+                            mapsInto(f, a, b) and injectiveOn(f, a) and surjectiveOnto(f, a, b)
+                            [by hypothesis given-bijection]
+                          @into-and-injective |
+                            mapsInto(f, a, b) and injectiveOn(f, a)
+                            [by and_elim_left bijection-facts]
+                          @into |
+                            mapsInto(f, a, b)
+                            [by and_elim_left into-and-injective]
+                          @injective |
+                            injectiveOn(f, a)
+                            [by and_elim_right into-and-injective]
+                          @spec |
+                            forall y: Element; inverseSpec(f, a, b, y, apply(g, y))
+                            [by hypothesis given-spec]
+
+                          // INTO: on b the spec's first branch holds, and it says g(y) is in a
+                          @pointwise-into |
+                            fix y: Element {
+                              @given-y-in-b |
+                                assume member(y, b) {
+                                  @y-in-b |
+                                    member(y, b)
+                                    [by hypothesis given-y-in-b]
+                                  @spec-at-y |
+                                    inverseSpec(f, a, b, y, apply(g, y))
+                                    [using specialize spec(y)]
+                                  @conclusion-image-in-a |
+                                    member(apply(g, y), a)
+                                    [using tautology spec-at-y y-in-b]
+                                }
+                              @conclusion-into-implication |
+                                member(y, b) -> member(apply(g, y), a)
+                                [by implies_intro given-y-in-b]
+                            }
+                          @g-maps-into |
+                            mapsInto(g, b, a)
+                            [by forall_intro pointwise-into]
+
+                          // INJECTIVE: y = f(g(y)) = f(g(y2)) = y2
+                          @pointwise-injective |
+                            fix y: Element {
+                              @inner |
+                                fix y2: Element {
+                                  @given-y |
+                                    assume member(y, b) {
+                                      @given-y2 |
+                                        assume member(y2, b) {
+                                          @given-images |
+                                            assume apply(g, y) = apply(g, y2) {
+                                              @y-in-b |
+                                                member(y, b)
+                                                [by hypothesis given-y]
+                                              @y2-in-b |
+                                                member(y2, b)
+                                                [by hypothesis given-y2]
+                                              @images-equal |
+                                                apply(g, y) = apply(g, y2)
+                                                [by hypothesis given-images]
+                                              @spec-at-y |
+                                                inverseSpec(f, a, b, y, apply(g, y))
+                                                [using specialize spec(y)]
+                                              @spec-at-y2 |
+                                                inverseSpec(f, a, b, y2, apply(g, y2))
+                                                [using specialize spec(y2)]
+                                              @f-undoes-g-at-y |
+                                                apply(f, apply(g, y)) = y
+                                                [using tautology spec-at-y y-in-b]
+                                              @f-undoes-g-at-y2 |
+                                                apply(f, apply(g, y2)) = y2
+                                                [using tautology spec-at-y2 y2-in-b]
+                                              @f-of-shared-image-is-y2 |
+                                                apply(f, apply(g, y)) = y2
+                                                [by rewrite images-equal f-undoes-g-at-y2]
+                                              @conclusion-equal |
+                                                y = y2
+                                                [by rewrite f-undoes-g-at-y f-of-shared-image-is-y2]
+                                            }
+                                          @conclusion-images |
+                                            apply(g, y) = apply(g, y2) -> y = y2
+                                            [by implies_intro given-images]
+                                        }
+                                      @conclusion-y2 |
+                                        member(y2, b) -> apply(g, y) = apply(g, y2) -> y = y2
+                                        [by implies_intro given-y2]
+                                    }
+                                  @conclusion-y |
+                                    member(y, b) -> member(y2, b) -> apply(g, y) = apply(g, y2) -> y = y2
+                                    [by implies_intro given-y]
+                                }
+                              @discharge-y2 |
+                                forall y2: Element; member(y, b) -> member(y2, b) -> apply(g, y) = apply(g, y2) -> y = y2
+                                [by forall_intro inner]
+                            }
+                          @g-is-injective |
+                            injectiveOn(g, b)
+                            [by forall_intro pointwise-injective]
+
+                          // SURJECTIVE: x in a is g(f(x)), because f(g(f(x))) = f(x) and f is injective on a
+                          @pointwise-covers |
+                            fix x: Element {
+                              @given-x-in-a |
+                                assume member(x, a) {
+                                  @x-in-a |
+                                    member(x, a)
+                                    [by hypothesis given-x-in-a]
+                                  @image-in-b |
+                                    member(apply(f, x), b)
+                                    [using specialize into(x) x-in-a]
+                                  @spec-at-image |
+                                    inverseSpec(f, a, b, apply(f, x), apply(g, apply(f, x)))
+                                    [using specialize spec(apply(f, x))]
+                                  @g-of-image-in-a |
+                                    member(apply(g, apply(f, x)), a)
+                                    [using tautology spec-at-image image-in-b]
+                                  @f-undoes-g-at-image |
+                                    apply(f, apply(g, apply(f, x))) = apply(f, x)
+                                    [using tautology spec-at-image image-in-b]
+                                  @g-undoes-f-at-x |
+                                    apply(g, apply(f, x)) = x
+                                    [using specialize injective(apply(g, apply(f, x)), x) g-of-image-in-a x-in-a f-undoes-g-at-image]
+                                  @image-is-a-preimage |
+                                    member(apply(f, x), b) and apply(g, apply(f, x)) = x
+                                    [by and_intro image-in-b g-undoes-f-at-x]
+                                  @conclusion-x-is-covered |
+                                    exists y: Element; member(y, b) and apply(g, y) = x
+                                    [by exists_intro(apply(f, x)) image-is-a-preimage]
+                                }
+                              @conclusion-covers-implication |
+                                member(x, a) -> exists y: Element; member(y, b) and apply(g, y) = x
+                                [by implies_intro given-x-in-a]
+                            }
+                          @g-covers |
+                            surjectiveOnto(g, b, a)
+                            [by forall_intro pointwise-covers]
+
+                          @g-into-and-injective |
+                            mapsInto(g, b, a) and injectiveOn(g, b)
+                            [by and_intro g-maps-into g-is-injective]
+                          @conclusion-g-bijects |
+                            bijectsOnto(g, b, a)
+                            [by and_intro g-into-and-injective g-covers]
+                        }
+                      @conclusion-spec-implication |
+                        (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) -> bijectsOnto(g, b, a)
+                        [by implies_intro given-spec]
+                    }
+                  @conclusion-bijection-implication |
+                    bijectsOnto(f, a, b) -> (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) -> bijectsOnto(g, b, a)
+                    [by implies_intro given-bijection]
+                }
+              @discharge-b |
+                forall b: Set; bijectsOnto(f, a, b) -> (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) -> bijectsOnto(g, b, a)
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a: Set; forall b: Set; bijectsOnto(f, a, b) -> (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) -> bijectsOnto(g, b, a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-g |
+        forall g: Fn; forall a: Set; forall b: Set; bijectsOnto(f, a, b) -> (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) -> bijectsOnto(g, b, a)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall a: Set; forall b: Set;
+      bijectsOnto(f, a, b) ->
+      (forall y: Element; inverseSpec(f, a, b, y, apply(g, y))) ->
+      bijectsOnto(g, b, a)
+    [by forall_intro generalize-f]
+qed
+
+// A bijection a -> b has an inverse bijection b -> a: realize the spec.
+theorem bijectionInvertsOnSets: forall f: Fn; forall a: Set; forall b: Set;
+  bijectsOnto(f, a, b) -> exists g: Fn; bijectsOnto(g, b, a)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @generalize-b |
+            fix b: Set {
+              @given-bijection |
+                assume bijectsOnto(f, a, b) {
+                  @bijection |
+                    bijectsOnto(f, a, b)
+                    [by hypothesis given-bijection]
+                  @spec-is-total-and-single-valued |
+                    forall y: Element; exists x: Element;
+                      inverseSpec(f, a, b, y, x) and (forall x2: Element; inverseSpec(f, a, b, y, x2) -> x = x2)
+                    [using specialize inverseSpecIsTotalAndSingleValued(f, a, b) bijection]
+                  @a-realization-exists |
+                    exists g: Fn; forall y: Element; inverseSpec(f, a, b, y, apply(g, y))
+                    [using instantiation functionFromGraph(fun y, x: Element => inverseSpec(f, a, b, y, x)) spec-is-total-and-single-valued]
+                  @with-realization-g |
+                    unpack g: Fn from a-realization-exists {
+                      @g-realizes-the-spec |
+                        forall y: Element; inverseSpec(f, a, b, y, apply(g, y))
+                        [by hypothesis with-realization-g]
+                      @g-bijects |
+                        bijectsOnto(g, b, a)
+                        [using specialize inverseSpecBijects(f, g, a, b) bijection g-realizes-the-spec]
+                      @conclusion-g-is-an-inverse |
+                        exists g2: Fn; bijectsOnto(g2, b, a)
+                        [by exists_intro(g) g-bijects]
+                    }
+                  @conclusion-inverse-exists |
+                    exists g2: Fn; bijectsOnto(g2, b, a)
+                    [by exists_elim with-realization-g]
+                }
+              @conclusion-bijection-implication |
+                bijectsOnto(f, a, b) -> exists g2: Fn; bijectsOnto(g2, b, a)
+                [by implies_intro given-bijection]
+            }
+          @discharge-b |
+            forall b: Set; bijectsOnto(f, a, b) -> exists g2: Fn; bijectsOnto(g2, b, a)
+            [by forall_intro generalize-b]
+        }
+      @discharge-a |
+        forall a: Set; forall b: Set; bijectsOnto(f, a, b) -> exists g2: Fn; bijectsOnto(g2, b, a)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a: Set; forall b: Set;
+      bijectsOnto(f, a, b) -> exists g: Fn; bijectsOnto(g, b, a)
+    [by forall_intro generalize-f]
+qed
+
+// SYMMETRY: equinumerosity runs both ways, because bijections invert.
+theorem equinumerousSymmetric: forall a: Set; forall b: Set;
+  equinumerous(a, b) -> equinumerous(b, a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @given-equinumerous |
+            assume equinumerous(a, b) {
+              @the-bijection-exists |
+                exists f: Fn; bijectsOnto(f, a, b)
+                [by hypothesis given-equinumerous]
+              @with-bijection-f |
+                unpack f: Fn from the-bijection-exists {
+                  @f-bijects |
+                    bijectsOnto(f, a, b)
+                    [by hypothesis with-bijection-f]
+                  @conclusion-inverse-bijects-back |
+                    exists g: Fn; bijectsOnto(g, b, a)
+                    [using specialize bijectionInvertsOnSets(f, a, b) f-bijects]
+                }
+              @conclusion-symmetric |
+                exists g: Fn; bijectsOnto(g, b, a)
+                [by exists_elim with-bijection-f]
+            }
+          @conclusion-implication |
+            equinumerous(a, b) -> equinumerous(b, a)
+            [by implies_intro given-equinumerous]
+        }
+      @discharge-b |
+        forall b: Set; equinumerous(a, b) -> equinumerous(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; equinumerous(a, b) -> equinumerous(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// SIZE IS UNIQUE for ANY set: two sizes give segment(m) ~ a ~ segment(n), and equinumerous
+// segments have the same length.
+theorem hasSizeIsUnique: forall a: Set; forall m: Nat; forall n: Nat;
+  hasSize(a, m) -> hasSize(a, n) -> m = n
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-size-m |
+                assume hasSize(a, m) {
+                  @given-size-n |
+                    assume hasSize(a, n) {
+                      @a-matches-segment-m |
+                        equinumerous(a, segment(m))
+                        [by hypothesis given-size-m]
+                      @a-matches-segment-n |
+                        equinumerous(a, segment(n))
+                        [by hypothesis given-size-n]
+                      @segment-m-matches-a |
+                        equinumerous(segment(m), a)
+                        [using specialize equinumerousSymmetric(a, segment(m)) a-matches-segment-m]
+                      @segments-match |
+                        equinumerous(segment(m), segment(n))
+                        [using specialize equinumerousTransitive(segment(m), a, segment(n)) segment-m-matches-a a-matches-segment-n]
+                      @conclusion-same-length |
+                        m = n
+                        [using specialize segmentSizeIsUnique(m, n) segments-match]
+                    }
+                  @conclusion-size-n |
+                    hasSize(a, n) -> m = n
+                    [by implies_intro given-size-n]
+                }
+              @conclusion-size-m |
+                hasSize(a, m) -> hasSize(a, n) -> m = n
+                [by implies_intro given-size-m]
+            }
+          @discharge-n |
+            forall n: Nat; hasSize(a, m) -> hasSize(a, n) -> m = n
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m: Nat; forall n: Nat; hasSize(a, m) -> hasSize(a, n) -> m = n
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall a: Set; forall m: Nat; forall n: Nat; hasSize(a, m) -> hasSize(a, n) -> m = n
+    [by forall_intro generalize-a]
+qed
+
+// -- the counting function ------------------------------------------------------
+//
+// `size(a)` is THE size of a finite set. The symbol is total (every Set has some
+// `size`), but its value is pinned only when `a` is finite: then `size(a)` is a size of
+// `a` — and by `hasSizeIsUnique` the only one, so this is definite description, not
+// choice, in exactly the way `function.inverse` is. For an infinite set `size(a)` is an
+// unconstrained value that nothing reasons about.
+func size(a: Set) => Nat:
+  hasSize(a, size(a)) when isFinite(a)
+
+// A set's size is whatever size it has: `size` agrees with `hasSize`.
+theorem sizeIsTheSize: forall a: Set; forall n: Nat; hasSize(a, n) -> size(a) = n
+proof
+  @size-clause |
+    forall a: Set; isFinite(a) -> hasSize(a, size(a))
+    [by definition(0) size]
+  @generalize-a |
+    fix a: Set {
+      @generalize-n |
+        fix n: Nat {
+          @given-size |
+            assume hasSize(a, n) {
+              @a-has-size-n |
+                hasSize(a, n)
+                [by hypothesis given-size]
+              @a-is-finite |
+                isFinite(a)
+                [by exists_intro(n) a-has-size-n]
+              @a-has-its-size |
+                hasSize(a, size(a))
+                [using specialize size-clause(a) a-is-finite]
+              @conclusion-sizes-agree |
+                size(a) = n
+                [using specialize hasSizeIsUnique(a, size(a), n) a-has-its-size a-has-size-n]
+            }
+          @conclusion-implication |
+            hasSize(a, n) -> size(a) = n
+            [by implies_intro given-size]
+        }
+      @discharge-n |
+        forall n: Nat; hasSize(a, n) -> size(a) = n
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall a: Set; forall n: Nat; hasSize(a, n) -> size(a) = n
+    [by forall_intro generalize-a]
+qed
+
+// The segment {0, …, n-1} has size n — the identity bijects it onto itself.
+theorem sizeOfSegment: forall n: Nat; size(segment(n)) = n
+proof
+  @generalize-n |
+    fix n: Nat {
+      @segment-matches-itself |
+        equinumerous(segment(n), segment(n))
+        [using specialize equinumerousReflexive(segment(n))]
+      @conclusion-size-n |
+        size(segment(n)) = n
+        [using specialize sizeIsTheSize(segment(n), n) segment-matches-itself]
+    }
+  @conclusion |
+    forall n: Nat; size(segment(n)) = n
+    [by forall_intro generalize-n]
+qed
+
+// The empty set has size ZERO.
+theorem sizeOfEmptyset: size(emptyset) = ZERO
+proof
+  @emptyset-has-size-zero |
+    hasSize(emptyset, ZERO)
+    [by cite emptysetHasSizeZero]
+  @conclusion |
+    size(emptyset) = ZERO
+    [using specialize sizeIsTheSize(emptyset, ZERO) emptyset-has-size-zero]
 qed
