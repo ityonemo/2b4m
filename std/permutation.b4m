@@ -1,0 +1,1003 @@
+// std/permutation.b4m — the theory of PERMUTATIONS: bijections of a set, what they
+// move, transpositions, and the permutations OF a given set.
+//
+// A permutation is a bijection Element -> Element — an invertible `Fn`. That these form
+// a group under composition (the SYMMETRIC GROUP on Element) is already proved in
+// std/function/invertible.b4m, whose `InvertibleFunctionsGroup` models std/group.b4m
+// onto the invertible maps; this file takes that sort as `Perm` and forwards the group
+// facts, then adds what is specific to permutations and absent from a bare group:
+//
+//   - the SUPPORT of a permutation — the set of points it moves — and that a
+//     permutation maps its support into itself;
+//   - permutations with DISJOINT supports COMMUTE (Judson's "disjoint cycles commute",
+//     in its general form — no cycle structure is needed, only supports);
+//   - TRANSPOSITIONS: `transposition(u, v)` is std/set/finite.b4m's `swap`, an
+//     involution, hence a permutation and its own inverse;
+//   - permutations OF A SET `a` — bijections of `a` onto itself, `permutes(f, a)` —
+//     closed under identity, composition, inverse, and containing every transposition
+//     of two members of `a`. These are the permutations S_a that chapter 5 counts.
+
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+
+sort Element = element.Element
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+pred invertible = function.invertible
+func inverse = function.inverse
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+axiom funcExtensionality = function.funcExtensionality
+axiom invertibleDef = function.invertibleDef
+axiom inverseLeft = function.inverseLeft
+axiom inverseRight = function.inverseRight
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+
+sort Set = set.Set
+const emptyset = set.emptyset
+pred member = set.member
+func intersection = set.intersection
+axiom intersectionMember = set.intersectionMember
+axiom emptysetMember = set.emptysetMember
+axiom extensionality = set.extensionality
+
+// -- permutations and the symmetric group ------------------------------------
+
+// A PERMUTATION: an invertible map of Element. The sort is std/function/invertible.b4m's
+// `InvFn`; the group facts below are that file's, forwarded under permutation names.
+sort Perm = function_invertible.InvFn
+
+theorem identityIsAPermutation = function_invertible.identityInvertible
+theorem inverseIsAPermutation = function_invertible.inverseInvertible
+theorem composeIsAPermutation = function_invertible.composeInvertible
+theorem permutationCancelLeft = function_invertible.invCancelLeft
+theorem permutationCancelRight = function_invertible.invCancelRight
+theorem permutationInverseUnique = function_invertible.invInverseUnique
+theorem permutationInverseInvolution = function_invertible.invInvolution
+
+// A permutation is one-to-one: undo it with its inverse.
+theorem permutationIsInjective: forall f: Perm; forall x: Element; forall y: Element;
+  apply(f, x) = apply(f, y) -> x = y
+proof
+  @generalize-f |
+    fix f: Perm {
+      @f-is-invertible |
+        invertible(f)
+        [by predicate generalize-f]
+      @inverse-undoes-f |
+        compose(inverse(f), f) = identityFn
+        [using specialize inverseLeft(f) f-is-invertible]
+      @generalize-x |
+        fix x: Element {
+          @generalize-y |
+            fix y: Element {
+              @given-images |
+                assume apply(f, x) = apply(f, y) {
+                  @images-equal |
+                    apply(f, x) = apply(f, y)
+                    [by hypothesis given-images]
+                  @composite-at-x |
+                    apply(compose(inverse(f), f), x) = apply(inverse(f), apply(f, x))
+                    [using specialize composeApply(inverse(f), f, x)]
+                  @composite-at-y |
+                    apply(compose(inverse(f), f), y) = apply(inverse(f), apply(f, y))
+                    [using specialize composeApply(inverse(f), f, y)]
+                  @identity-at-x-raw |
+                    apply(identityFn, x) = x
+                    [using specialize identityApply(x)]
+                  @identity-at-y-raw |
+                    apply(identityFn, y) = y
+                    [using specialize identityApply(y)]
+                  @identity-at-x |
+                    apply(compose(inverse(f), f), x) = x
+                    [by rewrite inverse-undoes-f identity-at-x-raw]
+                  @identity-at-y |
+                    apply(compose(inverse(f), f), y) = y
+                    [by rewrite inverse-undoes-f identity-at-y-raw]
+                  @x-recovered |
+                    apply(inverse(f), apply(f, x)) = x
+                    [by rewrite composite-at-x identity-at-x]
+                  @y-recovered |
+                    apply(inverse(f), apply(f, y)) = y
+                    [by rewrite composite-at-y identity-at-y]
+                  @x-recovered-through-y |
+                    apply(inverse(f), apply(f, y)) = x
+                    [by rewrite images-equal x-recovered]
+                  @conclusion-equal |
+                    x = y
+                    [by rewrite x-recovered-through-y y-recovered]
+                }
+              @conclusion-implication |
+                apply(f, x) = apply(f, y) -> x = y
+                [by implies_intro given-images]
+            }
+          @discharge-y |
+            forall y: Element; apply(f, x) = apply(f, y) -> x = y
+            [by forall_intro generalize-y]
+        }
+      @discharge-x |
+        forall x: Element; forall y: Element; apply(f, x) = apply(f, y) -> x = y
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall y: Element; apply(f, x) = apply(f, y) -> x = y
+    [by forall_intro generalize-f]
+qed
+
+// -- the support -----------------------------------------------------------------
+
+// `f` FIXES x or MOVES it.
+define fixes(f, x) = apply(f, x) = x
+define moves(f, x) = apply(f, x) != x
+
+// The SUPPORT of a map: the set of points it moves. A set given by comprehension, like
+// `segment` — the axiom is its membership condition.
+func support(f: Fn) => Set
+axiom supportMember: forall f: Fn; forall x: Element;
+  member(x, support(f)) iff apply(f, x) != x
+
+// The identity moves nothing.
+theorem supportOfIdentityIsEmpty: support(identityFn) = emptyset
+proof
+  @pointwise-forward |
+    fix x: Element {
+      @membership |
+        member(x, support(identityFn)) iff apply(identityFn, x) != x
+        [using specialize supportMember(identityFn, x)]
+      @identity-fixes-x |
+        apply(identityFn, x) = x
+        [using specialize identityApply(x)]
+      @not-in-support |
+        member(x, support(identityFn)) -> member(x, emptyset)
+        [using tautology membership identity-fixes-x]
+    }
+  @support-is-included-in-emptyset |
+    forall x: Element; member(x, support(identityFn)) -> member(x, emptyset)
+    [by forall_intro pointwise-forward]
+  @pointwise-backward |
+    fix x: Element {
+      @nothing-in-emptyset |
+        not member(x, emptyset)
+        [using specialize emptysetMember(x)]
+      @emptyset-into-support |
+        member(x, emptyset) -> member(x, support(identityFn))
+        [using tautology nothing-in-emptyset]
+    }
+  @emptyset-is-included-in-support |
+    forall x: Element; member(x, emptyset) -> member(x, support(identityFn))
+    [by forall_intro pointwise-backward]
+  @conclusion |
+    support(identityFn) = emptyset
+    [using specialize extensionality(support(identityFn), emptyset) support-is-included-in-emptyset emptyset-is-included-in-support]
+qed
+
+// A permutation maps its support INTO its support: if f(x) were fixed, f(f(x)) = f(x)
+// and injectivity would force f(x) = x.
+theorem permutationPreservesItsSupport: forall f: Perm; forall x: Element;
+  member(x, support(f)) -> member(apply(f, x), support(f))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-moved |
+            assume member(x, support(f)) {
+              @x-in-support |
+                member(x, support(f))
+                [by hypothesis given-moved]
+              @membership-at-x |
+                member(x, support(f)) iff apply(f, x) != x
+                [using specialize supportMember(f, x)]
+              @membership-at-image |
+                member(apply(f, x), support(f)) iff apply(f, apply(f, x)) != apply(f, x)
+                [using specialize supportMember(f, apply(f, x))]
+              @f-moves-x |
+                apply(f, x) != x
+                [using tautology membership-at-x x-in-support]
+              @injective-at-image |
+                apply(f, apply(f, x)) = apply(f, x) -> apply(f, x) = x
+                [using specialize permutationIsInjective(f, apply(f, x), x)]
+              @conclusion-image-moved |
+                member(apply(f, x), support(f))
+                [using tautology membership-at-image injective-at-image f-moves-x]
+            }
+          @conclusion-implication |
+            member(x, support(f)) -> member(apply(f, x), support(f))
+            [by implies_intro given-moved]
+        }
+      @discharge-x |
+        forall x: Element; member(x, support(f)) -> member(apply(f, x), support(f))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; member(x, support(f)) -> member(apply(f, x), support(f))
+    [by forall_intro generalize-f]
+qed
+
+// -- disjoint permutations commute ------------------------------------------------
+
+// Two maps have DISJOINT supports when no point is moved by both.
+define disjointSupports(f, g) = intersection(support(f), support(g)) = emptyset
+
+// The set-algebra form, pointwise: a point in one support is not in the other.
+theorem disjointSupportsPointwise: forall f: Fn; forall g: Fn;
+  disjointSupports(f, g) -> forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-disjoint |
+            assume disjointSupports(f, g) {
+              @supports-meet-nowhere |
+                intersection(support(f), support(g)) = emptyset
+                [by hypothesis given-disjoint]
+              @pointwise |
+                fix x: Element {
+                  @in-the-meet |
+                    member(x, intersection(support(f), support(g))) iff (member(x, support(f)) and member(x, support(g)))
+                    [using specialize intersectionMember(support(f), support(g), x)]
+                  @in-the-empty-meet |
+                    member(x, emptyset) iff (member(x, support(f)) and member(x, support(g)))
+                    [by rewrite supports-meet-nowhere in-the-meet]
+                  @nothing-in-emptyset |
+                    not member(x, emptyset)
+                    [using specialize emptysetMember(x)]
+                  @conclusion-not-both |
+                    member(x, support(f)) -> (not member(x, support(g)))
+                    [using tautology in-the-empty-meet nothing-in-emptyset]
+                }
+              @conclusion-pointwise |
+                forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+                [by forall_intro pointwise]
+            }
+          @conclusion-implication |
+            disjointSupports(f, g) -> forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+            [by implies_intro given-disjoint]
+        }
+      @discharge-g |
+        forall g: Fn; disjointSupports(f, g) -> forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; disjointSupports(f, g) -> forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+    [by forall_intro generalize-f]
+qed
+
+// PERMUTATIONS WITH DISJOINT SUPPORTS COMMUTE. Pointwise at x: if f moves x then g fixes
+// both x and f(x) (f keeps x's image in its own support, away from g's), so both
+// composites give f(x); symmetrically if g moves x; and if neither moves x both give x.
+// This is Judson's "disjoint cycles commute" — cycles never enter, only supports.
+theorem disjointPermutationsCommute: forall f: Perm; forall g: Perm;
+  disjointSupports(f, g) -> compose(f, g) = compose(g, f)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-g |
+        fix g: Perm {
+          @given-disjoint |
+            assume disjointSupports(f, g) {
+              @disjoint |
+                disjointSupports(f, g)
+                [by hypothesis given-disjoint]
+              @f-moved-is-g-fixed |
+                forall x: Element; member(x, support(f)) -> (not member(x, support(g)))
+                [using specialize disjointSupportsPointwise(f, g) disjoint]
+              @pointwise |
+                fix x: Element {
+                  @f-then-g-at-x |
+                    apply(compose(f, g), x) = apply(f, apply(g, x))
+                    [using specialize composeApply(f, g, x)]
+                  @g-then-f-at-x |
+                    apply(compose(g, f), x) = apply(g, apply(f, x))
+                    [using specialize composeApply(g, f, x)]
+                  @f-membership-at-x |
+                    member(x, support(f)) iff apply(f, x) != x
+                    [using specialize supportMember(f, x)]
+                  @g-membership-at-x |
+                    member(x, support(g)) iff apply(g, x) != x
+                    [using specialize supportMember(g, x)]
+                  @x-moved-by-f-or-not |
+                    member(x, support(f)) or (not member(x, support(f)))
+                    [using tautology]
+                  @composites-agree-at-x |
+                    apply(f, apply(g, x)) = apply(g, apply(f, x))
+                    case x-moved-by-f-or-not {
+                      @when-f-moves-x |
+                        assume member(x, support(f)) {
+                          // g fixes x and fixes f(x), so both composites give f(x)
+                          @x-in-support-f |
+                            member(x, support(f))
+                            [by hypothesis when-f-moves-x]
+                          @x-not-in-support-g |
+                            not member(x, support(g))
+                            [using specialize f-moved-is-g-fixed(x) x-in-support-f]
+                          @g-fixes-x |
+                            apply(g, x) = x
+                            [using tautology g-membership-at-x x-not-in-support-g]
+                          @image-in-support-f |
+                            member(apply(f, x), support(f))
+                            [using specialize permutationPreservesItsSupport(f, x) x-in-support-f]
+                          @image-not-in-support-g |
+                            not member(apply(f, x), support(g))
+                            [using specialize f-moved-is-g-fixed(apply(f, x)) image-in-support-f]
+                          @g-membership-at-image |
+                            member(apply(f, x), support(g)) iff apply(g, apply(f, x)) != apply(f, x)
+                            [using specialize supportMember(g, apply(f, x))]
+                          @g-fixes-image |
+                            apply(g, apply(f, x)) = apply(f, x)
+                            [using tautology g-membership-at-image image-not-in-support-g]
+                          @f-x-is-f-x |
+                            apply(f, x) = apply(f, x)
+                            [by reflexivity]
+                          @f-of-g-x-is-f-x |
+                            apply(f, apply(g, x)) = apply(f, x)
+                            [by rewrite g-fixes-x f-x-is-f-x]
+                          @conclusion-when-f-moves |
+                            apply(f, apply(g, x)) = apply(g, apply(f, x))
+                            [by rewrite g-fixes-image f-of-g-x-is-f-x]
+                        }
+                      @when-f-fixes-x |
+                        assume not member(x, support(f)) {
+                          @x-not-in-support-f |
+                            not member(x, support(f))
+                            [by hypothesis when-f-fixes-x]
+                          @f-fixes-x |
+                            apply(f, x) = x
+                            [using tautology f-membership-at-x x-not-in-support-f]
+                          @x-moved-by-g-or-not |
+                            member(x, support(g)) or (not member(x, support(g)))
+                            [using tautology]
+                          @conclusion-when-f-fixes |
+                            apply(f, apply(g, x)) = apply(g, apply(f, x))
+                            case x-moved-by-g-or-not {
+                              @when-g-moves-x |
+                                assume member(x, support(g)) {
+                                  // f fixes g(x), so both composites give g(x)
+                                  @x-in-support-g |
+                                    member(x, support(g))
+                                    [by hypothesis when-g-moves-x]
+                                  @image-in-support-g |
+                                    member(apply(g, x), support(g))
+                                    [using specialize permutationPreservesItsSupport(g, x) x-in-support-g]
+                                  @f-moved-is-g-fixed-at-image |
+                                    member(apply(g, x), support(f)) -> (not member(apply(g, x), support(g)))
+                                    [using specialize f-moved-is-g-fixed(apply(g, x))]
+                                  @image-not-in-support-f |
+                                    not member(apply(g, x), support(f))
+                                    [using tautology f-moved-is-g-fixed-at-image image-in-support-g]
+                                  @f-membership-at-image |
+                                    member(apply(g, x), support(f)) iff apply(f, apply(g, x)) != apply(g, x)
+                                    [using specialize supportMember(f, apply(g, x))]
+                                  @f-fixes-image |
+                                    apply(f, apply(g, x)) = apply(g, x)
+                                    [using tautology f-membership-at-image image-not-in-support-f]
+                                  @g-x-is-g-x |
+                                    apply(g, x) = apply(g, x)
+                                    [by reflexivity]
+                                  @g-of-f-x-is-g-x |
+                                    apply(g, apply(f, x)) = apply(g, x)
+                                    [by rewrite f-fixes-x g-x-is-g-x]
+                                  @conclusion-when-g-moves |
+                                    apply(f, apply(g, x)) = apply(g, apply(f, x))
+                                    [by rewrite g-of-f-x-is-g-x f-fixes-image]
+                                }
+                              @when-g-fixes-x |
+                                assume not member(x, support(g)) {
+                                  // both fix x, so both composites give x
+                                  @x-not-in-support-g |
+                                    not member(x, support(g))
+                                    [by hypothesis when-g-fixes-x]
+                                  @g-fixes-x |
+                                    apply(g, x) = x
+                                    [using tautology g-membership-at-x x-not-in-support-g]
+                                  @f-of-g-x-is-x |
+                                    apply(f, apply(g, x)) = x
+                                    [by rewrite g-fixes-x f-fixes-x]
+                                  @g-of-f-x-is-x |
+                                    apply(g, apply(f, x)) = x
+                                    [by rewrite f-fixes-x g-fixes-x]
+                                  @conclusion-when-both-fix |
+                                    apply(f, apply(g, x)) = apply(g, apply(f, x))
+                                    [by rewrite g-of-f-x-is-x f-of-g-x-is-x]
+                                }
+                            }
+                        }
+                    }
+                  @f-then-g-is-g-then-f-at-x |
+                    apply(compose(f, g), x) = apply(g, apply(f, x))
+                    [by rewrite composites-agree-at-x f-then-g-at-x]
+                  @conclusion-agree-at-x |
+                    apply(compose(f, g), x) = apply(compose(g, f), x)
+                    [by rewrite g-then-f-at-x f-then-g-is-g-then-f-at-x]
+                }
+              @composites-agree-everywhere |
+                forall x: Element; apply(compose(f, g), x) = apply(compose(g, f), x)
+                [by forall_intro pointwise]
+              @conclusion-composites-equal |
+                compose(f, g) = compose(g, f)
+                [using specialize funcExtensionality(compose(f, g), compose(g, f)) composites-agree-everywhere]
+            }
+          @conclusion-implication |
+            disjointSupports(f, g) -> compose(f, g) = compose(g, f)
+            [by implies_intro given-disjoint]
+        }
+      @discharge-g |
+        forall g: Perm; disjointSupports(f, g) -> compose(f, g) = compose(g, f)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Perm; forall g: Perm; disjointSupports(f, g) -> compose(f, g) = compose(g, f)
+    [by forall_intro generalize-f]
+qed
+
+// -- transpositions ---------------------------------------------------------------
+
+// A TRANSPOSITION exchanges two points and fixes every other: std/set/finite.b4m's
+// `swap`, under its permutation-theory name.
+func transposition = set_finite.swap
+theorem transpositionAtFirst = set_finite.swapAtFirst
+theorem transpositionAtSecond = set_finite.swapAtSecond
+theorem transpositionElsewhere = set_finite.swapElsewhere
+theorem transpositionIsAnInvolutionPointwise = set_finite.swapIsAnInvolution
+
+// (u v)(u v) = identity — the first of Judson's four rewrite identities.
+theorem transpositionIsAnInvolution: forall u: Element; forall v: Element;
+  compose(transposition(u, v), transposition(u, v)) = identityFn
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @pointwise |
+            fix x: Element {
+              @composite-at-x |
+                apply(compose(transposition(u, v), transposition(u, v)), x) = apply(transposition(u, v), apply(transposition(u, v), x))
+                [using specialize composeApply(transposition(u, v), transposition(u, v), x)]
+              @twice-is-x |
+                apply(transposition(u, v), apply(transposition(u, v), x)) = x
+                [using specialize transpositionIsAnInvolutionPointwise(u, v, x)]
+              @composite-is-x |
+                apply(compose(transposition(u, v), transposition(u, v)), x) = x
+                [by rewrite twice-is-x composite-at-x]
+              @identity-at-x |
+                apply(identityFn, x) = x
+                [using specialize identityApply(x)]
+              @x-is-identity-at-x |
+                x = apply(identityFn, x)
+                [by symmetry identity-at-x]
+              @conclusion-agree-at-x |
+                apply(compose(transposition(u, v), transposition(u, v)), x) = apply(identityFn, x)
+                [using chain composite-is-x x-is-identity-at-x]
+            }
+          @agree-everywhere |
+            forall x: Element; apply(compose(transposition(u, v), transposition(u, v)), x) = apply(identityFn, x)
+            [by forall_intro pointwise]
+          @conclusion-involution |
+            compose(transposition(u, v), transposition(u, v)) = identityFn
+            [using specialize funcExtensionality(compose(transposition(u, v), transposition(u, v)), identityFn) agree-everywhere]
+        }
+      @discharge-v |
+        forall v: Element; compose(transposition(u, v), transposition(u, v)) = identityFn
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; compose(transposition(u, v), transposition(u, v)) = identityFn
+    [by forall_intro generalize-u]
+qed
+
+// A transposition is a permutation: it is its own two-sided inverse.
+theorem transpositionIsAPermutation: forall u: Element; forall v: Element;
+  invertible(transposition(u, v))
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @involution |
+            compose(transposition(u, v), transposition(u, v)) = identityFn
+            [using specialize transpositionIsAnInvolution(u, v)]
+          @two-sided |
+            compose(transposition(u, v), transposition(u, v)) = identityFn and compose(transposition(u, v), transposition(u, v)) = identityFn
+            [by and_intro involution involution]
+          @an-inverse-exists |
+            exists g: Fn; compose(g, transposition(u, v)) = identityFn and compose(transposition(u, v), g) = identityFn
+            [by exists_intro(transposition(u, v)) two-sided]
+          @invertible-means |
+            invertible(transposition(u, v)) iff (exists g: Fn; compose(g, transposition(u, v)) = identityFn and compose(transposition(u, v), g) = identityFn)
+            [using specialize invertibleDef(transposition(u, v))]
+          @an-inverse-suffices |
+            (exists g: Fn; compose(g, transposition(u, v)) = identityFn and compose(transposition(u, v), g) = identityFn) -> invertible(transposition(u, v))
+            [by iff_elim_backward invertible-means]
+          @conclusion-invertible |
+            invertible(transposition(u, v))
+            [by modus_ponens an-inverse-suffices an-inverse-exists]
+        }
+      @discharge-v |
+        forall v: Element; invertible(transposition(u, v))
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; invertible(transposition(u, v))
+    [by forall_intro generalize-u]
+qed
+
+// A transposition is its own inverse: t⁻¹ = t⁻¹(t t) = (t⁻¹ t) t = t.
+theorem transpositionIsItsOwnInverse: forall u: Element; forall v: Element;
+  inverse(transposition(u, v)) = transposition(u, v)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @is-a-permutation |
+            invertible(transposition(u, v))
+            [using specialize transpositionIsAPermutation(u, v)]
+          @inverse-undoes-it |
+            compose(inverse(transposition(u, v)), transposition(u, v)) = identityFn
+            [using specialize inverseLeft(transposition(u, v)) is-a-permutation]
+          @involution |
+            compose(transposition(u, v), transposition(u, v)) = identityFn
+            [using specialize transpositionIsAnInvolution(u, v)]
+          @identity-on-the-right |
+            compose(inverse(transposition(u, v)), identityFn) = inverse(transposition(u, v))
+            [using specialize composeIdentityRight(inverse(transposition(u, v)))]
+          @inverse-is-inverse-times-identity |
+            inverse(transposition(u, v)) = compose(inverse(transposition(u, v)), identityFn)
+            [by symmetry identity-on-the-right]
+          @inverse-is-inverse-times-the-square |
+            inverse(transposition(u, v)) = compose(inverse(transposition(u, v)), compose(transposition(u, v), transposition(u, v)))
+            [by rewrite involution inverse-is-inverse-times-identity]
+          @reassociated |
+            compose(compose(inverse(transposition(u, v)), transposition(u, v)), transposition(u, v)) = compose(inverse(transposition(u, v)), compose(transposition(u, v), transposition(u, v)))
+            [using specialize composeAssoc(inverse(transposition(u, v)), transposition(u, v), transposition(u, v))]
+          @reassociated-flipped |
+            compose(inverse(transposition(u, v)), compose(transposition(u, v), transposition(u, v))) = compose(compose(inverse(transposition(u, v)), transposition(u, v)), transposition(u, v))
+            [by symmetry reassociated]
+          @inner-cancels |
+            compose(inverse(transposition(u, v)), compose(transposition(u, v), transposition(u, v))) = compose(identityFn, transposition(u, v))
+            [by rewrite inverse-undoes-it reassociated-flipped]
+          @identity-on-the-left |
+            compose(identityFn, transposition(u, v)) = transposition(u, v)
+            [using specialize composeIdentityLeft(transposition(u, v))]
+          @conclusion-own-inverse |
+            inverse(transposition(u, v)) = transposition(u, v)
+            [using chain inverse-is-inverse-times-the-square inner-cancels identity-on-the-left]
+        }
+      @discharge-v |
+        forall v: Element; inverse(transposition(u, v)) = transposition(u, v)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; inverse(transposition(u, v)) = transposition(u, v)
+    [by forall_intro generalize-u]
+qed
+
+// -- permutations OF A SET ----------------------------------------------------------
+//
+// `permutes(f, a)`: f bijects the set `a` onto itself — a permutation OF `a`, with no
+// constraint on what f does outside `a`. These are the elements of S_a. The four facts
+// below are the closure properties: S_a contains the identity, every transposition of
+// two of its members, and is closed under composition and (for permutations) inverse.
+
+define mapsInto(f, a, b) = set_finite.mapsInto(f, a, b)
+define injectiveOn(f, a) = set_finite.injectiveOn(f, a)
+define surjectiveOnto(f, a, b) = set_finite.surjectiveOnto(f, a, b)
+define bijectsOnto(f, a, b) = set_finite.bijectsOnto(f, a, b)
+define permutes(f, a) = bijectsOnto(f, a, a)
+
+theorem identityMapsInto = set_finite.identityMapsInto
+theorem identityIsInjectiveOn = set_finite.identityIsInjectiveOn
+theorem identityCovers = set_finite.identityCovers
+theorem composeMapsInto = set_finite.composeMapsInto
+theorem composeIsInjectiveOn = set_finite.composeIsInjectiveOn
+theorem composeIsSurjectiveOnto = set_finite.composeIsSurjectiveOnto
+theorem transpositionMapsInto = set_finite.swapMapsInto
+theorem transpositionIsInjectiveOn = set_finite.swapIsInjectiveOn
+theorem transpositionCoversItsImage = set_finite.swapCoversItsImage
+
+// The identity permutes every set.
+theorem identityPermutes: forall a: Set; permutes(identityFn, a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @identity-maps-into |
+        mapsInto(identityFn, a, a)
+        [using specialize identityMapsInto(a)]
+      @identity-is-injective |
+        injectiveOn(identityFn, a)
+        [using specialize identityIsInjectiveOn(a)]
+      @identity-covers |
+        surjectiveOnto(identityFn, a, a)
+        [using specialize identityCovers(a)]
+      @into-and-injective |
+        mapsInto(identityFn, a, a) and injectiveOn(identityFn, a)
+        [by and_intro identity-maps-into identity-is-injective]
+      @conclusion-permutes |
+        permutes(identityFn, a)
+        [by and_intro into-and-injective identity-covers]
+    }
+  @conclusion |
+    forall a: Set; permutes(identityFn, a)
+    [by forall_intro generalize-a]
+qed
+
+// Permutations of a set compose to a permutation of it.
+theorem composePermutes: forall f: Fn; forall g: Fn; forall a: Set;
+  permutes(f, a) -> permutes(g, a) -> permutes(compose(g, f), a)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-a |
+            fix a: Set {
+              @given-f |
+                assume permutes(f, a) {
+                  @given-g |
+                    assume permutes(g, a) {
+                      @f-facts |
+                        mapsInto(f, a, a) and injectiveOn(f, a) and surjectiveOnto(f, a, a)
+                        [by hypothesis given-f]
+                      @g-facts |
+                        mapsInto(g, a, a) and injectiveOn(g, a) and surjectiveOnto(g, a, a)
+                        [by hypothesis given-g]
+                      @f-into-and-injective |
+                        mapsInto(f, a, a) and injectiveOn(f, a)
+                        [by and_elim_left f-facts]
+                      @g-into-and-injective |
+                        mapsInto(g, a, a) and injectiveOn(g, a)
+                        [by and_elim_left g-facts]
+                      @f-into |
+                        mapsInto(f, a, a)
+                        [by and_elim_left f-into-and-injective]
+                      @f-injective |
+                        injectiveOn(f, a)
+                        [by and_elim_right f-into-and-injective]
+                      @f-covers |
+                        surjectiveOnto(f, a, a)
+                        [by and_elim_right f-facts]
+                      @g-into |
+                        mapsInto(g, a, a)
+                        [by and_elim_left g-into-and-injective]
+                      @g-injective |
+                        injectiveOn(g, a)
+                        [by and_elim_right g-into-and-injective]
+                      @g-covers |
+                        surjectiveOnto(g, a, a)
+                        [by and_elim_right g-facts]
+                      @composite-into |
+                        mapsInto(compose(g, f), a, a)
+                        [using specialize composeMapsInto(f, g, a, a, a) f-into g-into]
+                      @composite-injective |
+                        injectiveOn(compose(g, f), a)
+                        [using specialize composeIsInjectiveOn(f, g, a, a) f-into f-injective g-injective]
+                      @composite-covers |
+                        surjectiveOnto(compose(g, f), a, a)
+                        [using specialize composeIsSurjectiveOnto(f, g, a, a, a) f-covers g-covers]
+                      @composite-into-and-injective |
+                        mapsInto(compose(g, f), a, a) and injectiveOn(compose(g, f), a)
+                        [by and_intro composite-into composite-injective]
+                      @conclusion-composite-permutes |
+                        permutes(compose(g, f), a)
+                        [by and_intro composite-into-and-injective composite-covers]
+                    }
+                  @conclusion-g |
+                    permutes(g, a) -> permutes(compose(g, f), a)
+                    [by implies_intro given-g]
+                }
+              @conclusion-f |
+                permutes(f, a) -> permutes(g, a) -> permutes(compose(g, f), a)
+                [by implies_intro given-f]
+            }
+          @discharge-a |
+            forall a: Set; permutes(f, a) -> permutes(g, a) -> permutes(compose(g, f), a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-g |
+        forall g: Fn; forall a: Set; permutes(f, a) -> permutes(g, a) -> permutes(compose(g, f), a)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall a: Set; permutes(f, a) -> permutes(g, a) -> permutes(compose(g, f), a)
+    [by forall_intro generalize-f]
+qed
+
+// A transposition of two members of a set permutes it.
+theorem transpositionPermutes: forall u: Element; forall v: Element; forall a: Set;
+  member(u, a) -> member(v, a) -> permutes(transposition(u, v), a)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-a |
+            fix a: Set {
+              @given-u |
+                assume member(u, a) {
+                  @given-v |
+                    assume member(v, a) {
+                      @u-in-a |
+                        member(u, a)
+                        [by hypothesis given-u]
+                      @v-in-a |
+                        member(v, a)
+                        [by hypothesis given-v]
+                      @maps-into |
+                        mapsInto(transposition(u, v), a, a)
+                        [using specialize transpositionMapsInto(u, v, a) u-in-a v-in-a]
+                      @is-injective |
+                        injectiveOn(transposition(u, v), a)
+                        [using specialize transpositionIsInjectiveOn(u, v, a)]
+                      @covers |
+                        surjectiveOnto(transposition(u, v), a, a)
+                        [using specialize transpositionCoversItsImage(u, v, a, a) maps-into]
+                      @into-and-injective |
+                        mapsInto(transposition(u, v), a, a) and injectiveOn(transposition(u, v), a)
+                        [by and_intro maps-into is-injective]
+                      @conclusion-permutes |
+                        permutes(transposition(u, v), a)
+                        [by and_intro into-and-injective covers]
+                    }
+                  @conclusion-v |
+                    member(v, a) -> permutes(transposition(u, v), a)
+                    [by implies_intro given-v]
+                }
+              @conclusion-u |
+                member(u, a) -> member(v, a) -> permutes(transposition(u, v), a)
+                [by implies_intro given-u]
+            }
+          @discharge-a |
+            forall a: Set; member(u, a) -> member(v, a) -> permutes(transposition(u, v), a)
+            [by forall_intro generalize-a]
+        }
+      @discharge-v |
+        forall v: Element; forall a: Set; member(u, a) -> member(v, a) -> permutes(transposition(u, v), a)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall a: Set; member(u, a) -> member(v, a) -> permutes(transposition(u, v), a)
+    [by forall_intro generalize-u]
+qed
+
+// The inverse undoes a permutation pointwise, and the permutation undoes its inverse.
+theorem inverseUndoesPermutation: forall f: Perm; forall x: Element;
+  apply(inverse(f), apply(f, x)) = x
+proof
+  @generalize-f |
+    fix f: Perm {
+      @f-is-invertible |
+        invertible(f)
+        [by predicate generalize-f]
+      @inverse-then-f-is-identity |
+        compose(inverse(f), f) = identityFn
+        [using specialize inverseLeft(f) f-is-invertible]
+      @generalize-x |
+        fix x: Element {
+          @composite-at-x |
+            apply(compose(inverse(f), f), x) = apply(inverse(f), apply(f, x))
+            [using specialize composeApply(inverse(f), f, x)]
+          @identity-at-x |
+            apply(identityFn, x) = x
+            [using specialize identityApply(x)]
+          @composite-is-x |
+            apply(compose(inverse(f), f), x) = x
+            [by rewrite inverse-then-f-is-identity identity-at-x]
+          @conclusion-undone |
+            apply(inverse(f), apply(f, x)) = x
+            [by rewrite composite-at-x composite-is-x]
+        }
+      @discharge-x |
+        forall x: Element; apply(inverse(f), apply(f, x)) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; apply(inverse(f), apply(f, x)) = x
+    [by forall_intro generalize-f]
+qed
+
+theorem permutationUndoesInverse: forall f: Perm; forall x: Element;
+  apply(f, apply(inverse(f), x)) = x
+proof
+  @generalize-f |
+    fix f: Perm {
+      @f-is-invertible |
+        invertible(f)
+        [by predicate generalize-f]
+      @f-then-inverse-is-identity |
+        compose(f, inverse(f)) = identityFn
+        [using specialize inverseRight(f) f-is-invertible]
+      @generalize-x |
+        fix x: Element {
+          @composite-at-x |
+            apply(compose(f, inverse(f)), x) = apply(f, apply(inverse(f), x))
+            [using specialize composeApply(f, inverse(f), x)]
+          @identity-at-x |
+            apply(identityFn, x) = x
+            [using specialize identityApply(x)]
+          @composite-is-x |
+            apply(compose(f, inverse(f)), x) = x
+            [by rewrite f-then-inverse-is-identity identity-at-x]
+          @conclusion-undone |
+            apply(f, apply(inverse(f), x)) = x
+            [by rewrite composite-at-x composite-is-x]
+        }
+      @discharge-x |
+        forall x: Element; apply(f, apply(inverse(f), x)) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; apply(f, apply(inverse(f), x)) = x
+    [by forall_intro generalize-f]
+qed
+
+// The inverse of a permutation OF `a` permutes `a`: into, because y in a is f(x) for an
+// x in a and f⁻¹(y) = x; injective, because f undoes f⁻¹; onto, because f(x) is a
+// preimage of x.
+theorem inversePermutes: forall f: Perm; forall a: Set; permutes(f, a) -> permutes(inverse(f), a)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-a |
+        fix a: Set {
+          @given-permutes |
+            assume permutes(f, a) {
+              @f-facts |
+                mapsInto(f, a, a) and injectiveOn(f, a) and surjectiveOnto(f, a, a)
+                [by hypothesis given-permutes]
+              @f-into-and-injective |
+                mapsInto(f, a, a) and injectiveOn(f, a)
+                [by and_elim_left f-facts]
+              @f-into |
+                mapsInto(f, a, a)
+                [by and_elim_left f-into-and-injective]
+              @f-covers |
+                surjectiveOnto(f, a, a)
+                [by and_elim_right f-facts]
+
+              // INTO
+              @pointwise-into |
+                fix y: Element {
+                  @given-y-in-a |
+                    assume member(y, a) {
+                      @y-in-a |
+                        member(y, a)
+                        [by hypothesis given-y-in-a]
+                      @preimage-exists |
+                        exists x: Element; member(x, a) and apply(f, x) = y
+                        [using specialize f-covers(y) y-in-a]
+                      @with-preimage-x |
+                        unpack x: Element from preimage-exists {
+                          @preimage-facts |
+                            member(x, a) and apply(f, x) = y
+                            [by hypothesis with-preimage-x]
+                          @x-in-a |
+                            member(x, a)
+                            [by and_elim_left preimage-facts]
+                          @x-maps-to-y |
+                            apply(f, x) = y
+                            [by and_elim_right preimage-facts]
+                          @inverse-undoes-at-x |
+                            apply(inverse(f), apply(f, x)) = x
+                            [using specialize inverseUndoesPermutation(f, x)]
+                          @inverse-at-y-is-x |
+                            apply(inverse(f), y) = x
+                            [by rewrite x-maps-to-y inverse-undoes-at-x]
+                          @conclusion-inverse-image-in-a |
+                            member(apply(inverse(f), y), a)
+                            [by rewrite inverse-at-y-is-x x-in-a]
+                        }
+                      @conclusion-into-at-y |
+                        member(apply(inverse(f), y), a)
+                        [by exists_elim with-preimage-x]
+                    }
+                  @conclusion-into-implication |
+                    member(y, a) -> member(apply(inverse(f), y), a)
+                    [by implies_intro given-y-in-a]
+                }
+              @inverse-into |
+                mapsInto(inverse(f), a, a)
+                [by forall_intro pointwise-into]
+
+              // INJECTIVE
+              @pointwise-injective |
+                fix y: Element {
+                  @inner |
+                    fix y2: Element {
+                      @given-y |
+                        assume member(y, a) {
+                          @given-y2 |
+                            assume member(y2, a) {
+                              @given-images |
+                                assume apply(inverse(f), y) = apply(inverse(f), y2) {
+                                  @images-equal |
+                                    apply(inverse(f), y) = apply(inverse(f), y2)
+                                    [by hypothesis given-images]
+                                  @f-undoes-at-y |
+                                    apply(f, apply(inverse(f), y)) = y
+                                    [using specialize permutationUndoesInverse(f, y)]
+                                  @f-undoes-at-y2 |
+                                    apply(f, apply(inverse(f), y2)) = y2
+                                    [using specialize permutationUndoesInverse(f, y2)]
+                                  @f-of-shared-image-is-y2 |
+                                    apply(f, apply(inverse(f), y)) = y2
+                                    [by rewrite images-equal f-undoes-at-y2]
+                                  @conclusion-equal |
+                                    y = y2
+                                    [by rewrite f-undoes-at-y f-of-shared-image-is-y2]
+                                }
+                              @conclusion-images |
+                                apply(inverse(f), y) = apply(inverse(f), y2) -> y = y2
+                                [by implies_intro given-images]
+                            }
+                          @conclusion-y2 |
+                            member(y2, a) -> apply(inverse(f), y) = apply(inverse(f), y2) -> y = y2
+                            [by implies_intro given-y2]
+                        }
+                      @conclusion-y |
+                        member(y, a) -> member(y2, a) -> apply(inverse(f), y) = apply(inverse(f), y2) -> y = y2
+                        [by implies_intro given-y]
+                    }
+                  @discharge-y2 |
+                    forall y2: Element; member(y, a) -> member(y2, a) -> apply(inverse(f), y) = apply(inverse(f), y2) -> y = y2
+                    [by forall_intro inner]
+                }
+              @inverse-injective |
+                injectiveOn(inverse(f), a)
+                [by forall_intro pointwise-injective]
+
+              // ONTO
+              @pointwise-covers |
+                fix x: Element {
+                  @given-x-in-a |
+                    assume member(x, a) {
+                      @x-in-a |
+                        member(x, a)
+                        [by hypothesis given-x-in-a]
+                      @image-in-a |
+                        member(apply(f, x), a)
+                        [using specialize f-into(x) x-in-a]
+                      @inverse-undoes-at-x |
+                        apply(inverse(f), apply(f, x)) = x
+                        [using specialize inverseUndoesPermutation(f, x)]
+                      @image-is-a-preimage |
+                        member(apply(f, x), a) and apply(inverse(f), apply(f, x)) = x
+                        [by and_intro image-in-a inverse-undoes-at-x]
+                      @conclusion-x-is-covered |
+                        exists y: Element; member(y, a) and apply(inverse(f), y) = x
+                        [by exists_intro(apply(f, x)) image-is-a-preimage]
+                    }
+                  @conclusion-covers-implication |
+                    member(x, a) -> exists y: Element; member(y, a) and apply(inverse(f), y) = x
+                    [by implies_intro given-x-in-a]
+                }
+              @inverse-covers |
+                surjectiveOnto(inverse(f), a, a)
+                [by forall_intro pointwise-covers]
+
+              @inverse-into-and-injective |
+                mapsInto(inverse(f), a, a) and injectiveOn(inverse(f), a)
+                [by and_intro inverse-into inverse-injective]
+              @conclusion-inverse-permutes |
+                permutes(inverse(f), a)
+                [by and_intro inverse-into-and-injective inverse-covers]
+            }
+          @conclusion-implication |
+            permutes(f, a) -> permutes(inverse(f), a)
+            [by implies_intro given-permutes]
+        }
+      @discharge-a |
+        forall a: Set; permutes(f, a) -> permutes(inverse(f), a)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall f: Perm; forall a: Set; permutes(f, a) -> permutes(inverse(f), a)
+    [by forall_intro generalize-f]
+qed
