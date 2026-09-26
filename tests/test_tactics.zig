@@ -216,6 +216,19 @@ pub fn addTests(
     // Exercises the DIRECT-MAPPED-axiom transfer (group.opAssoc, an axiom, discharged
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
     ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.b4m" });
+    // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
+    // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
+    // aliases — the same entities by origin), and transferring top.unitFourth remaps the
+    // BORROWED theorems down a two-hop alias chain (top.unitThrice → mid, whose proof cites
+    // mid.unitTwice → base): each alias binds, under the model, to the transferred copy
+    // keyed on the ORIGIN file, re-proved there. Regression: an alias used to bind to the
+    // universe origin, handing the transferred proof base's untransferred `op(U, U) = U`
+    // against a target-sort claim (found modeling std/group/sequence onto Perm).
+    ctx.okSilent(&.{ "check", "tests/cases/model_alias_borrowed.b4m" });
+    // ... and the overlay's COMPLETENESS condition: a model that maps the symbols but leaves
+    // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
+    // the unmapped axiom stays in source terms and fails to match the relativized claim.
+    ctx.fail(&.{ "check", "tests/cases/model_alias_borrowed_bad.b4m" }, "tests/cases/model_alias_borrowed_base.b4m:9:4: error: Incomplete@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
 
     // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA (elemInduction) is
     // discharged by a local guard-relativized schema (goodInduction); a local schema cites it

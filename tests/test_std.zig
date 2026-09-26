@@ -270,11 +270,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/permutation.b4m" });
 
     // sequences of permutations (std/permutation/sequence.b4m): the group-sequence
-    // postulates restated for permutations (every entry invertible), and the product laws
-    // re-proved rather than transferred — a guarded model of std/group/sequence.b4m onto
-    // Perm is accepted, but its inverse-of-a-product proof cites std/group.b4m's
-    // inverseUnique, and a model materializes only its own source theory's theorems.
-    // What aata/5.1's parity theory runs on.
+    // postulates restated for permutations (every entry invertible), then a GUARDED model
+    // of std/group/sequence.b4m onto Perm transfers the product laws. The transferred
+    // inverse-of-a-product proof cites std/group.b4m's inverseUnique/invProduct through
+    // group_sequence's ALIASES — the overlay-over-the-universe case
+    // (tests/cases/model_alias_borrowed.b4m), on real std theories. What aata/5.1's
+    // parity theory runs on.
     ctx.okSilent(&.{ "check", "std/permutation/sequence.b4m" });
     // ... and the worked examples that unpack its three sequence-building postulates.
     ctx.okSilent(&.{ "check", "std/permutation/sequence-examples.b4m" });

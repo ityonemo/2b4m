@@ -384,7 +384,32 @@ fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Ke
         },
         else => return .not_alias,
     };
-    const origin = (try demandFactTarget(self, task, h, alias.target)) orelse return .handled; // suspended/diagnosed
+    const target = (try demandFactTarget(self, task, h, alias.target)) orelse return .handled; // suspended/diagnosed
+    var origin = target.index;
+    // UNDER A MODEL TRANSFER, an aliased THEOREM binds to its TRANSFERRED copy, keyed on the
+    // ORIGIN file `(model, origin_file).origin_name` — re-proved under the model there. A
+    // model is an overlay over the whole universe, not scoped to one file: the borrowed
+    // theorem's symbols are under the mapping (aliases collapse to the same entities), so its
+    // citation in a transferred proof must be remapped exactly like a same-file one. Binding
+    // to the universe origin here would hand the transferred proof the UNTRANSFERRED statement
+    // (source sort against a target-sort claim). An aliased AXIOM stays on the overlay path:
+    // `applyModel` maps its origin Index to the local discharging fact at the citation.
+    if (task.model != InternPool.Index.none and task.model != .universe and
+        self.interner.keyOf(origin) == .fact and self.interner.keyOf(origin).fact.kind == .theorem)
+    {
+        const tns = try self.interner.namespace(task.model, target.file);
+        const tkey = FactKV.Key{ .namespace = tns, .name = target.name };
+        if (self.facts.lookup(self.io, tkey)) |state| switch (state) {
+            .proven => |ix| origin = ix,
+            .in_flight => |owner| {
+                if (owner != h.self_index) h.suspendOn(owner);
+                return .handled;
+            },
+        } else {
+            h.suspendOn(try h.rackIndexed(try ProveTask.new(self.arena, .{ .file = target.file, .name = target.name, .loc = alias.target.start, .loc_file = task.file, .model = task.model, .parent = task.parent })));
+            return .handled;
+        }
+    }
     try self.facts.publishExisting(self.io, key, origin);
     return .handled;
 }
@@ -405,11 +430,15 @@ fn schemaLocator(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactK
     return .handled;
 }
 
+/// A resolved fact-reference target: the proven origin Index plus WHERE it lives (the
+/// origin file and its name there), which a model transfer needs to key the transferred copy.
+const FactTarget = struct { index: InternPool.Index, file: InternPool.Index, name: InternPool.StrId };
+
 /// Resolve a fact-reference token (possibly `ns.name`-qualified) to its PROVEN fact Index,
 /// demanding the import and/or the origin fact's ProveTask. Returns null if it SUSPENDED (a
 /// blocker was set) or DIAGNOSED. Diagnostics point at the alias's target token in
 /// `task.file`.
-fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: lexer.Token) std.mem.Allocator.Error!?InternPool.Index {
+fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: lexer.Token) std.mem.Allocator.Error!?FactTarget {
     var target_file = task.file;
     var target_ns = try self.interner.namespace(.universe, task.file);
     if (tok.qualifier != InternPool.Index.none) {
@@ -440,7 +469,7 @@ fn demandFactTarget(self: *Context, task: *ProveTask, h: *Engine.Handle, tok: le
     // its own ProveTask proves it. Absent → rack that prover + suspend.
     const origin_key = FactKV.Key{ .namespace = target_ns, .name = tok.name };
     if (self.facts.lookup(self.io, origin_key)) |state| switch (state) {
-        .proven => |ix| return ix,
+        .proven => |ix| return .{ .index = ix, .file = target_file, .name = tok.name },
         .in_flight => |owner| {
             h.suspendOn(owner); // the origin's own prover is running — wait for it
             return null;

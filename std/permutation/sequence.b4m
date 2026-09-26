@@ -3,16 +3,17 @@
 // A product of permutations τ₁ τ₂ ⋯ τ_n is what the parity theory of transpositions
 // reasons about. The sequence sort is declared here with the same postulates as
 // std/group/sequence.b4m states for a group (a fresh sort inherits none of them), with
-// every entry an invertible map, and the group file's product laws are re-proved for
-// permutations. (They are not TRANSFERRED: a model of std/group/sequence.b4m onto `Perm`
-// is accepted, but its inverse-of-a-product proof cites std/group.b4m's `inverseUnique`,
-// and a model materializes only its own source theory's theorems — the group theorem
-// stays over `Grp`, so the transferred step fails to match. Two short inductions cost
-// less than a second model layer.)
+// every entry an invertible map, and then std/group/sequence.b4m is MODELED onto the
+// permutations — a GUARDED model, since `Perm` is `Fn where invertible` — so its product
+// laws transfer. The model block names entities from two theories (group_sequence's and
+// group's): a model is an overlay over the whole universe, and the transferred proofs
+// borrow group theorems (inverseUnique, invProduct) through group_sequence's aliases.
 
 import permutation <<< "std/permutation.b4m"
 import function <<< "std/function.b4m"
 import function_invertible <<< "std/function/invertible.b4m"
+import group <<< "std/group.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
 import peano <<< "std/peano.b4m"
 
 sort Fn = function.Fn
@@ -180,7 +181,10 @@ axiom seqReverse: forall s: Seq; forall n: Nat;
   (forall i: Nat; less_than(i, n) -> at(r, i) = at(s, sub(n, succ(i))))
   and productUpTo(r, n) = revProductUpTo(s, n)
 
-// -- the product laws --------------------------------------------------------------
+// -- two inverse laws over plain maps ---------------------------------------------------
+//
+// Stated over `Fn` with `invertible` as a HYPOTHESIS (not over `Perm`), so a consumer can
+// apply them at a composite term whose invertibility it has in hand — a product, say.
 
 // A left inverse IS the inverse: k = k(h h⁻¹) = (k h) h⁻¹ = h⁻¹.
 theorem leftInverseIsTheInverse: forall h: Fn; forall k: Fn;
@@ -321,94 +325,49 @@ proof
     [by forall_intro generalize-g]
 qed
 
+// -- the model: sequences of permutations ARE group sequences ----------------------------
+//
+// Mapping std/group/sequence.b4m's element sort onto `Perm` makes the model guarded: every
+// mapped func nominates the closure fact that keeps its results invertible (`-|`), the
+// identity its base fact, and the group axioms the group_sequence proofs rest on are
+// discharged by the function library's laws — `group.opAssoc` is named directly, since
+// group_sequence borrows it without aliasing it.
+model PermSeq {
+  group_sequence.Grp: Perm
+  group_sequence.E: identityFn(identityIsAPermutation)
+  group_sequence.op: compose -| composeIsAPermutation
+  group_sequence.inverse: inverse -| inverseIsAPermutation
+  group_sequence.Seq: Seq
+  group_sequence.at: at -| atIsAPermutation
+  group_sequence.productUpTo: productUpTo -| productUpToIsAPermutation
+  group_sequence.revProductUpTo: revProductUpTo -| revProductUpToIsAPermutation
+  group_sequence.productUpToZero <- productUpToZero
+  group_sequence.productUpToSucc <- productUpToSucc
+  group_sequence.revProductZero <- revProductZero
+  group_sequence.revProductSucc <- revProductSucc
+  group_sequence.seqSingleton <- seqSingleton
+  group_sequence.seqConcat <- seqConcat
+  group_sequence.seqReverse <- seqReverse
+  group_sequence.opIdentityLeft <- composeIdentityLeft
+  group.opAssoc <- composeAssoc
+  group.opInverseLeft <- inverseLeft
+}
+
+// -- the product laws, transferred ---------------------------------------------------------
+
 // The identity is its own inverse.
 theorem inverseOfIdentity: inverse(identityFn) = identityFn
 proof
-  @identity-is-a-permutation |
-    invertible(identityFn)
-    [by cite identityIsAPermutation]
-  @identity-undoes-itself |
-    compose(identityFn, identityFn) = identityFn
-    [using specialize composeIdentityLeft(identityFn)]
-  @identity-is-its-own-inverse |
-    identityFn = inverse(identityFn)
-    [using specialize leftInverseIsTheInverse(identityFn, identityFn) identity-is-a-permutation identity-undoes-itself]
   @conclusion |
     inverse(identityFn) = identityFn
-    [by symmetry identity-is-its-own-inverse]
+    [using model(PermSeq) group_sequence.inverseIdentity]
 qed
 
-// (g₀ ⋯ gₙ₋₁)⁻¹ = gₙ₋₁⁻¹ ⋯ g₀⁻¹, by induction on n.
+// (g₀ ⋯ gₙ₋₁)⁻¹ = gₙ₋₁⁻¹ ⋯ g₀⁻¹ for permutations.
 theorem invOfProduct: forall s: Seq; forall n: Nat;
   inverse(productUpTo(s, n)) = revProductUpTo(s, n)
 proof
-  @generalize-s |
-    fix s: Seq {
-      @product-at-zero |
-        productUpTo(s, ZERO) = identityFn
-        [using specialize productUpToZero(s)]
-      @reversed-at-zero |
-        revProductUpTo(s, ZERO) = identityFn
-        [using specialize revProductZero(s)]
-      @inverse-of-identity |
-        inverse(identityFn) = identityFn
-        [by cite inverseOfIdentity]
-      @inverse-of-product-at-zero |
-        inverse(productUpTo(s, ZERO)) = identityFn
-        [by rewrite product-at-zero inverse-of-identity]
-      @reversed-at-zero-flipped |
-        identityFn = revProductUpTo(s, ZERO)
-        [by symmetry reversed-at-zero]
-      @base-case |
-        inverse(productUpTo(s, ZERO)) = revProductUpTo(s, ZERO)
-        [using chain inverse-of-product-at-zero reversed-at-zero-flipped]
-      @induction-step |
-        fix k: Nat {
-          @given-inductive-hypothesis |
-            assume inverse(productUpTo(s, k)) = revProductUpTo(s, k) {
-              @inductive-hypothesis |
-                inverse(productUpTo(s, k)) = revProductUpTo(s, k)
-                [by hypothesis given-inductive-hypothesis]
-              @product-at-successor |
-                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
-                [using specialize productUpToSucc(s, k)]
-              @reversed-at-successor |
-                revProductUpTo(s, succ(k)) = compose(inverse(at(s, k)), revProductUpTo(s, k))
-                [using specialize revProductSucc(s, k)]
-              @product-is-a-permutation |
-                invertible(productUpTo(s, k))
-                [using specialize productUpToIsAPermutation(s, k)]
-              @entry-is-a-permutation |
-                invertible(at(s, k))
-                [using specialize atIsAPermutation(s, k)]
-              @inverse-of-the-composite |
-                inverse(compose(productUpTo(s, k), at(s, k))) = compose(inverse(at(s, k)), inverse(productUpTo(s, k)))
-                [using specialize inverseOfComposite(productUpTo(s, k), at(s, k)) product-is-a-permutation entry-is-a-permutation]
-              @inverse-of-product-at-successor |
-                inverse(productUpTo(s, succ(k))) = compose(inverse(at(s, k)), inverse(productUpTo(s, k)))
-                [by rewrite product-at-successor inverse-of-the-composite]
-              @inductive-hypothesis-applied |
-                inverse(productUpTo(s, succ(k))) = compose(inverse(at(s, k)), revProductUpTo(s, k))
-                [by rewrite inductive-hypothesis inverse-of-product-at-successor]
-              @reversed-at-successor-flipped |
-                compose(inverse(at(s, k)), revProductUpTo(s, k)) = revProductUpTo(s, succ(k))
-                [by symmetry reversed-at-successor]
-              @conclusion-successor |
-                inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
-                [using chain inductive-hypothesis-applied reversed-at-successor-flipped]
-            }
-          @induction-step-at-k |
-            inverse(productUpTo(s, k)) = revProductUpTo(s, k) -> inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
-            [by implies_intro given-inductive-hypothesis]
-        }
-      @induction-step-for-all-k |
-        forall k: Nat; inverse(productUpTo(s, k)) = revProductUpTo(s, k) -> inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
-        [by forall_intro induction-step]
-      @conclusion-for-all-n |
-        forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
-        [using instantiation induction((fun k: Nat => inverse(productUpTo(s, k)) = revProductUpTo(s, k))) base-case induction-step-for-all-k]
-    }
   @conclusion |
     forall s: Seq; forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
-    [by forall_intro generalize-s]
+    [using model(PermSeq) group_sequence.invOfProduct]
 qed
