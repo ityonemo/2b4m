@@ -279,4 +279,11 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/permutation/sequence.b4m" });
     // ... and the worked examples that unpack its three sequence-building postulates.
     ctx.okSilent(&.{ "check", "std/permutation/sequence-examples.b4m" });
+
+    // CYCLE NOTATION (std/permutation/cycle.b4m): (a₀ … a_k) over a list of points, DEFINED
+    // by Judson's factorization (a₀ a_k)∘(a₀ … a_{k-1}) — always consistent, a permutation by
+    // a one-line induction — with the textbook ACTION as theorems under distinctness: fixes
+    // the unlisted, wraps the last to the first, advances the rest. One-cycle = identity,
+    // two-cycle = transposition.
+    ctx.okSilent(&.{ "check", "std/permutation/cycle.b4m" });
 }

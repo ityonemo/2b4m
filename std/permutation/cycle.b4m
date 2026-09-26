@@ -1,0 +1,883 @@
+// std/permutation/cycle.b4m — CYCLE NOTATION: (a₀ a₁ … a_k) as a permutation.
+//
+// A cycle names a permutation by a finite LIST of points: it sends each listed point to the
+// next, the last back to the first, and fixes every point not listed. The list is a `Points`
+// sequence read through `at`; `distinct(s, n)` says its first n entries are pairwise
+// different, which is what makes the description consistent.
+//
+// The cycle is DEFINED by Judson's factorization into transpositions,
+//     (a₀ a₁ … a_k) = (a₀ a_k) ∘ (a₀ a₁ … a_{k-1}),      (a₀) = identity,
+// rather than by clauses on its action: the recursion is consistent for ANY list (it is a
+// composite of transpositions), makes "a cycle is a permutation" a one-line induction, and
+// turns the textbook's description of the action — advance, wrap around, fix the rest —
+// into THEOREMS (proved below, under distinctness). The factorization the book proves as
+// its Proposition is then the definition read off.
+//
+// (The two clauses are axioms rather than a definition block: a block's clause variable
+// takes the first parameter's sort, and a bare constant on a clause's right-hand side is
+// read as a clause variable — see CHAPTER5-PAINPOINTS.)
+
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import element <<< "std/element.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Element = element.Element
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+pred invertible = function.invertible
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+func transposition = permutation.transposition
+theorem transpositionAtFirst = permutation.transpositionAtFirst
+theorem transpositionAtSecond = permutation.transpositionAtSecond
+theorem transpositionElsewhere = permutation.transpositionElsewhere
+theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
+theorem identityIsAPermutation = permutation.identityIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+axiom funcExtensionality = function.funcExtensionality
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom succNotZero = peano.succNotZero
+axiom addZeroLeft = peano.addZeroLeft
+axiom lessThanIntro = peano_order.lessThanIntro
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem notLessThanZero = peano_order.notLessThanZero
+
+// -- lists of points ----------------------------------------------------------------------
+
+// A finite list of points, read by index. (Existence postulates — building a list from a
+// given orbit — arrive with the decomposition theorem that needs them.)
+sort Points
+func at(s: Points, i: Nat) => Element
+
+// the first n entries are pairwise different
+define distinct(s, n) =
+  forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(s, i) = at(s, j) -> i = j
+
+// x is none of the first n entries
+define avoids(x, s, n) = forall i: Nat; less_than(i, n) -> x != at(s, i)
+
+// -- the cycle ----------------------------------------------------------------------------
+
+// (a₀ … a_k), by Judson's factorization; cycle(s, ZERO) is the identity (an empty cycle),
+// cycle(s, succ(ZERO)) = (a₀ a₀) is the identity too (a one-cycle), and cycle(s, succ(succ(ZERO)))
+// is the transposition (a₀ a₁).
+func cycle(s: Points, k: Nat) => Fn
+axiom cycleZero: forall s: Points; cycle(s, ZERO) = identityFn
+axiom cycleSucc: forall s: Points; forall k: Nat;
+  cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+
+// -- arithmetic and list helpers ------------------------------------------------------------
+
+theorem zeroBelowSucc: forall k: Nat; less_than(ZERO, succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @zero-plus-successor |
+        add(ZERO, succ(k)) = succ(k)
+        [using specialize addZeroLeft(succ(k))]
+      @conclusion-below |
+        less_than(ZERO, succ(k))
+        [using specialize lessThanIntro(ZERO, k, succ(k)) zero-plus-successor]
+    }
+  @conclusion |
+    forall k: Nat; less_than(ZERO, succ(k))
+    [by forall_intro generalize-k]
+qed
+
+// Distinctness and avoidance of a longer prefix pass to a shorter one.
+theorem distinctPrefix: forall s: Points; forall n: Nat; distinct(s, succ(n)) -> distinct(s, n)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-n |
+        fix n: Nat {
+          @given-distinct |
+            assume distinct(s, succ(n)) {
+              @distinct-longer |
+                forall i: Nat; forall j: Nat; less_than(i, succ(n)) -> less_than(j, succ(n)) -> at(s, i) = at(s, j) -> i = j
+                [by hypothesis given-distinct]
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @given-i |
+                        assume less_than(i, n) {
+                          @given-j |
+                            assume less_than(j, n) {
+                              @given-equal |
+                                assume at(s, i) = at(s, j) {
+                                  @i-below-n |
+                                    less_than(i, n)
+                                    [by hypothesis given-i]
+                                  @j-below-n |
+                                    less_than(j, n)
+                                    [by hypothesis given-j]
+                                  @entries-equal |
+                                    at(s, i) = at(s, j)
+                                    [by hypothesis given-equal]
+                                  @i-below-succ-n |
+                                    less_than(i, succ(n))
+                                    [using specialize lessThanSuccRight(i, n) i-below-n]
+                                  @j-below-succ-n |
+                                    less_than(j, succ(n))
+                                    [using specialize lessThanSuccRight(j, n) j-below-n]
+                                  @conclusion-same-index |
+                                    i = j
+                                    [using specialize distinct-longer(i, j) i-below-succ-n j-below-succ-n entries-equal]
+                                }
+                              @conclusion-equal |
+                                at(s, i) = at(s, j) -> i = j
+                                [by implies_intro given-equal]
+                            }
+                          @conclusion-j |
+                            less_than(j, n) -> at(s, i) = at(s, j) -> i = j
+                            [by implies_intro given-j]
+                        }
+                      @conclusion-i |
+                        less_than(i, n) -> less_than(j, n) -> at(s, i) = at(s, j) -> i = j
+                        [by implies_intro given-i]
+                    }
+                  @discharge-j |
+                    forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(s, i) = at(s, j) -> i = j
+                    [by forall_intro generalize-j]
+                }
+              @conclusion-distinct-shorter |
+                distinct(s, n)
+                [by forall_intro generalize-i]
+            }
+          @conclusion-implication |
+            distinct(s, succ(n)) -> distinct(s, n)
+            [by implies_intro given-distinct]
+        }
+      @discharge-n |
+        forall n: Nat; distinct(s, succ(n)) -> distinct(s, n)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall s: Points; forall n: Nat; distinct(s, succ(n)) -> distinct(s, n)
+    [by forall_intro generalize-s]
+qed
+
+theorem avoidsPrefix: forall x: Element; forall s: Points; forall n: Nat; avoids(x, s, succ(n)) -> avoids(x, s, n)
+proof
+  @generalize-x |
+    fix x: Element {
+      @generalize-s |
+        fix s: Points {
+          @generalize-n |
+            fix n: Nat {
+              @given-avoids |
+                assume avoids(x, s, succ(n)) {
+                  @avoids-longer |
+                    forall i: Nat; less_than(i, succ(n)) -> x != at(s, i)
+                    [by hypothesis given-avoids]
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-i |
+                        assume less_than(i, n) {
+                          @i-below-n |
+                            less_than(i, n)
+                            [by hypothesis given-i]
+                          @i-below-succ-n |
+                            less_than(i, succ(n))
+                            [using specialize lessThanSuccRight(i, n) i-below-n]
+                          @conclusion-differs |
+                            x != at(s, i)
+                            [using specialize avoids-longer(i) i-below-succ-n]
+                        }
+                      @conclusion-i |
+                        less_than(i, n) -> x != at(s, i)
+                        [by implies_intro given-i]
+                    }
+                  @conclusion-avoids-shorter |
+                    avoids(x, s, n)
+                    [by forall_intro generalize-i]
+                }
+              @conclusion-implication |
+                avoids(x, s, succ(n)) -> avoids(x, s, n)
+                [by implies_intro given-avoids]
+            }
+          @discharge-n |
+            forall n: Nat; avoids(x, s, succ(n)) -> avoids(x, s, n)
+            [by forall_intro generalize-n]
+        }
+      @discharge-s |
+        forall s: Points; forall n: Nat; avoids(x, s, succ(n)) -> avoids(x, s, n)
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall x: Element; forall s: Points; forall n: Nat; avoids(x, s, succ(n)) -> avoids(x, s, n)
+    [by forall_intro generalize-x]
+qed
+
+// Distinct entries at different indices differ.
+theorem distinctEntriesDiffer: forall s: Points; forall n: Nat; forall i: Nat; forall j: Nat;
+  distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-j |
+                fix j: Nat {
+                  @given-distinct |
+                    assume distinct(s, n) {
+                      @given-i |
+                        assume less_than(i, n) {
+                          @given-j |
+                            assume less_than(j, n) {
+                              @given-different |
+                                assume i != j {
+                                  @distinct-entries |
+                                    forall i2: Nat; forall j2: Nat; less_than(i2, n) -> less_than(j2, n) -> at(s, i2) = at(s, j2) -> i2 = j2
+                                    [by hypothesis given-distinct]
+                                  @i-below-n |
+                                    less_than(i, n)
+                                    [by hypothesis given-i]
+                                  @j-below-n |
+                                    less_than(j, n)
+                                    [by hypothesis given-j]
+                                  @indices-differ |
+                                    i != j
+                                    [by hypothesis given-different]
+                                  @suppose-entries-equal |
+                                    assume at(s, i) = at(s, j) {
+                                      @entries-equal |
+                                        at(s, i) = at(s, j)
+                                        [by hypothesis suppose-entries-equal]
+                                      @indices-equal |
+                                        i = j
+                                        [using specialize distinct-entries(i, j) i-below-n j-below-n entries-equal]
+                                    }
+                                  @conclusion-entries-differ |
+                                    at(s, i) != at(s, j)
+                                    [by not_intro suppose-entries-equal indices-equal indices-differ]
+                                }
+                              @conclusion-different |
+                                i != j -> at(s, i) != at(s, j)
+                                [by implies_intro given-different]
+                            }
+                          @conclusion-j |
+                            less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+                            [by implies_intro given-j]
+                        }
+                      @conclusion-i |
+                        less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+                        [by implies_intro given-i]
+                    }
+                  @conclusion-distinct |
+                    distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+                    [by implies_intro given-distinct]
+                }
+              @discharge-j |
+                forall j: Nat; distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+                [by forall_intro generalize-j]
+            }
+          @discharge-i |
+            forall i: Nat; forall j: Nat; distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+            [by forall_intro generalize-i]
+        }
+      @discharge-n |
+        forall n: Nat; forall i: Nat; forall j: Nat; distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall s: Points; forall n: Nat; forall i: Nat; forall j: Nat;
+      distinct(s, n) -> less_than(i, n) -> less_than(j, n) -> i != j -> at(s, i) != at(s, j)
+    [by forall_intro generalize-s]
+qed
+
+// -- a cycle is a permutation ------------------------------------------------------------------
+
+// Induction on the length: the empty cycle is the identity, and each step composes a
+// transposition with a permutation.
+theorem cycleIsAPermutation: forall s: Points; forall k: Nat; invertible(cycle(s, k))
+proof
+  @generalize-s |
+    fix s: Points {
+      @empty-cycle-is-identity |
+        cycle(s, ZERO) = identityFn
+        [using specialize cycleZero(s)]
+      @identity-is-a-permutation |
+        invertible(identityFn)
+        [by cite identityIsAPermutation]
+      @base-case |
+        invertible(cycle(s, ZERO))
+        [by rewrite empty-cycle-is-identity identity-is-a-permutation]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume invertible(cycle(s, k)) {
+              @inductive-hypothesis |
+                invertible(cycle(s, k))
+                [by hypothesis given-inductive-hypothesis]
+              @transposition-is-a-permutation |
+                invertible(transposition(at(s, ZERO), at(s, k)))
+                [using specialize transpositionIsAPermutation(at(s, ZERO), at(s, k))]
+              @composite-is-a-permutation |
+                invertible(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)))
+                [using specialize composeIsAPermutation(transposition(at(s, ZERO), at(s, k)), cycle(s, k)) transposition-is-a-permutation inductive-hypothesis]
+              @longer-cycle-unfolds |
+                cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+                [using specialize cycleSucc(s, k)]
+              @conclusion-longer-is-a-permutation |
+                invertible(cycle(s, succ(k)))
+                [by rewrite longer-cycle-unfolds composite-is-a-permutation]
+            }
+          @induction-step-at-k |
+            invertible(cycle(s, k)) -> invertible(cycle(s, succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; invertible(cycle(s, k)) -> invertible(cycle(s, succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; invertible(cycle(s, k))
+        [using instantiation induction((fun k: Nat => invertible(cycle(s, k)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat; invertible(cycle(s, k))
+    [by forall_intro generalize-s]
+qed
+
+// -- the action: fix the rest, wrap around, advance --------------------------------------------
+
+// A cycle FIXES every point it does not list. Induction on the length: the empty cycle is
+// the identity; a longer cycle is a transposition of two listed points after a shorter cycle,
+// and neither moves an unlisted point.
+theorem cycleFixesTheUnlisted: forall s: Points; forall k: Nat; forall x: Element;
+  avoids(x, s, k) -> apply(cycle(s, k), x) = x
+proof
+  @generalize-s |
+    fix s: Points {
+      // base case
+      @base-case-proof |
+        fix x: Element {
+          @given-avoids-nothing |
+            assume avoids(x, s, ZERO) {
+              @empty-cycle-is-identity |
+                cycle(s, ZERO) = identityFn
+                [using specialize cycleZero(s)]
+              @identity-fixes-x |
+                apply(identityFn, x) = x
+                [using specialize identityApply(x)]
+              @conclusion-base-fixes |
+                apply(cycle(s, ZERO), x) = x
+                [by rewrite empty-cycle-is-identity identity-fixes-x]
+            }
+          @conclusion-base-implication |
+            avoids(x, s, ZERO) -> apply(cycle(s, ZERO), x) = x
+            [by implies_intro given-avoids-nothing]
+        }
+      @base-case |
+        forall x: Element; avoids(x, s, ZERO) -> apply(cycle(s, ZERO), x) = x
+        [by forall_intro base-case-proof]
+
+      // inductive step
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x {
+              @inductive-hypothesis |
+                forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x
+                [by hypothesis given-inductive-hypothesis]
+              @generalize-x |
+                fix x: Element {
+                  @given-avoids |
+                    assume avoids(x, s, succ(k)) {
+                      @avoids-longer |
+                        forall i: Nat; less_than(i, succ(k)) -> x != at(s, i)
+                        [by hypothesis given-avoids]
+                      @avoids-shorter |
+                        avoids(x, s, k)
+                        [using specialize avoidsPrefix(x, s, k) avoids-longer]
+                      @shorter-cycle-fixes-x |
+                        apply(cycle(s, k), x) = x
+                        [using specialize inductive-hypothesis(x) avoids-shorter]
+                      @zero-listed |
+                        less_than(ZERO, succ(k))
+                        [using specialize zeroBelowSucc(k)]
+                      @k-listed |
+                        less_than(k, succ(k))
+                        [using specialize lessThanSelf(k)]
+                      @x-is-not-first |
+                        x != at(s, ZERO)
+                        [using specialize avoids-longer(ZERO) zero-listed]
+                      @x-is-not-last |
+                        x != at(s, k)
+                        [using specialize avoids-longer(k) k-listed]
+                      @transposition-fixes-x |
+                        apply(transposition(at(s, ZERO), at(s, k)), x) = x
+                        [using specialize transpositionElsewhere(at(s, ZERO), at(s, k), x) x-is-not-first x-is-not-last]
+                      @longer-cycle-unfolds |
+                        cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+                        [using specialize cycleSucc(s, k)]
+                      @composite-at-x |
+                        apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), x) = apply(transposition(at(s, ZERO), at(s, k)), apply(cycle(s, k), x))
+                        [using specialize composeApply(transposition(at(s, ZERO), at(s, k)), cycle(s, k), x)]
+                      @composite-is-transposition-at-x |
+                        apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), x) = apply(transposition(at(s, ZERO), at(s, k)), x)
+                        [by rewrite shorter-cycle-fixes-x composite-at-x]
+                      @composite-fixes-x |
+                        apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), x) = x
+                        [using chain composite-is-transposition-at-x transposition-fixes-x]
+                      @conclusion-longer-fixes-x |
+                        apply(cycle(s, succ(k)), x) = x
+                        [by rewrite longer-cycle-unfolds composite-fixes-x]
+                    }
+                  @conclusion-step-implication |
+                    avoids(x, s, succ(k)) -> apply(cycle(s, succ(k)), x) = x
+                    [by implies_intro given-avoids]
+                }
+              @discharge-x |
+                forall x: Element; avoids(x, s, succ(k)) -> apply(cycle(s, succ(k)), x) = x
+                [by forall_intro generalize-x]
+            }
+          @induction-step-at-k |
+            (forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x) -> (forall x: Element; avoids(x, s, succ(k)) -> apply(cycle(s, succ(k)), x) = x)
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; (forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x) -> (forall x: Element; avoids(x, s, succ(k)) -> apply(cycle(s, succ(k)), x) = x)
+        [by forall_intro induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x
+        [using instantiation induction((fun k: Nat => forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x)) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat; forall x: Element; avoids(x, s, k) -> apply(cycle(s, k), x) = x
+    [by forall_intro generalize-s]
+qed
+
+// The last listed point is none of the earlier ones (distinctness), so the shorter cycle
+// fixes it and the transposition (a₀ a_k) sends it to a₀.
+theorem lastEntryAvoidsTheRest: forall s: Points; forall k: Nat;
+  distinct(s, succ(k)) -> avoids(at(s, k), s, k)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-k |
+        fix k: Nat {
+          @given-distinct |
+            assume distinct(s, succ(k)) {
+              @distinct-entries |
+                distinct(s, succ(k))
+                [by hypothesis given-distinct]
+              @k-listed |
+                less_than(k, succ(k))
+                [using specialize lessThanSelf(k)]
+              @generalize-i |
+                fix i: Nat {
+                  @given-i |
+                    assume less_than(i, k) {
+                      @i-below-k |
+                        less_than(i, k)
+                        [by hypothesis given-i]
+                      @i-listed |
+                        less_than(i, succ(k))
+                        [using specialize lessThanSuccRight(i, k) i-below-k]
+                      @suppose-same-index |
+                        assume k = i {
+                          @k-is-i |
+                            k = i
+                            [by hypothesis suppose-same-index]
+                          @k-below-k |
+                            less_than(k, k)
+                            [by rewrite k-is-i i-below-k]
+                        }
+                      @k-not-below-k |
+                        not less_than(k, k)
+                        [using specialize lessThanIrreflexive(k)]
+                      @indices-differ |
+                        k != i
+                        [by not_intro suppose-same-index k-below-k k-not-below-k]
+                      @conclusion-entries-differ |
+                        at(s, k) != at(s, i)
+                        [using specialize distinctEntriesDiffer(s, succ(k), k, i) distinct-entries k-listed i-listed indices-differ]
+                    }
+                  @conclusion-i |
+                    less_than(i, k) -> at(s, k) != at(s, i)
+                    [by implies_intro given-i]
+                }
+              @conclusion-avoids |
+                avoids(at(s, k), s, k)
+                [by forall_intro generalize-i]
+            }
+          @conclusion-implication |
+            distinct(s, succ(k)) -> avoids(at(s, k), s, k)
+            [by implies_intro given-distinct]
+        }
+      @discharge-k |
+        forall k: Nat; distinct(s, succ(k)) -> avoids(at(s, k), s, k)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat; distinct(s, succ(k)) -> avoids(at(s, k), s, k)
+    [by forall_intro generalize-s]
+qed
+
+theorem cycleWrapsAround: forall s: Points; forall k: Nat;
+  distinct(s, succ(k)) -> apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-k |
+        fix k: Nat {
+          @given-distinct |
+            assume distinct(s, succ(k)) {
+              @distinct-entries |
+                distinct(s, succ(k))
+                [by hypothesis given-distinct]
+              @last-avoids-the-rest |
+                avoids(at(s, k), s, k)
+                [using specialize lastEntryAvoidsTheRest(s, k) distinct-entries]
+              @shorter-cycle-fixes-last |
+                apply(cycle(s, k), at(s, k)) = at(s, k)
+                [using specialize cycleFixesTheUnlisted(s, k, at(s, k)) last-avoids-the-rest]
+              @transposition-sends-last-to-first |
+                apply(transposition(at(s, ZERO), at(s, k)), at(s, k)) = at(s, ZERO)
+                [using specialize transpositionAtSecond(at(s, ZERO), at(s, k))]
+              @longer-cycle-unfolds |
+                cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+                [using specialize cycleSucc(s, k)]
+              @composite-at-last |
+                apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), at(s, k)) = apply(transposition(at(s, ZERO), at(s, k)), apply(cycle(s, k), at(s, k)))
+                [using specialize composeApply(transposition(at(s, ZERO), at(s, k)), cycle(s, k), at(s, k))]
+              @composite-is-transposition-at-last |
+                apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), at(s, k)) = apply(transposition(at(s, ZERO), at(s, k)), at(s, k))
+                [by rewrite shorter-cycle-fixes-last composite-at-last]
+              @composite-sends-last-to-first |
+                apply(compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k)), at(s, k)) = at(s, ZERO)
+                [using chain composite-is-transposition-at-last transposition-sends-last-to-first]
+              @conclusion-wraps |
+                apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+                [by rewrite longer-cycle-unfolds composite-sends-last-to-first]
+            }
+          @conclusion-implication |
+            distinct(s, succ(k)) -> apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+            [by implies_intro given-distinct]
+        }
+      @discharge-k |
+        forall k: Nat; distinct(s, succ(k)) -> apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat; distinct(s, succ(k)) -> apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+    [by forall_intro generalize-s]
+qed
+
+// A cycle ADVANCES each listed point but the last to the next. Induction on the length:
+// for a point before the previous last, the shorter cycle already advances it and the new
+// transposition (a₀ a_k) does not touch its image (which is neither a₀ nor a_k, by
+// distinctness); for the previous last, the shorter cycle wraps it to a₀ and (a₀ a_k)
+// carries a₀ on to a_k.
+theorem cycleAdvances: forall s: Points; forall k: Nat;
+  distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+proof
+  @generalize-s |
+    fix s: Points {
+      // base case: no i is below ZERO
+      @base-case-proof |
+        assume distinct(s, succ(ZERO)) {
+          @generalize-i-base |
+            fix i: Nat {
+              @nothing-below-zero |
+                not less_than(i, ZERO)
+                [using specialize notLessThanZero(i)]
+              @vacuous |
+                less_than(i, ZERO) -> apply(cycle(s, succ(ZERO)), at(s, i)) = at(s, succ(i))
+                [using tautology nothing-below-zero]
+            }
+          @conclusion-base-vacuous |
+            forall i: Nat; less_than(i, ZERO) -> apply(cycle(s, succ(ZERO)), at(s, i)) = at(s, succ(i))
+            [by forall_intro generalize-i-base]
+        }
+      @base-case |
+        distinct(s, succ(ZERO)) -> forall i: Nat; less_than(i, ZERO) -> apply(cycle(s, succ(ZERO)), at(s, i)) = at(s, succ(i))
+        [by implies_intro base-case-proof]
+
+      // inductive step
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i)) {
+              @inductive-hypothesis |
+                distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+                [by hypothesis given-inductive-hypothesis]
+              @given-distinct |
+                assume distinct(s, succ(succ(k))) {
+                  @distinct-longer |
+                    distinct(s, succ(succ(k)))
+                    [by hypothesis given-distinct]
+                  @distinct-shorter |
+                    distinct(s, succ(k))
+                    [using specialize distinctPrefix(s, succ(k)) distinct-longer]
+                  @shorter-cycle-advances |
+                    forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+                    [by modus_ponens inductive-hypothesis distinct-shorter]
+                  @longer-cycle-unfolds |
+                    cycle(s, succ(succ(k))) = compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k)))
+                    [using specialize cycleSucc(s, succ(k))]
+                  @zero-listed |
+                    less_than(ZERO, succ(succ(k)))
+                    [using specialize zeroBelowSucc(succ(k))]
+                  @succ-k-listed |
+                    less_than(succ(k), succ(succ(k)))
+                    [using specialize lessThanSelf(succ(k))]
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-i |
+                        assume less_than(i, succ(k)) {
+                          @i-below-succ-k |
+                            less_than(i, succ(k))
+                            [by hypothesis given-i]
+                          @composite-at-i |
+                            apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = apply(transposition(at(s, ZERO), at(s, succ(k))), apply(cycle(s, succ(k)), at(s, i)))
+                            [using specialize composeApply(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k)), at(s, i))]
+                          @i-below-k-or-is-k |
+                            less_than(i, k) or i = k
+                            [using specialize lessThanSuccSplit(i, k) i-below-succ-k]
+                          @composite-advances-i |
+                            apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = at(s, succ(i))
+                            case i-below-k-or-is-k {
+                              @when-before-the-previous-last |
+                                assume less_than(i, k) {
+                                  @i-below-k |
+                                    less_than(i, k)
+                                    [by hypothesis when-before-the-previous-last]
+                                  @shorter-advances-i |
+                                    apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+                                    [using specialize shorter-cycle-advances(i) i-below-k]
+                                  @composite-is-transposition-at-next |
+                                    apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = apply(transposition(at(s, ZERO), at(s, succ(k))), at(s, succ(i)))
+                                    [by rewrite shorter-advances-i composite-at-i]
+                                  // the next point is neither a₀ nor a_{k+1}
+                                  @succ-i-below-succ-k |
+                                    less_than(succ(i), succ(k))
+                                    [using specialize peano_order.succPreservesOrder(i, k) i-below-k]
+                                  @succ-i-listed |
+                                    less_than(succ(i), succ(succ(k)))
+                                    [using specialize lessThanSuccRight(succ(i), succ(k)) succ-i-below-succ-k]
+                                  @succ-i-is-not-zero |
+                                    succ(i) != ZERO
+                                    [using specialize succNotZero(i)]
+                                  @next-is-not-first |
+                                    at(s, succ(i)) != at(s, ZERO)
+                                    [using specialize distinctEntriesDiffer(s, succ(succ(k)), succ(i), ZERO) distinct-longer succ-i-listed zero-listed succ-i-is-not-zero]
+                                  @succ-i-not-below-itself |
+                                    not less_than(succ(i), succ(i))
+                                    [using specialize lessThanIrreflexive(succ(i))]
+                                  @suppose-next-index-is-last |
+                                    assume succ(i) = succ(k) {
+                                      @next-index-is-last |
+                                        succ(i) = succ(k)
+                                        [by hypothesis suppose-next-index-is-last]
+                                      @succ-i-below-itself |
+                                        less_than(succ(i), succ(i))
+                                        [by rewrite next-index-is-last succ-i-below-succ-k]
+                                    }
+                                  @next-index-is-not-last |
+                                    succ(i) != succ(k)
+                                    [by not_intro suppose-next-index-is-last succ-i-below-itself succ-i-not-below-itself]
+                                  @next-is-not-last |
+                                    at(s, succ(i)) != at(s, succ(k))
+                                    [using specialize distinctEntriesDiffer(s, succ(succ(k)), succ(i), succ(k)) distinct-longer succ-i-listed succ-k-listed next-index-is-not-last]
+                                  @transposition-fixes-next |
+                                    apply(transposition(at(s, ZERO), at(s, succ(k))), at(s, succ(i))) = at(s, succ(i))
+                                    [using specialize transpositionElsewhere(at(s, ZERO), at(s, succ(k)), at(s, succ(i))) next-is-not-first next-is-not-last]
+                                  @conclusion-before-last |
+                                    apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = at(s, succ(i))
+                                    [using chain composite-is-transposition-at-next transposition-fixes-next]
+                                }
+                              @when-the-previous-last |
+                                assume i = k {
+                                  @i-is-k |
+                                    i = k
+                                    [by hypothesis when-the-previous-last]
+                                  @shorter-wraps-last |
+                                    apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+                                    [using specialize cycleWrapsAround(s, k) distinct-shorter]
+                                  @shorter-wraps-i |
+                                    apply(cycle(s, succ(k)), at(s, i)) = at(s, ZERO)
+                                    [by rewrite i-is-k shorter-wraps-last]
+                                  @composite-is-transposition-at-first |
+                                    apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = apply(transposition(at(s, ZERO), at(s, succ(k))), at(s, ZERO))
+                                    [by rewrite shorter-wraps-i composite-at-i]
+                                  @transposition-sends-first-to-last |
+                                    apply(transposition(at(s, ZERO), at(s, succ(k))), at(s, ZERO)) = at(s, succ(k))
+                                    [using specialize transpositionAtFirst(at(s, ZERO), at(s, succ(k)))]
+                                  @composite-sends-i-to-last |
+                                    apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = at(s, succ(k))
+                                    [using chain composite-is-transposition-at-first transposition-sends-first-to-last]
+                                  @conclusion-at-previous-last |
+                                    apply(compose(transposition(at(s, ZERO), at(s, succ(k))), cycle(s, succ(k))), at(s, i)) = at(s, succ(i))
+                                    [by rewrite i-is-k composite-sends-i-to-last]
+                                }
+                            }
+                          @conclusion-longer-advances-i |
+                            apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i))
+                            [by rewrite longer-cycle-unfolds composite-advances-i]
+                        }
+                      @conclusion-i |
+                        less_than(i, succ(k)) -> apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i))
+                        [by implies_intro given-i]
+                    }
+                  @conclusion-longer-advances |
+                    forall i: Nat; less_than(i, succ(k)) -> apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i))
+                    [by forall_intro generalize-i]
+                }
+              @conclusion-step-implication |
+                distinct(s, succ(succ(k))) -> forall i: Nat; less_than(i, succ(k)) -> apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i))
+                [by implies_intro given-distinct]
+            }
+          @induction-step-at-k |
+            (distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))) -> (distinct(s, succ(succ(k))) -> forall i: Nat; less_than(i, succ(k)) -> apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; (distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))) -> (distinct(s, succ(succ(k))) -> forall i: Nat; less_than(i, succ(k)) -> apply(cycle(s, succ(succ(k))), at(s, i)) = at(s, succ(i)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+        [using instantiation induction((fun k: Nat => distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat;
+      distinct(s, succ(k)) -> forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+    [by forall_intro generalize-s]
+qed
+
+// -- the shortest cycles ------------------------------------------------------------------
+
+// (u u) is the identity: both clauses of the swap send u to u, and everything else stays.
+theorem transpositionOfAPointWithItself: forall u: Element; transposition(u, u) = identityFn
+proof
+  @generalize-u |
+    fix u: Element {
+      @pointwise |
+        fix x: Element {
+          @identity-at-x |
+            apply(identityFn, x) = x
+            [using specialize identityApply(x)]
+          @x-is-u-or-not |
+            x = u or x != u
+            [using tautology]
+          @swap-fixes-x |
+            apply(transposition(u, u), x) = x
+            case x-is-u-or-not {
+              @when-at-u |
+                assume x = u {
+                  @x-is-u |
+                    x = u
+                    [by hypothesis when-at-u]
+                  @u-goes-to-u |
+                    apply(transposition(u, u), u) = u
+                    [using specialize transpositionAtFirst(u, u)]
+                  @conclusion-at-u |
+                    apply(transposition(u, u), x) = x
+                    [by rewrite x-is-u u-goes-to-u]
+                }
+              @when-elsewhere |
+                assume x != u {
+                  @x-is-not-u |
+                    x != u
+                    [by hypothesis when-elsewhere]
+                  @conclusion-elsewhere |
+                    apply(transposition(u, u), x) = x
+                    [using specialize transpositionElsewhere(u, u, x) x-is-not-u x-is-not-u]
+                }
+            }
+          @x-is-identity-at-x |
+            x = apply(identityFn, x)
+            [by symmetry identity-at-x]
+          @conclusion-agree-at-x |
+            apply(transposition(u, u), x) = apply(identityFn, x)
+            [using chain swap-fixes-x x-is-identity-at-x]
+        }
+      @agree-everywhere |
+        forall x: Element; apply(transposition(u, u), x) = apply(identityFn, x)
+        [by forall_intro pointwise]
+      @conclusion-is-identity |
+        transposition(u, u) = identityFn
+        [using specialize funcExtensionality(transposition(u, u), identityFn) agree-everywhere]
+    }
+  @conclusion |
+    forall u: Element; transposition(u, u) = identityFn
+    [by forall_intro generalize-u]
+qed
+
+// A one-cycle is the identity, and a two-cycle (a₀ a₁) is the transposition — cycle
+// notation agrees with Judson's at the shortest lengths.
+theorem oneCycleIsTheIdentity: forall s: Points; cycle(s, succ(ZERO)) = identityFn
+proof
+  @generalize-s |
+    fix s: Points {
+      @one-cycle-unfolds |
+        cycle(s, succ(ZERO)) = compose(transposition(at(s, ZERO), at(s, ZERO)), cycle(s, ZERO))
+        [using specialize cycleSucc(s, ZERO)]
+      @empty-cycle-is-identity |
+        cycle(s, ZERO) = identityFn
+        [using specialize cycleZero(s)]
+      @self-swap-is-identity |
+        transposition(at(s, ZERO), at(s, ZERO)) = identityFn
+        [using specialize transpositionOfAPointWithItself(at(s, ZERO))]
+      @one-cycle-is-a-composite-with-identity |
+        cycle(s, succ(ZERO)) = compose(transposition(at(s, ZERO), at(s, ZERO)), identityFn)
+        [by rewrite empty-cycle-is-identity one-cycle-unfolds]
+      @identity-drops |
+        compose(transposition(at(s, ZERO), at(s, ZERO)), identityFn) = transposition(at(s, ZERO), at(s, ZERO))
+        [using specialize composeIdentityRight(transposition(at(s, ZERO), at(s, ZERO)))]
+      @one-cycle-is-the-self-swap |
+        cycle(s, succ(ZERO)) = transposition(at(s, ZERO), at(s, ZERO))
+        [using chain one-cycle-is-a-composite-with-identity identity-drops]
+      @conclusion-identity |
+        cycle(s, succ(ZERO)) = identityFn
+        [using chain one-cycle-is-the-self-swap self-swap-is-identity]
+    }
+  @conclusion |
+    forall s: Points; cycle(s, succ(ZERO)) = identityFn
+    [by forall_intro generalize-s]
+qed
+
+theorem twoCycleIsATransposition: forall s: Points;
+  cycle(s, succ(succ(ZERO))) = transposition(at(s, ZERO), at(s, succ(ZERO)))
+proof
+  @generalize-s |
+    fix s: Points {
+      @two-cycle-unfolds |
+        cycle(s, succ(succ(ZERO))) = compose(transposition(at(s, ZERO), at(s, succ(ZERO))), cycle(s, succ(ZERO)))
+        [using specialize cycleSucc(s, succ(ZERO))]
+      @one-cycle-is-identity |
+        cycle(s, succ(ZERO)) = identityFn
+        [using specialize oneCycleIsTheIdentity(s)]
+      @two-cycle-is-a-composite-with-identity |
+        cycle(s, succ(succ(ZERO))) = compose(transposition(at(s, ZERO), at(s, succ(ZERO))), identityFn)
+        [by rewrite one-cycle-is-identity two-cycle-unfolds]
+      @identity-drops |
+        compose(transposition(at(s, ZERO), at(s, succ(ZERO))), identityFn) = transposition(at(s, ZERO), at(s, succ(ZERO)))
+        [using specialize composeIdentityRight(transposition(at(s, ZERO), at(s, succ(ZERO))))]
+      @conclusion-transposition |
+        cycle(s, succ(succ(ZERO))) = transposition(at(s, ZERO), at(s, succ(ZERO)))
+        [using chain two-cycle-is-a-composite-with-identity identity-drops]
+    }
+  @conclusion |
+    forall s: Points; cycle(s, succ(succ(ZERO))) = transposition(at(s, ZERO), at(s, succ(ZERO)))
+    [by forall_intro generalize-s]
+qed
