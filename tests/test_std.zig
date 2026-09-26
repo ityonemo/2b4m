@@ -304,4 +304,12 @@ pub fn addTests(
     // orbit, the collision cancelled through injectivity of iterates to a RETURN
     // f^(succ p)(x) = x, and a LEAST period by well-ordering.
     ctx.okSilent(&.{ "check", "std/permutation/period.b4m" });
+
+    // THE CYCLE OF AN ORBIT (std/permutation/orbit-cycle.b4m): Points now has singleton and
+    // prepend postulates; the list of iterates x, f(x), …, f^n(x) exists (induction with the
+    // start quantified inside), every iterate is an early one once f^(p+1)(x) = x, the first
+    // p+1 are distinct when p is the LEAST period (a collision would cancel to an earlier
+    // return), and the cycle on that list agrees with f on the orbit (advance = next iterate;
+    // wrap = the return) and fixes off it. orbitIsACycle packages the one-orbit decomposition.
+    ctx.okSilent(&.{ "check", "std/permutation/orbit-cycle.b4m" });
 }
