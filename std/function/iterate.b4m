@@ -1,0 +1,194 @@
+// std/function/iterate.b4m — ITERATES of a map: f applied n times to a point.
+//
+// iterate(f, n, x) = f(f(…f(x)…)), n times. The sequence x, f(x), f(f(x)), … is what an
+// ORBIT is made of, and what a permutation's cycle structure reads off; the two laws here are
+// the ones every argument about orbits leans on — the successor can be applied first or
+// last, and iterating m+n times is iterating n times then m.
+//
+// (The two clauses are axioms rather than a definition block: a block's clause variable
+// takes the first parameter's sort — see CHAPTER5-PAINPOINTS.)
+
+import function <<< "std/function.b4m"
+import element <<< "std/element.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Element = element.Element
+sort Fn = function.Fn
+func apply = function.apply
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+axiom induction = peano.induction
+axiom addZeroLeft = peano.addZeroLeft
+axiom addSuccLeft = peano.addSuccLeft
+
+func iterate(f: Fn, n: Nat, x: Element) => Element
+axiom iterateZero: forall f: Fn; forall x: Element; iterate(f, ZERO, x) = x
+axiom iterateSucc: forall f: Fn; forall n: Nat; forall x: Element;
+  iterate(f, succ(n), x) = apply(f, iterate(f, n, x))
+
+// One iterate is one application.
+theorem iterateOnce: forall f: Fn; forall x: Element; iterate(f, succ(ZERO), x) = apply(f, x)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @one-unfolds |
+            iterate(f, succ(ZERO), x) = apply(f, iterate(f, ZERO, x))
+            [using specialize iterateSucc(f, ZERO, x)]
+          @zero-is-the-point |
+            iterate(f, ZERO, x) = x
+            [using specialize iterateZero(f, x)]
+          @conclusion-once |
+            iterate(f, succ(ZERO), x) = apply(f, x)
+            [by rewrite zero-is-the-point one-unfolds]
+        }
+      @discharge-x |
+        forall x: Element; iterate(f, succ(ZERO), x) = apply(f, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; iterate(f, succ(ZERO), x) = apply(f, x)
+    [by forall_intro generalize-f]
+qed
+
+// The successor can be applied FIRST as well as last: f^(n+1)(x) = f^n(f(x)). Induction on n.
+theorem iterateSuccInside: forall f: Fn; forall x: Element; forall n: Nat;
+  iterate(f, succ(n), x) = iterate(f, n, apply(f, x))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @one-is-the-application |
+            iterate(f, succ(ZERO), x) = apply(f, x)
+            [using specialize iterateOnce(f, x)]
+          @zero-inside-is-the-application |
+            iterate(f, ZERO, apply(f, x)) = apply(f, x)
+            [using specialize iterateZero(f, apply(f, x))]
+          @application-is-zero-inside |
+            apply(f, x) = iterate(f, ZERO, apply(f, x))
+            [by symmetry zero-inside-is-the-application]
+          @base-case |
+            iterate(f, succ(ZERO), x) = iterate(f, ZERO, apply(f, x))
+            [using chain one-is-the-application application-is-zero-inside]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume iterate(f, succ(k), x) = iterate(f, k, apply(f, x)) {
+                  @inductive-hypothesis |
+                    iterate(f, succ(k), x) = iterate(f, k, apply(f, x))
+                    [by hypothesis given-inductive-hypothesis]
+                  @outer-unfolds |
+                    iterate(f, succ(succ(k)), x) = apply(f, iterate(f, succ(k), x))
+                    [using specialize iterateSucc(f, succ(k), x)]
+                  @outer-through-hypothesis |
+                    iterate(f, succ(succ(k)), x) = apply(f, iterate(f, k, apply(f, x)))
+                    [by rewrite inductive-hypothesis outer-unfolds]
+                  @inner-unfolds |
+                    iterate(f, succ(k), apply(f, x)) = apply(f, iterate(f, k, apply(f, x)))
+                    [using specialize iterateSucc(f, k, apply(f, x))]
+                  @inner-unfolds-flipped |
+                    apply(f, iterate(f, k, apply(f, x))) = iterate(f, succ(k), apply(f, x))
+                    [by symmetry inner-unfolds]
+                  @conclusion-successor |
+                    iterate(f, succ(succ(k)), x) = iterate(f, succ(k), apply(f, x))
+                    [using chain outer-through-hypothesis inner-unfolds-flipped]
+                }
+              @induction-step-at-k |
+                iterate(f, succ(k), x) = iterate(f, k, apply(f, x)) -> iterate(f, succ(succ(k)), x) = iterate(f, succ(k), apply(f, x))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; iterate(f, succ(k), x) = iterate(f, k, apply(f, x)) -> iterate(f, succ(succ(k)), x) = iterate(f, succ(k), apply(f, x))
+            [by forall_intro induction-step]
+          @conclusion-for-all-n |
+            forall n: Nat; iterate(f, succ(n), x) = iterate(f, n, apply(f, x))
+            [using instantiation induction((fun k: Nat => iterate(f, succ(k), x) = iterate(f, k, apply(f, x)))) base-case induction-step-for-all-k]
+        }
+      @discharge-x |
+        forall x: Element; forall n: Nat; iterate(f, succ(n), x) = iterate(f, n, apply(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall n: Nat; iterate(f, succ(n), x) = iterate(f, n, apply(f, x))
+    [by forall_intro generalize-f]
+qed
+
+// Iterating m+n times is iterating n times, then m: f^(m+n)(x) = f^m(f^n(x)). Induction on m.
+theorem iterateAdd: forall f: Fn; forall x: Element; forall n: Nat; forall m: Nat;
+  iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @generalize-n |
+            fix n: Nat {
+              @zero-plus-n |
+                add(ZERO, n) = n
+                [using specialize addZeroLeft(n)]
+              @zero-iterates-of-the-n-th |
+                iterate(f, ZERO, iterate(f, n, x)) = iterate(f, n, x)
+                [using specialize iterateZero(f, iterate(f, n, x))]
+              @n-th-is-zero-iterates-of-it |
+                iterate(f, n, x) = iterate(f, ZERO, iterate(f, n, x))
+                [by symmetry zero-iterates-of-the-n-th]
+              @base-case |
+                iterate(f, add(ZERO, n), x) = iterate(f, ZERO, iterate(f, n, x))
+                [by rewrite zero-plus-n n-th-is-zero-iterates-of-it]
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume iterate(f, add(k, n), x) = iterate(f, k, iterate(f, n, x)) {
+                      @inductive-hypothesis |
+                        iterate(f, add(k, n), x) = iterate(f, k, iterate(f, n, x))
+                        [by hypothesis given-inductive-hypothesis]
+                      @sum-steps |
+                        add(succ(k), n) = succ(add(k, n))
+                        [using specialize addSuccLeft(k, n)]
+                      @sum-iterate-unfolds |
+                        iterate(f, succ(add(k, n)), x) = apply(f, iterate(f, add(k, n), x))
+                        [using specialize iterateSucc(f, add(k, n), x)]
+                      @sum-iterate-through-hypothesis |
+                        iterate(f, succ(add(k, n)), x) = apply(f, iterate(f, k, iterate(f, n, x)))
+                        [by rewrite inductive-hypothesis sum-iterate-unfolds]
+                      @outer-unfolds |
+                        iterate(f, succ(k), iterate(f, n, x)) = apply(f, iterate(f, k, iterate(f, n, x)))
+                        [using specialize iterateSucc(f, k, iterate(f, n, x))]
+                      @outer-unfolds-flipped |
+                        apply(f, iterate(f, k, iterate(f, n, x))) = iterate(f, succ(k), iterate(f, n, x))
+                        [by symmetry outer-unfolds]
+                      @at-the-successor-sum |
+                        iterate(f, succ(add(k, n)), x) = iterate(f, succ(k), iterate(f, n, x))
+                        [using chain sum-iterate-through-hypothesis outer-unfolds-flipped]
+                      @conclusion-successor |
+                        iterate(f, add(succ(k), n), x) = iterate(f, succ(k), iterate(f, n, x))
+                        [by rewrite sum-steps at-the-successor-sum]
+                    }
+                  @induction-step-at-k |
+                    iterate(f, add(k, n), x) = iterate(f, k, iterate(f, n, x)) -> iterate(f, add(succ(k), n), x) = iterate(f, succ(k), iterate(f, n, x))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat; iterate(f, add(k, n), x) = iterate(f, k, iterate(f, n, x)) -> iterate(f, add(succ(k), n), x) = iterate(f, succ(k), iterate(f, n, x))
+                [by forall_intro induction-step]
+              @conclusion-for-all-m |
+                forall m: Nat; iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+                [using instantiation induction((fun k: Nat => iterate(f, add(k, n), x) = iterate(f, k, iterate(f, n, x)))) base-case induction-step-for-all-k]
+            }
+          @discharge-n |
+            forall n: Nat; forall m: Nat; iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+            [by forall_intro generalize-n]
+        }
+      @discharge-x |
+        forall x: Element; forall n: Nat; forall m: Nat; iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall n: Nat; forall m: Nat; iterate(f, add(m, n), x) = iterate(f, m, iterate(f, n, x))
+    [by forall_intro generalize-f]
+qed

@@ -1,0 +1,381 @@
+// std/permutation/orbit.b4m — the ORBIT of a point under a permutation.
+//
+// The orbit of x under f is {x, f(x), f(f(x)), …}: the set of iterates. It is the raw
+// material of cycle structure — a cycle IS an orbit read in order — and the first fact
+// about it is finiteness: every iterate is either x itself or a point f moves, so the orbit
+// sits inside support(f) ∪ {x}, and is finite when the support is.
+
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_iterate <<< "std/function/iterate.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+func union = set.union
+func singleton = set.singleton
+theorem unionSingletonMember = set.unionSingletonMember
+theorem unionWithAMemberIsItself = set.unionWithAMemberIsItself
+define subset(a, b) = set.subset(a, b)
+
+sort Fn = function.Fn
+func apply = function.apply
+sort Perm = permutation.Perm
+func support = permutation.support
+axiom supportMember = permutation.supportMember
+theorem permutationPreservesItsSupport = permutation.permutationPreservesItsSupport
+func iterate = function_iterate.iterate
+axiom iterateZero = function_iterate.iterateZero
+axiom iterateSucc = function_iterate.iterateSucc
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+axiom induction = peano.induction
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define isFinite(a) = set_finite.isFinite(a)
+theorem subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+theorem addingAnElementRaisesTheSize = set_finite.addingAnElementRaisesTheSize
+
+// -- the orbit ----------------------------------------------------------------------------
+
+// A set given by comprehension, like `support`: y is in the orbit of x when it is some
+// iterate of x.
+func orbit(f: Fn, x: Element) => Set
+axiom orbitMember: forall f: Fn; forall x: Element; forall y: Element;
+  member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+
+// A point is in its own orbit: the zeroth iterate.
+theorem pointIsInItsOrbit: forall f: Fn; forall x: Element; member(x, orbit(f, x))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @zeroth-iterate-is-the-point |
+            iterate(f, ZERO, x) = x
+            [using specialize iterateZero(f, x)]
+          @point-is-the-zeroth-iterate |
+            x = iterate(f, ZERO, x)
+            [by symmetry zeroth-iterate-is-the-point]
+          @point-is-an-iterate |
+            exists n: Nat; x = iterate(f, n, x)
+            [by exists_intro(ZERO) point-is-the-zeroth-iterate]
+          @membership |
+            member(x, orbit(f, x)) iff (exists n: Nat; x = iterate(f, n, x))
+            [using specialize orbitMember(f, x, x)]
+          @conclusion-in-orbit |
+            member(x, orbit(f, x))
+            [using tautology membership point-is-an-iterate]
+        }
+      @discharge-x |
+        forall x: Element; member(x, orbit(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; member(x, orbit(f, x))
+    [by forall_intro generalize-f]
+qed
+
+// The orbit is closed under the map: the image of the n-th iterate is the (n+1)-th.
+theorem orbitIsClosedUnderTheMap: forall f: Fn; forall x: Element; forall y: Element;
+  member(y, orbit(f, x)) -> member(apply(f, y), orbit(f, x))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @generalize-y |
+            fix y: Element {
+              @given-in-orbit |
+                assume member(y, orbit(f, x)) {
+                  @y-in-orbit |
+                    member(y, orbit(f, x))
+                    [by hypothesis given-in-orbit]
+                  @y-membership |
+                    member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+                    [using specialize orbitMember(f, x, y)]
+                  @y-is-an-iterate |
+                    exists n: Nat; y = iterate(f, n, x)
+                    [using tautology y-membership y-in-orbit]
+                  @with-index-n |
+                    unpack n: Nat from y-is-an-iterate {
+                      @y-is-the-n-th |
+                        y = iterate(f, n, x)
+                        [by hypothesis with-index-n]
+                      @next-iterate-unfolds |
+                        iterate(f, succ(n), x) = apply(f, iterate(f, n, x))
+                        [using specialize iterateSucc(f, n, x)]
+                      @next-iterate-is-the-image |
+                        iterate(f, succ(n), x) = apply(f, y)
+                        [by rewrite y-is-the-n-th next-iterate-unfolds]
+                      @image-is-the-next-iterate |
+                        apply(f, y) = iterate(f, succ(n), x)
+                        [by symmetry next-iterate-is-the-image]
+                      @conclusion-image-is-an-iterate |
+                        exists n2: Nat; apply(f, y) = iterate(f, n2, x)
+                        [by exists_intro(succ(n)) image-is-the-next-iterate]
+                    }
+                  @image-is-an-iterate |
+                    exists n2: Nat; apply(f, y) = iterate(f, n2, x)
+                    [by exists_elim with-index-n]
+                  @image-membership |
+                    member(apply(f, y), orbit(f, x)) iff (exists n2: Nat; apply(f, y) = iterate(f, n2, x))
+                    [using specialize orbitMember(f, x, apply(f, y))]
+                  @conclusion-image-in-orbit |
+                    member(apply(f, y), orbit(f, x))
+                    [using tautology image-membership image-is-an-iterate]
+                }
+              @conclusion-implication |
+                member(y, orbit(f, x)) -> member(apply(f, y), orbit(f, x))
+                [by implies_intro given-in-orbit]
+            }
+          @discharge-y |
+            forall y: Element; member(y, orbit(f, x)) -> member(apply(f, y), orbit(f, x))
+            [by forall_intro generalize-y]
+        }
+      @discharge-x |
+        forall x: Element; forall y: Element; member(y, orbit(f, x)) -> member(apply(f, y), orbit(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x: Element; forall y: Element; member(y, orbit(f, x)) -> member(apply(f, y), orbit(f, x))
+    [by forall_intro generalize-f]
+qed
+
+// Every iterate of x under a permutation is either x or a point the permutation moves.
+// Induction on the iterate: if the n-th is in the support, so is its image (the support is
+// preserved); if it is not, the map fixes it and the (n+1)-th IS the n-th.
+theorem orbitLiesInSupportOrPoint: forall f: Perm; forall x: Element; forall y: Element;
+  member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @zeroth-iterate-is-the-point |
+            iterate(f, ZERO, x) = x
+            [using specialize iterateZero(f, x)]
+          @x-is-x |
+            x = x
+            [by reflexivity]
+          @point-membership |
+            member(x, union(support(f), singleton(x))) iff (member(x, support(f)) or x = x)
+            [using specialize unionSingletonMember(support(f), x, x)]
+          @point-is-in |
+            member(x, union(support(f), singleton(x)))
+            [using tautology point-membership x-is-x]
+          @base-case |
+            member(iterate(f, ZERO, x), union(support(f), singleton(x)))
+            [by rewrite zeroth-iterate-is-the-point point-is-in]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume member(iterate(f, k, x), union(support(f), singleton(x))) {
+                  @inductive-hypothesis |
+                    member(iterate(f, k, x), union(support(f), singleton(x)))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-iterate-unfolds |
+                    iterate(f, succ(k), x) = apply(f, iterate(f, k, x))
+                    [using specialize iterateSucc(f, k, x)]
+                  @k-th-moved-or-not |
+                    member(iterate(f, k, x), support(f)) or (not member(iterate(f, k, x), support(f)))
+                    [using tautology]
+                  @image-is-in |
+                    member(apply(f, iterate(f, k, x)), union(support(f), singleton(x)))
+                    case k-th-moved-or-not {
+                      @when-moved |
+                        assume member(iterate(f, k, x), support(f)) {
+                          @k-th-in-support |
+                            member(iterate(f, k, x), support(f))
+                            [by hypothesis when-moved]
+                          @image-in-support |
+                            member(apply(f, iterate(f, k, x)), support(f))
+                            [using specialize permutationPreservesItsSupport(f, iterate(f, k, x)) k-th-in-support]
+                          @image-membership |
+                            member(apply(f, iterate(f, k, x)), union(support(f), singleton(x))) iff (member(apply(f, iterate(f, k, x)), support(f)) or apply(f, iterate(f, k, x)) = x)
+                            [using specialize unionSingletonMember(support(f), x, apply(f, iterate(f, k, x)))]
+                          @conclusion-moved |
+                            member(apply(f, iterate(f, k, x)), union(support(f), singleton(x)))
+                            [using tautology image-membership image-in-support]
+                        }
+                      @when-fixed |
+                        assume not member(iterate(f, k, x), support(f)) {
+                          @k-th-not-in-support |
+                            not member(iterate(f, k, x), support(f))
+                            [by hypothesis when-fixed]
+                          @support-membership |
+                            member(iterate(f, k, x), support(f)) iff apply(f, iterate(f, k, x)) != iterate(f, k, x)
+                            [using specialize supportMember(f, iterate(f, k, x))]
+                          @k-th-is-fixed |
+                            apply(f, iterate(f, k, x)) = iterate(f, k, x)
+                            [using tautology support-membership k-th-not-in-support]
+                          @conclusion-fixed |
+                            member(apply(f, iterate(f, k, x)), union(support(f), singleton(x)))
+                            [by rewrite k-th-is-fixed inductive-hypothesis]
+                        }
+                    }
+                  @conclusion-next-is-in |
+                    member(iterate(f, succ(k), x), union(support(f), singleton(x)))
+                    [by rewrite next-iterate-unfolds image-is-in]
+                }
+              @induction-step-at-k |
+                member(iterate(f, k, x), union(support(f), singleton(x))) -> member(iterate(f, succ(k), x), union(support(f), singleton(x)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; member(iterate(f, k, x), union(support(f), singleton(x))) -> member(iterate(f, succ(k), x), union(support(f), singleton(x)))
+            [by forall_intro induction-step]
+          @every-iterate-is-in |
+            forall n: Nat; member(iterate(f, n, x), union(support(f), singleton(x)))
+            [using instantiation induction((fun k: Nat => member(iterate(f, k, x), union(support(f), singleton(x))))) base-case induction-step-for-all-k]
+          @generalize-y |
+            fix y: Element {
+              @given-in-orbit |
+                assume member(y, orbit(f, x)) {
+                  @y-in-orbit |
+                    member(y, orbit(f, x))
+                    [by hypothesis given-in-orbit]
+                  @y-membership |
+                    member(y, orbit(f, x)) iff (exists n: Nat; y = iterate(f, n, x))
+                    [using specialize orbitMember(f, x, y)]
+                  @y-is-an-iterate |
+                    exists n: Nat; y = iterate(f, n, x)
+                    [using tautology y-membership y-in-orbit]
+                  @with-index-n |
+                    unpack n: Nat from y-is-an-iterate {
+                      @y-is-the-n-th |
+                        y = iterate(f, n, x)
+                        [by hypothesis with-index-n]
+                      @n-th-is-in |
+                        member(iterate(f, n, x), union(support(f), singleton(x)))
+                        [using specialize every-iterate-is-in(n)]
+                      @conclusion-y-is-in |
+                        member(y, union(support(f), singleton(x)))
+                        [by rewrite y-is-the-n-th n-th-is-in]
+                    }
+                  @conclusion-in-support-or-point |
+                    member(y, union(support(f), singleton(x)))
+                    [by exists_elim with-index-n]
+                }
+              @conclusion-implication |
+                member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+                [by implies_intro given-in-orbit]
+            }
+          @discharge-y |
+            forall y: Element; member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+            [by forall_intro generalize-y]
+        }
+      @discharge-x |
+        forall x: Element; forall y: Element; member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; forall y: Element; member(y, orbit(f, x)) -> member(y, union(support(f), singleton(x)))
+    [by forall_intro generalize-f]
+qed
+
+// An orbit is FINITE when the support is: it is a subset of support(f) ∪ {x}, which has
+// the support's size or one more.
+theorem orbitOfFiniteSupportIsFinite: forall f: Perm; forall x: Element;
+  isFinite(support(f)) -> isFinite(orbit(f, x))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @support-has-a-size |
+                exists n: Nat; hasSize(support(f), n)
+                [by hypothesis given-finite]
+              @orbit-is-included |
+                subset(orbit(f, x), union(support(f), singleton(x)))
+                [using specialize orbitLiesInSupportOrPoint(f, x)]
+              @with-size-n |
+                unpack n: Nat from support-has-a-size {
+                  @support-has-size-n |
+                    hasSize(support(f), n)
+                    [by hypothesis with-size-n]
+                  @x-moved-or-not |
+                    member(x, support(f)) or (not member(x, support(f)))
+                    [using tautology]
+                  @adjoined-is-finite |
+                    exists k: Nat; hasSize(union(support(f), singleton(x)), k)
+                    case x-moved-or-not {
+                      @when-x-moved |
+                        assume member(x, support(f)) {
+                          @x-in-support |
+                            member(x, support(f))
+                            [by hypothesis when-x-moved]
+                          @adjoined-is-the-support |
+                            union(support(f), singleton(x)) = support(f)
+                            [using specialize unionWithAMemberIsItself(support(f), x) x-in-support]
+                          @adjoined-has-size-n |
+                            hasSize(union(support(f), singleton(x)), n)
+                            [by rewrite adjoined-is-the-support support-has-size-n]
+                          @conclusion-when-moved |
+                            exists k: Nat; hasSize(union(support(f), singleton(x)), k)
+                            [by exists_intro(n) adjoined-has-size-n]
+                        }
+                      @when-x-fixed |
+                        assume not member(x, support(f)) {
+                          @x-outside-support |
+                            not member(x, support(f))
+                            [by hypothesis when-x-fixed]
+                          @adjoined-has-size-succ-n |
+                            hasSize(union(support(f), singleton(x)), succ(n))
+                            [using specialize addingAnElementRaisesTheSize(support(f), x, n) support-has-size-n x-outside-support]
+                          @conclusion-when-fixed |
+                            exists k: Nat; hasSize(union(support(f), singleton(x)), k)
+                            [by exists_intro(succ(n)) adjoined-has-size-succ-n]
+                        }
+                    }
+                  @with-size-k |
+                    unpack k: Nat from adjoined-is-finite {
+                      @adjoined-has-size-k |
+                        hasSize(union(support(f), singleton(x)), k)
+                        [by hypothesis with-size-k]
+                      @orbit-is-sized |
+                        exists m: Nat; hasSize(orbit(f, x), m) and peano.less_or_equal(m, k)
+                        [using specialize subsetOfFiniteIsFinite(k, union(support(f), singleton(x)), orbit(f, x)) adjoined-has-size-k orbit-is-included]
+                      @with-size-m |
+                        unpack m: Nat from orbit-is-sized {
+                          @size-facts |
+                            hasSize(orbit(f, x), m) and peano.less_or_equal(m, k)
+                            [by hypothesis with-size-m]
+                          @orbit-has-size-m |
+                            hasSize(orbit(f, x), m)
+                            [by and_elim_left size-facts]
+                          @conclusion-orbit-finite-at-m |
+                            exists m2: Nat; hasSize(orbit(f, x), m2)
+                            [by exists_intro(m) orbit-has-size-m]
+                        }
+                      @conclusion-orbit-finite |
+                        exists m2: Nat; hasSize(orbit(f, x), m2)
+                        [by exists_elim with-size-m]
+                    }
+                  @conclusion-at-n |
+                    exists m2: Nat; hasSize(orbit(f, x), m2)
+                    [by exists_elim with-size-k]
+                }
+              @conclusion-finite |
+                exists m2: Nat; hasSize(orbit(f, x), m2)
+                [by exists_elim with-size-n]
+            }
+          @conclusion-implication |
+            isFinite(support(f)) -> isFinite(orbit(f, x))
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> isFinite(orbit(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element; isFinite(support(f)) -> isFinite(orbit(f, x))
+    [by forall_intro generalize-f]
+qed
