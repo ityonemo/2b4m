@@ -1,0 +1,414 @@
+// std/permutation/sequence.b4m — SEQUENCES OF PERMUTATIONS and their finite products.
+//
+// A product of permutations τ₁ τ₂ ⋯ τ_n is what the parity theory of transpositions
+// reasons about. The sequence sort is declared here with the same postulates as
+// std/group/sequence.b4m states for a group (a fresh sort inherits none of them), with
+// every entry an invertible map, and the group file's product laws are re-proved for
+// permutations. (They are not TRANSFERRED: a model of std/group/sequence.b4m onto `Perm`
+// is accepted, but its inverse-of-a-product proof cites std/group.b4m's `inverseUnique`,
+// and a model materializes only its own source theory's theorems — the group theorem
+// stays over `Grp`, so the transferred step fails to match. Two short inductions cost
+// less than a second model layer.)
+
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Fn = function.Fn
+sort Perm = permutation.Perm
+const identityFn = function.identityFn
+func compose = function.compose
+func inverse = function.inverse
+pred invertible = function.invertible
+axiom inverseLeft = function.inverseLeft
+theorem identityIsAPermutation = permutation.identityIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem inverseIsAPermutation = permutation.inverseIsAPermutation
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+axiom inverseRight = function.inverseRight
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+func sub = peano.sub
+pred less_than = peano.less_than
+define at_most(a, b) = peano.less_or_equal(a, b)
+axiom induction = peano.induction
+
+// -- sequences of permutations ------------------------------------------------------
+
+sort Seq
+func at(s: Seq, i: Nat) => Fn
+// every entry is a permutation
+axiom atIsAPermutation: forall s: Seq; forall i: Nat; invertible(at(s, i))
+
+// the product of the first k entries, left to right
+func productUpTo(s: Seq, k: Nat) => Fn
+axiom productUpToZero: forall s: Seq; productUpTo(s, ZERO) = identityFn
+axiom productUpToSucc: forall s: Seq; forall k: Nat; productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+
+// the reversed product of inverses (a prepend fold, as in std/group/sequence.b4m)
+func revProductUpTo(s: Seq, k: Nat) => Fn
+axiom revProductZero: forall s: Seq; revProductUpTo(s, ZERO) = identityFn
+axiom revProductSucc: forall s: Seq; forall k: Nat; revProductUpTo(s, succ(k)) = compose(inverse(at(s, k)), revProductUpTo(s, k))
+
+// Products of permutations are permutations — the closure facts the guarded model needs.
+theorem productUpToIsAPermutation: forall s: Seq; forall k: Nat; invertible(productUpTo(s, k))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @product-at-zero |
+        productUpTo(s, ZERO) = identityFn
+        [using specialize productUpToZero(s)]
+      @identity-is-a-permutation |
+        invertible(identityFn)
+        [by cite identityIsAPermutation]
+      @base-case |
+        invertible(productUpTo(s, ZERO))
+        [by rewrite product-at-zero identity-is-a-permutation]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume invertible(productUpTo(s, k)) {
+              @inductive-hypothesis |
+                invertible(productUpTo(s, k))
+                [by hypothesis given-inductive-hypothesis]
+              @entry-is-a-permutation |
+                invertible(at(s, k))
+                [using specialize atIsAPermutation(s, k)]
+              @composite-is-a-permutation |
+                invertible(compose(productUpTo(s, k), at(s, k)))
+                [using specialize composeIsAPermutation(productUpTo(s, k), at(s, k)) inductive-hypothesis entry-is-a-permutation]
+              @product-at-successor |
+                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                [using specialize productUpToSucc(s, k)]
+              @conclusion-successor-is-a-permutation |
+                invertible(productUpTo(s, succ(k)))
+                [by rewrite product-at-successor composite-is-a-permutation]
+            }
+          @induction-step-at-k |
+            invertible(productUpTo(s, k)) -> invertible(productUpTo(s, succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; invertible(productUpTo(s, k)) -> invertible(productUpTo(s, succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; invertible(productUpTo(s, k))
+        [using instantiation induction((fun k: Nat => invertible(productUpTo(s, k)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Seq; forall k: Nat; invertible(productUpTo(s, k))
+    [by forall_intro generalize-s]
+qed
+
+theorem revProductUpToIsAPermutation: forall s: Seq; forall k: Nat; invertible(revProductUpTo(s, k))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @product-at-zero |
+        revProductUpTo(s, ZERO) = identityFn
+        [using specialize revProductZero(s)]
+      @identity-is-a-permutation |
+        invertible(identityFn)
+        [by cite identityIsAPermutation]
+      @base-case |
+        invertible(revProductUpTo(s, ZERO))
+        [by rewrite product-at-zero identity-is-a-permutation]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume invertible(revProductUpTo(s, k)) {
+              @inductive-hypothesis |
+                invertible(revProductUpTo(s, k))
+                [by hypothesis given-inductive-hypothesis]
+              @entry-is-a-permutation |
+                invertible(at(s, k))
+                [using specialize atIsAPermutation(s, k)]
+              @entry-inverse-is-a-permutation |
+                invertible(inverse(at(s, k)))
+                [using specialize inverseIsAPermutation(at(s, k)) entry-is-a-permutation]
+              @composite-is-a-permutation |
+                invertible(compose(inverse(at(s, k)), revProductUpTo(s, k)))
+                [using specialize composeIsAPermutation(inverse(at(s, k)), revProductUpTo(s, k)) entry-inverse-is-a-permutation inductive-hypothesis]
+              @product-at-successor |
+                revProductUpTo(s, succ(k)) = compose(inverse(at(s, k)), revProductUpTo(s, k))
+                [using specialize revProductSucc(s, k)]
+              @conclusion-successor-is-a-permutation |
+                invertible(revProductUpTo(s, succ(k)))
+                [by rewrite product-at-successor composite-is-a-permutation]
+            }
+          @induction-step-at-k |
+            invertible(revProductUpTo(s, k)) -> invertible(revProductUpTo(s, succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; invertible(revProductUpTo(s, k)) -> invertible(revProductUpTo(s, succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; invertible(revProductUpTo(s, k))
+        [using instantiation induction((fun k: Nat => invertible(revProductUpTo(s, k)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Seq; forall k: Nat; invertible(revProductUpTo(s, k))
+    [by forall_intro generalize-s]
+qed
+
+// -- the sequence-BUILDING postulates, for permutations -------------------------------
+//
+// The same shape as std/group/sequence.b4m's, with the group's element sort read as
+// "a permutation": a binder over a group element becomes a Fn binder guarded by
+// `invertible`. Only the postulates the parity theory of transpositions uses are stated
+// (singleton, concatenation, reversal); prepend and removal can be restated from the group
+// file's when a consumer needs them — a library carries no axiom nothing in it rests on.
+
+axiom seqSingleton: forall x: Fn; invertible(x) ->
+  exists s: Seq; at(s, ZERO) = x and productUpTo(s, succ(ZERO)) = x
+
+axiom seqConcat: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
+  exists u: Seq;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+  and productUpTo(u, add(j, k)) = compose(productUpTo(s, j), productUpTo(t, k))
+
+axiom seqReverse: forall s: Seq; forall n: Nat;
+  exists r: Seq;
+  (forall i: Nat; less_than(i, n) -> at(r, i) = at(s, sub(n, succ(i))))
+  and productUpTo(r, n) = revProductUpTo(s, n)
+
+// -- the product laws --------------------------------------------------------------
+
+// A left inverse IS the inverse: k = k(h h⁻¹) = (k h) h⁻¹ = h⁻¹.
+theorem leftInverseIsTheInverse: forall h: Fn; forall k: Fn;
+  invertible(h) -> compose(k, h) = identityFn -> k = inverse(h)
+proof
+  @generalize-h |
+    fix h: Fn {
+      @generalize-k |
+        fix k: Fn {
+          @given-invertible |
+            assume invertible(h) {
+              @given-left-inverse |
+                assume compose(k, h) = identityFn {
+                  @h-is-invertible |
+                    invertible(h)
+                    [by hypothesis given-invertible]
+                  @k-undoes-h |
+                    compose(k, h) = identityFn
+                    [by hypothesis given-left-inverse]
+                  @h-undoes-its-inverse |
+                    compose(h, inverse(h)) = identityFn
+                    [using specialize inverseRight(h) h-is-invertible]
+                  @k-times-identity |
+                    compose(k, identityFn) = k
+                    [using specialize composeIdentityRight(k)]
+                  @k-is-k-times-identity |
+                    k = compose(k, identityFn)
+                    [by symmetry k-times-identity]
+                  @k-is-k-times-h-times-inverse |
+                    k = compose(k, compose(h, inverse(h)))
+                    [by rewrite h-undoes-its-inverse k-is-k-times-identity]
+                  @reassociated |
+                    compose(compose(k, h), inverse(h)) = compose(k, compose(h, inverse(h)))
+                    [using specialize composeAssoc(k, h, inverse(h))]
+                  @reassociated-flipped |
+                    compose(k, compose(h, inverse(h))) = compose(compose(k, h), inverse(h))
+                    [by symmetry reassociated]
+                  @left-pair-cancels |
+                    compose(k, compose(h, inverse(h))) = compose(identityFn, inverse(h))
+                    [by rewrite k-undoes-h reassociated-flipped]
+                  @identity-drops |
+                    compose(identityFn, inverse(h)) = inverse(h)
+                    [using specialize composeIdentityLeft(inverse(h))]
+                  @conclusion-k-is-the-inverse |
+                    k = inverse(h)
+                    [using chain k-is-k-times-h-times-inverse left-pair-cancels identity-drops]
+                }
+              @conclusion-left-inverse |
+                compose(k, h) = identityFn -> k = inverse(h)
+                [by implies_intro given-left-inverse]
+            }
+          @conclusion-invertible |
+            invertible(h) -> compose(k, h) = identityFn -> k = inverse(h)
+            [by implies_intro given-invertible]
+        }
+      @discharge-k |
+        forall k: Fn; invertible(h) -> compose(k, h) = identityFn -> k = inverse(h)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall h: Fn; forall k: Fn; invertible(h) -> compose(k, h) = identityFn -> k = inverse(h)
+    [by forall_intro generalize-h]
+qed
+
+// (g f)⁻¹ = f⁻¹ g⁻¹: f⁻¹ g⁻¹ is a left inverse of g f, and left inverses are the inverse.
+theorem inverseOfComposite: forall g: Fn; forall f: Fn;
+  invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+proof
+  @generalize-g |
+    fix g: Fn {
+      @generalize-f |
+        fix f: Fn {
+          @given-g |
+            assume invertible(g) {
+              @given-f |
+                assume invertible(f) {
+                  @g-is-invertible |
+                    invertible(g)
+                    [by hypothesis given-g]
+                  @f-is-invertible |
+                    invertible(f)
+                    [by hypothesis given-f]
+                  @composite-is-invertible |
+                    invertible(compose(g, f))
+                    [using specialize composeIsAPermutation(g, f) g-is-invertible f-is-invertible]
+                  @g-inverse-undoes-g |
+                    compose(inverse(g), g) = identityFn
+                    [using specialize inverseLeft(g) g-is-invertible]
+                  @f-inverse-undoes-f |
+                    compose(inverse(f), f) = identityFn
+                    [using specialize inverseLeft(f) f-is-invertible]
+                  // (f⁻¹ g⁻¹)(g f) = f⁻¹ (g⁻¹ (g f)) = f⁻¹ ((g⁻¹ g) f) = f⁻¹ (id f) = f⁻¹ f = id
+                  @outer-associated |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), compose(inverse(g), compose(g, f)))
+                    [using specialize composeAssoc(inverse(f), inverse(g), compose(g, f))]
+                  @inner-associated |
+                    compose(compose(inverse(g), g), f) = compose(inverse(g), compose(g, f))
+                    [using specialize composeAssoc(inverse(g), g, f)]
+                  @inner-associated-flipped |
+                    compose(inverse(g), compose(g, f)) = compose(compose(inverse(g), g), f)
+                    [by symmetry inner-associated]
+                  @inner-cancels |
+                    compose(inverse(g), compose(g, f)) = compose(identityFn, f)
+                    [by rewrite g-inverse-undoes-g inner-associated-flipped]
+                  @identity-drops |
+                    compose(identityFn, f) = f
+                    [using specialize composeIdentityLeft(f)]
+                  @inner-is-f |
+                    compose(inverse(g), compose(g, f)) = f
+                    [using chain inner-cancels identity-drops]
+                  @outer-is-f-inverse-f |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), f)
+                    [by rewrite inner-is-f outer-associated]
+                  @candidate-is-a-left-inverse |
+                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = identityFn
+                    [using chain outer-is-f-inverse-f f-inverse-undoes-f]
+                  @conclusion-candidate-is-the-inverse |
+                    compose(inverse(f), inverse(g)) = inverse(compose(g, f))
+                    [using specialize leftInverseIsTheInverse(compose(g, f), compose(inverse(f), inverse(g))) composite-is-invertible candidate-is-a-left-inverse]
+                  @conclusion-flipped |
+                    inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+                    [by symmetry conclusion-candidate-is-the-inverse]
+                }
+              @conclusion-f |
+                invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+                [by implies_intro given-f]
+            }
+          @conclusion-g |
+            invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+            [by implies_intro given-g]
+        }
+      @discharge-f |
+        forall f: Fn; invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+        [by forall_intro generalize-f]
+    }
+  @conclusion |
+    forall g: Fn; forall f: Fn; invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+    [by forall_intro generalize-g]
+qed
+
+// The identity is its own inverse.
+theorem inverseOfIdentity: inverse(identityFn) = identityFn
+proof
+  @identity-is-a-permutation |
+    invertible(identityFn)
+    [by cite identityIsAPermutation]
+  @identity-undoes-itself |
+    compose(identityFn, identityFn) = identityFn
+    [using specialize composeIdentityLeft(identityFn)]
+  @identity-is-its-own-inverse |
+    identityFn = inverse(identityFn)
+    [using specialize leftInverseIsTheInverse(identityFn, identityFn) identity-is-a-permutation identity-undoes-itself]
+  @conclusion |
+    inverse(identityFn) = identityFn
+    [by symmetry identity-is-its-own-inverse]
+qed
+
+// (g₀ ⋯ gₙ₋₁)⁻¹ = gₙ₋₁⁻¹ ⋯ g₀⁻¹, by induction on n.
+theorem invOfProduct: forall s: Seq; forall n: Nat;
+  inverse(productUpTo(s, n)) = revProductUpTo(s, n)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @product-at-zero |
+        productUpTo(s, ZERO) = identityFn
+        [using specialize productUpToZero(s)]
+      @reversed-at-zero |
+        revProductUpTo(s, ZERO) = identityFn
+        [using specialize revProductZero(s)]
+      @inverse-of-identity |
+        inverse(identityFn) = identityFn
+        [by cite inverseOfIdentity]
+      @inverse-of-product-at-zero |
+        inverse(productUpTo(s, ZERO)) = identityFn
+        [by rewrite product-at-zero inverse-of-identity]
+      @reversed-at-zero-flipped |
+        identityFn = revProductUpTo(s, ZERO)
+        [by symmetry reversed-at-zero]
+      @base-case |
+        inverse(productUpTo(s, ZERO)) = revProductUpTo(s, ZERO)
+        [using chain inverse-of-product-at-zero reversed-at-zero-flipped]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume inverse(productUpTo(s, k)) = revProductUpTo(s, k) {
+              @inductive-hypothesis |
+                inverse(productUpTo(s, k)) = revProductUpTo(s, k)
+                [by hypothesis given-inductive-hypothesis]
+              @product-at-successor |
+                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                [using specialize productUpToSucc(s, k)]
+              @reversed-at-successor |
+                revProductUpTo(s, succ(k)) = compose(inverse(at(s, k)), revProductUpTo(s, k))
+                [using specialize revProductSucc(s, k)]
+              @product-is-a-permutation |
+                invertible(productUpTo(s, k))
+                [using specialize productUpToIsAPermutation(s, k)]
+              @entry-is-a-permutation |
+                invertible(at(s, k))
+                [using specialize atIsAPermutation(s, k)]
+              @inverse-of-the-composite |
+                inverse(compose(productUpTo(s, k), at(s, k))) = compose(inverse(at(s, k)), inverse(productUpTo(s, k)))
+                [using specialize inverseOfComposite(productUpTo(s, k), at(s, k)) product-is-a-permutation entry-is-a-permutation]
+              @inverse-of-product-at-successor |
+                inverse(productUpTo(s, succ(k))) = compose(inverse(at(s, k)), inverse(productUpTo(s, k)))
+                [by rewrite product-at-successor inverse-of-the-composite]
+              @inductive-hypothesis-applied |
+                inverse(productUpTo(s, succ(k))) = compose(inverse(at(s, k)), revProductUpTo(s, k))
+                [by rewrite inductive-hypothesis inverse-of-product-at-successor]
+              @reversed-at-successor-flipped |
+                compose(inverse(at(s, k)), revProductUpTo(s, k)) = revProductUpTo(s, succ(k))
+                [by symmetry reversed-at-successor]
+              @conclusion-successor |
+                inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
+                [using chain inductive-hypothesis-applied reversed-at-successor-flipped]
+            }
+          @induction-step-at-k |
+            inverse(productUpTo(s, k)) = revProductUpTo(s, k) -> inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; inverse(productUpTo(s, k)) = revProductUpTo(s, k) -> inverse(productUpTo(s, succ(k))) = revProductUpTo(s, succ(k))
+        [by forall_intro induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
+        [using instantiation induction((fun k: Nat => inverse(productUpTo(s, k)) = revProductUpTo(s, k))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Seq; forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
+    [by forall_intro generalize-s]
+qed

@@ -1,0 +1,182 @@
+// Worked examples for `std/permutation/sequence.b4m`'s sequence-BUILDING postulates.
+//
+// `seqSingleton`, `seqConcat` and `seqReverse` assert that a sequence of permutations with
+// given entries EXISTS. Nothing in `sequence.b4m` itself derives from them — its product
+// laws are inductions on `productUpTo` alone — so without this file they are three
+// postulates no proof ever eliminates. Each theorem below unpacks one at the smallest
+// scale that needs it (the same discipline as std/group/sequence-examples.b4m).
+
+import permutation_sequence <<< "std/permutation/sequence.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func compose = function.compose
+func inverse = function.inverse
+pred invertible = function.invertible
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+sort Seq = permutation_sequence.Seq
+func at = permutation_sequence.at
+func productUpTo = permutation_sequence.productUpTo
+func revProductUpTo = permutation_sequence.revProductUpTo
+axiom productUpToZero = permutation_sequence.productUpToZero
+axiom seqSingleton = permutation_sequence.seqSingleton
+axiom seqConcat = permutation_sequence.seqConcat
+axiom seqReverse = permutation_sequence.seqReverse
+theorem invOfProduct = permutation_sequence.invOfProduct
+
+// Every permutation is a length-one product: the singleton sequence [f].
+theorem everyPermutationIsASingletonProduct: forall f: Fn;
+  invertible(f) -> exists s: Seq; productUpTo(s, succ(ZERO)) = f
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-permutation |
+        assume invertible(f) {
+          @f-is-a-permutation |
+            invertible(f)
+            [by hypothesis given-permutation]
+          @the-singleton-exists |
+            exists s: Seq; at(s, ZERO) = f and productUpTo(s, succ(ZERO)) = f
+            [using specialize seqSingleton(f) f-is-a-permutation]
+          @with-singleton-s |
+            unpack s: Seq from the-singleton-exists {
+              @singleton-facts |
+                at(s, ZERO) = f and productUpTo(s, succ(ZERO)) = f
+                [by hypothesis with-singleton-s]
+              @length-one-product-is-f |
+                productUpTo(s, succ(ZERO)) = f
+                [by and_elim_right singleton-facts]
+              @conclusion-s-is-a-witness |
+                exists s2: Seq; productUpTo(s2, succ(ZERO)) = f
+                [by exists_intro(s) length-one-product-is-f]
+            }
+          @conclusion-witness |
+            exists s2: Seq; productUpTo(s2, succ(ZERO)) = f
+            [by exists_elim with-singleton-s]
+        }
+      @conclusion-implication |
+        invertible(f) -> exists s2: Seq; productUpTo(s2, succ(ZERO)) = f
+        [by implies_intro given-permutation]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> exists s: Seq; productUpTo(s, succ(ZERO)) = f
+    [by forall_intro generalize-f]
+qed
+
+// Concatenating nothing keeps the product: s's first j entries followed by zero of t's
+// multiply to productUpTo(s, j), because the empty product is the identity.
+theorem concatenatingNothingKeepsTheProduct: forall s: Seq; forall t: Seq; forall j: Nat;
+  exists u: Seq; productUpTo(u, add(j, ZERO)) = productUpTo(s, j)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-t |
+        fix t: Seq {
+          @generalize-j |
+            fix j: Nat {
+              @the-concatenation-exists |
+                exists u: Seq;
+                  (forall i: Nat; peano.less_than(i, j) -> at(u, i) = at(s, i))
+                  and (forall i: Nat; peano.less_than(i, ZERO) -> at(u, add(j, i)) = at(t, i))
+                  and productUpTo(u, add(j, ZERO)) = compose(productUpTo(s, j), productUpTo(t, ZERO))
+                [using specialize seqConcat(s, t, j, ZERO)]
+              @with-concatenation-u |
+                unpack u: Seq from the-concatenation-exists {
+                  @concatenation-facts |
+                    (forall i: Nat; peano.less_than(i, j) -> at(u, i) = at(s, i))
+                      and (forall i: Nat; peano.less_than(i, ZERO) -> at(u, add(j, i)) = at(t, i))
+                      and productUpTo(u, add(j, ZERO)) = compose(productUpTo(s, j), productUpTo(t, ZERO))
+                    [by hypothesis with-concatenation-u]
+                  @joined-product |
+                    productUpTo(u, add(j, ZERO)) = compose(productUpTo(s, j), productUpTo(t, ZERO))
+                    [by and_elim_right concatenation-facts]
+                  @empty-product-is-identity |
+                    productUpTo(t, ZERO) = identityFn
+                    [using specialize productUpToZero(t)]
+                  @joined-product-with-identity |
+                    productUpTo(u, add(j, ZERO)) = compose(productUpTo(s, j), identityFn)
+                    [by rewrite empty-product-is-identity joined-product]
+                  @identity-drops |
+                    compose(productUpTo(s, j), identityFn) = productUpTo(s, j)
+                    [using specialize composeIdentityRight(productUpTo(s, j))]
+                  @joined-product-is-the-first |
+                    productUpTo(u, add(j, ZERO)) = productUpTo(s, j)
+                    [using chain joined-product-with-identity identity-drops]
+                  @conclusion-u-is-a-witness |
+                    exists u2: Seq; productUpTo(u2, add(j, ZERO)) = productUpTo(s, j)
+                    [by exists_intro(u) joined-product-is-the-first]
+                }
+              @conclusion-witness |
+                exists u2: Seq; productUpTo(u2, add(j, ZERO)) = productUpTo(s, j)
+                [by exists_elim with-concatenation-u]
+            }
+          @discharge-j |
+            forall j: Nat; exists u2: Seq; productUpTo(u2, add(j, ZERO)) = productUpTo(s, j)
+            [by forall_intro generalize-j]
+        }
+      @discharge-t |
+        forall t: Seq; forall j: Nat; exists u2: Seq; productUpTo(u2, add(j, ZERO)) = productUpTo(s, j)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s: Seq; forall t: Seq; forall j: Nat; exists u: Seq; productUpTo(u, add(j, ZERO)) = productUpTo(s, j)
+    [by forall_intro generalize-s]
+qed
+
+// Reversing a sequence produces the inverse of its product — the reversed product of
+// inverses, which `invOfProduct` identifies with the inverse.
+theorem reversalProducesTheInverse: forall s: Seq; forall n: Nat;
+  exists r: Seq; productUpTo(r, n) = inverse(productUpTo(s, n))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-n |
+        fix n: Nat {
+          @the-reversal-exists |
+            exists r: Seq;
+              (forall i: Nat; peano.less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i))))
+              and productUpTo(r, n) = revProductUpTo(s, n)
+            [using specialize seqReverse(s, n)]
+          @with-reversal-r |
+            unpack r: Seq from the-reversal-exists {
+              @reversal-facts |
+                (forall i: Nat; peano.less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i))))
+                  and productUpTo(r, n) = revProductUpTo(s, n)
+                [by hypothesis with-reversal-r]
+              @reversed-product |
+                productUpTo(r, n) = revProductUpTo(s, n)
+                [by and_elim_right reversal-facts]
+              @inverse-is-the-reversed-product |
+                inverse(productUpTo(s, n)) = revProductUpTo(s, n)
+                [using specialize invOfProduct(s, n)]
+              @reversed-product-is-the-inverse |
+                revProductUpTo(s, n) = inverse(productUpTo(s, n))
+                [by symmetry inverse-is-the-reversed-product]
+              @product-of-r-is-the-inverse |
+                productUpTo(r, n) = inverse(productUpTo(s, n))
+                [using chain reversed-product reversed-product-is-the-inverse]
+              @conclusion-r-is-a-witness |
+                exists r2: Seq; productUpTo(r2, n) = inverse(productUpTo(s, n))
+                [by exists_intro(r) product-of-r-is-the-inverse]
+            }
+          @conclusion-witness |
+            exists r2: Seq; productUpTo(r2, n) = inverse(productUpTo(s, n))
+            [by exists_elim with-reversal-r]
+        }
+      @discharge-n |
+        forall n: Nat; exists r2: Seq; productUpTo(r2, n) = inverse(productUpTo(s, n))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall s: Seq; forall n: Nat; exists r: Seq; productUpTo(r, n) = inverse(productUpTo(s, n))
+    [by forall_intro generalize-s]
+qed
