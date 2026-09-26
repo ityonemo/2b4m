@@ -258,6 +258,11 @@ pub fn addTests(
     // Exercises cross-sort guarded weakening (group.Grp -> Fn where invertible).
     ctx.okSilent(&.{ "check", "std/function/invertible.b4m" });
 
+    // ITERATES (std/function/iterate.b4m): f applied n times, with the two laws every orbit
+    // argument leans on — the successor can be applied first or last (f^(n+1)(x) =
+    // f^n(f(x))), and f^(m+n)(x) = f^m(f^n(x)).
+    ctx.okSilent(&.{ "check", "std/function/iterate.b4m" });
+
     // permutations (std/permutation.b4m): the invertible maps as `Perm`, with what a
     // bare group lacks — the SUPPORT of a permutation (a comprehension set), that a
     // permutation preserves its support, disjoint-support permutations COMMUTE
@@ -286,4 +291,10 @@ pub fn addTests(
     // the unlisted, wraps the last to the first, advances the rest. One-cycle = identity,
     // two-cycle = transposition.
     ctx.okSilent(&.{ "check", "std/permutation/cycle.b4m" });
+
+    // ORBITS (std/permutation/orbit.b4m): the set of iterates of a point, a comprehension set
+    // like `support`; the point is in it, it is closed under the map, every iterate is the
+    // point or a moved point (so the orbit sits inside support ∪ {x}), hence FINITE when the
+    // support is — the first use of subsetOfFiniteIsFinite and of adding one element.
+    ctx.okSilent(&.{ "check", "std/permutation/orbit.b4m" });
 }

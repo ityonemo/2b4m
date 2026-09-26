@@ -1821,3 +1821,69 @@ proof
     forall a: Set; forall b: Set; subset(a, b) -> a != b -> exists t: Element; member(t, b) and (not member(t, a))
     [by forall_intro generalize-a]
 qed
+
+// Adjoining an element already present changes nothing.
+theorem unionWithAMemberIsItself: forall a: Set; forall t: Element;
+  member(t, a) -> union(a, singleton(t)) = a
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-t |
+        fix t: Element {
+          @given-t-in-a |
+            assume member(t, a) {
+              @t-in-a |
+                member(t, a)
+                [by hypothesis given-t-in-a]
+              @pointwise-forward |
+                fix x: Element {
+                  @union-membership |
+                    member(x, union(a, singleton(t))) iff (member(x, a) or x = t)
+                    [using specialize unionSingletonMember(a, t, x)]
+                  @suppose-x-is-t |
+                    assume x = t {
+                      @x-is-t |
+                        x = t
+                        [by hypothesis suppose-x-is-t]
+                      @conclusion-x-in-a |
+                        member(x, a)
+                        [by rewrite x-is-t t-in-a]
+                    }
+                  @being-t-puts-x-in-a |
+                    x = t -> member(x, a)
+                    [by implies_intro suppose-x-is-t]
+                  @conclusion-forward |
+                    member(x, union(a, singleton(t))) -> member(x, a)
+                    [using tautology union-membership being-t-puts-x-in-a]
+                }
+              @adjoined-is-included |
+                forall x: Element; member(x, union(a, singleton(t))) -> member(x, a)
+                [by forall_intro pointwise-forward]
+              @pointwise-backward |
+                fix x: Element {
+                  @union-membership |
+                    member(x, union(a, singleton(t))) iff (member(x, a) or x = t)
+                    [using specialize unionSingletonMember(a, t, x)]
+                  @conclusion-backward |
+                    member(x, a) -> member(x, union(a, singleton(t)))
+                    [using tautology union-membership]
+                }
+              @a-is-included |
+                forall x: Element; member(x, a) -> member(x, union(a, singleton(t)))
+                [by forall_intro pointwise-backward]
+              @conclusion-unchanged |
+                union(a, singleton(t)) = a
+                [using specialize extensionality(union(a, singleton(t)), a) adjoined-is-included a-is-included]
+            }
+          @conclusion-implication |
+            member(t, a) -> union(a, singleton(t)) = a
+            [by implies_intro given-t-in-a]
+        }
+      @discharge-t |
+        forall t: Element; member(t, a) -> union(a, singleton(t)) = a
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall a: Set; forall t: Element; member(t, a) -> union(a, singleton(t)) = a
+    [by forall_intro generalize-a]
+qed
