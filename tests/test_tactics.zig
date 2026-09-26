@@ -225,10 +225,10 @@ pub fn addTests(
     // universe origin, handing the transferred proof base's untransferred `op(U, U) = U`
     // against a target-sort claim (found modeling std/group/sequence onto Perm).
     ctx.okSilent(&.{ "check", "tests/cases/model_alias_borrowed.b4m" });
-    // ... and the overlay's COMPLETENESS condition: a model that maps the symbols but leaves
+    // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.
-    ctx.fail(&.{ "check", "tests/cases/model_alias_borrowed_bad.b4m" }, "tests/cases/model_alias_borrowed_base.b4m:9:4: error: Incomplete@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model_alias_borrowed_bad.b4m" }, "tests/cases/model_alias_borrowed_base.b4m:9:4: error: Undischarged@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
 
     // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA (elemInduction) is
     // discharged by a local guard-relativized schema (goodInduction); a local schema cites it
