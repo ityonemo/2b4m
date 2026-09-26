@@ -29,6 +29,25 @@ const emptyset = set.emptyset
 pred member = set.member
 axiom emptysetMember = set.emptysetMember
 axiom extensionality = set.extensionality
+func union = set.union
+func intersection = set.intersection
+func difference = set.difference
+func singleton = set.singleton
+axiom unionMember = set.unionMember
+axiom intersectionMember = set.intersectionMember
+axiom differenceMember = set.differenceMember
+axiom singletonMember = set.singletonMember
+theorem unionEmpty = set.unionEmpty
+define subset(a, b) = set.subset(a, b)
+theorem unionSingletonMember = set.unionSingletonMember
+theorem differenceSingletonMember = set.differenceSingletonMember
+theorem memberIsNotTheOutsider = set.memberIsNotTheOutsider
+theorem restoringAnElement = set.restoringAnElement
+theorem splittingOffAnElement = set.splittingOffAnElement
+theorem disjointMeansNotBoth = set.disjointMeansNotBoth
+theorem disjointWithSubset = set.disjointWithSubset
+theorem removalLeavesASubset = set.removalLeavesASubset
+theorem properSubsetHasAnOutsider = set.properSubsetHasAnOutsider
 
 sort Fn = function.Fn
 func apply = function.apply
@@ -48,6 +67,15 @@ theorem lessThanSuccRight = peano_order.lessThanSuccRight
 theorem lessThanSelf = peano_order.lessThanSelf
 theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
 theorem zeroOrSucc = peano.zeroOrSucc
+func add = peano.add
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+theorem addZeroRight = peano.addZeroRight
+theorem addSuccRight = peano.addSuccRight
+theorem lessOrEqualRefl = peano_order.lessOrEqualRefl
+theorem lessThanToLessOrEqual = peano_order.lessThanToLessOrEqual
+theorem lessOrEqualToLessThanSucc = peano_order.lessOrEqualToLessThanSucc
+theorem lessThanSuccToLessOrEqual = peano_order.lessThanSuccToLessOrEqual
+theorem succPreservesOrder = peano_order.succPreservesOrder
 axiom induction = peano.induction
 
 // -- maps between sets ------------------------------------------------------
@@ -2912,4 +2940,1756 @@ proof
   @conclusion |
     size(emptyset) = ZERO
     [using specialize sizeIsTheSize(emptyset, ZERO) emptyset-has-size-zero]
+qed
+
+// -- counting one element at a time ------------------------------------------------------
+//
+// The combinatorics of finite sets — a subset of a finite set is finite and no larger, a
+// proper subset is strictly smaller, disjoint sizes add — all reduce to two moves: REMOVING
+// one element from a set of size n+1 leaves size n, and ADDING a fresh element to a set of
+// size n gives size n+1. Both are bijection surgery at a single point.
+
+// RESTRICTION OFF A POINT: a bijection b -> segment(succ n) that sends t to the top restricts
+// to a bijection b \ {t} -> segment(n). The restriction lemma with a SET as the source: into
+// because nothing but t can hit the top (injectivity); injective as a subset; onto because a
+// preimage of a point below the top is not t.
+theorem restrictionOffAPoint: forall f: Fn; forall b: Set; forall t: Element; forall n: Nat;
+  bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) ->
+  bijectsOnto(f, difference(b, singleton(t)), segment(n))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-b |
+        fix b: Set {
+          @generalize-t |
+            fix t: Element {
+              @generalize-n |
+                fix n: Nat {
+                  @given-bijection |
+                    assume bijectsOnto(f, b, segment(succ(n))) {
+                      @given-t-in-b |
+                        assume member(t, b) {
+                          @given-top |
+                            assume apply(f, t) = numeral(n) {
+                              @bijection-facts |
+                                mapsInto(f, b, segment(succ(n))) and injectiveOn(f, b) and surjectiveOnto(f, b, segment(succ(n)))
+                                [by hypothesis given-bijection]
+                              @into-and-injective |
+                                mapsInto(f, b, segment(succ(n))) and injectiveOn(f, b)
+                                [by and_elim_left bijection-facts]
+                              @into |
+                                mapsInto(f, b, segment(succ(n)))
+                                [by and_elim_left into-and-injective]
+                              @injective |
+                                injectiveOn(f, b)
+                                [by and_elim_right into-and-injective]
+                              @covers |
+                                surjectiveOnto(f, b, segment(succ(n)))
+                                [by and_elim_right bijection-facts]
+                              @t-in-b |
+                                member(t, b)
+                                [by hypothesis given-t-in-b]
+                              @top-to-top |
+                                apply(f, t) = numeral(n)
+                                [by hypothesis given-top]
+                              @top-not-in-small |
+                                not member(numeral(n), segment(n))
+                                [using specialize topIsNotInTheSmallerSegment(n)]
+
+                              // INTO
+                              @pointwise-into |
+                                fix x: Element {
+                                  @given-x |
+                                    assume member(x, difference(b, singleton(t))) {
+                                      @x-in-rest |
+                                        member(x, difference(b, singleton(t)))
+                                        [by hypothesis given-x]
+                                      @rest-membership |
+                                        member(x, difference(b, singleton(t))) iff (member(x, b) and (not member(x, singleton(t))))
+                                        [using specialize differenceMember(b, singleton(t), x)]
+                                      @singleton-membership |
+                                        member(x, singleton(t)) iff x = t
+                                        [using specialize singletonMember(t, x)]
+                                      @x-in-b |
+                                        member(x, b)
+                                        [using tautology x-in-rest rest-membership]
+                                      @x-is-not-t |
+                                        x != t
+                                        [using tautology x-in-rest rest-membership singleton-membership]
+                                      @image-in-big |
+                                        member(apply(f, x), segment(succ(n)))
+                                        [using specialize into(x) x-in-b]
+                                      @image-splits |
+                                        member(apply(f, x), segment(n)) or apply(f, x) = numeral(n)
+                                        [using specialize segmentSuccSplits(n, apply(f, x)) image-in-big]
+                                      @conclusion-image-in-small |
+                                        member(apply(f, x), segment(n))
+                                        case image-splits {
+                                          @when-in-small |
+                                            assume member(apply(f, x), segment(n)) {
+                                              @conclusion-small |
+                                                member(apply(f, x), segment(n))
+                                                [by hypothesis when-in-small]
+                                            }
+                                          @when-at-top |
+                                            assume apply(f, x) = numeral(n) {
+                                              @x-hits-top |
+                                                apply(f, x) = numeral(n)
+                                                [by hypothesis when-at-top]
+                                              @same-image-as-t |
+                                                apply(f, x) = apply(f, t)
+                                                [by rewrite top-to-top x-hits-top]
+                                              @x-is-t |
+                                                x = t
+                                                [using specialize injective(x, t) x-in-b t-in-b same-image-as-t]
+                                              @conclusion-absurd |
+                                                member(apply(f, x), segment(n))
+                                                [by absurd x-is-t x-is-not-t]
+                                            }
+                                        }
+                                    }
+                                  @conclusion-into-implication |
+                                    member(x, difference(b, singleton(t))) -> member(apply(f, x), segment(n))
+                                    [by implies_intro given-x]
+                                }
+                              @restriction-into |
+                                mapsInto(f, difference(b, singleton(t)), segment(n))
+                                [by forall_intro pointwise-into]
+
+                              // INJECTIVE: a subset of b
+                              @pointwise-injective |
+                                fix x: Element {
+                                  @inner |
+                                    fix y: Element {
+                                      @given-x-in-rest |
+                                        assume member(x, difference(b, singleton(t))) {
+                                          @given-y-in-rest |
+                                            assume member(y, difference(b, singleton(t))) {
+                                              @given-images |
+                                                assume apply(f, x) = apply(f, y) {
+                                                  @x-in-rest |
+                                                    member(x, difference(b, singleton(t)))
+                                                    [by hypothesis given-x-in-rest]
+                                                  @y-in-rest |
+                                                    member(y, difference(b, singleton(t)))
+                                                    [by hypothesis given-y-in-rest]
+                                                  @images-equal |
+                                                    apply(f, x) = apply(f, y)
+                                                    [by hypothesis given-images]
+                                                  @x-rest-membership |
+                                                    member(x, difference(b, singleton(t))) iff (member(x, b) and (not member(x, singleton(t))))
+                                                    [using specialize differenceMember(b, singleton(t), x)]
+                                                  @y-rest-membership |
+                                                    member(y, difference(b, singleton(t))) iff (member(y, b) and (not member(y, singleton(t))))
+                                                    [using specialize differenceMember(b, singleton(t), y)]
+                                                  @x-in-b |
+                                                    member(x, b)
+                                                    [using tautology x-in-rest x-rest-membership]
+                                                  @y-in-b |
+                                                    member(y, b)
+                                                    [using tautology y-in-rest y-rest-membership]
+                                                  @conclusion-equal |
+                                                    x = y
+                                                    [using specialize injective(x, y) x-in-b y-in-b images-equal]
+                                                }
+                                              @conclusion-images |
+                                                apply(f, x) = apply(f, y) -> x = y
+                                                [by implies_intro given-images]
+                                            }
+                                          @conclusion-y |
+                                            member(y, difference(b, singleton(t))) -> apply(f, x) = apply(f, y) -> x = y
+                                            [by implies_intro given-y-in-rest]
+                                        }
+                                      @conclusion-x |
+                                        member(x, difference(b, singleton(t))) -> member(y, difference(b, singleton(t))) -> apply(f, x) = apply(f, y) -> x = y
+                                        [by implies_intro given-x-in-rest]
+                                    }
+                                  @discharge-y |
+                                    forall y: Element; member(x, difference(b, singleton(t))) -> member(y, difference(b, singleton(t))) -> apply(f, x) = apply(f, y) -> x = y
+                                    [by forall_intro inner]
+                                }
+                              @restriction-injective |
+                                injectiveOn(f, difference(b, singleton(t)))
+                                [by forall_intro pointwise-injective]
+
+                              // ONTO: a preimage of a point below the top is not t
+                              @pointwise-covers |
+                                fix y: Element {
+                                  @given-y |
+                                    assume member(y, segment(n)) {
+                                      @y-in-small |
+                                        member(y, segment(n))
+                                        [by hypothesis given-y]
+                                      @y-in-big |
+                                        member(y, segment(succ(n)))
+                                        [using specialize segmentGrows(n, y) y-in-small]
+                                      @preimage-exists |
+                                        exists x: Element; member(x, b) and apply(f, x) = y
+                                        [using specialize covers(y) y-in-big]
+                                      @with-preimage-x |
+                                        unpack x: Element from preimage-exists {
+                                          @preimage-facts |
+                                            member(x, b) and apply(f, x) = y
+                                            [by hypothesis with-preimage-x]
+                                          @x-in-b |
+                                            member(x, b)
+                                            [by and_elim_left preimage-facts]
+                                          @x-maps-to-y |
+                                            apply(f, x) = y
+                                            [by and_elim_right preimage-facts]
+                                          // if x were t, y = f(t) would be the top, which is not below it
+                                          @suppose-x-is-t |
+                                            assume x = t {
+                                              @x-is-t |
+                                                x = t
+                                                [by hypothesis suppose-x-is-t]
+                                              @t-maps-to-y |
+                                                apply(f, t) = y
+                                                [by rewrite x-is-t x-maps-to-y]
+                                              @y-is-top |
+                                                numeral(n) = y
+                                                [by rewrite top-to-top t-maps-to-y]
+                                              @top-in-small |
+                                                member(numeral(n), segment(n))
+                                                [by rewrite y-is-top y-in-small]
+                                            }
+                                          @x-is-not-t |
+                                            x != t
+                                            [by not_intro suppose-x-is-t top-in-small top-not-in-small]
+                                          @x-rest-membership |
+                                            member(x, difference(b, singleton(t))) iff (member(x, b) and (not member(x, singleton(t))))
+                                            [using specialize differenceMember(b, singleton(t), x)]
+                                          @singleton-membership |
+                                            member(x, singleton(t)) iff x = t
+                                            [using specialize singletonMember(t, x)]
+                                          @x-in-rest |
+                                            member(x, difference(b, singleton(t)))
+                                            [using tautology x-in-b x-is-not-t x-rest-membership singleton-membership]
+                                          @x-is-a-preimage-in-rest |
+                                            member(x, difference(b, singleton(t))) and apply(f, x) = y
+                                            [by and_intro x-in-rest x-maps-to-y]
+                                          @conclusion-covered |
+                                            exists x2: Element; member(x2, difference(b, singleton(t))) and apply(f, x2) = y
+                                            [by exists_intro(x) x-is-a-preimage-in-rest]
+                                        }
+                                      @conclusion-y-covered |
+                                        exists x2: Element; member(x2, difference(b, singleton(t))) and apply(f, x2) = y
+                                        [by exists_elim with-preimage-x]
+                                    }
+                                  @conclusion-covers-implication |
+                                    member(y, segment(n)) -> exists x2: Element; member(x2, difference(b, singleton(t))) and apply(f, x2) = y
+                                    [by implies_intro given-y]
+                                }
+                              @restriction-covers |
+                                surjectiveOnto(f, difference(b, singleton(t)), segment(n))
+                                [by forall_intro pointwise-covers]
+
+                              @restriction-into-and-injective |
+                                mapsInto(f, difference(b, singleton(t)), segment(n)) and injectiveOn(f, difference(b, singleton(t)))
+                                [by and_intro restriction-into restriction-injective]
+                              @conclusion-restriction-bijects |
+                                bijectsOnto(f, difference(b, singleton(t)), segment(n))
+                                [by and_intro restriction-into-and-injective restriction-covers]
+                            }
+                          @conclusion-top |
+                            apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+                            [by implies_intro given-top]
+                        }
+                      @conclusion-t |
+                        member(t, b) -> apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+                        [by implies_intro given-t-in-b]
+                    }
+                  @conclusion-bijection |
+                    bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+                    [by implies_intro given-bijection]
+                }
+              @discharge-n |
+                forall n: Nat; bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+                [by forall_intro generalize-n]
+            }
+          @discharge-t |
+            forall t: Element; forall n: Nat; bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+            [by forall_intro generalize-t]
+        }
+      @discharge-b |
+        forall b: Set; forall t: Element; forall n: Nat; bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) -> bijectsOnto(f, difference(b, singleton(t)), segment(n))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall f: Fn; forall b: Set; forall t: Element; forall n: Nat;
+      bijectsOnto(f, b, segment(succ(n))) -> member(t, b) -> apply(f, t) = numeral(n) ->
+      bijectsOnto(f, difference(b, singleton(t)), segment(n))
+    [by forall_intro generalize-f]
+qed
+
+// REMOVING an element from a set of size n+1 leaves size n: straighten the bijection with a
+// swap so the element goes to the top, then restrict off it.
+theorem removingAnElementDropsTheSize: forall b: Set; forall t: Element; forall n: Nat;
+  hasSize(b, succ(n)) -> member(t, b) -> hasSize(difference(b, singleton(t)), n)
+proof
+  @generalize-b |
+    fix b: Set {
+      @generalize-t |
+        fix t: Element {
+          @generalize-n |
+            fix n: Nat {
+              @given-size |
+                assume hasSize(b, succ(n)) {
+                  @given-t-in-b |
+                    assume member(t, b) {
+                      @the-bijection-exists |
+                        exists f: Fn; bijectsOnto(f, b, segment(succ(n)))
+                        [by hypothesis given-size]
+                      @t-in-b |
+                        member(t, b)
+                        [by hypothesis given-t-in-b]
+                      @with-bijection-f |
+                        unpack f: Fn from the-bijection-exists {
+                          @bijection-facts |
+                            mapsInto(f, b, segment(succ(n))) and injectiveOn(f, b) and surjectiveOnto(f, b, segment(succ(n)))
+                            [by hypothesis with-bijection-f]
+                          @into-and-injective |
+                            mapsInto(f, b, segment(succ(n))) and injectiveOn(f, b)
+                            [by and_elim_left bijection-facts]
+                          @into |
+                            mapsInto(f, b, segment(succ(n)))
+                            [by and_elim_left into-and-injective]
+                          @injective |
+                            injectiveOn(f, b)
+                            [by and_elim_right into-and-injective]
+                          @covers |
+                            surjectiveOnto(f, b, segment(succ(n)))
+                            [by and_elim_right bijection-facts]
+
+                          // the swap that moves t's image onto the top
+                          @image-of-t-in-big |
+                            member(apply(f, t), segment(succ(n)))
+                            [using specialize into(t) t-in-b]
+                          @top-in-big |
+                            member(numeral(n), segment(succ(n)))
+                            [using specialize topIsInTheBiggerSegment(n)]
+                          @swap-maps-into |
+                            mapsInto(swap(apply(f, t), numeral(n)), segment(succ(n)), segment(succ(n)))
+                            [using specialize swapMapsInto(apply(f, t), numeral(n), segment(succ(n))) image-of-t-in-big top-in-big]
+                          @swap-is-injective |
+                            injectiveOn(swap(apply(f, t), numeral(n)), segment(succ(n)))
+                            [using specialize swapIsInjectiveOn(apply(f, t), numeral(n), segment(succ(n)))]
+                          @swap-covers |
+                            surjectiveOnto(swap(apply(f, t), numeral(n)), segment(succ(n)), segment(succ(n)))
+                            [using specialize swapCoversItsImage(apply(f, t), numeral(n), segment(succ(n)), segment(succ(n))) swap-maps-into]
+
+                          // the composite bijects b onto segment(succ n) and sends t to the top
+                          @composite-maps-into |
+                            mapsInto(compose(swap(apply(f, t), numeral(n)), f), b, segment(succ(n)))
+                            [using specialize composeMapsInto(f, swap(apply(f, t), numeral(n)), b, segment(succ(n)), segment(succ(n))) into swap-maps-into]
+                          @composite-is-injective |
+                            injectiveOn(compose(swap(apply(f, t), numeral(n)), f), b)
+                            [using specialize composeIsInjectiveOn(f, swap(apply(f, t), numeral(n)), b, segment(succ(n))) into injective swap-is-injective]
+                          @composite-covers |
+                            surjectiveOnto(compose(swap(apply(f, t), numeral(n)), f), b, segment(succ(n)))
+                            [using specialize composeIsSurjectiveOnto(f, swap(apply(f, t), numeral(n)), b, segment(succ(n)), segment(succ(n))) covers swap-covers]
+                          @composite-into-and-injective |
+                            mapsInto(compose(swap(apply(f, t), numeral(n)), f), b, segment(succ(n))) and injectiveOn(compose(swap(apply(f, t), numeral(n)), f), b)
+                            [by and_intro composite-maps-into composite-is-injective]
+                          @composite-bijects |
+                            bijectsOnto(compose(swap(apply(f, t), numeral(n)), f), b, segment(succ(n)))
+                            [by and_intro composite-into-and-injective composite-covers]
+                          @composite-at-t |
+                            apply(compose(swap(apply(f, t), numeral(n)), f), t) = apply(swap(apply(f, t), numeral(n)), apply(f, t))
+                            [using specialize composeApply(swap(apply(f, t), numeral(n)), f, t)]
+                          @swap-moves-the-image-to-top |
+                            apply(swap(apply(f, t), numeral(n)), apply(f, t)) = numeral(n)
+                            [using specialize swapAtFirst(apply(f, t), numeral(n))]
+                          @composite-sends-t-to-top |
+                            apply(compose(swap(apply(f, t), numeral(n)), f), t) = numeral(n)
+                            [by rewrite swap-moves-the-image-to-top composite-at-t]
+
+                          @restriction-bijects |
+                            bijectsOnto(compose(swap(apply(f, t), numeral(n)), f), difference(b, singleton(t)), segment(n))
+                            [using specialize restrictionOffAPoint(compose(swap(apply(f, t), numeral(n)), f), b, t, n) composite-bijects t-in-b composite-sends-t-to-top]
+                          @conclusion-witness |
+                            exists g: Fn; bijectsOnto(g, difference(b, singleton(t)), segment(n))
+                            [by exists_intro(compose(swap(apply(f, t), numeral(n)), f)) restriction-bijects]
+                        }
+                      @conclusion-rest-has-size-n |
+                        exists g: Fn; bijectsOnto(g, difference(b, singleton(t)), segment(n))
+                        [by exists_elim with-bijection-f]
+                    }
+                  @conclusion-t |
+                    member(t, b) -> hasSize(difference(b, singleton(t)), n)
+                    [by implies_intro given-t-in-b]
+                }
+              @conclusion-size |
+                hasSize(b, succ(n)) -> member(t, b) -> hasSize(difference(b, singleton(t)), n)
+                [by implies_intro given-size]
+            }
+          @discharge-n |
+            forall n: Nat; hasSize(b, succ(n)) -> member(t, b) -> hasSize(difference(b, singleton(t)), n)
+            [by forall_intro generalize-n]
+        }
+      @discharge-t |
+        forall t: Element; forall n: Nat; hasSize(b, succ(n)) -> member(t, b) -> hasSize(difference(b, singleton(t)), n)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall b: Set; forall t: Element; forall n: Nat;
+      hasSize(b, succ(n)) -> member(t, b) -> hasSize(difference(b, singleton(t)), n)
+    [by forall_intro generalize-b]
+qed
+
+// ADDING a fresh element: extend a bijection c -> segment(m) by t -> numeral(m). The
+// extension is pinned pointwise by a spec (at t, the new top; elsewhere, the old map) that
+// is trivially total and single-valued, and `functionFromGraph` realizes it.
+define extensionSpec(h, t, m, x, y) = (x = t and y = numeral(m)) or (x != t and y = apply(h, x))
+
+theorem extensionSpecIsTotalAndSingleValued: forall h: Fn; forall t: Element; forall m: Nat;
+  forall x: Element; exists y: Element;
+  extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+proof
+  @generalize-h |
+    fix h: Fn {
+      @generalize-t |
+        fix t: Element {
+          @generalize-m |
+            fix m: Nat {
+              @pointwise |
+                fix x: Element {
+                  @x-is-t-or-not |
+                    x = t or x != t
+                    [using tautology]
+                  @conclusion-unique-value |
+                    exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+                    case x-is-t-or-not {
+                      @when-at-t |
+                        assume x = t {
+                          @x-is-t |
+                            x = t
+                            [by hypothesis when-at-t]
+                          @top-is-itself |
+                            numeral(m) = numeral(m)
+                            [by reflexivity]
+                          @top-meets-the-spec |
+                            extensionSpec(h, t, m, x, numeral(m))
+                            [using tautology x-is-t top-is-itself]
+                          @generalize-candidate |
+                            fix y2: Element {
+                              @given-candidate |
+                                assume extensionSpec(h, t, m, x, y2) {
+                                  @candidate-meets-spec |
+                                    extensionSpec(h, t, m, x, y2)
+                                    [by hypothesis given-candidate]
+                                  @candidate-is-top |
+                                    y2 = numeral(m)
+                                    [using tautology candidate-meets-spec x-is-t]
+                                  @conclusion-top-is-candidate |
+                                    numeral(m) = y2
+                                    [by symmetry candidate-is-top]
+                                }
+                              @conclusion-candidate-implication |
+                                extensionSpec(h, t, m, x, y2) -> numeral(m) = y2
+                                [by implies_intro given-candidate]
+                            }
+                          @top-is-the-only-value |
+                            forall y2: Element; extensionSpec(h, t, m, x, y2) -> numeral(m) = y2
+                            [by forall_intro generalize-candidate]
+                          @witness-clauses |
+                            extensionSpec(h, t, m, x, numeral(m)) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> numeral(m) = y2)
+                            [by and_intro top-meets-the-spec top-is-the-only-value]
+                          @conclusion-at-t |
+                            exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+                            [by exists_intro(numeral(m)) witness-clauses]
+                        }
+                      @when-elsewhere |
+                        assume x != t {
+                          @x-is-not-t |
+                            x != t
+                            [by hypothesis when-elsewhere]
+                          @old-value-is-itself |
+                            apply(h, x) = apply(h, x)
+                            [by reflexivity]
+                          @old-value-meets-the-spec |
+                            extensionSpec(h, t, m, x, apply(h, x))
+                            [using tautology x-is-not-t old-value-is-itself]
+                          @generalize-candidate |
+                            fix y2: Element {
+                              @given-candidate |
+                                assume extensionSpec(h, t, m, x, y2) {
+                                  @candidate-meets-spec |
+                                    extensionSpec(h, t, m, x, y2)
+                                    [by hypothesis given-candidate]
+                                  @candidate-is-old-value |
+                                    y2 = apply(h, x)
+                                    [using tautology candidate-meets-spec x-is-not-t]
+                                  @conclusion-old-value-is-candidate |
+                                    apply(h, x) = y2
+                                    [by symmetry candidate-is-old-value]
+                                }
+                              @conclusion-candidate-implication |
+                                extensionSpec(h, t, m, x, y2) -> apply(h, x) = y2
+                                [by implies_intro given-candidate]
+                            }
+                          @old-value-is-the-only-value |
+                            forall y2: Element; extensionSpec(h, t, m, x, y2) -> apply(h, x) = y2
+                            [by forall_intro generalize-candidate]
+                          @witness-clauses |
+                            extensionSpec(h, t, m, x, apply(h, x)) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> apply(h, x) = y2)
+                            [by and_intro old-value-meets-the-spec old-value-is-the-only-value]
+                          @conclusion-elsewhere |
+                            exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+                            [by exists_intro(apply(h, x)) witness-clauses]
+                        }
+                    }
+                }
+              @conclusion-total-and-single-valued |
+                forall x: Element; exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+                [by forall_intro pointwise]
+            }
+          @discharge-m |
+            forall m: Nat; forall x: Element; exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+            [by forall_intro generalize-m]
+        }
+      @discharge-t |
+        forall t: Element; forall m: Nat; forall x: Element; exists y: Element; extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall h: Fn; forall t: Element; forall m: Nat;
+      forall x: Element; exists y: Element;
+      extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+    [by forall_intro generalize-h]
+qed
+// Any map realizing the extension spec bijects c ∪ {t} onto segment(succ m): on c it is the
+// old bijection into segment(m); at t it is the new top, which nothing in c reaches.
+theorem extensionSpecBijects: forall h: Fn; forall g: Fn; forall c: Set; forall t: Element; forall m: Nat;
+  bijectsOnto(h, c, segment(m)) -> (not member(t, c)) ->
+  (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) ->
+  bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+proof
+  @generalize-h |
+    fix h: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-c |
+            fix c: Set {
+              @generalize-t |
+                fix t: Element {
+                  @generalize-m |
+                    fix m: Nat {
+                      @given-bijection |
+                        assume bijectsOnto(h, c, segment(m)) {
+                          @given-t-outside |
+                            assume not member(t, c) {
+                              @given-spec |
+                                assume forall x: Element; extensionSpec(h, t, m, x, apply(g, x)) {
+                                  @bijection-facts |
+                                    mapsInto(h, c, segment(m)) and injectiveOn(h, c) and surjectiveOnto(h, c, segment(m))
+                                    [by hypothesis given-bijection]
+                                  @into-and-injective |
+                                    mapsInto(h, c, segment(m)) and injectiveOn(h, c)
+                                    [by and_elim_left bijection-facts]
+                                  @into |
+                                    mapsInto(h, c, segment(m))
+                                    [by and_elim_left into-and-injective]
+                                  @injective |
+                                    injectiveOn(h, c)
+                                    [by and_elim_right into-and-injective]
+                                  @covers |
+                                    surjectiveOnto(h, c, segment(m))
+                                    [by and_elim_right bijection-facts]
+                                  @t-outside |
+                                    not member(t, c)
+                                    [by hypothesis given-t-outside]
+                                  @spec |
+                                    forall x: Element; extensionSpec(h, t, m, x, apply(g, x))
+                                    [by hypothesis given-spec]
+                                  @top-in-big |
+                                    member(numeral(m), segment(succ(m)))
+                                    [using specialize topIsInTheBiggerSegment(m)]
+                                  @top-not-in-small |
+                                    not member(numeral(m), segment(m))
+                                    [using specialize topIsNotInTheSmallerSegment(m)]
+
+                                  // INTO
+                                  @pointwise-into |
+                                    fix x: Element {
+                                      @given-x |
+                                        assume member(x, union(c, singleton(t))) {
+                                          @x-in-union |
+                                            member(x, union(c, singleton(t)))
+                                            [by hypothesis given-x]
+                                          @union-membership |
+                                            member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+                                            [using specialize unionSingletonMember(c, t, x)]
+                                          @x-in-c-or-is-t |
+                                            member(x, c) or x = t
+                                            [using tautology x-in-union union-membership]
+                                          @spec-at-x |
+                                            extensionSpec(h, t, m, x, apply(g, x))
+                                            [using specialize spec(x)]
+                                          @conclusion-image-in-big |
+                                            member(apply(g, x), segment(succ(m)))
+                                            case x-in-c-or-is-t {
+                                              @when-in-c |
+                                                assume member(x, c) {
+                                                  @x-in-c |
+                                                    member(x, c)
+                                                    [by hypothesis when-in-c]
+                                                  @x-is-not-t |
+                                                    x != t
+                                                    [using specialize memberIsNotTheOutsider(c, t, x) x-in-c t-outside]
+                                                  @g-agrees-with-h |
+                                                    apply(g, x) = apply(h, x)
+                                                    [using tautology spec-at-x x-is-not-t]
+                                                  @old-image-in-small |
+                                                    member(apply(h, x), segment(m))
+                                                    [using specialize into(x) x-in-c]
+                                                  @image-in-small |
+                                                    member(apply(g, x), segment(m))
+                                                    [by rewrite g-agrees-with-h old-image-in-small]
+                                                  @conclusion-in-c |
+                                                    member(apply(g, x), segment(succ(m)))
+                                                    [using specialize segmentGrows(m, apply(g, x)) image-in-small]
+                                                }
+                                              @when-at-t |
+                                                assume x = t {
+                                                  @x-is-t |
+                                                    x = t
+                                                    [by hypothesis when-at-t]
+                                                  @g-sends-x-to-top |
+                                                    apply(g, x) = numeral(m)
+                                                    [using tautology spec-at-x x-is-t]
+                                                  @conclusion-at-t |
+                                                    member(apply(g, x), segment(succ(m)))
+                                                    [by rewrite g-sends-x-to-top top-in-big]
+                                                }
+                                            }
+                                        }
+                                      @conclusion-into-implication |
+                                        member(x, union(c, singleton(t))) -> member(apply(g, x), segment(succ(m)))
+                                        [by implies_intro given-x]
+                                    }
+                                  @g-maps-into |
+                                    mapsInto(g, union(c, singleton(t)), segment(succ(m)))
+                                    [by forall_intro pointwise-into]
+
+                                  // INJECTIVE: four cases on which of x, y is t
+                                  @pointwise-injective |
+                                    fix x: Element {
+                                      @inner |
+                                        fix y: Element {
+                                          @given-x-in-union |
+                                            assume member(x, union(c, singleton(t))) {
+                                              @given-y-in-union |
+                                                assume member(y, union(c, singleton(t))) {
+                                                  @given-images |
+                                                    assume apply(g, x) = apply(g, y) {
+                                                      @x-in-union |
+                                                        member(x, union(c, singleton(t)))
+                                                        [by hypothesis given-x-in-union]
+                                                      @y-in-union |
+                                                        member(y, union(c, singleton(t)))
+                                                        [by hypothesis given-y-in-union]
+                                                      @images-equal |
+                                                        apply(g, x) = apply(g, y)
+                                                        [by hypothesis given-images]
+                                                      @x-union-membership |
+                                                        member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+                                                        [using specialize unionSingletonMember(c, t, x)]
+                                                      @y-union-membership |
+                                                        member(y, union(c, singleton(t))) iff (member(y, c) or y = t)
+                                                        [using specialize unionSingletonMember(c, t, y)]
+                                                      @x-in-c-or-is-t |
+                                                        member(x, c) or x = t
+                                                        [using tautology x-in-union x-union-membership]
+                                                      @y-in-c-or-is-t |
+                                                        member(y, c) or y = t
+                                                        [using tautology y-in-union y-union-membership]
+                                                      @spec-at-x |
+                                                        extensionSpec(h, t, m, x, apply(g, x))
+                                                        [using specialize spec(x)]
+                                                      @spec-at-y |
+                                                        extensionSpec(h, t, m, y, apply(g, y))
+                                                        [using specialize spec(y)]
+                                                      @conclusion-equal |
+                                                        x = y
+                                                        case x-in-c-or-is-t {
+                                                          @when-x-in-c |
+                                                            assume member(x, c) {
+                                                              @x-in-c |
+                                                                member(x, c)
+                                                                [by hypothesis when-x-in-c]
+                                                              @x-is-not-t |
+                                                                x != t
+                                                                [using specialize memberIsNotTheOutsider(c, t, x) x-in-c t-outside]
+                                                              @g-x-is-h-x |
+                                                                apply(g, x) = apply(h, x)
+                                                                [using tautology spec-at-x x-is-not-t]
+                                                              @h-x-in-small |
+                                                                member(apply(h, x), segment(m))
+                                                                [using specialize into(x) x-in-c]
+                                                              @h-x-is-g-y |
+                                                                apply(h, x) = apply(g, y)
+                                                                [by rewrite g-x-is-h-x images-equal]
+                                                              @conclusion-x-in-c |
+                                                                x = y
+                                                                case y-in-c-or-is-t {
+                                                                  @when-y-in-c |
+                                                                    assume member(y, c) {
+                                                                      @y-in-c |
+                                                                        member(y, c)
+                                                                        [by hypothesis when-y-in-c]
+                                                                      @y-is-not-t |
+                                                                        y != t
+                                                                        [using specialize memberIsNotTheOutsider(c, t, y) y-in-c t-outside]
+                                                                      @g-y-is-h-y |
+                                                                        apply(g, y) = apply(h, y)
+                                                                        [using tautology spec-at-y y-is-not-t]
+                                                                      @h-images-equal |
+                                                                        apply(h, x) = apply(h, y)
+                                                                        [by rewrite g-y-is-h-y h-x-is-g-y]
+                                                                      @conclusion-both-in-c |
+                                                                        x = y
+                                                                        [using specialize injective(x, y) x-in-c y-in-c h-images-equal]
+                                                                    }
+                                                                  @when-y-at-t |
+                                                                    assume y = t {
+                                                                      // then h(x) would be the top, which is not in segment(m)
+                                                                      @y-is-t |
+                                                                        y = t
+                                                                        [by hypothesis when-y-at-t]
+                                                                      @g-y-is-top |
+                                                                        apply(g, y) = numeral(m)
+                                                                        [using tautology spec-at-y y-is-t]
+                                                                      @h-x-is-top |
+                                                                        apply(h, x) = numeral(m)
+                                                                        [by rewrite g-y-is-top h-x-is-g-y]
+                                                                      @top-in-small |
+                                                                        member(numeral(m), segment(m))
+                                                                        [by rewrite h-x-is-top h-x-in-small]
+                                                                      @conclusion-absurd-x |
+                                                                        x = y
+                                                                        [by absurd top-in-small top-not-in-small]
+                                                                    }
+                                                                }
+                                                            }
+                                                          @when-x-at-t |
+                                                            assume x = t {
+                                                              @x-is-t |
+                                                                x = t
+                                                                [by hypothesis when-x-at-t]
+                                                              @g-x-is-top |
+                                                                apply(g, x) = numeral(m)
+                                                                [using tautology spec-at-x x-is-t]
+                                                              @top-is-g-y |
+                                                                numeral(m) = apply(g, y)
+                                                                [by rewrite g-x-is-top images-equal]
+                                                              @conclusion-x-at-t |
+                                                                x = y
+                                                                case y-in-c-or-is-t {
+                                                                  @when-y-in-c |
+                                                                    assume member(y, c) {
+                                                                      @y-in-c |
+                                                                        member(y, c)
+                                                                        [by hypothesis when-y-in-c]
+                                                                      @y-is-not-t |
+                                                                        y != t
+                                                                        [using specialize memberIsNotTheOutsider(c, t, y) y-in-c t-outside]
+                                                                      @g-y-is-h-y |
+                                                                        apply(g, y) = apply(h, y)
+                                                                        [using tautology spec-at-y y-is-not-t]
+                                                                      @h-y-in-small |
+                                                                        member(apply(h, y), segment(m))
+                                                                        [using specialize into(y) y-in-c]
+                                                                      @top-is-h-y |
+                                                                        numeral(m) = apply(h, y)
+                                                                        [by rewrite g-y-is-h-y top-is-g-y]
+                                                                      @top-in-small |
+                                                                        member(numeral(m), segment(m))
+                                                                        [by rewrite top-is-h-y h-y-in-small]
+                                                                      @conclusion-absurd-y |
+                                                                        x = y
+                                                                        [by absurd top-in-small top-not-in-small]
+                                                                    }
+                                                                  @when-y-at-t |
+                                                                    assume y = t {
+                                                                      @y-is-t |
+                                                                        y = t
+                                                                        [by hypothesis when-y-at-t]
+                                                                      @conclusion-both-t |
+                                                                        x = y
+                                                                        [by rewrite y-is-t x-is-t]
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                  @conclusion-images |
+                                                    apply(g, x) = apply(g, y) -> x = y
+                                                    [by implies_intro given-images]
+                                                }
+                                              @conclusion-y |
+                                                member(y, union(c, singleton(t))) -> apply(g, x) = apply(g, y) -> x = y
+                                                [by implies_intro given-y-in-union]
+                                            }
+                                          @conclusion-x |
+                                            member(x, union(c, singleton(t))) -> member(y, union(c, singleton(t))) -> apply(g, x) = apply(g, y) -> x = y
+                                            [by implies_intro given-x-in-union]
+                                        }
+                                      @discharge-y |
+                                        forall y: Element; member(x, union(c, singleton(t))) -> member(y, union(c, singleton(t))) -> apply(g, x) = apply(g, y) -> x = y
+                                        [by forall_intro inner]
+                                    }
+                                  @g-is-injective |
+                                    injectiveOn(g, union(c, singleton(t)))
+                                    [by forall_intro pointwise-injective]
+
+                                  // ONTO: below the top, h's preimage; at the top, t
+                                  @pointwise-covers |
+                                    fix y: Element {
+                                      @given-y |
+                                        assume member(y, segment(succ(m))) {
+                                          @y-in-big |
+                                            member(y, segment(succ(m)))
+                                            [by hypothesis given-y]
+                                          @y-splits |
+                                            member(y, segment(m)) or y = numeral(m)
+                                            [using specialize segmentSuccSplits(m, y) y-in-big]
+                                          @conclusion-y-covered |
+                                            exists x: Element; member(x, union(c, singleton(t))) and apply(g, x) = y
+                                            case y-splits {
+                                              @when-below-top |
+                                                assume member(y, segment(m)) {
+                                                  @y-in-small |
+                                                    member(y, segment(m))
+                                                    [by hypothesis when-below-top]
+                                                  @preimage-exists |
+                                                    exists x: Element; member(x, c) and apply(h, x) = y
+                                                    [using specialize covers(y) y-in-small]
+                                                  @with-preimage-x |
+                                                    unpack x: Element from preimage-exists {
+                                                      @preimage-facts |
+                                                        member(x, c) and apply(h, x) = y
+                                                        [by hypothesis with-preimage-x]
+                                                      @x-in-c |
+                                                        member(x, c)
+                                                        [by and_elim_left preimage-facts]
+                                                      @h-x-is-y |
+                                                        apply(h, x) = y
+                                                        [by and_elim_right preimage-facts]
+                                                      @x-is-not-t |
+                                                        x != t
+                                                        [using specialize memberIsNotTheOutsider(c, t, x) x-in-c t-outside]
+                                                      @spec-at-x |
+                                                        extensionSpec(h, t, m, x, apply(g, x))
+                                                        [using specialize spec(x)]
+                                                      @g-x-is-h-x |
+                                                        apply(g, x) = apply(h, x)
+                                                        [using tautology spec-at-x x-is-not-t]
+                                                      @g-x-is-y |
+                                                        apply(g, x) = y
+                                                        [using chain g-x-is-h-x h-x-is-y]
+                                                      @union-membership-at-x |
+                                                        member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+                                                        [using specialize unionSingletonMember(c, t, x)]
+                                                      @x-in-union |
+                                                        member(x, union(c, singleton(t)))
+                                                        [using tautology x-in-c union-membership-at-x]
+                                                      @x-is-a-preimage |
+                                                        member(x, union(c, singleton(t))) and apply(g, x) = y
+                                                        [by and_intro x-in-union g-x-is-y]
+                                                      @conclusion-witness-x |
+                                                        exists x2: Element; member(x2, union(c, singleton(t))) and apply(g, x2) = y
+                                                        [by exists_intro(x) x-is-a-preimage]
+                                                    }
+                                                  @conclusion-below-top |
+                                                    exists x2: Element; member(x2, union(c, singleton(t))) and apply(g, x2) = y
+                                                    [by exists_elim with-preimage-x]
+                                                }
+                                              @when-at-top |
+                                                assume y = numeral(m) {
+                                                  @y-is-top |
+                                                    y = numeral(m)
+                                                    [by hypothesis when-at-top]
+                                                  @t-is-t |
+                                                    t = t
+                                                    [by reflexivity]
+                                                  @spec-at-t |
+                                                    extensionSpec(h, t, m, t, apply(g, t))
+                                                    [using specialize spec(t)]
+                                                  @g-t-is-top |
+                                                    apply(g, t) = numeral(m)
+                                                    [using tautology spec-at-t t-is-t]
+                                                  @g-t-is-y |
+                                                    apply(g, t) = y
+                                                    [by rewrite y-is-top g-t-is-top]
+                                                  @union-membership-at-t |
+                                                    member(t, union(c, singleton(t))) iff (member(t, c) or t = t)
+                                                    [using specialize unionSingletonMember(c, t, t)]
+                                                  @t-in-union |
+                                                    member(t, union(c, singleton(t)))
+                                                    [using tautology union-membership-at-t t-is-t]
+                                                  @t-is-a-preimage |
+                                                    member(t, union(c, singleton(t))) and apply(g, t) = y
+                                                    [by and_intro t-in-union g-t-is-y]
+                                                  @conclusion-witness-t |
+                                                    exists x2: Element; member(x2, union(c, singleton(t))) and apply(g, x2) = y
+                                                    [by exists_intro(t) t-is-a-preimage]
+                                                }
+                                            }
+                                        }
+                                      @conclusion-covers-implication |
+                                        member(y, segment(succ(m))) -> exists x: Element; member(x, union(c, singleton(t))) and apply(g, x) = y
+                                        [by implies_intro given-y]
+                                    }
+                                  @g-covers |
+                                    surjectiveOnto(g, union(c, singleton(t)), segment(succ(m)))
+                                    [by forall_intro pointwise-covers]
+
+                                  @g-into-and-injective |
+                                    mapsInto(g, union(c, singleton(t)), segment(succ(m))) and injectiveOn(g, union(c, singleton(t)))
+                                    [by and_intro g-maps-into g-is-injective]
+                                  @conclusion-g-bijects |
+                                    bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                                    [by and_intro g-into-and-injective g-covers]
+                                }
+                              @conclusion-spec |
+                                (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                                [by implies_intro given-spec]
+                            }
+                          @conclusion-outside |
+                            (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                            [by implies_intro given-t-outside]
+                        }
+                      @conclusion-bijection |
+                        bijectsOnto(h, c, segment(m)) -> (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                        [by implies_intro given-bijection]
+                    }
+                  @discharge-m |
+                    forall m: Nat; bijectsOnto(h, c, segment(m)) -> (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                    [by forall_intro generalize-m]
+                }
+              @discharge-t |
+                forall t: Element; forall m: Nat; bijectsOnto(h, c, segment(m)) -> (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                [by forall_intro generalize-t]
+            }
+          @discharge-c |
+            forall c: Set; forall t: Element; forall m: Nat; bijectsOnto(h, c, segment(m)) -> (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+            [by forall_intro generalize-c]
+        }
+      @discharge-g |
+        forall g: Fn; forall c: Set; forall t: Element; forall m: Nat; bijectsOnto(h, c, segment(m)) -> (not member(t, c)) -> (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) -> bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall h: Fn; forall g: Fn; forall c: Set; forall t: Element; forall m: Nat;
+      bijectsOnto(h, c, segment(m)) -> (not member(t, c)) ->
+      (forall x: Element; extensionSpec(h, t, m, x, apply(g, x))) ->
+      bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+    [by forall_intro generalize-h]
+qed
+
+// ADDING a fresh element to a set of size m gives size m+1: realize the extension spec.
+theorem addingAnElementRaisesTheSize: forall c: Set; forall t: Element; forall m: Nat;
+  hasSize(c, m) -> (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+proof
+  @generalize-c |
+    fix c: Set {
+      @generalize-t |
+        fix t: Element {
+          @generalize-m |
+            fix m: Nat {
+              @given-size |
+                assume hasSize(c, m) {
+                  @given-t-outside |
+                    assume not member(t, c) {
+                      @the-bijection-exists |
+                        exists h: Fn; bijectsOnto(h, c, segment(m))
+                        [by hypothesis given-size]
+                      @t-outside |
+                        not member(t, c)
+                        [by hypothesis given-t-outside]
+                      @with-bijection-h |
+                        unpack h: Fn from the-bijection-exists {
+                          @h-bijects |
+                            bijectsOnto(h, c, segment(m))
+                            [by hypothesis with-bijection-h]
+                          @spec-is-total-and-single-valued |
+                            forall x: Element; exists y: Element;
+                              extensionSpec(h, t, m, x, y) and (forall y2: Element; extensionSpec(h, t, m, x, y2) -> y = y2)
+                            [using specialize extensionSpecIsTotalAndSingleValued(h, t, m)]
+                          @a-realization-exists |
+                            exists g: Fn; forall x: Element; extensionSpec(h, t, m, x, apply(g, x))
+                            [using instantiation functionFromGraph(fun x, y: Element => extensionSpec(h, t, m, x, y)) spec-is-total-and-single-valued]
+                          @with-realization-g |
+                            unpack g: Fn from a-realization-exists {
+                              @g-realizes-the-spec |
+                                forall x: Element; extensionSpec(h, t, m, x, apply(g, x))
+                                [by hypothesis with-realization-g]
+                              @g-bijects |
+                                bijectsOnto(g, union(c, singleton(t)), segment(succ(m)))
+                                [using specialize extensionSpecBijects(h, g, c, t, m) h-bijects t-outside g-realizes-the-spec]
+                              @conclusion-witness |
+                                exists g2: Fn; bijectsOnto(g2, union(c, singleton(t)), segment(succ(m)))
+                                [by exists_intro(g) g-bijects]
+                            }
+                          @conclusion-realized |
+                            exists g2: Fn; bijectsOnto(g2, union(c, singleton(t)), segment(succ(m)))
+                            [by exists_elim with-realization-g]
+                        }
+                      @conclusion-enlarged-has-size |
+                        exists g2: Fn; bijectsOnto(g2, union(c, singleton(t)), segment(succ(m)))
+                        [by exists_elim with-bijection-h]
+                    }
+                  @conclusion-outside |
+                    (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+                    [by implies_intro given-t-outside]
+                }
+              @conclusion-size |
+                hasSize(c, m) -> (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+                [by implies_intro given-size]
+            }
+          @discharge-m |
+            forall m: Nat; hasSize(c, m) -> (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+            [by forall_intro generalize-m]
+        }
+      @discharge-t |
+        forall t: Element; forall m: Nat; hasSize(c, m) -> (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall c: Set; forall t: Element; forall m: Nat;
+      hasSize(c, m) -> (not member(t, c)) -> hasSize(union(c, singleton(t)), succ(m))
+    [by forall_intro generalize-c]
+qed
+
+// A set of size n+1 has a member: the preimage of the top.
+theorem sizedSetHasAMember: forall b: Set; forall n: Nat; hasSize(b, succ(n)) -> exists t: Element; member(t, b)
+proof
+  @generalize-b |
+    fix b: Set {
+      @generalize-n |
+        fix n: Nat {
+          @given-size |
+            assume hasSize(b, succ(n)) {
+              @the-bijection-exists |
+                exists f: Fn; bijectsOnto(f, b, segment(succ(n)))
+                [by hypothesis given-size]
+              @with-bijection-f |
+                unpack f: Fn from the-bijection-exists {
+                  @bijection-facts |
+                    mapsInto(f, b, segment(succ(n))) and injectiveOn(f, b) and surjectiveOnto(f, b, segment(succ(n)))
+                    [by hypothesis with-bijection-f]
+                  @covers |
+                    surjectiveOnto(f, b, segment(succ(n)))
+                    [by and_elim_right bijection-facts]
+                  @top-in-big |
+                    member(numeral(n), segment(succ(n)))
+                    [using specialize topIsInTheBiggerSegment(n)]
+                  @preimage-exists |
+                    exists x: Element; member(x, b) and apply(f, x) = numeral(n)
+                    [using specialize covers(numeral(n)) top-in-big]
+                  @with-preimage-x |
+                    unpack x: Element from preimage-exists {
+                      @preimage-facts |
+                        member(x, b) and apply(f, x) = numeral(n)
+                        [by hypothesis with-preimage-x]
+                      @x-in-b |
+                        member(x, b)
+                        [by and_elim_left preimage-facts]
+                      @conclusion-witness |
+                        exists t: Element; member(t, b)
+                        [by exists_intro(x) x-in-b]
+                    }
+                  @conclusion-preimage |
+                    exists t: Element; member(t, b)
+                    [by exists_elim with-preimage-x]
+                }
+              @conclusion-member |
+                exists t: Element; member(t, b)
+                [by exists_elim with-bijection-f]
+            }
+          @conclusion-implication |
+            hasSize(b, succ(n)) -> exists t: Element; member(t, b)
+            [by implies_intro given-size]
+        }
+      @discharge-n |
+        forall n: Nat; hasSize(b, succ(n)) -> exists t: Element; member(t, b)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall b: Set; forall n: Nat; hasSize(b, succ(n)) -> exists t: Element; member(t, b)
+    [by forall_intro generalize-b]
+qed
+
+// -- the three counting principles ------------------------------------------------------
+
+// A SUBSET OF A FINITE SET IS FINITE, and no larger. Induction on the size n of the whole:
+// remove a member t of the whole; if t is outside the subset, the subset sits inside the
+// remainder (size n-1); if t is inside, remove it from the subset too, count the rest inside
+// the remainder, and put t back.
+theorem subsetOfFiniteIsFinite: forall n: Nat; forall b: Set; forall a: Set;
+  hasSize(b, n) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, n)
+proof
+  // base case: the whole is empty, so the subset is empty, of size ZERO
+  @base-case-proof |
+    fix b: Set {
+      @inner-base |
+        fix a: Set {
+          @given-size-zero |
+            assume hasSize(b, ZERO) {
+              @given-subset |
+                assume subset(a, b) {
+                  @b-has-size-zero |
+                    hasSize(b, ZERO)
+                    [by hypothesis given-size-zero]
+                  @a-in-b |
+                    forall x: Element; member(x, a) -> member(x, b)
+                    [by hypothesis given-subset]
+                  @b-is-empty |
+                    b = emptyset
+                    [using specialize sizeZeroIsEmpty(b) b-has-size-zero]
+                  @a-in-empty |
+                    forall x: Element; member(x, a) -> member(x, emptyset)
+                    [by rewrite b-is-empty a-in-b]
+                  @pointwise-backward |
+                    fix x: Element {
+                      @nothing-in-emptyset |
+                        not member(x, emptyset)
+                        [using specialize emptysetMember(x)]
+                      @empty-into-a |
+                        member(x, emptyset) -> member(x, a)
+                        [using tautology nothing-in-emptyset]
+                    }
+                  @empty-in-a |
+                    forall x: Element; member(x, emptyset) -> member(x, a)
+                    [by forall_intro pointwise-backward]
+                  @a-is-empty |
+                    a = emptyset
+                    [using specialize extensionality(a, emptyset) a-in-empty empty-in-a]
+                  @empty-has-size-zero |
+                    hasSize(emptyset, ZERO)
+                    [by cite emptysetHasSizeZero]
+                  @a-has-size-zero |
+                    hasSize(a, ZERO)
+                    [by rewrite a-is-empty empty-has-size-zero]
+                  @zero-is-at-most-zero |
+                    less_or_equal(ZERO, ZERO)
+                    [using specialize lessOrEqualRefl(ZERO)]
+                  @witness-clauses |
+                    hasSize(a, ZERO) and less_or_equal(ZERO, ZERO)
+                    [by and_intro a-has-size-zero zero-is-at-most-zero]
+                  @conclusion-base-witness |
+                    exists m: Nat; hasSize(a, m) and less_or_equal(m, ZERO)
+                    [by exists_intro(ZERO) witness-clauses]
+                }
+              @conclusion-base-subset |
+                subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, ZERO)
+                [by implies_intro given-subset]
+            }
+          @conclusion-base-size |
+            hasSize(b, ZERO) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, ZERO)
+            [by implies_intro given-size-zero]
+        }
+      @discharge-base-a |
+        forall a: Set; hasSize(b, ZERO) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, ZERO)
+        [by forall_intro inner-base]
+    }
+  @base-case |
+    forall b: Set; forall a: Set; hasSize(b, ZERO) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, ZERO)
+    [by forall_intro base-case-proof]
+
+  // inductive step: remove one member of the whole and count inside the remainder
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall b: Set; forall a: Set; hasSize(b, k) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, k) {
+          @inductive-hypothesis |
+            forall b: Set; forall a: Set; hasSize(b, k) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, k)
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-b |
+            fix b: Set {
+              @generalize-a |
+                fix a: Set {
+                  @given-size |
+                    assume hasSize(b, succ(k)) {
+                      @given-subset |
+                        assume subset(a, b) {
+                          @b-has-size |
+                            hasSize(b, succ(k))
+                            [by hypothesis given-size]
+                          @a-in-b |
+                            forall x: Element; member(x, a) -> member(x, b)
+                            [by hypothesis given-subset]
+                          @some-member-exists |
+                            exists t: Element; member(t, b)
+                            [using specialize sizedSetHasAMember(b, k) b-has-size]
+                          @with-member-t |
+                            unpack t: Element from some-member-exists {
+                              @t-in-b |
+                                member(t, b)
+                                [by hypothesis with-member-t]
+                              @rest-has-size-k |
+                                hasSize(difference(b, singleton(t)), k)
+                                [using specialize removingAnElementDropsTheSize(b, t, k) b-has-size t-in-b]
+                              @t-in-a-or-not |
+                                (not member(t, a)) or member(t, a)
+                                [using tautology]
+                              @conclusion-a-is-sized |
+                                exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+                                case t-in-a-or-not {
+                                  @when-t-outside-a |
+                                    assume not member(t, a) {
+                                      // a sits inside the remainder
+                                      @t-not-in-a |
+                                        not member(t, a)
+                                        [by hypothesis when-t-outside-a]
+                                      @pointwise-a-in-rest |
+                                        fix x: Element {
+                                          @given-x-in-a |
+                                            assume member(x, a) {
+                                              @x-in-a |
+                                                member(x, a)
+                                                [by hypothesis given-x-in-a]
+                                              @x-in-b |
+                                                member(x, b)
+                                                [using specialize a-in-b(x) x-in-a]
+                                              @x-is-not-t |
+                                                x != t
+                                                [using specialize memberIsNotTheOutsider(a, t, x) x-in-a t-not-in-a]
+                                              @rest-membership |
+                                                member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                                                [using specialize differenceSingletonMember(b, t, x)]
+                                              @conclusion-x-in-rest |
+                                                member(x, difference(b, singleton(t)))
+                                                [using tautology rest-membership x-in-b x-is-not-t]
+                                            }
+                                          @conclusion-a-into-rest |
+                                            member(x, a) -> member(x, difference(b, singleton(t)))
+                                            [by implies_intro given-x-in-a]
+                                        }
+                                      @a-in-rest |
+                                        subset(a, difference(b, singleton(t)))
+                                        [by forall_intro pointwise-a-in-rest]
+                                      @a-sized-in-rest |
+                                        exists m: Nat; hasSize(a, m) and less_or_equal(m, k)
+                                        [using specialize inductive-hypothesis(difference(b, singleton(t)), a) rest-has-size-k a-in-rest]
+                                      @with-size-m |
+                                        unpack m: Nat from a-sized-in-rest {
+                                          @size-facts |
+                                            hasSize(a, m) and less_or_equal(m, k)
+                                            [by hypothesis with-size-m]
+                                          @a-has-size-m |
+                                            hasSize(a, m)
+                                            [by and_elim_left size-facts]
+                                          @m-at-most-k |
+                                            less_or_equal(m, k)
+                                            [by and_elim_right size-facts]
+                                          @m-below-succ-k |
+                                            less_than(m, succ(k))
+                                            [using specialize lessOrEqualToLessThanSucc(m, k) m-at-most-k]
+                                          @m-at-most-succ-k |
+                                            less_or_equal(m, succ(k))
+                                            [using specialize lessThanToLessOrEqual(m, succ(k)) m-below-succ-k]
+                                          @witness-clauses |
+                                            hasSize(a, m) and less_or_equal(m, succ(k))
+                                            [by and_intro a-has-size-m m-at-most-succ-k]
+                                          @conclusion-witness-m |
+                                            exists m2: Nat; hasSize(a, m2) and less_or_equal(m2, succ(k))
+                                            [by exists_intro(m) witness-clauses]
+                                        }
+                                      @conclusion-t-outside |
+                                        exists m2: Nat; hasSize(a, m2) and less_or_equal(m2, succ(k))
+                                        [by exists_elim with-size-m]
+                                    }
+                                  @when-t-inside-a |
+                                    assume member(t, a) {
+                                      // remove t from a as well, count, and put it back
+                                      @t-in-a |
+                                        member(t, a)
+                                        [by hypothesis when-t-inside-a]
+                                      @pointwise-rest-in-rest |
+                                        fix x: Element {
+                                          @given-x-in-rest-of-a |
+                                            assume member(x, difference(a, singleton(t))) {
+                                              @x-in-rest-of-a |
+                                                member(x, difference(a, singleton(t)))
+                                                [by hypothesis given-x-in-rest-of-a]
+                                              @a-rest-membership |
+                                                member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                                                [using specialize differenceSingletonMember(a, t, x)]
+                                              @x-in-a |
+                                                member(x, a)
+                                                [using tautology a-rest-membership x-in-rest-of-a]
+                                              @x-is-not-t |
+                                                x != t
+                                                [using tautology a-rest-membership x-in-rest-of-a]
+                                              @x-in-b |
+                                                member(x, b)
+                                                [using specialize a-in-b(x) x-in-a]
+                                              @b-rest-membership |
+                                                member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                                                [using specialize differenceSingletonMember(b, t, x)]
+                                              @conclusion-x-in-rest-of-b |
+                                                member(x, difference(b, singleton(t)))
+                                                [using tautology b-rest-membership x-in-b x-is-not-t]
+                                            }
+                                          @conclusion-rest-into-rest |
+                                            member(x, difference(a, singleton(t))) -> member(x, difference(b, singleton(t)))
+                                            [by implies_intro given-x-in-rest-of-a]
+                                        }
+                                      @rest-of-a-in-rest-of-b |
+                                        subset(difference(a, singleton(t)), difference(b, singleton(t)))
+                                        [by forall_intro pointwise-rest-in-rest]
+                                      @rest-of-a-sized |
+                                        exists m: Nat; hasSize(difference(a, singleton(t)), m) and less_or_equal(m, k)
+                                        [using specialize inductive-hypothesis(difference(b, singleton(t)), difference(a, singleton(t))) rest-has-size-k rest-of-a-in-rest-of-b]
+                                      @with-size-m |
+                                        unpack m: Nat from rest-of-a-sized {
+                                          @size-facts |
+                                            hasSize(difference(a, singleton(t)), m) and less_or_equal(m, k)
+                                            [by hypothesis with-size-m]
+                                          @rest-of-a-has-size-m |
+                                            hasSize(difference(a, singleton(t)), m)
+                                            [by and_elim_left size-facts]
+                                          @m-at-most-k |
+                                            less_or_equal(m, k)
+                                            [by and_elim_right size-facts]
+                                          @t-rest-membership |
+                                            member(t, difference(a, singleton(t))) iff (member(t, a) and t != t)
+                                            [using specialize differenceSingletonMember(a, t, t)]
+                                          @t-is-t |
+                                            t = t
+                                            [by reflexivity]
+                                          @t-not-in-rest-of-a |
+                                            not member(t, difference(a, singleton(t)))
+                                            [using tautology t-rest-membership t-is-t]
+                                          @restored-has-size |
+                                            hasSize(union(difference(a, singleton(t)), singleton(t)), succ(m))
+                                            [using specialize addingAnElementRaisesTheSize(difference(a, singleton(t)), t, m) rest-of-a-has-size-m t-not-in-rest-of-a]
+                                          @restored-is-a |
+                                            union(difference(a, singleton(t)), singleton(t)) = a
+                                            [using specialize restoringAnElement(a, t) t-in-a]
+                                          @a-has-size-succ-m |
+                                            hasSize(a, succ(m))
+                                            [by rewrite restored-is-a restored-has-size]
+                                          @m-below-succ-k |
+                                            less_than(m, succ(k))
+                                            [using specialize lessOrEqualToLessThanSucc(m, k) m-at-most-k]
+                                          @succ-m-below-succ-succ-k |
+                                            less_than(succ(m), succ(succ(k)))
+                                            [using specialize succPreservesOrder(m, succ(k)) m-below-succ-k]
+                                          @succ-m-at-most-succ-k |
+                                            less_or_equal(succ(m), succ(k))
+                                            [using specialize lessThanSuccToLessOrEqual(succ(m), succ(k)) succ-m-below-succ-succ-k]
+                                          @witness-clauses |
+                                            hasSize(a, succ(m)) and less_or_equal(succ(m), succ(k))
+                                            [by and_intro a-has-size-succ-m succ-m-at-most-succ-k]
+                                          @conclusion-witness-succ-m |
+                                            exists m2: Nat; hasSize(a, m2) and less_or_equal(m2, succ(k))
+                                            [by exists_intro(succ(m)) witness-clauses]
+                                        }
+                                      @conclusion-t-inside |
+                                        exists m2: Nat; hasSize(a, m2) and less_or_equal(m2, succ(k))
+                                        [by exists_elim with-size-m]
+                                    }
+                                }
+                            }
+                          @conclusion-with-member |
+                            exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+                            [by exists_elim with-member-t]
+                        }
+                      @conclusion-step-subset |
+                        subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+                        [by implies_intro given-subset]
+                    }
+                  @conclusion-step-size |
+                    hasSize(b, succ(k)) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+                    [by implies_intro given-size]
+                }
+              @discharge-a |
+                forall a: Set; hasSize(b, succ(k)) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+                [by forall_intro generalize-a]
+            }
+          @discharge-b |
+            forall b: Set; forall a: Set; hasSize(b, succ(k)) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k))
+            [by forall_intro generalize-b]
+        }
+      @induction-step-at-k |
+        (forall b: Set; forall a: Set; hasSize(b, k) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, k)) -> (forall b: Set; forall a: Set; hasSize(b, succ(k)) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (forall b: Set; forall a: Set; hasSize(b, k) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, k)) -> (forall b: Set; forall a: Set; hasSize(b, succ(k)) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, succ(k)))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; forall b: Set; forall a: Set; hasSize(b, n) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, n)
+    [using instantiation induction((fun k: Nat => forall b: Set; forall a: Set; hasSize(b, k) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, k))) base-case induction-step-for-all-k]
+qed
+
+// A PROPER SUBSET IS STRICTLY SMALLER: it misses some t of the whole, so it sits inside the
+// whole with t removed, which has one fewer element.
+theorem properSubsetIsSmaller: forall a: Set; forall b: Set; forall m: Nat; forall n: Nat;
+  subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-subset |
+                    assume subset(a, b) {
+                      @given-proper |
+                        assume a != b {
+                          @given-size-a |
+                            assume hasSize(a, m) {
+                              @given-size-b |
+                                assume hasSize(b, n) {
+                                  @a-in-b |
+                                    subset(a, b)
+                                    [by hypothesis given-subset]
+                                  @proper |
+                                    a != b
+                                    [by hypothesis given-proper]
+                                  @a-has-size-m |
+                                    hasSize(a, m)
+                                    [by hypothesis given-size-a]
+                                  @b-has-size-n |
+                                    hasSize(b, n)
+                                    [by hypothesis given-size-b]
+                                  @outsider-exists |
+                                    exists t: Element; member(t, b) and (not member(t, a))
+                                    [using specialize properSubsetHasAnOutsider(a, b) a-in-b proper]
+                                  @with-outsider-t |
+                                    unpack t: Element from outsider-exists {
+                                      @outsider-facts |
+                                        member(t, b) and (not member(t, a))
+                                        [by hypothesis with-outsider-t]
+                                      @t-in-b |
+                                        member(t, b)
+                                        [by and_elim_left outsider-facts]
+                                      @t-not-in-a |
+                                        not member(t, a)
+                                        [by and_elim_right outsider-facts]
+                                      @n-is-zero-or-a-successor |
+                                        n = ZERO or (exists k: Nat; n = succ(k))
+                                        [using specialize zeroOrSucc(n)]
+                                      @conclusion-m-below-n |
+                                        less_than(m, n)
+                                        case n-is-zero-or-a-successor {
+                                          @when-zero |
+                                            assume n = ZERO {
+                                              // b would be empty, yet t is in it
+                                              @n-is-zero |
+                                                n = ZERO
+                                                [by hypothesis when-zero]
+                                              @b-has-size-zero |
+                                                hasSize(b, ZERO)
+                                                [by rewrite n-is-zero b-has-size-n]
+                                              @b-is-empty |
+                                                b = emptyset
+                                                [using specialize sizeZeroIsEmpty(b) b-has-size-zero]
+                                              @t-in-emptyset |
+                                                member(t, emptyset)
+                                                [by rewrite b-is-empty t-in-b]
+                                              @nothing-in-emptyset |
+                                                not member(t, emptyset)
+                                                [using specialize emptysetMember(t)]
+                                              @conclusion-absurd |
+                                                less_than(m, n)
+                                                [by absurd t-in-emptyset nothing-in-emptyset]
+                                            }
+                                          @when-successor |
+                                            assume exists k: Nat; n = succ(k) {
+                                              @successor-exists |
+                                                exists k: Nat; n = succ(k)
+                                                [by hypothesis when-successor]
+                                              @with-predecessor-k |
+                                                unpack k: Nat from successor-exists {
+                                                  @n-is-succ-k |
+                                                    n = succ(k)
+                                                    [by hypothesis with-predecessor-k]
+                                                  @b-has-size-succ-k |
+                                                    hasSize(b, succ(k))
+                                                    [by rewrite n-is-succ-k b-has-size-n]
+                                                  @rest-has-size-k |
+                                                    hasSize(difference(b, singleton(t)), k)
+                                                    [using specialize removingAnElementDropsTheSize(b, t, k) b-has-size-succ-k t-in-b]
+                                                  @pointwise-a-in-rest |
+                                                    fix x: Element {
+                                                      @given-x-in-a |
+                                                        assume member(x, a) {
+                                                          @x-in-a |
+                                                            member(x, a)
+                                                            [by hypothesis given-x-in-a]
+                                                          @x-in-b |
+                                                            member(x, b)
+                                                            [using specialize a-in-b(x) x-in-a]
+                                                          @x-is-not-t |
+                                                            x != t
+                                                            [using specialize memberIsNotTheOutsider(a, t, x) x-in-a t-not-in-a]
+                                                          @rest-membership |
+                                                            member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                                                            [using specialize differenceSingletonMember(b, t, x)]
+                                                          @conclusion-x-in-rest |
+                                                            member(x, difference(b, singleton(t)))
+                                                            [using tautology rest-membership x-in-b x-is-not-t]
+                                                        }
+                                                      @conclusion-a-into-rest |
+                                                        member(x, a) -> member(x, difference(b, singleton(t)))
+                                                        [by implies_intro given-x-in-a]
+                                                    }
+                                                  @a-in-rest |
+                                                    subset(a, difference(b, singleton(t)))
+                                                    [by forall_intro pointwise-a-in-rest]
+                                                  @a-sized-in-rest |
+                                                    exists m2: Nat; hasSize(a, m2) and less_or_equal(m2, k)
+                                                    [using specialize subsetOfFiniteIsFinite(k, difference(b, singleton(t)), a) rest-has-size-k a-in-rest]
+                                                  @with-size-m2 |
+                                                    unpack m2: Nat from a-sized-in-rest {
+                                                      @size-facts |
+                                                        hasSize(a, m2) and less_or_equal(m2, k)
+                                                        [by hypothesis with-size-m2]
+                                                      @a-has-size-m2 |
+                                                        hasSize(a, m2)
+                                                        [by and_elim_left size-facts]
+                                                      @m2-at-most-k |
+                                                        less_or_equal(m2, k)
+                                                        [by and_elim_right size-facts]
+                                                      @m-is-m2 |
+                                                        m = m2
+                                                        [using specialize hasSizeIsUnique(a, m, m2) a-has-size-m a-has-size-m2]
+                                                      @m-at-most-k |
+                                                        less_or_equal(m, k)
+                                                        [by rewrite m-is-m2 m2-at-most-k]
+                                                      @m-below-succ-k |
+                                                        less_than(m, succ(k))
+                                                        [using specialize lessOrEqualToLessThanSucc(m, k) m-at-most-k]
+                                                      @conclusion-m-below-n-at-k |
+                                                        less_than(m, n)
+                                                        [by rewrite n-is-succ-k m-below-succ-k]
+                                                    }
+                                                  @conclusion-with-size |
+                                                    less_than(m, n)
+                                                    [by exists_elim with-size-m2]
+                                                }
+                                              @conclusion-successor |
+                                                less_than(m, n)
+                                                [by exists_elim with-predecessor-k]
+                                            }
+                                        }
+                                    }
+                                  @conclusion-with-outsider |
+                                    less_than(m, n)
+                                    [by exists_elim with-outsider-t]
+                                }
+                              @conclusion-size-b |
+                                hasSize(b, n) -> less_than(m, n)
+                                [by implies_intro given-size-b]
+                            }
+                          @conclusion-size-a |
+                            hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+                            [by implies_intro given-size-a]
+                        }
+                      @conclusion-proper |
+                        a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+                        [by implies_intro given-proper]
+                    }
+                  @conclusion-subset |
+                    subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+                    [by implies_intro given-subset]
+                }
+              @discharge-n |
+                forall n: Nat; subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+                [by forall_intro generalize-n]
+            }
+          @discharge-m |
+            forall m: Nat; forall n: Nat; subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+            [by forall_intro generalize-m]
+        }
+      @discharge-b |
+        forall b: Set; forall m: Nat; forall n: Nat; subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall m: Nat; forall n: Nat;
+      subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+    [by forall_intro generalize-a]
+qed
+
+// DISJOINT SIZES ADD: |a ∪ b| = |a| + |b| when a and b share nothing. Induction on |b|:
+// split one member t off b, count a ∪ (b \ {t}) by the hypothesis, and add t back — it is
+// new to that union, since it is in b (so not in a) and not in b \ {t}.
+theorem disjointUnionSizesAdd: forall a: Set; forall m: Nat; hasSize(a, m) ->
+  forall n: Nat; forall b: Set; hasSize(b, n) -> intersection(a, b) = emptyset ->
+  hasSize(union(a, b), add(m, n))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-m |
+        fix m: Nat {
+          @given-size-a |
+            assume hasSize(a, m) {
+              @a-has-size-m |
+                hasSize(a, m)
+                [by hypothesis given-size-a]
+
+              // base case: b is empty, so a ∪ b = a and m + 0 = m
+              @base-case-proof |
+                fix b: Set {
+                  @given-size-zero |
+                    assume hasSize(b, ZERO) {
+                      @given-disjoint-zero |
+                        assume intersection(a, b) = emptyset {
+                          @b-has-size-zero |
+                            hasSize(b, ZERO)
+                            [by hypothesis given-size-zero]
+                          @b-is-empty |
+                            b = emptyset
+                            [using specialize sizeZeroIsEmpty(b) b-has-size-zero]
+                          @union-with-empty |
+                            union(a, emptyset) = a
+                            [using specialize unionEmpty(a)]
+                          @union-is-a |
+                            union(a, b) = a
+                            [by rewrite b-is-empty union-with-empty]
+                          @m-plus-zero |
+                            add(m, ZERO) = m
+                            [using specialize addZeroRight(m)]
+                          @union-has-size-m |
+                            hasSize(union(a, b), m)
+                            [by rewrite union-is-a a-has-size-m]
+                          @conclusion-base-size |
+                            hasSize(union(a, b), add(m, ZERO))
+                            [by rewrite m-plus-zero union-has-size-m]
+                        }
+                      @conclusion-base-disjoint |
+                        intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, ZERO))
+                        [by implies_intro given-disjoint-zero]
+                    }
+                  @conclusion-base-implication |
+                    hasSize(b, ZERO) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, ZERO))
+                    [by implies_intro given-size-zero]
+                }
+              @base-case |
+                forall b: Set; hasSize(b, ZERO) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, ZERO))
+                [by forall_intro base-case-proof]
+
+              // inductive step
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume forall b: Set; hasSize(b, k) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, k)) {
+                      @inductive-hypothesis |
+                        forall b: Set; hasSize(b, k) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @generalize-b |
+                        fix b: Set {
+                          @given-size |
+                            assume hasSize(b, succ(k)) {
+                              @given-disjoint |
+                                assume intersection(a, b) = emptyset {
+                                  @b-has-size |
+                                    hasSize(b, succ(k))
+                                    [by hypothesis given-size]
+                                  @disjoint |
+                                    intersection(a, b) = emptyset
+                                    [by hypothesis given-disjoint]
+                                  @some-member-exists |
+                                    exists t: Element; member(t, b)
+                                    [using specialize sizedSetHasAMember(b, k) b-has-size]
+                                  @with-member-t |
+                                    unpack t: Element from some-member-exists {
+                                      @t-in-b |
+                                        member(t, b)
+                                        [by hypothesis with-member-t]
+                                      @rest-has-size-k |
+                                        hasSize(difference(b, singleton(t)), k)
+                                        [using specialize removingAnElementDropsTheSize(b, t, k) b-has-size t-in-b]
+                                      @rest-in-b |
+                                        subset(difference(b, singleton(t)), b)
+                                        [using specialize removalLeavesASubset(b, t)]
+                                      @disjoint-with-rest |
+                                        intersection(a, difference(b, singleton(t))) = emptyset
+                                        [using specialize disjointWithSubset(a, b, difference(b, singleton(t))) disjoint rest-in-b]
+                                      @union-with-rest-has-size |
+                                        hasSize(union(a, difference(b, singleton(t))), add(m, k))
+                                        [using specialize inductive-hypothesis(difference(b, singleton(t))) rest-has-size-k disjoint-with-rest]
+                                      // t is new to a ∪ (b \ {t})
+                                      @t-not-in-a |
+                                        not member(t, a)
+                                        [using specialize disjointMeansNotBoth(a, b, t) disjoint t-in-b]
+                                      @t-rest-membership |
+                                        member(t, difference(b, singleton(t))) iff (member(t, b) and t != t)
+                                        [using specialize differenceSingletonMember(b, t, t)]
+                                      @t-is-t |
+                                        t = t
+                                        [by reflexivity]
+                                      @t-not-in-rest |
+                                        not member(t, difference(b, singleton(t)))
+                                        [using tautology t-rest-membership t-is-t]
+                                      @union-membership-at-t |
+                                        member(t, union(a, difference(b, singleton(t)))) iff (member(t, a) or member(t, difference(b, singleton(t))))
+                                        [using specialize unionMember(a, difference(b, singleton(t)), t)]
+                                      @t-not-in-the-union |
+                                        not member(t, union(a, difference(b, singleton(t))))
+                                        [using tautology union-membership-at-t t-not-in-a t-not-in-rest]
+                                      @enlarged-has-size |
+                                        hasSize(union(union(a, difference(b, singleton(t))), singleton(t)), succ(add(m, k)))
+                                        [using specialize addingAnElementRaisesTheSize(union(a, difference(b, singleton(t))), t, add(m, k)) union-with-rest-has-size t-not-in-the-union]
+                                      @split-is-the-union |
+                                        union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+                                        [using specialize splittingOffAnElement(a, b, t) t-in-b]
+                                      @union-has-size |
+                                        hasSize(union(a, b), succ(add(m, k)))
+                                        [by rewrite split-is-the-union enlarged-has-size]
+                                      @sum-at-successor |
+                                        add(m, succ(k)) = succ(add(m, k))
+                                        [using specialize addSuccRight(m, k)]
+                                      @conclusion-step-size |
+                                        hasSize(union(a, b), add(m, succ(k)))
+                                        [by rewrite sum-at-successor union-has-size]
+                                    }
+                                  @conclusion-with-member |
+                                    hasSize(union(a, b), add(m, succ(k)))
+                                    [by exists_elim with-member-t]
+                                }
+                              @conclusion-step-disjoint |
+                                intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, succ(k)))
+                                [by implies_intro given-disjoint]
+                            }
+                          @conclusion-step-implication |
+                            hasSize(b, succ(k)) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, succ(k)))
+                            [by implies_intro given-size]
+                        }
+                      @discharge-b |
+                        forall b: Set; hasSize(b, succ(k)) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, succ(k)))
+                        [by forall_intro generalize-b]
+                    }
+                  @induction-step-at-k |
+                    (forall b: Set; hasSize(b, k) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, k))) -> (forall b: Set; hasSize(b, succ(k)) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, succ(k))))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat; (forall b: Set; hasSize(b, k) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, k))) -> (forall b: Set; hasSize(b, succ(k)) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, succ(k))))
+                [by forall_intro induction-step]
+              @conclusion-for-all-n |
+                forall n: Nat; forall b: Set; hasSize(b, n) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, n))
+                [using instantiation induction((fun k: Nat => forall b: Set; hasSize(b, k) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, k)))) base-case induction-step-for-all-k]
+            }
+          @conclusion-size-a |
+            hasSize(a, m) -> forall n: Nat; forall b: Set; hasSize(b, n) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, n))
+            [by implies_intro given-size-a]
+        }
+      @discharge-m |
+        forall m: Nat; hasSize(a, m) -> forall n: Nat; forall b: Set; hasSize(b, n) -> intersection(a, b) = emptyset -> hasSize(union(a, b), add(m, n))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall a: Set; forall m: Nat; hasSize(a, m) ->
+      forall n: Nat; forall b: Set; hasSize(b, n) -> intersection(a, b) = emptyset ->
+      hasSize(union(a, b), add(m, n))
+    [by forall_intro generalize-a]
 qed
