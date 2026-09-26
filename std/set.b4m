@@ -47,6 +47,16 @@ axiom complementMember: forall a: Set; forall x: Element;
 // nothing is a member of the empty set
 axiom emptysetMember: forall x: Element; not member(x, emptyset)
 
+// y ∈ {x}  iff  y = x — the SINGLETON, the set of one element (the atom `insert`,
+// `difference(a, singleton(x))`, and one-element-at-a-time counting are built from).
+func singleton(x: Element) => Set
+axiom singletonMember: forall x: Element; forall y: Element;
+  member(y, singleton(x)) iff y = x
+
+// a ⊆ b: every member of a is a member of b. Transparent (macro), so a proof gets the
+// pointwise implication for free; extensionality below is the pair of inclusions spelled out.
+define subset(a, b) = forall x: Element; member(x, a) -> member(x, b)
+
 // extensionality: sets with the same members are equal (each inclusion is a
 // plain forall; the two chain to `a = b`).
 axiom extensionality: forall a, b: Set;
@@ -1289,4 +1299,525 @@ proof
     forall a, b: Set;
       union(difference(a, b), difference(b, a)) = difference(union(a, b), intersection(a, b))
     [using extensionality_quantified(extensionality) unionMember differenceMember intersectionMember]
+qed
+
+// -- one element at a time -----------------------------------------------------------------
+//
+// Singletons and subsets: the facts that adding or removing ONE element needs. These are
+// what std/set/finite.b4m counts with, stated here because they are pure set algebra.
+// Membership in a set with one element added or removed, in one line each.
+theorem unionSingletonMember: forall c: Set; forall t: Element; forall x: Element;
+  member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+proof
+  @generalize-c |
+    fix c: Set {
+      @generalize-t |
+        fix t: Element {
+          @generalize-x |
+            fix x: Element {
+              @union-membership |
+                member(x, union(c, singleton(t))) iff (member(x, c) or member(x, singleton(t)))
+                [using specialize unionMember(c, singleton(t), x)]
+              @singleton-membership |
+                member(x, singleton(t)) iff x = t
+                [using specialize singletonMember(t, x)]
+              @conclusion-membership |
+                member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+                [using tautology union-membership singleton-membership]
+            }
+          @discharge-x |
+            forall x: Element; member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+            [by forall_intro generalize-x]
+        }
+      @discharge-t |
+        forall t: Element; forall x: Element; member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall c: Set; forall t: Element; forall x: Element; member(x, union(c, singleton(t))) iff (member(x, c) or x = t)
+    [by forall_intro generalize-c]
+qed
+
+theorem differenceSingletonMember: forall b: Set; forall t: Element; forall x: Element;
+  member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+proof
+  @generalize-b |
+    fix b: Set {
+      @generalize-t |
+        fix t: Element {
+          @generalize-x |
+            fix x: Element {
+              @difference-membership |
+                member(x, difference(b, singleton(t))) iff (member(x, b) and (not member(x, singleton(t))))
+                [using specialize differenceMember(b, singleton(t), x)]
+              @singleton-membership |
+                member(x, singleton(t)) iff x = t
+                [using specialize singletonMember(t, x)]
+              @conclusion-membership |
+                member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                [using tautology difference-membership singleton-membership]
+            }
+          @discharge-x |
+            forall x: Element; member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+            [by forall_intro generalize-x]
+        }
+      @discharge-t |
+        forall t: Element; forall x: Element; member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall b: Set; forall t: Element; forall x: Element; member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+    [by forall_intro generalize-b]
+qed
+
+// A member of a set is not an element outside it.
+theorem memberIsNotTheOutsider: forall c: Set; forall t: Element; forall x: Element;
+  member(x, c) -> (not member(t, c)) -> x != t
+proof
+  @generalize-c |
+    fix c: Set {
+      @generalize-t |
+        fix t: Element {
+          @generalize-x |
+            fix x: Element {
+              @given-x-in-c |
+                assume member(x, c) {
+                  @given-t-outside |
+                    assume not member(t, c) {
+                      @x-in-c |
+                        member(x, c)
+                        [by hypothesis given-x-in-c]
+                      @t-outside |
+                        not member(t, c)
+                        [by hypothesis given-t-outside]
+                      @suppose-x-is-t |
+                        assume x = t {
+                          @x-is-t |
+                            x = t
+                            [by hypothesis suppose-x-is-t]
+                          @t-in-c |
+                            member(t, c)
+                            [by rewrite x-is-t x-in-c]
+                        }
+                      @conclusion-distinct |
+                        x != t
+                        [by not_intro suppose-x-is-t t-in-c t-outside]
+                    }
+                  @conclusion-outside |
+                    (not member(t, c)) -> x != t
+                    [by implies_intro given-t-outside]
+                }
+              @conclusion-in-c |
+                member(x, c) -> (not member(t, c)) -> x != t
+                [by implies_intro given-x-in-c]
+            }
+          @discharge-x |
+            forall x: Element; member(x, c) -> (not member(t, c)) -> x != t
+            [by forall_intro generalize-x]
+        }
+      @discharge-t |
+        forall t: Element; forall x: Element; member(x, c) -> (not member(t, c)) -> x != t
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall c: Set; forall t: Element; forall x: Element; member(x, c) -> (not member(t, c)) -> x != t
+    [by forall_intro generalize-c]
+qed
+
+// -- the set identities the counting needs, each pointwise ----------------------------
+
+// Putting a removed element back restores the set.
+theorem restoringAnElement: forall a: Set; forall t: Element;
+  member(t, a) -> union(difference(a, singleton(t)), singleton(t)) = a
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-t |
+        fix t: Element {
+          @given-t-in-a |
+            assume member(t, a) {
+              @t-in-a |
+                member(t, a)
+                [by hypothesis given-t-in-a]
+              @pointwise-forward |
+                fix x: Element {
+                  @union-membership |
+                    member(x, union(difference(a, singleton(t)), singleton(t))) iff (member(x, difference(a, singleton(t))) or x = t)
+                    [using specialize unionSingletonMember(difference(a, singleton(t)), t, x)]
+                  @rest-membership |
+                    member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                    [using specialize differenceSingletonMember(a, t, x)]
+                  @suppose-x-is-t |
+                    assume x = t {
+                      @x-is-t |
+                        x = t
+                        [by hypothesis suppose-x-is-t]
+                      @conclusion-x-in-a |
+                        member(x, a)
+                        [by rewrite x-is-t t-in-a]
+                    }
+                  @being-t-puts-x-in-a |
+                    x = t -> member(x, a)
+                    [by implies_intro suppose-x-is-t]
+                  @conclusion-forward |
+                    member(x, union(difference(a, singleton(t)), singleton(t))) -> member(x, a)
+                    [using tautology union-membership rest-membership being-t-puts-x-in-a]
+                }
+              @restored-is-included |
+                forall x: Element; member(x, union(difference(a, singleton(t)), singleton(t))) -> member(x, a)
+                [by forall_intro pointwise-forward]
+              @pointwise-backward |
+                fix x: Element {
+                  @union-membership |
+                    member(x, union(difference(a, singleton(t)), singleton(t))) iff (member(x, difference(a, singleton(t))) or x = t)
+                    [using specialize unionSingletonMember(difference(a, singleton(t)), t, x)]
+                  @rest-membership |
+                    member(x, difference(a, singleton(t))) iff (member(x, a) and x != t)
+                    [using specialize differenceSingletonMember(a, t, x)]
+                  @conclusion-backward |
+                    member(x, a) -> member(x, union(difference(a, singleton(t)), singleton(t)))
+                    [using tautology union-membership rest-membership]
+                }
+              @a-is-included |
+                forall x: Element; member(x, a) -> member(x, union(difference(a, singleton(t)), singleton(t)))
+                [by forall_intro pointwise-backward]
+              @conclusion-restored |
+                union(difference(a, singleton(t)), singleton(t)) = a
+                [using specialize extensionality(union(difference(a, singleton(t)), singleton(t)), a) restored-is-included a-is-included]
+            }
+          @conclusion-implication |
+            member(t, a) -> union(difference(a, singleton(t)), singleton(t)) = a
+            [by implies_intro given-t-in-a]
+        }
+      @discharge-t |
+        forall t: Element; member(t, a) -> union(difference(a, singleton(t)), singleton(t)) = a
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall a: Set; forall t: Element; member(t, a) -> union(difference(a, singleton(t)), singleton(t)) = a
+    [by forall_intro generalize-a]
+qed
+
+// Splitting one element of b off a union: a ∪ b = (a ∪ (b \ {t})) ∪ {t} when t ∈ b.
+theorem splittingOffAnElement: forall a: Set; forall b: Set; forall t: Element;
+  member(t, b) -> union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-t |
+            fix t: Element {
+              @given-t-in-b |
+                assume member(t, b) {
+                  @t-in-b |
+                    member(t, b)
+                    [by hypothesis given-t-in-b]
+                  @pointwise-forward |
+                    fix x: Element {
+                      @outer-membership |
+                        member(x, union(union(a, difference(b, singleton(t))), singleton(t))) iff (member(x, union(a, difference(b, singleton(t)))) or x = t)
+                        [using specialize unionSingletonMember(union(a, difference(b, singleton(t))), t, x)]
+                      @inner-membership |
+                        member(x, union(a, difference(b, singleton(t)))) iff (member(x, a) or member(x, difference(b, singleton(t))))
+                        [using specialize unionMember(a, difference(b, singleton(t)), x)]
+                      @rest-membership |
+                        member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                        [using specialize differenceSingletonMember(b, t, x)]
+                      @whole-membership |
+                        member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                        [using specialize unionMember(a, b, x)]
+                      @suppose-x-is-t |
+                        assume x = t {
+                          @x-is-t |
+                            x = t
+                            [by hypothesis suppose-x-is-t]
+                          @conclusion-x-in-b |
+                            member(x, b)
+                            [by rewrite x-is-t t-in-b]
+                        }
+                      @being-t-puts-x-in-b |
+                        x = t -> member(x, b)
+                        [by implies_intro suppose-x-is-t]
+                      @conclusion-forward |
+                        member(x, union(union(a, difference(b, singleton(t))), singleton(t))) -> member(x, union(a, b))
+                        [using tautology outer-membership inner-membership rest-membership whole-membership being-t-puts-x-in-b]
+                    }
+                  @split-is-included |
+                    forall x: Element; member(x, union(union(a, difference(b, singleton(t))), singleton(t))) -> member(x, union(a, b))
+                    [by forall_intro pointwise-forward]
+                  @pointwise-backward |
+                    fix x: Element {
+                      @outer-membership |
+                        member(x, union(union(a, difference(b, singleton(t))), singleton(t))) iff (member(x, union(a, difference(b, singleton(t)))) or x = t)
+                        [using specialize unionSingletonMember(union(a, difference(b, singleton(t))), t, x)]
+                      @inner-membership |
+                        member(x, union(a, difference(b, singleton(t)))) iff (member(x, a) or member(x, difference(b, singleton(t))))
+                        [using specialize unionMember(a, difference(b, singleton(t)), x)]
+                      @rest-membership |
+                        member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                        [using specialize differenceSingletonMember(b, t, x)]
+                      @whole-membership |
+                        member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                        [using specialize unionMember(a, b, x)]
+                      @conclusion-backward |
+                        member(x, union(a, b)) -> member(x, union(union(a, difference(b, singleton(t))), singleton(t)))
+                        [using tautology outer-membership inner-membership rest-membership whole-membership]
+                    }
+                  @whole-is-included |
+                    forall x: Element; member(x, union(a, b)) -> member(x, union(union(a, difference(b, singleton(t))), singleton(t)))
+                    [by forall_intro pointwise-backward]
+                  @conclusion-split |
+                    union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+                    [using specialize extensionality(union(union(a, difference(b, singleton(t))), singleton(t)), union(a, b)) split-is-included whole-is-included]
+                }
+              @conclusion-implication |
+                member(t, b) -> union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+                [by implies_intro given-t-in-b]
+            }
+          @discharge-t |
+            forall t: Element; member(t, b) -> union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+            [by forall_intro generalize-t]
+        }
+      @discharge-b |
+        forall b: Set; forall t: Element; member(t, b) -> union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall t: Element; member(t, b) -> union(union(a, difference(b, singleton(t))), singleton(t)) = union(a, b)
+    [by forall_intro generalize-a]
+qed
+
+// Disjointness, pointwise: a member of b is not a member of a.
+theorem disjointMeansNotBoth: forall a: Set; forall b: Set; forall x: Element;
+  intersection(a, b) = emptyset -> member(x, b) -> (not member(x, a))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-x |
+            fix x: Element {
+              @given-disjoint |
+                assume intersection(a, b) = emptyset {
+                  @given-x-in-b |
+                    assume member(x, b) {
+                      @disjoint |
+                        intersection(a, b) = emptyset
+                        [by hypothesis given-disjoint]
+                      @x-in-b |
+                        member(x, b)
+                        [by hypothesis given-x-in-b]
+                      @meet-membership |
+                        member(x, intersection(a, b)) iff (member(x, a) and member(x, b))
+                        [using specialize intersectionMember(a, b, x)]
+                      @empty-meet-membership |
+                        member(x, emptyset) iff (member(x, a) and member(x, b))
+                        [by rewrite disjoint meet-membership]
+                      @nothing-in-emptyset |
+                        not member(x, emptyset)
+                        [using specialize emptysetMember(x)]
+                      @conclusion-not-in-a |
+                        not member(x, a)
+                        [using tautology empty-meet-membership nothing-in-emptyset x-in-b]
+                    }
+                  @conclusion-x-in-b |
+                    member(x, b) -> (not member(x, a))
+                    [by implies_intro given-x-in-b]
+                }
+              @conclusion-disjoint |
+                intersection(a, b) = emptyset -> member(x, b) -> (not member(x, a))
+                [by implies_intro given-disjoint]
+            }
+          @discharge-x |
+            forall x: Element; intersection(a, b) = emptyset -> member(x, b) -> (not member(x, a))
+            [by forall_intro generalize-x]
+        }
+      @discharge-b |
+        forall b: Set; forall x: Element; intersection(a, b) = emptyset -> member(x, b) -> (not member(x, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall x: Element; intersection(a, b) = emptyset -> member(x, b) -> (not member(x, a))
+    [by forall_intro generalize-a]
+qed
+
+// Disjointness passes to a subset: a ∩ b = ∅ and c ⊆ b give a ∩ c = ∅.
+theorem disjointWithSubset: forall a: Set; forall b: Set; forall c: Set;
+  intersection(a, b) = emptyset -> subset(c, b) -> intersection(a, c) = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @given-disjoint |
+                assume intersection(a, b) = emptyset {
+                  @given-subset |
+                    assume subset(c, b) {
+                      @disjoint |
+                        intersection(a, b) = emptyset
+                        [by hypothesis given-disjoint]
+                      @c-in-b |
+                        forall x: Element; member(x, c) -> member(x, b)
+                        [by hypothesis given-subset]
+                      @pointwise-forward |
+                        fix x: Element {
+                          @meet-membership |
+                            member(x, intersection(a, c)) iff (member(x, a) and member(x, c))
+                            [using specialize intersectionMember(a, c, x)]
+                          @x-in-c-puts-x-in-b |
+                            member(x, c) -> member(x, b)
+                            [using specialize c-in-b(x)]
+                          @x-in-b-keeps-x-out-of-a |
+                            member(x, b) -> (not member(x, a))
+                            [using specialize disjointMeansNotBoth(a, b, x) disjoint]
+                          @nothing-in-emptyset |
+                            not member(x, emptyset)
+                            [using specialize emptysetMember(x)]
+                          @conclusion-forward |
+                            member(x, intersection(a, c)) -> member(x, emptyset)
+                            [using tautology meet-membership x-in-c-puts-x-in-b x-in-b-keeps-x-out-of-a nothing-in-emptyset]
+                        }
+                      @meet-is-included-in-empty |
+                        forall x: Element; member(x, intersection(a, c)) -> member(x, emptyset)
+                        [by forall_intro pointwise-forward]
+                      @pointwise-backward |
+                        fix x: Element {
+                          @nothing-in-emptyset |
+                            not member(x, emptyset)
+                            [using specialize emptysetMember(x)]
+                          @conclusion-backward |
+                            member(x, emptyset) -> member(x, intersection(a, c))
+                            [using tautology nothing-in-emptyset]
+                        }
+                      @empty-is-included-in-meet |
+                        forall x: Element; member(x, emptyset) -> member(x, intersection(a, c))
+                        [by forall_intro pointwise-backward]
+                      @conclusion-disjoint-with-c |
+                        intersection(a, c) = emptyset
+                        [using specialize extensionality(intersection(a, c), emptyset) meet-is-included-in-empty empty-is-included-in-meet]
+                    }
+                  @conclusion-subset |
+                    subset(c, b) -> intersection(a, c) = emptyset
+                    [by implies_intro given-subset]
+                }
+              @conclusion-disjoint |
+                intersection(a, b) = emptyset -> subset(c, b) -> intersection(a, c) = emptyset
+                [by implies_intro given-disjoint]
+            }
+          @discharge-c |
+            forall c: Set; intersection(a, b) = emptyset -> subset(c, b) -> intersection(a, c) = emptyset
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; intersection(a, b) = emptyset -> subset(c, b) -> intersection(a, c) = emptyset
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; intersection(a, b) = emptyset -> subset(c, b) -> intersection(a, c) = emptyset
+    [by forall_intro generalize-a]
+qed
+
+// Removing an element leaves a subset.
+theorem removalLeavesASubset: forall b: Set; forall t: Element; subset(difference(b, singleton(t)), b)
+proof
+  @generalize-b |
+    fix b: Set {
+      @generalize-t |
+        fix t: Element {
+          @pointwise |
+            fix x: Element {
+              @rest-membership |
+                member(x, difference(b, singleton(t))) iff (member(x, b) and x != t)
+                [using specialize differenceSingletonMember(b, t, x)]
+              @conclusion-in-b |
+                member(x, difference(b, singleton(t))) -> member(x, b)
+                [using tautology rest-membership]
+            }
+          @conclusion-subset |
+            forall x: Element; member(x, difference(b, singleton(t))) -> member(x, b)
+            [by forall_intro pointwise]
+        }
+      @discharge-t |
+        forall t: Element; subset(difference(b, singleton(t)), b)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall b: Set; forall t: Element; subset(difference(b, singleton(t)), b)
+    [by forall_intro generalize-b]
+qed
+
+// A PROPER subset misses some element of the whole: if it missed none, the whole would be
+// included in it too, and extensionality would make them equal.
+theorem properSubsetHasAnOutsider: forall a: Set; forall b: Set;
+  subset(a, b) -> a != b -> exists t: Element; member(t, b) and (not member(t, a))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @given-subset |
+            assume subset(a, b) {
+              @given-proper |
+                assume a != b {
+                  @a-in-b |
+                    forall x: Element; member(x, a) -> member(x, b)
+                    [by hypothesis given-subset]
+                  @proper |
+                    a != b
+                    [by hypothesis given-proper]
+                  @suppose-no-outsider |
+                    assume not (exists t: Element; member(t, b) and (not member(t, a))) {
+                      @no-outsider |
+                        not (exists t: Element; member(t, b) and (not member(t, a)))
+                        [by hypothesis suppose-no-outsider]
+                      @pointwise |
+                        fix x: Element {
+                          @suppose-x-is-an-outsider |
+                            assume member(x, b) and (not member(x, a)) {
+                              @x-is-an-outsider |
+                                member(x, b) and (not member(x, a))
+                                [by hypothesis suppose-x-is-an-outsider]
+                              @an-outsider-exists |
+                                exists t: Element; member(t, b) and (not member(t, a))
+                                [by exists_intro(x) x-is-an-outsider]
+                            }
+                          @x-is-not-an-outsider |
+                            not (member(x, b) and (not member(x, a)))
+                            [by not_intro suppose-x-is-an-outsider an-outsider-exists no-outsider]
+                          @conclusion-x-in-b-puts-x-in-a |
+                            member(x, b) -> member(x, a)
+                            [using tautology x-is-not-an-outsider]
+                        }
+                      @b-in-a |
+                        forall x: Element; member(x, b) -> member(x, a)
+                        [by forall_intro pointwise]
+                      @sets-are-equal |
+                        a = b
+                        [using specialize extensionality(a, b) a-in-b b-in-a]
+                    }
+                  @an-outsider-must-exist |
+                    not (not (exists t: Element; member(t, b) and (not member(t, a))))
+                    [by not_intro suppose-no-outsider sets-are-equal proper]
+                  @conclusion-outsider |
+                    exists t: Element; member(t, b) and (not member(t, a))
+                    [by double_negation an-outsider-must-exist]
+                }
+              @conclusion-proper |
+                a != b -> exists t: Element; member(t, b) and (not member(t, a))
+                [by implies_intro given-proper]
+            }
+          @conclusion-subset |
+            subset(a, b) -> a != b -> exists t: Element; member(t, b) and (not member(t, a))
+            [by implies_intro given-subset]
+        }
+      @discharge-b |
+        forall b: Set; subset(a, b) -> a != b -> exists t: Element; member(t, b) and (not member(t, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; subset(a, b) -> a != b -> exists t: Element; member(t, b) and (not member(t, a))
+    [by forall_intro generalize-a]
 qed
