@@ -1,0 +1,1642 @@
+// std/permutation/decomposition.b4m — EVERY PERMUTATION OF A FINITE SET IS A PRODUCT OF
+// DISJOINT CYCLES (Judson, Theorem 5.8).
+//
+// Peel one orbit at a time. For a moved point x, the orbit of x is a cycle c
+// (std/permutation/orbit-cycle.b4m); the remainder g = c⁻¹ ∘ f fixes the orbit and agrees
+// with f elsewhere, so support(g) = support(f) \ orbit(f, x), a PROPER subset, and by
+// strong induction on the size of the support g is a product of disjoint cycles, each
+// supported inside support(g). Then f = c ∘ g, and c's support lies in the orbit, disjoint
+// from support(g) — so prepending c keeps the cycles disjoint.
+
+import permutation <<< "std/permutation.b4m"
+import cycle_theory <<< "std/permutation/cycle.b4m"
+import orbit_theory <<< "std/permutation/orbit.b4m"
+import orbit_cycle <<< "std/permutation/orbit-cycle.b4m"
+import permutation_sequence <<< "std/permutation/sequence.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+const emptyset = set.emptyset
+pred member = set.member
+func difference = set.difference
+func intersection = set.intersection
+axiom differenceMember = set.differenceMember
+axiom intersectionMember = set.intersectionMember
+axiom emptysetMember = set.emptysetMember
+axiom extensionality = set.extensionality
+define subset(a, b) = set.subset(a, b)
+
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+pred invertible = function.invertible
+func inverse = function.inverse
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+axiom funcExtensionality = function.funcExtensionality
+axiom inverseLeft = function.inverseLeft
+axiom inverseRight = function.inverseRight
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+
+sort Perm = permutation.Perm
+func support = permutation.support
+axiom supportMember = permutation.supportMember
+theorem inverseIsAPermutation = permutation.inverseIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem identityIsAPermutation = permutation.identityIsAPermutation
+define disjointSupports(f, g) = permutation.disjointSupports(f, g)
+
+sort Points = cycle_theory.Points
+func cycle = cycle_theory.cycle
+define distinct(s, n) = cycle_theory.distinct(s, n)
+theorem cycleIsAPermutation = cycle_theory.cycleIsAPermutation
+func orbit = orbit_theory.orbit
+theorem pointIsInItsOrbit = orbit_theory.pointIsInItsOrbit
+theorem orbitIsACycle = orbit_cycle.orbitIsACycle
+theorem preimageOfAnOrbitMemberIsInTheOrbit = orbit_cycle.preimageOfAnOrbitMemberIsInTheOrbit
+theorem orbitOfAMovedPointIsInTheSupport = orbit_cycle.orbitOfAMovedPointIsInTheSupport
+
+sort Seq = permutation_sequence.Seq
+func at = permutation_sequence.at
+func productUpTo = permutation_sequence.productUpTo
+axiom productUpToZero = permutation_sequence.productUpToZero
+axiom seqSingleton = permutation_sequence.seqSingleton
+axiom seqPrepend = permutation_sequence.seqPrepend
+theorem productOfPrepend = permutation_sequence.productOfPrepend
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+pred less_than = peano.less_than
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem strongInduction = peano_order.strongInduction
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem succReflectsOrder = peano_order.succReflectsOrder
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define isFinite(a) = set_finite.isFinite(a)
+theorem sizedSetHasAMember = set_finite.sizedSetHasAMember
+theorem sizeZeroIsEmpty = set_finite.sizeZeroIsEmpty
+theorem subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+theorem properSubsetIsSmaller = set_finite.properSubsetIsSmaller
+
+// a permutation IS a cycle when it is the cycle on some distinct list
+define isACycle(g) = exists s: Points; exists p: Nat; distinct(s, succ(p)) and g = cycle(s, succ(p))
+
+// -- small helpers ----------------------------------------------------------------------------
+
+// A map that fixes everything outside a set is supported inside it.
+theorem fixingOffASetBoundsTheSupport: forall c: Fn; forall o: Set;
+  (forall y: Element; (not member(y, o)) -> apply(c, y) = y) -> subset(support(c), o)
+proof
+  @generalize-c |
+    fix c: Fn {
+      @generalize-o |
+        fix o: Set {
+          @given-fixes |
+            assume forall y: Element; (not member(y, o)) -> apply(c, y) = y {
+              @fixes-off |
+                forall y: Element; (not member(y, o)) -> apply(c, y) = y
+                [by hypothesis given-fixes]
+              @pointwise |
+                fix y: Element {
+                  @given-moved |
+                    assume member(y, support(c)) {
+                      @y-moved |
+                        member(y, support(c))
+                        [by hypothesis given-moved]
+                      @membership |
+                        member(y, support(c)) iff apply(c, y) != y
+                        [using specialize supportMember(c, y)]
+                      @c-moves-y |
+                        apply(c, y) != y
+                        [using tautology membership y-moved]
+                      @suppose-outside |
+                        assume not member(y, o) {
+                          @y-outside |
+                            not member(y, o)
+                            [by hypothesis suppose-outside]
+                          @c-fixes-y |
+                            apply(c, y) = y
+                            [using specialize fixes-off(y) y-outside]
+                        }
+                      @not-outside |
+                        not (not member(y, o))
+                        [by not_intro suppose-outside c-fixes-y c-moves-y]
+                      @conclusion-y-in-o |
+                        member(y, o)
+                        [by double_negation not-outside]
+                    }
+                  @conclusion-implication |
+                    member(y, support(c)) -> member(y, o)
+                    [by implies_intro given-moved]
+                }
+              @conclusion-support-inside |
+                subset(support(c), o)
+                [by forall_intro pointwise]
+            }
+          @conclusion-fixes |
+            (forall y: Element; (not member(y, o)) -> apply(c, y) = y) -> subset(support(c), o)
+            [by implies_intro given-fixes]
+        }
+      @discharge-o |
+        forall o: Set; (forall y: Element; (not member(y, o)) -> apply(c, y) = y) -> subset(support(c), o)
+        [by forall_intro generalize-o]
+    }
+  @conclusion |
+    forall c: Fn; forall o: Set; (forall y: Element; (not member(y, o)) -> apply(c, y) = y) -> subset(support(c), o)
+    [by forall_intro generalize-c]
+qed
+
+// The inverse of an invertible map fixes what the map fixes, and undoes it pointwise.
+theorem inverseUndoesAtAPoint: forall c: Fn; invertible(c) -> forall w: Element; apply(inverse(c), apply(c, w)) = w
+proof
+  @generalize-c |
+    fix c: Fn {
+      @given-invertible |
+        assume invertible(c) {
+          @c-invertible |
+            invertible(c)
+            [by hypothesis given-invertible]
+          @inverse-then-c |
+            compose(inverse(c), c) = identityFn
+            [using specialize inverseLeft(c) c-invertible]
+          @generalize-w |
+            fix w: Element {
+              @composite-at-w |
+                apply(compose(inverse(c), c), w) = apply(inverse(c), apply(c, w))
+                [using specialize composeApply(inverse(c), c, w)]
+              @identity-at-w |
+                apply(identityFn, w) = w
+                [using specialize identityApply(w)]
+              @composite-is-w |
+                apply(compose(inverse(c), c), w) = w
+                [by rewrite inverse-then-c identity-at-w]
+              @conclusion-undone |
+                apply(inverse(c), apply(c, w)) = w
+                [by rewrite composite-at-w composite-is-w]
+            }
+          @conclusion-for-all-w |
+            forall w: Element; apply(inverse(c), apply(c, w)) = w
+            [by forall_intro generalize-w]
+        }
+      @conclusion-implication |
+        invertible(c) -> forall w: Element; apply(inverse(c), apply(c, w)) = w
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall c: Fn; invertible(c) -> forall w: Element; apply(inverse(c), apply(c, w)) = w
+    [by forall_intro generalize-c]
+qed
+
+theorem inverseFixesAFixedPoint: forall c: Fn; invertible(c) -> forall w: Element; apply(c, w) = w -> apply(inverse(c), w) = w
+proof
+  @generalize-c |
+    fix c: Fn {
+      @given-invertible |
+        assume invertible(c) {
+          @c-invertible |
+            invertible(c)
+            [by hypothesis given-invertible]
+          @undoes |
+            forall w: Element; apply(inverse(c), apply(c, w)) = w
+            [using specialize inverseUndoesAtAPoint(c) c-invertible]
+          @generalize-w |
+            fix w: Element {
+              @given-fixed |
+                assume apply(c, w) = w {
+                  @c-fixes-w |
+                    apply(c, w) = w
+                    [by hypothesis given-fixed]
+                  @inverse-undoes-at-w |
+                    apply(inverse(c), apply(c, w)) = w
+                    [using specialize undoes(w)]
+                  @conclusion-inverse-fixes-w |
+                    apply(inverse(c), w) = w
+                    [by rewrite c-fixes-w inverse-undoes-at-w]
+                }
+              @conclusion-implication |
+                apply(c, w) = w -> apply(inverse(c), w) = w
+                [by implies_intro given-fixed]
+            }
+          @conclusion-for-all-w |
+            forall w: Element; apply(c, w) = w -> apply(inverse(c), w) = w
+            [by forall_intro generalize-w]
+        }
+      @conclusion-invertible |
+        invertible(c) -> forall w: Element; apply(c, w) = w -> apply(inverse(c), w) = w
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall c: Fn; invertible(c) -> forall w: Element; apply(c, w) = w -> apply(inverse(c), w) = w
+    [by forall_intro generalize-c]
+qed
+
+// Removing a set leaves a subset.
+theorem differenceIsASubset: forall a: Set; forall b: Set; subset(difference(a, b), a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @pointwise |
+            fix x: Element {
+              @membership |
+                member(x, difference(a, b)) iff (member(x, a) and (not member(x, b)))
+                [using specialize differenceMember(a, b, x)]
+              @conclusion-in-a |
+                member(x, difference(a, b)) -> member(x, a)
+                [using tautology membership]
+            }
+          @conclusion-subset |
+            subset(difference(a, b), a)
+            [by forall_intro pointwise]
+        }
+      @discharge-b |
+        forall b: Set; subset(difference(a, b), a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; subset(difference(a, b), a)
+    [by forall_intro generalize-a]
+qed
+
+// -- peeling one orbit off ------------------------------------------------------------------------
+
+// PEELING OFF AN ORBIT. For a moved point x, f = c ∘ g where c is the cycle of x's orbit and
+// g = c⁻¹ ∘ f fixes the orbit and agrees with f off it — so c is supported inside the orbit
+// and g exactly on support(f) \ orbit(f, x).
+theorem peelingOffAnOrbit: forall f: Perm; forall x: Element;
+  isFinite(support(f)) -> member(x, support(f)) ->
+  exists c: Fn; exists g: Fn;
+  invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+  and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @given-moved |
+                assume member(x, support(f)) {
+                  @support-is-finite |
+                    isFinite(support(f))
+                    [by hypothesis given-finite]
+                  @f-invertible |
+                    invertible(f)
+                    [by predicate generalize-f]
+                  @orbit-cycle-exists |
+                    exists s: Points; exists p: Nat; cycle_theory.at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+                    [using specialize orbitIsACycle(f, x) support-is-finite]
+                  @preimages-stay-in-the-orbit |
+                    forall y: Element; member(apply(f, y), orbit(f, x)) -> member(y, orbit(f, x))
+                    [using specialize preimageOfAnOrbitMemberIsInTheOrbit(f, x) support-is-finite]
+                  @with-list-s |
+                    unpack s: Points from orbit-cycle-exists {
+                      @inner-exists |
+                        exists p: Nat; cycle_theory.at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+                        [by hypothesis with-list-s]
+                      @with-period-p |
+                        unpack p: Nat from inner-exists {
+                          @cycle-facts |
+                            cycle_theory.at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)) and (forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y)
+                            [by hypothesis with-period-p]
+                          @first-three |
+                            cycle_theory.at(s, ZERO) = x and distinct(s, succ(p)) and (forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y))
+                            [by and_elim_left cycle-facts]
+                          @fixes-off |
+                            forall y: Element; (not member(y, orbit(f, x))) -> apply(cycle(s, succ(p)), y) = y
+                            [by and_elim_right cycle-facts]
+                          @head-and-distinct |
+                            cycle_theory.at(s, ZERO) = x and distinct(s, succ(p))
+                            [by and_elim_left first-three]
+                          @agrees-on |
+                            forall y: Element; member(y, orbit(f, x)) -> apply(cycle(s, succ(p)), y) = apply(f, y)
+                            [by and_elim_right first-three]
+                          @distinct-entries |
+                            distinct(s, succ(p))
+                            [by and_elim_right head-and-distinct]
+
+                          // c is a cycle, and a permutation
+                          @c-invertible |
+                            invertible(cycle(s, succ(p)))
+                            [using specialize cycleIsAPermutation(s, succ(p))]
+                          @c-is-itself |
+                            cycle(s, succ(p)) = cycle(s, succ(p))
+                            [by reflexivity]
+                          @cycle-clauses |
+                            distinct(s, succ(p)) and cycle(s, succ(p)) = cycle(s, succ(p))
+                            [by and_intro distinct-entries c-is-itself]
+                          @cycle-inner-witness |
+                            exists p2: Nat; distinct(s, succ(p2)) and cycle(s, succ(p)) = cycle(s, succ(p2))
+                            [by exists_intro(p) cycle-clauses]
+                          @c-is-a-cycle |
+                            isACycle(cycle(s, succ(p)))
+                            [by exists_intro(s) cycle-inner-witness]
+                          @inverse-c-invertible |
+                            invertible(inverse(cycle(s, succ(p))))
+                            [using specialize inverseIsAPermutation(cycle(s, succ(p))) c-invertible]
+                          @g-invertible |
+                            invertible(compose(inverse(cycle(s, succ(p))), f))
+                            [using specialize composeIsAPermutation(inverse(cycle(s, succ(p))), f) inverse-c-invertible f-invertible]
+                          @c-supported-in-the-orbit |
+                            subset(support(cycle(s, succ(p))), orbit(f, x))
+                            [using specialize fixingOffASetBoundsTheSupport(cycle(s, succ(p)), orbit(f, x)) fixes-off]
+                          @inverse-fixes |
+                            forall w: Element; apply(cycle(s, succ(p)), w) = w -> apply(inverse(cycle(s, succ(p))), w) = w
+                            [using specialize inverseFixesAFixedPoint(cycle(s, succ(p))) c-invertible]
+                          @inverse-undoes |
+                            forall w: Element; apply(inverse(cycle(s, succ(p))), apply(cycle(s, succ(p)), w)) = w
+                            [using specialize inverseUndoesAtAPoint(cycle(s, succ(p))) c-invertible]
+
+                          // f = c ∘ g
+                          @reassociated |
+                            compose(compose(cycle(s, succ(p)), inverse(cycle(s, succ(p)))), f) = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f))
+                            [using specialize composeAssoc(cycle(s, succ(p)), inverse(cycle(s, succ(p))), f)]
+                          @c-undoes-its-inverse |
+                            compose(cycle(s, succ(p)), inverse(cycle(s, succ(p)))) = identityFn
+                            [using specialize inverseRight(cycle(s, succ(p))) c-invertible]
+                          @identity-times-f-is-the-product |
+                            compose(identityFn, f) = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f))
+                            [by rewrite c-undoes-its-inverse reassociated]
+                          @identity-drops |
+                            compose(identityFn, f) = f
+                            [using specialize composeIdentityLeft(f)]
+                          @f-is-the-product |
+                            f = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f))
+                            [by rewrite identity-drops identity-times-f-is-the-product]
+
+                          // g fixes the orbit and agrees with f off it
+                          @pointwise |
+                            fix y: Element {
+                              @g-at-y |
+                                apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(inverse(cycle(s, succ(p))), apply(f, y))
+                                [using specialize composeApply(inverse(cycle(s, succ(p))), f, y)]
+                              @in-or-out |
+                                member(y, orbit(f, x)) or (not member(y, orbit(f, x)))
+                                [using tautology]
+                              @conclusion-g-behaves-at-y |
+                                (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                                case in-or-out {
+                                  @when-in-orbit |
+                                    assume member(y, orbit(f, x)) {
+                                      @y-in-orbit |
+                                        member(y, orbit(f, x))
+                                        [by hypothesis when-in-orbit]
+                                      @c-agrees-at-y |
+                                        apply(cycle(s, succ(p)), y) = apply(f, y)
+                                        [using specialize agrees-on(y) y-in-orbit]
+                                      @f-is-c-at-y |
+                                        apply(f, y) = apply(cycle(s, succ(p)), y)
+                                        [by symmetry c-agrees-at-y]
+                                      @g-at-y-via-c |
+                                        apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(inverse(cycle(s, succ(p))), apply(cycle(s, succ(p)), y))
+                                        [by rewrite f-is-c-at-y g-at-y]
+                                      @undone-at-y |
+                                        apply(inverse(cycle(s, succ(p))), apply(cycle(s, succ(p)), y)) = y
+                                        [using specialize inverse-undoes(y)]
+                                      @g-fixes-y |
+                                        apply(compose(inverse(cycle(s, succ(p))), f), y) = y
+                                        [using chain g-at-y-via-c undone-at-y]
+                                      @on-clause |
+                                        member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y
+                                        [using tautology g-fixes-y]
+                                      @off-clause-vacuous |
+                                        (not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                        [using tautology y-in-orbit]
+                                      @conclusion-in |
+                                        (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                                        [by and_intro on-clause off-clause-vacuous]
+                                    }
+                                  @when-off-orbit |
+                                    assume not member(y, orbit(f, x)) {
+                                      @y-outside |
+                                        not member(y, orbit(f, x))
+                                        [by hypothesis when-off-orbit]
+                                      @suppose-image-in-orbit |
+                                        assume member(apply(f, y), orbit(f, x)) {
+                                          @image-in-orbit |
+                                            member(apply(f, y), orbit(f, x))
+                                            [by hypothesis suppose-image-in-orbit]
+                                          @y-in-orbit-after-all |
+                                            member(y, orbit(f, x))
+                                            [using specialize preimages-stay-in-the-orbit(y) image-in-orbit]
+                                        }
+                                      @image-outside |
+                                        not member(apply(f, y), orbit(f, x))
+                                        [by not_intro suppose-image-in-orbit y-in-orbit-after-all y-outside]
+                                      @c-fixes-the-image |
+                                        apply(cycle(s, succ(p)), apply(f, y)) = apply(f, y)
+                                        [using specialize fixes-off(apply(f, y)) image-outside]
+                                      @inverse-fixes-the-image |
+                                        apply(inverse(cycle(s, succ(p))), apply(f, y)) = apply(f, y)
+                                        [using specialize inverse-fixes(apply(f, y)) c-fixes-the-image]
+                                      @g-is-f-at-y |
+                                        apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                        [using chain g-at-y inverse-fixes-the-image]
+                                      @on-clause-vacuous |
+                                        member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y
+                                        [using tautology y-outside]
+                                      @off-clause |
+                                        (not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                        [using tautology g-is-f-at-y]
+                                      @conclusion-off |
+                                        (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                                        [by and_intro on-clause-vacuous off-clause]
+                                    }
+                                }
+                            }
+                          @g-behaves |
+                            forall y: Element; (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                            [by forall_intro pointwise]
+
+                          // support(g) = support(f) \ orbit
+                          @pointwise-forward |
+                            fix y: Element {
+                              @given-moved-by-g |
+                                assume member(y, support(compose(inverse(cycle(s, succ(p))), f))) {
+                                  @y-moved-by-g |
+                                    member(y, support(compose(inverse(cycle(s, succ(p))), f)))
+                                    [by hypothesis given-moved-by-g]
+                                  @g-membership |
+                                    member(y, support(compose(inverse(cycle(s, succ(p))), f))) iff apply(compose(inverse(cycle(s, succ(p))), f), y) != y
+                                    [using specialize supportMember(compose(inverse(cycle(s, succ(p))), f), y)]
+                                  @g-moves-y |
+                                    apply(compose(inverse(cycle(s, succ(p))), f), y) != y
+                                    [using tautology g-membership y-moved-by-g]
+                                  @behaviour-at-y |
+                                    (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                                    [using specialize g-behaves(y)]
+                                  @on-clause |
+                                    member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y
+                                    [by and_elim_left behaviour-at-y]
+                                  @off-clause |
+                                    (not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                    [by and_elim_right behaviour-at-y]
+                                  @suppose-in-orbit |
+                                    assume member(y, orbit(f, x)) {
+                                      @y-in-orbit |
+                                        member(y, orbit(f, x))
+                                        [by hypothesis suppose-in-orbit]
+                                      @g-fixes-y |
+                                        apply(compose(inverse(cycle(s, succ(p))), f), y) = y
+                                        [by modus_ponens on-clause y-in-orbit]
+                                    }
+                                  @y-outside |
+                                    not member(y, orbit(f, x))
+                                    [by not_intro suppose-in-orbit g-fixes-y g-moves-y]
+                                  @g-is-f-at-y |
+                                    apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                    [by modus_ponens off-clause y-outside]
+                                  @f-moves-y |
+                                    apply(f, y) != y
+                                    [by rewrite g-is-f-at-y g-moves-y]
+                                  @f-membership |
+                                    member(y, support(f)) iff apply(f, y) != y
+                                    [using specialize supportMember(f, y)]
+                                  @y-moved-by-f |
+                                    member(y, support(f))
+                                    [using tautology f-membership f-moves-y]
+                                  @difference-membership |
+                                    member(y, difference(support(f), orbit(f, x))) iff (member(y, support(f)) and (not member(y, orbit(f, x))))
+                                    [using specialize differenceMember(support(f), orbit(f, x), y)]
+                                  @conclusion-in-difference |
+                                    member(y, difference(support(f), orbit(f, x)))
+                                    [using tautology difference-membership y-moved-by-f y-outside]
+                                }
+                              @conclusion-forward-implication |
+                                member(y, support(compose(inverse(cycle(s, succ(p))), f))) -> member(y, difference(support(f), orbit(f, x)))
+                                [by implies_intro given-moved-by-g]
+                            }
+                          @support-g-in-difference |
+                            forall y: Element; member(y, support(compose(inverse(cycle(s, succ(p))), f))) -> member(y, difference(support(f), orbit(f, x)))
+                            [by forall_intro pointwise-forward]
+                          @pointwise-backward |
+                            fix y: Element {
+                              @given-in-difference |
+                                assume member(y, difference(support(f), orbit(f, x))) {
+                                  @y-in-difference |
+                                    member(y, difference(support(f), orbit(f, x)))
+                                    [by hypothesis given-in-difference]
+                                  @difference-membership |
+                                    member(y, difference(support(f), orbit(f, x))) iff (member(y, support(f)) and (not member(y, orbit(f, x))))
+                                    [using specialize differenceMember(support(f), orbit(f, x), y)]
+                                  @y-moved-by-f |
+                                    member(y, support(f))
+                                    [using tautology difference-membership y-in-difference]
+                                  @y-outside |
+                                    not member(y, orbit(f, x))
+                                    [using tautology difference-membership y-in-difference]
+                                  @f-membership |
+                                    member(y, support(f)) iff apply(f, y) != y
+                                    [using specialize supportMember(f, y)]
+                                  @f-moves-y |
+                                    apply(f, y) != y
+                                    [using tautology f-membership y-moved-by-f]
+                                  @behaviour-at-y |
+                                    (member(y, orbit(f, x)) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = y) and ((not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y))
+                                    [using specialize g-behaves(y)]
+                                  @off-clause |
+                                    (not member(y, orbit(f, x))) -> apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                    [by and_elim_right behaviour-at-y]
+                                  @g-is-f-at-y |
+                                    apply(compose(inverse(cycle(s, succ(p))), f), y) = apply(f, y)
+                                    [by modus_ponens off-clause y-outside]
+                                  @g-moves-y |
+                                    apply(compose(inverse(cycle(s, succ(p))), f), y) != y
+                                    [by rewrite g-is-f-at-y f-moves-y]
+                                  @g-membership |
+                                    member(y, support(compose(inverse(cycle(s, succ(p))), f))) iff apply(compose(inverse(cycle(s, succ(p))), f), y) != y
+                                    [using specialize supportMember(compose(inverse(cycle(s, succ(p))), f), y)]
+                                  @conclusion-moved-by-g |
+                                    member(y, support(compose(inverse(cycle(s, succ(p))), f)))
+                                    [using tautology g-membership g-moves-y]
+                                }
+                              @conclusion-backward-implication |
+                                member(y, difference(support(f), orbit(f, x))) -> member(y, support(compose(inverse(cycle(s, succ(p))), f)))
+                                [by implies_intro given-in-difference]
+                            }
+                          @difference-in-support-g |
+                            forall y: Element; member(y, difference(support(f), orbit(f, x))) -> member(y, support(compose(inverse(cycle(s, succ(p))), f)))
+                            [by forall_intro pointwise-backward]
+                          @support-g-is-the-difference |
+                            support(compose(inverse(cycle(s, succ(p))), f)) = difference(support(f), orbit(f, x))
+                            [using specialize extensionality(support(compose(inverse(cycle(s, succ(p))), f)), difference(support(f), orbit(f, x))) support-g-in-difference difference-in-support-g]
+
+                          // assemble
+                          @both-invertible |
+                            invertible(cycle(s, succ(p))) and invertible(compose(inverse(cycle(s, succ(p))), f))
+                            [by and_intro c-invertible g-invertible]
+                          @and-a-cycle |
+                            invertible(cycle(s, succ(p))) and invertible(compose(inverse(cycle(s, succ(p))), f)) and isACycle(cycle(s, succ(p)))
+                            [by and_intro both-invertible c-is-a-cycle]
+                          @and-the-product |
+                            invertible(cycle(s, succ(p))) and invertible(compose(inverse(cycle(s, succ(p))), f)) and isACycle(cycle(s, succ(p))) and f = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f))
+                            [by and_intro and-a-cycle f-is-the-product]
+                          @and-the-cycle-support |
+                            invertible(cycle(s, succ(p))) and invertible(compose(inverse(cycle(s, succ(p))), f)) and isACycle(cycle(s, succ(p))) and f = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f)) and subset(support(cycle(s, succ(p))), orbit(f, x))
+                            [by and_intro and-the-product c-supported-in-the-orbit]
+                          @all-six |
+                            invertible(cycle(s, succ(p))) and invertible(compose(inverse(cycle(s, succ(p))), f)) and isACycle(cycle(s, succ(p))) and f = compose(cycle(s, succ(p)), compose(inverse(cycle(s, succ(p))), f)) and subset(support(cycle(s, succ(p))), orbit(f, x)) and support(compose(inverse(cycle(s, succ(p))), f)) = difference(support(f), orbit(f, x))
+                            [by and_intro and-the-cycle-support support-g-is-the-difference]
+                          @inner-witness |
+                            exists g: Fn; invertible(cycle(s, succ(p))) and invertible(g) and isACycle(cycle(s, succ(p))) and f = compose(cycle(s, succ(p)), g) and subset(support(cycle(s, succ(p))), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                            [by exists_intro(compose(inverse(cycle(s, succ(p))), f)) all-six]
+                          @conclusion-witness |
+                            exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                            [by exists_intro(cycle(s, succ(p))) inner-witness]
+                        }
+                      @conclusion-with-p |
+                        exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                        [by exists_elim with-period-p]
+                    }
+                  @conclusion-with-s |
+                    exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                    [by exists_elim with-list-s]
+                }
+              @conclusion-moved |
+                member(x, support(f)) -> exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                [by implies_intro given-moved]
+            }
+          @conclusion-finite |
+            isFinite(support(f)) -> member(x, support(f)) -> exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+            [by implies_intro given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> member(x, support(f)) -> exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element;
+      isFinite(support(f)) -> member(x, support(f)) ->
+      exists c: Fn; exists g: Fn;
+      invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+      and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+    [by forall_intro generalize-f]
+qed
+
+// -- three more helpers for the induction -------------------------------------------------------
+
+theorem subsetTransitive: forall a: Set; forall b: Set; forall c: Set;
+  subset(a, b) -> subset(b, c) -> subset(a, c)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-c |
+            fix c: Set {
+              @given-a-in-b |
+                assume subset(a, b) {
+                  @given-b-in-c |
+                    assume subset(b, c) {
+                      @a-in-b |
+                        forall x: Element; member(x, a) -> member(x, b)
+                        [by hypothesis given-a-in-b]
+                      @b-in-c |
+                        forall x: Element; member(x, b) -> member(x, c)
+                        [by hypothesis given-b-in-c]
+                      @pointwise |
+                        fix x: Element {
+                          @a-to-b |
+                            member(x, a) -> member(x, b)
+                            [using specialize a-in-b(x)]
+                          @b-to-c |
+                            member(x, b) -> member(x, c)
+                            [using specialize b-in-c(x)]
+                          @conclusion-a-to-c |
+                            member(x, a) -> member(x, c)
+                            [using tautology a-to-b b-to-c]
+                        }
+                      @conclusion-a-in-c |
+                        subset(a, c)
+                        [by forall_intro pointwise]
+                    }
+                  @conclusion-b-in-c |
+                    subset(b, c) -> subset(a, c)
+                    [by implies_intro given-b-in-c]
+                }
+              @conclusion-a-in-b |
+                subset(a, b) -> subset(b, c) -> subset(a, c)
+                [by implies_intro given-a-in-b]
+            }
+          @discharge-c |
+            forall c: Set; subset(a, b) -> subset(b, c) -> subset(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b: Set; forall c: Set; subset(a, b) -> subset(b, c) -> subset(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall c: Set; subset(a, b) -> subset(b, c) -> subset(a, c)
+    [by forall_intro generalize-a]
+qed
+
+// A map with empty support is the identity.
+theorem emptySupportMeansIdentity: forall f: Fn; support(f) = emptyset -> f = identityFn
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-empty |
+        assume support(f) = emptyset {
+          @support-is-empty |
+            support(f) = emptyset
+            [by hypothesis given-empty]
+          @pointwise |
+            fix y: Element {
+              @membership |
+                member(y, support(f)) iff apply(f, y) != y
+                [using specialize supportMember(f, y)]
+              @membership-in-empty |
+                member(y, emptyset) iff apply(f, y) != y
+                [by rewrite support-is-empty membership]
+              @nothing-in-emptyset |
+                not member(y, emptyset)
+                [using specialize emptysetMember(y)]
+              @f-fixes-y |
+                apply(f, y) = y
+                [using tautology membership-in-empty nothing-in-emptyset]
+              @identity-at-y |
+                apply(identityFn, y) = y
+                [using specialize identityApply(y)]
+              @y-is-identity-at-y |
+                y = apply(identityFn, y)
+                [by symmetry identity-at-y]
+              @conclusion-agree-at-y |
+                apply(f, y) = apply(identityFn, y)
+                [using chain f-fixes-y y-is-identity-at-y]
+            }
+          @agree-everywhere |
+            forall y: Element; apply(f, y) = apply(identityFn, y)
+            [by forall_intro pointwise]
+          @conclusion-identity |
+            f = identityFn
+            [using specialize funcExtensionality(f, identityFn) agree-everywhere]
+        }
+      @conclusion-implication |
+        support(f) = emptyset -> f = identityFn
+        [by implies_intro given-empty]
+    }
+  @conclusion |
+    forall f: Fn; support(f) = emptyset -> f = identityFn
+    [by forall_intro generalize-f]
+qed
+
+// A map supported inside o and one supported inside a \ o have disjoint supports, in
+// both orders.
+theorem separatedSupportsAreDisjoint: forall c: Fn; forall h: Fn; forall a: Set; forall o: Set;
+  subset(support(c), o) -> subset(support(h), difference(a, o)) ->
+  (disjointSupports(c, h) and disjointSupports(h, c))
+proof
+  @generalize-c |
+    fix c: Fn {
+      @generalize-h |
+        fix h: Fn {
+          @generalize-a |
+            fix a: Set {
+              @generalize-o |
+                fix o: Set {
+                  @given-c-inside |
+                    assume subset(support(c), o) {
+                      @given-h-outside |
+                        assume subset(support(h), difference(a, o)) {
+                          @c-inside |
+                            forall y: Element; member(y, support(c)) -> member(y, o)
+                            [by hypothesis given-c-inside]
+                          @h-outside |
+                            forall y: Element; member(y, support(h)) -> member(y, difference(a, o))
+                            [by hypothesis given-h-outside]
+                          @pointwise-forward |
+                            fix y: Element {
+                              @meet-membership |
+                                member(y, intersection(support(c), support(h))) iff (member(y, support(c)) and member(y, support(h)))
+                                [using specialize intersectionMember(support(c), support(h), y)]
+                              @c-puts-y-in-o |
+                                member(y, support(c)) -> member(y, o)
+                                [using specialize c-inside(y)]
+                              @h-puts-y-outside |
+                                member(y, support(h)) -> member(y, difference(a, o))
+                                [using specialize h-outside(y)]
+                              @difference-membership |
+                                member(y, difference(a, o)) iff (member(y, a) and (not member(y, o)))
+                                [using specialize differenceMember(a, o, y)]
+                              @nothing-in-emptyset |
+                                not member(y, emptyset)
+                                [using specialize emptysetMember(y)]
+                              @conclusion-forward |
+                                member(y, intersection(support(c), support(h))) -> member(y, emptyset)
+                                [using tautology meet-membership c-puts-y-in-o h-puts-y-outside difference-membership nothing-in-emptyset]
+                            }
+                          @meet-in-empty |
+                            forall y: Element; member(y, intersection(support(c), support(h))) -> member(y, emptyset)
+                            [by forall_intro pointwise-forward]
+                          @pointwise-backward |
+                            fix y: Element {
+                              @nothing-in-emptyset |
+                                not member(y, emptyset)
+                                [using specialize emptysetMember(y)]
+                              @conclusion-backward |
+                                member(y, emptyset) -> member(y, intersection(support(c), support(h)))
+                                [using tautology nothing-in-emptyset]
+                            }
+                          @empty-in-meet |
+                            forall y: Element; member(y, emptyset) -> member(y, intersection(support(c), support(h)))
+                            [by forall_intro pointwise-backward]
+                          @c-h-disjoint |
+                            intersection(support(c), support(h)) = emptyset
+                            [using specialize extensionality(intersection(support(c), support(h)), emptyset) meet-in-empty empty-in-meet]
+                          @meet-commutes |
+                            intersection(support(h), support(c)) = intersection(support(c), support(h))
+                            [using specialize set.intersectionCommutative(support(h), support(c))]
+                          @h-c-disjoint |
+                            intersection(support(h), support(c)) = emptyset
+                            [using chain meet-commutes c-h-disjoint]
+                          @conclusion-both |
+                            disjointSupports(c, h) and disjointSupports(h, c)
+                            [by and_intro c-h-disjoint h-c-disjoint]
+                        }
+                      @conclusion-h-outside |
+                        subset(support(h), difference(a, o)) -> (disjointSupports(c, h) and disjointSupports(h, c))
+                        [by implies_intro given-h-outside]
+                    }
+                  @conclusion-c-inside |
+                    subset(support(c), o) -> subset(support(h), difference(a, o)) -> (disjointSupports(c, h) and disjointSupports(h, c))
+                    [by implies_intro given-c-inside]
+                }
+              @discharge-o |
+                forall o: Set; subset(support(c), o) -> subset(support(h), difference(a, o)) -> (disjointSupports(c, h) and disjointSupports(h, c))
+                [by forall_intro generalize-o]
+            }
+          @discharge-a |
+            forall a: Set; forall o: Set; subset(support(c), o) -> subset(support(h), difference(a, o)) -> (disjointSupports(c, h) and disjointSupports(h, c))
+            [by forall_intro generalize-a]
+        }
+      @discharge-h |
+        forall h: Fn; forall a: Set; forall o: Set; subset(support(c), o) -> subset(support(h), difference(a, o)) -> (disjointSupports(c, h) and disjointSupports(h, c))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall c: Fn; forall h: Fn; forall a: Set; forall o: Set;
+      subset(support(c), o) -> subset(support(h), difference(a, o)) ->
+      (disjointSupports(c, h) and disjointSupports(h, c))
+    [by forall_intro generalize-c]
+qed
+
+// -- the theorem ---------------------------------------------------------------------------------
+
+// f DECOMPOSES INTO DISJOINT CYCLES: some sequence of m permutations, each a cycle, each
+// supported inside support(f), pairwise disjoint, with product f.
+define decomposesIntoDisjointCycles(f) = exists w: Seq; exists m: Nat;
+  (forall i: Nat; less_than(i, m) -> isACycle(at(w, i)))
+  and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f)))
+  and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+  and productUpTo(w, m) = f
+
+// Strong induction on the size of the support. Size ZERO: the support is empty, f is the
+// identity, the empty product. Size k+1: pick a moved point x, peel its orbit's cycle c off
+// (f = c ∘ g, support(g) = support(f) \ orbit), decompose g by the hypothesis — its support is
+// a proper subset, so strictly smaller — and prepend c: the product is c ∘ g = f, c is
+// supported in the orbit and every cycle of g outside it, so the cycles stay disjoint.
+theorem finiteSupportDecomposes: forall n: Nat; forall f: Fn;
+  invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f)
+proof
+  @strong-step |
+    fix n: Nat {
+      @given-below |
+        assume forall m: Nat; less_than(m, n) -> (forall f: Fn; invertible(f) -> hasSize(support(f), m) -> decomposesIntoDisjointCycles(f)) {
+          @below |
+            forall m: Nat; less_than(m, n) -> (forall f: Fn; invertible(f) -> hasSize(support(f), m) -> decomposesIntoDisjointCycles(f))
+            [by hypothesis given-below]
+          @generalize-f |
+            fix f: Fn {
+              @given-invertible |
+                assume invertible(f) {
+                  @given-size |
+                    assume hasSize(support(f), n) {
+                      @f-invertible |
+                        invertible(f)
+                        [by hypothesis given-invertible]
+                      @support-has-size-n |
+                        hasSize(support(f), n)
+                        [by hypothesis given-size]
+                      @n-is-zero-or-a-successor |
+                        n = ZERO or (exists k: Nat; n = succ(k))
+                        [using specialize zeroOrSucc(n)]
+                      @conclusion-decomposes |
+                        decomposesIntoDisjointCycles(f)
+                        case n-is-zero-or-a-successor {
+                          @when-empty-support |
+                            assume n = ZERO {
+                              // f is the identity: the empty product of no cycles
+                              @n-is-zero |
+                                n = ZERO
+                                [by hypothesis when-empty-support]
+                              @support-has-size-zero |
+                                hasSize(support(f), ZERO)
+                                [by rewrite n-is-zero support-has-size-n]
+                              @support-is-empty |
+                                support(f) = emptyset
+                                [using specialize sizeZeroIsEmpty(support(f)) support-has-size-zero]
+                              @f-is-the-identity |
+                                f = identityFn
+                                [using specialize emptySupportMeansIdentity(f) support-is-empty]
+                              @identity-invertible |
+                                invertible(identityFn)
+                                [by cite identityIsAPermutation]
+                              @some-sequence-exists |
+                                exists w: Seq; at(w, ZERO) = identityFn and productUpTo(w, succ(ZERO)) = identityFn
+                                [using specialize seqSingleton(identityFn) identity-invertible]
+                              @with-sequence-w |
+                                unpack w: Seq from some-sequence-exists {
+                                  @empty-product-is-identity |
+                                    productUpTo(w, ZERO) = identityFn
+                                    [using specialize productUpToZero(w)]
+                                  @identity-is-f |
+                                    identityFn = f
+                                    [by symmetry f-is-the-identity]
+                                  @empty-product-is-f |
+                                    productUpTo(w, ZERO) = f
+                                    [using chain empty-product-is-identity identity-is-f]
+                                  @vacuous-cycles |
+                                    fix i: Nat {
+                                      @nothing-below-zero |
+                                        not less_than(i, ZERO)
+                                        [using specialize notLessThanZero(i)]
+                                      @cycle-clause |
+                                        less_than(i, ZERO) -> isACycle(at(w, i))
+                                        [using tautology nothing-below-zero]
+                                    }
+                                  @no-cycles |
+                                    forall i: Nat; less_than(i, ZERO) -> isACycle(at(w, i))
+                                    [by forall_intro vacuous-cycles]
+                                  @vacuous-supports |
+                                    fix i: Nat {
+                                      @nothing-below-zero |
+                                        not less_than(i, ZERO)
+                                        [using specialize notLessThanZero(i)]
+                                      @support-clause |
+                                        less_than(i, ZERO) -> subset(support(at(w, i)), support(f))
+                                        [using tautology nothing-below-zero]
+                                    }
+                                  @no-supports |
+                                    forall i: Nat; less_than(i, ZERO) -> subset(support(at(w, i)), support(f))
+                                    [by forall_intro vacuous-supports]
+                                  @vacuous-disjoint |
+                                    fix i: Nat {
+                                      @inner-vacuous |
+                                        fix j: Nat {
+                                          @nothing-below-zero |
+                                            not less_than(i, ZERO)
+                                            [using specialize notLessThanZero(i)]
+                                          @disjoint-clause |
+                                            less_than(i, ZERO) -> less_than(j, ZERO) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                            [using tautology nothing-below-zero]
+                                        }
+                                      @discharge-j-vacuous |
+                                        forall j: Nat; less_than(i, ZERO) -> less_than(j, ZERO) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                        [by forall_intro inner-vacuous]
+                                    }
+                                  @no-pairs |
+                                    forall i: Nat; forall j: Nat; less_than(i, ZERO) -> less_than(j, ZERO) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                    [by forall_intro vacuous-disjoint]
+                                  @cycles-and-supports |
+                                    (forall i: Nat; less_than(i, ZERO) -> isACycle(at(w, i))) and (forall i: Nat; less_than(i, ZERO) -> subset(support(at(w, i)), support(f)))
+                                    [by and_intro no-cycles no-supports]
+                                  @and-disjoint |
+                                    (forall i: Nat; less_than(i, ZERO) -> isACycle(at(w, i))) and (forall i: Nat; less_than(i, ZERO) -> subset(support(at(w, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, ZERO) -> less_than(j, ZERO) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                                    [by and_intro cycles-and-supports no-pairs]
+                                  @all-four |
+                                    (forall i: Nat; less_than(i, ZERO) -> isACycle(at(w, i))) and (forall i: Nat; less_than(i, ZERO) -> subset(support(at(w, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, ZERO) -> less_than(j, ZERO) -> i != j -> disjointSupports(at(w, i), at(w, j))) and productUpTo(w, ZERO) = f
+                                    [by and_intro and-disjoint empty-product-is-f]
+                                  @inner-witness |
+                                    exists m: Nat; (forall i: Nat; less_than(i, m) -> isACycle(at(w, i))) and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j))) and productUpTo(w, m) = f
+                                    [by exists_intro(ZERO) all-four]
+                                  @conclusion-empty-witness |
+                                    decomposesIntoDisjointCycles(f)
+                                    [by exists_intro(w) inner-witness]
+                                }
+                              @conclusion-empty-support |
+                                decomposesIntoDisjointCycles(f)
+                                [by exists_elim with-sequence-w]
+                            }
+                          @when-moved-point |
+                            assume exists k: Nat; n = succ(k) {
+                              @predecessor-exists |
+                                exists k: Nat; n = succ(k)
+                                [by hypothesis when-moved-point]
+                              @with-predecessor-k |
+                                unpack k: Nat from predecessor-exists {
+                                  @n-is-succ-k |
+                                    n = succ(k)
+                                    [by hypothesis with-predecessor-k]
+                                  @support-has-size-succ-k |
+                                    hasSize(support(f), succ(k))
+                                    [by rewrite n-is-succ-k support-has-size-n]
+                                  @support-is-finite |
+                                    isFinite(support(f))
+                                    [by exists_intro(n) support-has-size-n]
+                                  @some-moved-point |
+                                    exists x: Element; member(x, support(f))
+                                    [using specialize sizedSetHasAMember(support(f), k) support-has-size-succ-k]
+                                  @with-moved-x |
+                                    unpack x: Element from some-moved-point {
+                                      @x-moved |
+                                        member(x, support(f))
+                                        [by hypothesis with-moved-x]
+                                      @peel-exists |
+                                        exists c: Fn; exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                                        [using specialize peelingOffAnOrbit(f, x) support-is-finite x-moved]
+                                      @orbit-in-support |
+                                        subset(orbit(f, x), support(f))
+                                        [using specialize orbitOfAMovedPointIsInTheSupport(f, x) x-moved]
+                                      @x-in-orbit |
+                                        member(x, orbit(f, x))
+                                        [using specialize pointIsInItsOrbit(f, x)]
+                                      @with-cycle-c |
+                                        unpack c: Fn from peel-exists {
+                                          @inner-peel |
+                                            exists g: Fn; invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                                            [by hypothesis with-cycle-c]
+                                          @with-remainder-g |
+                                            unpack g: Fn from inner-peel {
+                                              @peel-facts |
+                                                invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                                                [by hypothesis with-remainder-g]
+                                              @first-five |
+                                                invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g) and subset(support(c), orbit(f, x))
+                                                [by and_elim_left peel-facts]
+                                              @g-support-is-the-difference |
+                                                support(g) = difference(support(f), orbit(f, x))
+                                                [by and_elim_right peel-facts]
+                                              @first-four |
+                                                invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+                                                [by and_elim_left first-five]
+                                              @c-support-in-orbit |
+                                                subset(support(c), orbit(f, x))
+                                                [by and_elim_right first-five]
+                                              @first-three |
+                                                invertible(c) and invertible(g) and isACycle(c)
+                                                [by and_elim_left first-four]
+                                              @f-is-the-product |
+                                                f = compose(c, g)
+                                                [by and_elim_right first-four]
+                                              @both-invertible |
+                                                invertible(c) and invertible(g)
+                                                [by and_elim_left first-three]
+                                              @c-is-a-cycle |
+                                                isACycle(c)
+                                                [by and_elim_right first-three]
+                                              @c-invertible |
+                                                invertible(c)
+                                                [by and_elim_left both-invertible]
+                                              @g-invertible |
+                                                invertible(g)
+                                                [by and_elim_right both-invertible]
+
+                                              // support(g) is a PROPER subset of support(f), so strictly smaller
+                                              @difference-in-support |
+                                                subset(difference(support(f), orbit(f, x)), support(f))
+                                                [using specialize differenceIsASubset(support(f), orbit(f, x))]
+                                              @g-support-in-f-support |
+                                                subset(support(g), support(f))
+                                                [by rewrite g-support-is-the-difference difference-in-support]
+                                              @difference-membership-at-x |
+                                                member(x, difference(support(f), orbit(f, x))) iff (member(x, support(f)) and (not member(x, orbit(f, x))))
+                                                [using specialize differenceMember(support(f), orbit(f, x), x)]
+                                              @x-not-in-difference |
+                                                not member(x, difference(support(f), orbit(f, x)))
+                                                [using tautology difference-membership-at-x x-in-orbit]
+                                              @x-not-in-g-support |
+                                                not member(x, support(g))
+                                                [by rewrite g-support-is-the-difference x-not-in-difference]
+                                              @suppose-same-support |
+                                                assume support(g) = support(f) {
+                                                  @same-support |
+                                                    support(g) = support(f)
+                                                    [by hypothesis suppose-same-support]
+                                                  @x-in-g-support |
+                                                    member(x, support(g))
+                                                    [by rewrite same-support x-moved]
+                                                }
+                                              @supports-differ |
+                                                support(g) != support(f)
+                                                [by not_intro suppose-same-support x-in-g-support x-not-in-g-support]
+                                              @g-support-is-sized |
+                                                exists m2: Nat; hasSize(support(g), m2) and less_or_equal(m2, succ(k))
+                                                [using specialize subsetOfFiniteIsFinite(succ(k), support(f), support(g)) support-has-size-succ-k g-support-in-f-support]
+                                              @with-size-m2 |
+                                                unpack m2: Nat from g-support-is-sized {
+                                                  @size-facts |
+                                                    hasSize(support(g), m2) and less_or_equal(m2, succ(k))
+                                                    [by hypothesis with-size-m2]
+                                                  @g-support-has-size-m2 |
+                                                    hasSize(support(g), m2)
+                                                    [by and_elim_left size-facts]
+                                                  @m2-below-succ-k |
+                                                    less_than(m2, succ(k))
+                                                    [using specialize properSubsetIsSmaller(support(g), support(f), m2, succ(k)) g-support-in-f-support supports-differ g-support-has-size-m2 support-has-size-succ-k]
+                                                  @m2-below-n |
+                                                    less_than(m2, n)
+                                                    [by rewrite n-is-succ-k m2-below-succ-k]
+                                                  @decomposition-at-m2 |
+                                                    forall f2: Fn; invertible(f2) -> hasSize(support(f2), m2) -> decomposesIntoDisjointCycles(f2)
+                                                    [using specialize below(m2) m2-below-n]
+                                                  @g-decomposes |
+                                                    decomposesIntoDisjointCycles(g)
+                                                    [using specialize decomposition-at-m2(g) g-invertible g-support-has-size-m2]
+                                                  @with-sequence-w2 |
+                                                    unpack w2: Seq from g-decomposes {
+                                                      @inner-g |
+                                                        exists m3: Nat; (forall i: Nat; less_than(i, m3) -> isACycle(at(w2, i))) and (forall i: Nat; less_than(i, m3) -> subset(support(at(w2, i)), support(g))) and (forall i: Nat; forall j: Nat; less_than(i, m3) -> less_than(j, m3) -> i != j -> disjointSupports(at(w2, i), at(w2, j))) and productUpTo(w2, m3) = g
+                                                        [by hypothesis with-sequence-w2]
+                                                      @with-length-m3 |
+                                                        unpack m3: Nat from inner-g {
+                                                          @g-facts |
+                                                            (forall i: Nat; less_than(i, m3) -> isACycle(at(w2, i))) and (forall i: Nat; less_than(i, m3) -> subset(support(at(w2, i)), support(g))) and (forall i: Nat; forall j: Nat; less_than(i, m3) -> less_than(j, m3) -> i != j -> disjointSupports(at(w2, i), at(w2, j))) and productUpTo(w2, m3) = g
+                                                            [by hypothesis with-length-m3]
+                                                          @g-first-three |
+                                                            (forall i: Nat; less_than(i, m3) -> isACycle(at(w2, i))) and (forall i: Nat; less_than(i, m3) -> subset(support(at(w2, i)), support(g))) and (forall i: Nat; forall j: Nat; less_than(i, m3) -> less_than(j, m3) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                                                            [by and_elim_left g-facts]
+                                                          @g-product |
+                                                            productUpTo(w2, m3) = g
+                                                            [by and_elim_right g-facts]
+                                                          @g-first-two |
+                                                            (forall i: Nat; less_than(i, m3) -> isACycle(at(w2, i))) and (forall i: Nat; less_than(i, m3) -> subset(support(at(w2, i)), support(g)))
+                                                            [by and_elim_left g-first-three]
+                                                          @g-disjoint |
+                                                            forall i: Nat; forall j: Nat; less_than(i, m3) -> less_than(j, m3) -> i != j -> disjointSupports(at(w2, i), at(w2, j))
+                                                            [by and_elim_right g-first-three]
+                                                          @g-cycles |
+                                                            forall i: Nat; less_than(i, m3) -> isACycle(at(w2, i))
+                                                            [by and_elim_left g-first-two]
+                                                          @g-supports |
+                                                            forall i: Nat; less_than(i, m3) -> subset(support(at(w2, i)), support(g))
+                                                            [by and_elim_right g-first-two]
+
+                                                          // prepend c
+                                                          @prepend-for-c |
+                                                            forall s: Seq; exists u: Seq; at(u, ZERO) = c and (forall i: Nat; at(u, succ(i)) = at(s, i))
+                                                            [using specialize seqPrepend(c) c-invertible]
+                                                          @prepended-exists |
+                                                            exists u: Seq; at(u, ZERO) = c and (forall i: Nat; at(u, succ(i)) = at(w2, i))
+                                                            [using specialize prepend-for-c(w2)]
+                                                          @with-prepended-u |
+                                                            unpack u: Seq from prepended-exists {
+                                                              @prepend-facts |
+                                                                at(u, ZERO) = c and (forall i: Nat; at(u, succ(i)) = at(w2, i))
+                                                                [by hypothesis with-prepended-u]
+                                                              @head-is-c |
+                                                                at(u, ZERO) = c
+                                                                [by and_elim_left prepend-facts]
+                                                              @tail-shifts |
+                                                                forall i: Nat; at(u, succ(i)) = at(w2, i)
+                                                                [by and_elim_right prepend-facts]
+                                                              // the product is c ∘ g = f
+                                                              @product-of-prepend |
+                                                                forall n2: Nat; productUpTo(u, succ(n2)) = compose(c, productUpTo(w2, n2))
+                                                                [using specialize productOfPrepend(c, w2, u) head-is-c tail-shifts]
+                                                              @product-at-m3 |
+                                                                productUpTo(u, succ(m3)) = compose(c, productUpTo(w2, m3))
+                                                                [using specialize product-of-prepend(m3)]
+                                                              @product-is-c-g |
+                                                                productUpTo(u, succ(m3)) = compose(c, g)
+                                                                [by rewrite g-product product-at-m3]
+                                                              @product-is-f |
+                                                                productUpTo(u, succ(m3)) = f
+                                                                [by rewrite f-is-the-product product-is-c-g]
+                                                              // every entry is a cycle
+                                                              @c-support-in-f-support |
+                                                                subset(support(c), support(f))
+                                                                [using specialize subsetTransitive(support(c), orbit(f, x), support(f)) c-support-in-orbit orbit-in-support]
+                                                              @generalize-i-cycles |
+                                                                fix i: Nat {
+                                                                  @given-i-in-range |
+                                                                    assume less_than(i, succ(m3)) {
+                                                                      @i-in-range |
+                                                                        less_than(i, succ(m3))
+                                                                        [by hypothesis given-i-in-range]
+                                                                      @i-is-zero-or-a-successor |
+                                                                        i = ZERO or (exists i2: Nat; i = succ(i2))
+                                                                        [using specialize zeroOrSucc(i)]
+                                                                      @conclusion-entry-is-a-cycle |
+                                                                        isACycle(at(u, i))
+                                                                        case i-is-zero-or-a-successor {
+                                                                          @when-head |
+                                                                            assume i = ZERO {
+                                                                              @i-is-zero |
+                                                                                i = ZERO
+                                                                                [by hypothesis when-head]
+                                                                              @head-is-a-cycle |
+                                                                                isACycle(at(u, ZERO))
+                                                                                [by rewrite head-is-c c-is-a-cycle]
+                                                                              @conclusion-head-cycle |
+                                                                                isACycle(at(u, i))
+                                                                                [by rewrite i-is-zero head-is-a-cycle]
+                                                                            }
+                                                                          @when-tail |
+                                                                            assume exists i2: Nat; i = succ(i2) {
+                                                                              @predecessor-of-i-exists |
+                                                                                exists i2: Nat; i = succ(i2)
+                                                                                [by hypothesis when-tail]
+                                                                              @with-predecessor-i2 |
+                                                                                unpack i2: Nat from predecessor-of-i-exists {
+                                                                                  @i-is-succ-i2 |
+                                                                                    i = succ(i2)
+                                                                                    [by hypothesis with-predecessor-i2]
+                                                                                  @succ-i2-in-range |
+                                                                                    less_than(succ(i2), succ(m3))
+                                                                                    [by rewrite i-is-succ-i2 i-in-range]
+                                                                                  @i2-in-range |
+                                                                                    less_than(i2, m3)
+                                                                                    [using specialize succReflectsOrder(i2, m3) succ-i2-in-range]
+                                                                                  @tail-entry-is-a-cycle |
+                                                                                    isACycle(at(w2, i2))
+                                                                                    [using specialize g-cycles(i2) i2-in-range]
+                                                                                  @shifted-entry |
+                                                                                    at(u, succ(i2)) = at(w2, i2)
+                                                                                    [using specialize tail-shifts(i2)]
+                                                                                  @shifted-entry-is-a-cycle |
+                                                                                    isACycle(at(u, succ(i2)))
+                                                                                    [by rewrite shifted-entry tail-entry-is-a-cycle]
+                                                                                  @conclusion-tail-cycle |
+                                                                                    isACycle(at(u, i))
+                                                                                    [by rewrite i-is-succ-i2 shifted-entry-is-a-cycle]
+                                                                                }
+                                                                              @conclusion-when-tail |
+                                                                                isACycle(at(u, i))
+                                                                                [by exists_elim with-predecessor-i2]
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                  @conclusion-cycle-clause |
+                                                                    less_than(i, succ(m3)) -> isACycle(at(u, i))
+                                                                    [by implies_intro given-i-in-range]
+                                                                }
+                                                              @all-cycles |
+                                                                forall i: Nat; less_than(i, succ(m3)) -> isACycle(at(u, i))
+                                                                [by forall_intro generalize-i-cycles]
+                                                              // every entry is supported inside support(f)
+                                                              @generalize-i-supports |
+                                                                fix i: Nat {
+                                                                  @given-i-in-range |
+                                                                    assume less_than(i, succ(m3)) {
+                                                                      @i-in-range |
+                                                                        less_than(i, succ(m3))
+                                                                        [by hypothesis given-i-in-range]
+                                                                      @i-is-zero-or-a-successor |
+                                                                        i = ZERO or (exists i2: Nat; i = succ(i2))
+                                                                        [using specialize zeroOrSucc(i)]
+                                                                      @conclusion-entry-supported |
+                                                                        subset(support(at(u, i)), support(f))
+                                                                        case i-is-zero-or-a-successor {
+                                                                          @when-head |
+                                                                            assume i = ZERO {
+                                                                              @i-is-zero |
+                                                                                i = ZERO
+                                                                                [by hypothesis when-head]
+                                                                              @head-supported |
+                                                                                subset(support(at(u, ZERO)), support(f))
+                                                                                [by rewrite head-is-c c-support-in-f-support]
+                                                                              @conclusion-head-supported |
+                                                                                subset(support(at(u, i)), support(f))
+                                                                                [by rewrite i-is-zero head-supported]
+                                                                            }
+                                                                          @when-tail |
+                                                                            assume exists i2: Nat; i = succ(i2) {
+                                                                              @predecessor-of-i-exists |
+                                                                                exists i2: Nat; i = succ(i2)
+                                                                                [by hypothesis when-tail]
+                                                                              @with-predecessor-i2 |
+                                                                                unpack i2: Nat from predecessor-of-i-exists {
+                                                                                  @i-is-succ-i2 |
+                                                                                    i = succ(i2)
+                                                                                    [by hypothesis with-predecessor-i2]
+                                                                                  @succ-i2-in-range |
+                                                                                    less_than(succ(i2), succ(m3))
+                                                                                    [by rewrite i-is-succ-i2 i-in-range]
+                                                                                  @i2-in-range |
+                                                                                    less_than(i2, m3)
+                                                                                    [using specialize succReflectsOrder(i2, m3) succ-i2-in-range]
+                                                                                  @tail-entry-in-g-support |
+                                                                                    subset(support(at(w2, i2)), support(g))
+                                                                                    [using specialize g-supports(i2) i2-in-range]
+                                                                                  @tail-entry-in-f-support |
+                                                                                    subset(support(at(w2, i2)), support(f))
+                                                                                    [using specialize subsetTransitive(support(at(w2, i2)), support(g), support(f)) tail-entry-in-g-support g-support-in-f-support]
+                                                                                  @shifted-entry |
+                                                                                    at(u, succ(i2)) = at(w2, i2)
+                                                                                    [using specialize tail-shifts(i2)]
+                                                                                  @shifted-entry-supported |
+                                                                                    subset(support(at(u, succ(i2))), support(f))
+                                                                                    [by rewrite shifted-entry tail-entry-in-f-support]
+                                                                                  @conclusion-tail-supported |
+                                                                                    subset(support(at(u, i)), support(f))
+                                                                                    [by rewrite i-is-succ-i2 shifted-entry-supported]
+                                                                                }
+                                                                              @conclusion-when-tail |
+                                                                                subset(support(at(u, i)), support(f))
+                                                                                [by exists_elim with-predecessor-i2]
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                  @conclusion-support-clause |
+                                                                    less_than(i, succ(m3)) -> subset(support(at(u, i)), support(f))
+                                                                    [by implies_intro given-i-in-range]
+                                                                }
+                                                              @all-supported |
+                                                                forall i: Nat; less_than(i, succ(m3)) -> subset(support(at(u, i)), support(f))
+                                                                [by forall_intro generalize-i-supports]
+                                                              // pairwise disjoint
+                                                              @generalize-i-disjoint |
+                                                                fix i: Nat {
+                                                                  @generalize-j-disjoint |
+                                                                    fix j: Nat {
+                                                                      @given-i-in-range |
+                                                                        assume less_than(i, succ(m3)) {
+                                                                          @given-j-in-range |
+                                                                            assume less_than(j, succ(m3)) {
+                                                                              @given-different |
+                                                                                assume i != j {
+                                                                                  @i-in-range |
+                                                                                    less_than(i, succ(m3))
+                                                                                    [by hypothesis given-i-in-range]
+                                                                                  @j-in-range |
+                                                                                    less_than(j, succ(m3))
+                                                                                    [by hypothesis given-j-in-range]
+                                                                                  @different |
+                                                                                    i != j
+                                                                                    [by hypothesis given-different]
+                                                                                  @i-is-zero-or-a-successor |
+                                                                                    i = ZERO or (exists i2: Nat; i = succ(i2))
+                                                                                    [using specialize zeroOrSucc(i)]
+                                                                                  @j-is-zero-or-a-successor |
+                                                                                    j = ZERO or (exists j2: Nat; j = succ(j2))
+                                                                                    [using specialize zeroOrSucc(j)]
+                                                                                  @conclusion-pair-disjoint |
+                                                                                    disjointSupports(at(u, i), at(u, j))
+                                                                                    case i-is-zero-or-a-successor {
+                                                                                      @when-i-head |
+                                                                                        assume i = ZERO {
+                                                                                          @i-is-zero |
+                                                                                            i = ZERO
+                                                                                            [by hypothesis when-i-head]
+                                                                                          @conclusion-i-head |
+                                                                                            disjointSupports(at(u, i), at(u, j))
+                                                                                            case j-is-zero-or-a-successor {
+                                                                                              @when-j-head |
+                                                                                                assume j = ZERO {
+                                                                                                  @j-is-zero |
+                                                                                                    j = ZERO
+                                                                                                    [by hypothesis when-j-head]
+                                                                                                  @i-is-j |
+                                                                                                    i = j
+                                                                                                    [by rewrite j-is-zero i-is-zero]
+                                                                                                  @conclusion-both-head-absurd |
+                                                                                                    disjointSupports(at(u, i), at(u, j))
+                                                                                                    [by absurd i-is-j different]
+                                                                                                }
+                                                                                              @when-j-tail |
+                                                                                                assume exists j2: Nat; j = succ(j2) {
+                                                                                                  @predecessor-of-j-exists |
+                                                                                                    exists j2: Nat; j = succ(j2)
+                                                                                                    [by hypothesis when-j-tail]
+                                                                                                  @with-predecessor-j2 |
+                                                                                                    unpack j2: Nat from predecessor-of-j-exists {
+                                                                                                      @j-is-succ-j2 |
+                                                                                                        j = succ(j2)
+                                                                                                        [by hypothesis with-predecessor-j2]
+                                                                                                      @succ-j2-in-range |
+                                                                                                        less_than(succ(j2), succ(m3))
+                                                                                                        [by rewrite j-is-succ-j2 j-in-range]
+                                                                                                      @j2-in-range |
+                                                                                                        less_than(j2, m3)
+                                                                                                        [using specialize succReflectsOrder(j2, m3) succ-j2-in-range]
+                                                                                                      @tail-entry-in-g-support |
+                                                                                                        subset(support(at(w2, j2)), support(g))
+                                                                                                        [using specialize g-supports(j2) j2-in-range]
+                                                                                                      @tail-entry-in-difference |
+                                                                                                        subset(support(at(w2, j2)), difference(support(f), orbit(f, x)))
+                                                                                                        [by rewrite g-support-is-the-difference tail-entry-in-g-support]
+                                                                                                      @separated |
+                                                                                                        disjointSupports(c, at(w2, j2)) and disjointSupports(at(w2, j2), c)
+                                                                                                        [using specialize separatedSupportsAreDisjoint(c, at(w2, j2), support(f), orbit(f, x)) c-support-in-orbit tail-entry-in-difference]
+                                                                                                      @c-vs-tail-entry |
+                                                                                                        disjointSupports(c, at(w2, j2))
+                                                                                                        [by and_elim_left separated]
+                                                                                                      @shifted-j |
+                                                                                                        at(u, succ(j2)) = at(w2, j2)
+                                                                                                        [using specialize tail-shifts(j2)]
+                                                                                                      @c-vs-shifted |
+                                                                                                        disjointSupports(c, at(u, succ(j2)))
+                                                                                                        [by rewrite shifted-j c-vs-tail-entry]
+                                                                                                      @head-vs-shifted |
+                                                                                                        disjointSupports(at(u, ZERO), at(u, succ(j2)))
+                                                                                                        [by rewrite head-is-c c-vs-shifted]
+                                                                                                      @head-vs-j |
+                                                                                                        disjointSupports(at(u, ZERO), at(u, j))
+                                                                                                        [by rewrite j-is-succ-j2 head-vs-shifted]
+                                                                                                      @conclusion-head-vs-tail |
+                                                                                                        disjointSupports(at(u, i), at(u, j))
+                                                                                                        [by rewrite i-is-zero head-vs-j]
+                                                                                                    }
+                                                                                                  @conclusion-when-j-tail |
+                                                                                                    disjointSupports(at(u, i), at(u, j))
+                                                                                                    [by exists_elim with-predecessor-j2]
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                      @when-i-tail |
+                                                                                        assume exists i2: Nat; i = succ(i2) {
+                                                                                          @predecessor-of-i-exists |
+                                                                                            exists i2: Nat; i = succ(i2)
+                                                                                            [by hypothesis when-i-tail]
+                                                                                          @with-predecessor-i2 |
+                                                                                            unpack i2: Nat from predecessor-of-i-exists {
+                                                                                              @i-is-succ-i2 |
+                                                                                                i = succ(i2)
+                                                                                                [by hypothesis with-predecessor-i2]
+                                                                                              @succ-i2-in-range |
+                                                                                                less_than(succ(i2), succ(m3))
+                                                                                                [by rewrite i-is-succ-i2 i-in-range]
+                                                                                              @i2-in-range |
+                                                                                                less_than(i2, m3)
+                                                                                                [using specialize succReflectsOrder(i2, m3) succ-i2-in-range]
+                                                                                              @shifted-i |
+                                                                                                at(u, succ(i2)) = at(w2, i2)
+                                                                                                [using specialize tail-shifts(i2)]
+                                                                                              @conclusion-i-tail |
+                                                                                                disjointSupports(at(u, i), at(u, j))
+                                                                                                case j-is-zero-or-a-successor {
+                                                                                                  @when-j-head |
+                                                                                                    assume j = ZERO {
+                                                                                                      @j-is-zero |
+                                                                                                        j = ZERO
+                                                                                                        [by hypothesis when-j-head]
+                                                                                                      @tail-entry-in-g-support |
+                                                                                                        subset(support(at(w2, i2)), support(g))
+                                                                                                        [using specialize g-supports(i2) i2-in-range]
+                                                                                                      @tail-entry-in-difference |
+                                                                                                        subset(support(at(w2, i2)), difference(support(f), orbit(f, x)))
+                                                                                                        [by rewrite g-support-is-the-difference tail-entry-in-g-support]
+                                                                                                      @separated |
+                                                                                                        disjointSupports(c, at(w2, i2)) and disjointSupports(at(w2, i2), c)
+                                                                                                        [using specialize separatedSupportsAreDisjoint(c, at(w2, i2), support(f), orbit(f, x)) c-support-in-orbit tail-entry-in-difference]
+                                                                                                      @tail-entry-vs-c |
+                                                                                                        disjointSupports(at(w2, i2), c)
+                                                                                                        [by and_elim_right separated]
+                                                                                                      @shifted-vs-c |
+                                                                                                        disjointSupports(at(u, succ(i2)), c)
+                                                                                                        [by rewrite shifted-i tail-entry-vs-c]
+                                                                                                      @shifted-vs-head |
+                                                                                                        disjointSupports(at(u, succ(i2)), at(u, ZERO))
+                                                                                                        [by rewrite head-is-c shifted-vs-c]
+                                                                                                      @i-vs-head |
+                                                                                                        disjointSupports(at(u, i), at(u, ZERO))
+                                                                                                        [by rewrite i-is-succ-i2 shifted-vs-head]
+                                                                                                      @conclusion-tail-vs-head |
+                                                                                                        disjointSupports(at(u, i), at(u, j))
+                                                                                                        [by rewrite j-is-zero i-vs-head]
+                                                                                                    }
+                                                                                                  @when-j-tail |
+                                                                                                    assume exists j2: Nat; j = succ(j2) {
+                                                                                                      @predecessor-of-j-exists |
+                                                                                                        exists j2: Nat; j = succ(j2)
+                                                                                                        [by hypothesis when-j-tail]
+                                                                                                      @with-predecessor-j2 |
+                                                                                                        unpack j2: Nat from predecessor-of-j-exists {
+                                                                                                          @j-is-succ-j2 |
+                                                                                                            j = succ(j2)
+                                                                                                            [by hypothesis with-predecessor-j2]
+                                                                                                          @succ-j2-in-range |
+                                                                                                            less_than(succ(j2), succ(m3))
+                                                                                                            [by rewrite j-is-succ-j2 j-in-range]
+                                                                                                          @j2-in-range |
+                                                                                                            less_than(j2, m3)
+                                                                                                            [using specialize succReflectsOrder(j2, m3) succ-j2-in-range]
+                                                                                                          @suppose-same-predecessor |
+                                                                                                            assume i2 = j2 {
+                                                                                                              @same-predecessor |
+                                                                                                                i2 = j2
+                                                                                                                [by hypothesis suppose-same-predecessor]
+                                                                                                              @i-is-succ-j2 |
+                                                                                                                i = succ(j2)
+                                                                                                                [by rewrite same-predecessor i-is-succ-i2]
+                                                                                                              @i-is-j |
+                                                                                                                i = j
+                                                                                                                [by rewrite j-is-succ-j2 i-is-succ-j2]
+                                                                                                            }
+                                                                                                          @predecessors-differ |
+                                                                                                            i2 != j2
+                                                                                                            [by not_intro suppose-same-predecessor i-is-j different]
+                                                                                                          @tail-entries-disjoint |
+                                                                                                            disjointSupports(at(w2, i2), at(w2, j2))
+                                                                                                            [using specialize g-disjoint(i2, j2) i2-in-range j2-in-range predecessors-differ]
+                                                                                                          @shifted-j |
+                                                                                                            at(u, succ(j2)) = at(w2, j2)
+                                                                                                            [using specialize tail-shifts(j2)]
+                                                                                                          @shifted-i-vs-tail-j |
+                                                                                                            disjointSupports(at(u, succ(i2)), at(w2, j2))
+                                                                                                            [by rewrite shifted-i tail-entries-disjoint]
+                                                                                                          @shifted-i-vs-shifted-j |
+                                                                                                            disjointSupports(at(u, succ(i2)), at(u, succ(j2)))
+                                                                                                            [by rewrite shifted-j shifted-i-vs-tail-j]
+                                                                                                          @i-vs-shifted-j |
+                                                                                                            disjointSupports(at(u, i), at(u, succ(j2)))
+                                                                                                            [by rewrite i-is-succ-i2 shifted-i-vs-shifted-j]
+                                                                                                          @conclusion-tail-vs-tail |
+                                                                                                            disjointSupports(at(u, i), at(u, j))
+                                                                                                            [by rewrite j-is-succ-j2 i-vs-shifted-j]
+                                                                                                        }
+                                                                                                      @conclusion-when-j-tail |
+                                                                                                        disjointSupports(at(u, i), at(u, j))
+                                                                                                        [by exists_elim with-predecessor-j2]
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                          @conclusion-when-i-tail |
+                                                                                            disjointSupports(at(u, i), at(u, j))
+                                                                                            [by exists_elim with-predecessor-i2]
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                              @conclusion-different |
+                                                                                i != j -> disjointSupports(at(u, i), at(u, j))
+                                                                                [by implies_intro given-different]
+                                                                            }
+                                                                          @conclusion-j-range |
+                                                                            less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j))
+                                                                            [by implies_intro given-j-in-range]
+                                                                        }
+                                                                      @conclusion-i-range |
+                                                                        less_than(i, succ(m3)) -> less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j))
+                                                                        [by implies_intro given-i-in-range]
+                                                                    }
+                                                                  @discharge-j-disjoint |
+                                                                    forall j: Nat; less_than(i, succ(m3)) -> less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j))
+                                                                    [by forall_intro generalize-j-disjoint]
+                                                                }
+                                                              @all-disjoint |
+                                                                forall i: Nat; forall j: Nat; less_than(i, succ(m3)) -> less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j))
+                                                                [by forall_intro generalize-i-disjoint]
+                                                              // assemble
+                                                              @cycles-and-supports |
+                                                                (forall i: Nat; less_than(i, succ(m3)) -> isACycle(at(u, i))) and (forall i: Nat; less_than(i, succ(m3)) -> subset(support(at(u, i)), support(f)))
+                                                                [by and_intro all-cycles all-supported]
+                                                              @and-disjoint |
+                                                                (forall i: Nat; less_than(i, succ(m3)) -> isACycle(at(u, i))) and (forall i: Nat; less_than(i, succ(m3)) -> subset(support(at(u, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, succ(m3)) -> less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j)))
+                                                                [by and_intro cycles-and-supports all-disjoint]
+                                                              @all-four |
+                                                                (forall i: Nat; less_than(i, succ(m3)) -> isACycle(at(u, i))) and (forall i: Nat; less_than(i, succ(m3)) -> subset(support(at(u, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, succ(m3)) -> less_than(j, succ(m3)) -> i != j -> disjointSupports(at(u, i), at(u, j))) and productUpTo(u, succ(m3)) = f
+                                                                [by and_intro and-disjoint product-is-f]
+                                                              @inner-witness |
+                                                                exists m: Nat; (forall i: Nat; less_than(i, m) -> isACycle(at(u, i))) and (forall i: Nat; less_than(i, m) -> subset(support(at(u, i)), support(f))) and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(u, i), at(u, j))) and productUpTo(u, m) = f
+                                                                [by exists_intro(succ(m3)) all-four]
+                                                              @conclusion-witness-u |
+                                                                decomposesIntoDisjointCycles(f)
+                                                                [by exists_intro(u) inner-witness]
+                                                            }
+                                                          @conclusion-with-u |
+                                                            decomposesIntoDisjointCycles(f)
+                                                            [by exists_elim with-prepended-u]
+                                                        }
+                                                      @conclusion-with-m3 |
+                                                        decomposesIntoDisjointCycles(f)
+                                                        [by exists_elim with-length-m3]
+                                                    }
+                                                  @conclusion-with-w2 |
+                                                    decomposesIntoDisjointCycles(f)
+                                                    [by exists_elim with-sequence-w2]
+                                                }
+                                              @conclusion-with-m2 |
+                                                decomposesIntoDisjointCycles(f)
+                                                [by exists_elim with-size-m2]
+                                            }
+                                          @conclusion-with-g |
+                                            decomposesIntoDisjointCycles(f)
+                                            [by exists_elim with-remainder-g]
+                                        }
+                                      @conclusion-with-c |
+                                        decomposesIntoDisjointCycles(f)
+                                        [by exists_elim with-cycle-c]
+                                    }
+                                  @conclusion-with-x |
+                                    decomposesIntoDisjointCycles(f)
+                                    [by exists_elim with-moved-x]
+                                }
+                              @conclusion-with-k |
+                                decomposesIntoDisjointCycles(f)
+                                [by exists_elim with-predecessor-k]
+                            }
+                        }
+                    }
+                  @conclusion-size |
+                    hasSize(support(f), n) -> decomposesIntoDisjointCycles(f)
+                    [by implies_intro given-size]
+                }
+              @conclusion-invertible |
+                invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f)
+                [by implies_intro given-invertible]
+            }
+          @discharge-f |
+            forall f: Fn; invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f)
+            [by forall_intro generalize-f]
+        }
+      @strong-step-at-n |
+        (forall m: Nat; less_than(m, n) -> (forall f: Fn; invertible(f) -> hasSize(support(f), m) -> decomposesIntoDisjointCycles(f))) -> (forall f: Fn; invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f))
+        [by implies_intro given-below]
+    }
+  @strong-step-for-all-n |
+    forall n: Nat; (forall m: Nat; less_than(m, n) -> (forall f: Fn; invertible(f) -> hasSize(support(f), m) -> decomposesIntoDisjointCycles(f))) -> (forall f: Fn; invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f))
+    [by forall_intro strong-step]
+  @conclusion |
+    forall n: Nat; forall f: Fn; invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f)
+    [using instantiation strongInduction((fun n: Nat => forall f: Fn; invertible(f) -> hasSize(support(f), n) -> decomposesIntoDisjointCycles(f))) strong-step-for-all-n]
+qed
+
+// JUDSON'S THEOREM 5.8: every permutation of a finite set is a product of disjoint cycles.
+theorem everyPermutationOfAFiniteSetIsAProductOfDisjointCycles: forall f: Perm;
+  isFinite(support(f)) -> decomposesIntoDisjointCycles(f)
+proof
+  @generalize-f |
+    fix f: Perm {
+      @given-finite |
+        assume isFinite(support(f)) {
+          @f-invertible |
+            invertible(f)
+            [by predicate generalize-f]
+          @support-has-a-size |
+            exists n: Nat; hasSize(support(f), n)
+            [by hypothesis given-finite]
+          @with-size-n |
+            unpack n: Nat from support-has-a-size {
+              @support-has-size-n |
+                hasSize(support(f), n)
+                [by hypothesis with-size-n]
+              @conclusion-decomposes-at-n |
+                decomposesIntoDisjointCycles(f)
+                [using specialize finiteSupportDecomposes(n, f) f-invertible support-has-size-n]
+            }
+          @conclusion-decomposes |
+            decomposesIntoDisjointCycles(f)
+            [by exists_elim with-size-n]
+        }
+      @conclusion-implication |
+        isFinite(support(f)) -> decomposesIntoDisjointCycles(f)
+        [by implies_intro given-finite]
+    }
+  @conclusion |
+    forall f: Perm; isFinite(support(f)) -> decomposesIntoDisjointCycles(f)
+    [by forall_intro generalize-f]
+qed
