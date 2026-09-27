@@ -33,6 +33,12 @@ const ONE = complex.ONE
 func recip = complex.recip
 func cadd = complex.add
 const i = complex.i
+func cneg = complex.neg
+func rneg = real.neg
+axiom sqrtNonneg = real_sqrt.sqrtNonneg
+axiom sqrtSquare = real_sqrt.sqrtSquare
+axiom sqrtOfSquare = real_sqrt.sqrtOfSquare
+theorem sqrtMonotone = real_sqrt.sqrtMonotone
 
 // the norm-square (a real) and the modulus (its nonnegative square root).
 define normSq(z) = radd(rmul(re(z), re(z)), rmul(im(z), im(z)))
@@ -520,5 +526,440 @@ proof
     }
   @conclusion |
     forall z: Complex; z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+    [by forall_intro generalize-z]
+qed
+
+// -- the triangle inequality (EXERCISE 19(d)) and its reverse (19(e)) ------------------------
+// |z + w|² = |z|² + |w|² + 2 re(z w̄), and re(z w̄) ≤ |z||w| (Cauchy–Schwarz: re(z w̄)² ≤
+// |z w̄|² = |z|²|w|²), so |z + w|² ≤ (|z| + |w|)²; sqrt is monotone, so |z + w| ≤ |z| + |w|.
+
+// re(z w̄) = re(z) re(w) + im(z) im(w).
+theorem reOfProductWithConjugate: forall z, w: Complex; re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @re-of-product |
+            re(mul(z, conj(w))) = radd(rmul(re(z), re(conj(w))), rneg(rmul(im(z), im(conj(w)))))
+            [using specialize complex.reMul(z, conj(w))]
+          @re-of-conjugate |
+            re(conj(w)) = re(w)
+            [using specialize complex.reOfConj(w)]
+          @im-of-conjugate |
+            im(conj(w)) = rneg(im(w))
+            [using specialize complex.imOfConj(w)]
+          @re-of-product-real-parts |
+            re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rneg(rmul(im(z), im(conj(w)))))
+            [by rewrite re-of-conjugate re-of-product]
+          @re-of-product-parts |
+            re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rneg(rmul(im(z), rneg(im(w)))))
+            [by rewrite im-of-conjugate re-of-product-real-parts]
+          @signs-cancel |
+            radd(rmul(re(z), re(w)), rneg(rmul(im(z), rneg(im(w))))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+            [using polynomial(real)]
+          @conclusion-re-of-product |
+            re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+            [using chain re-of-product-parts signs-cancel]
+        }
+      @discharge-w |
+        forall w: Complex; re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+    [by forall_intro generalize-z]
+qed
+
+// Cauchy–Schwarz: re(z w̄)² ≤ |z w̄|² = |z|²|w|².
+theorem realPartSquaredIsBoundedByNormSqProduct: forall z, w: Complex; less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(normSq(z), normSq(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @im-square-nonneg |
+            less_or_equal(real.ZERO, rmul(im(mul(z, conj(w))), im(mul(z, conj(w)))))
+            [using specialize real.squareNonneg(im(mul(z, conj(w))))]
+          @re-square-refl |
+            less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+            [using specialize real.lessOrEqualRefl(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))))]
+          @re-square-plus-zero-bounded |
+            less_or_equal(radd(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), real.ZERO), radd(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(im(mul(z, conj(w))), im(mul(z, conj(w))))))
+            [using specialize real.lessOrEqualAddBoth(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), real.ZERO, rmul(im(mul(z, conj(w))), im(mul(z, conj(w))))) re-square-refl im-square-nonneg]
+          @re-square-plus-zero |
+            radd(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), real.ZERO) = rmul(re(mul(z, conj(w))), re(mul(z, conj(w))))
+            [using specialize real.addZeroRight(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))))]
+          @re-square-bounded-by-normsq |
+            less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), normSq(mul(z, conj(w))))
+            [by rewrite re-square-plus-zero re-square-plus-zero-bounded]
+          @normsq-of-product |
+            normSq(mul(z, conj(w))) = rmul(normSq(z), normSq(conj(w)))
+            [using specialize normSqMul(z, conj(w))]
+          @normsq-of-conjugate |
+            normSq(conj(w)) = normSq(w)
+            [using specialize normSqConj(w)]
+          @normsq-of-product-plain |
+            normSq(mul(z, conj(w))) = rmul(normSq(z), normSq(w))
+            [by rewrite normsq-of-conjugate normsq-of-product]
+          @conclusion-cauchy-schwarz |
+            less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(normSq(z), normSq(w)))
+            [by rewrite normsq-of-product-plain re-square-bounded-by-normsq]
+        }
+      @discharge-w |
+        forall w: Complex; less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(normSq(z), normSq(w)))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(normSq(z), normSq(w)))
+    [by forall_intro generalize-z]
+qed
+
+// re(z w̄) ≤ |z||w|: both sides' squares compare, and |z||w| ≥ 0.
+theorem realPartIsBoundedByModuli: forall z, w: Complex; less_or_equal(re(mul(z, conj(w))), rmul(abs(z), abs(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @normsq-z-nonneg |
+            less_or_equal(real.ZERO, normSq(z))
+            [using specialize normSqNonneg(z)]
+          @normsq-w-nonneg |
+            less_or_equal(real.ZERO, normSq(w))
+            [using specialize normSqNonneg(w)]
+          @abs-z-nonneg |
+            less_or_equal(real.ZERO, abs(z))
+            [using specialize sqrtNonneg(normSq(z)) normsq-z-nonneg]
+          @abs-w-nonneg |
+            less_or_equal(real.ZERO, abs(w))
+            [using specialize sqrtNonneg(normSq(w)) normsq-w-nonneg]
+          @product-nonneg |
+            less_or_equal(real.ZERO, rmul(abs(z), abs(w)))
+            [using specialize real.mulNonneg(abs(z), abs(w)) abs-z-nonneg abs-w-nonneg]
+          @abs-z-squares |
+            rmul(abs(z), abs(z)) = normSq(z)
+            [using specialize sqrtSquare(normSq(z)) normsq-z-nonneg]
+          @abs-w-squares |
+            rmul(abs(w), abs(w)) = normSq(w)
+            [using specialize sqrtSquare(normSq(w)) normsq-w-nonneg]
+          @product-square-regrouped |
+            rmul(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))) = rmul(rmul(abs(z), abs(z)), rmul(abs(w), abs(w)))
+            [using assoc_commut(real.mulIsAssociative, real.mulIsCommutative, real.mulLeftSwap)]
+          @product-square-z |
+            rmul(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))) = rmul(normSq(z), rmul(abs(w), abs(w)))
+            [by rewrite abs-z-squares product-square-regrouped]
+          @product-square |
+            rmul(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))) = rmul(normSq(z), normSq(w))
+            [by rewrite abs-w-squares product-square-z]
+          @cauchy-schwarz |
+            less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(normSq(z), normSq(w)))
+            [using specialize realPartSquaredIsBoundedByNormSqProduct(z, w)]
+          @squares-compare |
+            less_or_equal(rmul(re(mul(z, conj(w))), re(mul(z, conj(w)))), rmul(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
+            [by rewrite product-square cauchy-schwarz]
+          @conclusion-bounded |
+            less_or_equal(re(mul(z, conj(w))), rmul(abs(z), abs(w)))
+            [using specialize real.squareBoundGivesBound(re(mul(z, conj(w))), rmul(abs(z), abs(w))) product-nonneg squares-compare]
+        }
+      @discharge-w |
+        forall w: Complex; less_or_equal(re(mul(z, conj(w))), rmul(abs(z), abs(w)))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; less_or_equal(re(mul(z, conj(w))), rmul(abs(z), abs(w)))
+    [by forall_intro generalize-z]
+qed
+
+// |z + w|² = |z|² + |w|² + 2 re(z w̄).
+theorem normSqOfSum: forall z, w: Complex; normSq(cadd(z, w)) = radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @re-of-sum |
+            re(cadd(z, w)) = radd(re(z), re(w))
+            [using specialize complex.reAdd(z, w)]
+          @im-of-sum |
+            im(cadd(z, w)) = radd(im(z), im(w))
+            [using specialize complex.imAdd(z, w)]
+          @re-of-product |
+            re(mul(z, conj(w))) = radd(rmul(re(z), re(w)), rmul(im(z), im(w)))
+            [using specialize reOfProductWithConjugate(z, w)]
+          @unfolded |
+            normSq(cadd(z, w)) = radd(rmul(re(cadd(z, w)), re(cadd(z, w))), rmul(im(cadd(z, w)), im(cadd(z, w))))
+            [by reflexivity]
+          @re-expanded |
+            normSq(cadd(z, w)) = radd(rmul(radd(re(z), re(w)), radd(re(z), re(w))), rmul(im(cadd(z, w)), im(cadd(z, w))))
+            [by rewrite re-of-sum unfolded]
+          @parts-expanded |
+            normSq(cadd(z, w)) = radd(rmul(radd(re(z), re(w)), radd(re(z), re(w))), rmul(radd(im(z), im(w)), radd(im(z), im(w))))
+            [by rewrite im-of-sum re-expanded]
+          @squares-expand |
+            radd(rmul(radd(re(z), re(w)), radd(re(z), re(w))), rmul(radd(im(z), im(w)), radd(im(z), im(w)))) = radd(radd(radd(rmul(re(z), re(z)), rmul(im(z), im(z))), radd(rmul(re(w), re(w)), rmul(im(w), im(w)))), radd(radd(rmul(re(z), re(w)), rmul(im(z), im(w))), radd(rmul(re(z), re(w)), rmul(im(z), im(w)))))
+            [using polynomial(real)]
+          @expanded |
+            normSq(cadd(z, w)) = radd(radd(radd(rmul(re(z), re(z)), rmul(im(z), im(z))), radd(rmul(re(w), re(w)), rmul(im(w), im(w)))), radd(radd(rmul(re(z), re(w)), rmul(im(z), im(w))), radd(rmul(re(z), re(w)), rmul(im(z), im(w)))))
+            [using chain parts-expanded squares-expand]
+          @conclusion-normsq-of-sum |
+            normSq(cadd(z, w)) = radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+            [by rewrite re-of-product expanded]
+        }
+      @discharge-w |
+        forall w: Complex; normSq(cadd(z, w)) = radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; normSq(cadd(z, w)) = radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+    [by forall_intro generalize-z]
+qed
+
+// EXERCISE 19(d): |z + w| ≤ |z| + |w|.
+theorem triangleInequality: forall z, w: Complex; less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @real-part-bounded |
+            less_or_equal(re(mul(z, conj(w))), rmul(abs(z), abs(w)))
+            [using specialize realPartIsBoundedByModuli(z, w)]
+          @twice-bounded |
+            less_or_equal(radd(re(mul(z, conj(w))), re(mul(z, conj(w)))), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
+            [using specialize real.lessOrEqualAddBoth(re(mul(z, conj(w))), rmul(abs(z), abs(w)), re(mul(z, conj(w))), rmul(abs(z), abs(w))) real-part-bounded real-part-bounded]
+          @squares-refl |
+            less_or_equal(radd(normSq(z), normSq(w)), radd(normSq(z), normSq(w)))
+            [using specialize real.lessOrEqualRefl(radd(normSq(z), normSq(w)))]
+          @expansion-bounded |
+            less_or_equal(radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w))))), radd(radd(normSq(z), normSq(w)), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w)))))
+            [using specialize real.lessOrEqualAddBoth(radd(normSq(z), normSq(w)), radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w)))) squares-refl twice-bounded]
+          @normsq-of-sum |
+            normSq(cadd(z, w)) = radd(radd(normSq(z), normSq(w)), radd(re(mul(z, conj(w))), re(mul(z, conj(w)))))
+            [using specialize normSqOfSum(z, w)]
+          @normsq-of-sum-bounded |
+            less_or_equal(normSq(cadd(z, w)), radd(radd(normSq(z), normSq(w)), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w)))))
+            [by rewrite normsq-of-sum expansion-bounded]
+          @normsq-z-nonneg |
+            less_or_equal(real.ZERO, normSq(z))
+            [using specialize normSqNonneg(z)]
+          @normsq-w-nonneg |
+            less_or_equal(real.ZERO, normSq(w))
+            [using specialize normSqNonneg(w)]
+          @abs-z-squares |
+            rmul(abs(z), abs(z)) = normSq(z)
+            [using specialize sqrtSquare(normSq(z)) normsq-z-nonneg]
+          @abs-w-squares |
+            rmul(abs(w), abs(w)) = normSq(w)
+            [using specialize sqrtSquare(normSq(w)) normsq-w-nonneg]
+          @square-of-sum-expands |
+            rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))) = radd(radd(rmul(abs(z), abs(z)), rmul(abs(w), abs(w))), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
+            [using polynomial(real)]
+          @square-of-sum-z |
+            rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))) = radd(radd(normSq(z), rmul(abs(w), abs(w))), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
+            [by rewrite abs-z-squares square-of-sum-expands]
+          @square-of-sum |
+            rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))) = radd(radd(normSq(z), normSq(w)), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
+            [by rewrite abs-w-squares square-of-sum-z]
+          @normsq-of-sum-at-most-square |
+            less_or_equal(normSq(cadd(z, w)), rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))))
+            [by rewrite square-of-sum normsq-of-sum-bounded]
+          @normsq-of-sum-nonneg |
+            less_or_equal(real.ZERO, normSq(cadd(z, w)))
+            [using specialize normSqNonneg(cadd(z, w))]
+          @roots-ordered |
+            less_or_equal(sqrt(normSq(cadd(z, w))), sqrt(rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))))
+            [using specialize sqrtMonotone(normSq(cadd(z, w)), rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))) normsq-of-sum-nonneg normsq-of-sum-at-most-square]
+          @abs-z-nonneg |
+            less_or_equal(real.ZERO, abs(z))
+            [using specialize sqrtNonneg(normSq(z)) normsq-z-nonneg]
+          @abs-w-nonneg |
+            less_or_equal(real.ZERO, abs(w))
+            [using specialize sqrtNonneg(normSq(w)) normsq-w-nonneg]
+          @sum-of-moduli-nonneg |
+            less_or_equal(real.ZERO, radd(abs(z), abs(w)))
+            [using specialize real.addNonneg(abs(z), abs(w)) abs-z-nonneg abs-w-nonneg]
+          @root-of-square |
+            sqrt(rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))) = radd(abs(z), abs(w))
+            [using specialize sqrtOfSquare(radd(abs(z), abs(w))) sum-of-moduli-nonneg]
+          @conclusion-triangle |
+            less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
+            [by rewrite root-of-square roots-ordered]
+        }
+      @discharge-w |
+        forall w: Complex; less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
+    [by forall_intro generalize-z]
+qed
+
+// |w − z| = |z − w|: the parts are negated, and squares forget signs.
+theorem normSqOfDifferenceIsSymmetric: forall z, w: Complex; normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @re-of-wz |
+            re(cadd(w, cneg(z))) = radd(re(w), re(cneg(z)))
+            [using specialize complex.reAdd(w, cneg(z))]
+          @im-of-wz |
+            im(cadd(w, cneg(z))) = radd(im(w), im(cneg(z)))
+            [using specialize complex.imAdd(w, cneg(z))]
+          @re-of-neg-z |
+            re(cneg(z)) = rneg(re(z))
+            [using specialize complex.reNeg(z)]
+          @im-of-neg-z |
+            im(cneg(z)) = rneg(im(z))
+            [using specialize complex.imNeg(z)]
+          @re-of-zw |
+            re(cadd(z, cneg(w))) = radd(re(z), re(cneg(w)))
+            [using specialize complex.reAdd(z, cneg(w))]
+          @im-of-zw |
+            im(cadd(z, cneg(w))) = radd(im(z), im(cneg(w)))
+            [using specialize complex.imAdd(z, cneg(w))]
+          @re-of-neg-w |
+            re(cneg(w)) = rneg(re(w))
+            [using specialize complex.reNeg(w)]
+          @im-of-neg-w |
+            im(cneg(w)) = rneg(im(w))
+            [using specialize complex.imNeg(w)]
+          @wz-unfolded |
+            normSq(cadd(w, cneg(z))) = radd(rmul(re(cadd(w, cneg(z))), re(cadd(w, cneg(z)))), rmul(im(cadd(w, cneg(z))), im(cadd(w, cneg(z)))))
+            [by reflexivity]
+          @wz-re |
+            normSq(cadd(w, cneg(z))) = radd(rmul(radd(re(w), re(cneg(z))), radd(re(w), re(cneg(z)))), rmul(im(cadd(w, cneg(z))), im(cadd(w, cneg(z)))))
+            [by rewrite re-of-wz wz-unfolded]
+          @wz-re-im |
+            normSq(cadd(w, cneg(z))) = radd(rmul(radd(re(w), re(cneg(z))), radd(re(w), re(cneg(z)))), rmul(radd(im(w), im(cneg(z))), radd(im(w), im(cneg(z)))))
+            [by rewrite im-of-wz wz-re]
+          @wz-re-neg |
+            normSq(cadd(w, cneg(z))) = radd(rmul(radd(re(w), rneg(re(z))), radd(re(w), rneg(re(z)))), rmul(radd(im(w), im(cneg(z))), radd(im(w), im(cneg(z)))))
+            [by rewrite re-of-neg-z wz-re-im]
+          @wz-parts |
+            normSq(cadd(w, cneg(z))) = radd(rmul(radd(re(w), rneg(re(z))), radd(re(w), rneg(re(z)))), rmul(radd(im(w), rneg(im(z))), radd(im(w), rneg(im(z)))))
+            [by rewrite im-of-neg-z wz-re-neg]
+          @zw-unfolded |
+            normSq(cadd(z, cneg(w))) = radd(rmul(re(cadd(z, cneg(w))), re(cadd(z, cneg(w)))), rmul(im(cadd(z, cneg(w))), im(cadd(z, cneg(w)))))
+            [by reflexivity]
+          @zw-re |
+            normSq(cadd(z, cneg(w))) = radd(rmul(radd(re(z), re(cneg(w))), radd(re(z), re(cneg(w)))), rmul(im(cadd(z, cneg(w))), im(cadd(z, cneg(w)))))
+            [by rewrite re-of-zw zw-unfolded]
+          @zw-re-im |
+            normSq(cadd(z, cneg(w))) = radd(rmul(radd(re(z), re(cneg(w))), radd(re(z), re(cneg(w)))), rmul(radd(im(z), im(cneg(w))), radd(im(z), im(cneg(w)))))
+            [by rewrite im-of-zw zw-re]
+          @zw-re-neg |
+            normSq(cadd(z, cneg(w))) = radd(rmul(radd(re(z), rneg(re(w))), radd(re(z), rneg(re(w)))), rmul(radd(im(z), im(cneg(w))), radd(im(z), im(cneg(w)))))
+            [by rewrite re-of-neg-w zw-re-im]
+          @zw-parts |
+            normSq(cadd(z, cneg(w))) = radd(rmul(radd(re(z), rneg(re(w))), radd(re(z), rneg(re(w)))), rmul(radd(im(z), rneg(im(w))), radd(im(z), rneg(im(w)))))
+            [by rewrite im-of-neg-w zw-re-neg]
+          @parts-agree |
+            radd(rmul(radd(re(w), rneg(re(z))), radd(re(w), rneg(re(z)))), rmul(radd(im(w), rneg(im(z))), radd(im(w), rneg(im(z))))) = radd(rmul(radd(re(z), rneg(re(w))), radd(re(z), rneg(re(w)))), rmul(radd(im(z), rneg(im(w))), radd(im(z), rneg(im(w)))))
+            [using polynomial(real)]
+          @zw-parts-flipped |
+            radd(rmul(radd(re(z), rneg(re(w))), radd(re(z), rneg(re(w)))), rmul(radd(im(z), rneg(im(w))), radd(im(z), rneg(im(w))))) = normSq(cadd(z, cneg(w)))
+            [by symmetry zw-parts]
+          @conclusion-symmetric |
+            normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+            [using chain wz-parts parts-agree zw-parts-flipped]
+        }
+      @discharge-w |
+        forall w: Complex; normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+    [by forall_intro generalize-z]
+qed
+
+// EXERCISE 19(e): |z| − |w| ≤ |z − w| and |w| − |z| ≤ |z − w|, i.e. ||z| − |w|| ≤ |z − w|.
+// From the triangle inequality at z = (z − w) + w and at w = (w − z) + z.
+theorem reverseTriangleInequality: forall z, w: Complex; less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w)))) and less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          // |z| ≤ |z − w| + |w|.
+          @z-recovered |
+            cadd(cadd(z, cneg(w)), w) = z
+            [using polynomial(complex)]
+          @triangle-at-z |
+            less_or_equal(abs(cadd(cadd(z, cneg(w)), w)), radd(abs(cadd(z, cneg(w))), abs(w)))
+            [using specialize triangleInequality(cadd(z, cneg(w)), w)]
+          @abs-z-bounded |
+            less_or_equal(abs(z), radd(abs(cadd(z, cneg(w))), abs(w)))
+            [by rewrite z-recovered triangle-at-z]
+          @abs-z-shifted |
+            less_or_equal(radd(abs(z), rneg(abs(w))), radd(radd(abs(cadd(z, cneg(w))), abs(w)), rneg(abs(w))))
+            [using specialize real.lessOrEqualAddRight(abs(z), radd(abs(cadd(z, cneg(w))), abs(w)), rneg(abs(w))) abs-z-bounded]
+          @w-regrouped |
+            radd(radd(abs(cadd(z, cneg(w))), abs(w)), rneg(abs(w))) = radd(abs(cadd(z, cneg(w))), radd(abs(w), rneg(abs(w))))
+            [using specialize real.addIsAssociative(abs(cadd(z, cneg(w))), abs(w), rneg(abs(w)))]
+          @w-minus-w |
+            radd(abs(w), rneg(abs(w))) = real.ZERO
+            [using specialize real.addNegRight(abs(w))]
+          @w-cancelled-to-zero |
+            radd(radd(abs(cadd(z, cneg(w))), abs(w)), rneg(abs(w))) = radd(abs(cadd(z, cneg(w))), real.ZERO)
+            [by rewrite w-minus-w w-regrouped]
+          @plus-zero-w |
+            radd(abs(cadd(z, cneg(w))), real.ZERO) = abs(cadd(z, cneg(w)))
+            [using specialize real.addZeroRight(abs(cadd(z, cneg(w))))]
+          @w-cancels |
+            radd(radd(abs(cadd(z, cneg(w))), abs(w)), rneg(abs(w))) = abs(cadd(z, cneg(w)))
+            [using chain w-cancelled-to-zero plus-zero-w]
+          @first-bound |
+            less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w))))
+            [by rewrite w-cancels abs-z-shifted]
+          // |w| ≤ |w − z| + |z|, and |w − z| = |z − w|.
+          @w-recovered |
+            cadd(cadd(w, cneg(z)), z) = w
+            [using polynomial(complex)]
+          @triangle-at-w |
+            less_or_equal(abs(cadd(cadd(w, cneg(z)), z)), radd(abs(cadd(w, cneg(z))), abs(z)))
+            [using specialize triangleInequality(cadd(w, cneg(z)), z)]
+          @abs-w-bounded-raw |
+            less_or_equal(abs(w), radd(abs(cadd(w, cneg(z))), abs(z)))
+            [by rewrite w-recovered triangle-at-w]
+          @difference-symmetric |
+            normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+            [using specialize normSqOfDifferenceIsSymmetric(z, w)]
+          @abs-w-bounded |
+            less_or_equal(abs(w), radd(abs(cadd(z, cneg(w))), abs(z)))
+            [by rewrite difference-symmetric abs-w-bounded-raw]
+          @abs-w-shifted |
+            less_or_equal(radd(abs(w), rneg(abs(z))), radd(radd(abs(cadd(z, cneg(w))), abs(z)), rneg(abs(z))))
+            [using specialize real.lessOrEqualAddRight(abs(w), radd(abs(cadd(z, cneg(w))), abs(z)), rneg(abs(z))) abs-w-bounded]
+          @z-regrouped |
+            radd(radd(abs(cadd(z, cneg(w))), abs(z)), rneg(abs(z))) = radd(abs(cadd(z, cneg(w))), radd(abs(z), rneg(abs(z))))
+            [using specialize real.addIsAssociative(abs(cadd(z, cneg(w))), abs(z), rneg(abs(z)))]
+          @z-minus-z |
+            radd(abs(z), rneg(abs(z))) = real.ZERO
+            [using specialize real.addNegRight(abs(z))]
+          @z-cancelled-to-zero |
+            radd(radd(abs(cadd(z, cneg(w))), abs(z)), rneg(abs(z))) = radd(abs(cadd(z, cneg(w))), real.ZERO)
+            [by rewrite z-minus-z z-regrouped]
+          @plus-zero-z |
+            radd(abs(cadd(z, cneg(w))), real.ZERO) = abs(cadd(z, cneg(w)))
+            [using specialize real.addZeroRight(abs(cadd(z, cneg(w))))]
+          @z-cancels |
+            radd(radd(abs(cadd(z, cneg(w))), abs(z)), rneg(abs(z))) = abs(cadd(z, cneg(w)))
+            [using chain z-cancelled-to-zero plus-zero-z]
+          @second-bound |
+            less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
+            [by rewrite z-cancels abs-w-shifted]
+          @conclusion-reverse-triangle |
+            less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w)))) and less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
+            [by and_intro first-bound second-bound]
+        }
+      @discharge-w |
+        forall w: Complex; less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w)))) and less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w)))) and less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
     [by forall_intro generalize-z]
 qed
