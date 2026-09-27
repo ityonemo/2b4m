@@ -1568,6 +1568,15 @@ fn describeNamespaceOf(self: *Prove, ix: InternPool.Index) []const u8 {
 /// left an in_flight-self / failed entry — diagnosed here).
 fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
     const ns = try self.resolveQualifier(tok);
+    return self.resolveFactIn(tok, ns);
+}
+
+/// `resolveFactRef` with the namespace already chosen: the fact `tok` names in `ns`, with the
+/// TRANSFER redirect (a source theorem → its copy re-proved under this proof's model) and the
+/// axiom overlay applied. Shared by the bare/qualified `cite` and the `[using import(I) thm]`
+/// citation, whose namespace is the import's — an import cite inside a transferred proof used to
+/// skip the redirect and hand the kernel the UNTRANSFERRED source statement.
+fn resolveFactIn(self: *Prove, tok: lexer.Token, ns: InternPool.Index) Error!InternPool.Index {
     const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
         return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
     };
@@ -1868,9 +1877,18 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
     } else args;
     const params = rs.fact.params.?;
     const schema_name = tokName(c.schema.?);
-    // stable ordered param-name list for the hash + payload.
-    const pnames = try self.ctx.arena.alloc(StrId, params.len);
-    for (params, pnames) |p, *out| out.* = tokName(p.name);
+    // stable ordered param-name list for the hash + payload: the schema's params, then — under
+    // a model transfer — the args' FREE VARIABLES of refined image sort (`freeFvarParams`).
+    var pnames_list: std.ArrayList(StrId) = .empty;
+    for (params) |p| try pnames_list.append(self.ctx.arena, tokName(p.name));
+    if (self.underModel()) {
+        const base = try self.ctx.arena.dupe(StrId, pnames_list.items);
+        self.freeFvarParams(rs, base, &pnames_list, args, args_source) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return .failed,
+        };
+    }
+    const pnames = pnames_list.items;
 
     const hash = Schema.instanceHash(self.pool, schema_name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(schema_name), hash }) catch return error.OutOfMemory;
@@ -1906,6 +1924,73 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
     }));
     return .{ .blocked = blocker };
+}
+
+/// FREE VARIABLES of a schema instance's args — a caller-local `fix`/`unpack` variable riding
+/// into the instance inside a lambda body or a compound value arg — whose SOURCE sort's image
+/// under the transfer model is REFINED become EXTRA value params of the instance, named after
+/// themselves and bound to themselves (in both spaces). `buildInstanceState` then wraps the
+/// instance's proof in `assume guard(v)` exactly as for a refined schema value param, so a
+/// discharge INSIDE the instance body (a nested accelerant whose own instance leads with
+/// `guard(v) ->`) finds the guard it needs, and the call site discharges `guard(v)` from its
+/// enclosing block (`withGuardPremises`): the guard travels with the variable. Before this, an
+/// integer-induction proof transferred through a guarded model (std/group/power.b4m's powerAdd
+/// onto Perm) failed at the induction body's inner `specialize` with "cannot discharge the
+/// guard premise 'invertible(g)'". A variable that would shadow a schema param or a global of
+/// the schema's namespace is left alone (the body may name that global).
+fn freeFvarParams(self: *Prove, rs: ResolvedSchema, base: []const StrId, out: *std.ArrayList(StrId), args: *Schema.SchemaArgs, args_source: *Schema.SchemaArgs) Error!void {
+    var seen_source: std.ArrayList(term.Node.Fvar) = .empty;
+    var seen_target: std.ArrayList(term.Node.Fvar) = .empty;
+    for (base) |pname| {
+        if (args_source.get(pname)) |arg| try self.collectArgFvars(arg, &seen_source);
+        if (args.get(pname)) |arg| try self.collectArgFvars(arg, &seen_target);
+    }
+    for (seen_source.items) |fv| {
+        var clash = false;
+        for (base) |pname| {
+            if (pname == fv.name) clash = true;
+        }
+        if (clash) continue;
+        if (self.ctx.idents.lookup(self.ctx.io, .{ .namespace = rs.ns, .name = fv.name }) != null) continue;
+        const src_sort: InternPool.Index = @enumFromInt(@intFromEnum(fv.sort));
+        const image = self.ctx.interner.applyModel(self.model, src_sort);
+        if (!self.ctx.interner.isRefined(image)) continue;
+        // the target-space twin: the same variable at the image's carrier (as the target args hold it).
+        var tsort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(image)));
+        for (seen_target.items) |tv| {
+            if (tv.name == fv.name) tsort = tv.sort;
+        }
+        const sv = try self.pool.add(.{ .fvar = .{ .name = fv.name, .sort = fv.sort } });
+        const tv = try self.pool.add(.{ .fvar = .{ .name = fv.name, .sort = tsort } });
+        try args_source.put(self.ctx.arena, fv.name, .{ .value = .{ .id = sv, .sort = fv.sort } });
+        try args.put(self.ctx.arena, fv.name, .{ .value = .{ .id = tv, .sort = tsort } });
+        try out.append(self.ctx.arena, fv.name);
+    }
+}
+
+/// The free variables of one schema arg: a compound value arg's, or a lambda body's minus the
+/// lambda's own (kept-free) params. A BARE variable value arg contributes nothing — its param
+/// already carries the guard.
+fn collectArgFvars(self: *Prove, arg: Schema.SchemaArg, out: *std.ArrayList(term.Node.Fvar)) Error!void {
+    switch (arg) {
+        .value => |v| {
+            if (self.pool.get(v.id) == .fvar) return;
+            try self.collectFreeFvars(v.id, out);
+        },
+        .lambda => |l| {
+            var all: std.ArrayList(term.Node.Fvar) = .empty;
+            try self.collectFreeFvars(l.body, &all);
+            outer: for (all.items) |fv| {
+                for (l.params) |p| {
+                    if (p == fv.name) continue :outer;
+                }
+                for (out.items) |e| {
+                    if (e.name == fv.name) continue :outer;
+                }
+                try out.append(self.ctx.arena, fv);
+            }
+        },
+    }
 }
 
 /// The `instantiate` justification (in `process`, after the read pass demanded + proved the
@@ -2221,22 +2306,11 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
         .import => |m| m.namespace,
         else => return self.fail(itok.start, "'{s}' is not an import", .{self.text(itok)}),
     };
-    // the cited theorem, proven in I's namespace (the read pass demanded it there).
-    const fstate = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = imp_ns, .name = tokName(rtok) }) orelse
-        return self.fail(rtok.start, "'{s}' is not a fact in '{s}'", .{ self.text(rtok), self.text(itok) });
-    const fact = switch (fstate) {
-        .proven => |ix| ix,
-        .in_flight => return self.fail(rtok.start, "cites '{s}', whose proof has not completed", .{self.text(rtok)}),
-    };
-    if (self.ctx.interner.keyOf(fact) == .schema)
-        return self.fail(rtok.start, "'{s}' is a schema; use `[using instantiation …]`, not an import citation", .{self.text(rtok)});
-    // the citation makes THIS proof rest on whatever the imported fact rests on (itself, if it
-    // is an axiom) — the same bookkeeping `resolveFactRef` does for `by cite`. Without it an
-    // axiom reached only through `import(I)` vanishes from `--axioms` and `--library` counts
-    // it unused.
-    self.inheritHoles(fact);
-    self.inheritAxioms(fact);
-    self.traceFact(rtok, fact, "import(I) citation: looked up in the import's namespace");
+    // the cited fact, resolved in I's namespace exactly as `[by cite I.thm]` resolves — the
+    // TRANSFER redirect under a model (the read pass demanded the transferred copy in
+    // `(model, I's file)`), the axiom overlay, the schema rejection, and the holes/axioms
+    // bookkeeping (an axiom reached only through `import(I)` must still show in `--axioms`).
+    const fact = try self.resolveFactIn(rtok, imp_ns);
     // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
     // imported axiom is as citable as an imported theorem).
     return switch (self.ctx.interner.keyOf(fact).fact.kind) {
@@ -8845,7 +8919,6 @@ fn transferLabel(self: *Prove) []const u8 {
     }
     return thm;
 }
-
 
 /// Walk done: seal the root, kernel-check the whole lowering against `goal`, then the
 /// use-all-facts pass (unless --draft). True iff the theorem is established.

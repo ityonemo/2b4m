@@ -1,0 +1,37 @@
+// A GUARDED model transfer of a theorem proved by integer induction whose predicate mentions
+// the fixed element x: the `induction` schema instance carries x (a guarded fix variable) inside
+// its lambda argument, so the instance's body must know good(x) — the integer induction
+// theorem's own proof specializes an inner `nonnegInduction` instance that leads with the
+// guard premise good(x). Regression: "cannot discharge the guard premise 'good(x)'" at
+// std/integer.b4m's induction body (found transferring std/group/power.b4m onto Perm).
+import base <<< "model_guarded_instance_free_var_base.b4m"
+import integer <<< "std/integer.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+func succ = integer.succ
+func prev = integer.prev
+
+sort T
+pred good(x: T)
+sort GoodT = T where good
+func tstep(x: T, n: Int) => T
+axiom tstepZero: forall x: T; tstep(x, ZERO) = x
+axiom tstepSucc: forall x: T; forall n: Int; tstep(x, succ(n)) = tstep(x, n)
+axiom tstepPrev: forall x: T; forall n: Int; tstep(x, prev(n)) = tstep(x, n)
+axiom tstepGood: forall x: T; forall n: Int; good(x) -> good(tstep(x, n))
+
+model M {
+  base.S: GoodT
+  base.step: tstep -| tstepGood
+  base.stepZero <- tstepZero
+  base.stepSucc <- tstepSucc
+  base.stepPrev <- tstepPrev
+}
+
+theorem tstepIsIdentity: forall x: GoodT; forall n: Int; tstep(x, n) = x
+proof
+  @conclusion |
+    forall x: GoodT; forall n: Int; tstep(x, n) = x
+    [using model(M) base.stepIsIdentity]
+qed

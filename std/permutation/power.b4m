@@ -1,0 +1,216 @@
+// std/permutation/power.b4m — INTEGER POWERS of a permutation, f^k for k ∈ ℤ, and the
+// permutations as a model of std/group/power.b4m.
+//
+// f^0 = id, f^(k+1) = f^k ∘ f, f^(k−1) = f^k ∘ f⁻¹ — the three clauses of group_power's
+// `power`, on functions. A power of a permutation is a permutation (bidirectional integer
+// induction), so Perm = Fn where invertible is a GUARDED model of the group-power theory,
+// and the whole corpus of exponent laws (f^m f^n = f^(m+n), (f^m)^n = f^(mn), f^(−m) =
+// (f^m)⁻¹) and of ORDERS (std/group/order.b4m: f^k = id ⟺ |f| divides k, …) transfers to
+// permutations. std/permutation/dihedral-orders.b4m uses this for the orders of the
+// elements of D_n.
+
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import permutation <<< "std/permutation.b4m"
+import group <<< "std/group.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_order <<< "std/group/order.b4m"
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Fn = function.Fn
+sort Perm = permutation.Perm
+const identityFn = function.identityFn
+func compose = function.compose
+func inverse = function.inverse
+pred invertible = function.invertible
+axiom inverseLeft = function.inverseLeft
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem identityIsAPermutation = permutation.identityIsAPermutation
+theorem inverseIsAPermutation = permutation.inverseIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iprev = integer.prev
+func iadd = integer.add
+func imul = integer.mul
+func ineg = integer.neg
+pred int_less_than = int_divides.less_than
+define divides(d, k) = int_divides.divides(d, k)
+theorem intInduction = integer.induction
+
+// -- the integer power -----------------------------------------------------------------------
+func permPower(f: Fn, k: Int) => Fn
+axiom permPowerZero: forall f: Fn; permPower(f, IZERO) = identityFn
+axiom permPowerSucc: forall f: Fn; forall k: Int; permPower(f, isucc(k)) = compose(permPower(f, k), f)
+axiom permPowerPrev: forall f: Fn; forall k: Int; permPower(f, iprev(k)) = compose(permPower(f, k), inverse(f))
+
+// every integer power of a permutation is a permutation: id is; composing with f or f⁻¹ keeps it.
+theorem permPowerIsAPermutation: forall f: Fn; forall k: Int; invertible(f) -> invertible(permPower(f, k))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-k |
+        fix k: Int {
+          @given-invertible |
+            assume invertible(f) {
+              @f-invertible |
+                invertible(f)
+                [by hypothesis given-invertible]
+              @inverse-invertible |
+                invertible(inverse(f))
+                [using specialize inverseIsAPermutation(f) f-invertible]
+              @zeroth-power |
+                permPower(f, IZERO) = identityFn
+                [using specialize permPowerZero(f)]
+              @identity-invertible |
+                invertible(identityFn)
+                [by cite identityIsAPermutation]
+              @base-case |
+                invertible(permPower(f, IZERO))
+                [by rewrite zeroth-power identity-invertible]
+              @step-up |
+                fix k2: Int {
+                  @given-power-invertible |
+                    assume invertible(permPower(f, k2)) {
+                      @power-invertible |
+                        invertible(permPower(f, k2))
+                        [by hypothesis given-power-invertible]
+                      @next-unfolds |
+                        permPower(f, isucc(k2)) = compose(permPower(f, k2), f)
+                        [using specialize permPowerSucc(f, k2)]
+                      @composite-invertible |
+                        invertible(compose(permPower(f, k2), f))
+                        [using specialize composeIsAPermutation(permPower(f, k2), f) power-invertible f-invertible]
+                      @conclusion-next-invertible |
+                        invertible(permPower(f, isucc(k2)))
+                        [by rewrite next-unfolds composite-invertible]
+                    }
+                  @conclusion-step-up |
+                    invertible(permPower(f, k2)) -> invertible(permPower(f, isucc(k2)))
+                    [by implies_intro given-power-invertible]
+                }
+              @step-up-for-all |
+                forall k2: Int; invertible(permPower(f, k2)) -> invertible(permPower(f, isucc(k2)))
+                [by forall_intro step-up]
+              @step-down |
+                fix k2: Int {
+                  @given-power-invertible |
+                    assume invertible(permPower(f, k2)) {
+                      @power-invertible |
+                        invertible(permPower(f, k2))
+                        [by hypothesis given-power-invertible]
+                      @previous-unfolds |
+                        permPower(f, iprev(k2)) = compose(permPower(f, k2), inverse(f))
+                        [using specialize permPowerPrev(f, k2)]
+                      @composite-invertible |
+                        invertible(compose(permPower(f, k2), inverse(f)))
+                        [using specialize composeIsAPermutation(permPower(f, k2), inverse(f)) power-invertible inverse-invertible]
+                      @conclusion-previous-invertible |
+                        invertible(permPower(f, iprev(k2)))
+                        [by rewrite previous-unfolds composite-invertible]
+                    }
+                  @conclusion-step-down |
+                    invertible(permPower(f, k2)) -> invertible(permPower(f, iprev(k2)))
+                    [by implies_intro given-power-invertible]
+                }
+              @step-down-for-all |
+                forall k2: Int; invertible(permPower(f, k2)) -> invertible(permPower(f, iprev(k2)))
+                [by forall_intro step-down]
+              @all-powers-invertible |
+                forall k2: Int; invertible(permPower(f, k2))
+                [using instantiation intInduction((fun k2: Int => invertible(permPower(f, k2)))) base-case step-up-for-all step-down-for-all]
+              @conclusion-power-invertible |
+                invertible(permPower(f, k))
+                [using specialize all-powers-invertible(k)]
+            }
+          @invertible-implies |
+            invertible(f) -> invertible(permPower(f, k))
+            [by implies_intro given-invertible]
+        }
+      @discharge-k |
+        forall k: Int; invertible(f) -> invertible(permPower(f, k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall f: Fn; forall k: Int; invertible(f) -> invertible(permPower(f, k))
+    [by forall_intro generalize-f]
+qed
+
+// -- the permutations model the group-power theory (guarded by `invertible`) ----------------
+model PermPower {
+  group_power.Grp: Perm
+  group_power.E: identityFn(identityIsAPermutation)
+  group_power.op: compose -| composeIsAPermutation
+  group_power.inverse: inverse -| inverseIsAPermutation
+  group_power.power: permPower -| permPowerIsAPermutation
+  group_power.opAssoc <- composeAssoc
+  group_power.opIdentityLeft <- composeIdentityLeft
+  group_power.opInverseLeft <- inverseLeft
+  group_power.powerZero <- permPowerZero
+  group_power.powerSucc <- permPowerSucc
+  group_power.powerPrev <- permPowerPrev
+}
+
+// PAYOFF: the exponent laws, for permutations.
+theorem permPowerOne: forall f: Perm; permPower(f, isucc(IZERO)) = f
+proof
+  @conclusion |
+    forall f: Perm; permPower(f, isucc(IZERO)) = f
+    [using model(PermPower) group_power.powerOne]
+qed
+
+theorem permPowerAdd: forall f: Perm; forall m, n: Int; compose(permPower(f, m), permPower(f, n)) = permPower(f, iadd(m, n))
+proof
+  @conclusion |
+    forall f: Perm; forall m, n: Int; compose(permPower(f, m), permPower(f, n)) = permPower(f, iadd(m, n))
+    [using model(PermPower) group_power.powerAdd]
+qed
+
+theorem permPowerMul: forall f: Perm; forall m, n: Int; permPower(permPower(f, m), n) = permPower(f, imul(m, n))
+proof
+  @conclusion |
+    forall f: Perm; forall m, n: Int; permPower(permPower(f, m), n) = permPower(f, imul(m, n))
+    [using model(PermPower) group_power.powerMul]
+qed
+
+theorem permPowerNegInverse: forall f: Perm; forall m: Int; permPower(f, ineg(m)) = inverse(permPower(f, m))
+proof
+  @conclusion |
+    forall f: Perm; forall m: Int; permPower(f, ineg(m)) = inverse(permPower(f, m))
+    [using model(PermPower) group_power.powerNegInverse]
+qed
+
+theorem permPowerOfIdentity: forall n: Int; permPower(identityFn, n) = identityFn
+proof
+  @conclusion |
+    forall n: Int; permPower(identityFn, n) = identityFn
+    [using model(PermPower) group_power.powerOfIdentity]
+qed
+
+// -- and the ORDER theory: n is the order of f (std/group/order.b4m's hasOrder, on Perm) ------
+define permHasOrder(f, n) = int_less_than(IZERO, n) and permPower(f, n) = identityFn and (forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, n) -> permPower(f, m) != identityFn)
+
+theorem permKilledIffOrderDivides: forall f: Perm; forall n: Int; permHasOrder(f, n) -> forall k: Int; (permPower(f, k) = identityFn iff divides(n, k))
+proof
+  @conclusion |
+    forall f: Perm; forall n: Int; permHasOrder(f, n) -> forall k: Int; (permPower(f, k) = identityFn iff divides(n, k))
+    [using model(PermPower) group_order.killedIffOrderDivides]
+qed
+
+theorem permInverseHasSameOrder: forall f: Perm; forall n: Int; permHasOrder(f, n) -> permHasOrder(inverse(f), n)
+proof
+  @conclusion |
+    forall f: Perm; forall n: Int; permHasOrder(f, n) -> permHasOrder(inverse(f), n)
+    [using model(PermPower) group_order.inverseHasSameOrder]
+qed
+
+theorem permConjugateHasSameOrder: forall g, f: Perm; forall n: Int; permHasOrder(f, n) -> permHasOrder(compose(compose(inverse(g), f), g), n)
+proof
+  @conclusion |
+    forall g, f: Perm; forall n: Int; permHasOrder(f, n) -> permHasOrder(compose(compose(inverse(g), f), g), n)
+    [using model(PermPower) group_order.conjugateHasSameOrder]
+qed

@@ -1,0 +1,74 @@
+// A source theory whose theorem is proved by INTEGER induction on a predicate that mentions a
+// fixed element: step(x, n) = x for every integer n, from step(x, 0) = x, step(x, n+1) = step(x, n)
+// and step(x, n−1) = step(x, n).
+import integer <<< "std/integer.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+func succ = integer.succ
+func prev = integer.prev
+theorem induction = integer.induction
+
+sort S
+func step(x: S, n: Int) => S
+axiom stepZero: forall x: S; step(x, ZERO) = x
+axiom stepSucc: forall x: S; forall n: Int; step(x, succ(n)) = step(x, n)
+axiom stepPrev: forall x: S; forall n: Int; step(x, prev(n)) = step(x, n)
+
+theorem stepIsIdentity: forall x: S; forall n: Int; step(x, n) = x
+proof
+  @generalize-x |
+    fix x: S {
+      @base-case |
+        step(x, ZERO) = x
+        [using specialize stepZero(x)]
+      @step-up |
+        fix k: Int {
+          @given-hypothesis |
+            assume step(x, k) = x {
+              @hypothesis |
+                step(x, k) = x
+                [by hypothesis given-hypothesis]
+              @next-unfolds |
+                step(x, succ(k)) = step(x, k)
+                [using specialize stepSucc(x, k)]
+              @conclusion-next |
+                step(x, succ(k)) = x
+                [using chain next-unfolds hypothesis]
+            }
+          @conclusion-step-up |
+            step(x, k) = x -> step(x, succ(k)) = x
+            [by implies_intro given-hypothesis]
+        }
+      @step-up-for-all |
+        forall k: Int; step(x, k) = x -> step(x, succ(k)) = x
+        [by forall_intro step-up]
+      @step-down |
+        fix k: Int {
+          @given-hypothesis |
+            assume step(x, k) = x {
+              @hypothesis |
+                step(x, k) = x
+                [by hypothesis given-hypothesis]
+              @previous-unfolds |
+                step(x, prev(k)) = step(x, k)
+                [using specialize stepPrev(x, k)]
+              @conclusion-previous |
+                step(x, prev(k)) = x
+                [using chain previous-unfolds hypothesis]
+            }
+          @conclusion-step-down |
+            step(x, k) = x -> step(x, prev(k)) = x
+            [by implies_intro given-hypothesis]
+        }
+      @step-down-for-all |
+        forall k: Int; step(x, k) = x -> step(x, prev(k)) = x
+        [by forall_intro step-down]
+      @conclusion-all-n |
+        forall n: Int; step(x, n) = x
+        [using instantiation induction((fun n: Int => step(x, n) = x)) base-case step-up-for-all step-down-for-all]
+    }
+  @conclusion |
+    forall x: S; forall n: Int; step(x, n) = x
+    [by forall_intro generalize-x]
+qed

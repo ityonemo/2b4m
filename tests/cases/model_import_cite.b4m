@@ -1,0 +1,26 @@
+// A model transfer of a theorem whose proof cites another file's theorem with
+// `[using import(I) thm]`: under the model the import cite must resolve to the TRANSFERRED copy
+// of that theorem (re-proved in target terms), as a bare `by cite` does. Regression: the import
+// cite looked up the untransferred source statement — "step claims 'add(Z, Z) = Z' but the
+// theorem derives 'op(U, U) = U'" (found transferring std/group/order.b4m onto Perm).
+import mid <<< "model_import_cite_mid.b4m"
+import base <<< "model_import_cite_base.b4m"
+
+sort T
+const Z: T
+func add(a: T, b: T) => T
+axiom addZeroLeft: forall a: T; add(Z, a) = a
+
+model M {
+  base.S: T
+  base.U: Z
+  base.op: add
+  base.opUnitLeft <- addZeroLeft
+}
+
+theorem zeroThrice: add(Z, add(Z, Z)) = Z
+proof
+  @conclusion |
+    add(Z, add(Z, Z)) = Z
+    [using model(M) mid.unitThrice]
+qed

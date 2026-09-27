@@ -231,6 +231,16 @@ pub fn addTests(
     // Regression: a passive ident lookup → "unknown namespace 'mid'" (found citing
     // std/group/listing.b4m, an alias-only re-export, from std/integer/mod-n-listing.b4m).
     ctx.okSilent(&.{ "check", "tests/cases/model_cite_untouched_namespace.b4m" });
+    // ... a GUARDED transfer of a theorem proved by integer induction whose predicate mentions
+    // the fixed element: the induction instance's lambda arg carries the guarded variable, so the
+    // instance gets `assume good(x)` wrappers for the args' free variables too (freeFvarParams) —
+    // its body's inner `specialize` needs that guard. Regression: "cannot discharge the guard
+    // premise 'good(x)'" inside std/integer.b4m's induction body.
+    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_instance_free_var.b4m" });
+    // ... and a transferred proof whose step cites another file's theorem with
+    // `[using import(I) thm]`: the import cite resolves to the TRANSFERRED copy, as `by cite` does.
+    // Regression: it handed the kernel the untransferred source statement.
+    ctx.okSilent(&.{ "check", "tests/cases/model_import_cite.b4m" });
     // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.
