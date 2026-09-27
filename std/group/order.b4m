@@ -1416,3 +1416,193 @@ proof
     forall g, h: Grp; hasFiniteOrder(g) -> hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
     [by forall_intro generalize-g]
 qed
+
+// -- the order divides every killing exponent, for a VARIABLE element ----------------------
+// The fixed-A/N law powerEqIdentityIffOrderDivides, restated for any g with hasOrder(g, n):
+// g^k = e ⟺ n | k. Forward: divide k = nq + r with 0 ≤ r < n; then g^r = g^k = e, so
+// minimality forces r = 0. Backward: g^(nq) = (g^n)^q = e.
+theorem killedIffOrderDivides: forall g: Grp; forall n: Int; hasOrder(g, n) -> forall k: Int; (power(g, k) = E iff divides(n, k))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Int {
+          @given-order |
+            assume hasOrder(g, n) {
+              @order-facts |
+                less_than(ZERO, n) and power(g, n) = E and (forall m: Int; less_than(ZERO, m) -> less_than(m, n) -> power(g, m) != E)
+                [by hypothesis given-order]
+              @n-positive |
+                less_than(ZERO, n)
+                [using tautology order-facts]
+              @g-kills |
+                power(g, n) = E
+                [using tautology order-facts]
+              @g-minimal |
+                forall m: Int; less_than(ZERO, m) -> less_than(m, n) -> power(g, m) != E
+                [using tautology order-facts]
+              @generalize-k |
+                fix k: Int {
+                  // forward: g^k = e ⟹ n | k.
+                  @given-killed |
+                    assume power(g, k) = E {
+                      @g-k-is-e |
+                        power(g, k) = E
+                        [by hypothesis given-killed]
+                      @div-alg |
+                        exists q: Int; exists r: Int; k = add(mul(n, q), r) and is_nonneg(r) and less_than(r, n)
+                        [using specialize int_divides.divisionAlgorithmExists(k, n) n-positive]
+                      @with-quotient |
+                        unpack q: Int from div-alg {
+                          @remainder-exists |
+                            exists r: Int; k = add(mul(n, q), r) and is_nonneg(r) and less_than(r, n)
+                            [by hypothesis with-quotient]
+                          @with-remainder |
+                            unpack r: Int from remainder-exists {
+                              @div-facts |
+                                k = add(mul(n, q), r) and is_nonneg(r) and less_than(r, n)
+                                [by hypothesis with-remainder]
+                              @k-decomposes |
+                                k = add(mul(n, q), r)
+                                [using tautology div-facts]
+                              @r-nonneg |
+                                is_nonneg(r)
+                                [using tautology div-facts]
+                              @r-less-n |
+                                less_than(r, n)
+                                [using tautology div-facts]
+                              // g^(nq) = (g^n)^q = e.
+                              @power-of-killed |
+                                power(power(g, n), q) = power(g, mul(n, q))
+                                [using specialize group_power.powerMul(g, n, q)]
+                              @identity-power-is-nq-power |
+                                power(E, q) = power(g, mul(n, q))
+                                [by rewrite g-kills power-of-killed]
+                              @nq-power-is-identity-power |
+                                power(g, mul(n, q)) = power(E, q)
+                                [by symmetry identity-power-is-nq-power]
+                              @identity-power |
+                                power(E, q) = E
+                                [using specialize group_power.powerOfIdentity(q)]
+                              @nq-kills |
+                                power(g, mul(n, q)) = E
+                                [using chain nq-power-is-identity-power identity-power]
+                              // g^k = g^(nq)·g^r = g^r, so g^r = e.
+                              @power-add |
+                                op(power(g, mul(n, q)), power(g, r)) = power(g, add(mul(n, q), r))
+                                [using specialize group_power.powerAdd(g, mul(n, q), r)]
+                              @product-with-e |
+                                op(E, power(g, r)) = power(g, add(mul(n, q), r))
+                                [by rewrite nq-kills power-add]
+                              @e-times-gr |
+                                op(E, power(g, r)) = power(g, r)
+                                [using specialize group_power.opIdentityLeft(power(g, r))]
+                              @gr-is-k-power |
+                                power(g, r) = power(g, add(mul(n, q), r))
+                                [using chain e-times-gr product-with-e]
+                              @decomposed-power-is-e |
+                                power(g, add(mul(n, q), r)) = E
+                                [by rewrite k-decomposes g-k-is-e]
+                              @gr-is-e |
+                                power(g, r) = E
+                                [using chain gr-is-k-power decomposed-power-is-e]
+                              // minimality: 0 < r < n would make g^r ≠ e; so r = 0.
+                              @given-r-positive |
+                                assume less_than(ZERO, r) {
+                                  @r-positive |
+                                    less_than(ZERO, r)
+                                    [by hypothesis given-r-positive]
+                                  @gr-nonzero |
+                                    power(g, r) != E
+                                    [using specialize g-minimal(r) r-positive r-less-n]
+                                }
+                              @r-positive-implies |
+                                less_than(ZERO, r) -> power(g, r) != E
+                                [by implies_intro given-r-positive]
+                              @r-not-positive |
+                                not less_than(ZERO, r)
+                                [using tautology r-positive-implies gr-is-e]
+                              @r-is-zero |
+                                r = ZERO
+                                [using specialize int_divides.nonnegNotPositiveIsZero(r) r-nonneg r-not-positive]
+                              @k-is-nq-plus-zero |
+                                k = add(mul(n, q), ZERO)
+                                [by rewrite r-is-zero k-decomposes]
+                              @nq-plus-zero |
+                                add(mul(n, q), ZERO) = mul(n, q)
+                                [using specialize integer.addZeroRight(mul(n, q))]
+                              @k-is-multiple |
+                                k = mul(n, q)
+                                [using chain k-is-nq-plus-zero nq-plus-zero]
+                              @conclusion-divides |
+                                divides(n, k)
+                                [by exists_intro(q) k-is-multiple]
+                            }
+                          @conclusion-with-remainder |
+                            divides(n, k)
+                            [by exists_elim with-remainder]
+                        }
+                      @conclusion-with-quotient |
+                        divides(n, k)
+                        [by exists_elim with-quotient]
+                    }
+                  // backward: n | k ⟹ g^k = g^(nq) = e.
+                  @given-divides |
+                    assume divides(n, k) {
+                      @multiple-exists |
+                        exists q: Int; k = mul(n, q)
+                        [by hypothesis given-divides]
+                      @with-cofactor |
+                        unpack q: Int from multiple-exists {
+                          @k-is-multiple |
+                            k = mul(n, q)
+                            [by hypothesis with-cofactor]
+                          @power-of-killed |
+                            power(power(g, n), q) = power(g, mul(n, q))
+                            [using specialize group_power.powerMul(g, n, q)]
+                          @identity-power-is-nq-power |
+                            power(E, q) = power(g, mul(n, q))
+                            [by rewrite g-kills power-of-killed]
+                          @nq-power-is-identity-power |
+                            power(g, mul(n, q)) = power(E, q)
+                            [by symmetry identity-power-is-nq-power]
+                          @identity-power |
+                            power(E, q) = E
+                            [using specialize group_power.powerOfIdentity(q)]
+                          @nq-kills |
+                            power(g, mul(n, q)) = E
+                            [using chain nq-power-is-identity-power identity-power]
+                          @conclusion-k-kills |
+                            power(g, k) = E
+                            [by rewrite k-is-multiple nq-kills]
+                        }
+                      @conclusion-with-cofactor |
+                        power(g, k) = E
+                        [by exists_elim with-cofactor]
+                    }
+                  @forward |
+                    power(g, k) = E -> divides(n, k)
+                    [by implies_intro given-killed]
+                  @backward |
+                    divides(n, k) -> power(g, k) = E
+                    [by implies_intro given-divides]
+                  @conclusion-iff |
+                    power(g, k) = E iff divides(n, k)
+                    [by iff_intro forward backward]
+                }
+              @discharge-k |
+                forall k: Int; (power(g, k) = E iff divides(n, k))
+                [by forall_intro generalize-k]
+            }
+          @order-implies |
+            hasOrder(g, n) -> forall k: Int; (power(g, k) = E iff divides(n, k))
+            [by implies_intro given-order]
+        }
+      @discharge-n |
+        forall n: Int; hasOrder(g, n) -> forall k: Int; (power(g, k) = E iff divides(n, k))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Int; hasOrder(g, n) -> forall k: Int; (power(g, k) = E iff divides(n, k))
+    [by forall_intro generalize-g]
+qed
