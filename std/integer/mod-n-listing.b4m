@@ -1,0 +1,1189 @@
+// std/integer/mod-n-listing.b4m — ℤ_n COUNTED: the n classes listed, and Judson's §4.1
+// Exercise 29 ("ℤ_n has an even number of generators for n > 2") by MODEL TRANSFER.
+//
+// The exhibit: nothing about generators is proved here. std/group/listing.b4m proves, for an
+// arbitrary group, that a listing of n > 2 distinct elements covering the group yields a
+// listing of the generators of even length (they pair off with their inverses). ℤ_n is a model
+// of that whole stack at once — the group (ZnGroup's discharges), the integer powers
+// (ZnGroupPower's), and sequences of elements (a ZnSeq sort carrying the two list-building
+// postulates) — so the theorem is a theorem about ℤ_n by `model(ZnListing)`. What is proved
+// here is only the COUNTING: the classes cls(0), …, cls(n-1) are pairwise distinct and are all
+// the classes, via a ℕ → ℤ embedding, the quotient identification and the division algorithm.
+
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import group <<< "std/group.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import group_listing <<< "std/group/listing.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import peano_parity <<< "std/peano/parity.b4m"
+
+// ℤ and its order
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iadd = integer.add
+func isub = integer.sub
+func imul = integer.mul
+pred int_less_than = int_order.less_than
+pred nonneg = integer.nonneg
+axiom nonnegZero = integer.nonnegZero
+axiom nonnegSucc = integer.nonnegSucc
+axiom nonnegInduction = int_order.nonnegInduction
+axiom intLessThanIntro = int_order.lessThanIntro
+axiom intLessThanElim = int_order.lessThanElim
+theorem intLessThanIrreflexive = int_order.lessThanIrreflexive
+theorem intTrichotomy = int_order.trichotomy
+theorem intAdditionPreservesOrder = int_order.additionPreservesOrder
+theorem intAddZeroLeft = integer.addZeroLeft
+axiom intAddSuccLeft = integer.addSuccLeft
+theorem intAddSuccRight = int_order.addSuccRight
+theorem intAddZeroRight = int_order.addZeroRight
+theorem intAddIsCommutative = int_order.addIsCommutative
+theorem divisionAlgorithmExists = int_divides.divisionAlgorithmExists
+theorem boundedRemainderDifferenceIsZero = int_divides.boundedRemainderDifferenceIsZero
+theorem intLessThanTransitive = int_order.lessThanTransitive
+theorem intAddIsAssociative = integer.addIsAssociative
+theorem intAddNegRight = integer.addNegRight
+theorem intAddNegLeft = integer.addNegLeft
+axiom definitionOfSubtraction = integer.definitionOfSubtraction
+func ineg = integer.neg
+
+// ℤ_n (the template at the modulus N)
+sort Zn = mod_n.Zn
+func cls = mod_n.cls
+const ZERO = mod_n.ZERO
+func add = mod_n.add
+func neg = mod_n.neg
+const N = mod_n.N
+axiom nPositive = mod_n.nPositive
+axiom clsSurjective = mod_n.clsSurjective
+axiom clsCongruent = mod_n.clsCongruent
+func znPower = mod_n.znPower
+theorem addAssoc = mod_n.addAssoc
+theorem addIdentityLeft = mod_n.addIdentityLeft
+theorem addInverseLeft = mod_n.addInverseLeft
+theorem znPowerZero = mod_n.znPowerZero
+theorem znPowerSucc = mod_n.znPowerSucc
+theorem znPowerPrev = mod_n.znPowerPrev
+
+// ℕ, the index sort of sequences
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+func nadd = peano.add
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom addZeroLeft = peano.addZeroLeft
+axiom addSuccLeft = peano.addSuccLeft
+theorem addZeroRight = peano.addZeroRight
+theorem addSuccRight = peano.addSuccRight
+axiom lessThanIntro = peano_order.lessThanIntro
+axiom lessThanElim = peano_order.lessThanElim
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem trichotomy = peano_order.trichotomy
+
+// -- sequences of classes ----------------------------------------------------------------------
+//
+// A fresh sort inherits no postulates: the two list-building postulates of std/group/sequence.b4m
+// (singleton and concatenation), with the product folded by ℤ_n's addition.
+sort ZnSeq
+func znAt(s: ZnSeq, i: Nat) => Zn
+func znProductUpTo(s: ZnSeq, k: Nat) => Zn
+axiom znProductUpToZero: forall s: ZnSeq; znProductUpTo(s, NZERO) = ZERO
+axiom znProductUpToSucc: forall s: ZnSeq; forall k: Nat; znProductUpTo(s, succ(k)) = add(znProductUpTo(s, k), znAt(s, k))
+axiom znSeqSingleton: forall x: Zn;
+  exists s: ZnSeq; znAt(s, NZERO) = x and znProductUpTo(s, succ(NZERO)) = x
+axiom znSeqConcat: forall s: ZnSeq; forall t: ZnSeq; forall j: Nat; forall k: Nat;
+  exists u: ZnSeq;
+  (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+  and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+  and znProductUpTo(u, nadd(j, k)) = add(znProductUpTo(s, j), znProductUpTo(t, k))
+
+// -- ℤ_n is a model of the listed-group stack --------------------------------------------------
+//
+// One overlay over three source theories: the group axioms are discharged by ℤ_n's lifted laws
+// (as in mod-n.b4m's ZnGroup), the integer-power axioms by znPower's (as in ZnGroupPower), and
+// the sequence postulates by ZnSeq's.
+model ZnListing {
+  group_listing.Grp: Zn
+  group.E: ZERO
+  group.op: add
+  group.inverse: neg
+  group_power.power: znPower
+  group_sequence.Seq: ZnSeq
+  group_sequence.at: znAt
+  group_sequence.productUpTo: znProductUpTo
+  group.opAssoc <- addAssoc
+  group.opIdentityLeft <- addIdentityLeft
+  group.opInverseLeft <- addInverseLeft
+  group_power.powerZero <- znPowerZero
+  group_power.powerSucc <- znPowerSucc
+  group_power.powerPrev <- znPowerPrev
+  group_sequence.productUpToZero <- znProductUpToZero
+  group_sequence.productUpToSucc <- znProductUpToSucc
+  group_sequence.seqSingleton <- znSeqSingleton
+  group_sequence.seqConcat <- znSeqConcat
+}
+
+// z GENERATES ℤ_n: every class is an integer multiple of it.
+define generates(z) = forall y: Zn; exists k: Int; y = znPower(z, k)
+
+// The abstract theorem, transported: a listing of ℤ_n of length n > 2 yields an even-length
+// listing of its generators.
+theorem generatorsOfAListedZnAreEvenInNumber: forall n: Nat; forall w: ZnSeq;
+  (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+  (forall g: Zn; exists i: Nat; less_than(i, n) and znAt(w, i) = g) ->
+  less_than(succ(succ(NZERO)), n) ->
+  exists v: ZnSeq; exists p: Nat;
+  (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+  and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+  and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+  and peano.divides(peano_parity.TWO, p)
+proof
+  @conclusion |
+    forall n: Nat; forall w: ZnSeq;
+      (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+      (forall g: Zn; exists i: Nat; less_than(i, n) and znAt(w, i) = g) ->
+      less_than(succ(succ(NZERO)), n) ->
+      exists v: ZnSeq; exists p: Nat;
+      (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+      and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+      and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+      and peano.divides(peano_parity.TWO, p)
+    [using model(ZnListing) group_listing.generatorsOfAFiniteGroupAreEvenInNumber]
+qed
+
+// -- the embedding ℕ → ℤ ----------------------------------------------------------------------
+//
+// Sequences are indexed by ℕ while ℤ_n's representatives are integers; `toInt` carries an
+// index to its integer, by the two recursion clauses (axioms; see CHAPTER5-PAINPOINTS on
+// definition blocks with a bare constant).
+func toInt(n: Nat) => Int
+axiom toIntZero: toInt(NZERO) = IZERO
+axiom toIntSucc: forall n: Nat; toInt(succ(n)) = isucc(toInt(n))
+
+theorem toIntNonneg: forall n: Nat; nonneg(toInt(n))
+proof
+  @zero-image |
+    toInt(NZERO) = IZERO
+    [by cite toIntZero]
+  @zero-nonneg |
+    nonneg(IZERO)
+    [by cite nonnegZero]
+  @base-case |
+    nonneg(toInt(NZERO))
+    [by rewrite zero-image zero-nonneg]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume nonneg(toInt(k)) {
+          @inductive-hypothesis |
+            nonneg(toInt(k))
+            [by hypothesis given-inductive-hypothesis]
+          @next-image |
+            toInt(succ(k)) = isucc(toInt(k))
+            [using specialize toIntSucc(k)]
+          @next-nonneg |
+            nonneg(isucc(toInt(k)))
+            [using specialize nonnegSucc(toInt(k)) inductive-hypothesis]
+          @conclusion-step |
+            nonneg(toInt(succ(k)))
+            [by rewrite next-image next-nonneg]
+        }
+      @induction-step-at-k |
+        nonneg(toInt(k)) -> nonneg(toInt(succ(k)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; nonneg(toInt(k)) -> nonneg(toInt(succ(k)))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; nonneg(toInt(n))
+    [using instantiation induction((fun k: Nat => nonneg(toInt(k)))) base-case induction-step-for-all-k]
+qed
+
+theorem toIntAdd: forall a: Nat; forall b: Nat; toInt(nadd(a, b)) = iadd(toInt(a), toInt(b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @a-plus-zero |
+        nadd(a, NZERO) = a
+        [using specialize addZeroRight(a)]
+      @zero-image |
+        toInt(NZERO) = IZERO
+        [by cite toIntZero]
+      @image-plus-zero |
+        iadd(toInt(a), IZERO) = toInt(a)
+        [using specialize intAddZeroRight(toInt(a))]
+      @base-case |
+        toInt(nadd(a, NZERO)) = iadd(toInt(a), toInt(NZERO))
+        [using simplify a-plus-zero zero-image image-plus-zero]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume toInt(nadd(a, k)) = iadd(toInt(a), toInt(k)) {
+              @inductive-hypothesis |
+                toInt(nadd(a, k)) = iadd(toInt(a), toInt(k))
+                [by hypothesis given-inductive-hypothesis]
+              @sum-steps |
+                nadd(a, succ(k)) = succ(nadd(a, k))
+                [using specialize addSuccRight(a, k)]
+              @image-of-successor |
+                toInt(succ(nadd(a, k))) = isucc(toInt(nadd(a, k)))
+                [using specialize toIntSucc(nadd(a, k))]
+              @image-of-k-successor |
+                toInt(succ(k)) = isucc(toInt(k))
+                [using specialize toIntSucc(k)]
+              @integer-sum-steps |
+                iadd(toInt(a), isucc(toInt(k))) = isucc(iadd(toInt(a), toInt(k)))
+                [using specialize intAddSuccRight(toInt(a), toInt(k))]
+              @conclusion-step |
+                toInt(nadd(a, succ(k))) = iadd(toInt(a), toInt(succ(k)))
+                [using simplify sum-steps image-of-successor inductive-hypothesis image-of-k-successor integer-sum-steps]
+            }
+          @induction-step-at-k |
+            toInt(nadd(a, k)) = iadd(toInt(a), toInt(k)) -> toInt(nadd(a, succ(k))) = iadd(toInt(a), toInt(succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; toInt(nadd(a, k)) = iadd(toInt(a), toInt(k)) -> toInt(nadd(a, succ(k))) = iadd(toInt(a), toInt(succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-b |
+        forall b: Nat; toInt(nadd(a, b)) = iadd(toInt(a), toInt(b))
+        [using instantiation induction((fun k: Nat => toInt(nadd(a, k)) = iadd(toInt(a), toInt(k)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall a: Nat; forall b: Nat; toInt(nadd(a, b)) = iadd(toInt(a), toInt(b))
+    [by forall_intro generalize-a]
+qed
+
+// The embedding preserves the order: a gap of d + 1 in ℕ is a gap of toInt(d) + 1 in ℤ.
+theorem toIntPreservesOrder: forall i: Nat; forall j: Nat; less_than(i, j) -> int_less_than(toInt(i), toInt(j))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @given-below |
+            assume less_than(i, j) {
+              @below |
+                less_than(i, j)
+                [by hypothesis given-below]
+              @gap-exists |
+                exists d: Nat; nadd(i, succ(d)) = j
+                [using specialize lessThanElim(i, j) below]
+              @with-gap-d |
+                unpack d: Nat from gap-exists {
+                  @gap |
+                    nadd(i, succ(d)) = j
+                    [by hypothesis with-gap-d]
+                  @image-of-sum |
+                    toInt(nadd(i, succ(d))) = iadd(toInt(i), toInt(succ(d)))
+                    [using specialize toIntAdd(i, succ(d))]
+                  @image-of-gap |
+                    toInt(succ(d)) = isucc(toInt(d))
+                    [using specialize toIntSucc(d)]
+                  @image-of-j-a |
+                    toInt(j) = iadd(toInt(i), toInt(succ(d)))
+                    [by rewrite gap image-of-sum]
+                  @image-of-j |
+                    toInt(j) = iadd(toInt(i), isucc(toInt(d)))
+                    [by rewrite image-of-gap image-of-j-a]
+                  @image-gap-form |
+                    iadd(toInt(i), isucc(toInt(d))) = toInt(j)
+                    [by symmetry image-of-j]
+                  @gap-nonneg |
+                    nonneg(toInt(d))
+                    [using specialize toIntNonneg(d)]
+                  @conclusion-images-ordered |
+                    int_less_than(toInt(i), toInt(j))
+                    [using specialize intLessThanIntro(toInt(i), toInt(d), toInt(j)) gap-nonneg image-gap-form]
+                }
+              @conclusion-ordered |
+                int_less_than(toInt(i), toInt(j))
+                [by exists_elim with-gap-d]
+            }
+          @conclusion-at-j |
+            less_than(i, j) -> int_less_than(toInt(i), toInt(j))
+            [by implies_intro given-below]
+        }
+      @discharge-j |
+        forall j: Nat; less_than(i, j) -> int_less_than(toInt(i), toInt(j))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; less_than(i, j) -> int_less_than(toInt(i), toInt(j))
+    [by forall_intro generalize-i]
+qed
+
+// And reflects it (trichotomy in ℕ, irreflexivity in ℤ); so it is injective.
+theorem toIntReflectsOrder: forall i: Nat; forall j: Nat; int_less_than(toInt(i), toInt(j)) -> less_than(i, j)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @given-images-ordered |
+            assume int_less_than(toInt(i), toInt(j)) {
+              @images-ordered |
+                int_less_than(toInt(i), toInt(j))
+                [by hypothesis given-images-ordered]
+              @three-ways |
+                less_than(i, j) or i = j or less_than(j, i)
+                [using specialize trichotomy(i, j)]
+              @image-not-below-itself |
+                not int_less_than(toInt(i), toInt(i))
+                [using specialize intLessThanIrreflexive(toInt(i))]
+              @conclusion-below |
+                less_than(i, j)
+                case three-ways {
+                  @when-below |
+                    assume less_than(i, j) {
+                      @conclusion-when-below |
+                        less_than(i, j)
+                        [by hypothesis when-below]
+                    }
+                  @when-equal |
+                    assume i = j {
+                      @equal |
+                        i = j
+                        [by hypothesis when-equal]
+                      @image-below-itself |
+                        int_less_than(toInt(i), toInt(i))
+                        [by rewrite equal images-ordered]
+                      @conclusion-when-equal |
+                        less_than(i, j)
+                        [by absurd image-below-itself image-not-below-itself]
+                    }
+                  @when-above |
+                    assume less_than(j, i) {
+                      @above |
+                        less_than(j, i)
+                        [by hypothesis when-above]
+                      @images-reversed |
+                        int_less_than(toInt(j), toInt(i))
+                        [using specialize toIntPreservesOrder(j, i) above]
+                      @image-below-itself |
+                        int_less_than(toInt(i), toInt(i))
+                        [using specialize intLessThanTransitive(toInt(i), toInt(j), toInt(i)) images-ordered images-reversed]
+                      @conclusion-when-above |
+                        less_than(i, j)
+                        [by absurd image-below-itself image-not-below-itself]
+                    }
+                }
+            }
+          @conclusion-at-j |
+            int_less_than(toInt(i), toInt(j)) -> less_than(i, j)
+            [by implies_intro given-images-ordered]
+        }
+      @discharge-j |
+        forall j: Nat; int_less_than(toInt(i), toInt(j)) -> less_than(i, j)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; int_less_than(toInt(i), toInt(j)) -> less_than(i, j)
+    [by forall_intro generalize-i]
+qed
+
+theorem toIntInjective: forall i: Nat; forall j: Nat; toInt(i) = toInt(j) -> i = j
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @given-images-equal |
+            assume toInt(i) = toInt(j) {
+              @images-equal |
+                toInt(i) = toInt(j)
+                [by hypothesis given-images-equal]
+              @three-ways |
+                less_than(i, j) or i = j or less_than(j, i)
+                [using specialize trichotomy(i, j)]
+              @image-not-below-itself |
+                not int_less_than(toInt(j), toInt(j))
+                [using specialize intLessThanIrreflexive(toInt(j))]
+              @conclusion-equal |
+                i = j
+                case three-ways {
+                  @when-below |
+                    assume less_than(i, j) {
+                      @below |
+                        less_than(i, j)
+                        [by hypothesis when-below]
+                      @images-ordered |
+                        int_less_than(toInt(i), toInt(j))
+                        [using specialize toIntPreservesOrder(i, j) below]
+                      @image-below-itself |
+                        int_less_than(toInt(j), toInt(j))
+                        [by rewrite images-equal images-ordered]
+                      @conclusion-when-below |
+                        i = j
+                        [by absurd image-below-itself image-not-below-itself]
+                    }
+                  @when-equal |
+                    assume i = j {
+                      @conclusion-when-equal |
+                        i = j
+                        [by hypothesis when-equal]
+                    }
+                  @when-above |
+                    assume less_than(j, i) {
+                      @above |
+                        less_than(j, i)
+                        [by hypothesis when-above]
+                      @images-ordered |
+                        int_less_than(toInt(j), toInt(i))
+                        [using specialize toIntPreservesOrder(j, i) above]
+                      @image-below-itself |
+                        int_less_than(toInt(j), toInt(j))
+                        [by rewrite images-equal images-ordered]
+                      @conclusion-when-above |
+                        i = j
+                        [by absurd image-below-itself image-not-below-itself]
+                    }
+                }
+            }
+          @conclusion-at-j |
+            toInt(i) = toInt(j) -> i = j
+            [by implies_intro given-images-equal]
+        }
+      @discharge-j |
+        forall j: Nat; toInt(i) = toInt(j) -> i = j
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; toInt(i) = toInt(j) -> i = j
+    [by forall_intro generalize-i]
+qed
+
+// Every nonnegative integer is the image of some index: induction on the nonnegatives.
+theorem everyNonnegIsAnImage: forall a: Int; nonneg(a) -> exists m: Nat; toInt(m) = a
+proof
+  @zero-image |
+    toInt(NZERO) = IZERO
+    [by cite toIntZero]
+  @base-case |
+    exists m: Nat; toInt(m) = IZERO
+    [by exists_intro(NZERO) zero-image]
+  @induction-step |
+    fix k: Int {
+      @given-nonneg |
+        assume nonneg(k) {
+          @given-inductive-hypothesis |
+            assume exists m: Nat; toInt(m) = k {
+              @inductive-hypothesis |
+                exists m: Nat; toInt(m) = k
+                [by hypothesis given-inductive-hypothesis]
+              @with-index-m |
+                unpack m: Nat from inductive-hypothesis {
+                  @image-is-k |
+                    toInt(m) = k
+                    [by hypothesis with-index-m]
+                  @next-image |
+                    toInt(succ(m)) = isucc(toInt(m))
+                    [using specialize toIntSucc(m)]
+                  @next-image-is-succ-k |
+                    toInt(succ(m)) = isucc(k)
+                    [by rewrite image-is-k next-image]
+                  @conclusion-witness |
+                    exists m2: Nat; toInt(m2) = isucc(k)
+                    [by exists_intro(succ(m)) next-image-is-succ-k]
+                }
+              @conclusion-step |
+                exists m2: Nat; toInt(m2) = isucc(k)
+                [by exists_elim with-index-m]
+            }
+          @conclusion-given-hypothesis |
+            (exists m: Nat; toInt(m) = k) -> (exists m2: Nat; toInt(m2) = isucc(k))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        nonneg(k) -> (exists m: Nat; toInt(m) = k) -> (exists m2: Nat; toInt(m2) = isucc(k))
+        [by implies_intro given-nonneg]
+    }
+  @induction-step-for-all-k |
+    forall k: Int; nonneg(k) -> (exists m: Nat; toInt(m) = k) -> (exists m2: Nat; toInt(m2) = isucc(k))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall a: Int; nonneg(a) -> exists m: Nat; toInt(m) = a
+    [using instantiation nonnegInduction((fun a: Int => exists m: Nat; toInt(m) = a)) base-case induction-step-for-all-k]
+qed
+
+// -- two facts about integer differences --------------------------------------------------------
+
+theorem differenceOfSum: forall a: Int; forall b: Int; isub(iadd(a, b), b) = a
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @unfolds |
+            isub(iadd(a, b), b) = iadd(iadd(a, b), ineg(b))
+            [using specialize definitionOfSubtraction(iadd(a, b), b)]
+          @reassociated |
+            iadd(iadd(a, b), ineg(b)) = iadd(a, iadd(b, ineg(b)))
+            [using specialize intAddIsAssociative(a, b, ineg(b))]
+          @cancels |
+            iadd(b, ineg(b)) = IZERO
+            [using specialize intAddNegRight(b)]
+          @plus-zero |
+            iadd(a, IZERO) = a
+            [using specialize intAddZeroRight(a)]
+          @conclusion-difference |
+            isub(iadd(a, b), b) = a
+            [using simplify unfolds reassociated cancels plus-zero]
+        }
+      @discharge-b |
+        forall b: Int; isub(iadd(a, b), b) = a
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Int; forall b: Int; isub(iadd(a, b), b) = a
+    [by forall_intro generalize-a]
+qed
+
+theorem zeroDifferenceMeansEqual: forall a: Int; forall b: Int; isub(a, b) = IZERO -> a = b
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-zero-difference |
+            assume isub(a, b) = IZERO {
+              @zero-difference |
+                isub(a, b) = IZERO
+                [by hypothesis given-zero-difference]
+              @unfolds |
+                isub(a, b) = iadd(a, ineg(b))
+                [using specialize definitionOfSubtraction(a, b)]
+              @sum-is-zero |
+                iadd(a, ineg(b)) = IZERO
+                [by rewrite unfolds zero-difference]
+              @reassociated |
+                iadd(iadd(a, ineg(b)), b) = iadd(a, iadd(ineg(b), b))
+                [using specialize intAddIsAssociative(a, ineg(b), b)]
+              @cancels |
+                iadd(ineg(b), b) = IZERO
+                [using specialize intAddNegLeft(b)]
+              @a-plus-zero |
+                iadd(a, IZERO) = a
+                [using specialize intAddZeroRight(a)]
+              @zero-plus-b |
+                iadd(IZERO, b) = b
+                [using specialize intAddZeroLeft(b)]
+              @a-is-a-plus-zero |
+                a = iadd(a, IZERO)
+                [by symmetry a-plus-zero]
+              @a-through-the-cancelling-pair |
+                a = iadd(a, iadd(ineg(b), b))
+                [by rewrite cancels a-is-a-plus-zero]
+              @a-reassociated |
+                a = iadd(iadd(a, ineg(b)), b)
+                [by rewrite reassociated a-through-the-cancelling-pair]
+              @a-is-zero-plus-b |
+                a = iadd(IZERO, b)
+                [by rewrite sum-is-zero a-reassociated]
+              @conclusion-equal |
+                a = b
+                [using chain a-is-zero-plus-b zero-plus-b]
+            }
+          @conclusion-at-b |
+            isub(a, b) = IZERO -> a = b
+            [by implies_intro given-zero-difference]
+        }
+      @discharge-b |
+        forall b: Int; isub(a, b) = IZERO -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Int; forall b: Int; isub(a, b) = IZERO -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// -- the listing of ℤ_n --------------------------------------------------------------------------
+
+// A sequence whose i-th entry is the class of i, for i below m: induction on m, appending
+// cls(m) by concatenating with a singleton.
+theorem sequenceOfClassesExists: forall m: Nat; exists w: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w, i) = cls(toInt(i))
+proof
+  @some-sequence-exists |
+    exists w: ZnSeq; znAt(w, NZERO) = ZERO and znProductUpTo(w, succ(NZERO)) = ZERO
+    [using specialize znSeqSingleton(ZERO)]
+  @base-case-proof |
+    unpack w: ZnSeq from some-sequence-exists {
+      @vacuous |
+        fix i: Nat {
+          @nothing-below-zero |
+            not less_than(i, NZERO)
+            [using specialize notLessThanZero(i)]
+          @conclusion-vacuous-entry |
+            less_than(i, NZERO) -> znAt(w, i) = cls(toInt(i))
+            [using tautology nothing-below-zero]
+        }
+      @no-entries |
+        forall i: Nat; less_than(i, NZERO) -> znAt(w, i) = cls(toInt(i))
+        [by forall_intro vacuous]
+      @conclusion-base-witness |
+        exists w2: ZnSeq; forall i: Nat; less_than(i, NZERO) -> znAt(w2, i) = cls(toInt(i))
+        [by exists_intro(w) no-entries]
+    }
+  @base-case |
+    exists w2: ZnSeq; forall i: Nat; less_than(i, NZERO) -> znAt(w2, i) = cls(toInt(i))
+    [by exists_elim base-case-proof]
+  @induction-step |
+    fix m: Nat {
+      @given-inductive-hypothesis |
+        assume exists w2: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w2, i) = cls(toInt(i)) {
+          @inductive-hypothesis |
+            exists w2: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w2, i) = cls(toInt(i))
+            [by hypothesis given-inductive-hypothesis]
+          @with-prefix-w |
+            unpack w: ZnSeq from inductive-hypothesis {
+              @prefix-entries |
+                forall i: Nat; less_than(i, m) -> znAt(w, i) = cls(toInt(i))
+                [by hypothesis with-prefix-w]
+              @singleton-exists |
+                exists s: ZnSeq; znAt(s, NZERO) = cls(toInt(m)) and znProductUpTo(s, succ(NZERO)) = cls(toInt(m))
+                [using specialize znSeqSingleton(cls(toInt(m)))]
+              @with-singleton-s |
+                unpack s: ZnSeq from singleton-exists {
+                  @singleton-facts |
+                    znAt(s, NZERO) = cls(toInt(m)) and znProductUpTo(s, succ(NZERO)) = cls(toInt(m))
+                    [by hypothesis with-singleton-s]
+                  @singleton-head |
+                    znAt(s, NZERO) = cls(toInt(m))
+                    [by and_elim_left singleton-facts]
+                  @concatenation-exists |
+                    exists u: ZnSeq; (forall i: Nat; less_than(i, m) -> znAt(u, i) = znAt(w, i)) and (forall i: Nat; less_than(i, succ(NZERO)) -> znAt(u, nadd(m, i)) = znAt(s, i)) and znProductUpTo(u, nadd(m, succ(NZERO))) = add(znProductUpTo(w, m), znProductUpTo(s, succ(NZERO)))
+                    [using specialize znSeqConcat(w, s, m, succ(NZERO))]
+                  @with-concatenation-u |
+                    unpack u: ZnSeq from concatenation-exists {
+                      @concatenation-facts |
+                        (forall i: Nat; less_than(i, m) -> znAt(u, i) = znAt(w, i)) and (forall i: Nat; less_than(i, succ(NZERO)) -> znAt(u, nadd(m, i)) = znAt(s, i)) and znProductUpTo(u, nadd(m, succ(NZERO))) = add(znProductUpTo(w, m), znProductUpTo(s, succ(NZERO)))
+                        [by hypothesis with-concatenation-u]
+                      @agreement-pair |
+                        (forall i: Nat; less_than(i, m) -> znAt(u, i) = znAt(w, i)) and (forall i: Nat; less_than(i, succ(NZERO)) -> znAt(u, nadd(m, i)) = znAt(s, i))
+                        [by and_elim_left concatenation-facts]
+                      @prefix-agrees |
+                        forall i: Nat; less_than(i, m) -> znAt(u, i) = znAt(w, i)
+                        [by and_elim_left agreement-pair]
+                      @block-agrees |
+                        forall i: Nat; less_than(i, succ(NZERO)) -> znAt(u, nadd(m, i)) = znAt(s, i)
+                        [by and_elim_right agreement-pair]
+                      @zero-below-one |
+                        less_than(NZERO, succ(NZERO))
+                        [using specialize lessThanSelf(NZERO)]
+                      @u-at-m-plus-zero |
+                        znAt(u, nadd(m, NZERO)) = znAt(s, NZERO)
+                        [using specialize block-agrees(NZERO) zero-below-one]
+                      @m-plus-zero-is-m |
+                        nadd(m, NZERO) = m
+                        [using specialize addZeroRight(m)]
+                      @u-at-m |
+                        znAt(u, m) = znAt(s, NZERO)
+                        [by rewrite m-plus-zero-is-m u-at-m-plus-zero]
+                      @last-entry-is-the-class-of-m |
+                        znAt(u, m) = cls(toInt(m))
+                        [using chain u-at-m singleton-head]
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-i-in-range |
+                            assume less_than(i, succ(m)) {
+                              @i-in-range |
+                                less_than(i, succ(m))
+                                [by hypothesis given-i-in-range]
+                              @i-splits |
+                                less_than(i, m) or i = m
+                                [using specialize lessThanSuccSplit(i, m) i-in-range]
+                              @conclusion-entry-i |
+                                znAt(u, i) = cls(toInt(i))
+                                case i-splits {
+                                  @when-old |
+                                    assume less_than(i, m) {
+                                      @i-old |
+                                        less_than(i, m)
+                                        [by hypothesis when-old]
+                                      @entry-is-old-entry |
+                                        znAt(u, i) = znAt(w, i)
+                                        [using specialize prefix-agrees(i) i-old]
+                                      @old-entry-is-the-class |
+                                        znAt(w, i) = cls(toInt(i))
+                                        [using specialize prefix-entries(i) i-old]
+                                      @conclusion-when-old |
+                                        znAt(u, i) = cls(toInt(i))
+                                        [using chain entry-is-old-entry old-entry-is-the-class]
+                                    }
+                                  @when-new |
+                                    assume i = m {
+                                      @i-is-m |
+                                        i = m
+                                        [by hypothesis when-new]
+                                      @conclusion-when-new |
+                                        znAt(u, i) = cls(toInt(i))
+                                        [by rewrite i-is-m last-entry-is-the-class-of-m]
+                                    }
+                                }
+                            }
+                          @conclusion-entry-clause |
+                            less_than(i, succ(m)) -> znAt(u, i) = cls(toInt(i))
+                            [by implies_intro given-i-in-range]
+                        }
+                      @all-entries |
+                        forall i: Nat; less_than(i, succ(m)) -> znAt(u, i) = cls(toInt(i))
+                        [by forall_intro generalize-i]
+                      @conclusion-witness-u |
+                        exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i))
+                        [by exists_intro(u) all-entries]
+                    }
+                  @conclusion-with-u |
+                    exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i))
+                    [by exists_elim with-concatenation-u]
+                }
+              @conclusion-with-s |
+                exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i))
+                [by exists_elim with-singleton-s]
+            }
+          @conclusion-step |
+            exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i))
+            [by exists_elim with-prefix-w]
+        }
+      @induction-step-at-m |
+        (exists w2: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w2, i) = cls(toInt(i))) -> (exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-m |
+    forall m: Nat; (exists w2: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w2, i) = cls(toInt(i))) -> (exists w2: ZnSeq; forall i: Nat; less_than(i, succ(m)) -> znAt(w2, i) = cls(toInt(i)))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall m: Nat; exists w: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w, i) = cls(toInt(i))
+    [using instantiation induction((fun m: Nat => exists w2: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w2, i) = cls(toInt(i)))) base-case induction-step-for-all-m]
+qed
+
+// The modulus is the image of some index (it is positive, hence nonnegative).
+theorem modulusIsAnImage: exists m: Nat; toInt(m) = N
+proof
+  @n-positive |
+    int_less_than(IZERO, N)
+    [by cite nPositive]
+  @gap-exists |
+    exists d: Int; nonneg(d) and iadd(IZERO, isucc(d)) = N
+    [using specialize intLessThanElim(IZERO, N) n-positive]
+  @with-gap-d |
+    unpack d: Int from gap-exists {
+      @gap-facts |
+        nonneg(d) and iadd(IZERO, isucc(d)) = N
+        [by hypothesis with-gap-d]
+      @d-nonneg |
+        nonneg(d)
+        [by and_elim_left gap-facts]
+      @gap |
+        iadd(IZERO, isucc(d)) = N
+        [by and_elim_right gap-facts]
+      @zero-plus |
+        iadd(IZERO, isucc(d)) = isucc(d)
+        [using specialize intAddZeroLeft(isucc(d))]
+      @n-is-a-successor |
+        isucc(d) = N
+        [by rewrite zero-plus gap]
+      @successor-nonneg |
+        nonneg(isucc(d))
+        [using specialize nonnegSucc(d) d-nonneg]
+      @n-nonneg |
+        nonneg(N)
+        [by rewrite n-is-a-successor successor-nonneg]
+      @conclusion-image |
+        exists m: Nat; toInt(m) = N
+        [using specialize everyNonnegIsAnImage(N) n-nonneg]
+    }
+  @conclusion |
+    exists m: Nat; toInt(m) = N
+    [by exists_elim with-gap-d]
+qed
+
+// ℤ_n HAS n ELEMENTS: the classes cls(0), …, cls(n-1) are pairwise distinct (two
+// representatives below n that are congruent mod n are equal — the bounded-remainder lemma
+// of the division algorithm) and are all the classes (reduce any representative mod n).
+theorem znIsListedByItsRepresentatives: exists m: Nat; exists w: ZnSeq;
+  toInt(m) = N
+  and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j)
+  and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+proof
+  @index-of-n-exists |
+    exists m: Nat; toInt(m) = N
+    [by cite modulusIsAnImage]
+  @n-positive |
+    int_less_than(IZERO, N)
+    [by cite nPositive]
+  @with-index-m |
+    unpack m: Nat from index-of-n-exists {
+      @image-of-m |
+        toInt(m) = N
+        [by hypothesis with-index-m]
+      @sequence-exists |
+        exists w: ZnSeq; forall i: Nat; less_than(i, m) -> znAt(w, i) = cls(toInt(i))
+        [using specialize sequenceOfClassesExists(m)]
+      @with-sequence-w |
+        unpack w: ZnSeq from sequence-exists {
+          @entries |
+            forall i: Nat; less_than(i, m) -> znAt(w, i) = cls(toInt(i))
+            [by hypothesis with-sequence-w]
+
+          // distinct: congruent representatives below n are equal
+          @generalize-i |
+            fix i: Nat {
+              @generalize-j |
+                fix j: Nat {
+                  @given-i-below |
+                    assume less_than(i, m) {
+                      @given-j-below |
+                        assume less_than(j, m) {
+                          @given-entries-equal |
+                            assume znAt(w, i) = znAt(w, j) {
+                              @i-below |
+                                less_than(i, m)
+                                [by hypothesis given-i-below]
+                              @j-below |
+                                less_than(j, m)
+                                [by hypothesis given-j-below]
+                              @entries-equal |
+                                znAt(w, i) = znAt(w, j)
+                                [by hypothesis given-entries-equal]
+                              @entry-i |
+                                znAt(w, i) = cls(toInt(i))
+                                [using specialize entries(i) i-below]
+                              @entry-j |
+                                znAt(w, j) = cls(toInt(j))
+                                [using specialize entries(j) j-below]
+                              @class-i-is-entry-j |
+                                cls(toInt(i)) = znAt(w, j)
+                                [by rewrite entry-i entries-equal]
+                              @classes-equal |
+                                cls(toInt(i)) = cls(toInt(j))
+                                [by rewrite entry-j class-i-is-entry-j]
+                              @classes-equal-flipped |
+                                cls(toInt(j)) = cls(toInt(i))
+                                [by symmetry classes-equal]
+                              @image-i-nonneg |
+                                nonneg(toInt(i))
+                                [using specialize toIntNonneg(i)]
+                              @image-j-nonneg |
+                                nonneg(toInt(j))
+                                [using specialize toIntNonneg(j)]
+                              @image-i-below-image-m |
+                                int_less_than(toInt(i), toInt(m))
+                                [using specialize toIntPreservesOrder(i, m) i-below]
+                              @image-j-below-image-m |
+                                int_less_than(toInt(j), toInt(m))
+                                [using specialize toIntPreservesOrder(j, m) j-below]
+                              @image-i-below-n |
+                                int_less_than(toInt(i), N)
+                                [by rewrite image-of-m image-i-below-image-m]
+                              @image-j-below-n |
+                                int_less_than(toInt(j), N)
+                                [by rewrite image-of-m image-j-below-image-m]
+                              @three-ways |
+                                int_less_than(toInt(i), toInt(j)) or toInt(i) = toInt(j) or int_less_than(toInt(j), toInt(i))
+                                [using specialize intTrichotomy(toInt(i), toInt(j))]
+                              @images-equal |
+                                toInt(i) = toInt(j)
+                                case three-ways {
+                                  @when-i-smaller |
+                                    assume int_less_than(toInt(i), toInt(j)) {
+                                      @i-smaller |
+                                        int_less_than(toInt(i), toInt(j))
+                                        [by hypothesis when-i-smaller]
+                                      @congruence |
+                                        cls(toInt(j)) = cls(toInt(i)) iff mod_n.divides(N, isub(toInt(j), toInt(i)))
+                                        [using specialize clsCongruent(toInt(j), toInt(i))]
+                                      @difference-divisible |
+                                        mod_n.divides(N, isub(toInt(j), toInt(i)))
+                                        [using tautology congruence classes-equal-flipped]
+                                      @difference-is-zero |
+                                        isub(toInt(j), toInt(i)) = IZERO
+                                        [using specialize boundedRemainderDifferenceIsZero(N, toInt(i), toInt(j)) n-positive image-i-nonneg image-j-below-n i-smaller difference-divisible]
+                                      @images-agree |
+                                        toInt(j) = toInt(i)
+                                        [using specialize zeroDifferenceMeansEqual(toInt(j), toInt(i)) difference-is-zero]
+                                      @image-i-below-itself |
+                                        int_less_than(toInt(i), toInt(i))
+                                        [by rewrite images-agree i-smaller]
+                                      @image-i-not-below-itself |
+                                        not int_less_than(toInt(i), toInt(i))
+                                        [using specialize intLessThanIrreflexive(toInt(i))]
+                                      @conclusion-when-i-smaller |
+                                        toInt(i) = toInt(j)
+                                        [by absurd image-i-below-itself image-i-not-below-itself]
+                                    }
+                                  @when-equal |
+                                    assume toInt(i) = toInt(j) {
+                                      @conclusion-when-equal |
+                                        toInt(i) = toInt(j)
+                                        [by hypothesis when-equal]
+                                    }
+                                  @when-j-smaller |
+                                    assume int_less_than(toInt(j), toInt(i)) {
+                                      @j-smaller |
+                                        int_less_than(toInt(j), toInt(i))
+                                        [by hypothesis when-j-smaller]
+                                      @congruence |
+                                        cls(toInt(i)) = cls(toInt(j)) iff mod_n.divides(N, isub(toInt(i), toInt(j)))
+                                        [using specialize clsCongruent(toInt(i), toInt(j))]
+                                      @difference-divisible |
+                                        mod_n.divides(N, isub(toInt(i), toInt(j)))
+                                        [using tautology congruence classes-equal]
+                                      @difference-is-zero |
+                                        isub(toInt(i), toInt(j)) = IZERO
+                                        [using specialize boundedRemainderDifferenceIsZero(N, toInt(j), toInt(i)) n-positive image-j-nonneg image-i-below-n j-smaller difference-divisible]
+                                      @images-agree |
+                                        toInt(i) = toInt(j)
+                                        [using specialize zeroDifferenceMeansEqual(toInt(i), toInt(j)) difference-is-zero]
+                                      @image-j-below-itself |
+                                        int_less_than(toInt(j), toInt(j))
+                                        [by rewrite images-agree j-smaller]
+                                      @image-j-not-below-itself |
+                                        not int_less_than(toInt(j), toInt(j))
+                                        [using specialize intLessThanIrreflexive(toInt(j))]
+                                      @conclusion-when-j-smaller |
+                                        toInt(i) = toInt(j)
+                                        [by absurd image-j-below-itself image-j-not-below-itself]
+                                    }
+                                }
+                              @conclusion-indices-equal |
+                                i = j
+                                [using specialize toIntInjective(i, j) images-equal]
+                            }
+                          @conclusion-given-equal |
+                            znAt(w, i) = znAt(w, j) -> i = j
+                            [by implies_intro given-entries-equal]
+                        }
+                      @conclusion-given-j |
+                        less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+                        [by implies_intro given-j-below]
+                    }
+                  @conclusion-distinct-at-i-j |
+                    less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+                    [by implies_intro given-i-below]
+                }
+              @discharge-j |
+                forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+                [by forall_intro generalize-j]
+            }
+          @entries-distinct |
+            forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+            [by forall_intro generalize-i]
+
+          // covering: reduce a representative mod n
+          @generalize-g |
+            fix g: Zn {
+              @representative-exists |
+                exists k: Int; g = cls(k)
+                [using specialize clsSurjective(g)]
+              @with-representative-k |
+                unpack k: Int from representative-exists {
+                  @g-is-class-of-k |
+                    g = cls(k)
+                    [by hypothesis with-representative-k]
+                  @division-exists |
+                    exists q: Int; exists r: Int; k = iadd(imul(N, q), r) and nonneg(r) and int_less_than(r, N)
+                    [using specialize divisionAlgorithmExists(k, N) n-positive]
+                  @with-quotient-q |
+                    unpack q: Int from division-exists {
+                      @after-q |
+                        exists r: Int; k = iadd(imul(N, q), r) and nonneg(r) and int_less_than(r, N)
+                        [by hypothesis with-quotient-q]
+                      @with-remainder-r |
+                        unpack r: Int from after-q {
+                          @division-facts |
+                            k = iadd(imul(N, q), r) and nonneg(r) and int_less_than(r, N)
+                            [by hypothesis with-remainder-r]
+                          @k-decomposed |
+                            k = iadd(imul(N, q), r)
+                            [using tautology division-facts]
+                          @r-nonneg |
+                            nonneg(r)
+                            [using tautology division-facts]
+                          @r-below-n |
+                            int_less_than(r, N)
+                            [using tautology division-facts]
+                          @difference-of-the-sum |
+                            isub(iadd(imul(N, q), r), r) = imul(N, q)
+                            [using specialize differenceOfSum(imul(N, q), r)]
+                          @k-minus-r |
+                            isub(k, r) = imul(N, q)
+                            [by rewrite k-decomposed difference-of-the-sum]
+                          @difference-divisible |
+                            mod_n.divides(N, isub(k, r))
+                            [by exists_intro(q) k-minus-r]
+                          @congruence |
+                            cls(k) = cls(r) iff mod_n.divides(N, isub(k, r))
+                            [using specialize clsCongruent(k, r)]
+                          @class-of-k-is-class-of-r |
+                            cls(k) = cls(r)
+                            [using tautology congruence difference-divisible]
+                          @index-of-r-exists |
+                            exists i: Nat; toInt(i) = r
+                            [using specialize everyNonnegIsAnImage(r) r-nonneg]
+                          @with-index-i |
+                            unpack i: Nat from index-of-r-exists {
+                              @image-of-i |
+                                toInt(i) = r
+                                [by hypothesis with-index-i]
+                              @image-of-i-below-n |
+                                int_less_than(toInt(i), N)
+                                [by rewrite image-of-i r-below-n]
+                              @image-of-i-below-image-of-m |
+                                int_less_than(toInt(i), toInt(m))
+                                [by rewrite image-of-m image-of-i-below-n]
+                              @i-below-m |
+                                less_than(i, m)
+                                [using specialize toIntReflectsOrder(i, m) image-of-i-below-image-of-m]
+                              @entry-i |
+                                znAt(w, i) = cls(toInt(i))
+                                [using specialize entries(i) i-below-m]
+                              @entry-i-is-class-of-r |
+                                znAt(w, i) = cls(r)
+                                [by rewrite image-of-i entry-i]
+                              @g-is-class-of-r |
+                                g = cls(r)
+                                [by rewrite class-of-k-is-class-of-r g-is-class-of-k]
+                              @class-of-r-is-g |
+                                cls(r) = g
+                                [by symmetry g-is-class-of-r]
+                              @entry-i-is-g |
+                                znAt(w, i) = g
+                                [using chain entry-i-is-class-of-r class-of-r-is-g]
+                              @i-below-and-hits |
+                                less_than(i, m) and znAt(w, i) = g
+                                [by and_intro i-below-m entry-i-is-g]
+                              @conclusion-witness-i |
+                                exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+                                [by exists_intro(i) i-below-and-hits]
+                            }
+                          @conclusion-with-i |
+                            exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+                            [by exists_elim with-index-i]
+                        }
+                      @conclusion-with-r |
+                        exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+                        [by exists_elim with-remainder-r]
+                    }
+                  @conclusion-with-q |
+                    exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+                    [by exists_elim with-quotient-q]
+                }
+              @conclusion-g-listed |
+                exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+                [by exists_elim with-representative-k]
+            }
+          @covers |
+            forall g: Zn; exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g
+            [by forall_intro generalize-g]
+          @listing-facts |
+            toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i2: Nat; less_than(i2, m) and znAt(w, i2) = g)
+            [using tautology image-of-m entries-distinct covers]
+          @with-w |
+            exists w2: ZnSeq; toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w2, i) = znAt(w2, j) -> i = j) and (forall g: Zn; exists i2: Nat; less_than(i2, m) and znAt(w2, i2) = g)
+            [by exists_intro(w) listing-facts]
+          @conclusion-witness-m |
+            exists m2: Nat; exists w2: ZnSeq; toInt(m2) = N and (forall i: Nat; forall j: Nat; less_than(i, m2) -> less_than(j, m2) -> znAt(w2, i) = znAt(w2, j) -> i = j) and (forall g: Zn; exists i2: Nat; less_than(i2, m2) and znAt(w2, i2) = g)
+            [by exists_intro(m) with-w]
+        }
+      @conclusion-with-w |
+        exists m2: Nat; exists w2: ZnSeq; toInt(m2) = N and (forall i: Nat; forall j: Nat; less_than(i, m2) -> less_than(j, m2) -> znAt(w2, i) = znAt(w2, j) -> i = j) and (forall g: Zn; exists i2: Nat; less_than(i2, m2) and znAt(w2, i2) = g)
+        [by exists_elim with-sequence-w]
+    }
+  @conclusion |
+    exists m: Nat; exists w: ZnSeq;
+      toInt(m) = N
+      and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j)
+      and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+    [by exists_elim with-index-m]
+qed
+
+// JUDSON §4.1 EXERCISE 29: for n > 2, ℤ_n has an even number of generators — listed by a
+// sequence of even length. The listing of ℤ_n feeds the transported theorem; the hypothesis
+// 2 < n crosses from ℤ to the index sort through the embedding.
+theorem znHasAnEvenNumberOfGenerators: int_less_than(isucc(isucc(IZERO)), N) ->
+  exists v: ZnSeq; exists p: Nat;
+  (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+  and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+  and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+  and peano.divides(peano_parity.TWO, p)
+proof
+  @given-three-classes |
+    assume int_less_than(isucc(isucc(IZERO)), N) {
+      @three-classes |
+        int_less_than(isucc(isucc(IZERO)), N)
+        [by hypothesis given-three-classes]
+      @listing-exists |
+        exists m: Nat; exists w: ZnSeq; toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+        [by cite znIsListedByItsRepresentatives]
+      @zero-image |
+        toInt(NZERO) = IZERO
+        [by cite toIntZero]
+      @one-image |
+        toInt(succ(NZERO)) = isucc(toInt(NZERO))
+        [using specialize toIntSucc(NZERO)]
+      @two-image |
+        toInt(succ(succ(NZERO))) = isucc(toInt(succ(NZERO)))
+        [using specialize toIntSucc(succ(NZERO))]
+      @two-is-two |
+        toInt(succ(succ(NZERO))) = isucc(isucc(IZERO))
+        [using simplify zero-image one-image two-image]
+      @with-length-m |
+        unpack m: Nat from listing-exists {
+          @after-m |
+            exists w: ZnSeq; toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+            [by hypothesis with-length-m]
+          @with-listing-w |
+            unpack w: ZnSeq from after-m {
+              @listing-facts |
+                toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+                [by hypothesis with-listing-w]
+              @image-of-m |
+                toInt(m) = N
+                [using tautology listing-facts]
+              @distinct |
+                forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+                [using tautology listing-facts]
+              @covers |
+                forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g
+                [using tautology listing-facts]
+              @two-image-below-n |
+                int_less_than(toInt(succ(succ(NZERO))), N)
+                [by rewrite two-is-two three-classes]
+              @two-below-image-of-m |
+                int_less_than(toInt(succ(succ(NZERO))), toInt(m))
+                [by rewrite image-of-m two-image-below-n]
+              @two-below-m |
+                less_than(succ(succ(NZERO)), m)
+                [using specialize toIntReflectsOrder(succ(succ(NZERO)), m) two-below-image-of-m]
+              @conclusion-generators-even |
+                exists v: ZnSeq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g) and peano.divides(peano_parity.TWO, p)
+                [using specialize generatorsOfAListedZnAreEvenInNumber(m, w) distinct covers two-below-m]
+            }
+          @conclusion-with-w |
+            exists v: ZnSeq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g) and peano.divides(peano_parity.TWO, p)
+            [by exists_elim with-listing-w]
+        }
+      @conclusion-with-m |
+        exists v: ZnSeq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g) and peano.divides(peano_parity.TWO, p)
+        [by exists_elim with-length-m]
+    }
+  @conclusion |
+    int_less_than(isucc(isucc(IZERO)), N) ->
+      exists v: ZnSeq; exists p: Nat;
+      (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+      and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+      and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+      and peano.divides(peano_parity.TWO, p)
+    [by implies_intro given-three-classes]
+qed

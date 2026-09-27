@@ -14,6 +14,7 @@
 
 import group <<< "std/group.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
+import group_power <<< "std/group/power.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import peano_parity <<< "std/peano/parity.b4m"
@@ -64,6 +65,18 @@ theorem dividesSub = peano_divides.dividesSub
 theorem dividesRefl = peano_divides.dividesRefl
 theorem invInvolution = group.invInvolution
 theorem inverseUnique = group.inverseUnique
+sort Int = group_power.Int
+const IZERO = group_power.ZERO
+func isucc = group_power.succ
+func iprev = group_power.prev
+func ineg = group_power.neg
+func power = group_power.power
+axiom powerZero = group_power.powerZero
+axiom powerSucc = group_power.powerSucc
+axiom powerPrev = group_power.powerPrev
+theorem powerNegInverse = group_power.powerNegInverse
+theorem powerInverseBase = group_power.powerInverseBase
+theorem intInduction = group_power.induction
 theorem opInverseRight = group.opInverseRight
 axiom opIdentityLeft = group.opIdentityLeft
 
@@ -2699,5 +2712,554 @@ proof
   @conclusion |
     forall n: Nat; forall w: Seq;
       listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> divides(TWO, n) -> exists a: Grp; a != E and op(a, a) = E
+    [by forall_intro generalize-n]
+qed
+
+// -- generators of a finite group come in pairs ---------------------------------------------
+
+// g GENERATES the group: every element is an integer power of g (std/group/power.b4m).
+define generates(g) = forall y: Grp; exists k: Int; y = power(g, k)
+
+// If g² = e, every power of g is e or g: induction over the integer exponent, both ways
+// (g⁻¹ = g as well).
+theorem squareIdentityPowersAreTwoValued: forall g: Grp; op(g, g) = E -> forall k: Int; (power(g, k) = E or power(g, k) = g)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @given-square |
+        assume op(g, g) = E {
+          @square |
+            op(g, g) = E
+            [by hypothesis given-square]
+          @g-is-its-inverse |
+            g = inverse(g)
+            [using specialize inverseUnique(g, g) square]
+          @identity-times-g |
+            op(E, g) = g
+            [using specialize opIdentityLeft(g)]
+          @zeroth-power |
+            power(g, IZERO) = E
+            [using specialize powerZero(g)]
+          @base-case |
+            power(g, IZERO) = E or power(g, IZERO) = g
+            [using tautology zeroth-power]
+          @step-up |
+            fix k: Int {
+              @given-two-valued |
+                assume power(g, k) = E or power(g, k) = g {
+                  @two-valued |
+                    power(g, k) = E or power(g, k) = g
+                    [by hypothesis given-two-valued]
+                  @next-unfolds |
+                    power(g, isucc(k)) = op(power(g, k), g)
+                    [using specialize powerSucc(g, k)]
+                  @conclusion-next-two-valued |
+                    power(g, isucc(k)) = E or power(g, isucc(k)) = g
+                    case two-valued {
+                      @when-identity |
+                        assume power(g, k) = E {
+                          @is-identity |
+                            power(g, k) = E
+                            [by hypothesis when-identity]
+                          @next-is-g |
+                            power(g, isucc(k)) = g
+                            [using simplify next-unfolds is-identity identity-times-g]
+                          @conclusion-when-identity |
+                            power(g, isucc(k)) = E or power(g, isucc(k)) = g
+                            [using tautology next-is-g]
+                        }
+                      @when-g |
+                        assume power(g, k) = g {
+                          @is-g |
+                            power(g, k) = g
+                            [by hypothesis when-g]
+                          @next-is-identity |
+                            power(g, isucc(k)) = E
+                            [using simplify next-unfolds is-g square]
+                          @conclusion-when-g |
+                            power(g, isucc(k)) = E or power(g, isucc(k)) = g
+                            [using tautology next-is-identity]
+                        }
+                    }
+                }
+              @conclusion-step-up |
+                (power(g, k) = E or power(g, k) = g) -> (power(g, isucc(k)) = E or power(g, isucc(k)) = g)
+                [by implies_intro given-two-valued]
+            }
+          @step-up-for-all-k |
+            forall k: Int; (power(g, k) = E or power(g, k) = g) -> (power(g, isucc(k)) = E or power(g, isucc(k)) = g)
+            [by forall_intro step-up]
+          @step-down |
+            fix k: Int {
+              @given-two-valued |
+                assume power(g, k) = E or power(g, k) = g {
+                  @two-valued |
+                    power(g, k) = E or power(g, k) = g
+                    [by hypothesis given-two-valued]
+                  @previous-unfolds-a |
+                    power(g, iprev(k)) = op(power(g, k), inverse(g))
+                    [using specialize powerPrev(g, k)]
+                  @previous-unfolds |
+                    power(g, iprev(k)) = op(power(g, k), g)
+                    [by rewrite g-is-its-inverse previous-unfolds-a]
+                  @conclusion-previous-two-valued |
+                    power(g, iprev(k)) = E or power(g, iprev(k)) = g
+                    case two-valued {
+                      @when-identity |
+                        assume power(g, k) = E {
+                          @is-identity |
+                            power(g, k) = E
+                            [by hypothesis when-identity]
+                          @previous-is-g |
+                            power(g, iprev(k)) = g
+                            [using simplify previous-unfolds is-identity identity-times-g]
+                          @conclusion-when-identity |
+                            power(g, iprev(k)) = E or power(g, iprev(k)) = g
+                            [using tautology previous-is-g]
+                        }
+                      @when-g |
+                        assume power(g, k) = g {
+                          @is-g |
+                            power(g, k) = g
+                            [by hypothesis when-g]
+                          @previous-is-identity |
+                            power(g, iprev(k)) = E
+                            [using simplify previous-unfolds is-g square]
+                          @conclusion-when-g |
+                            power(g, iprev(k)) = E or power(g, iprev(k)) = g
+                            [using tautology previous-is-identity]
+                        }
+                    }
+                }
+              @conclusion-step-down |
+                (power(g, k) = E or power(g, k) = g) -> (power(g, iprev(k)) = E or power(g, iprev(k)) = g)
+                [by implies_intro given-two-valued]
+            }
+          @step-down-for-all-k |
+            forall k: Int; (power(g, k) = E or power(g, k) = g) -> (power(g, iprev(k)) = E or power(g, iprev(k)) = g)
+            [by forall_intro step-down]
+          @conclusion-for-all-k |
+            forall k: Int; (power(g, k) = E or power(g, k) = g)
+            [using instantiation intInduction((fun k: Int => power(g, k) = E or power(g, k) = g)) base-case step-up-for-all-k step-down-for-all-k]
+        }
+      @conclusion-at-g |
+        op(g, g) = E -> forall k: Int; (power(g, k) = E or power(g, k) = g)
+        [by implies_intro given-square]
+    }
+  @conclusion |
+    forall g: Grp; op(g, g) = E -> forall k: Int; (power(g, k) = E or power(g, k) = g)
+    [by forall_intro generalize-g]
+qed
+
+// The inverse of a generator generates: y = g^k = (g⁻¹)^(−k).
+theorem inverseOfAGeneratorGenerates: forall g: Grp; generates(g) -> generates(inverse(g))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @given-generates |
+        assume generates(g) {
+          @g-generates |
+            generates(g)
+            [by hypothesis given-generates]
+          @generalize-y |
+            fix y: Grp {
+              @exponent-exists |
+                exists k: Int; y = power(g, k)
+                [using specialize g-generates(y)]
+              @with-exponent-k |
+                unpack k: Int from exponent-exists {
+                  @y-is-a-power |
+                    y = power(g, k)
+                    [by hypothesis with-exponent-k]
+                  @inverse-base |
+                    power(inverse(g), ineg(k)) = inverse(power(g, ineg(k)))
+                    [using specialize powerInverseBase(g, ineg(k))]
+                  @negated-exponent |
+                    power(g, ineg(k)) = inverse(power(g, k))
+                    [using specialize powerNegInverse(g, k)]
+                  @doubly-inverted |
+                    power(inverse(g), ineg(k)) = inverse(inverse(power(g, k)))
+                    [by rewrite negated-exponent inverse-base]
+                  @undone |
+                    inverse(inverse(power(g, k))) = power(g, k)
+                    [using specialize invInvolution(power(g, k))]
+                  @inverse-power-is-the-power |
+                    power(inverse(g), ineg(k)) = power(g, k)
+                    [using chain doubly-inverted undone]
+                  @y-is-an-inverse-power |
+                    y = power(inverse(g), ineg(k))
+                    [by rewrite inverse-power-is-the-power y-is-a-power]
+                  @conclusion-witness |
+                    exists k2: Int; y = power(inverse(g), k2)
+                    [by exists_intro(ineg(k)) y-is-an-inverse-power]
+                }
+              @conclusion-y-is-reached |
+                exists k2: Int; y = power(inverse(g), k2)
+                [by exists_elim with-exponent-k]
+            }
+          @conclusion-inverse-generates |
+            generates(inverse(g))
+            [by forall_intro generalize-y]
+        }
+      @conclusion-at-g |
+        generates(g) -> generates(inverse(g))
+        [by implies_intro given-generates]
+    }
+  @conclusion |
+    forall g: Grp; generates(g) -> generates(inverse(g))
+    [by forall_intro generalize-g]
+qed
+
+// In a group of order n > 2 no generator is its own inverse: g = g⁻¹ makes every power of g
+// one of e, g, so a listing of the group takes at most two values, i.e. n ≤ 2.
+theorem generatorIsNotSelfInverse: forall n: Nat; forall w: Seq;
+  listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) ->
+  forall g: Grp; generates(g) -> g != inverse(g)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-w |
+        fix w: Seq {
+          @given-injective |
+            assume listsWithoutRepetition(w, n) {
+              @given-covers |
+                assume (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) {
+                  @given-three |
+                    assume less_than(succ(succ(ZERO)), n) {
+                      @injective |
+                        listsWithoutRepetition(w, n)
+                        [by hypothesis given-injective]
+                      @three |
+                        less_than(succ(succ(ZERO)), n)
+                        [by hypothesis given-three]
+                      @generalize-g |
+                        fix g: Grp {
+                          @given-generates |
+                            assume generates(g) {
+                              @g-generates |
+                                generates(g)
+                                [by hypothesis given-generates]
+                              @suppose-self-inverse |
+                                assume g = inverse(g) {
+                                  @self-inverse |
+                                    g = inverse(g)
+                                    [by hypothesis suppose-self-inverse]
+                                  @g-times-inverse |
+                                    op(g, inverse(g)) = E
+                                    [using specialize opInverseRight(g)]
+                                  @square |
+                                    op(g, g) = E
+                                    [by rewrite self-inverse g-times-inverse]
+                                  @powers-two-valued |
+                                    forall k: Int; (power(g, k) = E or power(g, k) = g)
+                                    [using specialize squareIdentityPowersAreTwoValued(g) square]
+                                  @generalize-i |
+                                    fix i: Nat {
+                                      @given-i-in-range |
+                                        assume less_than(i, n) {
+                                          @exponent-exists |
+                                            exists k: Int; at(w, i) = power(g, k)
+                                            [using specialize g-generates(at(w, i))]
+                                          @with-exponent-k |
+                                            unpack k: Int from exponent-exists {
+                                              @entry-is-a-power |
+                                                at(w, i) = power(g, k)
+                                                [by hypothesis with-exponent-k]
+                                              @power-two-valued |
+                                                power(g, k) = E or power(g, k) = g
+                                                [using specialize powers-two-valued(k)]
+                                              @conclusion-entry-two-valued |
+                                                at(w, i) = E or at(w, i) = g
+                                                [by rewrite entry-is-a-power power-two-valued]
+                                            }
+                                          @conclusion-entry-two-valued-at-i |
+                                            at(w, i) = E or at(w, i) = g
+                                            [by exists_elim with-exponent-k]
+                                        }
+                                      @conclusion-two-valued-clause |
+                                        less_than(i, n) -> (at(w, i) = E or at(w, i) = g)
+                                        [by implies_intro given-i-in-range]
+                                    }
+                                  @listing-two-valued |
+                                    forall i: Nat; less_than(i, n) -> (at(w, i) = E or at(w, i) = g)
+                                    [by forall_intro generalize-i]
+                                  @at-most-two |
+                                    not less_than(succ(succ(ZERO)), n)
+                                    [using specialize twoValuesAdmitAtMostTwoEntries(w, n, E, g) injective listing-two-valued]
+                                }
+                              @conclusion-not-self-inverse |
+                                g != inverse(g)
+                                [by not_intro suppose-self-inverse three at-most-two]
+                            }
+                          @conclusion-at-g |
+                            generates(g) -> g != inverse(g)
+                            [by implies_intro given-generates]
+                        }
+                      @discharge-g |
+                        forall g: Grp; generates(g) -> g != inverse(g)
+                        [by forall_intro generalize-g]
+                    }
+                  @conclusion-given-three |
+                    less_than(succ(succ(ZERO)), n) -> forall g: Grp; generates(g) -> g != inverse(g)
+                    [by implies_intro given-three]
+                }
+              @conclusion-given-covers |
+                (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> forall g: Grp; generates(g) -> g != inverse(g)
+                [by implies_intro given-covers]
+            }
+          @conclusion-at-w |
+            listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> forall g: Grp; generates(g) -> g != inverse(g)
+            [by implies_intro given-injective]
+        }
+      @discharge-w |
+        forall w: Seq; listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> forall g: Grp; generates(g) -> g != inverse(g)
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall n: Nat; forall w: Seq;
+      listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) ->
+      forall g: Grp; generates(g) -> g != inverse(g)
+    [by forall_intro generalize-n]
+qed
+
+// THE GENERATORS OF A FINITE GROUP OF ORDER n > 2 ARE EVEN IN NUMBER (Judson §4.1, Exercise
+// 29, for every finite group at once — ℤ_n gets it by model transfer). Split the listing of
+// the group into the generators and the rest; the generators are closed under inverse and
+// none is its own inverse, so they pair off.
+theorem generatorsOfAFiniteGroupAreEvenInNumber: forall n: Nat; forall w: Seq;
+  listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-w |
+        fix w: Seq {
+          @given-injective |
+            assume listsWithoutRepetition(w, n) {
+              @given-covers |
+                assume (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) {
+                  @given-three |
+                    assume less_than(succ(succ(ZERO)), n) {
+                      @injective |
+                        listsWithoutRepetition(w, n)
+                        [by hypothesis given-injective]
+                      @covers |
+                        (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g)
+                        [by hypothesis given-covers]
+                      @three |
+                        less_than(succ(succ(ZERO)), n)
+                        [by hypothesis given-three]
+                      @no-generator-is-self-inverse |
+                        forall g: Grp; generates(g) -> g != inverse(g)
+                        [using specialize generatorIsNotSelfInverse(n, w) injective covers three]
+                      @splitting |
+                        forall m0: Nat; forall w0: Seq; (forall i: Nat; forall j: Nat; less_than(i, m0) -> less_than(j, m0) -> at(w0, i) = at(w0, j) -> i = j) -> exists v: Seq; exists p: Nat; exists v2: Seq; exists q: Nat; add(p, q) = m0 and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, m0) and at(v, j) = at(w0, i) and generates(at(w0, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, m0) -> generates(at(w0, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w0, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, m0) and at(v2, j) = at(w0, i) and (not generates(at(w0, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, m0) -> (not generates(at(w0, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w0, i)))
+                        [using instantiation splittingAListing((fun x: Grp => generates(x)))]
+                      @split |
+                        exists v: Seq; exists p: Nat; exists v2: Seq; exists q: Nat; add(p, q) = n and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, n) and at(v2, j) = at(w, i) and (not generates(at(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, n) -> (not generates(at(w, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w, i)))
+                        [using specialize splitting(n, w) injective]
+                      @with-v |
+                        unpack v: Seq from split {
+                          @after-v |
+                            exists p: Nat; exists v2: Seq; exists q: Nat; add(p, q) = n and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, n) and at(v2, j) = at(w, i) and (not generates(at(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, n) -> (not generates(at(w, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w, i)))
+                            [by hypothesis with-v]
+                          @with-p |
+                            unpack p: Nat from after-v {
+                              @after-p |
+                                exists v2: Seq; exists q: Nat; add(p, q) = n and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, n) and at(v2, j) = at(w, i) and (not generates(at(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, n) -> (not generates(at(w, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w, i)))
+                                [by hypothesis with-p]
+                              @with-v2 |
+                                unpack v2: Seq from after-p {
+                                  @after-v2 |
+                                    exists q: Nat; add(p, q) = n and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, n) and at(v2, j) = at(w, i) and (not generates(at(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, n) -> (not generates(at(w, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w, i)))
+                                    [by hypothesis with-v2]
+                                  @with-q |
+                                    unpack q: Nat from after-v2 {
+                                      @split-facts |
+                                        add(p, q) = n and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, n) and at(v2, j) = at(w, i) and (not generates(at(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v2, i) = at(v2, j) -> i = j) and (forall i: Nat; less_than(i, n) -> (not generates(at(w, i))) -> exists j: Nat; less_than(j, q) and at(v2, j) = at(w, i)))
+                                        [by hypothesis with-q]
+                                      @generator-entries |
+                                        forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))
+                                        [using tautology split-facts]
+                                      @generators-injective |
+                                        listsWithoutRepetition(v, p)
+                                        [using tautology split-facts]
+                                      @generators-covered |
+                                        forall i: Nat; less_than(i, n) -> generates(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
+                                        [using tautology split-facts]
+
+                                      // the entries generate; every generator is an entry
+                                      @generalize-j-for-entries |
+                                        fix j: Nat {
+                                          @given-j |
+                                            assume less_than(j, p) {
+                                              @j-in-range |
+                                                less_than(j, p)
+                                                [by hypothesis given-j]
+                                              @source-exists |
+                                                exists i: Nat; less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))
+                                                [using specialize generator-entries(j) j-in-range]
+                                              @with-source-i |
+                                                unpack i: Nat from source-exists {
+                                                  @source-facts |
+                                                    less_than(i, n) and at(v, j) = at(w, i) and generates(at(w, i))
+                                                    [by hypothesis with-source-i]
+                                                  @entry-is-source |
+                                                    at(v, j) = at(w, i)
+                                                    [using tautology source-facts]
+                                                  @source-generates |
+                                                    generates(at(w, i))
+                                                    [using tautology source-facts]
+                                                  @conclusion-entry-generates |
+                                                    generates(at(v, j))
+                                                    [by rewrite entry-is-source source-generates]
+                                                }
+                                              @conclusion-entry-generates-at-j |
+                                                generates(at(v, j))
+                                                [by exists_elim with-source-i]
+                                            }
+                                          @conclusion-entry-clause |
+                                            less_than(j, p) -> generates(at(v, j))
+                                            [by implies_intro given-j]
+                                        }
+                                      @entries-generate |
+                                        forall j: Nat; less_than(j, p) -> generates(at(v, j))
+                                        [by forall_intro generalize-j-for-entries]
+                                      @generalize-g-for-covers |
+                                        fix g: Grp {
+                                          @given-g-generates |
+                                            assume generates(g) {
+                                              @g-generates |
+                                                generates(g)
+                                                [by hypothesis given-g-generates]
+                                              @g-is-listed |
+                                                exists i: Nat; less_than(i, n) and at(w, i) = g
+                                                [using specialize covers(g)]
+                                              @with-index-i |
+                                                unpack i: Nat from g-is-listed {
+                                                  @index-facts |
+                                                    less_than(i, n) and at(w, i) = g
+                                                    [by hypothesis with-index-i]
+                                                  @i-in-range |
+                                                    less_than(i, n)
+                                                    [by and_elim_left index-facts]
+                                                  @entry-is-g |
+                                                    at(w, i) = g
+                                                    [by and_elim_right index-facts]
+                                                  @entry-generates |
+                                                    generates(at(w, i))
+                                                    [by rewrite entry-is-g g-generates]
+                                                  @g-in-generators |
+                                                    exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
+                                                    [using specialize generators-covered(i) i-in-range entry-generates]
+                                                  @conclusion-g-in-generators |
+                                                    exists j: Nat; less_than(j, p) and at(v, j) = g
+                                                    [by rewrite entry-is-g g-in-generators]
+                                                }
+                                              @conclusion-g-listed |
+                                                exists j: Nat; less_than(j, p) and at(v, j) = g
+                                                [by exists_elim with-index-i]
+                                            }
+                                          @conclusion-covers-clause |
+                                            generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g
+                                            [by implies_intro given-g-generates]
+                                        }
+                                      @generators-listed |
+                                        forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g
+                                        [by forall_intro generalize-g-for-covers]
+
+                                      // the generators pair off
+                                      @generalize-j-for-no-fixed-point |
+                                        fix j: Nat {
+                                          @given-j |
+                                            assume less_than(j, p) {
+                                              @j-in-range |
+                                                less_than(j, p)
+                                                [by hypothesis given-j]
+                                              @entry-generates |
+                                                generates(at(v, j))
+                                                [using specialize entries-generate(j) j-in-range]
+                                              @conclusion-entry-not-fixed |
+                                                at(v, j) != inverse(at(v, j))
+                                                [using specialize no-generator-is-self-inverse(at(v, j)) entry-generates]
+                                            }
+                                          @conclusion-not-fixed-clause |
+                                            less_than(j, p) -> at(v, j) != inverse(at(v, j))
+                                            [by implies_intro given-j]
+                                        }
+                                      @generators-no-fixed-point |
+                                        noEntryIsItsOwnInverse(v, p)
+                                        [by forall_intro generalize-j-for-no-fixed-point]
+                                      @generalize-j-for-closed |
+                                        fix j: Nat {
+                                          @given-j |
+                                            assume less_than(j, p) {
+                                              @j-in-range |
+                                                less_than(j, p)
+                                                [by hypothesis given-j]
+                                              @entry-generates |
+                                                generates(at(v, j))
+                                                [using specialize entries-generate(j) j-in-range]
+                                              @inverse-generates |
+                                                generates(inverse(at(v, j)))
+                                                [using specialize inverseOfAGeneratorGenerates(at(v, j)) entry-generates]
+                                              @conclusion-inverse-listed |
+                                                exists j2: Nat; less_than(j2, p) and at(v, j2) = inverse(at(v, j))
+                                                [using specialize generators-listed(inverse(at(v, j))) inverse-generates]
+                                            }
+                                          @conclusion-closed-clause |
+                                            less_than(j, p) -> exists j2: Nat; less_than(j2, p) and at(v, j2) = inverse(at(v, j))
+                                            [by implies_intro given-j]
+                                        }
+                                      @generators-closed |
+                                        closedUnderInverse(v, p)
+                                        [by forall_intro generalize-j-for-closed]
+                                      @count-even |
+                                        divides(TWO, p)
+                                        [using specialize pairedListingHasEvenLength(p, v) generators-injective generators-no-fixed-point generators-closed]
+                                      @generator-listing |
+                                        (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+                                        [using tautology entries-generate generators-injective generators-listed count-even]
+                                      @with-count |
+                                        exists p2: Nat; (forall j: Nat; less_than(j, p2) -> generates(at(v, j))) and listsWithoutRepetition(v, p2) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p2) and at(v, j) = g) and divides(TWO, p2)
+                                        [by exists_intro(p) generator-listing]
+                                      @conclusion-witness-v |
+                                        exists v3: Seq; exists p3: Nat; (forall j: Nat; less_than(j, p3) -> generates(at(v3, j))) and listsWithoutRepetition(v3, p3) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p3) and at(v3, j) = g) and divides(TWO, p3)
+                                        [by exists_intro(v) with-count]
+                                    }
+                                  @conclusion-with-q |
+                                    exists v3: Seq; exists p3: Nat; (forall j: Nat; less_than(j, p3) -> generates(at(v3, j))) and listsWithoutRepetition(v3, p3) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p3) and at(v3, j) = g) and divides(TWO, p3)
+                                    [by exists_elim with-q]
+                                }
+                              @conclusion-with-v2 |
+                                exists v3: Seq; exists p3: Nat; (forall j: Nat; less_than(j, p3) -> generates(at(v3, j))) and listsWithoutRepetition(v3, p3) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p3) and at(v3, j) = g) and divides(TWO, p3)
+                                [by exists_elim with-v2]
+                            }
+                          @conclusion-with-p |
+                            exists v3: Seq; exists p3: Nat; (forall j: Nat; less_than(j, p3) -> generates(at(v3, j))) and listsWithoutRepetition(v3, p3) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p3) and at(v3, j) = g) and divides(TWO, p3)
+                            [by exists_elim with-p]
+                        }
+                      @conclusion-with-v |
+                        exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+                        [by exists_elim with-v]
+                    }
+                  @conclusion-given-three |
+                    less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+                    [by implies_intro given-three]
+                }
+              @conclusion-given-covers |
+                (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+                [by implies_intro given-covers]
+            }
+          @conclusion-at-w |
+            listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+            [by implies_intro given-injective]
+        }
+      @discharge-w |
+        forall w: Seq; listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall n: Nat; forall w: Seq;
+      listsWithoutRepetition(w, n) -> (forall g: Grp; exists i: Nat; less_than(i, n) and at(w, i) = g) -> less_than(succ(succ(ZERO)), n) -> exists v: Seq; exists p: Nat; (forall j: Nat; less_than(j, p) -> generates(at(v, j))) and listsWithoutRepetition(v, p) and (forall g: Grp; generates(g) -> exists j: Nat; less_than(j, p) and at(v, j) = g) and divides(TWO, p)
     [by forall_intro generalize-n]
 qed
