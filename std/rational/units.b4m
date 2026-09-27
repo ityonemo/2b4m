@@ -1,0 +1,208 @@
+// std/rational/units.b4m — ℚ* = ℚ ∖ {0}, the multiplicative group of ℚ, and its elements of
+// finite order.
+//
+// ℚ is an ordered field, so everything in std/field/units.b4m holds of it: ℚ* is a group
+// under multiplication (a GUARDED model of std/group.b4m on the nonzero cut), and the only
+// elements of finite order — x^n = 1 for some positive n — are ±1 (Judson §4.1, exercise 10).
+// One model block, `RationalUnits`, overlays field_order + field_units onto ℚ; the group model
+// is restated on the cut with the transferred closure facts.
+
+import group <<< "std/group.b4m"
+import field_order <<< "std/field/order.b4m"
+import field_units <<< "std/field/units.b4m"
+import rational <<< "std/rational.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Q = rational.Q
+const ZERO = rational.ZERO
+const ONE = rational.ONE
+func add = rational.add
+func mul = rational.mul
+func neg = rational.neg
+func recip = rational.recip
+pred less_than = rational.less_than
+axiom addIsAssociative = rational.addIsAssociative
+axiom addZeroLeft = rational.addZeroLeft
+axiom addNegLeft = rational.addNegLeft
+axiom addIsCommutative = rational.addIsCommutative
+axiom mulIsAssociative = rational.mulIsAssociative
+axiom mulAddDistribLeft = rational.mulAddDistribLeft
+axiom mulAddDistribRight = rational.mulAddDistribRight
+axiom mulIsCommutative = rational.mulIsCommutative
+axiom mulOneLeft = rational.mulOneLeft
+axiom fieldInverse = rational.fieldInverse
+axiom oneNotZero = rational.oneNotZero
+axiom lessThanIrreflexive = rational.lessThanIrreflexive
+axiom lessThanTransitive = rational.lessThanTransitive
+axiom lessThanTrichotomy = rational.lessThanTrichotomy
+axiom lessThanAddRight = rational.lessThanAddRight
+axiom lessThanAddCancel = rational.lessThanAddCancel
+axiom positiveProduct = rational.positiveProduct
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+pred nat_less_than = peano.less_than
+
+// -- the nonzero cut and natural powers, in ℚ's own symbols --------------------------------
+pred nonzero(a: Q)
+axiom nonzeroCharacterization: forall a: Q; nonzero(a) iff a != ZERO
+sort QStar = Q where nonzero
+
+func pow(x: Q, n: Nat) => Q
+axiom powZero: forall x: Q; pow(x, NZERO) = ONE
+axiom powSucc: forall x: Q; forall n: Nat; pow(x, succ(n)) = mul(pow(x, n), x)
+
+// -- ℚ models the ordered field together with its multiplicative theory ------------------
+model RationalUnits {
+  field_order.OrderedField: Q
+  field_order.ZERO: ZERO
+  field_order.ONE: ONE
+  field_order.add: add
+  field_order.mul: mul
+  field_order.neg: neg
+  field_order.recip: recip
+  field_order.less_than: less_than
+  field_units.nonzero: nonzero
+  field_units.pow: pow
+  field_order.addIsAssociative <- addIsAssociative
+  field_order.addZeroLeft <- addZeroLeft
+  field_order.addNegLeft <- addNegLeft
+  field_order.addIsCommutative <- addIsCommutative
+  field_order.mulIsAssociative <- mulIsAssociative
+  field_order.mulAddDistribLeft <- mulAddDistribLeft
+  field_order.mulAddDistribRight <- mulAddDistribRight
+  field_order.mulIsCommutative <- mulIsCommutative
+  field_order.mulOneLeft <- mulOneLeft
+  field_order.fieldInverse <- fieldInverse
+  field_order.oneNotZero <- oneNotZero
+  field_order.lessThanIrreflexive <- lessThanIrreflexive
+  field_order.lessThanTransitive <- lessThanTransitive
+  field_order.lessThanTrichotomy <- lessThanTrichotomy
+  field_order.lessThanAddRight <- lessThanAddRight
+  field_order.lessThanAddCancel <- lessThanAddCancel
+  field_order.positiveProduct <- positiveProduct
+  field_units.nonzeroCharacterization <- nonzeroCharacterization
+  field_units.powZero <- powZero
+  field_units.powSucc <- powSucc
+}
+
+// the closure facts, transferred.
+theorem oneIsNonzero: nonzero(ONE)
+proof
+  @conclusion |
+    nonzero(ONE)
+    [using model(RationalUnits) field_units.oneIsNonzero]
+qed
+
+theorem productOfNonzeroIsNonzero: forall a, b: Q; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Q; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+    [using model(RationalUnits) field_units.productOfNonzeroIsNonzero]
+qed
+
+theorem recipOfNonzeroIsNonzero: forall a: Q; nonzero(a) -> nonzero(recip(a))
+proof
+  @conclusion |
+    forall a: Q; nonzero(a) -> nonzero(recip(a))
+    [using model(RationalUnits) field_units.recipOfNonzeroIsNonzero]
+qed
+
+// the group laws on the cut.
+theorem unitsAssoc: forall x, y, z: QStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+proof
+  @generalize-x |
+    fix x: QStar {
+      @generalize-y |
+        fix y: QStar {
+          @generalize-z |
+            fix z: QStar {
+              @conclusion-inner |
+                mul(mul(x, y), z) = mul(x, mul(y, z))
+                [using specialize mulIsAssociative(x, y, z)]
+            }
+          @discharge-z |
+            forall z: QStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: QStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: QStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsIdentityLeft: forall x: QStar; mul(ONE, x) = x
+proof
+  @generalize-x |
+    fix x: QStar {
+      @conclusion-inner |
+        mul(ONE, x) = x
+        [using specialize mulOneLeft(x)]
+    }
+  @conclusion |
+    forall x: QStar; mul(ONE, x) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsInverseLeft: forall x: QStar; mul(recip(x), x) = ONE
+proof
+  @recip-on-the-left |
+    forall a: Q; a != ZERO -> mul(recip(a), a) = ONE
+    [using model(RationalUnits) field_order.recipMulLeft]
+  @generalize-x |
+    fix x: QStar {
+      @x-nonzero |
+        nonzero(x)
+        [by predicate generalize-x]
+      @x-characterized |
+        nonzero(x) iff x != ZERO
+        [using specialize nonzeroCharacterization(x)]
+      @x-not-zero |
+        x != ZERO
+        [using tautology x-characterized x-nonzero]
+      @conclusion-inner |
+        mul(recip(x), x) = ONE
+        [using specialize recip-on-the-left(x) x-not-zero]
+    }
+  @conclusion |
+    forall x: QStar; mul(recip(x), x) = ONE
+    [by forall_intro generalize-x]
+qed
+
+// ℚ* is a GROUP under multiplication.
+model RationalUnitsGroup {
+  group.Grp: QStar
+  group.E: ONE(oneIsNonzero)
+  group.op: mul -| productOfNonzeroIsNonzero
+  group.inverse: recip -| recipOfNonzeroIsNonzero
+  group.opAssoc <- unitsAssoc
+  group.opIdentityLeft <- unitsIdentityLeft
+  group.opInverseLeft <- unitsInverseLeft
+}
+
+// PAYOFF: the group corpus on ℚ*.
+theorem unitsCancelLeft: forall a, b, c: QStar; mul(a, b) = mul(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: QStar; mul(a, b) = mul(a, c) -> b = c
+    [using model(RationalUnitsGroup) group.cancelLeft]
+qed
+
+theorem recipIsUnique: forall a, b: QStar; mul(a, b) = ONE -> b = recip(a)
+proof
+  @conclusion |
+    forall a, b: QStar; mul(a, b) = ONE -> b = recip(a)
+    [using model(RationalUnitsGroup) group.inverseUnique]
+qed
+
+// THE ELEMENTS OF FINITE ORDER IN ℚ* ARE ±1 — transferred from the ordered-field proof.
+theorem finiteOrderIsPlusOrMinusOne: forall x: Q; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+proof
+  @conclusion |
+    forall x: Q; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+    [using model(RationalUnits) field_units.finiteOrderIsPlusOrMinusOne]
+qed

@@ -1,0 +1,1077 @@
+// std/field/units.b4m — the MULTIPLICATIVE GROUP of an ordered field, and its elements of
+// finite order.
+//
+// F* = F ∖ {0} is a group under multiplication: `nonzero` cuts the field, ONE is nonzero,
+// products and reciprocals of nonzero elements are nonzero, and the field axioms discharge
+// the group axioms on the cut — a GUARDED model of std/group.b4m (as U(n) in
+// std/integer/mod-n.b4m). Then natural powers x^n, and the ordered-field fact behind
+// Judson §4.1 exercise 10 for ℚ* and ℝ*: the only elements of finite order are ±1 —
+// a positive x ≠ 1 has x^n on the same side of 1 as x, and a negative x = −y has
+// x^n = (−1)^n y^n, which is 1 only when y^n = 1, i.e. y = 1.
+//
+// ℚ and ℝ get all of this by modeling this file (std/rational/units.b4m, std/real/units.b4m).
+
+import group <<< "std/group.b4m"
+import field_order <<< "std/field/order.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort F = field_order.OrderedField
+const ZERO = field_order.ZERO
+const ONE = field_order.ONE
+func add = field_order.add
+func mul = field_order.mul
+func neg = field_order.neg
+func recip = field_order.recip
+pred less_than = field_order.less_than
+axiom mulIsAssociative = field_order.mulIsAssociative
+axiom mulIsCommutative = field_order.mulIsCommutative
+axiom mulOneLeft = field_order.mulOneLeft
+axiom fieldInverse = field_order.fieldInverse
+axiom oneNotZero = field_order.oneNotZero
+axiom lessThanIrreflexive = field_order.lessThanIrreflexive
+axiom lessThanTransitive = field_order.lessThanTransitive
+axiom lessThanTrichotomy = field_order.lessThanTrichotomy
+axiom positiveProduct = field_order.positiveProduct
+theorem mulOneRight = field_order.mulOneRight
+theorem recipMulLeft = field_order.recipMulLeft
+theorem noZeroDivisors = field_order.noZeroDivisors
+theorem mulZeroRight = field_order.mulZeroRight
+theorem negMulNeg = field_order.negMulNeg
+theorem mulNegLeft = field_order.mulNegLeft
+theorem negNeg = field_order.negNeg
+theorem mulLeftSwap = field_order.mulLeftSwap
+theorem zeroLessThanOne = field_order.zeroLessThanOne
+theorem negOfNegativeIsPositive = field_order.negOfNegativeIsPositive
+theorem negOneLessThanZero = field_order.negOneLessThanZero
+theorem productAboveOne = field_order.productAboveOne
+theorem productBelowOne = field_order.productBelowOne
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+pred nat_less_than = peano.less_than
+axiom induction = peano.induction
+axiom addZeroLeft = peano.addZeroLeft
+axiom natLessThanIntro = peano_order.lessThanIntro
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem zeroOrSucc = peano.zeroOrSucc
+
+// -- F* = the nonzero elements ------------------------------------------------------------
+// An OPAQUE predicate pinned by its characterization (not a `define`), so it stays folded
+// through the guarded model transfer.
+pred nonzero(a: F)
+axiom nonzeroCharacterization: forall a: F; nonzero(a) iff a != ZERO
+
+sort Nonzero = F where nonzero
+
+theorem oneIsNonzero: nonzero(ONE)
+proof
+  @characterization |
+    forall a: F; nonzero(a) iff a != ZERO
+    [by cite nonzeroCharacterization]
+  @one-characterized |
+    nonzero(ONE) iff ONE != ZERO
+    [using specialize characterization(ONE)]
+  @one-not-zero |
+    ONE != ZERO
+    [by cite oneNotZero]
+  @conclusion |
+    nonzero(ONE)
+    [using tautology one-characterized one-not-zero]
+qed
+
+// no zero divisors: the product of nonzero elements is nonzero.
+theorem productOfNonzeroIsNonzero: forall a, b: F; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+proof
+  @characterization |
+    forall a: F; nonzero(a) iff a != ZERO
+    [by cite nonzeroCharacterization]
+  @generalize-a |
+    fix a: F {
+      @generalize-b |
+        fix b: F {
+          @given-a-nonzero |
+            assume nonzero(a) {
+              @given-b-nonzero |
+                assume nonzero(b) {
+                  @a-nonzero |
+                    nonzero(a)
+                    [by hypothesis given-a-nonzero]
+                  @b-nonzero |
+                    nonzero(b)
+                    [by hypothesis given-b-nonzero]
+                  @a-characterized |
+                    nonzero(a) iff a != ZERO
+                    [using specialize characterization(a)]
+                  @b-characterized |
+                    nonzero(b) iff b != ZERO
+                    [using specialize characterization(b)]
+                  @product-characterized |
+                    nonzero(mul(a, b)) iff mul(a, b) != ZERO
+                    [using specialize characterization(mul(a, b))]
+                  @a-not-zero |
+                    a != ZERO
+                    [using tautology a-characterized a-nonzero]
+                  @b-not-zero |
+                    b != ZERO
+                    [using tautology b-characterized b-nonzero]
+                  @zero-product-splits |
+                    mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+                    [using specialize noZeroDivisors(a, b)]
+                  @product-not-zero |
+                    mul(a, b) != ZERO
+                    [using tautology zero-product-splits a-not-zero b-not-zero]
+                  @conclusion-product-nonzero |
+                    nonzero(mul(a, b))
+                    [using tautology product-characterized product-not-zero]
+                }
+              @b-nonzero-implies |
+                nonzero(b) -> nonzero(mul(a, b))
+                [by implies_intro given-b-nonzero]
+            }
+          @a-nonzero-implies |
+            nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+            [by implies_intro given-a-nonzero]
+        }
+      @discharge-b |
+        forall b: F; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: F; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// a·recip(a) = 1 ≠ 0, so recip(a) ≠ 0.
+theorem recipOfNonzeroIsNonzero: forall a: F; nonzero(a) -> nonzero(recip(a))
+proof
+  @characterization |
+    forall a: F; nonzero(a) iff a != ZERO
+    [by cite nonzeroCharacterization]
+  @generalize-a |
+    fix a: F {
+      @given-a-nonzero |
+        assume nonzero(a) {
+          @a-nonzero |
+            nonzero(a)
+            [by hypothesis given-a-nonzero]
+          @a-characterized |
+            nonzero(a) iff a != ZERO
+            [using specialize characterization(a)]
+          @recip-characterized |
+            nonzero(recip(a)) iff recip(a) != ZERO
+            [using specialize characterization(recip(a))]
+          @a-not-zero |
+            a != ZERO
+            [using tautology a-characterized a-nonzero]
+          @a-times-recip |
+            mul(a, recip(a)) = ONE
+            [using specialize fieldInverse(a) a-not-zero]
+          @a-times-zero |
+            mul(a, ZERO) = ZERO
+            [using specialize mulZeroRight(a)]
+          @one-not-zero |
+            ONE != ZERO
+            [by cite oneNotZero]
+          @given-recip-zero |
+            assume recip(a) = ZERO {
+              @recip-zero |
+                recip(a) = ZERO
+                [by hypothesis given-recip-zero]
+              @a-times-zero-is-one |
+                mul(a, ZERO) = ONE
+                [by rewrite recip-zero a-times-recip]
+              @one-is-zero |
+                ONE = ZERO
+                [using chain one-is-a-times-zero a-times-zero]
+              @one-is-a-times-zero |
+                ONE = mul(a, ZERO)
+                [by symmetry a-times-zero-is-one]
+            }
+          @recip-zero-implies |
+            recip(a) = ZERO -> ONE = ZERO
+            [by implies_intro given-recip-zero]
+          @recip-not-zero |
+            recip(a) != ZERO
+            [using tautology recip-zero-implies one-not-zero]
+          @conclusion-recip-nonzero |
+            nonzero(recip(a))
+            [using tautology recip-characterized recip-not-zero]
+        }
+      @a-nonzero-implies |
+        nonzero(a) -> nonzero(recip(a))
+        [by implies_intro given-a-nonzero]
+    }
+  @conclusion |
+    forall a: F; nonzero(a) -> nonzero(recip(a))
+    [by forall_intro generalize-a]
+qed
+
+// the group laws on the cut (relativized copies of the field axioms).
+theorem unitsAssoc: forall x, y, z: Nonzero; mul(mul(x, y), z) = mul(x, mul(y, z))
+proof
+  @generalize-x |
+    fix x: Nonzero {
+      @generalize-y |
+        fix y: Nonzero {
+          @generalize-z |
+            fix z: Nonzero {
+              @conclusion-inner |
+                mul(mul(x, y), z) = mul(x, mul(y, z))
+                [using specialize mulIsAssociative(x, y, z)]
+            }
+          @discharge-z |
+            forall z: Nonzero; mul(mul(x, y), z) = mul(x, mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Nonzero; mul(mul(x, y), z) = mul(x, mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Nonzero; mul(mul(x, y), z) = mul(x, mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsIdentityLeft: forall x: Nonzero; mul(ONE, x) = x
+proof
+  @generalize-x |
+    fix x: Nonzero {
+      @conclusion-inner |
+        mul(ONE, x) = x
+        [using specialize mulOneLeft(x)]
+    }
+  @conclusion |
+    forall x: Nonzero; mul(ONE, x) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsInverseLeft: forall x: Nonzero; mul(recip(x), x) = ONE
+proof
+  @characterization |
+    forall a: F; nonzero(a) iff a != ZERO
+    [by cite nonzeroCharacterization]
+  @generalize-x |
+    fix x: Nonzero {
+      @x-nonzero |
+        nonzero(x)
+        [by predicate generalize-x]
+      @x-characterized |
+        nonzero(x) iff x != ZERO
+        [using specialize characterization(x)]
+      @x-not-zero |
+        x != ZERO
+        [using tautology x-characterized x-nonzero]
+      @conclusion-inner |
+        mul(recip(x), x) = ONE
+        [using specialize recipMulLeft(x) x-not-zero]
+    }
+  @conclusion |
+    forall x: Nonzero; mul(recip(x), x) = ONE
+    [by forall_intro generalize-x]
+qed
+
+// F* is a GROUP under multiplication.
+model UnitsGroup {
+  group.Grp: Nonzero
+  group.E: ONE(oneIsNonzero)
+  group.op: mul -| productOfNonzeroIsNonzero
+  group.inverse: recip -| recipOfNonzeroIsNonzero
+  group.opAssoc <- unitsAssoc
+  group.opIdentityLeft <- unitsIdentityLeft
+  group.opInverseLeft <- unitsInverseLeft
+}
+
+// PAYOFF: the group corpus on F*, e.g. cancellation and uniqueness of inverses.
+theorem unitsCancelLeft: forall a, b, c: Nonzero; mul(a, b) = mul(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: Nonzero; mul(a, b) = mul(a, c) -> b = c
+    [using model(UnitsGroup) group.cancelLeft]
+qed
+
+theorem recipIsUnique: forall a, b: Nonzero; mul(a, b) = ONE -> b = recip(a)
+proof
+  @conclusion |
+    forall a, b: Nonzero; mul(a, b) = ONE -> b = recip(a)
+    [using model(UnitsGroup) group.inverseUnique]
+qed
+
+// -- natural powers x^n ---------------------------------------------------------------------
+// Named axioms rather than a definition block: the ℚ and ℝ models discharge them by name.
+func pow(x: F, n: Nat) => F
+axiom powZero: forall x: F; pow(x, NZERO) = ONE
+axiom powSucc: forall x: F; forall n: Nat; pow(x, succ(n)) = mul(pow(x, n), x)
+
+// 0 < x ⟹ 0 < x^n.
+theorem powPositive: forall x: F; less_than(ZERO, x) -> forall n: Nat; less_than(ZERO, pow(x, n))
+proof
+  @generalize-x |
+    fix x: F {
+      @given-positive |
+        assume less_than(ZERO, x) {
+          @positive |
+            less_than(ZERO, x)
+            [by hypothesis given-positive]
+          @zeroth-power |
+            pow(x, NZERO) = ONE
+            [using specialize powZero(x)]
+          @zero-below-one |
+            less_than(ZERO, ONE)
+            [by cite zeroLessThanOne]
+          @base-case |
+            less_than(ZERO, pow(x, NZERO))
+            [by rewrite zeroth-power zero-below-one]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume less_than(ZERO, pow(x, k)) {
+                  @inductive-hypothesis |
+                    less_than(ZERO, pow(x, k))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-unfolds |
+                    pow(x, succ(k)) = mul(pow(x, k), x)
+                    [using specialize powSucc(x, k)]
+                  @product-positive |
+                    less_than(ZERO, mul(pow(x, k), x))
+                    [using specialize positiveProduct(pow(x, k), x) inductive-hypothesis positive]
+                  @conclusion-step |
+                    less_than(ZERO, pow(x, succ(k)))
+                    [by rewrite next-unfolds product-positive]
+                }
+              @induction-step-at-k |
+                less_than(ZERO, pow(x, k)) -> less_than(ZERO, pow(x, succ(k)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; less_than(ZERO, pow(x, k)) -> less_than(ZERO, pow(x, succ(k)))
+            [by forall_intro induction-step]
+          @conclusion-all-powers |
+            forall n: Nat; less_than(ZERO, pow(x, n))
+            [using instantiation induction((fun k: Nat => less_than(ZERO, pow(x, k)))) base-case induction-step-for-all-k]
+        }
+      @positive-implies |
+        less_than(ZERO, x) -> forall n: Nat; less_than(ZERO, pow(x, n))
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall x: F; less_than(ZERO, x) -> forall n: Nat; less_than(ZERO, pow(x, n))
+    [by forall_intro generalize-x]
+qed
+
+// x^1 = x.
+theorem powOne: forall x: F; pow(x, succ(NZERO)) = x
+proof
+  @generalize-x |
+    fix x: F {
+      @first-unfolds |
+        pow(x, succ(NZERO)) = mul(pow(x, NZERO), x)
+        [using specialize powSucc(x, NZERO)]
+      @zeroth-power |
+        pow(x, NZERO) = ONE
+        [using specialize powZero(x)]
+      @first-is-one-times-x |
+        pow(x, succ(NZERO)) = mul(ONE, x)
+        [by rewrite zeroth-power first-unfolds]
+      @one-times-x |
+        mul(ONE, x) = x
+        [using specialize mulOneLeft(x)]
+      @conclusion-first-power |
+        pow(x, succ(NZERO)) = x
+        [using chain first-is-one-times-x one-times-x]
+    }
+  @conclusion |
+    forall x: F; pow(x, succ(NZERO)) = x
+    [by forall_intro generalize-x]
+qed
+
+// 1 < x ⟹ 1 < x^(n+1).
+theorem powAboveOne: forall x: F; less_than(ONE, x) -> forall n: Nat; less_than(ONE, pow(x, succ(n)))
+proof
+  @generalize-x |
+    fix x: F {
+      @given-above-one |
+        assume less_than(ONE, x) {
+          @above-one |
+            less_than(ONE, x)
+            [by hypothesis given-above-one]
+          @first-power |
+            pow(x, succ(NZERO)) = x
+            [using specialize powOne(x)]
+          @base-case |
+            less_than(ONE, pow(x, succ(NZERO)))
+            [by rewrite first-power above-one]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume less_than(ONE, pow(x, succ(k))) {
+                  @inductive-hypothesis |
+                    less_than(ONE, pow(x, succ(k)))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-unfolds |
+                    pow(x, succ(succ(k))) = mul(pow(x, succ(k)), x)
+                    [using specialize powSucc(x, succ(k))]
+                  @product-above-one |
+                    less_than(ONE, mul(pow(x, succ(k)), x))
+                    [using specialize productAboveOne(pow(x, succ(k)), x) inductive-hypothesis above-one]
+                  @conclusion-step |
+                    less_than(ONE, pow(x, succ(succ(k))))
+                    [by rewrite next-unfolds product-above-one]
+                }
+              @induction-step-at-k |
+                less_than(ONE, pow(x, succ(k))) -> less_than(ONE, pow(x, succ(succ(k))))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; less_than(ONE, pow(x, succ(k))) -> less_than(ONE, pow(x, succ(succ(k))))
+            [by forall_intro induction-step]
+          @conclusion-all-powers |
+            forall n: Nat; less_than(ONE, pow(x, succ(n)))
+            [using instantiation induction((fun k: Nat => less_than(ONE, pow(x, succ(k))))) base-case induction-step-for-all-k]
+        }
+      @above-one-implies |
+        less_than(ONE, x) -> forall n: Nat; less_than(ONE, pow(x, succ(n)))
+        [by implies_intro given-above-one]
+    }
+  @conclusion |
+    forall x: F; less_than(ONE, x) -> forall n: Nat; less_than(ONE, pow(x, succ(n)))
+    [by forall_intro generalize-x]
+qed
+
+// 0 < x < 1 ⟹ x^(n+1) < 1.
+theorem powBelowOne: forall x: F; less_than(ZERO, x) -> less_than(x, ONE) -> forall n: Nat; less_than(pow(x, succ(n)), ONE)
+proof
+  @generalize-x |
+    fix x: F {
+      @given-positive |
+        assume less_than(ZERO, x) {
+          @given-below-one |
+            assume less_than(x, ONE) {
+              @positive |
+                less_than(ZERO, x)
+                [by hypothesis given-positive]
+              @below-one |
+                less_than(x, ONE)
+                [by hypothesis given-below-one]
+              @first-power |
+                pow(x, succ(NZERO)) = x
+                [using specialize powOne(x)]
+              @base-case |
+                less_than(pow(x, succ(NZERO)), ONE)
+                [by rewrite first-power below-one]
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume less_than(pow(x, succ(k)), ONE) {
+                      @inductive-hypothesis |
+                        less_than(pow(x, succ(k)), ONE)
+                        [by hypothesis given-inductive-hypothesis]
+                      @next-unfolds |
+                        pow(x, succ(succ(k))) = mul(pow(x, succ(k)), x)
+                        [using specialize powSucc(x, succ(k))]
+                      @product-below-one |
+                        less_than(mul(pow(x, succ(k)), x), ONE)
+                        [using specialize productBelowOne(pow(x, succ(k)), x) inductive-hypothesis positive below-one]
+                      @conclusion-step |
+                        less_than(pow(x, succ(succ(k))), ONE)
+                        [by rewrite next-unfolds product-below-one]
+                    }
+                  @induction-step-at-k |
+                    less_than(pow(x, succ(k)), ONE) -> less_than(pow(x, succ(succ(k))), ONE)
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat; less_than(pow(x, succ(k)), ONE) -> less_than(pow(x, succ(succ(k))), ONE)
+                [by forall_intro induction-step]
+              @conclusion-all-powers |
+                forall n: Nat; less_than(pow(x, succ(n)), ONE)
+                [using instantiation induction((fun k: Nat => less_than(pow(x, succ(k)), ONE))) base-case induction-step-for-all-k]
+            }
+          @below-one-implies |
+            less_than(x, ONE) -> forall n: Nat; less_than(pow(x, succ(n)), ONE)
+            [by implies_intro given-below-one]
+        }
+      @positive-implies |
+        less_than(ZERO, x) -> less_than(x, ONE) -> forall n: Nat; less_than(pow(x, succ(n)), ONE)
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall x: F; less_than(ZERO, x) -> less_than(x, ONE) -> forall n: Nat; less_than(pow(x, succ(n)), ONE)
+    [by forall_intro generalize-x]
+qed
+
+// (−1)^n is 1 or −1.
+theorem powOfNegOneIsPlusOrMinusOne: forall n: Nat; pow(neg(ONE), n) = ONE or pow(neg(ONE), n) = neg(ONE)
+proof
+  @zeroth-power |
+    pow(neg(ONE), NZERO) = ONE
+    [using specialize powZero(neg(ONE))]
+  @base-case |
+    pow(neg(ONE), NZERO) = ONE or pow(neg(ONE), NZERO) = neg(ONE)
+    [using tautology zeroth-power]
+  @one-times-neg-one |
+    mul(ONE, neg(ONE)) = neg(ONE)
+    [using specialize mulOneLeft(neg(ONE))]
+  @neg-one-squared-unsigned |
+    mul(neg(ONE), neg(ONE)) = mul(ONE, ONE)
+    [using specialize negMulNeg(ONE, ONE)]
+  @one-times-one |
+    mul(ONE, ONE) = ONE
+    [using specialize mulOneLeft(ONE)]
+  @neg-one-squared |
+    mul(neg(ONE), neg(ONE)) = ONE
+    [using chain neg-one-squared-unsigned one-times-one]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume pow(neg(ONE), k) = ONE or pow(neg(ONE), k) = neg(ONE) {
+          @inductive-hypothesis |
+            pow(neg(ONE), k) = ONE or pow(neg(ONE), k) = neg(ONE)
+            [by hypothesis given-inductive-hypothesis]
+          @next-unfolds |
+            pow(neg(ONE), succ(k)) = mul(pow(neg(ONE), k), neg(ONE))
+            [using specialize powSucc(neg(ONE), k)]
+          @conclusion-step |
+            pow(neg(ONE), succ(k)) = ONE or pow(neg(ONE), succ(k)) = neg(ONE)
+            case inductive-hypothesis {
+              @when-one |
+                assume pow(neg(ONE), k) = ONE {
+                  @is-one |
+                    pow(neg(ONE), k) = ONE
+                    [by hypothesis when-one]
+                  @next-is-one-times-neg-one |
+                    pow(neg(ONE), succ(k)) = mul(ONE, neg(ONE))
+                    [by rewrite is-one next-unfolds]
+                  @next-is-neg-one |
+                    pow(neg(ONE), succ(k)) = neg(ONE)
+                    [using chain next-is-one-times-neg-one one-times-neg-one]
+                  @conclusion-when-one |
+                    pow(neg(ONE), succ(k)) = ONE or pow(neg(ONE), succ(k)) = neg(ONE)
+                    [using tautology next-is-neg-one]
+                }
+              @when-neg-one |
+                assume pow(neg(ONE), k) = neg(ONE) {
+                  @is-neg-one |
+                    pow(neg(ONE), k) = neg(ONE)
+                    [by hypothesis when-neg-one]
+                  @next-is-neg-one-squared |
+                    pow(neg(ONE), succ(k)) = mul(neg(ONE), neg(ONE))
+                    [by rewrite is-neg-one next-unfolds]
+                  @next-is-one |
+                    pow(neg(ONE), succ(k)) = ONE
+                    [using chain next-is-neg-one-squared neg-one-squared]
+                  @conclusion-when-neg-one |
+                    pow(neg(ONE), succ(k)) = ONE or pow(neg(ONE), succ(k)) = neg(ONE)
+                    [using tautology next-is-one]
+                }
+            }
+        }
+      @induction-step-at-k |
+        (pow(neg(ONE), k) = ONE or pow(neg(ONE), k) = neg(ONE)) -> (pow(neg(ONE), succ(k)) = ONE or pow(neg(ONE), succ(k)) = neg(ONE))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (pow(neg(ONE), k) = ONE or pow(neg(ONE), k) = neg(ONE)) -> (pow(neg(ONE), succ(k)) = ONE or pow(neg(ONE), succ(k)) = neg(ONE))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; pow(neg(ONE), n) = ONE or pow(neg(ONE), n) = neg(ONE)
+    [using instantiation induction((fun k: Nat => pow(neg(ONE), k) = ONE or pow(neg(ONE), k) = neg(ONE))) base-case induction-step-for-all-k]
+qed
+
+// (−y)^n = (−1)^n · y^n.
+theorem powOfNeg: forall y: F; forall n: Nat; pow(neg(y), n) = mul(pow(neg(ONE), n), pow(y, n))
+proof
+  @generalize-y |
+    fix y: F {
+      @neg-y-zeroth |
+        pow(neg(y), NZERO) = ONE
+        [using specialize powZero(neg(y))]
+      @neg-one-zeroth |
+        pow(neg(ONE), NZERO) = ONE
+        [using specialize powZero(neg(ONE))]
+      @y-zeroth |
+        pow(y, NZERO) = ONE
+        [using specialize powZero(y)]
+      @one-times-one |
+        mul(ONE, ONE) = ONE
+        [using specialize mulOneLeft(ONE)]
+      @base-case |
+        pow(neg(y), NZERO) = mul(pow(neg(ONE), NZERO), pow(y, NZERO))
+        [using simplify neg-y-zeroth neg-one-zeroth y-zeroth one-times-one]
+      @neg-one-times-y-raw |
+        mul(neg(ONE), y) = neg(mul(ONE, y))
+        [using specialize mulNegLeft(ONE, y)]
+      @one-times-y |
+        mul(ONE, y) = y
+        [using specialize mulOneLeft(y)]
+      @neg-one-times-y |
+        mul(neg(ONE), y) = neg(y)
+        [by rewrite one-times-y neg-one-times-y-raw]
+      @neg-y-as-product |
+        neg(y) = mul(neg(ONE), y)
+        [by symmetry neg-one-times-y]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume pow(neg(y), k) = mul(pow(neg(ONE), k), pow(y, k)) {
+              @inductive-hypothesis |
+                pow(neg(y), k) = mul(pow(neg(ONE), k), pow(y, k))
+                [by hypothesis given-inductive-hypothesis]
+              @next-unfolds |
+                pow(neg(y), succ(k)) = mul(pow(neg(y), k), neg(y))
+                [using specialize powSucc(neg(y), k)]
+              @neg-one-next-unfolds |
+                pow(neg(ONE), succ(k)) = mul(pow(neg(ONE), k), neg(ONE))
+                [using specialize powSucc(neg(ONE), k)]
+              @y-next-unfolds |
+                pow(y, succ(k)) = mul(pow(y, k), y)
+                [using specialize powSucc(y, k)]
+              @next-with-hypothesis |
+                pow(neg(y), succ(k)) = mul(mul(pow(neg(ONE), k), pow(y, k)), neg(y))
+                [by rewrite inductive-hypothesis next-unfolds]
+              @next-with-neg-one |
+                pow(neg(y), succ(k)) = mul(mul(pow(neg(ONE), k), pow(y, k)), mul(neg(ONE), y))
+                [by rewrite neg-y-as-product next-with-hypothesis]
+              @regrouped |
+                mul(mul(pow(neg(ONE), k), pow(y, k)), mul(neg(ONE), y)) = mul(mul(pow(neg(ONE), k), neg(ONE)), mul(pow(y, k), y))
+                [using assoc_commut(mulIsAssociative, mulIsCommutative, mulLeftSwap)]
+              @next-regrouped |
+                pow(neg(y), succ(k)) = mul(mul(pow(neg(ONE), k), neg(ONE)), mul(pow(y, k), y))
+                [using chain next-with-neg-one regrouped]
+              @next-with-neg-one-power |
+                pow(neg(y), succ(k)) = mul(pow(neg(ONE), succ(k)), mul(pow(y, k), y))
+                [by rewrite neg-one-next-unfolds next-regrouped]
+              @conclusion-step |
+                pow(neg(y), succ(k)) = mul(pow(neg(ONE), succ(k)), pow(y, succ(k)))
+                [by rewrite y-next-unfolds next-with-neg-one-power]
+            }
+          @induction-step-at-k |
+            pow(neg(y), k) = mul(pow(neg(ONE), k), pow(y, k)) -> pow(neg(y), succ(k)) = mul(pow(neg(ONE), succ(k)), pow(y, succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; pow(neg(y), k) = mul(pow(neg(ONE), k), pow(y, k)) -> pow(neg(y), succ(k)) = mul(pow(neg(ONE), succ(k)), pow(y, succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-all-powers |
+        forall n: Nat; pow(neg(y), n) = mul(pow(neg(ONE), n), pow(y, n))
+        [using instantiation induction((fun k: Nat => pow(neg(y), k) = mul(pow(neg(ONE), k), pow(y, k)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall y: F; forall n: Nat; pow(neg(y), n) = mul(pow(neg(ONE), n), pow(y, n))
+    [by forall_intro generalize-y]
+qed
+
+// 0^(n+1) = 0.
+theorem powOfZero: forall n: Nat; pow(ZERO, succ(n)) = ZERO
+proof
+  @generalize-n |
+    fix n: Nat {
+      @unfolds |
+        pow(ZERO, succ(n)) = mul(pow(ZERO, n), ZERO)
+        [using specialize powSucc(ZERO, n)]
+      @times-zero |
+        mul(pow(ZERO, n), ZERO) = ZERO
+        [using specialize mulZeroRight(pow(ZERO, n))]
+      @conclusion-zero-power |
+        pow(ZERO, succ(n)) = ZERO
+        [using chain unfolds times-zero]
+    }
+  @conclusion |
+    forall n: Nat; pow(ZERO, succ(n)) = ZERO
+    [by forall_intro generalize-n]
+qed
+
+// a POSITIVE element with a power equal to 1 is 1: above 1 its powers stay above 1, below 1
+// they stay below.
+theorem positiveFiniteOrderIsOne: forall y: F; less_than(ZERO, y) -> forall m: Nat; pow(y, succ(m)) = ONE -> y = ONE
+proof
+  @generalize-y |
+    fix y: F {
+      @given-positive |
+        assume less_than(ZERO, y) {
+          @positive |
+            less_than(ZERO, y)
+            [by hypothesis given-positive]
+          @generalize-m |
+            fix m: Nat {
+              @given-power-one |
+                assume pow(y, succ(m)) = ONE {
+                  @power-one |
+                    pow(y, succ(m)) = ONE
+                    [by hypothesis given-power-one]
+                  @one-not-below-itself |
+                    not less_than(ONE, ONE)
+                    [using specialize lessThanIrreflexive(ONE)]
+                  @y-versus-one |
+                    less_than(y, ONE) or y = ONE or less_than(ONE, y)
+                    [using specialize lessThanTrichotomy(y, ONE)]
+                  @conclusion-y-is-one |
+                    y = ONE
+                    case y-versus-one {
+                      @when-below |
+                        assume less_than(y, ONE) {
+                          @below-one |
+                            less_than(y, ONE)
+                            [by hypothesis when-below]
+                          @power-below-one |
+                            less_than(pow(y, succ(m)), ONE)
+                            [using specialize powBelowOne(y, m) positive below-one]
+                          @one-below-itself |
+                            less_than(ONE, ONE)
+                            [by rewrite power-one power-below-one]
+                          @conclusion-when-below |
+                            y = ONE
+                            [by absurd one-below-itself one-not-below-itself]
+                        }
+                      @when-equal |
+                        assume y = ONE {
+                          @conclusion-when-equal |
+                            y = ONE
+                            [by hypothesis when-equal]
+                        }
+                      @when-above |
+                        assume less_than(ONE, y) {
+                          @above-one |
+                            less_than(ONE, y)
+                            [by hypothesis when-above]
+                          @power-above-one |
+                            less_than(ONE, pow(y, succ(m)))
+                            [using specialize powAboveOne(y, m) above-one]
+                          @one-below-itself |
+                            less_than(ONE, ONE)
+                            [by rewrite power-one power-above-one]
+                          @conclusion-when-above |
+                            y = ONE
+                            [by absurd one-below-itself one-not-below-itself]
+                        }
+                    }
+                }
+              @power-one-implies |
+                pow(y, succ(m)) = ONE -> y = ONE
+                [by implies_intro given-power-one]
+            }
+          @discharge-m |
+            forall m: Nat; pow(y, succ(m)) = ONE -> y = ONE
+            [by forall_intro generalize-m]
+        }
+      @positive-implies |
+        less_than(ZERO, y) -> forall m: Nat; pow(y, succ(m)) = ONE -> y = ONE
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall y: F; less_than(ZERO, y) -> forall m: Nat; pow(y, succ(m)) = ONE -> y = ONE
+    [by forall_intro generalize-y]
+qed
+
+// THE ELEMENTS OF FINITE ORDER IN F* ARE ±1 (Judson §4.1, exercise 10, for ℚ* and ℝ*).
+// "x has finite order": some positive n has x^n = 1. 0 has none; a positive x with x^n = 1
+// is 1; a negative x = −y has x^n = (−1)^n y^n with y^n > 0, so (−1)^n = 1 and y^n = 1 (the
+// other sign would make y^n = −1 < 0), whence y = 1 and x = −1. Conversely 1¹ = 1 and
+// (−1)² = 1.
+theorem finiteOrderIsPlusOrMinusOne: forall x: F; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+proof
+  @generalize-x |
+    fix x: F {
+      @one-not-zero |
+        ONE != ZERO
+        [by cite oneNotZero]
+      @zero-not-below-itself |
+        not less_than(ZERO, ZERO)
+        [using specialize lessThanIrreflexive(ZERO)]
+      @nat-zero-not-below-itself |
+        not nat_less_than(NZERO, NZERO)
+        [using specialize notLessThanZero(NZERO)]
+      // forward.
+      @given-finite-order |
+        assume exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE {
+          @killer-exists |
+            exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE
+            [by hypothesis given-finite-order]
+          @with-killer-n |
+            unpack n: Nat from killer-exists {
+              @killer-facts |
+                nat_less_than(NZERO, n) and pow(x, n) = ONE
+                [by hypothesis with-killer-n]
+              @n-positive |
+                nat_less_than(NZERO, n)
+                [by and_elim_left killer-facts]
+              @n-kills |
+                pow(x, n) = ONE
+                [by and_elim_right killer-facts]
+              @n-zero-or-succ |
+                n = NZERO or (exists m: Nat; n = succ(m))
+                [using specialize zeroOrSucc(n)]
+              @conclusion-with-n |
+                x = ONE or x = neg(ONE)
+                case n-zero-or-succ {
+                  @when-n-zero |
+                    assume n = NZERO {
+                      @n-zero |
+                        n = NZERO
+                        [by hypothesis when-n-zero]
+                      @zero-below-itself |
+                        nat_less_than(NZERO, NZERO)
+                        [by rewrite n-zero n-positive]
+                      @conclusion-when-n-zero |
+                        x = ONE or x = neg(ONE)
+                        [by absurd zero-below-itself nat-zero-not-below-itself]
+                    }
+                  @when-n-succ |
+                    assume exists m: Nat; n = succ(m) {
+                      @predecessor-exists |
+                        exists m: Nat; n = succ(m)
+                        [by hypothesis when-n-succ]
+                      @with-predecessor-m |
+                        unpack m: Nat from predecessor-exists {
+                          @n-is-succ-m |
+                            n = succ(m)
+                            [by hypothesis with-predecessor-m]
+                          @succ-m-kills |
+                            pow(x, succ(m)) = ONE
+                            [by rewrite n-is-succ-m n-kills]
+                          @x-versus-zero |
+                            less_than(x, ZERO) or x = ZERO or less_than(ZERO, x)
+                            [using specialize lessThanTrichotomy(x, ZERO)]
+                          @conclusion-with-m |
+                            x = ONE or x = neg(ONE)
+                            case x-versus-zero {
+                              // x < 0: x = −y with y > 0.
+                              @when-negative |
+                                assume less_than(x, ZERO) {
+                                  @negative |
+                                    less_than(x, ZERO)
+                                    [by hypothesis when-negative]
+                                  @neg-x-positive |
+                                    less_than(ZERO, neg(x))
+                                    [using specialize negOfNegativeIsPositive(x) negative]
+                                  @x-is-neg-neg-x-raw |
+                                    neg(neg(x)) = x
+                                    [using specialize negNeg(x)]
+                                  @x-is-neg-neg-x |
+                                    x = neg(neg(x))
+                                    [by symmetry x-is-neg-neg-x-raw]
+                                  @neg-neg-x-power |
+                                    pow(neg(neg(x)), succ(m)) = mul(pow(neg(ONE), succ(m)), pow(neg(x), succ(m)))
+                                    [using specialize powOfNeg(neg(x), succ(m))]
+                                  @x-power-splits |
+                                    pow(x, succ(m)) = mul(pow(neg(ONE), succ(m)), pow(neg(x), succ(m)))
+                                    [by rewrite x-is-neg-neg-x-raw neg-neg-x-power]
+                                  @x-power-splits-flipped |
+                                    mul(pow(neg(ONE), succ(m)), pow(neg(x), succ(m))) = pow(x, succ(m))
+                                    [by symmetry x-power-splits]
+                                  @signed-product-is-one |
+                                    mul(pow(neg(ONE), succ(m)), pow(neg(x), succ(m))) = ONE
+                                    [using chain x-power-splits-flipped succ-m-kills]
+                                  @y-power-positive |
+                                    less_than(ZERO, pow(neg(x), succ(m)))
+                                    [using specialize powPositive(neg(x), succ(m)) neg-x-positive]
+                                  @sign-two-valued |
+                                    pow(neg(ONE), succ(m)) = ONE or pow(neg(ONE), succ(m)) = neg(ONE)
+                                    [using specialize powOfNegOneIsPlusOrMinusOne(succ(m))]
+                                  @conclusion-when-negative |
+                                    x = ONE or x = neg(ONE)
+                                    case sign-two-valued {
+                                      @when-sign-positive |
+                                        assume pow(neg(ONE), succ(m)) = ONE {
+                                          @sign-positive |
+                                            pow(neg(ONE), succ(m)) = ONE
+                                            [by hypothesis when-sign-positive]
+                                          @one-times-y-power-is-one |
+                                            mul(ONE, pow(neg(x), succ(m))) = ONE
+                                            [by rewrite sign-positive signed-product-is-one]
+                                          @one-times-y-power |
+                                            mul(ONE, pow(neg(x), succ(m))) = pow(neg(x), succ(m))
+                                            [using specialize mulOneLeft(pow(neg(x), succ(m)))]
+                                          @y-power-as-product |
+                                            pow(neg(x), succ(m)) = mul(ONE, pow(neg(x), succ(m)))
+                                            [by symmetry one-times-y-power]
+                                          @y-power-is-one |
+                                            pow(neg(x), succ(m)) = ONE
+                                            [using chain y-power-as-product one-times-y-power-is-one]
+                                          @y-is-one |
+                                            neg(x) = ONE
+                                            [using specialize positiveFiniteOrderIsOne(neg(x), m) neg-x-positive y-power-is-one]
+                                          @x-is-neg-one |
+                                            x = neg(ONE)
+                                            [by rewrite y-is-one x-is-neg-neg-x]
+                                          @conclusion-when-sign-positive |
+                                            x = ONE or x = neg(ONE)
+                                            [using tautology x-is-neg-one]
+                                        }
+                                      @when-sign-negative |
+                                        assume pow(neg(ONE), succ(m)) = neg(ONE) {
+                                          @sign-negative |
+                                            pow(neg(ONE), succ(m)) = neg(ONE)
+                                            [by hypothesis when-sign-negative]
+                                          @neg-one-times-y-power-is-one |
+                                            mul(neg(ONE), pow(neg(x), succ(m))) = ONE
+                                            [by rewrite sign-negative signed-product-is-one]
+                                          @neg-one-times-y-power-raw |
+                                            mul(neg(ONE), pow(neg(x), succ(m))) = neg(mul(ONE, pow(neg(x), succ(m))))
+                                            [using specialize mulNegLeft(ONE, pow(neg(x), succ(m)))]
+                                          @one-times-y-power |
+                                            mul(ONE, pow(neg(x), succ(m))) = pow(neg(x), succ(m))
+                                            [using specialize mulOneLeft(pow(neg(x), succ(m)))]
+                                          @neg-one-times-y-power |
+                                            mul(neg(ONE), pow(neg(x), succ(m))) = neg(pow(neg(x), succ(m)))
+                                            [by rewrite one-times-y-power neg-one-times-y-power-raw]
+                                          @neg-y-power-as-product |
+                                            neg(pow(neg(x), succ(m))) = mul(neg(ONE), pow(neg(x), succ(m)))
+                                            [by symmetry neg-one-times-y-power]
+                                          @neg-y-power-is-one |
+                                            neg(pow(neg(x), succ(m))) = ONE
+                                            [using chain neg-y-power-as-product neg-one-times-y-power-is-one]
+                                          @neg-y-power-negative |
+                                            less_than(neg(pow(neg(x), succ(m))), ZERO)
+                                            [using specialize field_order.negOfPositiveIsNegative(pow(neg(x), succ(m))) y-power-positive]
+                                          @one-below-zero |
+                                            less_than(ONE, ZERO)
+                                            [by rewrite neg-y-power-is-one neg-y-power-negative]
+                                          @zero-below-one |
+                                            less_than(ZERO, ONE)
+                                            [by cite zeroLessThanOne]
+                                          @zero-below-itself |
+                                            less_than(ZERO, ZERO)
+                                            [using specialize lessThanTransitive(ZERO, ONE, ZERO) zero-below-one one-below-zero]
+                                          @conclusion-when-sign-negative |
+                                            x = ONE or x = neg(ONE)
+                                            [by absurd zero-below-itself zero-not-below-itself]
+                                        }
+                                    }
+                                }
+                              // x = 0: 0^(m+1) = 0 ≠ 1.
+                              @when-zero |
+                                assume x = ZERO {
+                                  @x-zero |
+                                    x = ZERO
+                                    [by hypothesis when-zero]
+                                  @zero-power |
+                                    pow(ZERO, succ(m)) = ZERO
+                                    [using specialize powOfZero(m)]
+                                  @zero-power-kills |
+                                    pow(ZERO, succ(m)) = ONE
+                                    [by rewrite x-zero succ-m-kills]
+                                  @one-is-zero-power |
+                                    ONE = pow(ZERO, succ(m))
+                                    [by symmetry zero-power-kills]
+                                  @one-is-zero |
+                                    ONE = ZERO
+                                    [using chain one-is-zero-power zero-power]
+                                  @conclusion-when-zero |
+                                    x = ONE or x = neg(ONE)
+                                    [by absurd one-is-zero one-not-zero]
+                                }
+                              // 0 < x: x = 1.
+                              @when-positive |
+                                assume less_than(ZERO, x) {
+                                  @positive |
+                                    less_than(ZERO, x)
+                                    [by hypothesis when-positive]
+                                  @x-is-one |
+                                    x = ONE
+                                    [using specialize positiveFiniteOrderIsOne(x, m) positive succ-m-kills]
+                                  @conclusion-when-positive |
+                                    x = ONE or x = neg(ONE)
+                                    [using tautology x-is-one]
+                                }
+                            }
+                        }
+                      @conclusion-when-n-succ |
+                        x = ONE or x = neg(ONE)
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @conclusion-forward-inner |
+            x = ONE or x = neg(ONE)
+            [by exists_elim with-killer-n]
+        }
+      @forward |
+        (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) -> (x = ONE or x = neg(ONE))
+        [by implies_intro given-finite-order]
+      // backward: 1¹ = 1 and (−1)² = 1.
+      @zero-plus-one |
+        peano.add(NZERO, succ(NZERO)) = succ(NZERO)
+        [using specialize addZeroLeft(succ(NZERO))]
+      @one-positive |
+        nat_less_than(NZERO, succ(NZERO))
+        [using specialize natLessThanIntro(NZERO, NZERO, succ(NZERO)) zero-plus-one]
+      @zero-plus-two |
+        peano.add(NZERO, succ(succ(NZERO))) = succ(succ(NZERO))
+        [using specialize addZeroLeft(succ(succ(NZERO)))]
+      @two-positive |
+        nat_less_than(NZERO, succ(succ(NZERO)))
+        [using specialize natLessThanIntro(NZERO, succ(NZERO), succ(succ(NZERO))) zero-plus-two]
+      @given-plus-or-minus-one |
+        assume x = ONE or x = neg(ONE) {
+          @plus-or-minus-one |
+            x = ONE or x = neg(ONE)
+            [by hypothesis given-plus-or-minus-one]
+          @conclusion-backward-inner |
+            exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE
+            case plus-or-minus-one {
+              @when-one |
+                assume x = ONE {
+                  @x-one |
+                    x = ONE
+                    [by hypothesis when-one]
+                  @first-power |
+                    pow(x, succ(NZERO)) = x
+                    [using specialize powOne(x)]
+                  @first-power-is-one |
+                    pow(x, succ(NZERO)) = ONE
+                    [using chain first-power x-one]
+                  @one-witnesses |
+                    nat_less_than(NZERO, succ(NZERO)) and pow(x, succ(NZERO)) = ONE
+                    [by and_intro one-positive first-power-is-one]
+                  @conclusion-when-one |
+                    exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE
+                    [by exists_intro(succ(NZERO)) one-witnesses]
+                }
+              @when-neg-one |
+                assume x = neg(ONE) {
+                  @x-neg-one |
+                    x = neg(ONE)
+                    [by hypothesis when-neg-one]
+                  @first-power |
+                    pow(x, succ(NZERO)) = x
+                    [using specialize powOne(x)]
+                  @second-unfolds |
+                    pow(x, succ(succ(NZERO))) = mul(pow(x, succ(NZERO)), x)
+                    [using specialize powSucc(x, succ(NZERO))]
+                  @second-is-square |
+                    pow(x, succ(succ(NZERO))) = mul(x, x)
+                    [by rewrite first-power second-unfolds]
+                  @second-is-neg-one-squared |
+                    pow(x, succ(succ(NZERO))) = mul(neg(ONE), neg(ONE))
+                    [by rewrite x-neg-one second-is-square]
+                  @neg-one-squared-unsigned |
+                    mul(neg(ONE), neg(ONE)) = mul(ONE, ONE)
+                    [using specialize negMulNeg(ONE, ONE)]
+                  @one-times-one |
+                    mul(ONE, ONE) = ONE
+                    [using specialize mulOneLeft(ONE)]
+                  @second-power-is-one |
+                    pow(x, succ(succ(NZERO))) = ONE
+                    [using chain second-is-neg-one-squared neg-one-squared-unsigned one-times-one]
+                  @two-witnesses |
+                    nat_less_than(NZERO, succ(succ(NZERO))) and pow(x, succ(succ(NZERO))) = ONE
+                    [by and_intro two-positive second-power-is-one]
+                  @conclusion-when-neg-one |
+                    exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE
+                    [by exists_intro(succ(succ(NZERO))) two-witnesses]
+                }
+            }
+        }
+      @backward |
+        (x = ONE or x = neg(ONE)) -> (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE)
+        [by implies_intro given-plus-or-minus-one]
+      @conclusion-iff |
+        (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+        [by iff_intro forward backward]
+    }
+  @conclusion |
+    forall x: F; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+    [by forall_intro generalize-x]
+qed

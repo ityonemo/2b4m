@@ -228,6 +228,10 @@ pub fn addTests(
     // product). MODELS std/field.b4m; postulates the order abstractly (opaque pred +
     // axioms, unlike the constructed ℤ order) and derives asymmetry etc. ℚ/ℝ model it.
     ctx.okSilent(&.{ "check", "std/field/order.b4m" });
+    // the multiplicative group F* of an ordered field (std/field/units.b4m): the nonzero cut
+    // as a GUARDED model of std/group.b4m, natural powers, and "the elements of finite order
+    // are ±1" (Judson §4.1 exercise 10 for ℚ* and ℝ*) proved once over the ordered field.
+    ctx.okSilent(&.{ "check", "std/field/units.b4m" });
 
     // the rationals ℚ (std/rational.b4m): the prime ordered field. MODELS
     // std/field/order.b4m (RationalOrderedField, the algebra lens) + a ring embedding
@@ -235,6 +239,9 @@ pub fn addTests(
     // Derives fromIntNonzero (nonzero ints embed to invertible rationals). First
     // concrete sort of the tower; independent, containment-by-embedding.
     ctx.okSilent(&.{ "check", "std/rational.b4m" });
+    // ℚ* (std/rational/units.b4m): models field_order + field_units onto ℚ in one block;
+    // ℚ* as a guarded group model; finite order ⟺ ±1 by transfer.
+    ctx.okSilent(&.{ "check", "std/rational/units.b4m" });
 
     // the reals ℝ (std/real.b4m): an axiomatic COMPLETE ordered field. MODELS
     // std/field/order.b4m + the least-upper-bound completeness AXIOM (a Real->Prop
@@ -242,6 +249,8 @@ pub fn addTests(
     // fromRational (ℚ↪ℝ embedding) to STATE facts about rationals — NO ℚ→ℝ transfer
     // model (ℚ has strictly fewer theorems than ℝ; nothing to lift, unlike ℕ↪ℤ).
     ctx.okSilent(&.{ "check", "std/real.b4m" });
+    // ℝ* (std/real/units.b4m): the same for ℝ.
+    ctx.okSilent(&.{ "check", "std/real/units.b4m" });
 
     // the nonnegative square root on ℝ (std/real/sqrt.b4m): sqrt pinned by its
     // guarded defining axioms (sqrt(x)·sqrt(x)=x, sqrt≥0 for x≥0); proves
