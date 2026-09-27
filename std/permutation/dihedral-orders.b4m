@@ -1,0 +1,1355 @@
+// std/permutation/dihedral-orders.b4m — the ORDERS of the elements of D_n (Judson §4.1,
+// exercise 6 asks for D_4).
+//
+// std/permutation/dihedral.b4m builds D_n from the rotation ρ and the reflection σ of the
+// n-gon with a ℕ-indexed power ρ^k; std/permutation/power.b4m gives permutations an INTEGER
+// power and the group-order relation permHasOrder. Here: the two powers agree on ℕ, ρ^n = id,
+// so ρ has order n (its smaller powers move the letter 0); σ reverses ρ as maps, so
+// σρ^k = ρ^(−k)σ and every reflected power ρ^kσ squares to the identity — order 2.
+
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import function_iterate <<< "std/function/iterate.b4m"
+import permutation <<< "std/permutation.b4m"
+import permutation_power <<< "std/permutation/power.b4m"
+import dihedral <<< "std/permutation/dihedral.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import int_embedding <<< "std/integer/embedding.b4m"
+
+sort Element = element.Element
+sort Fn = function.Fn
+sort Perm = permutation.Perm
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+func inverse = function.inverse
+pred invertible = function.invertible
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+axiom funcExtensionality = function.funcExtensionality
+axiom inverseLeft = function.inverseLeft
+axiom inverseRight = function.inverseRight
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+func iterate = function_iterate.iterate
+axiom iterateSucc = function_iterate.iterateSucc
+theorem iterateAdd = function_iterate.iterateAdd
+
+sort Set = set.Set
+pred member = set.member
+func numeral = set_finite.numeral
+func segment = set_finite.segment
+axiom numeralInjective = set_finite.numeralInjective
+axiom segmentMember = set_finite.segmentMember
+
+// the dihedral machinery: the ℕ power and the rotation/reflection specs.
+func power = dihedral.power
+axiom powerZero = dihedral.powerZero
+axiom powerSucc = dihedral.powerSucc
+theorem powerApply = dihedral.powerApply
+theorem powerCommutes = dihedral.powerCommutes
+theorem powerFixesAFixedPoint = dihedral.powerFixesAFixedPoint
+theorem rotationPowerAtZero = dihedral.rotationPowerAtZero
+theorem reflectionReversesTheRotation = dihedral.reflectionReversesTheRotation
+theorem reflectionSquaredIsIdentity = dihedral.reflectionSquaredIsIdentity
+theorem powersOfTheRotationDiffer = dihedral.powersOfTheRotationDiffer
+define isTheRotation(rho, n) = dihedral.isTheRotation(rho, n)
+define isTheReflection(sigma, n) = dihedral.isTheReflection(sigma, n)
+
+// the integer power and the order relation.
+func permPower = permutation_power.permPower
+axiom permPowerZero = permutation_power.permPowerZero
+axiom permPowerSucc = permutation_power.permPowerSucc
+axiom permPowerPrev = permutation_power.permPowerPrev
+theorem permPowerAdd = permutation_power.permPowerAdd
+theorem permPowerNegInverse = permutation_power.permPowerNegInverse
+define permHasOrder(f, n) = permutation_power.permHasOrder(f, n)
+
+// ℕ and ℤ
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+func nadd = peano.add
+pred less_than = peano.less_than
+axiom induction = peano.induction
+theorem addIsCommutative = peano.addIsCommutative
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem notLessThanZero = peano_order.notLessThanZero
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func ineg = integer.neg
+func iprev = integer.prev
+func iadd = integer.add
+pred int_less_than = int_order.less_than
+pred nonneg = integer.nonneg
+theorem intLessThanIrreflexive = int_order.lessThanIrreflexive
+theorem positiveIsNonneg = int_order.positiveIsNonneg
+theorem intInduction = integer.induction
+func toInt = int_embedding.toInt
+axiom toIntZero = int_embedding.toIntZero
+axiom toIntSucc = int_embedding.toIntSucc
+theorem toIntPreservesOrder = int_embedding.toIntPreservesOrder
+theorem toIntReflectsOrder = int_embedding.toIntReflectsOrder
+theorem everyNonnegIsAnImage = int_embedding.everyNonnegIsAnImage
+axiom negZero = integer.negZero
+axiom negSucc = integer.negSucc
+axiom negPrev = integer.negPrev
+theorem addNegRight = integer.addNegRight
+theorem rotationIsNotAReflection = dihedral.rotationIsNotAReflection
+theorem powerIsAPermutation = dihedral.powerIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem permIdentityHasOrderOne = permutation_power.permIdentityHasOrderOne
+theorem permInvolutionHasOrderTwo = permutation_power.permInvolutionHasOrderTwo
+theorem natLessThanTransitive = peano_order.lessThanTransitive
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+define ITWO = isucc(isucc(IZERO))
+
+// -- the two powers agree on ℕ: f^(toInt k) = f^k ------------------------------------------------
+theorem natPowerIsIntPower: forall f: Fn; forall k: Nat; permPower(f, toInt(k)) = power(f, k)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @zero-image |
+        toInt(NZERO) = IZERO
+        [by cite toIntZero]
+      @int-zeroth |
+        permPower(f, IZERO) = identityFn
+        [using specialize permPowerZero(f)]
+      @nat-zeroth |
+        power(f, NZERO) = identityFn
+        [using specialize powerZero(f)]
+      @identity-is-nat-zeroth |
+        identityFn = power(f, NZERO)
+        [by symmetry nat-zeroth]
+      @int-zeroth-at-image |
+        permPower(f, toInt(NZERO)) = identityFn
+        [by rewrite zero-image int-zeroth]
+      @base-case |
+        permPower(f, toInt(NZERO)) = power(f, NZERO)
+        [using chain int-zeroth-at-image identity-is-nat-zeroth]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume permPower(f, toInt(k)) = power(f, k) {
+              @inductive-hypothesis |
+                permPower(f, toInt(k)) = power(f, k)
+                [by hypothesis given-inductive-hypothesis]
+              @next-image |
+                toInt(succ(k)) = isucc(toInt(k))
+                [using specialize toIntSucc(k)]
+              @int-next-unfolds |
+                permPower(f, isucc(toInt(k))) = compose(permPower(f, toInt(k)), f)
+                [using specialize permPowerSucc(f, toInt(k))]
+              @int-next-at-image |
+                permPower(f, toInt(succ(k))) = compose(permPower(f, toInt(k)), f)
+                [by rewrite next-image int-next-unfolds]
+              @int-next-with-hypothesis |
+                permPower(f, toInt(succ(k))) = compose(power(f, k), f)
+                [by rewrite inductive-hypothesis int-next-at-image]
+              @powers-commute |
+                compose(f, power(f, k)) = compose(power(f, k), f)
+                [using specialize powerCommutes(f, k)]
+              @commuted-back |
+                compose(power(f, k), f) = compose(f, power(f, k))
+                [by symmetry powers-commute]
+              @nat-next-unfolds |
+                power(f, succ(k)) = compose(f, power(f, k))
+                [using specialize powerSucc(f, k)]
+              @nat-next-folded |
+                compose(f, power(f, k)) = power(f, succ(k))
+                [by symmetry nat-next-unfolds]
+              @conclusion-step |
+                permPower(f, toInt(succ(k))) = power(f, succ(k))
+                [using chain int-next-with-hypothesis commuted-back nat-next-folded]
+            }
+          @induction-step-at-k |
+            permPower(f, toInt(k)) = power(f, k) -> permPower(f, toInt(succ(k))) = power(f, succ(k))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; permPower(f, toInt(k)) = power(f, k) -> permPower(f, toInt(succ(k))) = power(f, succ(k))
+        [by forall_intro induction-step]
+      @conclusion-all-k |
+        forall k: Nat; permPower(f, toInt(k)) = power(f, k)
+        [using instantiation induction((fun k: Nat => permPower(f, toInt(k)) = power(f, k))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall f: Fn; forall k: Nat; permPower(f, toInt(k)) = power(f, k)
+    [by forall_intro generalize-f]
+qed
+
+// -- ρ^n = id -----------------------------------------------------------------------------------
+// ρ^n fixes every point: a letter i is ρ^i(0), and ρ^n(ρ^i(0)) = ρ^i(ρ^n(0)) = ρ^i(0) since
+// ρ^n(0) = ρ(ρ^(n−1)(0)) = ρ(n−1) = 0; a point outside the segment is fixed by ρ itself.
+theorem rotationPowerNIsIdentity: forall rho: Fn; forall n: Nat; isTheRotation(rho, n) -> power(rho, n) = identityFn
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-n |
+        fix n: Nat {
+          @given-rotation |
+            assume isTheRotation(rho, n) {
+              @rotation |
+                isTheRotation(rho, n)
+                [by hypothesis given-rotation]
+              @rotation-facts |
+                invertible(rho) and (forall i: Nat; less_than(succ(i), n) -> apply(rho, numeral(i)) = numeral(succ(i))) and (forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)) and (forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x)
+                [by hypothesis given-rotation]
+              @wraps |
+                forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)
+                [using tautology rotation-facts]
+              @fixes-outside |
+                forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x
+                [using tautology rotation-facts]
+              @powers-at-zero |
+                forall k: Nat; less_than(k, n) -> apply(power(rho, k), numeral(NZERO)) = numeral(k)
+                [using specialize rotationPowerAtZero(rho, n) rotation]
+              @n-zero-or-succ |
+                n = NZERO or (exists m: Nat; n = succ(m))
+                [using specialize zeroOrSucc(n)]
+              @conclusion-identity |
+                power(rho, n) = identityFn
+                case n-zero-or-succ {
+                  @when-zero |
+                    assume n = NZERO {
+                      @n-zero |
+                        n = NZERO
+                        [by hypothesis when-zero]
+                      @zeroth-power |
+                        power(rho, NZERO) = identityFn
+                        [using specialize powerZero(rho)]
+                      @conclusion-when-zero |
+                        power(rho, n) = identityFn
+                        [by rewrite n-zero zeroth-power]
+                    }
+                  @when-succ |
+                    assume exists m: Nat; n = succ(m) {
+                      @predecessor-exists |
+                        exists m: Nat; n = succ(m)
+                        [by hypothesis when-succ]
+                      @with-predecessor-m |
+                        unpack m: Nat from predecessor-exists {
+                          @n-is-succ-m |
+                            n = succ(m)
+                            [by hypothesis with-predecessor-m]
+                          // ρ^n(0) = 0.
+                          @m-below-n |
+                            less_than(m, succ(m))
+                            [using specialize lessThanSelf(m)]
+                          @m-below-n-named |
+                            less_than(m, n)
+                            [by rewrite n-is-succ-m m-below-n]
+                          @m-power-at-zero |
+                            apply(power(rho, m), numeral(NZERO)) = numeral(m)
+                            [using specialize powers-at-zero(m) m-below-n-named]
+                          @m-power-applies |
+                            apply(power(rho, m), numeral(NZERO)) = iterate(rho, m, numeral(NZERO))
+                            [using specialize powerApply(rho, numeral(NZERO), m)]
+                          @m-iterate-is-m-power |
+                            iterate(rho, m, numeral(NZERO)) = apply(power(rho, m), numeral(NZERO))
+                            [by symmetry m-power-applies]
+                          @m-iterate-at-zero |
+                            iterate(rho, m, numeral(NZERO)) = numeral(m)
+                            [using chain m-iterate-is-m-power m-power-at-zero]
+                          @n-iterate-unfolds |
+                            iterate(rho, succ(m), numeral(NZERO)) = apply(rho, iterate(rho, m, numeral(NZERO)))
+                            [using specialize iterateSucc(rho, m, numeral(NZERO))]
+                          @n-iterate-at-top |
+                            iterate(rho, succ(m), numeral(NZERO)) = apply(rho, numeral(m))
+                            [by rewrite m-iterate-at-zero n-iterate-unfolds]
+                          @top-wraps |
+                            apply(rho, numeral(m)) = numeral(NZERO)
+                            [using specialize wraps(m) n-is-succ-m]
+                          @n-iterate-at-zero-succ |
+                            iterate(rho, succ(m), numeral(NZERO)) = numeral(NZERO)
+                            [using chain n-iterate-at-top top-wraps]
+                          @n-iterate-at-zero |
+                            iterate(rho, n, numeral(NZERO)) = numeral(NZERO)
+                            [by rewrite n-is-succ-m n-iterate-at-zero-succ]
+                          // every point is fixed by ρ^n.
+                          @generalize-x |
+                            fix x: Element {
+                              @identity-at-x |
+                                apply(identityFn, x) = x
+                                [using specialize identityApply(x)]
+                              @x-is-identity-at-x |
+                                x = apply(identityFn, x)
+                                [by symmetry identity-at-x]
+                              @in-or-out |
+                                member(x, segment(n)) or (not member(x, segment(n)))
+                                [using tautology]
+                              @conclusion-fixed |
+                                apply(power(rho, n), x) = apply(identityFn, x)
+                                case in-or-out {
+                                  @when-in |
+                                    assume member(x, segment(n)) {
+                                      @x-in |
+                                        member(x, segment(n))
+                                        [by hypothesis when-in]
+                                      @membership-iff |
+                                        member(x, segment(n)) iff (exists k: Nat; less_than(k, n) and x = numeral(k))
+                                        [using specialize segmentMember(n, x)]
+                                      @x-is-a-letter |
+                                        exists k: Nat; less_than(k, n) and x = numeral(k)
+                                        [using tautology membership-iff x-in]
+                                      @with-letter-i |
+                                        unpack i: Nat from x-is-a-letter {
+                                          @letter-facts |
+                                            less_than(i, n) and x = numeral(i)
+                                            [by hypothesis with-letter-i]
+                                          @i-below-n |
+                                            less_than(i, n)
+                                            [by and_elim_left letter-facts]
+                                          @x-is-numeral-i |
+                                            x = numeral(i)
+                                            [by and_elim_right letter-facts]
+                                          @i-power-at-zero |
+                                            apply(power(rho, i), numeral(NZERO)) = numeral(i)
+                                            [using specialize powers-at-zero(i) i-below-n]
+                                          @i-power-applies |
+                                            apply(power(rho, i), numeral(NZERO)) = iterate(rho, i, numeral(NZERO))
+                                            [using specialize powerApply(rho, numeral(NZERO), i)]
+                                          @i-iterate-is-i-power |
+                                            iterate(rho, i, numeral(NZERO)) = apply(power(rho, i), numeral(NZERO))
+                                            [by symmetry i-power-applies]
+                                          @i-iterate-at-zero |
+                                            iterate(rho, i, numeral(NZERO)) = numeral(i)
+                                            [using chain i-iterate-is-i-power i-power-at-zero]
+                                          @numeral-i-is-i-iterate |
+                                            numeral(i) = iterate(rho, i, numeral(NZERO))
+                                            [by symmetry i-iterate-at-zero]
+                                          @n-power-applies |
+                                            apply(power(rho, n), numeral(i)) = iterate(rho, n, numeral(i))
+                                            [using specialize powerApply(rho, numeral(i), n)]
+                                          @n-power-at-i-iterate |
+                                            apply(power(rho, n), numeral(i)) = iterate(rho, n, iterate(rho, i, numeral(NZERO)))
+                                            [by rewrite numeral-i-is-i-iterate n-power-applies]
+                                          @iterates-combine |
+                                            iterate(rho, nadd(n, i), numeral(NZERO)) = iterate(rho, n, iterate(rho, i, numeral(NZERO)))
+                                            [using specialize iterateAdd(rho, numeral(NZERO), i, n)]
+                                          @combined-flipped |
+                                            iterate(rho, n, iterate(rho, i, numeral(NZERO))) = iterate(rho, nadd(n, i), numeral(NZERO))
+                                            [by symmetry iterates-combine]
+                                          @sum-commutes |
+                                            nadd(n, i) = nadd(i, n)
+                                            [using specialize addIsCommutative(n, i)]
+                                          @iterates-split |
+                                            iterate(rho, nadd(i, n), numeral(NZERO)) = iterate(rho, i, iterate(rho, n, numeral(NZERO)))
+                                            [using specialize iterateAdd(rho, numeral(NZERO), n, i)]
+                                          @iterates-split-at-fixed-zero |
+                                            iterate(rho, nadd(i, n), numeral(NZERO)) = iterate(rho, i, numeral(NZERO))
+                                            [by rewrite n-iterate-at-zero iterates-split]
+                                          @combined-commuted |
+                                            iterate(rho, n, iterate(rho, i, numeral(NZERO))) = iterate(rho, nadd(i, n), numeral(NZERO))
+                                            [by rewrite sum-commutes combined-flipped]
+                                          @n-power-at-letter |
+                                            apply(power(rho, n), numeral(i)) = numeral(i)
+                                            [using chain n-power-at-i-iterate combined-commuted iterates-split-at-fixed-zero i-iterate-at-zero]
+                                          @n-power-at-x |
+                                            apply(power(rho, n), x) = x
+                                            [by rewrite x-is-numeral-i n-power-at-letter]
+                                          @conclusion-when-in-inner |
+                                            apply(power(rho, n), x) = apply(identityFn, x)
+                                            [using chain n-power-at-x x-is-identity-at-x]
+                                        }
+                                      @conclusion-when-in |
+                                        apply(power(rho, n), x) = apply(identityFn, x)
+                                        [by exists_elim with-letter-i]
+                                    }
+                                  @when-out |
+                                    assume not member(x, segment(n)) {
+                                      @x-out |
+                                        not member(x, segment(n))
+                                        [by hypothesis when-out]
+                                      @rho-fixes-x |
+                                        apply(rho, x) = x
+                                        [using specialize fixes-outside(x) x-out]
+                                      @n-power-fixes-x |
+                                        apply(power(rho, n), x) = x
+                                        [using specialize powerFixesAFixedPoint(rho, x, n) rho-fixes-x]
+                                      @conclusion-when-out |
+                                        apply(power(rho, n), x) = apply(identityFn, x)
+                                        [using chain n-power-fixes-x x-is-identity-at-x]
+                                    }
+                                }
+                            }
+                          @pointwise |
+                            forall x: Element; apply(power(rho, n), x) = apply(identityFn, x)
+                            [by forall_intro generalize-x]
+                          @conclusion-when-succ-inner |
+                            power(rho, n) = identityFn
+                            [using specialize funcExtensionality(power(rho, n), identityFn) pointwise]
+                        }
+                      @conclusion-when-succ |
+                        power(rho, n) = identityFn
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @rotation-implies |
+            isTheRotation(rho, n) -> power(rho, n) = identityFn
+            [by implies_intro given-rotation]
+        }
+      @discharge-n |
+        forall n: Nat; isTheRotation(rho, n) -> power(rho, n) = identityFn
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall rho: Fn; forall n: Nat; isTheRotation(rho, n) -> power(rho, n) = identityFn
+    [by forall_intro generalize-rho]
+qed
+
+// -- ρ has order n --------------------------------------------------------------------------------
+// n kills ρ, and a positive m < n does not: ρ^m sends the letter 0 to the letter m ≠ 0.
+theorem rotationHasOrderN: forall rho: Fn; forall n: Nat; isTheRotation(rho, n) -> less_than(NZERO, n) -> permHasOrder(rho, toInt(n))
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-n |
+        fix n: Nat {
+          @given-rotation |
+            assume isTheRotation(rho, n) {
+              @given-positive |
+                assume less_than(NZERO, n) {
+                  @rotation |
+                    isTheRotation(rho, n)
+                    [by hypothesis given-rotation]
+                  @n-positive |
+                    less_than(NZERO, n)
+                    [by hypothesis given-positive]
+                  @zero-image |
+                    toInt(NZERO) = IZERO
+                    [by cite toIntZero]
+                  @images-ordered |
+                    int_less_than(toInt(NZERO), toInt(n))
+                    [using specialize toIntPreservesOrder(NZERO, n) n-positive]
+                  @image-positive |
+                    int_less_than(IZERO, toInt(n))
+                    [by rewrite zero-image images-ordered]
+                  @int-power-is-nat-power |
+                    permPower(rho, toInt(n)) = power(rho, n)
+                    [using specialize natPowerIsIntPower(rho, n)]
+                  @nat-power-is-identity |
+                    power(rho, n) = identityFn
+                    [using specialize rotationPowerNIsIdentity(rho, n) rotation]
+                  @n-kills |
+                    permPower(rho, toInt(n)) = identityFn
+                    [using chain int-power-is-nat-power nat-power-is-identity]
+                  @powers-at-zero |
+                    forall k: Nat; less_than(k, n) -> apply(power(rho, k), numeral(NZERO)) = numeral(k)
+                    [using specialize rotationPowerAtZero(rho, n) rotation]
+                  @generalize-m |
+                    fix m: Int {
+                      @given-m-positive |
+                        assume int_less_than(IZERO, m) {
+                          @given-m-below |
+                            assume int_less_than(m, toInt(n)) {
+                              @m-positive |
+                                int_less_than(IZERO, m)
+                                [by hypothesis given-m-positive]
+                              @m-below |
+                                int_less_than(m, toInt(n))
+                                [by hypothesis given-m-below]
+                              @m-nonneg |
+                                nonneg(m)
+                                [using specialize positiveIsNonneg(m) m-positive]
+                              @m-is-an-image |
+                                exists k: Nat; toInt(k) = m
+                                [using specialize everyNonnegIsAnImage(m) m-nonneg]
+                              @zero-not-below-itself |
+                                not int_less_than(IZERO, IZERO)
+                                [using specialize intLessThanIrreflexive(IZERO)]
+                              @with-index-k |
+                                unpack k: Nat from m-is-an-image {
+                                  @k-image |
+                                    toInt(k) = m
+                                    [by hypothesis with-index-k]
+                                  @m-is-k-image |
+                                    m = toInt(k)
+                                    [by symmetry k-image]
+                                  @k-image-below |
+                                    int_less_than(toInt(k), toInt(n))
+                                    [by rewrite m-is-k-image m-below]
+                                  @k-below-n |
+                                    less_than(k, n)
+                                    [using specialize toIntReflectsOrder(k, n) k-image-below]
+                                  @k-power-at-zero |
+                                    apply(power(rho, k), numeral(NZERO)) = numeral(k)
+                                    [using specialize powers-at-zero(k) k-below-n]
+                                  @m-power-is-k-power |
+                                    permPower(rho, m) = power(rho, k)
+                                    [by rewrite m-is-k-image int-power-is-nat-power-at-k]
+                                  @int-power-is-nat-power-at-k |
+                                    permPower(rho, toInt(k)) = power(rho, k)
+                                    [using specialize natPowerIsIntPower(rho, k)]
+                                  @identity-at-zero |
+                                    apply(identityFn, numeral(NZERO)) = numeral(NZERO)
+                                    [using specialize identityApply(numeral(NZERO))]
+                                  // if ρ^m were the identity, the letter k would be the letter 0.
+                                  @given-m-kills |
+                                    assume permPower(rho, m) = identityFn {
+                                      @m-kills |
+                                        permPower(rho, m) = identityFn
+                                        [by hypothesis given-m-kills]
+                                      @k-power-is-m-power |
+                                        power(rho, k) = permPower(rho, m)
+                                        [by symmetry m-power-is-k-power]
+                                      @k-power-is-identity |
+                                        power(rho, k) = identityFn
+                                        [using chain k-power-is-m-power m-kills]
+                                      @k-power-at-zero-is-identity-at-zero |
+                                        apply(power(rho, k), numeral(NZERO)) = apply(identityFn, numeral(NZERO))
+                                        [by rewrite k-power-is-identity k-power-at-zero-reflexive]
+                                      @k-power-at-zero-reflexive |
+                                        apply(power(rho, k), numeral(NZERO)) = apply(power(rho, k), numeral(NZERO))
+                                        [by reflexivity]
+                                      @letter-k-is-letter-zero |
+                                        numeral(k) = numeral(NZERO)
+                                        [using chain k-power-at-zero-flipped k-power-at-zero-is-identity-at-zero identity-at-zero]
+                                      @k-power-at-zero-flipped |
+                                        numeral(k) = apply(power(rho, k), numeral(NZERO))
+                                        [by symmetry k-power-at-zero]
+                                      @k-is-zero |
+                                        k = NZERO
+                                        [using specialize numeralInjective(k, NZERO) letter-k-is-letter-zero]
+                                      @m-is-zero-image |
+                                        m = toInt(NZERO)
+                                        [by rewrite k-is-zero m-is-k-image]
+                                      @m-is-zero |
+                                        m = IZERO
+                                        [using chain m-is-zero-image zero-image]
+                                      @zero-below-itself |
+                                        int_less_than(IZERO, IZERO)
+                                        [by rewrite m-is-zero m-positive]
+                                    }
+                                  @m-kills-implies |
+                                    permPower(rho, m) = identityFn -> int_less_than(IZERO, IZERO)
+                                    [by implies_intro given-m-kills]
+                                  @conclusion-m-does-not-kill-inner |
+                                    permPower(rho, m) != identityFn
+                                    [using tautology m-kills-implies zero-not-below-itself]
+                                }
+                              @conclusion-m-does-not-kill |
+                                permPower(rho, m) != identityFn
+                                [by exists_elim with-index-k]
+                            }
+                          @m-below-implies |
+                            int_less_than(m, toInt(n)) -> permPower(rho, m) != identityFn
+                            [by implies_intro given-m-below]
+                        }
+                      @m-positive-implies |
+                        int_less_than(IZERO, m) -> int_less_than(m, toInt(n)) -> permPower(rho, m) != identityFn
+                        [by implies_intro given-m-positive]
+                    }
+                  @minimal |
+                    forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, toInt(n)) -> permPower(rho, m) != identityFn
+                    [by forall_intro generalize-m]
+                  @conclusion-order |
+                    permHasOrder(rho, toInt(n))
+                    [using tautology image-positive n-kills minimal]
+                }
+              @positive-implies |
+                less_than(NZERO, n) -> permHasOrder(rho, toInt(n))
+                [by implies_intro given-positive]
+            }
+          @rotation-implies |
+            isTheRotation(rho, n) -> less_than(NZERO, n) -> permHasOrder(rho, toInt(n))
+            [by implies_intro given-rotation]
+        }
+      @discharge-n |
+        forall n: Nat; isTheRotation(rho, n) -> less_than(NZERO, n) -> permHasOrder(rho, toInt(n))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall rho: Fn; forall n: Nat; isTheRotation(rho, n) -> less_than(NZERO, n) -> permHasOrder(rho, toInt(n))
+    [by forall_intro generalize-rho]
+qed
+
+// -- σ reverses ρ, as maps: σρ = ρ⁻¹σ and σρ⁻¹ = ρσ -------------------------------------------------
+// On a letter this is dihedral.reflectionReversesTheRotation; off the segment both sides fix the
+// point (ρ, σ and hence ρ⁻¹ do).
+theorem reflectionReversesRotationAsMaps: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @rotation |
+                        isTheRotation(rho, n)
+                        [by hypothesis given-rotation]
+                      @reflection |
+                        isTheReflection(sigma, n)
+                        [by hypothesis given-reflection]
+                      @rotation-facts |
+                        invertible(rho) and (forall i: Nat; less_than(succ(i), n) -> apply(rho, numeral(i)) = numeral(succ(i))) and (forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)) and (forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x)
+                        [by hypothesis given-rotation]
+                      @reflection-facts |
+                        invertible(sigma) and apply(sigma, numeral(NZERO)) = numeral(NZERO) and (forall i: Nat; less_than(NZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(peano.sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x)
+                        [by hypothesis given-reflection]
+                      @rho-invertible |
+                        invertible(rho)
+                        [using tautology rotation-facts]
+                      @rho-fixes-outside |
+                        forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x
+                        [using tautology rotation-facts]
+                      @sigma-fixes-outside |
+                        forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x
+                        [using tautology reflection-facts]
+                      @pointwise-on-letters |
+                        forall x: Element; member(x, segment(n)) -> apply(sigma, apply(rho, x)) = apply(inverse(rho), apply(sigma, x))
+                        [using specialize reflectionReversesTheRotation(rho, sigma, n) rotation reflection]
+                      @inverse-undoes |
+                        compose(inverse(rho), rho) = identityFn
+                        [using specialize inverseLeft(rho) rho-invertible]
+                      @generalize-x |
+                        fix x: Element {
+                          @left-applies |
+                            apply(compose(sigma, rho), x) = apply(sigma, apply(rho, x))
+                            [using specialize composeApply(sigma, rho, x)]
+                          @right-applies |
+                            apply(compose(inverse(rho), sigma), x) = apply(inverse(rho), apply(sigma, x))
+                            [using specialize composeApply(inverse(rho), sigma, x)]
+                          @right-applies-flipped |
+                            apply(inverse(rho), apply(sigma, x)) = apply(compose(inverse(rho), sigma), x)
+                            [by symmetry right-applies]
+                          @in-or-out |
+                            member(x, segment(n)) or (not member(x, segment(n)))
+                            [using tautology]
+                          @conclusion-agree |
+                            apply(compose(sigma, rho), x) = apply(compose(inverse(rho), sigma), x)
+                            case in-or-out {
+                              @when-in |
+                                assume member(x, segment(n)) {
+                                  @x-in |
+                                    member(x, segment(n))
+                                    [by hypothesis when-in]
+                                  @reversed |
+                                    apply(sigma, apply(rho, x)) = apply(inverse(rho), apply(sigma, x))
+                                    [using specialize pointwise-on-letters(x) x-in]
+                                  @conclusion-when-in |
+                                    apply(compose(sigma, rho), x) = apply(compose(inverse(rho), sigma), x)
+                                    [using chain left-applies reversed right-applies-flipped]
+                                }
+                              @when-out |
+                                assume not member(x, segment(n)) {
+                                  @x-out |
+                                    not member(x, segment(n))
+                                    [by hypothesis when-out]
+                                  @rho-fixes-x |
+                                    apply(rho, x) = x
+                                    [using specialize rho-fixes-outside(x) x-out]
+                                  @sigma-fixes-x |
+                                    apply(sigma, x) = x
+                                    [using specialize sigma-fixes-outside(x) x-out]
+                                  // ρ⁻¹ fixes x too: ρ⁻¹(x) = ρ⁻¹(ρ x) = (ρ⁻¹ρ)(x) = x.
+                                  @undo-applies |
+                                    apply(compose(inverse(rho), rho), x) = apply(inverse(rho), apply(rho, x))
+                                    [using specialize composeApply(inverse(rho), rho, x)]
+                                  @undo-at-fixed |
+                                    apply(compose(inverse(rho), rho), x) = apply(inverse(rho), x)
+                                    [by rewrite rho-fixes-x undo-applies]
+                                  @undo-is-identity-at-x |
+                                    apply(compose(inverse(rho), rho), x) = apply(identityFn, x)
+                                    [by rewrite inverse-undoes undo-reflexive]
+                                  @undo-reflexive |
+                                    apply(compose(inverse(rho), rho), x) = apply(compose(inverse(rho), rho), x)
+                                    [by reflexivity]
+                                  @identity-at-x |
+                                    apply(identityFn, x) = x
+                                    [using specialize identityApply(x)]
+                                  @inverse-at-x-is-undo |
+                                    apply(inverse(rho), x) = apply(compose(inverse(rho), rho), x)
+                                    [by symmetry undo-at-fixed]
+                                  @inverse-fixes-x |
+                                    apply(inverse(rho), x) = x
+                                    [using chain inverse-at-x-is-undo undo-is-identity-at-x identity-at-x]
+                                  @left-at-x |
+                                    apply(compose(sigma, rho), x) = apply(sigma, x)
+                                    [by rewrite rho-fixes-x left-applies]
+                                  @left-is-x |
+                                    apply(compose(sigma, rho), x) = x
+                                    [using chain left-at-x sigma-fixes-x]
+                                  @right-at-x |
+                                    apply(compose(inverse(rho), sigma), x) = apply(inverse(rho), x)
+                                    [by rewrite sigma-fixes-x right-applies]
+                                  @right-is-x |
+                                    apply(compose(inverse(rho), sigma), x) = x
+                                    [using chain right-at-x inverse-fixes-x]
+                                  @x-is-right |
+                                    x = apply(compose(inverse(rho), sigma), x)
+                                    [by symmetry right-is-x]
+                                  @conclusion-when-out |
+                                    apply(compose(sigma, rho), x) = apply(compose(inverse(rho), sigma), x)
+                                    [using chain left-is-x x-is-right]
+                                }
+                            }
+                        }
+                      @pointwise |
+                        forall x: Element; apply(compose(sigma, rho), x) = apply(compose(inverse(rho), sigma), x)
+                        [by forall_intro generalize-x]
+                      @conclusion-as-maps |
+                        compose(sigma, rho) = compose(inverse(rho), sigma)
+                        [using specialize funcExtensionality(compose(sigma, rho), compose(inverse(rho), sigma)) pointwise]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, rho) = compose(inverse(rho), sigma)
+    [by forall_intro generalize-rho]
+qed
+
+// σρ⁻¹ = ρσ: multiply σρ = ρ⁻¹σ by ρ on the left and ρ⁻¹ on the right.
+theorem reflectionReversesInverseRotationAsMaps: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @rotation |
+                        isTheRotation(rho, n)
+                        [by hypothesis given-rotation]
+                      @reflection |
+                        isTheReflection(sigma, n)
+                        [by hypothesis given-reflection]
+                      @rotation-facts |
+                        invertible(rho) and (forall i: Nat; less_than(succ(i), n) -> apply(rho, numeral(i)) = numeral(succ(i))) and (forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)) and (forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x)
+                        [by hypothesis given-rotation]
+                      @rho-invertible |
+                        invertible(rho)
+                        [using tautology rotation-facts]
+                      @reversed |
+                        compose(sigma, rho) = compose(inverse(rho), sigma)
+                        [using specialize reflectionReversesRotationAsMaps(rho, sigma, n) rotation reflection]
+                      @rho-undoes |
+                        compose(rho, inverse(rho)) = identityFn
+                        [using specialize inverseRight(rho) rho-invertible]
+                      // ρ(σρ) = ρ(ρ⁻¹σ) = σ.
+                      @rho-times-reflexive |
+                        compose(rho, compose(sigma, rho)) = compose(rho, compose(sigma, rho))
+                        [by reflexivity]
+                      @rho-times-reversed |
+                        compose(rho, compose(sigma, rho)) = compose(rho, compose(inverse(rho), sigma))
+                        [by rewrite reversed rho-times-reflexive]
+                      @regrouped |
+                        compose(rho, compose(inverse(rho), sigma)) = compose(compose(rho, inverse(rho)), sigma)
+                        [using assoc(composeAssoc)]
+                      @cancelled |
+                        compose(compose(rho, inverse(rho)), sigma) = compose(identityFn, sigma)
+                        [by rewrite rho-undoes cancelled-reflexive]
+                      @cancelled-reflexive |
+                        compose(compose(rho, inverse(rho)), sigma) = compose(compose(rho, inverse(rho)), sigma)
+                        [by reflexivity]
+                      @identity-times-sigma |
+                        compose(identityFn, sigma) = sigma
+                        [using specialize composeIdentityLeft(sigma)]
+                      @rho-sigma-rho-is-sigma |
+                        compose(rho, compose(sigma, rho)) = sigma
+                        [using chain rho-times-reversed regrouped cancelled identity-times-sigma]
+                      @sigma-is-rho-sigma-rho |
+                        sigma = compose(rho, compose(sigma, rho))
+                        [by symmetry rho-sigma-rho-is-sigma]
+                      // σρ⁻¹ = (ρ(σρ))ρ⁻¹ = ρ(σ(ρρ⁻¹)) = ρσ.
+                      @sigma-inverse-reflexive |
+                        compose(sigma, inverse(rho)) = compose(sigma, inverse(rho))
+                        [by reflexivity]
+                      @sigma-inverse-expanded |
+                        compose(sigma, inverse(rho)) = compose(compose(rho, compose(sigma, rho)), inverse(rho))
+                        [by rewrite sigma-is-rho-sigma-rho sigma-inverse-reflexive]
+                      @regrouped-again |
+                        compose(compose(rho, compose(sigma, rho)), inverse(rho)) = compose(rho, compose(sigma, compose(rho, inverse(rho))))
+                        [using assoc(composeAssoc)]
+                      @inner-cancelled |
+                        compose(rho, compose(sigma, compose(rho, inverse(rho)))) = compose(rho, compose(sigma, identityFn))
+                        [by rewrite rho-undoes inner-reflexive]
+                      @inner-reflexive |
+                        compose(rho, compose(sigma, compose(rho, inverse(rho)))) = compose(rho, compose(sigma, compose(rho, inverse(rho))))
+                        [by reflexivity]
+                      @sigma-times-identity |
+                        compose(sigma, identityFn) = sigma
+                        [using specialize composeIdentityRight(sigma)]
+                      @inner-collapsed |
+                        compose(rho, compose(sigma, identityFn)) = compose(rho, sigma)
+                        [by rewrite sigma-times-identity inner-collapsed-reflexive]
+                      @inner-collapsed-reflexive |
+                        compose(rho, compose(sigma, identityFn)) = compose(rho, compose(sigma, identityFn))
+                        [by reflexivity]
+                      @conclusion-as-maps |
+                        compose(sigma, inverse(rho)) = compose(rho, sigma)
+                        [using chain sigma-inverse-expanded regrouped-again inner-cancelled inner-collapsed]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> compose(sigma, inverse(rho)) = compose(rho, sigma)
+    [by forall_intro generalize-rho]
+qed
+
+// -- σρ^k = ρ^(−k)σ for every integer k -----------------------------------------------------------
+theorem reflectionReversesPowers: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @rotation |
+                        isTheRotation(rho, n)
+                        [by hypothesis given-rotation]
+                      @reflection |
+                        isTheReflection(sigma, n)
+                        [by hypothesis given-reflection]
+                      @reverses-rho |
+                        compose(sigma, rho) = compose(inverse(rho), sigma)
+                        [using specialize reflectionReversesRotationAsMaps(rho, sigma, n) rotation reflection]
+                      @reverses-inverse |
+                        compose(sigma, inverse(rho)) = compose(rho, sigma)
+                        [using specialize reflectionReversesInverseRotationAsMaps(rho, sigma, n) rotation reflection]
+                      // base: σρ⁰ = σ = ρ⁰σ.
+                      @zeroth-power |
+                        permPower(rho, IZERO) = identityFn
+                        [using specialize permPowerZero(rho)]
+                      @neg-zero |
+                        ineg(IZERO) = IZERO
+                        [by cite negZero]
+                      @sigma-times-identity |
+                        compose(sigma, identityFn) = sigma
+                        [using specialize composeIdentityRight(sigma)]
+                      @identity-times-sigma |
+                        compose(identityFn, sigma) = sigma
+                        [using specialize composeIdentityLeft(sigma)]
+                      @base-left |
+                        compose(sigma, permPower(rho, IZERO)) = sigma
+                        [by rewrite zeroth-power sigma-times-identity]
+                      @base-right-at-zero |
+                        compose(permPower(rho, IZERO), sigma) = sigma
+                        [by rewrite zeroth-power identity-times-sigma]
+                      @base-right |
+                        compose(permPower(rho, ineg(IZERO)), sigma) = sigma
+                        [by rewrite neg-zero base-right-at-zero]
+                      @sigma-is-base-right |
+                        sigma = compose(permPower(rho, ineg(IZERO)), sigma)
+                        [by symmetry base-right]
+                      @base-case |
+                        compose(sigma, permPower(rho, IZERO)) = compose(permPower(rho, ineg(IZERO)), sigma)
+                        [using chain base-left sigma-is-base-right]
+                      // step up.
+                      @step-up |
+                        fix k: Int {
+                          @given-hypothesis |
+                            assume compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) {
+                              @hypothesis |
+                                compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                                [by hypothesis given-hypothesis]
+                              @next-unfolds |
+                                permPower(rho, isucc(k)) = compose(permPower(rho, k), rho)
+                                [using specialize permPowerSucc(rho, k)]
+                              @left-unfolded |
+                                compose(sigma, permPower(rho, isucc(k))) = compose(sigma, compose(permPower(rho, k), rho))
+                                [by rewrite next-unfolds left-reflexive]
+                              @left-reflexive |
+                                compose(sigma, permPower(rho, isucc(k))) = compose(sigma, permPower(rho, isucc(k)))
+                                [by reflexivity]
+                              @regrouped-1 |
+                                compose(sigma, compose(permPower(rho, k), rho)) = compose(compose(sigma, permPower(rho, k)), rho)
+                                [using assoc(composeAssoc)]
+                              @with-hypothesis |
+                                compose(compose(sigma, permPower(rho, k)), rho) = compose(compose(permPower(rho, ineg(k)), sigma), rho)
+                                [by rewrite hypothesis with-hypothesis-reflexive]
+                              @with-hypothesis-reflexive |
+                                compose(compose(sigma, permPower(rho, k)), rho) = compose(compose(sigma, permPower(rho, k)), rho)
+                                [by reflexivity]
+                              @regrouped-2 |
+                                compose(compose(permPower(rho, ineg(k)), sigma), rho) = compose(permPower(rho, ineg(k)), compose(sigma, rho))
+                                [using assoc(composeAssoc)]
+                              @reversed-inside |
+                                compose(permPower(rho, ineg(k)), compose(sigma, rho)) = compose(permPower(rho, ineg(k)), compose(inverse(rho), sigma))
+                                [by rewrite reverses-rho reversed-inside-reflexive]
+                              @reversed-inside-reflexive |
+                                compose(permPower(rho, ineg(k)), compose(sigma, rho)) = compose(permPower(rho, ineg(k)), compose(sigma, rho))
+                                [by reflexivity]
+                              @regrouped-3 |
+                                compose(permPower(rho, ineg(k)), compose(inverse(rho), sigma)) = compose(compose(permPower(rho, ineg(k)), inverse(rho)), sigma)
+                                [using assoc(composeAssoc)]
+                              @previous-of-neg |
+                                permPower(rho, iprev(ineg(k))) = compose(permPower(rho, ineg(k)), inverse(rho))
+                                [using specialize permPowerPrev(rho, ineg(k))]
+                              @folded |
+                                compose(compose(permPower(rho, ineg(k)), inverse(rho)), sigma) = compose(permPower(rho, iprev(ineg(k))), sigma)
+                                [by rewrite previous-of-neg folded-reflexive]
+                              @folded-reflexive |
+                                compose(compose(permPower(rho, ineg(k)), inverse(rho)), sigma) = compose(compose(permPower(rho, ineg(k)), inverse(rho)), sigma)
+                                [by reflexivity]
+                              @neg-of-succ |
+                                ineg(isucc(k)) = iprev(ineg(k))
+                                [using specialize negSucc(k)]
+                              @folded-at-neg-succ |
+                                compose(compose(permPower(rho, ineg(k)), inverse(rho)), sigma) = compose(permPower(rho, ineg(isucc(k))), sigma)
+                                [by rewrite neg-of-succ folded]
+                              @conclusion-step-up |
+                                compose(sigma, permPower(rho, isucc(k))) = compose(permPower(rho, ineg(isucc(k))), sigma)
+                                [using chain left-unfolded regrouped-1 with-hypothesis regrouped-2 reversed-inside regrouped-3 folded-at-neg-succ]
+                            }
+                          @step-up-at-k |
+                            compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) -> compose(sigma, permPower(rho, isucc(k))) = compose(permPower(rho, ineg(isucc(k))), sigma)
+                            [by implies_intro given-hypothesis]
+                        }
+                      @step-up-for-all |
+                        forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) -> compose(sigma, permPower(rho, isucc(k))) = compose(permPower(rho, ineg(isucc(k))), sigma)
+                        [by forall_intro step-up]
+                      // step down.
+                      @step-down |
+                        fix k: Int {
+                          @given-hypothesis |
+                            assume compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) {
+                              @hypothesis |
+                                compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                                [by hypothesis given-hypothesis]
+                              @previous-unfolds |
+                                permPower(rho, iprev(k)) = compose(permPower(rho, k), inverse(rho))
+                                [using specialize permPowerPrev(rho, k)]
+                              @left-unfolded |
+                                compose(sigma, permPower(rho, iprev(k))) = compose(sigma, compose(permPower(rho, k), inverse(rho)))
+                                [by rewrite previous-unfolds left-reflexive]
+                              @left-reflexive |
+                                compose(sigma, permPower(rho, iprev(k))) = compose(sigma, permPower(rho, iprev(k)))
+                                [by reflexivity]
+                              @regrouped-1 |
+                                compose(sigma, compose(permPower(rho, k), inverse(rho))) = compose(compose(sigma, permPower(rho, k)), inverse(rho))
+                                [using assoc(composeAssoc)]
+                              @with-hypothesis |
+                                compose(compose(sigma, permPower(rho, k)), inverse(rho)) = compose(compose(permPower(rho, ineg(k)), sigma), inverse(rho))
+                                [by rewrite hypothesis with-hypothesis-reflexive]
+                              @with-hypothesis-reflexive |
+                                compose(compose(sigma, permPower(rho, k)), inverse(rho)) = compose(compose(sigma, permPower(rho, k)), inverse(rho))
+                                [by reflexivity]
+                              @regrouped-2 |
+                                compose(compose(permPower(rho, ineg(k)), sigma), inverse(rho)) = compose(permPower(rho, ineg(k)), compose(sigma, inverse(rho)))
+                                [using assoc(composeAssoc)]
+                              @reversed-inside |
+                                compose(permPower(rho, ineg(k)), compose(sigma, inverse(rho))) = compose(permPower(rho, ineg(k)), compose(rho, sigma))
+                                [by rewrite reverses-inverse reversed-inside-reflexive]
+                              @reversed-inside-reflexive |
+                                compose(permPower(rho, ineg(k)), compose(sigma, inverse(rho))) = compose(permPower(rho, ineg(k)), compose(sigma, inverse(rho)))
+                                [by reflexivity]
+                              @regrouped-3 |
+                                compose(permPower(rho, ineg(k)), compose(rho, sigma)) = compose(compose(permPower(rho, ineg(k)), rho), sigma)
+                                [using assoc(composeAssoc)]
+                              @next-of-neg |
+                                permPower(rho, isucc(ineg(k))) = compose(permPower(rho, ineg(k)), rho)
+                                [using specialize permPowerSucc(rho, ineg(k))]
+                              @folded |
+                                compose(compose(permPower(rho, ineg(k)), rho), sigma) = compose(permPower(rho, isucc(ineg(k))), sigma)
+                                [by rewrite next-of-neg folded-reflexive]
+                              @folded-reflexive |
+                                compose(compose(permPower(rho, ineg(k)), rho), sigma) = compose(compose(permPower(rho, ineg(k)), rho), sigma)
+                                [by reflexivity]
+                              @neg-of-prev |
+                                ineg(iprev(k)) = isucc(ineg(k))
+                                [using specialize negPrev(k)]
+                              @folded-at-neg-prev |
+                                compose(compose(permPower(rho, ineg(k)), rho), sigma) = compose(permPower(rho, ineg(iprev(k))), sigma)
+                                [by rewrite neg-of-prev folded]
+                              @conclusion-step-down |
+                                compose(sigma, permPower(rho, iprev(k))) = compose(permPower(rho, ineg(iprev(k))), sigma)
+                                [using chain left-unfolded regrouped-1 with-hypothesis regrouped-2 reversed-inside regrouped-3 folded-at-neg-prev]
+                            }
+                          @step-down-at-k |
+                            compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) -> compose(sigma, permPower(rho, iprev(k))) = compose(permPower(rho, ineg(iprev(k))), sigma)
+                            [by implies_intro given-hypothesis]
+                        }
+                      @step-down-for-all |
+                        forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma) -> compose(sigma, permPower(rho, iprev(k))) = compose(permPower(rho, ineg(iprev(k))), sigma)
+                        [by forall_intro step-down]
+                      @conclusion-all-k |
+                        forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                        [using instantiation intInduction((fun k: Int => compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma))) base-case step-up-for-all step-down-for-all]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+    [by forall_intro generalize-rho]
+qed
+
+// -- (ρ^kσ)² = id ------------------------------------------------------------------------------------
+theorem reflectedPowerSquaresToIdentity: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @rotation |
+                        isTheRotation(rho, n)
+                        [by hypothesis given-rotation]
+                      @reflection |
+                        isTheReflection(sigma, n)
+                        [by hypothesis given-reflection]
+                      @rotation-facts |
+                        invertible(rho) and (forall i: Nat; less_than(succ(i), n) -> apply(rho, numeral(i)) = numeral(succ(i))) and (forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)) and (forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x)
+                        [by hypothesis given-rotation]
+                      @rho-invertible |
+                        invertible(rho)
+                        [using tautology rotation-facts]
+                      @reverses-powers |
+                        forall k: Int; compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                        [using specialize reflectionReversesPowers(rho, sigma, n) rotation reflection]
+                      @sigma-squared |
+                        compose(sigma, sigma) = identityFn
+                        [using specialize reflectionSquaredIsIdentity(sigma, n) reflection]
+                      @generalize-k |
+                        fix k: Int {
+                          @regrouped-1 |
+                            compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = compose(permPower(rho, k), compose(compose(sigma, permPower(rho, k)), sigma))
+                            [using assoc(composeAssoc)]
+                          @reversed-k |
+                            compose(sigma, permPower(rho, k)) = compose(permPower(rho, ineg(k)), sigma)
+                            [using specialize reverses-powers(k)]
+                          @reversed-inside |
+                            compose(permPower(rho, k), compose(compose(sigma, permPower(rho, k)), sigma)) = compose(permPower(rho, k), compose(compose(permPower(rho, ineg(k)), sigma), sigma))
+                            [by rewrite reversed-k reversed-inside-reflexive]
+                          @reversed-inside-reflexive |
+                            compose(permPower(rho, k), compose(compose(sigma, permPower(rho, k)), sigma)) = compose(permPower(rho, k), compose(compose(sigma, permPower(rho, k)), sigma))
+                            [by reflexivity]
+                          @regrouped-2 |
+                            compose(permPower(rho, k), compose(compose(permPower(rho, ineg(k)), sigma), sigma)) = compose(compose(permPower(rho, k), permPower(rho, ineg(k))), compose(sigma, sigma))
+                            [using assoc(composeAssoc)]
+                          @powers-add |
+                            compose(permPower(rho, k), permPower(rho, ineg(k))) = permPower(rho, iadd(k, ineg(k)))
+                            [using specialize permPowerAdd(rho, k, ineg(k))]
+                          @exponents-cancel |
+                            iadd(k, ineg(k)) = IZERO
+                            [using specialize addNegRight(k)]
+                          @powers-cancel-to-zeroth |
+                            compose(permPower(rho, k), permPower(rho, ineg(k))) = permPower(rho, IZERO)
+                            [by rewrite exponents-cancel powers-add]
+                          @zeroth-power |
+                            permPower(rho, IZERO) = identityFn
+                            [using specialize permPowerZero(rho)]
+                          @powers-cancel |
+                            compose(permPower(rho, k), permPower(rho, ineg(k))) = identityFn
+                            [using chain powers-cancel-to-zeroth zeroth-power]
+                          @both-cancelled-left |
+                            compose(compose(permPower(rho, k), permPower(rho, ineg(k))), compose(sigma, sigma)) = compose(identityFn, compose(sigma, sigma))
+                            [by rewrite powers-cancel both-reflexive]
+                          @both-reflexive |
+                            compose(compose(permPower(rho, k), permPower(rho, ineg(k))), compose(sigma, sigma)) = compose(compose(permPower(rho, k), permPower(rho, ineg(k))), compose(sigma, sigma))
+                            [by reflexivity]
+                          @both-cancelled |
+                            compose(identityFn, compose(sigma, sigma)) = compose(identityFn, identityFn)
+                            [by rewrite sigma-squared both-cancelled-reflexive]
+                          @both-cancelled-reflexive |
+                            compose(identityFn, compose(sigma, sigma)) = compose(identityFn, compose(sigma, sigma))
+                            [by reflexivity]
+                          @identity-squared |
+                            compose(identityFn, identityFn) = identityFn
+                            [using specialize composeIdentityLeft(identityFn)]
+                          @conclusion-square-is-identity |
+                            compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+                            [using chain regrouped-1 reversed-inside regrouped-2 both-cancelled-left both-cancelled identity-squared]
+                        }
+                      @discharge-k |
+                        forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+                        [by forall_intro generalize-k]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+    [by forall_intro generalize-rho]
+qed
+
+// -- ρ^jσ is never the identity (n > 2): it is a reflection, and ρ⁰ is not ------------------------
+theorem reflectedPowerIsNotIdentity: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @given-two-below-n |
+                        assume less_than(succ(succ(NZERO)), n) {
+                          @rotation |
+                            isTheRotation(rho, n)
+                            [by hypothesis given-rotation]
+                          @reflection |
+                            isTheReflection(sigma, n)
+                            [by hypothesis given-reflection]
+                          @two-below-n |
+                            less_than(succ(succ(NZERO)), n)
+                            [by hypothesis given-two-below-n]
+                          @zero-below-one |
+                            less_than(NZERO, succ(NZERO))
+                            [using specialize lessThanSelf(NZERO)]
+                          @zero-below-two |
+                            less_than(NZERO, succ(succ(NZERO)))
+                            [using specialize lessThanSuccRight(NZERO, succ(NZERO)) zero-below-one]
+                          @zero-below-n |
+                            less_than(NZERO, n)
+                            [using specialize natLessThanTransitive(NZERO, succ(succ(NZERO)), n) zero-below-two two-below-n]
+                          @powers-differ-from-reflections |
+                            forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(rho, i) != compose(power(rho, j), sigma)
+                            [using specialize rotationIsNotAReflection(rho, sigma, n) rotation reflection two-below-n]
+                          @zeroth-power |
+                            power(rho, NZERO) = identityFn
+                            [using specialize powerZero(rho)]
+                          @generalize-j |
+                            fix j: Nat {
+                              @given-j-below-n |
+                                assume less_than(j, n) {
+                                  @j-below-n |
+                                    less_than(j, n)
+                                    [by hypothesis given-j-below-n]
+                                  @zeroth-power-is-not-reflected |
+                                    power(rho, NZERO) != compose(power(rho, j), sigma)
+                                    [using specialize powers-differ-from-reflections(NZERO, j) zero-below-n j-below-n]
+                                  @identity-is-not-reflected |
+                                    identityFn != compose(power(rho, j), sigma)
+                                    [by rewrite zeroth-power zeroth-power-is-not-reflected]
+                                  @given-reflected-is-identity |
+                                    assume compose(power(rho, j), sigma) = identityFn {
+                                      @reflected-is-identity |
+                                        compose(power(rho, j), sigma) = identityFn
+                                        [by hypothesis given-reflected-is-identity]
+                                      @conclusion-identity-is-reflected |
+                                        identityFn = compose(power(rho, j), sigma)
+                                        [by symmetry reflected-is-identity]
+                                    }
+                                  @reflected-is-identity-implies |
+                                    compose(power(rho, j), sigma) = identityFn -> identityFn = compose(power(rho, j), sigma)
+                                    [by implies_intro given-reflected-is-identity]
+                                  @conclusion-reflected-is-not-identity |
+                                    compose(power(rho, j), sigma) != identityFn
+                                    [using tautology reflected-is-identity-implies identity-is-not-reflected]
+                                }
+                              @j-below-n-implies |
+                                less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                                [by implies_intro given-j-below-n]
+                            }
+                          @conclusion-for-all-j |
+                            forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                            [by forall_intro generalize-j]
+                        }
+                      @two-below-n-implies |
+                        less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                        [by implies_intro given-two-below-n]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+    [by forall_intro generalize-rho]
+qed
+
+// -- PAYOFF: every reflection ρ^jσ of D_n (n > 2) has order 2 -------------------------------------
+// (ρ^jσ)² = id and ρ^jσ ≠ id, so it is a nontrivial involution.
+theorem reflectedPowerHasOrderTwo: forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-sigma |
+        fix sigma: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-rotation |
+                assume isTheRotation(rho, n) {
+                  @given-reflection |
+                    assume isTheReflection(sigma, n) {
+                      @given-two-below-n |
+                        assume less_than(succ(succ(NZERO)), n) {
+                          @rotation |
+                            isTheRotation(rho, n)
+                            [by hypothesis given-rotation]
+                          @reflection |
+                            isTheReflection(sigma, n)
+                            [by hypothesis given-reflection]
+                          @two-below-n |
+                            less_than(succ(succ(NZERO)), n)
+                            [by hypothesis given-two-below-n]
+                          @rotation-facts |
+                            invertible(rho) and (forall i: Nat; less_than(succ(i), n) -> apply(rho, numeral(i)) = numeral(succ(i))) and (forall m: Nat; n = succ(m) -> apply(rho, numeral(m)) = numeral(NZERO)) and (forall x: Element; (not member(x, segment(n))) -> apply(rho, x) = x)
+                            [by hypothesis given-rotation]
+                          @reflection-facts |
+                            invertible(sigma) and apply(sigma, numeral(NZERO)) = numeral(NZERO) and (forall i: Nat; less_than(NZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(peano.sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x)
+                            [by hypothesis given-reflection]
+                          @rho-invertible |
+                            invertible(rho)
+                            [using tautology rotation-facts]
+                          @sigma-invertible |
+                            invertible(sigma)
+                            [using tautology reflection-facts]
+                          @reflected-powers-square-to-identity |
+                            forall k: Int; compose(compose(permPower(rho, k), sigma), compose(permPower(rho, k), sigma)) = identityFn
+                            [using specialize reflectedPowerSquaresToIdentity(rho, sigma, n) rotation reflection]
+                          @reflected-powers-are-not-identity |
+                            forall j: Nat; less_than(j, n) -> compose(power(rho, j), sigma) != identityFn
+                            [using specialize reflectedPowerIsNotIdentity(rho, sigma, n) rotation reflection two-below-n]
+                          @generalize-j |
+                            fix j: Nat {
+                              @given-j-below-n |
+                                assume less_than(j, n) {
+                                  @j-below-n |
+                                    less_than(j, n)
+                                    [by hypothesis given-j-below-n]
+                                  @power-invertible |
+                                    invertible(power(rho, j))
+                                    [using specialize powerIsAPermutation(rho, j) rho-invertible]
+                                  @reflected-power-invertible |
+                                    invertible(compose(power(rho, j), sigma))
+                                    [using specialize composeIsAPermutation(power(rho, j), sigma) power-invertible sigma-invertible]
+                                  @int-power-is-nat-power |
+                                    permPower(rho, toInt(j)) = power(rho, j)
+                                    [using specialize natPowerIsIntPower(rho, j)]
+                                  @square-is-identity-int |
+                                    compose(compose(permPower(rho, toInt(j)), sigma), compose(permPower(rho, toInt(j)), sigma)) = identityFn
+                                    [using specialize reflected-powers-square-to-identity(toInt(j))]
+                                  @square-is-identity |
+                                    compose(compose(power(rho, j), sigma), compose(power(rho, j), sigma)) = identityFn
+                                    [by rewrite int-power-is-nat-power square-is-identity-int]
+                                  @not-identity |
+                                    compose(power(rho, j), sigma) != identityFn
+                                    [using specialize reflected-powers-are-not-identity(j) j-below-n]
+                                  @conclusion-order-two |
+                                    permHasOrder(compose(power(rho, j), sigma), ITWO)
+                                    [using specialize permInvolutionHasOrderTwo(compose(power(rho, j), sigma)) reflected-power-invertible square-is-identity not-identity]
+                                }
+                              @j-below-n-implies |
+                                less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+                                [by implies_intro given-j-below-n]
+                            }
+                          @conclusion-for-all-j |
+                            forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+                            [by forall_intro generalize-j]
+                        }
+                      @two-below-n-implies |
+                        less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+                        [by implies_intro given-two-below-n]
+                    }
+                  @reflection-implies |
+                    isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+                    [by implies_intro given-reflection]
+                }
+              @rotation-implies |
+                isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+                [by implies_intro given-rotation]
+            }
+          @discharge-n |
+            forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+            [by forall_intro generalize-n]
+        }
+      @discharge-sigma |
+        forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+        [by forall_intro generalize-sigma]
+    }
+  @conclusion |
+    forall rho: Fn; forall sigma: Fn; forall n: Nat; isTheRotation(rho, n) -> isTheReflection(sigma, n) -> less_than(succ(succ(NZERO)), n) -> forall j: Nat; less_than(j, n) -> permHasOrder(compose(power(rho, j), sigma), ITWO)
+    [by forall_intro generalize-rho]
+qed

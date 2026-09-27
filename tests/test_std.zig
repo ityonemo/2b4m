@@ -416,6 +416,10 @@ pub fn addTests(
     // group-power clauses; Perm as a GUARDED model of std/group/power.b4m, so the exponent laws
     // and the order theory (f^k = id ⟺ |f| divides k, conjugates share an order) transfer.
     ctx.okSilent(&.{ "check", "std/permutation/power.b4m" });
+    // ORDERS IN D_n (std/permutation/dihedral-orders.b4m): the rotation has order n, and every
+    // reflected power ρ^jσ has order 2 (σρ = ρ⁻¹σ as maps, so (ρ^jσ)² = id; no reflection is a
+    // rotation) — the concrete answer to AATA §4.1 Ex 6 (D_4).
+    ctx.okSilent(&.{ "check", "std/permutation/dihedral-orders.b4m" });
 
     // LISTINGS OF GROUP ELEMENTS (std/group/listing.b4m): splitting an injective listing by a
     // predicate (theorem schemas, as std/permutation/listing.b4m for maps), the PAIRING lemma
