@@ -1,0 +1,531 @@
+// std/integer/mod-n-prime.b4m — ℤ_p for a PRIME modulus has no proper nontrivial subgroups
+// (Judson §4.1, exercise 26).
+//
+// A subgroup H of ℤ_n is a predicate closed under 0, + and −. It is closed under all
+// integer multiples (k·x = znPower(x, k)), so if it contains some cls(a) ≠ 0 with a
+// coprime to N — and for PRIME N every nonzero class is — then by Bézout 1 = ra + sN it
+// contains cls(1) = r·cls(a), which generates ℤ_n. So H is {0} or everything.
+
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import primes <<< "std/primes.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+const IONE = integer.ONE
+func iadd = integer.add
+func imul = integer.mul
+func isub = integer.sub
+func ineg = integer.neg
+func isucc = integer.succ
+func iprev = integer.prev
+theorem intInduction = integer.induction
+pred less_than = int_divides.less_than
+define divides(d, k) = int_divides.divides(d, k)
+define is_prime(p) = primes.is_prime(p)
+
+sort Zn = mod_n.Zn
+func cls = mod_n.cls
+const N = mod_n.N
+const ZERO = mod_n.ZERO
+func add = mod_n.add
+func neg = mod_n.neg
+func znPower = mod_n.znPower
+
+// -- a subgroup is closed under integer multiples ------------------------------------------
+// prop(x) ⟹ prop(k·x) for every k ∈ ℤ: 0·x = 0 ∈ H; (k+1)·x = k·x + x; (k−1)·x = k·x + (−x).
+theorem subgroupClosedUnderPowers(prop: Zn -> Prop): prop(ZERO) -> (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+proof
+  @given-zero |
+    assume prop(ZERO) {
+      @given-closed-add |
+        assume forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y)) {
+          @given-closed-neg |
+            assume forall x: Zn; prop(x) -> prop(neg(x)) {
+              @zero-in |
+                prop(ZERO)
+                [by hypothesis given-zero]
+              @closed-add |
+                forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))
+                [by hypothesis given-closed-add]
+              @closed-neg |
+                forall x: Zn; prop(x) -> prop(neg(x))
+                [by hypothesis given-closed-neg]
+              @generalize-x |
+                fix x: Zn {
+                  @given-x-in |
+                    assume prop(x) {
+                      @x-in |
+                        prop(x)
+                        [by hypothesis given-x-in]
+                      @neg-x-in |
+                        prop(neg(x))
+                        [using specialize closed-neg(x) x-in]
+                      @zeroth-multiple |
+                        znPower(x, IZERO) = ZERO
+                        [using specialize mod_n.znPowerZero(x)]
+                      @base-case |
+                        prop(znPower(x, IZERO))
+                        [by rewrite zeroth-multiple zero-in]
+                      @step-up |
+                        fix k: Int {
+                          @given-multiple-in |
+                            assume prop(znPower(x, k)) {
+                              @multiple-in |
+                                prop(znPower(x, k))
+                                [by hypothesis given-multiple-in]
+                              @next-multiple-unfolds |
+                                znPower(x, isucc(k)) = add(znPower(x, k), x)
+                                [using specialize mod_n.znPowerSucc(x, k)]
+                              @sum-in |
+                                prop(add(znPower(x, k), x))
+                                [using specialize closed-add(znPower(x, k), x) multiple-in x-in]
+                              @conclusion-next-multiple-in |
+                                prop(znPower(x, isucc(k)))
+                                [by rewrite next-multiple-unfolds sum-in]
+                            }
+                          @conclusion-step-up |
+                            prop(znPower(x, k)) -> prop(znPower(x, isucc(k)))
+                            [by implies_intro given-multiple-in]
+                        }
+                      @step-up-for-all-k |
+                        forall k: Int; prop(znPower(x, k)) -> prop(znPower(x, isucc(k)))
+                        [by forall_intro step-up]
+                      @step-down |
+                        fix k: Int {
+                          @given-multiple-in |
+                            assume prop(znPower(x, k)) {
+                              @multiple-in |
+                                prop(znPower(x, k))
+                                [by hypothesis given-multiple-in]
+                              @previous-multiple-unfolds |
+                                znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+                                [using specialize mod_n.znPowerPrev(x, k)]
+                              @difference-in |
+                                prop(add(znPower(x, k), neg(x)))
+                                [using specialize closed-add(znPower(x, k), neg(x)) multiple-in neg-x-in]
+                              @conclusion-previous-multiple-in |
+                                prop(znPower(x, iprev(k)))
+                                [by rewrite previous-multiple-unfolds difference-in]
+                            }
+                          @conclusion-step-down |
+                            prop(znPower(x, k)) -> prop(znPower(x, iprev(k)))
+                            [by implies_intro given-multiple-in]
+                        }
+                      @step-down-for-all-k |
+                        forall k: Int; prop(znPower(x, k)) -> prop(znPower(x, iprev(k)))
+                        [by forall_intro step-down]
+                      @conclusion-all-multiples-in |
+                        forall k: Int; prop(znPower(x, k))
+                        [using instantiation intInduction((fun k: Int => prop(znPower(x, k)))) base-case step-up-for-all-k step-down-for-all-k]
+                    }
+                  @x-in-implies |
+                    prop(x) -> forall k: Int; prop(znPower(x, k))
+                    [by implies_intro given-x-in]
+                }
+              @discharge-x |
+                forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+                [by forall_intro generalize-x]
+            }
+          @closed-neg-implies |
+            (forall x: Zn; prop(x) -> prop(neg(x))) -> forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+            [by implies_intro given-closed-neg]
+        }
+      @closed-add-implies |
+        (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+        [by implies_intro given-closed-add]
+    }
+  @conclusion |
+    prop(ZERO) -> (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+    [by implies_intro given-zero]
+qed
+
+// -- a multiple of the modulus is the zero class --------------------------------------------
+
+// a − 0 = a.
+theorem subZeroRight: forall a: Int; isub(a, IZERO) = a
+proof
+  @generalize-a |
+    fix a: Int {
+      @unfolded |
+        isub(a, IZERO) = iadd(a, ineg(IZERO))
+        [using specialize integer.definitionOfSubtraction(a, IZERO)]
+      @neg-zero |
+        ineg(IZERO) = IZERO
+        [using import(integer) negZero]
+      @plus-zero |
+        iadd(a, IZERO) = a
+        [using specialize integer.addZeroRight(a)]
+      @conclusion-sub-zero |
+        isub(a, IZERO) = a
+        [using simplify unfolded neg-zero plus-zero]
+    }
+  @conclusion |
+    forall a: Int; isub(a, IZERO) = a
+    [by forall_intro generalize-a]
+qed
+
+// N | a ⟹ cls(a) = 0.
+theorem multipleOfModulusIsZero: forall a: Int; divides(N, a) -> cls(a) = ZERO
+proof
+  @generalize-a |
+    fix a: Int {
+      @given-divides |
+        assume divides(N, a) {
+          @n-divides-a |
+            divides(N, a)
+            [by hypothesis given-divides]
+          @a-minus-zero |
+            isub(a, IZERO) = a
+            [using specialize subZeroRight(a)]
+          @n-divides-difference |
+            divides(N, isub(a, IZERO))
+            [by rewrite a-minus-zero n-divides-a]
+          @congruent-iff |
+            cls(a) = cls(IZERO) iff divides(N, isub(a, IZERO))
+            [using specialize mod_n.clsCongruent(a, IZERO)]
+          @a-is-zero-class |
+            cls(a) = cls(IZERO)
+            [using tautology congruent-iff n-divides-difference]
+          @zero-is-zero-class |
+            ZERO = cls(IZERO)
+            [using import(mod_n) zeroIsClsZero]
+          @zero-class-is-zero |
+            cls(IZERO) = ZERO
+            [by symmetry zero-is-zero-class]
+          @conclusion-a-is-zero |
+            cls(a) = ZERO
+            [using chain a-is-zero-class zero-class-is-zero]
+        }
+      @divides-implies |
+        divides(N, a) -> cls(a) = ZERO
+        [by implies_intro given-divides]
+    }
+  @conclusion |
+    forall a: Int; divides(N, a) -> cls(a) = ZERO
+    [by forall_intro generalize-a]
+qed
+
+// -- ℤ_p has no proper nontrivial subgroups -------------------------------------------------
+// For H a subgroup (0 ∈ H, closed under + and −) and N prime: H = {0} or H = ℤ_N. If some
+// cls(a) ∈ H is nonzero then N ∤ a, so a and N are coprime (N is prime); Bézout gives
+// r a + s N = 1, so cls(1) = r·cls(a) + cls(sN) = r·cls(a) ∈ H, and cls(1) generates ℤ_N.
+theorem primeModulusHasNoProperSubgroups(prop: Zn -> Prop): prop(ZERO) -> (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> is_prime(N) -> ((forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x)))
+proof
+  @given-zero |
+    assume prop(ZERO) {
+      @given-closed-add |
+        assume forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y)) {
+          @given-closed-neg |
+            assume forall x: Zn; prop(x) -> prop(neg(x)) {
+              @given-prime |
+                assume is_prime(N) {
+                  @zero-in |
+                    prop(ZERO)
+                    [by hypothesis given-zero]
+                  @closed-add |
+                    forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))
+                    [by hypothesis given-closed-add]
+                  @closed-neg |
+                    forall x: Zn; prop(x) -> prop(neg(x))
+                    [by hypothesis given-closed-neg]
+                  @n-prime |
+                    is_prime(N)
+                    [by hypothesis given-prime]
+                  @closed-under-multiples |
+                    forall x: Zn; prop(x) -> forall k: Int; prop(znPower(x, k))
+                    [using instantiation subgroupClosedUnderPowers((fun w: Zn => prop(w))) zero-in closed-add closed-neg]
+                  @trivial-or-not |
+                    (forall x: Zn; prop(x) -> x = ZERO) or (not (forall x: Zn; prop(x) -> x = ZERO))
+                    [using tautology]
+                  @conclusion-trivial-or-everything |
+                    (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                    case trivial-or-not {
+                      @when-trivial |
+                        assume forall x: Zn; prop(x) -> x = ZERO {
+                          @trivial |
+                            forall x: Zn; prop(x) -> x = ZERO
+                            [by hypothesis when-trivial]
+                          @conclusion-left |
+                            (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                            [by or_intro_left trivial]
+                        }
+                      @when-not-trivial |
+                        assume not (forall x: Zn; prop(x) -> x = ZERO) {
+                          @not-trivial |
+                            not (forall x: Zn; prop(x) -> x = ZERO)
+                            [by hypothesis when-not-trivial]
+                          // classically, some member is nonzero.
+                          @given-no-nonzero-member |
+                            assume not (exists z: Zn; prop(z) and z != ZERO) {
+                              @no-nonzero-member |
+                                not (exists z: Zn; prop(z) and z != ZERO)
+                                [by hypothesis given-no-nonzero-member]
+                              @generalize-y |
+                                fix y: Zn {
+                                  @given-y-in |
+                                    assume prop(y) {
+                                      @y-in |
+                                        prop(y)
+                                        [by hypothesis given-y-in]
+                                      @given-y-nonzero |
+                                        assume y != ZERO {
+                                          @y-nonzero |
+                                            y != ZERO
+                                            [by hypothesis given-y-nonzero]
+                                          @y-is-a-nonzero-member |
+                                            prop(y) and y != ZERO
+                                            [by and_intro y-in y-nonzero]
+                                          @some-nonzero-member |
+                                            exists z: Zn; prop(z) and z != ZERO
+                                            [by exists_intro(y) y-is-a-nonzero-member]
+                                        }
+                                      @y-nonzero-implies |
+                                        y != ZERO -> exists z: Zn; prop(z) and z != ZERO
+                                        [by implies_intro given-y-nonzero]
+                                      @y-is-zero |
+                                        y = ZERO
+                                        [using tautology y-nonzero-implies no-nonzero-member]
+                                    }
+                                  @y-in-implies |
+                                    prop(y) -> y = ZERO
+                                    [by implies_intro given-y-in]
+                                }
+                              @trivial-after-all |
+                                forall x: Zn; prop(x) -> x = ZERO
+                                [by forall_intro generalize-y]
+                            }
+                          @no-nonzero-member-implies-trivial |
+                            (not (exists z: Zn; prop(z) and z != ZERO)) -> (forall x: Zn; prop(x) -> x = ZERO)
+                            [by implies_intro given-no-nonzero-member]
+                          @nonzero-member-exists |
+                            exists z: Zn; prop(z) and z != ZERO
+                            [using tautology no-nonzero-member-implies-trivial not-trivial]
+                          @with-nonzero-member-z |
+                            unpack z: Zn from nonzero-member-exists {
+                              @z-facts |
+                                prop(z) and z != ZERO
+                                [by hypothesis with-nonzero-member-z]
+                              @z-in |
+                                prop(z)
+                                [by and_elim_left z-facts]
+                              @z-nonzero |
+                                z != ZERO
+                                [by and_elim_right z-facts]
+                              @z-has-representative |
+                                exists k: Int; z = cls(k)
+                                [using specialize mod_n.clsSurjective(z)]
+                              @with-representative-a |
+                                unpack a: Int from z-has-representative {
+                                  @z-is-cls-a |
+                                    z = cls(a)
+                                    [by hypothesis with-representative-a]
+                                  @cls-a-in |
+                                    prop(cls(a))
+                                    [by rewrite z-is-cls-a z-in]
+                                  @cls-a-nonzero |
+                                    cls(a) != ZERO
+                                    [by rewrite z-is-cls-a z-nonzero]
+                                  // N ∤ a, so (N prime) every common divisor of a and N is ±1.
+                                  @multiple-would-be-zero |
+                                    divides(N, a) -> cls(a) = ZERO
+                                    [using specialize multipleOfModulusIsZero(a)]
+                                  @n-does-not-divide-a |
+                                    not divides(N, a)
+                                    [using tautology multiple-would-be-zero cls-a-nonzero]
+                                  @common-divisors-are-units |
+                                    forall d: Int; divides(d, a) -> divides(d, N) -> (d = IONE or d = ineg(IONE))
+                                    [using specialize primes.coprimalityFromPrime(N, a) n-prime n-does-not-divide-a]
+                                  // a ≠ 0 (N | 0) and N ≠ 0 (N > 0), so Bézout applies.
+                                  @n-divides-zero |
+                                    divides(N, IZERO)
+                                    [using specialize int_divides.dividesZero(N)]
+                                  @given-a-zero |
+                                    assume a = IZERO {
+                                      @a-zero |
+                                        a = IZERO
+                                        [by hypothesis given-a-zero]
+                                      @n-divides-a-after-all |
+                                        divides(N, a)
+                                        [by rewrite a-zero n-divides-zero]
+                                    }
+                                  @a-zero-implies |
+                                    a = IZERO -> divides(N, a)
+                                    [by implies_intro given-a-zero]
+                                  @a-nonzero |
+                                    a != IZERO
+                                    [using tautology a-zero-implies n-does-not-divide-a]
+                                  @n-positive |
+                                    less_than(IZERO, N)
+                                    [using import(mod_n) nPositive]
+                                  @zero-not-below-itself |
+                                    not less_than(IZERO, IZERO)
+                                    [using specialize int_divides.lessThanIrreflexive(IZERO)]
+                                  @given-n-zero |
+                                    assume N = IZERO {
+                                      @n-zero |
+                                        N = IZERO
+                                        [by hypothesis given-n-zero]
+                                      @zero-below-itself |
+                                        less_than(IZERO, IZERO)
+                                        [by rewrite n-zero n-positive]
+                                    }
+                                  @n-zero-implies |
+                                    N = IZERO -> less_than(IZERO, IZERO)
+                                    [by implies_intro given-n-zero]
+                                  @n-nonzero |
+                                    N != IZERO
+                                    [using tautology n-zero-implies zero-not-below-itself]
+                                  @bezout-exists |
+                                    exists r: Int; exists s: Int; iadd(imul(a, r), imul(N, s)) = IONE
+                                    [using specialize int_divides.coprimeBezout(a, N) a-nonzero n-nonzero common-divisors-are-units]
+                                  @with-bezout-r |
+                                    unpack r: Int from bezout-exists {
+                                      @s-exists |
+                                        exists s: Int; iadd(imul(a, r), imul(N, s)) = IONE
+                                        [by hypothesis with-bezout-r]
+                                      @with-bezout-s |
+                                        unpack s: Int from s-exists {
+                                          @bezout-identity |
+                                            iadd(imul(a, r), imul(N, s)) = IONE
+                                            [by hypothesis with-bezout-s]
+                                          // cls(1) = cls(ar) + cls(sN) = r·cls(a) + 0.
+                                          @one-class-splits |
+                                            add(cls(imul(a, r)), cls(imul(N, s))) = cls(iadd(imul(a, r), imul(N, s)))
+                                            [using specialize mod_n.addHom(imul(a, r), imul(N, s))]
+                                          @one-class-as-sum |
+                                            add(cls(imul(a, r)), cls(imul(N, s))) = cls(IONE)
+                                            [by rewrite bezout-identity one-class-splits]
+                                          @n-divides-ns |
+                                            divides(N, imul(N, s))
+                                            [using specialize int_divides.dividesMul(N, N, s) n-divides-n]
+                                          @n-divides-n |
+                                            divides(N, N)
+                                            [using specialize int_divides.dividesRefl(N)]
+                                          @ns-class-is-zero |
+                                            cls(imul(N, s)) = ZERO
+                                            [using specialize multipleOfModulusIsZero(imul(N, s)) n-divides-ns]
+                                          @ar-commutes |
+                                            imul(a, r) = imul(r, a)
+                                            [using specialize int_divides.mulIsCommutative(a, r)]
+                                          @r-multiple-of-cls-a |
+                                            znPower(cls(a), r) = cls(imul(r, a))
+                                            [using specialize mod_n.znPowerDef(a, r)]
+                                          @ar-class-is-multiple |
+                                            cls(imul(a, r)) = znPower(cls(a), r)
+                                            [using simplify ar-commutes r-multiple-of-cls-a]
+                                          @one-class-as-sum-with-zero |
+                                            add(cls(imul(a, r)), ZERO) = cls(IONE)
+                                            [by rewrite ns-class-is-zero one-class-as-sum]
+                                          @one-class-as-multiple-plus-zero |
+                                            add(znPower(cls(a), r), ZERO) = cls(IONE)
+                                            [by rewrite ar-class-is-multiple one-class-as-sum-with-zero]
+                                          @multiple-plus-zero |
+                                            add(znPower(cls(a), r), ZERO) = znPower(cls(a), r)
+                                            [using specialize mod_n.addIdentityRight(znPower(cls(a), r))]
+                                          @one-class-is-multiple-plus-zero |
+                                            cls(IONE) = add(znPower(cls(a), r), ZERO)
+                                            [by symmetry one-class-as-multiple-plus-zero]
+                                          @one-class-is-multiple |
+                                            cls(IONE) = znPower(cls(a), r)
+                                            [using chain one-class-is-multiple-plus-zero multiple-plus-zero]
+                                          @multiples-of-cls-a-in |
+                                            forall k: Int; prop(znPower(cls(a), k))
+                                            [using specialize closed-under-multiples(cls(a)) cls-a-in]
+                                          @r-multiple-in |
+                                            prop(znPower(cls(a), r))
+                                            [using specialize multiples-of-cls-a-in(r)]
+                                          @one-class-in |
+                                            prop(cls(IONE))
+                                            [by rewrite one-class-is-multiple r-multiple-in]
+                                          // cls(1) generates ℤ_N, so everything is in.
+                                          @multiples-of-one-in |
+                                            forall k: Int; prop(znPower(cls(IONE), k))
+                                            [using specialize closed-under-multiples(cls(IONE)) one-class-in]
+                                          @generalize-w |
+                                            fix w: Zn {
+                                              @w-is-a-multiple-of-one |
+                                                exists k: Int; w = znPower(cls(IONE), k)
+                                                [using specialize mod_n.znIsCyclic(w)]
+                                              @with-exponent-k |
+                                                unpack k: Int from w-is-a-multiple-of-one {
+                                                  @w-is-k-multiple |
+                                                    w = znPower(cls(IONE), k)
+                                                    [by hypothesis with-exponent-k]
+                                                  @k-multiple-in |
+                                                    prop(znPower(cls(IONE), k))
+                                                    [using specialize multiples-of-one-in(k)]
+                                                  @conclusion-w-in |
+                                                    prop(w)
+                                                    [by rewrite w-is-k-multiple k-multiple-in]
+                                                }
+                                              @w-in |
+                                                prop(w)
+                                                [by exists_elim with-exponent-k]
+                                            }
+                                          @everything-in |
+                                            forall x: Zn; prop(x)
+                                            [by forall_intro generalize-w]
+                                          @conclusion-right |
+                                            (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                                            [by or_intro_right everything-in]
+                                        }
+                                      @conclusion-with-r |
+                                        (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                                        [by exists_elim with-bezout-s]
+                                    }
+                                  @conclusion-with-representative |
+                                    (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                                    [by exists_elim with-bezout-r]
+                                }
+                              @conclusion-with-z |
+                                (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                                [by exists_elim with-representative-a]
+                            }
+                          @conclusion-not-trivial |
+                            (forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x))
+                            [by exists_elim with-nonzero-member-z]
+                        }
+                    }
+                }
+              @prime-implies |
+                is_prime(N) -> ((forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x)))
+                [by implies_intro given-prime]
+            }
+          @closed-neg-implies |
+            (forall x: Zn; prop(x) -> prop(neg(x))) -> is_prime(N) -> ((forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x)))
+            [by implies_intro given-closed-neg]
+        }
+      @closed-add-implies |
+        (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> is_prime(N) -> ((forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x)))
+        [by implies_intro given-closed-add]
+    }
+  @conclusion |
+    prop(ZERO) -> (forall x, y: Zn; prop(x) -> prop(y) -> prop(add(x, y))) -> (forall x: Zn; prop(x) -> prop(neg(x))) -> is_prime(N) -> ((forall x: Zn; prop(x) -> x = ZERO) or (forall x: Zn; prop(x)))
+    [by implies_intro given-zero]
+qed
+
+// -- the exhibiting instance: an arbitrary subgroup H of ℤ_N --------------------------------
+// H is an opaque predicate with the subgroup criterion as its axioms; the schema instantiated
+// at it says H = {0} or H = ℤ_N whenever N is prime.
+pred inH(x: Zn)
+axiom subgroupHasZero: inH(ZERO)
+axiom subgroupClosedAdd: forall x, y: Zn; inH(x) -> inH(y) -> inH(add(x, y))
+axiom subgroupClosedNeg: forall x: Zn; inH(x) -> inH(neg(x))
+
+theorem primeModulusSubgroupIsTrivialOrEverything: is_prime(N) -> ((forall x: Zn; inH(x) -> x = ZERO) or (forall x: Zn; inH(x)))
+proof
+  @zero-in-h |
+    inH(ZERO)
+    [by cite subgroupHasZero]
+  @h-closed-add |
+    forall x, y: Zn; inH(x) -> inH(y) -> inH(add(x, y))
+    [by cite subgroupClosedAdd]
+  @h-closed-neg |
+    forall x: Zn; inH(x) -> inH(neg(x))
+    [by cite subgroupClosedNeg]
+  @conclusion |
+    is_prime(N) -> ((forall x: Zn; inH(x) -> x = ZERO) or (forall x: Zn; inH(x)))
+    [using instantiation primeModulusHasNoProperSubgroups(inH) zero-in-h h-closed-add h-closed-neg]
+qed

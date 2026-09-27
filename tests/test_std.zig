@@ -187,6 +187,11 @@ pub fn addTests(
     // theorem for all finite groups through one overlay over group, group_power and
     // group_sequence (ZnListing).
     ctx.okSilent(&.{ "check", "std/integer/mod-n-listing.b4m" });
+    // ℤ_p has no proper nontrivial subgroups (std/integer/mod-n-prime.b4m, Judson §4.1
+    // exercise 26): a subgroup (a predicate closed under 0, +, −) is closed under integer
+    // multiples; a nonzero member cls(a) has N ∤ a, so for PRIME N Bézout puts cls(1) in it.
+    // The schema is exhibited at an opaque subgroup predicate.
+    ctx.okSilent(&.{ "check", "std/integer/mod-n-prime.b4m" });
 
     // the ring theory (std/ring.b4m): an additive abelian group + associative,
     // distributing multiplication. Its additive half MODELS std/group.b4m (a

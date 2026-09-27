@@ -28,6 +28,11 @@ func radd = real.add
 func rmul = real.mul
 func sqrt = real_sqrt.sqrt
 pred less_or_equal = real.less_or_equal
+pred less_than = real.less_than
+const ONE = complex.ONE
+func recip = complex.recip
+func cadd = complex.add
+const i = complex.i
 
 // the norm-square (a real) and the modulus (its nonnegative square root).
 define normSq(z) = radd(rmul(re(z), re(z)), rmul(im(z), im(z)))
@@ -225,5 +230,295 @@ proof
     }
   @conclusion |
     forall z, w: Complex; abs(mul(z, w)) = rmul(abs(z), abs(w))
+    [by forall_intro generalize-z]
+qed
+
+// -- the norm-square vanishes only at 0 --------------------------------------------------
+// normSq(z) = re² + im² is a sum of two nonnegative reals, so it is 0 only when both
+// squares are, i.e. when re(z) = im(z) = 0, i.e. z = 0. This is what makes z̄/|z|² a
+// legitimate expression for z⁻¹ (Exercise 19(c)).
+
+// (real) a ≥ 0, b ≥ 0, a + b = 0 ⟹ a = 0: otherwise 0 < a gives b = 0 + b < a + b = 0,
+// against b ≥ 0.
+theorem nonnegSummandOfZeroIsZero: forall a, b: Real; less_or_equal(real.ZERO, a) -> less_or_equal(real.ZERO, b) -> radd(a, b) = real.ZERO -> a = real.ZERO
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @given-a-nonneg |
+            assume less_or_equal(real.ZERO, a) {
+              @given-b-nonneg |
+                assume less_or_equal(real.ZERO, b) {
+                  @given-sum-zero |
+                    assume radd(a, b) = real.ZERO {
+                      @a-nonneg |
+                        less_than(real.ZERO, a) or real.ZERO = a
+                        [by hypothesis given-a-nonneg]
+                      @b-nonneg |
+                        less_than(real.ZERO, b) or real.ZERO = b
+                        [by hypothesis given-b-nonneg]
+                      @sum-zero |
+                        radd(a, b) = real.ZERO
+                        [by hypothesis given-sum-zero]
+                      @zero-not-below-itself |
+                        not less_than(real.ZERO, real.ZERO)
+                        [using specialize real.lessThanIrreflexive(real.ZERO)]
+                      @conclusion-a-zero |
+                        a = real.ZERO
+                        case a-nonneg {
+                          @when-a-positive |
+                            assume less_than(real.ZERO, a) {
+                              @a-positive |
+                                less_than(real.ZERO, a)
+                                [by hypothesis when-a-positive]
+                              @shifted-by-b |
+                                less_than(radd(real.ZERO, b), radd(a, b))
+                                [using specialize real.lessThanAddRight(real.ZERO, a, b) a-positive]
+                              @zero-plus-b |
+                                radd(real.ZERO, b) = b
+                                [using specialize real.addZeroLeft(b)]
+                              @b-below-sum |
+                                less_than(b, radd(a, b))
+                                [by rewrite zero-plus-b shifted-by-b]
+                              @b-below-zero |
+                                less_than(b, real.ZERO)
+                                [by rewrite sum-zero b-below-sum]
+                              @zero-below-itself |
+                                less_than(real.ZERO, real.ZERO)
+                                case b-nonneg {
+                                  @when-b-positive |
+                                    assume less_than(real.ZERO, b) {
+                                      @b-positive |
+                                        less_than(real.ZERO, b)
+                                        [by hypothesis when-b-positive]
+                                      @zero-below-itself-via-b |
+                                        less_than(real.ZERO, real.ZERO)
+                                        [using specialize real.lessThanTransitive(real.ZERO, b, real.ZERO) b-positive b-below-zero]
+                                    }
+                                  @when-b-zero |
+                                    assume real.ZERO = b {
+                                      @b-zero |
+                                        real.ZERO = b
+                                        [by hypothesis when-b-zero]
+                                      @zero-below-itself-at-b |
+                                        less_than(real.ZERO, real.ZERO)
+                                        [by rewrite b-zero b-below-zero]
+                                    }
+                                }
+                              @conclusion-a-zero-absurdly |
+                                a = real.ZERO
+                                [by absurd zero-below-itself zero-not-below-itself]
+                            }
+                          @when-a-zero |
+                            assume real.ZERO = a {
+                              @a-zero |
+                                real.ZERO = a
+                                [by hypothesis when-a-zero]
+                              @conclusion-a-is-zero |
+                                a = real.ZERO
+                                [by symmetry a-zero]
+                            }
+                        }
+                    }
+                  @sum-zero-implies |
+                    radd(a, b) = real.ZERO -> a = real.ZERO
+                    [by implies_intro given-sum-zero]
+                }
+              @b-nonneg-implies |
+                less_or_equal(real.ZERO, b) -> radd(a, b) = real.ZERO -> a = real.ZERO
+                [by implies_intro given-b-nonneg]
+            }
+          @a-nonneg-implies |
+            less_or_equal(real.ZERO, a) -> less_or_equal(real.ZERO, b) -> radd(a, b) = real.ZERO -> a = real.ZERO
+            [by implies_intro given-a-nonneg]
+        }
+      @discharge-b |
+        forall b: Real; less_or_equal(real.ZERO, a) -> less_or_equal(real.ZERO, b) -> radd(a, b) = real.ZERO -> a = real.ZERO
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; less_or_equal(real.ZERO, a) -> less_or_equal(real.ZERO, b) -> radd(a, b) = real.ZERO -> a = real.ZERO
+    [by forall_intro generalize-a]
+qed
+
+// normSq(z) = 0 ⟹ z = 0: both squares vanish, so both parts do (no zero divisors), so
+// z = re + im·i = 0.
+theorem normSqZeroGivesZero: forall z: Complex; normSq(z) = real.ZERO -> z = ZERO
+proof
+  @generalize-z |
+    fix z: Complex {
+      @given-normsq-zero |
+        assume normSq(z) = real.ZERO {
+          @squares-sum-to-zero |
+            radd(rmul(re(z), re(z)), rmul(im(z), im(z))) = real.ZERO
+            [by hypothesis given-normsq-zero]
+          @re-square-nonneg |
+            less_or_equal(real.ZERO, rmul(re(z), re(z)))
+            [using specialize real.squareNonneg(re(z))]
+          @im-square-nonneg |
+            less_or_equal(real.ZERO, rmul(im(z), im(z)))
+            [using specialize real.squareNonneg(im(z))]
+          @re-square-zero |
+            rmul(re(z), re(z)) = real.ZERO
+            [using specialize nonnegSummandOfZeroIsZero(rmul(re(z), re(z)), rmul(im(z), im(z))) re-square-nonneg im-square-nonneg squares-sum-to-zero]
+          @squares-commute |
+            radd(rmul(re(z), re(z)), rmul(im(z), im(z))) = radd(rmul(im(z), im(z)), rmul(re(z), re(z)))
+            [using specialize real.addIsCommutative(rmul(re(z), re(z)), rmul(im(z), im(z)))]
+          @squares-sum-to-zero-swapped |
+            radd(rmul(im(z), im(z)), rmul(re(z), re(z))) = real.ZERO
+            [by rewrite squares-commute squares-sum-to-zero]
+          @im-square-zero |
+            rmul(im(z), im(z)) = real.ZERO
+            [using specialize nonnegSummandOfZeroIsZero(rmul(im(z), im(z)), rmul(re(z), re(z))) im-square-nonneg re-square-nonneg squares-sum-to-zero-swapped]
+          @re-zero-or-zero |
+            re(z) = real.ZERO or re(z) = real.ZERO
+            [using specialize real.noZeroDivisors(re(z), re(z)) re-square-zero]
+          @re-zero |
+            re(z) = real.ZERO
+            [using tautology re-zero-or-zero]
+          @im-zero-or-zero |
+            im(z) = real.ZERO or im(z) = real.ZERO
+            [using specialize real.noZeroDivisors(im(z), im(z)) im-square-zero]
+          @im-zero |
+            im(z) = real.ZERO
+            [using tautology im-zero-or-zero]
+          @z-from-parts |
+            z = cadd(fromReal(re(z)), mul(fromReal(im(z)), i))
+            [using specialize complex.complexParts(z)]
+          @z-from-zero-real-part |
+            z = cadd(fromReal(real.ZERO), mul(fromReal(im(z)), i))
+            [by rewrite re-zero z-from-parts]
+          @z-from-zero-parts |
+            z = cadd(fromReal(real.ZERO), mul(fromReal(real.ZERO), i))
+            [by rewrite im-zero z-from-zero-real-part]
+          @real-zero-embeds |
+            fromReal(real.ZERO) = ZERO
+            [using import(complex) fromRealZero]
+          @z-from-zeros |
+            z = cadd(ZERO, mul(ZERO, i))
+            [by rewrite real-zero-embeds z-from-zero-parts]
+          @zero-times-i |
+            mul(ZERO, i) = ZERO
+            [using specialize complex.mulZeroLeft(i)]
+          @z-is-zero-plus-zero |
+            z = cadd(ZERO, ZERO)
+            [by rewrite zero-times-i z-from-zeros]
+          @zero-plus-zero |
+            cadd(ZERO, ZERO) = ZERO
+            [using specialize complex.addZeroLeft(ZERO)]
+          @conclusion-z-zero |
+            z = ZERO
+            [using chain z-is-zero-plus-zero zero-plus-zero]
+        }
+      @normsq-zero-implies |
+        normSq(z) = real.ZERO -> z = ZERO
+        [by implies_intro given-normsq-zero]
+    }
+  @conclusion |
+    forall z: Complex; normSq(z) = real.ZERO -> z = ZERO
+    [by forall_intro generalize-z]
+qed
+
+// EXERCISE 19(c): z⁻¹ = z̄ / |z|², i.e. recip(z) = z̄ · recip(|z|²) for z ≠ 0. The candidate
+// w = z̄ · recip(|z|²) satisfies z·w = (z z̄)·recip(|z|²) = |z|²·recip(|z|²) = 1, and the
+// inverse is unique: recip(z) = recip(z)·(z·w) = (recip(z)·z)·w = w.
+theorem recipIsConjOverNormSq: forall z: Complex; z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @given-z-nonzero |
+        assume z != ZERO {
+          @z-nonzero |
+            z != ZERO
+            [by hypothesis given-z-nonzero]
+          // |z|² ≠ 0, so its embedding is a nonzero complex number with a reciprocal.
+          @normsq-zero-implies-zero |
+            normSq(z) = real.ZERO -> z = ZERO
+            [using specialize normSqZeroGivesZero(z)]
+          @normsq-nonzero |
+            normSq(z) != real.ZERO
+            [using tautology normsq-zero-implies-zero z-nonzero]
+          @real-zero-embeds |
+            fromReal(real.ZERO) = ZERO
+            [using import(complex) fromRealZero]
+          @given-embedding-zero |
+            assume fromReal(normSq(z)) = ZERO {
+              @embedding-zero |
+                fromReal(normSq(z)) = ZERO
+                [by hypothesis given-embedding-zero]
+              @zero-is-embedded-zero |
+                ZERO = fromReal(real.ZERO)
+                [by symmetry real-zero-embeds]
+              @embeddings-agree |
+                fromReal(normSq(z)) = fromReal(real.ZERO)
+                [using chain embedding-zero zero-is-embedded-zero]
+              @normsq-zero |
+                normSq(z) = real.ZERO
+                [using specialize complex.fromRealInjective(normSq(z), real.ZERO) embeddings-agree]
+            }
+          @embedding-zero-implies |
+            fromReal(normSq(z)) = ZERO -> normSq(z) = real.ZERO
+            [by implies_intro given-embedding-zero]
+          @embedding-nonzero |
+            fromReal(normSq(z)) != ZERO
+            [using tautology embedding-zero-implies normsq-nonzero]
+          @embedding-times-recip |
+            mul(fromReal(normSq(z)), recip(fromReal(normSq(z)))) = ONE
+            [using specialize complex.fieldInverse(fromReal(normSq(z))) embedding-nonzero]
+          // z · w = 1 for w = z̄ · recip(|z|²).
+          @z-times-conj |
+            mul(z, conj(z)) = fromReal(normSq(z))
+            [using specialize zTimesConjIsNormSq(z)]
+          @z-times-w-regrouped |
+            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(mul(z, conj(z)), recip(fromReal(normSq(z))))
+            [using assoc(complex.mulIsAssociative)]
+          @z-times-w-via-normsq |
+            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(fromReal(normSq(z)), recip(fromReal(normSq(z))))
+            [by rewrite z-times-conj z-times-w-regrouped]
+          @z-times-w |
+            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = ONE
+            [using chain z-times-w-via-normsq embedding-times-recip]
+          // recip(z) = recip(z)·1 = recip(z)·(z·w) = (recip(z)·z)·w = 1·w = w.
+          @z-times-recip |
+            mul(z, recip(z)) = ONE
+            [using specialize complex.fieldInverse(z) z-nonzero]
+          @recip-times-z-commuted |
+            mul(recip(z), z) = mul(z, recip(z))
+            [using specialize complex.mulIsCommutative(recip(z), z)]
+          @recip-times-z |
+            mul(recip(z), z) = ONE
+            [using chain recip-times-z-commuted z-times-recip]
+          @recip-times-one |
+            mul(recip(z), ONE) = recip(z)
+            [using specialize complex.mulOneRight(recip(z))]
+          @recip-as-product-with-one |
+            recip(z) = mul(recip(z), ONE)
+            [by symmetry recip-times-one]
+          @recip-as-product-with-z-w |
+            recip(z) = mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z))))))
+            [by rewrite z-times-w recip-as-product-with-one]
+          @recip-product-regrouped |
+            mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z)))))) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
+            [using assoc(complex.mulIsAssociative)]
+          @recip-as-regrouped-product |
+            recip(z) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
+            [using chain recip-as-product-with-z-w recip-product-regrouped]
+          @recip-as-one-times-w |
+            recip(z) = mul(ONE, mul(conj(z), recip(fromReal(normSq(z)))))
+            [by rewrite recip-times-z recip-as-regrouped-product]
+          @one-times-w |
+            mul(ONE, mul(conj(z), recip(fromReal(normSq(z))))) = mul(conj(z), recip(fromReal(normSq(z))))
+            [using specialize complex.mulOneLeft(mul(conj(z), recip(fromReal(normSq(z)))))]
+          @conclusion-recip-is-w |
+            recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+            [using chain recip-as-one-times-w one-times-w]
+        }
+      @z-nonzero-implies |
+        z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+        [by implies_intro given-z-nonzero]
+    }
+  @conclusion |
+    forall z: Complex; z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
     [by forall_intro generalize-z]
 qed
