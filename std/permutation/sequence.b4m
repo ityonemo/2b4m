@@ -15,6 +15,7 @@ import function_invertible <<< "std/function/invertible.b4m"
 import group <<< "std/group.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
 import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
 
 sort Fn = function.Fn
 sort Perm = permutation.Perm
@@ -39,6 +40,10 @@ func sub = peano.sub
 pred less_than = peano.less_than
 define at_most(a, b) = peano.less_or_equal(a, b)
 axiom induction = peano.induction
+theorem addZeroRight = peano.addZeroRight
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem notLessThanZero = peano_order.notLessThanZero
 
 // -- sequences of permutations ------------------------------------------------------
 
@@ -499,4 +504,198 @@ proof
       at(u, ZERO) = x -> (forall i: Nat; at(u, succ(i)) = at(s, i)) ->
       forall n: Nat; productUpTo(u, succ(n)) = compose(x, productUpTo(s, n))
     [by forall_intro generalize-x]
+qed
+
+// -- mapping a fixed permutation over a sequence -----------------------------------------------------
+
+// For a permutation t and a sequence w, there is a sequence whose first m entries are
+// t ∘ w_0, …, t ∘ w_{m-1}: induction on m, appending t ∘ w_m by concatenating with a
+// singleton (the entries are invertible, so the singleton exists).
+theorem mappedSequenceExists: forall t: Fn; invertible(t) -> forall w: Seq; forall m: Nat;
+  exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
+proof
+  @generalize-t |
+    fix t: Fn {
+      @given-invertible |
+        assume invertible(t) {
+          @t-invertible |
+            invertible(t)
+            [by hypothesis given-invertible]
+          @generalize-w |
+            fix w: Seq {
+              // base case: no entries are required, any sequence will do
+              @identity-invertible |
+                invertible(identityFn)
+                [by cite identityIsAPermutation]
+              @some-sequence-exists |
+                exists v: Seq; at(v, ZERO) = identityFn and productUpTo(v, succ(ZERO)) = identityFn
+                [using specialize seqSingleton(identityFn) identity-invertible]
+              @base-case-proof |
+                unpack v: Seq from some-sequence-exists {
+                  @vacuous |
+                    fix j: Nat {
+                      @nothing-below-zero |
+                        not less_than(j, ZERO)
+                        [using specialize notLessThanZero(j)]
+                      @entry-clause |
+                        less_than(j, ZERO) -> at(v, j) = compose(t, at(w, j))
+                        [using tautology nothing-below-zero]
+                    }
+                  @no-entries |
+                    forall j: Nat; less_than(j, ZERO) -> at(v, j) = compose(t, at(w, j))
+                    [by forall_intro vacuous]
+                  @conclusion-base-witness |
+                    exists v2: Seq; forall j: Nat; less_than(j, ZERO) -> at(v2, j) = compose(t, at(w, j))
+                    [by exists_intro(v) no-entries]
+                }
+              @base-case |
+                exists v2: Seq; forall j: Nat; less_than(j, ZERO) -> at(v2, j) = compose(t, at(w, j))
+                [by exists_elim base-case-proof]
+              // inductive step: append t ∘ w_k
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j)) {
+                      @inductive-hypothesis |
+                        exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j))
+                        [by hypothesis given-inductive-hypothesis]
+                      @with-prefix-v |
+                        unpack v: Seq from inductive-hypothesis {
+                          @prefix-entries |
+                            forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j))
+                            [by hypothesis with-prefix-v]
+                          @entry-k-invertible |
+                            invertible(at(w, k))
+                            [using specialize atIsAPermutation(w, k)]
+                          @mapped-entry-invertible |
+                            invertible(compose(t, at(w, k)))
+                            [using specialize composeIsAPermutation(t, at(w, k)) t-invertible entry-k-invertible]
+                          @singleton-exists |
+                            exists s: Seq; at(s, ZERO) = compose(t, at(w, k)) and productUpTo(s, succ(ZERO)) = compose(t, at(w, k))
+                            [using specialize seqSingleton(compose(t, at(w, k))) mapped-entry-invertible]
+                          @with-singleton-s |
+                            unpack s: Seq from singleton-exists {
+                              @singleton-facts |
+                                at(s, ZERO) = compose(t, at(w, k)) and productUpTo(s, succ(ZERO)) = compose(t, at(w, k))
+                                [by hypothesis with-singleton-s]
+                              @singleton-head |
+                                at(s, ZERO) = compose(t, at(w, k))
+                                [by and_elim_left singleton-facts]
+                              @concatenation-exists |
+                                exists u: Seq; (forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)) and productUpTo(u, add(k, succ(ZERO))) = compose(productUpTo(v, k), productUpTo(s, succ(ZERO)))
+                                [using specialize seqConcat(v, s, k, succ(ZERO))]
+                              @with-concatenation-u |
+                                unpack u: Seq from concatenation-exists {
+                                  @concatenation-facts |
+                                    (forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)) and productUpTo(u, add(k, succ(ZERO))) = compose(productUpTo(v, k), productUpTo(s, succ(ZERO)))
+                                    [by hypothesis with-concatenation-u]
+                                  @agreement-pair |
+                                    (forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i))
+                                    [by and_elim_left concatenation-facts]
+                                  @u-agrees-with-prefix |
+                                    forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)
+                                    [by and_elim_left agreement-pair]
+                                  @u-agrees-with-singleton |
+                                    forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)
+                                    [by and_elim_right agreement-pair]
+                                  @zero-below-one |
+                                    less_than(ZERO, succ(ZERO))
+                                    [using specialize lessThanSelf(ZERO)]
+                                  @u-at-k-plus-zero |
+                                    at(u, add(k, ZERO)) = at(s, ZERO)
+                                    [using specialize u-agrees-with-singleton(ZERO) zero-below-one]
+                                  @k-plus-zero-is-k |
+                                    add(k, ZERO) = k
+                                    [using specialize addZeroRight(k)]
+                                  @u-at-k |
+                                    at(u, k) = at(s, ZERO)
+                                    [by rewrite k-plus-zero-is-k u-at-k-plus-zero]
+                                  @u-at-k-is-the-mapped-entry |
+                                    at(u, k) = compose(t, at(w, k))
+                                    [using chain u-at-k singleton-head]
+                                  @generalize-j |
+                                    fix j: Nat {
+                                      @given-j-in-range |
+                                        assume less_than(j, succ(k)) {
+                                          @j-in-range |
+                                            less_than(j, succ(k))
+                                            [by hypothesis given-j-in-range]
+                                          @j-below-k-or-is-k |
+                                            less_than(j, k) or j = k
+                                            [using specialize lessThanSuccSplit(j, k) j-in-range]
+                                          @conclusion-entry-j |
+                                            at(u, j) = compose(t, at(w, j))
+                                            case j-below-k-or-is-k {
+                                              @when-in-prefix |
+                                                assume less_than(j, k) {
+                                                  @j-below-k |
+                                                    less_than(j, k)
+                                                    [by hypothesis when-in-prefix]
+                                                  @u-entry-is-prefix-entry |
+                                                    at(u, j) = at(v, j)
+                                                    [using specialize u-agrees-with-prefix(j) j-below-k]
+                                                  @prefix-entry-is-mapped |
+                                                    at(v, j) = compose(t, at(w, j))
+                                                    [using specialize prefix-entries(j) j-below-k]
+                                                  @conclusion-in-prefix |
+                                                    at(u, j) = compose(t, at(w, j))
+                                                    [using chain u-entry-is-prefix-entry prefix-entry-is-mapped]
+                                                }
+                                              @when-the-new-entry |
+                                                assume j = k {
+                                                  @j-is-k |
+                                                    j = k
+                                                    [by hypothesis when-the-new-entry]
+                                                  @conclusion-new-entry |
+                                                    at(u, j) = compose(t, at(w, j))
+                                                    [by rewrite j-is-k u-at-k-is-the-mapped-entry]
+                                                }
+                                            }
+                                        }
+                                      @conclusion-entry-clause |
+                                        less_than(j, succ(k)) -> at(u, j) = compose(t, at(w, j))
+                                        [by implies_intro given-j-in-range]
+                                    }
+                                  @all-entries |
+                                    forall j: Nat; less_than(j, succ(k)) -> at(u, j) = compose(t, at(w, j))
+                                    [by forall_intro generalize-j]
+                                  @conclusion-witness-u |
+                                    exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j))
+                                    [by exists_intro(u) all-entries]
+                                }
+                              @conclusion-with-u |
+                                exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j))
+                                [by exists_elim with-concatenation-u]
+                            }
+                          @conclusion-with-s |
+                            exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j))
+                            [by exists_elim with-singleton-s]
+                        }
+                      @conclusion-step |
+                        exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j))
+                        [by exists_elim with-prefix-v]
+                    }
+                  @induction-step-at-k |
+                    (exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j))) -> (exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j)))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat; (exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j))) -> (exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = compose(t, at(w, j)))
+                [by forall_intro induction-step]
+              @conclusion-for-all-m |
+                forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
+                [using instantiation induction((fun k: Nat => exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = compose(t, at(w, j)))) base-case induction-step-for-all-k]
+            }
+          @discharge-w |
+            forall w: Seq; forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
+            [by forall_intro generalize-w]
+        }
+      @conclusion-invertible |
+        invertible(t) -> forall w: Seq; forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall t: Fn; invertible(t) -> forall w: Seq; forall m: Nat;
+      exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
+    [by forall_intro generalize-t]
 qed
