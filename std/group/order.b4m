@@ -30,6 +30,17 @@ func prev = integer.prev
 theorem intInduction = group_power.induction
 pred less_than = int_divides.less_than
 pred is_nonneg = int_divides.is_nonneg
+axiom lessThanIntro = integer.lessThanIntro
+axiom nonnegZero = integer.nonnegZero
+axiom nonnegSucc = integer.nonnegSucc
+axiom addZeroLeft = integer.addZeroLeft
+theorem noPositiveBelowOne = integer.noPositiveBelowOne
+theorem positiveBelowTwoIsOne = integer.positiveBelowTwoIsOne
+axiom powerZero = group_power.powerZero
+axiom powerSucc = group_power.powerSucc
+theorem powerOne = group_power.powerOne
+theorem powerOfIdentity = group_power.powerOfIdentity
+axiom opIdentityLeft = group.opIdentityLeft
 define divides(d, n) = exists k: Int; n = mul(d, k)
 
 // the element A and its order N: N is positive, kills A, and is the least positive such.
@@ -1604,5 +1615,152 @@ proof
     }
   @conclusion |
     forall g: Grp; forall n: Int; hasOrder(g, n) -> forall k: Int; (power(g, k) = E iff divides(n, k))
+    [by forall_intro generalize-g]
+qed
+
+// -- the two smallest orders ---------------------------------------------------------------------
+// e has order 1: e^1 = e, and no positive exponent lies below succ(ZERO).
+theorem identityHasOrderOne: hasOrder(E, succ(ZERO))
+proof
+  @zero-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @one-is-positive |
+    less_than(ZERO, succ(ZERO))
+    [using specialize lessThanIntro(ZERO, ZERO, succ(ZERO)) zero-nonneg zero-plus-one]
+  @zero-plus-one |
+    add(ZERO, succ(ZERO)) = succ(ZERO)
+    [using specialize addZeroLeft(succ(ZERO))]
+  @one-kills |
+    power(E, succ(ZERO)) = E
+    [using specialize powerOfIdentity(succ(ZERO))]
+  @generalize-m |
+    fix m: Int {
+      @given-positive |
+        assume less_than(ZERO, m) {
+          @positive |
+            less_than(ZERO, m)
+            [by hypothesis given-positive]
+          @not-below-one |
+            not less_than(m, succ(ZERO))
+            [using specialize noPositiveBelowOne(m) positive]
+          @conclusion-nothing-below-one |
+            less_than(m, succ(ZERO)) -> power(E, m) != E
+            [using tautology not-below-one]
+        }
+      @positive-implies |
+        less_than(ZERO, m) -> less_than(m, succ(ZERO)) -> power(E, m) != E
+        [by implies_intro given-positive]
+    }
+  @minimal |
+    forall m: Int; less_than(ZERO, m) -> less_than(m, succ(ZERO)) -> power(E, m) != E
+    [by forall_intro generalize-m]
+  @conclusion |
+    hasOrder(E, succ(ZERO))
+    [using tautology one-is-positive one-kills minimal]
+qed
+
+// An involution g ≠ e (g² = e) has order 2: g^2 = (g^1)g = gg = e, and the only positive
+// exponent below succ(succ(ZERO)) is succ(ZERO), where g^1 = g ≠ e.
+theorem involutionHasOrderTwo: forall g: Grp; op(g, g) = E -> g != E -> hasOrder(g, succ(succ(ZERO)))
+proof
+  @zero-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @one-nonneg |
+    is_nonneg(succ(ZERO))
+    [using specialize nonnegSucc(ZERO) zero-nonneg]
+  @zero-plus-two |
+    add(ZERO, succ(succ(ZERO))) = succ(succ(ZERO))
+    [using specialize addZeroLeft(succ(succ(ZERO)))]
+  @two-is-positive |
+    less_than(ZERO, succ(succ(ZERO)))
+    [using specialize lessThanIntro(ZERO, succ(ZERO), succ(succ(ZERO))) one-nonneg zero-plus-two]
+  @generalize-g |
+    fix g: Grp {
+      @given-involution |
+        assume op(g, g) = E {
+          @given-nontrivial |
+            assume g != E {
+              @involution |
+                op(g, g) = E
+                [by hypothesis given-involution]
+              @nontrivial |
+                g != E
+                [by hypothesis given-nontrivial]
+              @second-power-unfolds |
+                power(g, succ(succ(ZERO))) = op(power(g, succ(ZERO)), g)
+                [using specialize powerSucc(g, succ(ZERO))]
+              @first-power |
+                power(g, succ(ZERO)) = g
+                [using specialize powerOne(g)]
+              @second-power-is-square |
+                power(g, succ(succ(ZERO))) = op(g, g)
+                [by rewrite first-power second-power-unfolds]
+              @two-kills |
+                power(g, succ(succ(ZERO))) = E
+                [using chain second-power-is-square involution]
+              @generalize-m |
+                fix m: Int {
+                  @given-positive |
+                    assume less_than(ZERO, m) {
+                      @given-below-two |
+                        assume less_than(m, succ(succ(ZERO))) {
+                          @positive |
+                            less_than(ZERO, m)
+                            [by hypothesis given-positive]
+                          @below-two |
+                            less_than(m, succ(succ(ZERO)))
+                            [by hypothesis given-below-two]
+                          @m-is-one |
+                            m = succ(ZERO)
+                            [using specialize positiveBelowTwoIsOne(m) positive below-two]
+                          @m-power-is-g |
+                            power(g, m) = g
+                            [by rewrite m-is-one first-power]
+                          @given-m-kills |
+                            assume power(g, m) = E {
+                              @m-kills |
+                                power(g, m) = E
+                                [by hypothesis given-m-kills]
+                              @g-is-m-power |
+                                g = power(g, m)
+                                [by symmetry m-power-is-g]
+                              @conclusion-g-is-identity |
+                                g = E
+                                [using chain g-is-m-power m-kills]
+                            }
+                          @m-kills-implies |
+                            power(g, m) = E -> g = E
+                            [by implies_intro given-m-kills]
+                          @conclusion-m-does-not-kill |
+                            power(g, m) != E
+                            [using tautology m-kills-implies nontrivial]
+                        }
+                      @below-two-implies |
+                        less_than(m, succ(succ(ZERO))) -> power(g, m) != E
+                        [by implies_intro given-below-two]
+                    }
+                  @positive-implies |
+                    less_than(ZERO, m) -> less_than(m, succ(succ(ZERO))) -> power(g, m) != E
+                    [by implies_intro given-positive]
+                }
+              @minimal |
+                forall m: Int; less_than(ZERO, m) -> less_than(m, succ(succ(ZERO))) -> power(g, m) != E
+                [by forall_intro generalize-m]
+              @conclusion-order-two |
+                hasOrder(g, succ(succ(ZERO)))
+                [using tautology two-is-positive two-kills minimal]
+            }
+          @nontrivial-implies |
+            g != E -> hasOrder(g, succ(succ(ZERO)))
+            [by implies_intro given-nontrivial]
+        }
+      @involution-implies |
+        op(g, g) = E -> g != E -> hasOrder(g, succ(succ(ZERO)))
+        [by implies_intro given-involution]
+    }
+  @conclusion |
+    forall g: Grp; op(g, g) = E -> g != E -> hasOrder(g, succ(succ(ZERO)))
     [by forall_intro generalize-g]
 qed

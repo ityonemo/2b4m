@@ -26,6 +26,8 @@ func neg = integer.neg
 axiom addZeroLeft = integer.addZeroLeft
 axiom addSuccLeft = integer.addSuccLeft
 axiom oneIsSuccZero = integer.oneIsSuccZero
+axiom succPrev = integer.succPrev
+theorem succInjective = integer.succInjective
 theorem addZeroRight = ring.addZeroRight
 theorem addSuccRight = ring.addSuccRight
 theorem addIsCommutative = ring.addIsCommutative
@@ -2136,4 +2138,210 @@ proof
   @conclusion |
     forall x: Int; nonneg(x) -> (not less_than(ZERO, x)) -> x = ZERO
     [by forall_intro generalize-x]
+qed
+
+// -- nothing strictly between consecutive integers ---------------------------------------------
+// No positive m lies below succ(ZERO): m = succ(c) and add(m, succ(d)) = succ(ZERO) with c, d
+// nonneg would make succ(add(c, d)) = ZERO.
+theorem noPositiveBelowOne: forall m: Int; less_than(ZERO, m) -> (not less_than(m, succ(ZERO)))
+proof
+  @generalize-m |
+    fix m: Int {
+      @given-positive |
+        assume less_than(ZERO, m) {
+          @positive |
+            less_than(ZERO, m)
+            [by hypothesis given-positive]
+          @given-below-one |
+            assume less_than(m, succ(ZERO)) {
+              @below-one |
+                less_than(m, succ(ZERO))
+                [by hypothesis given-below-one]
+              @gap-above-zero-exists |
+                exists c: Int; nonneg(c) and add(ZERO, succ(c)) = m
+                [using specialize lessThanElim(ZERO, m) positive]
+              @gap-below-one-exists |
+                exists d: Int; nonneg(d) and add(m, succ(d)) = succ(ZERO)
+                [using specialize lessThanElim(m, succ(ZERO)) below-one]
+              @with-gap-c |
+                unpack c: Int from gap-above-zero-exists {
+                  @c-facts |
+                    nonneg(c) and add(ZERO, succ(c)) = m
+                    [by hypothesis with-gap-c]
+                  @c-nonneg |
+                    nonneg(c)
+                    [by and_elim_left c-facts]
+                  @c-gap |
+                    add(ZERO, succ(c)) = m
+                    [by and_elim_right c-facts]
+                  @zero-plus |
+                    add(ZERO, succ(c)) = succ(c)
+                    [using specialize addZeroLeft(succ(c))]
+                  @succ-c-is-m |
+                    succ(c) = m
+                    [by rewrite zero-plus c-gap]
+                  @m-is-succ-c |
+                    m = succ(c)
+                    [by symmetry succ-c-is-m]
+                  @with-gap-d |
+                    unpack d: Int from gap-below-one-exists {
+                      @d-facts |
+                        nonneg(d) and add(m, succ(d)) = succ(ZERO)
+                        [by hypothesis with-gap-d]
+                      @d-nonneg |
+                        nonneg(d)
+                        [by and_elim_left d-facts]
+                      @d-gap |
+                        add(m, succ(d)) = succ(ZERO)
+                        [by and_elim_right d-facts]
+                      @d-gap-at-succ-c |
+                        add(succ(c), succ(d)) = succ(ZERO)
+                        [by rewrite m-is-succ-c d-gap]
+                      @succ-out-left |
+                        add(succ(c), succ(d)) = succ(add(c, succ(d)))
+                        [using specialize addSuccLeft(c, succ(d))]
+                      @succ-out-right |
+                        add(c, succ(d)) = succ(add(c, d))
+                        [using specialize addSuccRight(c, d)]
+                      @succ-succ-sum-is-one |
+                        succ(succ(add(c, d))) = succ(ZERO)
+                        [by rewrite succ-out-right succ-out-left-is-one]
+                      @succ-out-left-is-one |
+                        succ(add(c, succ(d))) = succ(ZERO)
+                        [by rewrite succ-out-left d-gap-at-succ-c]
+                      @succ-sum-is-zero |
+                        succ(add(c, d)) = ZERO
+                        [using specialize succInjective(succ(add(c, d)), ZERO) succ-succ-sum-is-one]
+                      @sum-nonneg |
+                        nonneg(add(c, d))
+                        [using specialize nonnegAdd(c, d) c-nonneg d-nonneg]
+                      @succ-sum-not-zero |
+                        succ(add(c, d)) != ZERO
+                        [using specialize nonnegSuccNotZero(add(c, d)) sum-nonneg]
+                      @conclusion-contradiction-d |
+                        less_than(m, m)
+                        [using tautology succ-sum-is-zero succ-sum-not-zero]
+                    }
+                  @conclusion-contradiction-c |
+                    less_than(m, m)
+                    [by exists_elim with-gap-d]
+                }
+              @conclusion-contradiction |
+                less_than(m, m)
+                [by exists_elim with-gap-c]
+            }
+          @below-one-gives-absurdity |
+            less_than(m, succ(ZERO)) -> less_than(m, m)
+            [by implies_intro given-below-one]
+          @not-below-self |
+            not less_than(m, m)
+            [using specialize lessThanIrreflexive(m)]
+          @conclusion-not-below-one |
+            not less_than(m, succ(ZERO))
+            [using tautology below-one-gives-absurdity not-below-self]
+        }
+      @positive-implies |
+        less_than(ZERO, m) -> (not less_than(m, succ(ZERO)))
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall m: Int; less_than(ZERO, m) -> (not less_than(m, succ(ZERO)))
+    [by forall_intro generalize-m]
+qed
+
+// A positive m below succ(succ(ZERO)) is succ(ZERO): either prev(m) = ZERO, or prev(m) is
+// positive and below succ(ZERO), which noPositiveBelowOne forbids.
+theorem positiveBelowTwoIsOne: forall m: Int; less_than(ZERO, m) -> less_than(m, succ(succ(ZERO))) -> m = succ(ZERO)
+proof
+  @generalize-m |
+    fix m: Int {
+      @given-positive |
+        assume less_than(ZERO, m) {
+          @given-below-two |
+            assume less_than(m, succ(succ(ZERO))) {
+              @positive |
+                less_than(ZERO, m)
+                [by hypothesis given-positive]
+              @below-two |
+                less_than(m, succ(succ(ZERO)))
+                [by hypothesis given-below-two]
+              @prev-split |
+                less_than(ZERO, prev(m)) or prev(m) = ZERO
+                [using specialize lessThanZeroPrevSplit(m) positive]
+              @m-is-succ-prev |
+                succ(prev(m)) = m
+                [using specialize succPrev(m)]
+              @conclusion-one |
+                m = succ(ZERO)
+                case prev-split {
+                  @when-prev-positive |
+                    assume less_than(ZERO, prev(m)) {
+                      @prev-positive |
+                        less_than(ZERO, prev(m))
+                        [by hypothesis when-prev-positive]
+                      @gap-exists |
+                        exists d: Int; nonneg(d) and add(m, succ(d)) = succ(succ(ZERO))
+                        [using specialize lessThanElim(m, succ(succ(ZERO))) below-two]
+                      @with-gap-d |
+                        unpack d: Int from gap-exists {
+                          @d-facts |
+                            nonneg(d) and add(m, succ(d)) = succ(succ(ZERO))
+                            [by hypothesis with-gap-d]
+                          @d-nonneg |
+                            nonneg(d)
+                            [by and_elim_left d-facts]
+                          @d-gap |
+                            add(m, succ(d)) = succ(succ(ZERO))
+                            [by and_elim_right d-facts]
+                          @d-gap-at-succ-prev |
+                            add(succ(prev(m)), succ(d)) = succ(succ(ZERO))
+                            [by rewrite m-is-succ-prev d-gap]
+                          @succ-out-left |
+                            add(succ(prev(m)), succ(d)) = succ(add(prev(m), succ(d)))
+                            [using specialize addSuccLeft(prev(m), succ(d))]
+                          @succ-gap-is-two |
+                            succ(add(prev(m), succ(d))) = succ(succ(ZERO))
+                            [by rewrite succ-out-left d-gap-at-succ-prev]
+                          @gap-is-one |
+                            add(prev(m), succ(d)) = succ(ZERO)
+                            [using specialize succInjective(add(prev(m), succ(d)), succ(ZERO)) succ-gap-is-two]
+                          @prev-below-one |
+                            less_than(prev(m), succ(ZERO))
+                            [using specialize lessThanIntro(prev(m), d, succ(ZERO)) d-nonneg gap-is-one]
+                          @prev-not-below-one |
+                            not less_than(prev(m), succ(ZERO))
+                            [using specialize noPositiveBelowOne(prev(m)) prev-positive]
+                          @conclusion-one-by-absurdity |
+                            m = succ(ZERO)
+                            [using tautology prev-below-one prev-not-below-one]
+                        }
+                      @conclusion-one-when-prev-positive |
+                        m = succ(ZERO)
+                        [by exists_elim with-gap-d]
+                    }
+                  @when-prev-zero |
+                    assume prev(m) = ZERO {
+                      @prev-zero |
+                        prev(m) = ZERO
+                        [by hypothesis when-prev-zero]
+                      @succ-zero-is-m |
+                        succ(ZERO) = m
+                        [by rewrite prev-zero m-is-succ-prev]
+                      @conclusion-one-when-prev-zero |
+                        m = succ(ZERO)
+                        [by symmetry succ-zero-is-m]
+                    }
+                }
+            }
+          @below-two-implies |
+            less_than(m, succ(succ(ZERO))) -> m = succ(ZERO)
+            [by implies_intro given-below-two]
+        }
+      @positive-implies |
+        less_than(ZERO, m) -> less_than(m, succ(succ(ZERO))) -> m = succ(ZERO)
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall m: Int; less_than(ZERO, m) -> less_than(m, succ(succ(ZERO))) -> m = succ(ZERO)
+    [by forall_intro generalize-m]
 qed
