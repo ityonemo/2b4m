@@ -1427,3 +1427,78 @@ proof
     forall n: Nat; forall w: Seq; listsWithoutRepetition(w, n) -> (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
     [by forall_intro generalize-n]
 qed
+
+// -- two injective listings of the same class have the same length --------------------------
+// Each is drawn from the other, so pigeonhole bounds each length by the other.
+theorem listingsOfTheSameClassHaveEqualLength: forall m: Nat; forall v: Seq; forall n: Nat; forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-v |
+        fix v: Seq {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-w |
+                fix w: Seq {
+                  @given-v-injective |
+                    assume listsWithoutRepetition(v, m) {
+                      @given-w-injective |
+                        assume listsWithoutRepetition(w, n) {
+                          @given-v-drawn |
+                            assume drawnFrom(v, m, w, n) {
+                              @given-w-drawn |
+                                assume drawnFrom(w, n, v, m) {
+                                  @v-injective |
+                                    listsWithoutRepetition(v, m)
+                                    [by hypothesis given-v-injective]
+                                  @w-injective |
+                                    listsWithoutRepetition(w, n)
+                                    [by hypothesis given-w-injective]
+                                  @v-drawn |
+                                    drawnFrom(v, m, w, n)
+                                    [by hypothesis given-v-drawn]
+                                  @w-drawn |
+                                    drawnFrom(w, n, v, m)
+                                    [by hypothesis given-w-drawn]
+                                  @m-at-most-n |
+                                    less_or_equal(m, n)
+                                    [using specialize sublistingIsNoLongerThanTheListing(m, v, n, w) v-injective v-drawn]
+                                  @n-at-most-m |
+                                    less_or_equal(n, m)
+                                    [using specialize sublistingIsNoLongerThanTheListing(n, w, m, v) w-injective w-drawn]
+                                  @conclusion-equal |
+                                    m = n
+                                    [using specialize peano_order.lessOrEqualAntisymmetric(m, n) m-at-most-n n-at-most-m]
+                                }
+                              @w-drawn-implies |
+                                drawnFrom(w, n, v, m) -> m = n
+                                [by implies_intro given-w-drawn]
+                            }
+                          @v-drawn-implies |
+                            drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+                            [by implies_intro given-v-drawn]
+                        }
+                      @w-injective-implies |
+                        listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+                        [by implies_intro given-w-injective]
+                    }
+                  @v-injective-implies |
+                    listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+                    [by implies_intro given-v-injective]
+                }
+              @discharge-w |
+                forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+                [by forall_intro generalize-w]
+            }
+          @discharge-n |
+            forall n: Nat; forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+            [by forall_intro generalize-n]
+        }
+      @discharge-v |
+        forall v: Seq; forall n: Nat; forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall m: Nat; forall v: Seq; forall n: Nat; forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
+    [by forall_intro generalize-m]
+qed
