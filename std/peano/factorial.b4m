@@ -1,0 +1,128 @@
+// std/peano/factorial.b4m — the FACTORIAL n! = 1 · 2 · … · n.
+//
+// (The two clauses are axioms rather than a definition block — a bare constant on a clause's
+// right-hand side is read as a clause variable; see CHAPTER5-PAINPOINTS.)
+
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom oneIsSuccZero = peano.oneIsSuccZero
+axiom mulSuccLeft = peano.mulSuccLeft
+axiom succNotZero = peano.succNotZero
+theorem zeroOrSucc = peano.zeroOrSucc
+theorem mulZeroRight = peano.mulZeroRight
+theorem addIsCommutative = peano.addIsCommutative
+theorem lessThanIntro = peano_order.lessThanIntro
+theorem addZeroLeft = peano.addZeroLeft
+
+func factorial(n: Nat) => Nat
+axiom factorialZero: factorial(ZERO) = ONE
+axiom factorialSucc: forall n: Nat; factorial(succ(n)) = mul(succ(n), factorial(n))
+
+// A factorial is never ZERO: 0! = 1, and (n+1)! = n! + n · n! is at least n! ≥ 1. Induction,
+// with the invariant "factorial(n) is a successor".
+theorem factorialIsPositive: forall n: Nat; exists k: Nat; factorial(n) = succ(k)
+proof
+  @zero-factorial-is-one |
+    factorial(ZERO) = ONE
+    [by cite factorialZero]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @zero-factorial-is-succ-zero |
+    factorial(ZERO) = succ(ZERO)
+    [using chain zero-factorial-is-one one-is-succ-zero]
+  @base-case |
+    exists k: Nat; factorial(ZERO) = succ(k)
+    [by exists_intro(ZERO) zero-factorial-is-succ-zero]
+  @induction-step |
+    fix n: Nat {
+      @given-inductive-hypothesis |
+        assume exists k: Nat; factorial(n) = succ(k) {
+          @inductive-hypothesis |
+            exists k: Nat; factorial(n) = succ(k)
+            [by hypothesis given-inductive-hypothesis]
+          @with-predecessor-k |
+            unpack k: Nat from inductive-hypothesis {
+              @n-factorial-is-succ-k |
+                factorial(n) = succ(k)
+                [by hypothesis with-predecessor-k]
+              @next-factorial-unfolds |
+                factorial(succ(n)) = mul(succ(n), factorial(n))
+                [using specialize factorialSucc(n)]
+              @product-unfolds |
+                mul(succ(n), factorial(n)) = add(mul(n, factorial(n)), factorial(n))
+                [using specialize mulSuccLeft(n, factorial(n))]
+              @next-factorial-is-a-sum |
+                factorial(succ(n)) = add(mul(n, factorial(n)), factorial(n))
+                [using chain next-factorial-unfolds product-unfolds]
+              @next-factorial-is-a-sum-with-succ-k |
+                factorial(succ(n)) = add(mul(n, factorial(n)), succ(k))
+                [by rewrite n-factorial-is-succ-k next-factorial-is-a-sum]
+              @sum-commutes |
+                add(mul(n, factorial(n)), succ(k)) = add(succ(k), mul(n, factorial(n)))
+                [using specialize addIsCommutative(mul(n, factorial(n)), succ(k))]
+              @succ-pulls-out |
+                add(succ(k), mul(n, factorial(n))) = succ(add(k, mul(n, factorial(n))))
+                [using specialize peano.addSuccLeft(k, mul(n, factorial(n)))]
+              @next-factorial-commuted |
+                factorial(succ(n)) = add(succ(k), mul(n, factorial(n)))
+                [using chain next-factorial-is-a-sum-with-succ-k sum-commutes]
+              @next-factorial-is-a-successor |
+                factorial(succ(n)) = succ(add(k, mul(n, factorial(n))))
+                [using chain next-factorial-commuted succ-pulls-out]
+              @conclusion-witness |
+                exists k2: Nat; factorial(succ(n)) = succ(k2)
+                [by exists_intro(add(k, mul(n, factorial(n)))) next-factorial-is-a-successor]
+            }
+          @conclusion-successor |
+            exists k2: Nat; factorial(succ(n)) = succ(k2)
+            [by exists_elim with-predecessor-k]
+        }
+      @induction-step-at-n |
+        (exists k: Nat; factorial(n) = succ(k)) -> (exists k2: Nat; factorial(succ(n)) = succ(k2))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-n |
+    forall n: Nat; (exists k: Nat; factorial(n) = succ(k)) -> (exists k2: Nat; factorial(succ(n)) = succ(k2))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; exists k: Nat; factorial(n) = succ(k)
+    [using instantiation induction((fun n: Nat => exists k: Nat; factorial(n) = succ(k))) base-case induction-step-for-all-n]
+qed
+
+theorem factorialIsNotZero: forall n: Nat; factorial(n) != ZERO
+proof
+  @generalize-n |
+    fix n: Nat {
+      @is-a-successor |
+        exists k: Nat; factorial(n) = succ(k)
+        [using specialize factorialIsPositive(n)]
+      @with-predecessor-k |
+        unpack k: Nat from is-a-successor {
+          @factorial-is-succ-k |
+            factorial(n) = succ(k)
+            [by hypothesis with-predecessor-k]
+          @succ-k-is-not-zero |
+            succ(k) != ZERO
+            [using specialize succNotZero(k)]
+          @conclusion-not-zero-at-k |
+            factorial(n) != ZERO
+            [by rewrite factorial-is-succ-k succ-k-is-not-zero]
+        }
+      @conclusion-not-zero |
+        factorial(n) != ZERO
+        [by exists_elim with-predecessor-k]
+    }
+  @conclusion |
+    forall n: Nat; factorial(n) != ZERO
+    [by forall_intro generalize-n]
+qed

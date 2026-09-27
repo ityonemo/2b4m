@@ -5038,3 +5038,86 @@ proof
       exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y)
     [using instantiation induction((fun k: Nat => forall a: Set; forall b: Set; forall g: Fn; hasSize(a, succ(k)) -> hasSize(b, k) -> mapsInto(g, a, b) -> exists x: Element; exists y: Element; member(x, a) and member(y, a) and x != y and apply(g, x) = apply(g, y))) base-case induction-step-for-all-k]
 qed
+
+// segment(succ n) with its top removed is segment(n).
+theorem segmentWithoutTheTop: forall n: Nat; difference(segment(succ(n)), singleton(numeral(n))) = segment(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @top-not-in-small |
+        not member(numeral(n), segment(n))
+        [using specialize topIsNotInTheSmallerSegment(n)]
+      @pointwise-forward |
+        fix x: Element {
+          @rest-membership |
+            member(x, difference(segment(succ(n)), singleton(numeral(n)))) iff (member(x, segment(succ(n))) and x != numeral(n))
+            [using specialize differenceSingletonMember(segment(succ(n)), numeral(n), x)]
+          @given-in-rest |
+            assume member(x, difference(segment(succ(n)), singleton(numeral(n)))) {
+              @x-in-rest |
+                member(x, difference(segment(succ(n)), singleton(numeral(n))))
+                [by hypothesis given-in-rest]
+              @x-in-big |
+                member(x, segment(succ(n)))
+                [using tautology rest-membership x-in-rest]
+              @x-is-not-top |
+                x != numeral(n)
+                [using tautology rest-membership x-in-rest]
+              @x-splits |
+                member(x, segment(n)) or x = numeral(n)
+                [using specialize segmentSuccSplits(n, x) x-in-big]
+              @conclusion-x-in-small |
+                member(x, segment(n))
+                [using tautology x-splits x-is-not-top]
+            }
+          @conclusion-forward |
+            member(x, difference(segment(succ(n)), singleton(numeral(n)))) -> member(x, segment(n))
+            [by implies_intro given-in-rest]
+        }
+      @rest-in-small |
+        forall x: Element; member(x, difference(segment(succ(n)), singleton(numeral(n)))) -> member(x, segment(n))
+        [by forall_intro pointwise-forward]
+      @pointwise-backward |
+        fix x: Element {
+          @rest-membership |
+            member(x, difference(segment(succ(n)), singleton(numeral(n)))) iff (member(x, segment(succ(n))) and x != numeral(n))
+            [using specialize differenceSingletonMember(segment(succ(n)), numeral(n), x)]
+          @given-in-small |
+            assume member(x, segment(n)) {
+              @x-in-small |
+                member(x, segment(n))
+                [by hypothesis given-in-small]
+              @x-in-big |
+                member(x, segment(succ(n)))
+                [using specialize segmentGrows(n, x) x-in-small]
+              @suppose-top |
+                assume x = numeral(n) {
+                  @x-is-top |
+                    x = numeral(n)
+                    [by hypothesis suppose-top]
+                  @top-in-small |
+                    member(numeral(n), segment(n))
+                    [by rewrite x-is-top x-in-small]
+                }
+              @x-is-not-top |
+                x != numeral(n)
+                [by not_intro suppose-top top-in-small top-not-in-small]
+              @conclusion-x-in-rest |
+                member(x, difference(segment(succ(n)), singleton(numeral(n))))
+                [using tautology rest-membership x-in-big x-is-not-top]
+            }
+          @conclusion-backward |
+            member(x, segment(n)) -> member(x, difference(segment(succ(n)), singleton(numeral(n))))
+            [by implies_intro given-in-small]
+        }
+      @small-in-rest |
+        forall x: Element; member(x, segment(n)) -> member(x, difference(segment(succ(n)), singleton(numeral(n))))
+        [by forall_intro pointwise-backward]
+      @conclusion-equal |
+        difference(segment(succ(n)), singleton(numeral(n))) = segment(n)
+        [using specialize extensionality(difference(segment(succ(n)), singleton(numeral(n))), segment(n)) rest-in-small small-in-rest]
+    }
+  @conclusion |
+    forall n: Nat; difference(segment(succ(n)), singleton(numeral(n))) = segment(n)
+    [by forall_intro generalize-n]
+qed

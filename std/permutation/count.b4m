@@ -1,0 +1,2523 @@
+// std/permutation/count.b4m — HOW MANY permutations of n letters there are: n!.
+//
+// The symmetric group on n letters is LISTED: a sequence of n! permutations of {0, …, n-1},
+// pairwise distinct, that hits every permutation of the segment. Judson's count (AATA §5.1):
+// a permutation of n+1 letters is a transposition (k n) times a permutation fixing the top
+// letter n, and the latter is a permutation of n letters — so the n+1 letters are enumerated
+// in n+1 BLOCKS of n! entries, block k being (k n) ∘ (every permutation of n letters).
+//
+// A PERMUTATION OF n LETTERS is a `Perm` (an invertible map of Element) that bijects the
+// segment {0, …, n-1} onto itself and fixes everything outside it — this file's
+// `permutesTheSegment(t, n)`.
+
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import peano_factorial <<< "std/peano/factorial.b4m"
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import permutation <<< "std/permutation.b4m"
+import permutation_sequence <<< "std/permutation/sequence.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom oneIsSuccZero = peano.oneIsSuccZero
+axiom mulZeroLeft = peano.mulZeroLeft
+axiom mulSuccLeft = peano.mulSuccLeft
+theorem addZeroRight = peano.addZeroRight
+axiom addSuccLeft = peano.addSuccLeft
+theorem addIsAssociative = peano.addIsAssociative
+axiom lessThanIntro = peano_order.lessThanIntro
+axiom lessThanElim = peano_order.lessThanElim
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem lessThanTransitive = peano_order.lessThanTransitive
+theorem succReflectsOrder = peano_order.succReflectsOrder
+theorem additionPreservesOrder = peano_order.additionPreservesOrder
+theorem lessThanAddCancelLeft = peano_order.lessThanAddCancelLeft
+theorem lessOrEqualIsGapExistential = peano_order.lessOrEqualIsGapExistential
+theorem trichotomy = peano_order.trichotomy
+func factorial = peano_factorial.factorial
+axiom factorialZero = peano_factorial.factorialZero
+axiom factorialSucc = peano_factorial.factorialSucc
+
+sort Element = element.Element
+sort Set = set.Set
+const emptyset = set.emptyset
+pred member = set.member
+func singleton = set.singleton
+func difference = set.difference
+axiom emptysetMember = set.emptysetMember
+
+sort Fn = function.Fn
+sort Perm = permutation.Perm
+const identityFn = function.identityFn
+func apply = function.apply
+func compose = function.compose
+pred invertible = function.invertible
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+axiom funcExtensionality = function.funcExtensionality
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem identityIsAPermutation = permutation.identityIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem permutationCancelLeft = permutation.permutationCancelLeft
+theorem permutationIsInjective = permutation.permutationIsInjective
+
+func numeral = set_finite.numeral
+func segment = set_finite.segment
+func swap = set_finite.swap
+axiom numeralInjective = set_finite.numeralInjective
+axiom segmentMember = set_finite.segmentMember
+theorem numeralInSegment = set_finite.numeralInSegment
+theorem segmentZeroIsEmpty = set_finite.segmentZeroIsEmpty
+theorem segmentSuccSplits = set_finite.segmentSuccSplits
+theorem segmentGrows = set_finite.segmentGrows
+theorem topIsInTheBiggerSegment = set_finite.topIsInTheBiggerSegment
+theorem topIsNotInTheSmallerSegment = set_finite.topIsNotInTheSmallerSegment
+theorem segmentWithoutTheTop = set_finite.segmentWithoutTheTop
+theorem restrictionOffAPoint = set_finite.restrictionOffAPoint
+theorem swapAtFirst = set_finite.swapAtFirst
+theorem swapAtSecond = set_finite.swapAtSecond
+theorem swapElsewhere = set_finite.swapElsewhere
+theorem identityPermutes = permutation.identityPermutes
+theorem composePermutes = permutation.composePermutes
+theorem transpositionPermutes = permutation.transpositionPermutes
+theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
+theorem transpositionIsAnInvolution = permutation.transpositionIsAnInvolution
+
+sort Seq = permutation_sequence.Seq
+func at = permutation_sequence.at
+axiom seqSingleton = permutation_sequence.seqSingleton
+axiom seqConcat = permutation_sequence.seqConcat
+theorem mappedSequenceExists = permutation_sequence.mappedSequenceExists
+
+define mapsInto(f, a, b) = set_finite.mapsInto(f, a, b)
+define injectiveOn(f, a) = set_finite.injectiveOn(f, a)
+define surjectiveOnto(f, a, b) = set_finite.surjectiveOnto(f, a, b)
+define bijectsOnto(f, a, b) = set_finite.bijectsOnto(f, a, b)
+define permutes(f, a) = permutation.permutes(f, a)
+
+// -- permutations of n letters ---------------------------------------------------------------
+
+// `t` is a PERMUTATION OF n LETTERS: invertible, bijects {0, …, n-1} onto itself, and fixes
+// every element outside the segment.
+define permutesTheSegment(t, n) =
+  invertible(t) and permutes(t, segment(n))
+  and (forall x: Element; (not member(x, segment(n))) -> apply(t, x) = x)
+
+// A permutation of n letters is a permutation of n+1 letters (fixing the new top letter).
+// Injectivity is global (it is invertible), and the top letter is a fixed point since it is
+// not in the smaller segment.
+theorem extendingByTheTop: forall t: Fn; forall n: Nat;
+  permutesTheSegment(t, n) -> permutesTheSegment(t, succ(n))
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-n |
+        fix n: Nat {
+          @given-permutes-n-letters |
+            assume permutesTheSegment(t, n) {
+              @permutes-n-letters |
+                permutesTheSegment(t, n)
+                [by hypothesis given-permutes-n-letters]
+              @t-invertible |
+                invertible(t)
+                [using tautology permutes-n-letters]
+              @t-maps-into |
+                forall x: Element; member(x, segment(n)) -> member(apply(t, x), segment(n))
+                [using tautology permutes-n-letters]
+              @t-covers |
+                forall y: Element; member(y, segment(n)) -> exists x: Element; member(x, segment(n)) and apply(t, x) = y
+                [using tautology permutes-n-letters]
+              @t-fixes-outside |
+                forall x: Element; (not member(x, segment(n))) -> apply(t, x) = x
+                [using tautology permutes-n-letters]
+              @top-not-in-small |
+                not member(numeral(n), segment(n))
+                [using specialize topIsNotInTheSmallerSegment(n)]
+              @top-is-fixed |
+                apply(t, numeral(n)) = numeral(n)
+                [using specialize t-fixes-outside(numeral(n)) top-not-in-small]
+
+              // t maps the bigger segment into itself
+              @generalize-x-for-maps-into |
+                fix x: Element {
+                  @given-x-in-big |
+                    assume member(x, segment(succ(n))) {
+                      @x-in-big |
+                        member(x, segment(succ(n)))
+                        [by hypothesis given-x-in-big]
+                      @x-splits |
+                        member(x, segment(n)) or x = numeral(n)
+                        [using specialize segmentSuccSplits(n, x) x-in-big]
+                      @conclusion-image-in-big |
+                        member(apply(t, x), segment(succ(n)))
+                        case x-splits {
+                          @when-x-in-small |
+                            assume member(x, segment(n)) {
+                              @x-in-small |
+                                member(x, segment(n))
+                                [by hypothesis when-x-in-small]
+                              @image-in-small |
+                                member(apply(t, x), segment(n))
+                                [using specialize t-maps-into(x) x-in-small]
+                              @conclusion-image-grows |
+                                member(apply(t, x), segment(succ(n)))
+                                [using specialize segmentGrows(n, apply(t, x)) image-in-small]
+                            }
+                          @when-x-is-top |
+                            assume x = numeral(n) {
+                              @x-is-top |
+                                x = numeral(n)
+                                [by hypothesis when-x-is-top]
+                              @x-is-fixed |
+                                apply(t, x) = x
+                                [by rewrite x-is-top top-is-fixed]
+                              @conclusion-fixed-top-in-big |
+                                member(apply(t, x), segment(succ(n)))
+                                [by rewrite x-is-fixed x-in-big]
+                            }
+                        }
+                    }
+                  @conclusion-maps-into-at-x |
+                    member(x, segment(succ(n))) -> member(apply(t, x), segment(succ(n)))
+                    [by implies_intro given-x-in-big]
+                }
+              @maps-into-big |
+                forall x: Element; member(x, segment(succ(n))) -> member(apply(t, x), segment(succ(n)))
+                [by forall_intro generalize-x-for-maps-into]
+
+              // t is injective everywhere, in particular on the bigger segment
+              @t-injective |
+                forall a: Element; forall b: Element; apply(t, a) = apply(t, b) -> a = b
+                [using specialize permutationIsInjective(t)]
+              @generalize-x-for-injective |
+                fix x: Element {
+                  @generalize-y-for-injective |
+                    fix y: Element {
+                      @injective-at-x-y |
+                        apply(t, x) = apply(t, y) -> x = y
+                        [using specialize t-injective(x, y)]
+                      @conclusion-injective-clause |
+                        member(x, segment(succ(n))) -> member(y, segment(succ(n))) -> apply(t, x) = apply(t, y) -> x = y
+                        [using tautology injective-at-x-y]
+                    }
+                  @discharge-y-for-injective |
+                    forall y: Element; member(x, segment(succ(n))) -> member(y, segment(succ(n))) -> apply(t, x) = apply(t, y) -> x = y
+                    [by forall_intro generalize-y-for-injective]
+                }
+              @injective-on-big |
+                forall x: Element; forall y: Element; member(x, segment(succ(n))) -> member(y, segment(succ(n))) -> apply(t, x) = apply(t, y) -> x = y
+                [by forall_intro generalize-x-for-injective]
+
+              // t covers the bigger segment
+              @generalize-y-for-covers |
+                fix y: Element {
+                  @given-y-in-big |
+                    assume member(y, segment(succ(n))) {
+                      @y-in-big |
+                        member(y, segment(succ(n)))
+                        [by hypothesis given-y-in-big]
+                      @y-splits |
+                        member(y, segment(n)) or y = numeral(n)
+                        [using specialize segmentSuccSplits(n, y) y-in-big]
+                      @conclusion-y-is-hit |
+                        exists x: Element; member(x, segment(succ(n))) and apply(t, x) = y
+                        case y-splits {
+                          @when-y-in-small |
+                            assume member(y, segment(n)) {
+                              @y-in-small |
+                                member(y, segment(n))
+                                [by hypothesis when-y-in-small]
+                              @preimage-exists |
+                                exists x: Element; member(x, segment(n)) and apply(t, x) = y
+                                [using specialize t-covers(y) y-in-small]
+                              @with-preimage-x |
+                                unpack x: Element from preimage-exists {
+                                  @preimage-facts |
+                                    member(x, segment(n)) and apply(t, x) = y
+                                    [by hypothesis with-preimage-x]
+                                  @preimage-in-small |
+                                    member(x, segment(n))
+                                    [by and_elim_left preimage-facts]
+                                  @preimage-hits |
+                                    apply(t, x) = y
+                                    [by and_elim_right preimage-facts]
+                                  @preimage-in-big |
+                                    member(x, segment(succ(n)))
+                                    [using specialize segmentGrows(n, x) preimage-in-small]
+                                  @preimage-in-big-and-hits |
+                                    member(x, segment(succ(n))) and apply(t, x) = y
+                                    [by and_intro preimage-in-big preimage-hits]
+                                  @conclusion-witness-x |
+                                    exists x2: Element; member(x2, segment(succ(n))) and apply(t, x2) = y
+                                    [by exists_intro(x) preimage-in-big-and-hits]
+                                }
+                              @conclusion-hit-from-small |
+                                exists x2: Element; member(x2, segment(succ(n))) and apply(t, x2) = y
+                                [by exists_elim with-preimage-x]
+                            }
+                          @when-y-is-top |
+                            assume y = numeral(n) {
+                              @y-is-top |
+                                y = numeral(n)
+                                [by hypothesis when-y-is-top]
+                              @y-is-fixed |
+                                apply(t, y) = y
+                                [by rewrite y-is-top top-is-fixed]
+                              @y-in-big-and-fixed |
+                                member(y, segment(succ(n))) and apply(t, y) = y
+                                [by and_intro y-in-big y-is-fixed]
+                              @conclusion-hit-by-itself |
+                                exists x2: Element; member(x2, segment(succ(n))) and apply(t, x2) = y
+                                [by exists_intro(y) y-in-big-and-fixed]
+                            }
+                        }
+                    }
+                  @conclusion-covers-at-y |
+                    member(y, segment(succ(n))) -> exists x: Element; member(x, segment(succ(n))) and apply(t, x) = y
+                    [by implies_intro given-y-in-big]
+                }
+              @covers-big |
+                forall y: Element; member(y, segment(succ(n))) -> exists x: Element; member(x, segment(succ(n))) and apply(t, x) = y
+                [by forall_intro generalize-y-for-covers]
+
+              // t fixes everything outside the bigger segment (which is outside the smaller one)
+              @generalize-x-for-fixes |
+                fix x: Element {
+                  @given-x-outside-big |
+                    assume not member(x, segment(succ(n))) {
+                      @x-outside-big |
+                        not member(x, segment(succ(n)))
+                        [by hypothesis given-x-outside-big]
+                      @small-grows-at-x |
+                        member(x, segment(n)) -> member(x, segment(succ(n)))
+                        [using specialize segmentGrows(n, x)]
+                      @x-outside-small |
+                        not member(x, segment(n))
+                        [using tautology small-grows-at-x x-outside-big]
+                      @conclusion-x-fixed |
+                        apply(t, x) = x
+                        [using specialize t-fixes-outside(x) x-outside-small]
+                    }
+                  @conclusion-fixes-at-x |
+                    (not member(x, segment(succ(n)))) -> apply(t, x) = x
+                    [by implies_intro given-x-outside-big]
+                }
+              @fixes-outside-big |
+                forall x: Element; (not member(x, segment(succ(n)))) -> apply(t, x) = x
+                [by forall_intro generalize-x-for-fixes]
+              @conclusion-permutes-more-letters |
+                permutesTheSegment(t, succ(n))
+                [using tautology t-invertible maps-into-big injective-on-big covers-big fixes-outside-big]
+            }
+          @conclusion-at-n |
+            permutesTheSegment(t, n) -> permutesTheSegment(t, succ(n))
+            [by implies_intro given-permutes-n-letters]
+        }
+      @discharge-n |
+        forall n: Nat; permutesTheSegment(t, n) -> permutesTheSegment(t, succ(n))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall t: Fn; forall n: Nat; permutesTheSegment(t, n) -> permutesTheSegment(t, succ(n))
+    [by forall_intro generalize-t]
+qed
+
+// A permutation of n+1 letters that fixes the top letter is a permutation of n letters:
+// restrict it off the top (the finite-set library's restriction lemma), and note that
+// anything outside the smaller segment is either the top (fixed) or outside the bigger one.
+theorem restrictingOffTheTop: forall t: Fn; forall n: Nat;
+  permutesTheSegment(t, succ(n)) -> apply(t, numeral(n)) = numeral(n) -> permutesTheSegment(t, n)
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-n |
+        fix n: Nat {
+          @given-permutes-more-letters |
+            assume permutesTheSegment(t, succ(n)) {
+              @given-top-fixed |
+                assume apply(t, numeral(n)) = numeral(n) {
+                  @permutes-more-letters |
+                    permutesTheSegment(t, succ(n))
+                    [by hypothesis given-permutes-more-letters]
+                  @top-fixed |
+                    apply(t, numeral(n)) = numeral(n)
+                    [by hypothesis given-top-fixed]
+                  @t-invertible |
+                    invertible(t)
+                    [using tautology permutes-more-letters]
+                  @t-bijects-big |
+                    bijectsOnto(t, segment(succ(n)), segment(succ(n)))
+                    [using tautology permutes-more-letters]
+                  @t-fixes-outside-big |
+                    forall x: Element; (not member(x, segment(succ(n)))) -> apply(t, x) = x
+                    [using tautology permutes-more-letters]
+                  @top-in-big |
+                    member(numeral(n), segment(succ(n)))
+                    [using specialize topIsInTheBiggerSegment(n)]
+                  @restriction-bijects |
+                    bijectsOnto(t, difference(segment(succ(n)), singleton(numeral(n))), segment(n))
+                    [using specialize restrictionOffAPoint(t, segment(succ(n)), numeral(n), n) t-bijects-big top-in-big top-fixed]
+                  @big-without-top-is-small |
+                    difference(segment(succ(n)), singleton(numeral(n))) = segment(n)
+                    [using specialize segmentWithoutTheTop(n)]
+                  @t-bijects-small |
+                    bijectsOnto(t, segment(n), segment(n))
+                    [by rewrite big-without-top-is-small restriction-bijects]
+
+                  // outside the smaller segment: the top, or outside the bigger segment
+                  @generalize-x |
+                    fix x: Element {
+                      @given-x-outside-small |
+                        assume not member(x, segment(n)) {
+                          @x-outside-small |
+                            not member(x, segment(n))
+                            [by hypothesis given-x-outside-small]
+                          @x-in-big-or-not |
+                            member(x, segment(succ(n))) or (not member(x, segment(succ(n))))
+                            [using tautology]
+                          @conclusion-x-fixed |
+                            apply(t, x) = x
+                            case x-in-big-or-not {
+                              @when-x-in-big |
+                                assume member(x, segment(succ(n))) {
+                                  @x-in-big |
+                                    member(x, segment(succ(n)))
+                                    [by hypothesis when-x-in-big]
+                                  @x-splits |
+                                    member(x, segment(n)) or x = numeral(n)
+                                    [using specialize segmentSuccSplits(n, x) x-in-big]
+                                  @x-is-top |
+                                    x = numeral(n)
+                                    [using tautology x-splits x-outside-small]
+                                  @conclusion-top-fixed |
+                                    apply(t, x) = x
+                                    [by rewrite x-is-top top-fixed]
+                                }
+                              @when-x-outside-big |
+                                assume not member(x, segment(succ(n))) {
+                                  @x-outside-big |
+                                    not member(x, segment(succ(n)))
+                                    [by hypothesis when-x-outside-big]
+                                  @conclusion-outsider-fixed |
+                                    apply(t, x) = x
+                                    [using specialize t-fixes-outside-big(x) x-outside-big]
+                                }
+                            }
+                        }
+                      @conclusion-fixes-at-x |
+                        (not member(x, segment(n))) -> apply(t, x) = x
+                        [by implies_intro given-x-outside-small]
+                    }
+                  @t-fixes-outside-small |
+                    forall x: Element; (not member(x, segment(n))) -> apply(t, x) = x
+                    [by forall_intro generalize-x]
+                  @conclusion-permutes-fewer-letters |
+                    permutesTheSegment(t, n)
+                    [using tautology t-invertible t-bijects-small t-fixes-outside-small]
+                }
+              @conclusion-given-top-fixed |
+                apply(t, numeral(n)) = numeral(n) -> permutesTheSegment(t, n)
+                [by implies_intro given-top-fixed]
+            }
+          @conclusion-at-n |
+            permutesTheSegment(t, succ(n)) -> apply(t, numeral(n)) = numeral(n) -> permutesTheSegment(t, n)
+            [by implies_intro given-permutes-more-letters]
+        }
+      @discharge-n |
+        forall n: Nat; permutesTheSegment(t, succ(n)) -> apply(t, numeral(n)) = numeral(n) -> permutesTheSegment(t, n)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall t: Fn; forall n: Nat;
+      permutesTheSegment(t, succ(n)) -> apply(t, numeral(n)) = numeral(n) -> permutesTheSegment(t, n)
+    [by forall_intro generalize-t]
+qed
+
+// Permutations of n letters compose: invertibility and the bijection compose, and a point
+// outside the segment is fixed by both factors.
+theorem composingPermutationsOfTheSegment: forall f: Fn; forall g: Fn; forall n: Nat;
+  permutesTheSegment(f, n) -> permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-n |
+            fix n: Nat {
+              @given-f-permutes |
+                assume permutesTheSegment(f, n) {
+                  @given-g-permutes |
+                    assume permutesTheSegment(g, n) {
+                      @f-permutes |
+                        permutesTheSegment(f, n)
+                        [by hypothesis given-f-permutes]
+                      @g-permutes |
+                        permutesTheSegment(g, n)
+                        [by hypothesis given-g-permutes]
+                      @f-invertible |
+                        invertible(f)
+                        [using tautology f-permutes]
+                      @g-invertible |
+                        invertible(g)
+                        [using tautology g-permutes]
+                      @f-bijects |
+                        permutes(f, segment(n))
+                        [using tautology f-permutes]
+                      @g-bijects |
+                        permutes(g, segment(n))
+                        [using tautology g-permutes]
+                      @f-fixes-outside |
+                        forall x: Element; (not member(x, segment(n))) -> apply(f, x) = x
+                        [using tautology f-permutes]
+                      @g-fixes-outside |
+                        forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x
+                        [using tautology g-permutes]
+                      @composite-invertible |
+                        invertible(compose(g, f))
+                        [using specialize composeIsAPermutation(g, f) g-invertible f-invertible]
+                      @composite-bijects |
+                        permutes(compose(g, f), segment(n))
+                        [using specialize composePermutes(f, g, segment(n)) f-bijects g-bijects]
+                      @generalize-x |
+                        fix x: Element {
+                          @given-x-outside |
+                            assume not member(x, segment(n)) {
+                              @x-outside |
+                                not member(x, segment(n))
+                                [by hypothesis given-x-outside]
+                              @f-fixes-x |
+                                apply(f, x) = x
+                                [using specialize f-fixes-outside(x) x-outside]
+                              @g-fixes-x |
+                                apply(g, x) = x
+                                [using specialize g-fixes-outside(x) x-outside]
+                              @composite-unfolds |
+                                apply(compose(g, f), x) = apply(g, apply(f, x))
+                                [using specialize composeApply(g, f, x)]
+                              @composite-after-f |
+                                apply(compose(g, f), x) = apply(g, x)
+                                [by rewrite f-fixes-x composite-unfolds]
+                              @conclusion-composite-fixes-x |
+                                apply(compose(g, f), x) = x
+                                [using chain composite-after-f g-fixes-x]
+                            }
+                          @conclusion-fixes-at-x |
+                            (not member(x, segment(n))) -> apply(compose(g, f), x) = x
+                            [by implies_intro given-x-outside]
+                        }
+                      @composite-fixes-outside |
+                        forall x: Element; (not member(x, segment(n))) -> apply(compose(g, f), x) = x
+                        [by forall_intro generalize-x]
+                      @conclusion-composite-permutes |
+                        permutesTheSegment(compose(g, f), n)
+                        [using tautology composite-invertible composite-bijects composite-fixes-outside]
+                    }
+                  @conclusion-given-g |
+                    permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+                    [by implies_intro given-g-permutes]
+                }
+              @conclusion-at-n |
+                permutesTheSegment(f, n) -> permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+                [by implies_intro given-f-permutes]
+            }
+          @discharge-n |
+            forall n: Nat; permutesTheSegment(f, n) -> permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+            [by forall_intro generalize-n]
+        }
+      @discharge-g |
+        forall g: Fn; forall n: Nat; permutesTheSegment(f, n) -> permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall n: Nat;
+      permutesTheSegment(f, n) -> permutesTheSegment(g, n) -> permutesTheSegment(compose(g, f), n)
+    [by forall_intro generalize-f]
+qed
+
+// The transposition (k n), for k ≤ n, is a permutation of n+1 letters: both letters are in
+// the segment, and a swap fixes every point other than its two letters.
+theorem swappingWithTheTop: forall n: Nat; forall k: Nat;
+  less_than(k, succ(n)) -> permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @given-k-in-range |
+            assume less_than(k, succ(n)) {
+              @k-in-range |
+                less_than(k, succ(n))
+                [by hypothesis given-k-in-range]
+              @k-membership |
+                member(numeral(k), segment(succ(n))) iff less_than(k, succ(n))
+                [using specialize numeralInSegment(succ(n), k)]
+              @k-in-big |
+                member(numeral(k), segment(succ(n)))
+                [using tautology k-membership k-in-range]
+              @top-in-big |
+                member(numeral(n), segment(succ(n)))
+                [using specialize topIsInTheBiggerSegment(n)]
+              @swap-invertible |
+                invertible(swap(numeral(k), numeral(n)))
+                [using specialize transpositionIsAPermutation(numeral(k), numeral(n))]
+              @swap-bijects |
+                permutes(swap(numeral(k), numeral(n)), segment(succ(n)))
+                [using specialize transpositionPermutes(numeral(k), numeral(n), segment(succ(n))) k-in-big top-in-big]
+              @generalize-x |
+                fix x: Element {
+                  @given-x-outside |
+                    assume not member(x, segment(succ(n))) {
+                      @x-outside |
+                        not member(x, segment(succ(n)))
+                        [by hypothesis given-x-outside]
+                      @suppose-x-is-k |
+                        assume x = numeral(k) {
+                          @x-is-k |
+                            x = numeral(k)
+                            [by hypothesis suppose-x-is-k]
+                          @x-in-big-as-k |
+                            member(x, segment(succ(n)))
+                            [by rewrite x-is-k k-in-big]
+                        }
+                      @x-is-not-k |
+                        x != numeral(k)
+                        [by not_intro suppose-x-is-k x-in-big-as-k x-outside]
+                      @suppose-x-is-top |
+                        assume x = numeral(n) {
+                          @x-is-top |
+                            x = numeral(n)
+                            [by hypothesis suppose-x-is-top]
+                          @x-in-big-as-top |
+                            member(x, segment(succ(n)))
+                            [by rewrite x-is-top top-in-big]
+                        }
+                      @x-is-not-top |
+                        x != numeral(n)
+                        [by not_intro suppose-x-is-top x-in-big-as-top x-outside]
+                      @conclusion-swap-fixes-x |
+                        apply(swap(numeral(k), numeral(n)), x) = x
+                        [using specialize swapElsewhere(numeral(k), numeral(n), x) x-is-not-k x-is-not-top]
+                    }
+                  @conclusion-fixes-at-x |
+                    (not member(x, segment(succ(n)))) -> apply(swap(numeral(k), numeral(n)), x) = x
+                    [by implies_intro given-x-outside]
+                }
+              @swap-fixes-outside |
+                forall x: Element; (not member(x, segment(succ(n)))) -> apply(swap(numeral(k), numeral(n)), x) = x
+                [by forall_intro generalize-x]
+              @conclusion-swap-permutes |
+                permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+                [using tautology swap-invertible swap-bijects swap-fixes-outside]
+            }
+          @conclusion-at-k |
+            less_than(k, succ(n)) -> permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+            [by implies_intro given-k-in-range]
+        }
+      @discharge-k |
+        forall k: Nat; less_than(k, succ(n)) -> permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall n: Nat; forall k: Nat;
+      less_than(k, succ(n)) -> permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+    [by forall_intro generalize-n]
+qed
+
+// Composing with a transposition twice is the identity: reassociate and cancel the involution.
+theorem undoingTheSwap: forall u: Element; forall v: Element; forall f: Fn;
+  compose(swap(u, v), compose(swap(u, v), f)) = f
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-f |
+            fix f: Fn {
+              @reassociated |
+                compose(compose(swap(u, v), swap(u, v)), f) = compose(swap(u, v), compose(swap(u, v), f))
+                [using specialize composeAssoc(swap(u, v), swap(u, v), f)]
+              @swap-squared-is-identity |
+                compose(swap(u, v), swap(u, v)) = identityFn
+                [using specialize transpositionIsAnInvolution(u, v)]
+              @identity-times-f |
+                compose(identityFn, f) = compose(swap(u, v), compose(swap(u, v), f))
+                [by rewrite swap-squared-is-identity reassociated]
+              @identity-is-neutral |
+                compose(identityFn, f) = f
+                [using specialize composeIdentityLeft(f)]
+              @conclusion-undone |
+                compose(swap(u, v), compose(swap(u, v), f)) = f
+                [by rewrite identity-times-f identity-is-neutral]
+            }
+          @discharge-f |
+            forall f: Fn; compose(swap(u, v), compose(swap(u, v), f)) = f
+            [by forall_intro generalize-f]
+        }
+      @discharge-v |
+        forall v: Element; forall f: Fn; compose(swap(u, v), compose(swap(u, v), f)) = f
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u: Element; forall v: Element; forall f: Fn; compose(swap(u, v), compose(swap(u, v), f)) = f
+    [by forall_intro generalize-u]
+qed
+
+// -- listing the permutations ----------------------------------------------------------------
+
+// `t` is a permutation of n+1 letters SENDING THE TOP letter n to the letter k.
+define sendsTheTopTo(t, n, k) = permutesTheSegment(t, succ(n)) and apply(t, numeral(n)) = numeral(k)
+
+// `w` ENUMERATES the permutations of n letters in its first m entries: every entry is one,
+// no entry repeats, and every permutation of n letters is an entry. "The symmetric group on
+// n letters has m elements."
+define enumerates(w, n, m) =
+  (forall j: Nat; less_than(j, m) -> permutesTheSegment(at(w, j), n))
+  and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(w, i) = at(w, j) -> i = j)
+  and (forall t: Fn; permutesTheSegment(t, n) -> exists j: Nat; less_than(j, m) and at(w, j) = t)
+
+// `v` enumerates BLOCK k in its first m entries: the permutations of n+1 letters sending
+// the top letter to k.
+define enumeratesTheBlock(v, m, n, k) =
+  (forall j: Nat; less_than(j, m) -> sendsTheTopTo(at(v, j), n, k))
+  and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j)
+  and (forall t: Fn; sendsTheTopTo(t, n, k) -> exists j: Nat; less_than(j, m) and at(v, j) = t)
+
+// `u` enumerates the BLOCKS BELOW k in its first L entries: the permutations of n+1
+// letters sending the top letter to some letter below k.
+define enumeratesTheBlocksBelow(u, L, n, k) =
+  (forall i: Nat; less_than(i, L) -> exists a: Nat; less_than(a, k) and sendsTheTopTo(at(u, i), n, a))
+  and (forall i: Nat; forall j: Nat; less_than(i, L) -> less_than(j, L) -> at(u, i) = at(u, j) -> i = j)
+  and (forall t: Fn; forall a: Nat; less_than(a, k) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, L) and at(u, i) = t)
+
+// Where the top letter goes is determined by the permutation.
+theorem theTopGoesOneWay: forall t: Fn; forall n: Nat; forall a: Nat; forall k: Nat;
+  sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-a |
+            fix a: Nat {
+              @generalize-k |
+                fix k: Nat {
+                  @given-sends-to-a |
+                    assume sendsTheTopTo(t, n, a) {
+                      @given-sends-to-k |
+                        assume sendsTheTopTo(t, n, k) {
+                          @sends-to-a |
+                            sendsTheTopTo(t, n, a)
+                            [by hypothesis given-sends-to-a]
+                          @sends-to-k |
+                            sendsTheTopTo(t, n, k)
+                            [by hypothesis given-sends-to-k]
+                          @top-goes-to-a |
+                            apply(t, numeral(n)) = numeral(a)
+                            [using tautology sends-to-a]
+                          @top-goes-to-k |
+                            apply(t, numeral(n)) = numeral(k)
+                            [using tautology sends-to-k]
+                          @letters-agree |
+                            numeral(a) = numeral(k)
+                            [by rewrite top-goes-to-a top-goes-to-k]
+                          @conclusion-indices-agree |
+                            a = k
+                            [using specialize numeralInjective(a, k) letters-agree]
+                        }
+                      @conclusion-given-k |
+                        sendsTheTopTo(t, n, k) -> a = k
+                        [by implies_intro given-sends-to-k]
+                    }
+                  @conclusion-at-k |
+                    sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+                    [by implies_intro given-sends-to-a]
+                }
+              @discharge-k |
+                forall k: Nat; sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a: Nat; forall k: Nat; sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+            [by forall_intro generalize-a]
+        }
+      @discharge-n |
+        forall n: Nat; forall a: Nat; forall k: Nat; sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall t: Fn; forall n: Nat; forall a: Nat; forall k: Nat;
+      sendsTheTopTo(t, n, a) -> sendsTheTopTo(t, n, k) -> a = k
+    [by forall_intro generalize-t]
+qed
+
+// Block k is (k n) ∘ (the enumeration of n letters): each entry sends the top to k (the
+// inner factor fixes the top, the swap moves it to k); distinct entries stay distinct
+// (undo the swap); and any t sending the top to k is (k n) ∘ ((k n) ∘ t), where (k n) ∘ t
+// fixes the top and so is a permutation of n letters — an entry of the inner enumeration.
+theorem theBlockEnumerates: forall n: Nat; forall m: Nat; forall w: Seq; enumerates(w, n, m) ->
+  forall k: Nat; less_than(k, succ(n)) -> forall v: Seq;
+  (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) ->
+  enumeratesTheBlock(v, m, n, k)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-w |
+            fix w: Seq {
+              @given-enumeration |
+                assume enumerates(w, n, m) {
+                  @enumeration |
+                    enumerates(w, n, m)
+                    [by hypothesis given-enumeration]
+                  @w-entries |
+                    forall j: Nat; less_than(j, m) -> permutesTheSegment(at(w, j), n)
+                    [using tautology enumeration]
+                  @w-injective |
+                    forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(w, i) = at(w, j) -> i = j
+                    [using tautology enumeration]
+                  @w-covers |
+                    forall t: Fn; permutesTheSegment(t, n) -> exists j: Nat; less_than(j, m) and at(w, j) = t
+                    [using tautology enumeration]
+                  @top-not-in-small |
+                    not member(numeral(n), segment(n))
+                    [using specialize topIsNotInTheSmallerSegment(n)]
+                  @generalize-k |
+                    fix k: Nat {
+                      @given-k-in-range |
+                        assume less_than(k, succ(n)) {
+                          @k-in-range |
+                            less_than(k, succ(n))
+                            [by hypothesis given-k-in-range]
+                          @swap-permutes |
+                            permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+                            [using specialize swappingWithTheTop(n, k) k-in-range]
+                          @swap-sends-top-to-k |
+                            apply(swap(numeral(k), numeral(n)), numeral(n)) = numeral(k)
+                            [using specialize swapAtSecond(numeral(k), numeral(n))]
+                          @swap-sends-k-to-top |
+                            apply(swap(numeral(k), numeral(n)), numeral(k)) = numeral(n)
+                            [using specialize swapAtFirst(numeral(k), numeral(n))]
+                          @generalize-v |
+                            fix v: Seq {
+                              @given-block-entries |
+                                assume forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j)) {
+                                  @block-entries |
+                                    forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                    [by hypothesis given-block-entries]
+
+                                  // every entry sends the top to k
+                                  @generalize-j-for-entries |
+                                    fix j: Nat {
+                                      @given-j-in-range |
+                                        assume less_than(j, m) {
+                                          @j-in-range |
+                                            less_than(j, m)
+                                            [by hypothesis given-j-in-range]
+                                          @entry-formula |
+                                            at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                            [using specialize block-entries(j) j-in-range]
+                                          @inner-permutes |
+                                            permutesTheSegment(at(w, j), n)
+                                            [using specialize w-entries(j) j-in-range]
+                                          @inner-permutes-more |
+                                            permutesTheSegment(at(w, j), succ(n))
+                                            [using specialize extendingByTheTop(at(w, j), n) inner-permutes]
+                                          @composite-permutes |
+                                            permutesTheSegment(compose(swap(numeral(k), numeral(n)), at(w, j)), succ(n))
+                                            [using specialize composingPermutationsOfTheSegment(at(w, j), swap(numeral(k), numeral(n)), succ(n)) inner-permutes-more swap-permutes]
+                                          @inner-fixes-outside |
+                                            forall x: Element; (not member(x, segment(n))) -> apply(at(w, j), x) = x
+                                            [using tautology inner-permutes]
+                                          @inner-fixes-top |
+                                            apply(at(w, j), numeral(n)) = numeral(n)
+                                            [using specialize inner-fixes-outside(numeral(n)) top-not-in-small]
+                                          @composite-at-top-unfolds |
+                                            apply(compose(swap(numeral(k), numeral(n)), at(w, j)), numeral(n)) = apply(swap(numeral(k), numeral(n)), apply(at(w, j), numeral(n)))
+                                            [using specialize composeApply(swap(numeral(k), numeral(n)), at(w, j), numeral(n))]
+                                          @composite-at-top-after-inner |
+                                            apply(compose(swap(numeral(k), numeral(n)), at(w, j)), numeral(n)) = apply(swap(numeral(k), numeral(n)), numeral(n))
+                                            [by rewrite inner-fixes-top composite-at-top-unfolds]
+                                          @composite-sends-top-to-k |
+                                            apply(compose(swap(numeral(k), numeral(n)), at(w, j)), numeral(n)) = numeral(k)
+                                            [using chain composite-at-top-after-inner swap-sends-top-to-k]
+                                          @entry-permutes |
+                                            permutesTheSegment(at(v, j), succ(n))
+                                            [by rewrite entry-formula composite-permutes]
+                                          @entry-sends-top-to-k |
+                                            apply(at(v, j), numeral(n)) = numeral(k)
+                                            [by rewrite entry-formula composite-sends-top-to-k]
+                                          @conclusion-entry-in-block |
+                                            sendsTheTopTo(at(v, j), n, k)
+                                            [by and_intro entry-permutes entry-sends-top-to-k]
+                                        }
+                                      @conclusion-entry-clause |
+                                        less_than(j, m) -> sendsTheTopTo(at(v, j), n, k)
+                                        [by implies_intro given-j-in-range]
+                                    }
+                                  @entries-in-block |
+                                    forall j: Nat; less_than(j, m) -> sendsTheTopTo(at(v, j), n, k)
+                                    [by forall_intro generalize-j-for-entries]
+
+                                  // distinct indices give distinct entries
+                                  @generalize-i-for-injective |
+                                    fix i: Nat {
+                                      @generalize-j-for-injective |
+                                        fix j: Nat {
+                                          @given-i-in-range |
+                                            assume less_than(i, m) {
+                                              @given-j-in-range-too |
+                                                assume less_than(j, m) {
+                                                  @given-entries-equal |
+                                                    assume at(v, i) = at(v, j) {
+                                                      @i-in-range |
+                                                        less_than(i, m)
+                                                        [by hypothesis given-i-in-range]
+                                                      @j-in-range-too |
+                                                        less_than(j, m)
+                                                        [by hypothesis given-j-in-range-too]
+                                                      @entries-equal |
+                                                        at(v, i) = at(v, j)
+                                                        [by hypothesis given-entries-equal]
+                                                      @entry-i-formula |
+                                                        at(v, i) = compose(swap(numeral(k), numeral(n)), at(w, i))
+                                                        [using specialize block-entries(i) i-in-range]
+                                                      @entry-j-formula |
+                                                        at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                                        [using specialize block-entries(j) j-in-range-too]
+                                                      @composite-i-is-entry-j |
+                                                        compose(swap(numeral(k), numeral(n)), at(w, i)) = at(v, j)
+                                                        [by rewrite entry-i-formula entries-equal]
+                                                      @composites-equal |
+                                                        compose(swap(numeral(k), numeral(n)), at(w, i)) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                                        [by rewrite entry-j-formula composite-i-is-entry-j]
+                                                      @undo-at-i |
+                                                        compose(swap(numeral(k), numeral(n)), compose(swap(numeral(k), numeral(n)), at(w, i))) = at(w, i)
+                                                        [using specialize undoingTheSwap(numeral(k), numeral(n), at(w, i))]
+                                                      @undo-at-j |
+                                                        compose(swap(numeral(k), numeral(n)), compose(swap(numeral(k), numeral(n)), at(w, j))) = at(w, j)
+                                                        [using specialize undoingTheSwap(numeral(k), numeral(n), at(w, j))]
+                                                      @undo-crossed |
+                                                        compose(swap(numeral(k), numeral(n)), compose(swap(numeral(k), numeral(n)), at(w, j))) = at(w, i)
+                                                        [by rewrite composites-equal undo-at-i]
+                                                      @inner-entries-equal |
+                                                        at(w, i) = at(w, j)
+                                                        [by rewrite undo-crossed undo-at-j]
+                                                      @conclusion-indices-equal |
+                                                        i = j
+                                                        [using specialize w-injective(i, j) i-in-range j-in-range-too inner-entries-equal]
+                                                    }
+                                                  @conclusion-given-equal |
+                                                    at(v, i) = at(v, j) -> i = j
+                                                    [by implies_intro given-entries-equal]
+                                                }
+                                              @conclusion-given-j |
+                                                less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                                [by implies_intro given-j-in-range-too]
+                                            }
+                                          @conclusion-injective-at-i-j |
+                                            less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                            [by implies_intro given-i-in-range]
+                                        }
+                                      @discharge-j-for-injective |
+                                        forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                        [by forall_intro generalize-j-for-injective]
+                                    }
+                                  @block-injective |
+                                    forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                    [by forall_intro generalize-i-for-injective]
+
+                                  // every permutation sending the top to k is an entry
+                                  @generalize-t |
+                                    fix t: Fn {
+                                      @given-t-in-block |
+                                        assume sendsTheTopTo(t, n, k) {
+                                          @t-in-block |
+                                            sendsTheTopTo(t, n, k)
+                                            [by hypothesis given-t-in-block]
+                                          @t-permutes-more |
+                                            permutesTheSegment(t, succ(n))
+                                            [using tautology t-in-block]
+                                          @t-sends-top-to-k |
+                                            apply(t, numeral(n)) = numeral(k)
+                                            [using tautology t-in-block]
+                                          @swapped-permutes-more |
+                                            permutesTheSegment(compose(swap(numeral(k), numeral(n)), t), succ(n))
+                                            [using specialize composingPermutationsOfTheSegment(t, swap(numeral(k), numeral(n)), succ(n)) t-permutes-more swap-permutes]
+                                          @swapped-at-top-unfolds |
+                                            apply(compose(swap(numeral(k), numeral(n)), t), numeral(n)) = apply(swap(numeral(k), numeral(n)), apply(t, numeral(n)))
+                                            [using specialize composeApply(swap(numeral(k), numeral(n)), t, numeral(n))]
+                                          @swapped-at-top-after-t |
+                                            apply(compose(swap(numeral(k), numeral(n)), t), numeral(n)) = apply(swap(numeral(k), numeral(n)), numeral(k))
+                                            [by rewrite t-sends-top-to-k swapped-at-top-unfolds]
+                                          @swapped-fixes-top |
+                                            apply(compose(swap(numeral(k), numeral(n)), t), numeral(n)) = numeral(n)
+                                            [using chain swapped-at-top-after-t swap-sends-k-to-top]
+                                          @swapped-permutes-fewer |
+                                            permutesTheSegment(compose(swap(numeral(k), numeral(n)), t), n)
+                                            [using specialize restrictingOffTheTop(compose(swap(numeral(k), numeral(n)), t), n) swapped-permutes-more swapped-fixes-top]
+                                          @inner-index-exists |
+                                            exists j: Nat; less_than(j, m) and at(w, j) = compose(swap(numeral(k), numeral(n)), t)
+                                            [using specialize w-covers(compose(swap(numeral(k), numeral(n)), t)) swapped-permutes-fewer]
+                                          @with-inner-index-j |
+                                            unpack j: Nat from inner-index-exists {
+                                              @inner-index-facts |
+                                                less_than(j, m) and at(w, j) = compose(swap(numeral(k), numeral(n)), t)
+                                                [by hypothesis with-inner-index-j]
+                                              @j-in-range |
+                                                less_than(j, m)
+                                                [by and_elim_left inner-index-facts]
+                                              @inner-entry-is-swapped-t |
+                                                at(w, j) = compose(swap(numeral(k), numeral(n)), t)
+                                                [by and_elim_right inner-index-facts]
+                                              @entry-formula |
+                                                at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                                [using specialize block-entries(j) j-in-range]
+                                              @entry-is-doubly-swapped-t |
+                                                at(v, j) = compose(swap(numeral(k), numeral(n)), compose(swap(numeral(k), numeral(n)), t))
+                                                [by rewrite inner-entry-is-swapped-t entry-formula]
+                                              @double-swap-undone |
+                                                compose(swap(numeral(k), numeral(n)), compose(swap(numeral(k), numeral(n)), t)) = t
+                                                [using specialize undoingTheSwap(numeral(k), numeral(n), t)]
+                                              @entry-is-t |
+                                                at(v, j) = t
+                                                [using chain entry-is-doubly-swapped-t double-swap-undone]
+                                              @index-in-range-and-hits |
+                                                less_than(j, m) and at(v, j) = t
+                                                [by and_intro j-in-range entry-is-t]
+                                              @conclusion-witness-j |
+                                                exists j2: Nat; less_than(j2, m) and at(v, j2) = t
+                                                [by exists_intro(j) index-in-range-and-hits]
+                                            }
+                                          @conclusion-t-is-an-entry |
+                                            exists j2: Nat; less_than(j2, m) and at(v, j2) = t
+                                            [by exists_elim with-inner-index-j]
+                                        }
+                                      @conclusion-covers-at-t |
+                                        sendsTheTopTo(t, n, k) -> exists j2: Nat; less_than(j2, m) and at(v, j2) = t
+                                        [by implies_intro given-t-in-block]
+                                    }
+                                  @block-covers |
+                                    forall t: Fn; sendsTheTopTo(t, n, k) -> exists j2: Nat; less_than(j2, m) and at(v, j2) = t
+                                    [by forall_intro generalize-t]
+                                  @conclusion-block-enumerates |
+                                    enumeratesTheBlock(v, m, n, k)
+                                    [using tautology entries-in-block block-injective block-covers]
+                                }
+                              @conclusion-given-block-entries |
+                                (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+                                [by implies_intro given-block-entries]
+                            }
+                          @discharge-v |
+                            forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+                            [by forall_intro generalize-v]
+                        }
+                      @conclusion-given-k-in-range |
+                        less_than(k, succ(n)) -> forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+                        [by implies_intro given-k-in-range]
+                    }
+                  @discharge-k |
+                    forall k: Nat; less_than(k, succ(n)) -> forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+                    [by forall_intro generalize-k]
+                }
+              @conclusion-given-enumeration |
+                enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(n)) -> forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+                [by implies_intro given-enumeration]
+            }
+          @discharge-w |
+            forall w: Seq; enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(n)) -> forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+            [by forall_intro generalize-w]
+        }
+      @discharge-m |
+        forall m: Nat; forall w: Seq; enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(n)) -> forall v: Seq; (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) -> enumeratesTheBlock(v, m, n, k)
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall n: Nat; forall m: Nat; forall w: Seq; enumerates(w, n, m) ->
+      forall k: Nat; less_than(k, succ(n)) -> forall v: Seq;
+      (forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))) ->
+      enumeratesTheBlock(v, m, n, k)
+    [by forall_intro generalize-n]
+qed
+
+// An index below base + m that is not below base is base + j for some j below m: the gap
+// from base to i, cancelled against base + m on the left.
+theorem indexPastTheBase: forall base: Nat; forall m: Nat; forall i: Nat;
+  less_than(i, add(base, m)) -> (less_than(base, i) or base = i) ->
+  exists j: Nat; less_than(j, m) and i = add(base, j)
+proof
+  @generalize-base |
+    fix base: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-i-below-sum |
+                assume less_than(i, add(base, m)) {
+                  @given-base-at-most-i |
+                    assume less_than(base, i) or base = i {
+                      @i-below-sum |
+                        less_than(i, add(base, m))
+                        [by hypothesis given-i-below-sum]
+                      @base-at-most-i |
+                        less_than(base, i) or base = i
+                        [by hypothesis given-base-at-most-i]
+                      @gap-characterization |
+                        peano_order.less_or_equal(base, i) iff (exists d: Nat; add(base, d) = i)
+                        [using specialize lessOrEqualIsGapExistential(base, i)]
+                      @gap-exists |
+                        exists d: Nat; add(base, d) = i
+                        [using tautology gap-characterization base-at-most-i]
+                      @with-gap-d |
+                        unpack d: Nat from gap-exists {
+                          @gap |
+                            add(base, d) = i
+                            [by hypothesis with-gap-d]
+                          @gap-form-below-sum |
+                            less_than(add(base, d), add(base, m))
+                            [by rewrite gap i-below-sum]
+                          @gap-below-m |
+                            less_than(d, m)
+                            [using specialize lessThanAddCancelLeft(base, d, m) gap-form-below-sum]
+                          @gap-flipped |
+                            i = add(base, d)
+                            [by symmetry gap]
+                          @gap-in-range-and-recovers-i |
+                            less_than(d, m) and i = add(base, d)
+                            [by and_intro gap-below-m gap-flipped]
+                          @conclusion-witness-d |
+                            exists j: Nat; less_than(j, m) and i = add(base, j)
+                            [by exists_intro(d) gap-in-range-and-recovers-i]
+                        }
+                      @conclusion-offset-exists |
+                        exists j: Nat; less_than(j, m) and i = add(base, j)
+                        [by exists_elim with-gap-d]
+                    }
+                  @conclusion-given-base-at-most-i |
+                    (less_than(base, i) or base = i) -> exists j: Nat; less_than(j, m) and i = add(base, j)
+                    [by implies_intro given-base-at-most-i]
+                }
+              @conclusion-at-i |
+                less_than(i, add(base, m)) -> (less_than(base, i) or base = i) -> exists j: Nat; less_than(j, m) and i = add(base, j)
+                [by implies_intro given-i-below-sum]
+            }
+          @discharge-i |
+            forall i: Nat; less_than(i, add(base, m)) -> (less_than(base, i) or base = i) -> exists j: Nat; less_than(j, m) and i = add(base, j)
+            [by forall_intro generalize-i]
+        }
+      @discharge-m |
+        forall m: Nat; forall i: Nat; less_than(i, add(base, m)) -> (less_than(base, i) or base = i) -> exists j: Nat; less_than(j, m) and i = add(base, j)
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall base: Nat; forall m: Nat; forall i: Nat;
+      less_than(i, add(base, m)) -> (less_than(base, i) or base = i) ->
+      exists j: Nat; less_than(j, m) and i = add(base, j)
+    [by forall_intro generalize-base]
+qed
+
+// An index below base + m is either below base or base + j with j below m (trichotomy).
+theorem indexSplits: forall base: Nat; forall m: Nat; forall i: Nat;
+  less_than(i, add(base, m)) -> (less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j)))
+proof
+  @generalize-base |
+    fix base: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-i-below-sum |
+                assume less_than(i, add(base, m)) {
+                  @i-below-sum |
+                    less_than(i, add(base, m))
+                    [by hypothesis given-i-below-sum]
+                  @past-the-base |
+                    (less_than(base, i) or base = i) -> exists j: Nat; less_than(j, m) and i = add(base, j)
+                    [using specialize indexPastTheBase(base, m, i) i-below-sum]
+                  @three-ways |
+                    less_than(base, i) or base = i or less_than(i, base)
+                    [using specialize trichotomy(base, i)]
+                  @conclusion-split |
+                    less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j))
+                    [using tautology three-ways past-the-base]
+                }
+              @conclusion-at-i |
+                less_than(i, add(base, m)) -> (less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j)))
+                [by implies_intro given-i-below-sum]
+            }
+          @discharge-i |
+            forall i: Nat; less_than(i, add(base, m)) -> (less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j)))
+            [by forall_intro generalize-i]
+        }
+      @discharge-m |
+        forall m: Nat; forall i: Nat; less_than(i, add(base, m)) -> (less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j)))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall base: Nat; forall m: Nat; forall i: Nat;
+      less_than(i, add(base, m)) -> (less_than(i, base) or (exists j: Nat; less_than(j, m) and i = add(base, j)))
+    [by forall_intro generalize-base]
+qed
+
+// An index below the base is below the base plus anything: extend the gap.
+theorem belowTheBaseIsBelowTheSum: forall base: Nat; forall m: Nat; forall i: Nat;
+  less_than(i, base) -> less_than(i, add(base, m))
+proof
+  @generalize-base |
+    fix base: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-i-below-base |
+                assume less_than(i, base) {
+                  @i-below-base |
+                    less_than(i, base)
+                    [by hypothesis given-i-below-base]
+                  @gap-exists |
+                    exists d: Nat; add(i, succ(d)) = base
+                    [using specialize lessThanElim(i, base) i-below-base]
+                  @with-gap-d |
+                    unpack d: Nat from gap-exists {
+                      @gap |
+                        add(i, succ(d)) = base
+                        [by hypothesis with-gap-d]
+                      @sum-reassociated |
+                        add(add(i, succ(d)), m) = add(i, add(succ(d), m))
+                        [using specialize addIsAssociative(i, succ(d), m)]
+                      @succ-pulls-out |
+                        add(succ(d), m) = succ(add(d, m))
+                        [using specialize addSuccLeft(d, m)]
+                      @sum-with-base |
+                        add(base, m) = add(i, add(succ(d), m))
+                        [by rewrite gap sum-reassociated]
+                      @sum-as-a-gap |
+                        add(base, m) = add(i, succ(add(d, m)))
+                        [by rewrite succ-pulls-out sum-with-base]
+                      @gap-form |
+                        add(i, succ(add(d, m))) = add(base, m)
+                        [by symmetry sum-as-a-gap]
+                      @conclusion-i-below-sum |
+                        less_than(i, add(base, m))
+                        [using specialize lessThanIntro(i, add(d, m), add(base, m)) gap-form]
+                    }
+                  @conclusion-below-sum |
+                    less_than(i, add(base, m))
+                    [by exists_elim with-gap-d]
+                }
+              @conclusion-at-i |
+                less_than(i, base) -> less_than(i, add(base, m))
+                [by implies_intro given-i-below-base]
+            }
+          @discharge-i |
+            forall i: Nat; less_than(i, base) -> less_than(i, add(base, m))
+            [by forall_intro generalize-i]
+        }
+      @discharge-m |
+        forall m: Nat; forall i: Nat; less_than(i, base) -> less_than(i, add(base, m))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall base: Nat; forall m: Nat; forall i: Nat; less_than(i, base) -> less_than(i, add(base, m))
+    [by forall_intro generalize-base]
+qed
+
+// A permutation sending the top below k does not send it to k.
+theorem theTopGoesBelowOrNot: forall n: Nat; forall k: Nat; forall a: Nat; forall t: Fn;
+  less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-a |
+            fix a: Nat {
+              @generalize-t |
+                fix t: Fn {
+                  @given-a-below-k |
+                    assume less_than(a, k) {
+                      @given-sends-to-a |
+                        assume sendsTheTopTo(t, n, a) {
+                          @a-below-k |
+                            less_than(a, k)
+                            [by hypothesis given-a-below-k]
+                          @sends-to-a |
+                            sendsTheTopTo(t, n, a)
+                            [by hypothesis given-sends-to-a]
+                          @suppose-sends-to-k |
+                            assume sendsTheTopTo(t, n, k) {
+                              @sends-to-k |
+                                sendsTheTopTo(t, n, k)
+                                [by hypothesis suppose-sends-to-k]
+                              @a-is-k |
+                                a = k
+                                [using specialize theTopGoesOneWay(t, n, a, k) sends-to-a sends-to-k]
+                              @k-below-itself |
+                                less_than(k, k)
+                                [by rewrite a-is-k a-below-k]
+                            }
+                          @k-not-below-itself |
+                            not less_than(k, k)
+                            [using specialize lessThanIrreflexive(k)]
+                          @conclusion-not-to-k |
+                            not sendsTheTopTo(t, n, k)
+                            [by not_intro suppose-sends-to-k k-below-itself k-not-below-itself]
+                        }
+                      @conclusion-given-sends-to-a |
+                        sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+                        [by implies_intro given-sends-to-a]
+                    }
+                  @conclusion-at-t |
+                    less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+                    [by implies_intro given-a-below-k]
+                }
+              @discharge-t |
+                forall t: Fn; less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+                [by forall_intro generalize-t]
+            }
+          @discharge-a |
+            forall a: Nat; forall t: Fn; less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+            [by forall_intro generalize-a]
+        }
+      @discharge-k |
+        forall k: Nat; forall a: Nat; forall t: Fn; less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall n: Nat; forall k: Nat; forall a: Nat; forall t: Fn;
+      less_than(a, k) -> sendsTheTopTo(t, n, a) -> (not sendsTheTopTo(t, n, k))
+    [by forall_intro generalize-n]
+qed
+
+// Concatenating block k after the blocks below k enumerates the blocks below k+1: an index
+// below len + m is in the prefix or is len + j into the block (indexSplits); two equal
+// entries are both in the prefix (the prefix is injective), both in the block (the block
+// is), or one of each (impossible — the top goes below k for one and to k for the other);
+// and a permutation sending the top below k+1 is in the prefix or in the block.
+theorem appendingABlock: forall n: Nat; forall k: Nat; forall len: Nat; forall m: Nat;
+  forall u: Seq; forall v: Seq; forall u2: Seq;
+  enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) ->
+  (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) ->
+  (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) ->
+  enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-len |
+            fix len: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @generalize-u |
+                    fix u: Seq {
+                      @generalize-v |
+                        fix v: Seq {
+                          @generalize-u2 |
+                            fix u2: Seq {
+                              @given-prefix-enumerates |
+                                assume enumeratesTheBlocksBelow(u, len, n, k) {
+                                  @given-block-enumerates |
+                                    assume enumeratesTheBlock(v, m, n, k) {
+                                      @given-prefix-agrees |
+                                        assume forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i) {
+                                          @given-block-agrees |
+                                            assume forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i) {
+                                              @prefix-enumerates |
+                                                enumeratesTheBlocksBelow(u, len, n, k)
+                                                [by hypothesis given-prefix-enumerates]
+                                              @block-enumerates |
+                                                enumeratesTheBlock(v, m, n, k)
+                                                [by hypothesis given-block-enumerates]
+                                              @prefix-agrees |
+                                                forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)
+                                                [by hypothesis given-prefix-agrees]
+                                              @block-agrees |
+                                                forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)
+                                                [by hypothesis given-block-agrees]
+                                              @prefix-entries |
+                                                forall i: Nat; less_than(i, len) -> exists a: Nat; less_than(a, k) and sendsTheTopTo(at(u, i), n, a)
+                                                [using tautology prefix-enumerates]
+                                              @prefix-injective |
+                                                forall i: Nat; forall j: Nat; less_than(i, len) -> less_than(j, len) -> at(u, i) = at(u, j) -> i = j
+                                                [using tautology prefix-enumerates]
+                                              @prefix-covers |
+                                                forall t: Fn; forall a: Nat; less_than(a, k) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, len) and at(u, i) = t
+                                                [using tautology prefix-enumerates]
+                                              @block-entries |
+                                                forall j: Nat; less_than(j, m) -> sendsTheTopTo(at(v, j), n, k)
+                                                [using tautology block-enumerates]
+                                              @block-injective |
+                                                forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                                [using tautology block-enumerates]
+                                              @block-covers |
+                                                forall t: Fn; sendsTheTopTo(t, n, k) -> exists j: Nat; less_than(j, m) and at(v, j) = t
+                                                [using tautology block-enumerates]
+                                              @k-below-succ-k |
+                                                less_than(k, succ(k))
+                                                [using specialize lessThanSelf(k)]
+
+                                              // every entry of the concatenation sends the top below k+1
+                                              @generalize-i-for-entries |
+                                                fix i: Nat {
+                                                  @given-i-in-range |
+                                                    assume less_than(i, add(len, m)) {
+                                                      @i-in-range |
+                                                        less_than(i, add(len, m))
+                                                        [by hypothesis given-i-in-range]
+                                                      @i-splits |
+                                                        less_than(i, len) or (exists j: Nat; less_than(j, m) and i = add(len, j))
+                                                        [using specialize indexSplits(len, m, i) i-in-range]
+                                                      @conclusion-entry-sends-below |
+                                                        exists a: Nat; less_than(a, succ(k)) and sendsTheTopTo(at(u2, i), n, a)
+                                                        case i-splits {
+                                                          @when-i-in-prefix |
+                                                            assume less_than(i, len) {
+                                                              @i-in-prefix |
+                                                                less_than(i, len)
+                                                                [by hypothesis when-i-in-prefix]
+                                                              @entry-is-prefix-entry |
+                                                                at(u2, i) = at(u, i)
+                                                                [using specialize prefix-agrees(i) i-in-prefix]
+                                                              @prefix-entry-sends-below |
+                                                                exists a: Nat; less_than(a, k) and sendsTheTopTo(at(u, i), n, a)
+                                                                [using specialize prefix-entries(i) i-in-prefix]
+                                                              @with-letter-a |
+                                                                unpack a: Nat from prefix-entry-sends-below {
+                                                                  @letter-facts |
+                                                                    less_than(a, k) and sendsTheTopTo(at(u, i), n, a)
+                                                                    [by hypothesis with-letter-a]
+                                                                  @a-below-k |
+                                                                    less_than(a, k)
+                                                                    [by and_elim_left letter-facts]
+                                                                  @prefix-entry-sends-to-a |
+                                                                    sendsTheTopTo(at(u, i), n, a)
+                                                                    [by and_elim_right letter-facts]
+                                                                  @a-below-succ-k |
+                                                                    less_than(a, succ(k))
+                                                                    [using specialize lessThanSuccRight(a, k) a-below-k]
+                                                                  @entry-sends-to-a |
+                                                                    sendsTheTopTo(at(u2, i), n, a)
+                                                                    [by rewrite entry-is-prefix-entry prefix-entry-sends-to-a]
+                                                                  @a-in-range-and-entry-sends-to-a |
+                                                                    less_than(a, succ(k)) and sendsTheTopTo(at(u2, i), n, a)
+                                                                    [by and_intro a-below-succ-k entry-sends-to-a]
+                                                                  @conclusion-witness-a |
+                                                                    exists a2: Nat; less_than(a2, succ(k)) and sendsTheTopTo(at(u2, i), n, a2)
+                                                                    [by exists_intro(a) a-in-range-and-entry-sends-to-a]
+                                                                }
+                                                              @conclusion-prefix-entry-sends-below |
+                                                                exists a2: Nat; less_than(a2, succ(k)) and sendsTheTopTo(at(u2, i), n, a2)
+                                                                [by exists_elim with-letter-a]
+                                                            }
+                                                          @when-i-in-block |
+                                                            assume exists j: Nat; less_than(j, m) and i = add(len, j) {
+                                                              @offset-exists |
+                                                                exists j: Nat; less_than(j, m) and i = add(len, j)
+                                                                [by hypothesis when-i-in-block]
+                                                              @with-offset-j |
+                                                                unpack j: Nat from offset-exists {
+                                                                  @offset-facts |
+                                                                    less_than(j, m) and i = add(len, j)
+                                                                    [by hypothesis with-offset-j]
+                                                                  @j-in-block |
+                                                                    less_than(j, m)
+                                                                    [by and_elim_left offset-facts]
+                                                                  @i-is-offset |
+                                                                    i = add(len, j)
+                                                                    [by and_elim_right offset-facts]
+                                                                  @offset-entry-is-block-entry |
+                                                                    at(u2, add(len, j)) = at(v, j)
+                                                                    [using specialize block-agrees(j) j-in-block]
+                                                                  @entry-is-block-entry |
+                                                                    at(u2, i) = at(v, j)
+                                                                    [by rewrite i-is-offset offset-entry-is-block-entry]
+                                                                  @block-entry-sends-to-k |
+                                                                    sendsTheTopTo(at(v, j), n, k)
+                                                                    [using specialize block-entries(j) j-in-block]
+                                                                  @entry-sends-to-k |
+                                                                    sendsTheTopTo(at(u2, i), n, k)
+                                                                    [by rewrite entry-is-block-entry block-entry-sends-to-k]
+                                                                  @k-in-range-and-entry-sends-to-k |
+                                                                    less_than(k, succ(k)) and sendsTheTopTo(at(u2, i), n, k)
+                                                                    [by and_intro k-below-succ-k entry-sends-to-k]
+                                                                  @conclusion-witness-k |
+                                                                    exists a2: Nat; less_than(a2, succ(k)) and sendsTheTopTo(at(u2, i), n, a2)
+                                                                    [by exists_intro(k) k-in-range-and-entry-sends-to-k]
+                                                                }
+                                                              @conclusion-block-entry-sends-below |
+                                                                exists a2: Nat; less_than(a2, succ(k)) and sendsTheTopTo(at(u2, i), n, a2)
+                                                                [by exists_elim with-offset-j]
+                                                            }
+                                                        }
+                                                    }
+                                                  @conclusion-entry-clause |
+                                                    less_than(i, add(len, m)) -> exists a: Nat; less_than(a, succ(k)) and sendsTheTopTo(at(u2, i), n, a)
+                                                    [by implies_intro given-i-in-range]
+                                                }
+                                              @entries-send-below |
+                                                forall i: Nat; less_than(i, add(len, m)) -> exists a: Nat; less_than(a, succ(k)) and sendsTheTopTo(at(u2, i), n, a)
+                                                [by forall_intro generalize-i-for-entries]
+
+                                              // distinct indices give distinct entries
+                                              @generalize-i-for-injective |
+                                                fix i: Nat {
+                                                  @generalize-j-for-injective |
+                                                    fix j: Nat {
+                                                      @given-i-in-range-too |
+                                                        assume less_than(i, add(len, m)) {
+                                                          @given-j-in-range |
+                                                            assume less_than(j, add(len, m)) {
+                                                              @given-entries-equal |
+                                                                assume at(u2, i) = at(u2, j) {
+                                                                  @i-in-range-too |
+                                                                    less_than(i, add(len, m))
+                                                                    [by hypothesis given-i-in-range-too]
+                                                                  @j-in-range |
+                                                                    less_than(j, add(len, m))
+                                                                    [by hypothesis given-j-in-range]
+                                                                  @entries-equal |
+                                                                    at(u2, i) = at(u2, j)
+                                                                    [by hypothesis given-entries-equal]
+                                                                  @i-splits |
+                                                                    less_than(i, len) or (exists i2: Nat; less_than(i2, m) and i = add(len, i2))
+                                                                    [using specialize indexSplits(len, m, i) i-in-range-too]
+                                                                  @j-splits |
+                                                                    less_than(j, len) or (exists j2: Nat; less_than(j2, m) and j = add(len, j2))
+                                                                    [using specialize indexSplits(len, m, j) j-in-range]
+                                                                  @conclusion-indices-equal |
+                                                                    i = j
+                                                                    case i-splits {
+                                                                      @when-i-in-prefix |
+                                                                        assume less_than(i, len) {
+                                                                          @i-in-prefix |
+                                                                            less_than(i, len)
+                                                                            [by hypothesis when-i-in-prefix]
+                                                                          @entry-i-is-prefix-entry |
+                                                                            at(u2, i) = at(u, i)
+                                                                            [using specialize prefix-agrees(i) i-in-prefix]
+                                                                          @conclusion-from-prefix-i |
+                                                                            i = j
+                                                                            case j-splits {
+                                                                              @when-j-in-prefix |
+                                                                                assume less_than(j, len) {
+                                                                                  @j-in-prefix |
+                                                                                    less_than(j, len)
+                                                                                    [by hypothesis when-j-in-prefix]
+                                                                                  @entry-j-is-prefix-entry |
+                                                                                    at(u2, j) = at(u, j)
+                                                                                    [using specialize prefix-agrees(j) j-in-prefix]
+                                                                                  @prefix-entry-i-is-entry-j |
+                                                                                    at(u, i) = at(u2, j)
+                                                                                    [by rewrite entry-i-is-prefix-entry entries-equal]
+                                                                                  @prefix-entries-equal |
+                                                                                    at(u, i) = at(u, j)
+                                                                                    [by rewrite entry-j-is-prefix-entry prefix-entry-i-is-entry-j]
+                                                                                  @conclusion-both-in-prefix |
+                                                                                    i = j
+                                                                                    [using specialize prefix-injective(i, j) i-in-prefix j-in-prefix prefix-entries-equal]
+                                                                                }
+                                                                              @when-j-in-block |
+                                                                                assume exists j2: Nat; less_than(j2, m) and j = add(len, j2) {
+                                                                                  @j-offset-exists |
+                                                                                    exists j2: Nat; less_than(j2, m) and j = add(len, j2)
+                                                                                    [by hypothesis when-j-in-block]
+                                                                                  @prefix-entry-i-sends-below |
+                                                                                    exists a: Nat; less_than(a, k) and sendsTheTopTo(at(u, i), n, a)
+                                                                                    [using specialize prefix-entries(i) i-in-prefix]
+                                                                                  @with-letter-a |
+                                                                                    unpack a: Nat from prefix-entry-i-sends-below {
+                                                                                      @letter-facts |
+                                                                                        less_than(a, k) and sendsTheTopTo(at(u, i), n, a)
+                                                                                        [by hypothesis with-letter-a]
+                                                                                      @a-below-k |
+                                                                                        less_than(a, k)
+                                                                                        [by and_elim_left letter-facts]
+                                                                                      @prefix-entry-i-sends-to-a |
+                                                                                        sendsTheTopTo(at(u, i), n, a)
+                                                                                        [by and_elim_right letter-facts]
+                                                                                      @entry-i-sends-to-a |
+                                                                                        sendsTheTopTo(at(u2, i), n, a)
+                                                                                        [by rewrite entry-i-is-prefix-entry prefix-entry-i-sends-to-a]
+                                                                                      @entry-i-does-not-send-to-k |
+                                                                                        not sendsTheTopTo(at(u2, i), n, k)
+                                                                                        [using specialize theTopGoesBelowOrNot(n, k, a, at(u2, i)) a-below-k entry-i-sends-to-a]
+                                                                                      @with-offset-j2 |
+                                                                                        unpack j2: Nat from j-offset-exists {
+                                                                                          @j-offset-facts |
+                                                                                            less_than(j2, m) and j = add(len, j2)
+                                                                                            [by hypothesis with-offset-j2]
+                                                                                          @j2-in-block |
+                                                                                            less_than(j2, m)
+                                                                                            [by and_elim_left j-offset-facts]
+                                                                                          @j-is-offset |
+                                                                                            j = add(len, j2)
+                                                                                            [by and_elim_right j-offset-facts]
+                                                                                          @offset-entry-j-is-block-entry |
+                                                                                            at(u2, add(len, j2)) = at(v, j2)
+                                                                                            [using specialize block-agrees(j2) j2-in-block]
+                                                                                          @entry-j-is-block-entry |
+                                                                                            at(u2, j) = at(v, j2)
+                                                                                            [by rewrite j-is-offset offset-entry-j-is-block-entry]
+                                                                                          @block-entry-j2-sends-to-k |
+                                                                                            sendsTheTopTo(at(v, j2), n, k)
+                                                                                            [using specialize block-entries(j2) j2-in-block]
+                                                                                          @entry-j-sends-to-k |
+                                                                                            sendsTheTopTo(at(u2, j), n, k)
+                                                                                            [by rewrite entry-j-is-block-entry block-entry-j2-sends-to-k]
+                                                                                          @entry-i-sends-to-k |
+                                                                                            sendsTheTopTo(at(u2, i), n, k)
+                                                                                            [by rewrite entries-equal entry-j-sends-to-k]
+                                                                                          @conclusion-mixed-is-absurd |
+                                                                                            i = j
+                                                                                            [by absurd entry-i-sends-to-k entry-i-does-not-send-to-k]
+                                                                                        }
+                                                                                      @conclusion-with-letter |
+                                                                                        i = j
+                                                                                        [by exists_elim with-offset-j2]
+                                                                                    }
+                                                                                  @conclusion-prefix-then-block |
+                                                                                    i = j
+                                                                                    [by exists_elim with-letter-a]
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                      @when-i-in-block |
+                                                                        assume exists i2: Nat; less_than(i2, m) and i = add(len, i2) {
+                                                                          @i-offset-exists |
+                                                                            exists i2: Nat; less_than(i2, m) and i = add(len, i2)
+                                                                            [by hypothesis when-i-in-block]
+                                                                          @with-offset-i2 |
+                                                                            unpack i2: Nat from i-offset-exists {
+                                                                              @i-offset-facts |
+                                                                                less_than(i2, m) and i = add(len, i2)
+                                                                                [by hypothesis with-offset-i2]
+                                                                              @i2-in-block |
+                                                                                less_than(i2, m)
+                                                                                [by and_elim_left i-offset-facts]
+                                                                              @i-is-offset |
+                                                                                i = add(len, i2)
+                                                                                [by and_elim_right i-offset-facts]
+                                                                              @offset-entry-i-is-block-entry |
+                                                                                at(u2, add(len, i2)) = at(v, i2)
+                                                                                [using specialize block-agrees(i2) i2-in-block]
+                                                                              @entry-i-is-block-entry |
+                                                                                at(u2, i) = at(v, i2)
+                                                                                [by rewrite i-is-offset offset-entry-i-is-block-entry]
+                                                                              @block-entry-i2-sends-to-k |
+                                                                                sendsTheTopTo(at(v, i2), n, k)
+                                                                                [using specialize block-entries(i2) i2-in-block]
+                                                                              @entry-i-sends-to-k |
+                                                                                sendsTheTopTo(at(u2, i), n, k)
+                                                                                [by rewrite entry-i-is-block-entry block-entry-i2-sends-to-k]
+                                                                              @conclusion-from-block-i |
+                                                                                i = j
+                                                                                case j-splits {
+                                                                                  @when-j-in-prefix |
+                                                                                    assume less_than(j, len) {
+                                                                                      @j-in-prefix |
+                                                                                        less_than(j, len)
+                                                                                        [by hypothesis when-j-in-prefix]
+                                                                                      @entry-j-is-prefix-entry |
+                                                                                        at(u2, j) = at(u, j)
+                                                                                        [using specialize prefix-agrees(j) j-in-prefix]
+                                                                                      @prefix-entry-j-sends-below |
+                                                                                        exists a: Nat; less_than(a, k) and sendsTheTopTo(at(u, j), n, a)
+                                                                                        [using specialize prefix-entries(j) j-in-prefix]
+                                                                                      @with-letter-a |
+                                                                                        unpack a: Nat from prefix-entry-j-sends-below {
+                                                                                          @letter-facts |
+                                                                                            less_than(a, k) and sendsTheTopTo(at(u, j), n, a)
+                                                                                            [by hypothesis with-letter-a]
+                                                                                          @a-below-k |
+                                                                                            less_than(a, k)
+                                                                                            [by and_elim_left letter-facts]
+                                                                                          @prefix-entry-j-sends-to-a |
+                                                                                            sendsTheTopTo(at(u, j), n, a)
+                                                                                            [by and_elim_right letter-facts]
+                                                                                          @entry-j-sends-to-a |
+                                                                                            sendsTheTopTo(at(u2, j), n, a)
+                                                                                            [by rewrite entry-j-is-prefix-entry prefix-entry-j-sends-to-a]
+                                                                                          @entry-i-sends-to-a |
+                                                                                            sendsTheTopTo(at(u2, i), n, a)
+                                                                                            [by rewrite entries-equal entry-j-sends-to-a]
+                                                                                          @entry-i-does-not-send-to-k |
+                                                                                            not sendsTheTopTo(at(u2, i), n, k)
+                                                                                            [using specialize theTopGoesBelowOrNot(n, k, a, at(u2, i)) a-below-k entry-i-sends-to-a]
+                                                                                          @conclusion-mixed-is-absurd |
+                                                                                            i = j
+                                                                                            [by absurd entry-i-sends-to-k entry-i-does-not-send-to-k]
+                                                                                        }
+                                                                                      @conclusion-block-then-prefix |
+                                                                                        i = j
+                                                                                        [by exists_elim with-letter-a]
+                                                                                    }
+                                                                                  @when-j-in-block |
+                                                                                    assume exists j2: Nat; less_than(j2, m) and j = add(len, j2) {
+                                                                                      @j-offset-exists |
+                                                                                        exists j2: Nat; less_than(j2, m) and j = add(len, j2)
+                                                                                        [by hypothesis when-j-in-block]
+                                                                                      @with-offset-j2 |
+                                                                                        unpack j2: Nat from j-offset-exists {
+                                                                                          @j-offset-facts |
+                                                                                            less_than(j2, m) and j = add(len, j2)
+                                                                                            [by hypothesis with-offset-j2]
+                                                                                          @j2-in-block |
+                                                                                            less_than(j2, m)
+                                                                                            [by and_elim_left j-offset-facts]
+                                                                                          @j-is-offset |
+                                                                                            j = add(len, j2)
+                                                                                            [by and_elim_right j-offset-facts]
+                                                                                          @offset-entry-j-is-block-entry |
+                                                                                            at(u2, add(len, j2)) = at(v, j2)
+                                                                                            [using specialize block-agrees(j2) j2-in-block]
+                                                                                          @entry-j-is-block-entry |
+                                                                                            at(u2, j) = at(v, j2)
+                                                                                            [by rewrite j-is-offset offset-entry-j-is-block-entry]
+                                                                                          @block-entry-i2-is-entry-j |
+                                                                                            at(v, i2) = at(u2, j)
+                                                                                            [by rewrite entry-i-is-block-entry entries-equal]
+                                                                                          @block-entries-equal |
+                                                                                            at(v, i2) = at(v, j2)
+                                                                                            [by rewrite entry-j-is-block-entry block-entry-i2-is-entry-j]
+                                                                                          @offsets-equal |
+                                                                                            i2 = j2
+                                                                                            [using specialize block-injective(i2, j2) i2-in-block j2-in-block block-entries-equal]
+                                                                                          @i-is-j-offset |
+                                                                                            i = add(len, j2)
+                                                                                            [by rewrite offsets-equal i-is-offset]
+                                                                                          @conclusion-both-in-block |
+                                                                                            i = j
+                                                                                            [by rewrite j-is-offset i-is-j-offset]
+                                                                                        }
+                                                                                      @conclusion-block-then-block |
+                                                                                        i = j
+                                                                                        [by exists_elim with-offset-j2]
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                          @conclusion-with-offset-i2 |
+                                                                            i = j
+                                                                            [by exists_elim with-offset-i2]
+                                                                        }
+                                                                    }
+                                                                }
+                                                              @conclusion-given-equal |
+                                                                at(u2, i) = at(u2, j) -> i = j
+                                                                [by implies_intro given-entries-equal]
+                                                            }
+                                                          @conclusion-given-j |
+                                                            less_than(j, add(len, m)) -> at(u2, i) = at(u2, j) -> i = j
+                                                            [by implies_intro given-j-in-range]
+                                                        }
+                                                      @conclusion-injective-at-i-j |
+                                                        less_than(i, add(len, m)) -> less_than(j, add(len, m)) -> at(u2, i) = at(u2, j) -> i = j
+                                                        [by implies_intro given-i-in-range-too]
+                                                    }
+                                                  @discharge-j-for-injective |
+                                                    forall j: Nat; less_than(i, add(len, m)) -> less_than(j, add(len, m)) -> at(u2, i) = at(u2, j) -> i = j
+                                                    [by forall_intro generalize-j-for-injective]
+                                                }
+                                              @concatenation-injective |
+                                                forall i: Nat; forall j: Nat; less_than(i, add(len, m)) -> less_than(j, add(len, m)) -> at(u2, i) = at(u2, j) -> i = j
+                                                [by forall_intro generalize-i-for-injective]
+
+                                              // every permutation sending the top below k+1 is an entry
+                                              @generalize-t |
+                                                fix t: Fn {
+                                                  @generalize-a |
+                                                    fix a: Nat {
+                                                      @given-a-below-succ-k |
+                                                        assume less_than(a, succ(k)) {
+                                                          @given-sends-to-a |
+                                                            assume sendsTheTopTo(t, n, a) {
+                                                              @a-below-succ-k |
+                                                                less_than(a, succ(k))
+                                                                [by hypothesis given-a-below-succ-k]
+                                                              @sends-to-a |
+                                                                sendsTheTopTo(t, n, a)
+                                                                [by hypothesis given-sends-to-a]
+                                                              @a-splits |
+                                                                less_than(a, k) or a = k
+                                                                [using specialize lessThanSuccSplit(a, k) a-below-succ-k]
+                                                              @conclusion-t-is-an-entry |
+                                                                exists i: Nat; less_than(i, add(len, m)) and at(u2, i) = t
+                                                                case a-splits {
+                                                                  @when-a-below-k |
+                                                                    assume less_than(a, k) {
+                                                                      @a-below-k |
+                                                                        less_than(a, k)
+                                                                        [by hypothesis when-a-below-k]
+                                                                      @prefix-index-exists |
+                                                                        exists i: Nat; less_than(i, len) and at(u, i) = t
+                                                                        [using specialize prefix-covers(t, a) a-below-k sends-to-a]
+                                                                      @with-prefix-index-i |
+                                                                        unpack i: Nat from prefix-index-exists {
+                                                                          @prefix-index-facts |
+                                                                            less_than(i, len) and at(u, i) = t
+                                                                            [by hypothesis with-prefix-index-i]
+                                                                          @i-in-prefix |
+                                                                            less_than(i, len)
+                                                                            [by and_elim_left prefix-index-facts]
+                                                                          @prefix-entry-is-t |
+                                                                            at(u, i) = t
+                                                                            [by and_elim_right prefix-index-facts]
+                                                                          @i-in-range |
+                                                                            less_than(i, add(len, m))
+                                                                            [using specialize belowTheBaseIsBelowTheSum(len, m, i) i-in-prefix]
+                                                                          @entry-is-prefix-entry |
+                                                                            at(u2, i) = at(u, i)
+                                                                            [using specialize prefix-agrees(i) i-in-prefix]
+                                                                          @entry-is-t |
+                                                                            at(u2, i) = t
+                                                                            [using chain entry-is-prefix-entry prefix-entry-is-t]
+                                                                          @i-in-range-and-hits |
+                                                                            less_than(i, add(len, m)) and at(u2, i) = t
+                                                                            [by and_intro i-in-range entry-is-t]
+                                                                          @conclusion-witness-i |
+                                                                            exists i2: Nat; less_than(i2, add(len, m)) and at(u2, i2) = t
+                                                                            [by exists_intro(i) i-in-range-and-hits]
+                                                                        }
+                                                                      @conclusion-found-in-prefix |
+                                                                        exists i2: Nat; less_than(i2, add(len, m)) and at(u2, i2) = t
+                                                                        [by exists_elim with-prefix-index-i]
+                                                                    }
+                                                                  @when-a-is-k |
+                                                                    assume a = k {
+                                                                      @a-is-k |
+                                                                        a = k
+                                                                        [by hypothesis when-a-is-k]
+                                                                      @sends-to-k |
+                                                                        sendsTheTopTo(t, n, k)
+                                                                        [by rewrite a-is-k sends-to-a]
+                                                                      @block-index-exists |
+                                                                        exists j: Nat; less_than(j, m) and at(v, j) = t
+                                                                        [using specialize block-covers(t) sends-to-k]
+                                                                      @with-block-index-j |
+                                                                        unpack j: Nat from block-index-exists {
+                                                                          @block-index-facts |
+                                                                            less_than(j, m) and at(v, j) = t
+                                                                            [by hypothesis with-block-index-j]
+                                                                          @j-in-block |
+                                                                            less_than(j, m)
+                                                                            [by and_elim_left block-index-facts]
+                                                                          @block-entry-is-t |
+                                                                            at(v, j) = t
+                                                                            [by and_elim_right block-index-facts]
+                                                                          @offset-in-range |
+                                                                            less_than(add(len, j), add(len, m))
+                                                                            [using specialize additionPreservesOrder(j, m, len) j-in-block]
+                                                                          @offset-entry-is-block-entry |
+                                                                            at(u2, add(len, j)) = at(v, j)
+                                                                            [using specialize block-agrees(j) j-in-block]
+                                                                          @offset-entry-is-t |
+                                                                            at(u2, add(len, j)) = t
+                                                                            [using chain offset-entry-is-block-entry block-entry-is-t]
+                                                                          @offset-in-range-and-hits |
+                                                                            less_than(add(len, j), add(len, m)) and at(u2, add(len, j)) = t
+                                                                            [by and_intro offset-in-range offset-entry-is-t]
+                                                                          @conclusion-witness-offset |
+                                                                            exists i2: Nat; less_than(i2, add(len, m)) and at(u2, i2) = t
+                                                                            [by exists_intro(add(len, j)) offset-in-range-and-hits]
+                                                                        }
+                                                                      @conclusion-found-in-block |
+                                                                        exists i2: Nat; less_than(i2, add(len, m)) and at(u2, i2) = t
+                                                                        [by exists_elim with-block-index-j]
+                                                                    }
+                                                                }
+                                                            }
+                                                          @conclusion-given-sends-to-a |
+                                                            sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, add(len, m)) and at(u2, i) = t
+                                                            [by implies_intro given-sends-to-a]
+                                                        }
+                                                      @conclusion-covers-at-t-a |
+                                                        less_than(a, succ(k)) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, add(len, m)) and at(u2, i) = t
+                                                        [by implies_intro given-a-below-succ-k]
+                                                    }
+                                                  @discharge-a |
+                                                    forall a: Nat; less_than(a, succ(k)) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, add(len, m)) and at(u2, i) = t
+                                                    [by forall_intro generalize-a]
+                                                }
+                                              @concatenation-covers |
+                                                forall t: Fn; forall a: Nat; less_than(a, succ(k)) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, add(len, m)) and at(u2, i) = t
+                                                [by forall_intro generalize-t]
+                                              @conclusion-concatenation-enumerates |
+                                                enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                                                [using tautology entries-send-below concatenation-injective concatenation-covers]
+                                            }
+                                          @conclusion-given-block-agrees |
+                                            (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                                            [by implies_intro given-block-agrees]
+                                        }
+                                      @conclusion-given-prefix-agrees |
+                                        (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                                        [by implies_intro given-prefix-agrees]
+                                    }
+                                  @conclusion-given-block |
+                                    enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                                    [by implies_intro given-block-enumerates]
+                                }
+                              @conclusion-at-u2 |
+                                enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                                [by implies_intro given-prefix-enumerates]
+                            }
+                          @discharge-u2 |
+                            forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                            [by forall_intro generalize-u2]
+                        }
+                      @discharge-v |
+                        forall v: Seq; forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                        [by forall_intro generalize-v]
+                    }
+                  @discharge-u |
+                    forall u: Seq; forall v: Seq; forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                    [by forall_intro generalize-u]
+                }
+              @discharge-m |
+                forall m: Nat; forall u: Seq; forall v: Seq; forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+                [by forall_intro generalize-m]
+            }
+          @discharge-len |
+            forall len: Nat; forall m: Nat; forall u: Seq; forall v: Seq; forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+            [by forall_intro generalize-len]
+        }
+      @discharge-k |
+        forall k: Nat; forall len: Nat; forall m: Nat; forall u: Seq; forall v: Seq; forall u2: Seq; enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) -> (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) -> enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall n: Nat; forall k: Nat; forall len: Nat; forall m: Nat;
+      forall u: Seq; forall v: Seq; forall u2: Seq;
+      enumeratesTheBlocksBelow(u, len, n, k) -> enumeratesTheBlock(v, m, n, k) ->
+      (forall i: Nat; less_than(i, len) -> at(u2, i) = at(u, i)) ->
+      (forall i: Nat; less_than(i, m) -> at(u2, add(len, i)) = at(v, i)) ->
+      enumeratesTheBlocksBelow(u2, add(len, m), n, succ(k))
+    [by forall_intro generalize-n]
+qed
+
+// The blocks below k, for k ≤ n+1, are enumerated by a sequence of k · m entries: induction
+// on k, appending block k (the swap (k n) mapped over the n-letter enumeration) each time.
+theorem theBlocksAccumulate: forall n: Nat; forall m: Nat; forall w: Seq; enumerates(w, n, m) ->
+  forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-w |
+            fix w: Seq {
+              @given-enumeration |
+                assume enumerates(w, n, m) {
+                  @enumeration |
+                    enumerates(w, n, m)
+                    [by hypothesis given-enumeration]
+
+                  // base case: no blocks, no entries — any sequence enumerates them vacuously
+                  @base-case-proof |
+                    assume less_than(ZERO, succ(succ(n))) {
+                      @identity-invertible |
+                        invertible(identityFn)
+                        [by cite identityIsAPermutation]
+                      @some-sequence-exists |
+                        exists u: Seq; at(u, ZERO) = identityFn and permutation_sequence.productUpTo(u, succ(ZERO)) = identityFn
+                        [using specialize seqSingleton(identityFn) identity-invertible]
+                      @zero-times-m |
+                        mul(ZERO, m) = ZERO
+                        [using specialize mulZeroLeft(m)]
+                      @with-any-u |
+                        unpack u: Seq from some-sequence-exists {
+                          @vacuous-entries |
+                            fix i: Nat {
+                              @nothing-below-zero |
+                                not less_than(i, ZERO)
+                                [using specialize notLessThanZero(i)]
+                              @nothing-below-the-length |
+                                not less_than(i, mul(ZERO, m))
+                                [by rewrite zero-times-m nothing-below-zero]
+                              @conclusion-vacuous-entry |
+                                less_than(i, mul(ZERO, m)) -> exists a: Nat; less_than(a, ZERO) and sendsTheTopTo(at(u, i), n, a)
+                                [using tautology nothing-below-the-length]
+                            }
+                          @no-entries |
+                            forall i: Nat; less_than(i, mul(ZERO, m)) -> exists a: Nat; less_than(a, ZERO) and sendsTheTopTo(at(u, i), n, a)
+                            [by forall_intro vacuous-entries]
+                          @vacuous-injective |
+                            fix i: Nat {
+                              @vacuous-injective-inner |
+                                fix j: Nat {
+                                  @nothing-below-zero |
+                                    not less_than(i, ZERO)
+                                    [using specialize notLessThanZero(i)]
+                                  @nothing-below-the-length |
+                                    not less_than(i, mul(ZERO, m))
+                                    [by rewrite zero-times-m nothing-below-zero]
+                                  @conclusion-vacuous-injective-clause |
+                                    less_than(i, mul(ZERO, m)) -> less_than(j, mul(ZERO, m)) -> at(u, i) = at(u, j) -> i = j
+                                    [using tautology nothing-below-the-length]
+                                }
+                              @discharge-j-vacuous |
+                                forall j: Nat; less_than(i, mul(ZERO, m)) -> less_than(j, mul(ZERO, m)) -> at(u, i) = at(u, j) -> i = j
+                                [by forall_intro vacuous-injective-inner]
+                            }
+                          @no-collisions |
+                            forall i: Nat; forall j: Nat; less_than(i, mul(ZERO, m)) -> less_than(j, mul(ZERO, m)) -> at(u, i) = at(u, j) -> i = j
+                            [by forall_intro vacuous-injective]
+                          @vacuous-covers |
+                            fix t: Fn {
+                              @vacuous-covers-inner |
+                                fix a: Nat {
+                                  @no-letter-below-zero |
+                                    not less_than(a, ZERO)
+                                    [using specialize notLessThanZero(a)]
+                                  @conclusion-vacuous-covers-clause |
+                                    less_than(a, ZERO) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, mul(ZERO, m)) and at(u, i) = t
+                                    [using tautology no-letter-below-zero]
+                                }
+                              @discharge-a-vacuous |
+                                forall a: Nat; less_than(a, ZERO) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, mul(ZERO, m)) and at(u, i) = t
+                                [by forall_intro vacuous-covers-inner]
+                            }
+                          @nothing-to-cover |
+                            forall t: Fn; forall a: Nat; less_than(a, ZERO) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, mul(ZERO, m)) and at(u, i) = t
+                            [by forall_intro vacuous-covers]
+                          @u-enumerates-nothing |
+                            enumeratesTheBlocksBelow(u, mul(ZERO, m), n, ZERO)
+                            [using tautology no-entries no-collisions nothing-to-cover]
+                          @conclusion-witness-u |
+                            exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(ZERO, m), n, ZERO)
+                            [by exists_intro(u) u-enumerates-nothing]
+                        }
+                      @conclusion-base |
+                        exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(ZERO, m), n, ZERO)
+                        [by exists_elim with-any-u]
+                    }
+                  @base-case |
+                    less_than(ZERO, succ(succ(n))) -> exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(ZERO, m), n, ZERO)
+                    [by implies_intro base-case-proof]
+
+                  // inductive step: append block k
+                  @induction-step |
+                    fix k: Nat {
+                      @given-inductive-hypothesis |
+                        assume less_than(k, succ(succ(n))) -> exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(k, m), n, k) {
+                          @inductive-hypothesis |
+                            less_than(k, succ(succ(n))) -> exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(k, m), n, k)
+                            [by hypothesis given-inductive-hypothesis]
+                          @given-succ-k-in-range |
+                            assume less_than(succ(k), succ(succ(n))) {
+                              @succ-k-in-range |
+                                less_than(succ(k), succ(succ(n)))
+                                [by hypothesis given-succ-k-in-range]
+                              @k-below-succ-n |
+                                less_than(k, succ(n))
+                                [using specialize succReflectsOrder(k, succ(n)) succ-k-in-range]
+                              @k-in-range |
+                                less_than(k, succ(succ(n)))
+                                [using specialize lessThanSuccRight(k, succ(n)) k-below-succ-n]
+                              @prefix-exists |
+                                exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(k, m), n, k)
+                                [by modus_ponens inductive-hypothesis k-in-range]
+                              @swap-permutes |
+                                permutesTheSegment(swap(numeral(k), numeral(n)), succ(n))
+                                [using specialize swappingWithTheTop(n, k) k-below-succ-n]
+                              @swap-invertible |
+                                invertible(swap(numeral(k), numeral(n)))
+                                [using tautology swap-permutes]
+                              @block-exists |
+                                exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                [using specialize mappedSequenceExists(swap(numeral(k), numeral(n)), w, m) swap-invertible]
+                              @with-prefix-u |
+                                unpack u: Seq from prefix-exists {
+                                  @prefix-enumerates |
+                                    enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+                                    [by hypothesis with-prefix-u]
+                                  @with-block-v |
+                                    unpack v: Seq from block-exists {
+                                      @block-entries |
+                                        forall j: Nat; less_than(j, m) -> at(v, j) = compose(swap(numeral(k), numeral(n)), at(w, j))
+                                        [by hypothesis with-block-v]
+                                      @block-enumerates |
+                                        enumeratesTheBlock(v, m, n, k)
+                                        [using specialize theBlockEnumerates(n, m, w, k, v) enumeration k-below-succ-n block-entries]
+                                      @concatenation-exists |
+                                        exists u2: Seq; (forall i: Nat; less_than(i, mul(k, m)) -> at(u2, i) = at(u, i)) and (forall i: Nat; less_than(i, m) -> at(u2, add(mul(k, m), i)) = at(v, i)) and permutation_sequence.productUpTo(u2, add(mul(k, m), m)) = compose(permutation_sequence.productUpTo(u, mul(k, m)), permutation_sequence.productUpTo(v, m))
+                                        [using specialize seqConcat(u, v, mul(k, m), m)]
+                                      @with-concatenation-u2 |
+                                        unpack u2: Seq from concatenation-exists {
+                                          @concatenation-facts |
+                                            (forall i: Nat; less_than(i, mul(k, m)) -> at(u2, i) = at(u, i)) and (forall i: Nat; less_than(i, m) -> at(u2, add(mul(k, m), i)) = at(v, i)) and permutation_sequence.productUpTo(u2, add(mul(k, m), m)) = compose(permutation_sequence.productUpTo(u, mul(k, m)), permutation_sequence.productUpTo(v, m))
+                                            [by hypothesis with-concatenation-u2]
+                                          @agreement-pair |
+                                            (forall i: Nat; less_than(i, mul(k, m)) -> at(u2, i) = at(u, i)) and (forall i: Nat; less_than(i, m) -> at(u2, add(mul(k, m), i)) = at(v, i))
+                                            [by and_elim_left concatenation-facts]
+                                          @prefix-agrees |
+                                            forall i: Nat; less_than(i, mul(k, m)) -> at(u2, i) = at(u, i)
+                                            [by and_elim_left agreement-pair]
+                                          @block-agrees |
+                                            forall i: Nat; less_than(i, m) -> at(u2, add(mul(k, m), i)) = at(v, i)
+                                            [by and_elim_right agreement-pair]
+                                          @concatenation-enumerates |
+                                            enumeratesTheBlocksBelow(u2, add(mul(k, m), m), n, succ(k))
+                                            [using specialize appendingABlock(n, k, mul(k, m), m, u, v, u2) prefix-enumerates block-enumerates prefix-agrees block-agrees]
+                                          @length-is-a-product |
+                                            mul(succ(k), m) = add(mul(k, m), m)
+                                            [using specialize mulSuccLeft(k, m)]
+                                          @concatenation-enumerates-with-length |
+                                            enumeratesTheBlocksBelow(u2, mul(succ(k), m), n, succ(k))
+                                            [by rewrite length-is-a-product concatenation-enumerates]
+                                          @conclusion-witness-u2 |
+                                            exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k))
+                                            [by exists_intro(u2) concatenation-enumerates-with-length]
+                                        }
+                                      @conclusion-with-u2 |
+                                        exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k))
+                                        [by exists_elim with-concatenation-u2]
+                                    }
+                                  @conclusion-with-v |
+                                    exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k))
+                                    [by exists_elim with-block-v]
+                                }
+                              @conclusion-with-u |
+                                exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k))
+                                [by exists_elim with-prefix-u]
+                            }
+                          @conclusion-step |
+                            less_than(succ(k), succ(succ(n))) -> exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k))
+                            [by implies_intro given-succ-k-in-range]
+                        }
+                      @induction-step-at-k |
+                        (less_than(k, succ(succ(n))) -> exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(k, m), n, k)) -> (less_than(succ(k), succ(succ(n))) -> exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k)))
+                        [by implies_intro given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat; (less_than(k, succ(succ(n))) -> exists u2: Seq; enumeratesTheBlocksBelow(u2, mul(k, m), n, k)) -> (less_than(succ(k), succ(succ(n))) -> exists u3: Seq; enumeratesTheBlocksBelow(u3, mul(succ(k), m), n, succ(k)))
+                    [by forall_intro induction-step]
+                  @conclusion-for-all-k |
+                    forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+                    [using instantiation induction((fun k: Nat => less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k))) base-case induction-step-for-all-k]
+                }
+              @conclusion-given-enumeration |
+                enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+                [by implies_intro given-enumeration]
+            }
+          @discharge-w |
+            forall w: Seq; enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+            [by forall_intro generalize-w]
+        }
+      @discharge-m |
+        forall m: Nat; forall w: Seq; enumerates(w, n, m) -> forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall n: Nat; forall m: Nat; forall w: Seq; enumerates(w, n, m) ->
+      forall k: Nat; less_than(k, succ(succ(n))) -> exists u: Seq; enumeratesTheBlocksBelow(u, mul(k, m), n, k)
+    [by forall_intro generalize-n]
+qed
+
+// All n+1 blocks together are all the permutations of n+1 letters: the top goes somewhere
+// in the segment, i.e. to some letter below n+1.
+theorem allTheBlocksEnumerate: forall n: Nat; forall len: Nat; forall u: Seq;
+  enumeratesTheBlocksBelow(u, len, n, succ(n)) -> enumerates(u, succ(n), len)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-len |
+        fix len: Nat {
+          @generalize-u |
+            fix u: Seq {
+              @given-blocks-enumerate |
+                assume enumeratesTheBlocksBelow(u, len, n, succ(n)) {
+                  @blocks-enumerate |
+                    enumeratesTheBlocksBelow(u, len, n, succ(n))
+                    [by hypothesis given-blocks-enumerate]
+                  @block-entries |
+                    forall i: Nat; less_than(i, len) -> exists a: Nat; less_than(a, succ(n)) and sendsTheTopTo(at(u, i), n, a)
+                    [using tautology blocks-enumerate]
+                  @blocks-injective |
+                    forall i: Nat; forall j: Nat; less_than(i, len) -> less_than(j, len) -> at(u, i) = at(u, j) -> i = j
+                    [using tautology blocks-enumerate]
+                  @blocks-cover |
+                    forall t: Fn; forall a: Nat; less_than(a, succ(n)) -> sendsTheTopTo(t, n, a) -> exists i: Nat; less_than(i, len) and at(u, i) = t
+                    [using tautology blocks-enumerate]
+                  @top-in-big |
+                    member(numeral(n), segment(succ(n)))
+                    [using specialize topIsInTheBiggerSegment(n)]
+
+                  // every entry is a permutation of n+1 letters
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-i-in-range |
+                        assume less_than(i, len) {
+                          @i-in-range |
+                            less_than(i, len)
+                            [by hypothesis given-i-in-range]
+                          @entry-sends-somewhere |
+                            exists a: Nat; less_than(a, succ(n)) and sendsTheTopTo(at(u, i), n, a)
+                            [using specialize block-entries(i) i-in-range]
+                          @with-letter-a |
+                            unpack a: Nat from entry-sends-somewhere {
+                              @letter-facts |
+                                less_than(a, succ(n)) and sendsTheTopTo(at(u, i), n, a)
+                                [by hypothesis with-letter-a]
+                              @conclusion-entry-permutes |
+                                permutesTheSegment(at(u, i), succ(n))
+                                [using tautology letter-facts]
+                            }
+                          @conclusion-entry-permutes-more-letters |
+                            permutesTheSegment(at(u, i), succ(n))
+                            [by exists_elim with-letter-a]
+                        }
+                      @conclusion-entry-clause |
+                        less_than(i, len) -> permutesTheSegment(at(u, i), succ(n))
+                        [by implies_intro given-i-in-range]
+                    }
+                  @entries-permute |
+                    forall i: Nat; less_than(i, len) -> permutesTheSegment(at(u, i), succ(n))
+                    [by forall_intro generalize-i]
+
+                  // every permutation of n+1 letters sends the top to some letter of the segment
+                  @generalize-t |
+                    fix t: Fn {
+                      @given-t-permutes |
+                        assume permutesTheSegment(t, succ(n)) {
+                          @t-permutes |
+                            permutesTheSegment(t, succ(n))
+                            [by hypothesis given-t-permutes]
+                          @t-maps-into |
+                            forall x: Element; member(x, segment(succ(n))) -> member(apply(t, x), segment(succ(n)))
+                            [using tautology t-permutes]
+                          @image-of-top-in-big |
+                            member(apply(t, numeral(n)), segment(succ(n)))
+                            [using specialize t-maps-into(numeral(n)) top-in-big]
+                          @segment-membership |
+                            member(apply(t, numeral(n)), segment(succ(n))) iff (exists a: Nat; less_than(a, succ(n)) and apply(t, numeral(n)) = numeral(a))
+                            [using specialize segmentMember(succ(n), apply(t, numeral(n)))]
+                          @image-of-top-is-a-letter |
+                            exists a: Nat; less_than(a, succ(n)) and apply(t, numeral(n)) = numeral(a)
+                            [using tautology segment-membership image-of-top-in-big]
+                          @with-letter-a |
+                            unpack a: Nat from image-of-top-is-a-letter {
+                              @letter-facts |
+                                less_than(a, succ(n)) and apply(t, numeral(n)) = numeral(a)
+                                [by hypothesis with-letter-a]
+                              @a-in-range |
+                                less_than(a, succ(n))
+                                [by and_elim_left letter-facts]
+                              @top-goes-to-a |
+                                apply(t, numeral(n)) = numeral(a)
+                                [by and_elim_right letter-facts]
+                              @t-sends-top-to-a |
+                                sendsTheTopTo(t, n, a)
+                                [by and_intro t-permutes top-goes-to-a]
+                              @conclusion-t-is-an-entry |
+                                exists i: Nat; less_than(i, len) and at(u, i) = t
+                                [using specialize blocks-cover(t, a) a-in-range t-sends-top-to-a]
+                            }
+                          @conclusion-t-is-listed |
+                            exists i: Nat; less_than(i, len) and at(u, i) = t
+                            [by exists_elim with-letter-a]
+                        }
+                      @conclusion-covers-at-t |
+                        permutesTheSegment(t, succ(n)) -> exists i: Nat; less_than(i, len) and at(u, i) = t
+                        [by implies_intro given-t-permutes]
+                    }
+                  @every-permutation-is-listed |
+                    forall t: Fn; permutesTheSegment(t, succ(n)) -> exists i: Nat; less_than(i, len) and at(u, i) = t
+                    [by forall_intro generalize-t]
+                  @conclusion-u-enumerates |
+                    enumerates(u, succ(n), len)
+                    [using tautology entries-permute blocks-injective every-permutation-is-listed]
+                }
+              @conclusion-at-u |
+                enumeratesTheBlocksBelow(u, len, n, succ(n)) -> enumerates(u, succ(n), len)
+                [by implies_intro given-blocks-enumerate]
+            }
+          @discharge-u |
+            forall u: Seq; enumeratesTheBlocksBelow(u, len, n, succ(n)) -> enumerates(u, succ(n), len)
+            [by forall_intro generalize-u]
+        }
+      @discharge-len |
+        forall len: Nat; forall u: Seq; enumeratesTheBlocksBelow(u, len, n, succ(n)) -> enumerates(u, succ(n), len)
+        [by forall_intro generalize-len]
+    }
+  @conclusion |
+    forall n: Nat; forall len: Nat; forall u: Seq;
+      enumeratesTheBlocksBelow(u, len, n, succ(n)) -> enumerates(u, succ(n), len)
+    [by forall_intro generalize-n]
+qed
+
+// THE COUNT: the symmetric group on n letters has n! elements — there is a list of n!
+// permutations of n letters, without repetition, containing every one. Induction on n:
+// zero letters have the one permutation (the identity, since nothing is in the empty
+// segment); n+1 letters have (n+1) · n! (theBlocksAccumulate at k = n+1).
+theorem symmetricGroupHasFactorialManyElements: forall n: Nat;
+  exists w: Seq; enumerates(w, n, factorial(n))
+proof
+  // base case: the identity alone lists the permutations of zero letters
+  @identity-invertible |
+    invertible(identityFn)
+    [by cite identityIsAPermutation]
+  @singleton-exists |
+    exists w: Seq; at(w, ZERO) = identityFn and permutation_sequence.productUpTo(w, succ(ZERO)) = identityFn
+    [using specialize seqSingleton(identityFn) identity-invertible]
+  @zero-factorial-is-one |
+    factorial(ZERO) = ONE
+    [by cite factorialZero]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @zero-factorial-is-succ-zero |
+    factorial(ZERO) = succ(ZERO)
+    [using chain zero-factorial-is-one one-is-succ-zero]
+  @zero-segment-is-empty |
+    segment(ZERO) = emptyset
+    [by cite segmentZeroIsEmpty]
+  @identity-permutes-nothing |
+    permutes(identityFn, segment(ZERO))
+    [using specialize identityPermutes(segment(ZERO))]
+  @generalize-x-for-identity |
+    fix x: Element {
+      @identity-fixes-x |
+        apply(identityFn, x) = x
+        [using specialize identityApply(x)]
+      @conclusion-identity-fixes-outside-at-x |
+        (not member(x, segment(ZERO))) -> apply(identityFn, x) = x
+        [using tautology identity-fixes-x]
+    }
+  @identity-fixes-outside |
+    forall x: Element; (not member(x, segment(ZERO))) -> apply(identityFn, x) = x
+    [by forall_intro generalize-x-for-identity]
+  @identity-permutes-zero-letters |
+    permutesTheSegment(identityFn, ZERO)
+    [using tautology identity-invertible identity-permutes-nothing identity-fixes-outside]
+  @base-case-proof |
+    unpack w: Seq from singleton-exists {
+      @singleton-facts |
+        at(w, ZERO) = identityFn and permutation_sequence.productUpTo(w, succ(ZERO)) = identityFn
+        [by hypothesis base-case-proof]
+      @head-is-identity |
+        at(w, ZERO) = identityFn
+        [by and_elim_left singleton-facts]
+      @generalize-j-for-entries |
+        fix j: Nat {
+          @given-j-below-one |
+            assume less_than(j, succ(ZERO)) {
+              @j-below-one |
+                less_than(j, succ(ZERO))
+                [by hypothesis given-j-below-one]
+              @j-splits |
+                less_than(j, ZERO) or j = ZERO
+                [using specialize lessThanSuccSplit(j, ZERO) j-below-one]
+              @nothing-below-zero |
+                not less_than(j, ZERO)
+                [using specialize notLessThanZero(j)]
+              @j-is-zero |
+                j = ZERO
+                [using tautology j-splits nothing-below-zero]
+              @entry-is-identity |
+                at(w, j) = identityFn
+                [by rewrite j-is-zero head-is-identity]
+              @conclusion-entry-permutes |
+                permutesTheSegment(at(w, j), ZERO)
+                [by rewrite entry-is-identity identity-permutes-zero-letters]
+            }
+          @conclusion-entry-clause |
+            less_than(j, succ(ZERO)) -> permutesTheSegment(at(w, j), ZERO)
+            [by implies_intro given-j-below-one]
+        }
+      @entries-permute |
+        forall j: Nat; less_than(j, succ(ZERO)) -> permutesTheSegment(at(w, j), ZERO)
+        [by forall_intro generalize-j-for-entries]
+      @generalize-i-for-injective |
+        fix i: Nat {
+          @generalize-j-for-injective |
+            fix j: Nat {
+              @given-i-below-one |
+                assume less_than(i, succ(ZERO)) {
+                  @given-j-below-one-too |
+                    assume less_than(j, succ(ZERO)) {
+                      @i-below-one |
+                        less_than(i, succ(ZERO))
+                        [by hypothesis given-i-below-one]
+                      @j-below-one-too |
+                        less_than(j, succ(ZERO))
+                        [by hypothesis given-j-below-one-too]
+                      @i-splits |
+                        less_than(i, ZERO) or i = ZERO
+                        [using specialize lessThanSuccSplit(i, ZERO) i-below-one]
+                      @j-splits |
+                        less_than(j, ZERO) or j = ZERO
+                        [using specialize lessThanSuccSplit(j, ZERO) j-below-one-too]
+                      @nothing-below-zero-for-i |
+                        not less_than(i, ZERO)
+                        [using specialize notLessThanZero(i)]
+                      @nothing-below-zero-for-j |
+                        not less_than(j, ZERO)
+                        [using specialize notLessThanZero(j)]
+                      @i-is-zero |
+                        i = ZERO
+                        [using tautology i-splits nothing-below-zero-for-i]
+                      @j-is-zero |
+                        j = ZERO
+                        [using tautology j-splits nothing-below-zero-for-j]
+                      @indices-equal |
+                        i = j
+                        [by rewrite j-is-zero i-is-zero]
+                      @conclusion-injective-clause |
+                        at(w, i) = at(w, j) -> i = j
+                        [using tautology indices-equal]
+                    }
+                  @conclusion-given-j |
+                    less_than(j, succ(ZERO)) -> at(w, i) = at(w, j) -> i = j
+                    [by implies_intro given-j-below-one-too]
+                }
+              @conclusion-injective-at-i-j |
+                less_than(i, succ(ZERO)) -> less_than(j, succ(ZERO)) -> at(w, i) = at(w, j) -> i = j
+                [by implies_intro given-i-below-one]
+            }
+          @discharge-j-for-injective |
+            forall j: Nat; less_than(i, succ(ZERO)) -> less_than(j, succ(ZERO)) -> at(w, i) = at(w, j) -> i = j
+            [by forall_intro generalize-j-for-injective]
+        }
+      @singleton-injective |
+        forall i: Nat; forall j: Nat; less_than(i, succ(ZERO)) -> less_than(j, succ(ZERO)) -> at(w, i) = at(w, j) -> i = j
+        [by forall_intro generalize-i-for-injective]
+      @generalize-t |
+        fix t: Fn {
+          @given-t-permutes |
+            assume permutesTheSegment(t, ZERO) {
+              @t-permutes |
+                permutesTheSegment(t, ZERO)
+                [by hypothesis given-t-permutes]
+              @t-fixes-outside |
+                forall x: Element; (not member(x, segment(ZERO))) -> apply(t, x) = x
+                [using tautology t-permutes]
+              @generalize-x |
+                fix x: Element {
+                  @x-not-in-emptyset |
+                    not member(x, emptyset)
+                    [using specialize emptysetMember(x)]
+                  @x-not-in-zero-segment |
+                    not member(x, segment(ZERO))
+                    [by rewrite zero-segment-is-empty x-not-in-emptyset]
+                  @t-fixes-x |
+                    apply(t, x) = x
+                    [using specialize t-fixes-outside(x) x-not-in-zero-segment]
+                  @identity-fixes-x |
+                    apply(identityFn, x) = x
+                    [using specialize identityApply(x)]
+                  @conclusion-agree-at-x |
+                    apply(t, x) = apply(identityFn, x)
+                    [by rewrite identity-fixes-x t-fixes-x]
+                }
+              @t-agrees-with-identity |
+                forall x: Element; apply(t, x) = apply(identityFn, x)
+                [by forall_intro generalize-x]
+              @t-is-identity |
+                t = identityFn
+                [using specialize funcExtensionality(t, identityFn) t-agrees-with-identity]
+              @head-is-t |
+                at(w, ZERO) = t
+                [by rewrite t-is-identity head-is-identity]
+              @zero-below-one |
+                less_than(ZERO, succ(ZERO))
+                [using specialize lessThanSelf(ZERO)]
+              @zero-in-range-and-hits |
+                less_than(ZERO, succ(ZERO)) and at(w, ZERO) = t
+                [by and_intro zero-below-one head-is-t]
+              @conclusion-t-is-listed |
+                exists j: Nat; less_than(j, succ(ZERO)) and at(w, j) = t
+                [by exists_intro(ZERO) zero-in-range-and-hits]
+            }
+          @conclusion-covers-at-t |
+            permutesTheSegment(t, ZERO) -> exists j: Nat; less_than(j, succ(ZERO)) and at(w, j) = t
+            [by implies_intro given-t-permutes]
+        }
+      @singleton-covers |
+        forall t: Fn; permutesTheSegment(t, ZERO) -> exists j: Nat; less_than(j, succ(ZERO)) and at(w, j) = t
+        [by forall_intro generalize-t]
+      @singleton-enumerates |
+        enumerates(w, ZERO, succ(ZERO))
+        [using tautology entries-permute singleton-injective singleton-covers]
+      @singleton-enumerates-zero-factorial |
+        enumerates(w, ZERO, factorial(ZERO))
+        [by rewrite zero-factorial-is-succ-zero singleton-enumerates]
+      @conclusion-witness-w |
+        exists w2: Seq; enumerates(w2, ZERO, factorial(ZERO))
+        [by exists_intro(w) singleton-enumerates-zero-factorial]
+    }
+  @base-case |
+    exists w2: Seq; enumerates(w2, ZERO, factorial(ZERO))
+    [by exists_elim base-case-proof]
+
+  // inductive step: n+1 blocks of n! entries
+  @induction-step |
+    fix n: Nat {
+      @given-inductive-hypothesis |
+        assume exists w2: Seq; enumerates(w2, n, factorial(n)) {
+          @inductive-hypothesis |
+            exists w2: Seq; enumerates(w2, n, factorial(n))
+            [by hypothesis given-inductive-hypothesis]
+          @with-enumeration-w |
+            unpack w: Seq from inductive-hypothesis {
+              @enumeration |
+                enumerates(w, n, factorial(n))
+                [by hypothesis with-enumeration-w]
+              @succ-n-in-range |
+                less_than(succ(n), succ(succ(n)))
+                [using specialize lessThanSelf(succ(n))]
+              @all-blocks-exist |
+                exists u: Seq; enumeratesTheBlocksBelow(u, mul(succ(n), factorial(n)), n, succ(n))
+                [using specialize theBlocksAccumulate(n, factorial(n), w, succ(n)) enumeration succ-n-in-range]
+              @with-all-blocks-u |
+                unpack u: Seq from all-blocks-exist {
+                  @all-blocks |
+                    enumeratesTheBlocksBelow(u, mul(succ(n), factorial(n)), n, succ(n))
+                    [by hypothesis with-all-blocks-u]
+                  @u-enumerates |
+                    enumerates(u, succ(n), mul(succ(n), factorial(n)))
+                    [using specialize allTheBlocksEnumerate(n, mul(succ(n), factorial(n)), u) all-blocks]
+                  @next-factorial-unfolds |
+                    factorial(succ(n)) = mul(succ(n), factorial(n))
+                    [using specialize factorialSucc(n)]
+                  @u-enumerates-next-factorial |
+                    enumerates(u, succ(n), factorial(succ(n)))
+                    [by rewrite next-factorial-unfolds u-enumerates]
+                  @conclusion-witness-u |
+                    exists w3: Seq; enumerates(w3, succ(n), factorial(succ(n)))
+                    [by exists_intro(u) u-enumerates-next-factorial]
+                }
+              @conclusion-with-u |
+                exists w3: Seq; enumerates(w3, succ(n), factorial(succ(n)))
+                [by exists_elim with-all-blocks-u]
+            }
+          @conclusion-step |
+            exists w3: Seq; enumerates(w3, succ(n), factorial(succ(n)))
+            [by exists_elim with-enumeration-w]
+        }
+      @induction-step-at-n |
+        (exists w2: Seq; enumerates(w2, n, factorial(n))) -> (exists w3: Seq; enumerates(w3, succ(n), factorial(succ(n))))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-n |
+    forall n: Nat; (exists w2: Seq; enumerates(w2, n, factorial(n))) -> (exists w3: Seq; enumerates(w3, succ(n), factorial(succ(n))))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; exists w: Seq; enumerates(w, n, factorial(n))
+    [using instantiation induction((fun n: Nat => exists w: Seq; enumerates(w, n, factorial(n)))) base-case induction-step-for-all-n]
+qed

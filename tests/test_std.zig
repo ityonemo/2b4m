@@ -33,6 +33,10 @@ pub fn addTests(
     // parity: even/odd + the crux 2|p² → 2|p, proven (no accelerated tactic)
     ctx.okSilent(&.{ "check", "std/peano/parity.b4m" });
 
+    // factorial: n! by its two recursion clauses (as axioms — a bare constant on a
+    // definition-block clause's right-hand side reads as a clause variable), never zero
+    ctx.okSilent(&.{ "check", "std/peano/factorial.b4m" });
+
     // the ℤ base std/integer.b4m now bundles the ring algebra (left/right
     // recursion, commutativity, associativity, n+(-n)=0, mul lemmas), the nonneg
     // subclass + its transferred Peano induction, DERIVED bidirectional induction,
@@ -329,4 +333,11 @@ pub fn addTests(
     // Judson's Proposition 5.12 — every permutation of a finite set is a product of
     // transpositions (no "at least two elements": the identity is the empty product).
     ctx.okSilent(&.{ "check", "std/permutation/transpositions.b4m" });
+
+    // THE COUNT (std/permutation/count.b4m): |S_n| = n!, stated as a LISTING — a sequence
+    // of n! permutations of the segment {0..n-1}, pairwise distinct, hitting every one.
+    // Judson's exercise: a permutation of n+1 letters sending the top to k is (k n) times a
+    // permutation of n letters, so n+1 blocks of n! entries (blocks concatenate by seqConcat,
+    // a block is a swap mapped over the n-letter listing by mappedSequenceExists).
+    ctx.okSilent(&.{ "check", "std/permutation/count.b4m" });
 }
