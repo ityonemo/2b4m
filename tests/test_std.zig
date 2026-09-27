@@ -322,4 +322,11 @@ pub fn addTests(
     // with `invertible` as a hypothesis and applies Perm-quantified theorems at those
     // terms — the refined-sort guard discharged from the prior step.
     ctx.okSilent(&.{ "check", "std/permutation/decomposition.b4m" });
+
+    // PRODUCTS OF TRANSPOSITIONS (std/permutation/transpositions.b4m): a cycle is a product of
+    // transpositions by its definition read as a prepend fold; concatenation keeps "every
+    // entry is a transposition"; a product of products of transpositions is one; hence
+    // Judson's Proposition 5.12 — every permutation of a finite set is a product of
+    // transpositions (no "at least two elements": the identity is the empty product).
+    ctx.okSilent(&.{ "check", "std/permutation/transpositions.b4m" });
 }
