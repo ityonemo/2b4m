@@ -257,6 +257,11 @@ pub fn addTests(
     // sqrtMulNonneg, sqrtOne. (Also hosts the ℝ-order helpers squareNonneg etc. —
     // those live in std/real.b4m.)
     ctx.okSilent(&.{ "check", "std/real/sqrt.b4m" });
+    // trigonometry on ℝ (std/real/trig.b4m): sin, cos, π adjoined by their characterizing
+    // identities (values at 0 and π, angle addition, Pythagoras); cos 2π = 1, sin 2π = 0 derived.
+    ctx.okSilent(&.{ "check", "std/real/trig.b4m" });
+    // natural multiples n·θ and the embedding ℕ → ℝ (std/real/scaling.b4m).
+    ctx.okSilent(&.{ "check", "std/real/scaling.b4m" });
 
     // the complex numbers ℂ (std/complex.b4m): an axiomatic FIELD (NOT ordered).
     // MODELS std/field.b4m; adjoins the imaginary unit I with I²=−1; embeds ℝ via
@@ -268,6 +273,10 @@ pub fn addTests(
     // the modulus identities (|z̄|=|z|, zz̄=|z|², |zw|=|z||w|) proved from ℂ's
     // projection algebra + real-sqrt (no trigonometry).
     ctx.okSilent(&.{ "check", "std/complex/modulus.b4m" });
+    // polar form on ℂ (std/complex/polar.b4m, Judson §4.2): cis θ · cis φ = cis(θ+φ),
+    // |cis θ| = 1, DeMoivre (r cis θ)^n = r^n cis(nθ), cis(2kπ/n)^n = 1, and the circle
+    // group T as a subgroup of ℂ* (z⁻¹ = z̄ on T).
+    ctx.okSilent(&.{ "check", "std/complex/polar.b4m" });
 
     // ℤ modeling the ring theory now lives INSIDE std/integer.b4m (the
     // `model IntegerRing` block + the negMulNeg transfer smoke test) — the

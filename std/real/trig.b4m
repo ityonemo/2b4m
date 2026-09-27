@@ -1,0 +1,84 @@
+// std/real/trig.b4m — SINE, COSINE and π on ℝ.
+//
+// The analytic construction (power series, or the inverse of an arc-length integral) is
+// beyond what the tower needs; as with `sqrt` (std/real/sqrt.b4m), the functions are
+// adjoined and pinned by their characterizing identities: the values at 0, the angle-
+// addition formulas, the Pythagorean identity, and the values at π. Everything the polar
+// form of ℂ needs (std/complex/polar.b4m) — the product rule cis θ · cis φ = cis(θ + φ),
+// DeMoivre's theorem, |cis θ| = 1, and the periodicity that makes cis(2kπ/n) an n-th root
+// of unity — follows from these.
+
+import real <<< "std/real.b4m"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+func neg = real.neg
+
+func sin(x: Real) => Real
+func cos(x: Real) => Real
+const pi: Real
+
+// -- defining identities --------------------------------------------------------------------
+axiom cosZero: cos(ZERO) = ONE
+axiom sinZero: sin(ZERO) = ZERO
+axiom cosAdd: forall a, b: Real; cos(add(a, b)) = add(mul(cos(a), cos(b)), neg(mul(sin(a), sin(b))))
+axiom sinAdd: forall a, b: Real; sin(add(a, b)) = add(mul(sin(a), cos(b)), mul(cos(a), sin(b)))
+axiom pythagorean: forall x: Real; add(mul(cos(x), cos(x)), mul(sin(x), sin(x))) = ONE
+axiom cosPi: cos(pi) = neg(ONE)
+axiom sinPi: sin(pi) = ZERO
+
+// -- the full turn: cos 2π = 1, sin 2π = 0 -----------------------------------------------------
+define twoPi = add(pi, pi)
+
+theorem cosTwoPi: cos(twoPi) = ONE
+proof
+  @unfolded |
+    cos(add(pi, pi)) = add(mul(cos(pi), cos(pi)), neg(mul(sin(pi), sin(pi))))
+    [using specialize cosAdd(pi, pi)]
+  @cos-pi |
+    cos(pi) = neg(ONE)
+    [by cite cosPi]
+  @sin-pi |
+    sin(pi) = ZERO
+    [by cite sinPi]
+  @with-cos |
+    cos(add(pi, pi)) = add(mul(neg(ONE), neg(ONE)), neg(mul(sin(pi), sin(pi))))
+    [by rewrite cos-pi unfolded]
+  @with-values |
+    cos(add(pi, pi)) = add(mul(neg(ONE), neg(ONE)), neg(mul(ZERO, ZERO)))
+    [by rewrite sin-pi with-cos]
+  @arithmetic |
+    add(mul(neg(ONE), neg(ONE)), neg(mul(ZERO, ZERO))) = ONE
+    [using polynomial(real)]
+  @conclusion |
+    cos(twoPi) = ONE
+    [using chain with-values arithmetic]
+qed
+
+theorem sinTwoPi: sin(twoPi) = ZERO
+proof
+  @unfolded |
+    sin(add(pi, pi)) = add(mul(sin(pi), cos(pi)), mul(cos(pi), sin(pi)))
+    [using specialize sinAdd(pi, pi)]
+  @cos-pi |
+    cos(pi) = neg(ONE)
+    [by cite cosPi]
+  @sin-pi |
+    sin(pi) = ZERO
+    [by cite sinPi]
+  @with-sin |
+    sin(add(pi, pi)) = add(mul(ZERO, cos(pi)), mul(cos(pi), ZERO))
+    [by rewrite sin-pi unfolded]
+  @with-values |
+    sin(add(pi, pi)) = add(mul(ZERO, neg(ONE)), mul(neg(ONE), ZERO))
+    [by rewrite cos-pi with-sin]
+  @arithmetic |
+    add(mul(ZERO, neg(ONE)), mul(neg(ONE), ZERO)) = ZERO
+    [using polynomial(real)]
+  @conclusion |
+    sin(twoPi) = ZERO
+    [using chain with-values arithmetic]
+qed

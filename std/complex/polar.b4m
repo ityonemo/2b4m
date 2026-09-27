@@ -1,0 +1,1079 @@
+// std/complex/polar.b4m — POLAR FORM on ℂ (Judson §4.2): cis θ = cos θ + i sin θ, the
+// product rule cis θ · cis φ = cis(θ + φ), |cis θ| = 1, DeMoivre's theorem
+// (r cis θ)^n = r^n cis(nθ), the n-th roots of unity cis(2kπ/n), and the circle group.
+//
+// Trigonometry is std/real/trig.b4m (axiomatic sin, cos, π); "nθ" is std/real/scaling.b4m's
+// natural multiple; the modulus is std/complex/modulus.b4m.
+
+import complex <<< "std/complex.b4m"
+import real <<< "std/real.b4m"
+import real_trig <<< "std/real/trig.b4m"
+import real_scaling <<< "std/real/scaling.b4m"
+import complex_modulus <<< "std/complex/modulus.b4m"
+import peano <<< "std/peano.b4m"
+import real_units <<< "std/real/units.b4m"
+
+sort Complex = complex.Complex
+const ZERO = complex.ZERO
+const ONE = complex.ONE
+const i = complex.i
+func cadd = complex.add
+func mul = complex.mul
+func recip = complex.recip
+func fromReal = complex.fromReal
+func re = complex.re
+func im = complex.im
+func conj = complex.conj
+theorem complexEq = complex.complexEq
+axiom reAdd = complex.reAdd
+axiom imAdd = complex.imAdd
+axiom reMul = complex.reMul
+axiom imMul = complex.imMul
+axiom reOfReal = complex.reOfReal
+axiom imOfReal = complex.imOfReal
+axiom reOfI = complex.reOfI
+axiom imOfI = complex.imOfI
+axiom fromRealOne = complex.fromRealOne
+axiom fromRealZero = complex.fromRealZero
+axiom fromRealMul = complex.fromRealMul
+axiom fieldInverse = complex.fieldInverse
+axiom mulOneLeft = complex.mulOneLeft
+theorem mulOneRight = complex.mulOneRight
+
+sort Real = real.Real
+const RZERO = real.ZERO
+const RONE = real.ONE
+func radd = real.add
+func rmul = real.mul
+func rneg = real.neg
+func rrecip = real.recip
+func sin = real_trig.sin
+func cos = real_trig.cos
+const pi = real_trig.pi
+define twoPi = real_trig.twoPi
+axiom cosZero = real_trig.cosZero
+axiom sinZero = real_trig.sinZero
+axiom cosAdd = real_trig.cosAdd
+axiom sinAdd = real_trig.sinAdd
+axiom pythagorean = real_trig.pythagorean
+theorem cosTwoPi = real_trig.cosTwoPi
+theorem sinTwoPi = real_trig.sinTwoPi
+func scale = real_scaling.scale
+func toReal = real_scaling.toReal
+axiom scaleZero = real_scaling.scaleZero
+axiom scaleSucc = real_scaling.scaleSucc
+theorem scaleIsProduct = real_scaling.scaleIsProduct
+theorem scaleSwap = real_scaling.scaleSwap
+theorem toRealOfSuccIsPositive = real_scaling.toRealOfSuccIsPositive
+define normSq(z) = complex_modulus.normSq(z)
+define abs(z) = complex_modulus.abs(z)
+theorem normSqMul = complex_modulus.normSqMul
+theorem normSqConj = complex_modulus.normSqConj
+theorem recipIsConjOverNormSq = complex_modulus.recipIsConjOverNormSq
+func rpow = real_units.pow
+axiom rpowZero = real_units.powZero
+axiom rpowSucc = real_units.powSucc
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+axiom induction = peano.induction
+
+// cis θ = cos θ + i sin θ.
+define cis(t) = cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))
+
+// natural powers z^n on ℂ.
+func cpow(z: Complex, n: Nat) => Complex
+axiom cpowZero: forall z: Complex; cpow(z, NZERO) = ONE
+axiom cpowSucc: forall z: Complex; forall n: Nat; cpow(z, succ(n)) = mul(cpow(z, n), z)
+
+// -- the parts of cis ------------------------------------------------------------------------
+
+// re(x·i) = 0 and im(x·i) = x for a real x.
+theorem reOfImaginaryTerm: forall x: Real; re(mul(fromReal(x), i)) = RZERO
+proof
+  @generalize-x |
+    fix x: Real {
+      @product-parts |
+        re(mul(fromReal(x), i)) = radd(rmul(re(fromReal(x)), re(i)), rneg(rmul(im(fromReal(x)), im(i))))
+        [using specialize reMul(fromReal(x), i)]
+      @re-of-x |
+        re(fromReal(x)) = x
+        [using specialize reOfReal(x)]
+      @im-of-x |
+        im(fromReal(x)) = RZERO
+        [using specialize imOfReal(x)]
+      @re-of-i |
+        re(i) = RZERO
+        [by cite reOfI]
+      @im-of-i |
+        im(i) = RONE
+        [by cite imOfI]
+      @with-re-x |
+        re(mul(fromReal(x), i)) = radd(rmul(x, re(i)), rneg(rmul(im(fromReal(x)), im(i))))
+        [by rewrite re-of-x product-parts]
+      @with-im-x |
+        re(mul(fromReal(x), i)) = radd(rmul(x, re(i)), rneg(rmul(RZERO, im(i))))
+        [by rewrite im-of-x with-re-x]
+      @with-re-i |
+        re(mul(fromReal(x), i)) = radd(rmul(x, RZERO), rneg(rmul(RZERO, im(i))))
+        [by rewrite re-of-i with-im-x]
+      @with-parts |
+        re(mul(fromReal(x), i)) = radd(rmul(x, RZERO), rneg(rmul(RZERO, RONE)))
+        [by rewrite im-of-i with-re-i]
+      @arithmetic |
+        radd(rmul(x, RZERO), rneg(rmul(RZERO, RONE))) = RZERO
+        [using polynomial(real)]
+      @conclusion-re |
+        re(mul(fromReal(x), i)) = RZERO
+        [using chain with-parts arithmetic]
+    }
+  @conclusion |
+    forall x: Real; re(mul(fromReal(x), i)) = RZERO
+    [by forall_intro generalize-x]
+qed
+
+theorem imOfImaginaryTerm: forall x: Real; im(mul(fromReal(x), i)) = x
+proof
+  @generalize-x |
+    fix x: Real {
+      @product-parts |
+        im(mul(fromReal(x), i)) = radd(rmul(re(fromReal(x)), im(i)), rmul(im(fromReal(x)), re(i)))
+        [using specialize imMul(fromReal(x), i)]
+      @re-of-x |
+        re(fromReal(x)) = x
+        [using specialize reOfReal(x)]
+      @im-of-x |
+        im(fromReal(x)) = RZERO
+        [using specialize imOfReal(x)]
+      @re-of-i |
+        re(i) = RZERO
+        [by cite reOfI]
+      @im-of-i |
+        im(i) = RONE
+        [by cite imOfI]
+      @with-re-x |
+        im(mul(fromReal(x), i)) = radd(rmul(x, im(i)), rmul(im(fromReal(x)), re(i)))
+        [by rewrite re-of-x product-parts]
+      @with-im-x |
+        im(mul(fromReal(x), i)) = radd(rmul(x, im(i)), rmul(RZERO, re(i)))
+        [by rewrite im-of-x with-re-x]
+      @with-re-i |
+        im(mul(fromReal(x), i)) = radd(rmul(x, im(i)), rmul(RZERO, RZERO))
+        [by rewrite re-of-i with-im-x]
+      @with-parts |
+        im(mul(fromReal(x), i)) = radd(rmul(x, RONE), rmul(RZERO, RZERO))
+        [by rewrite im-of-i with-re-i]
+      @arithmetic |
+        radd(rmul(x, RONE), rmul(RZERO, RZERO)) = x
+        [using polynomial(real)]
+      @conclusion-im |
+        im(mul(fromReal(x), i)) = x
+        [using chain with-parts arithmetic]
+    }
+  @conclusion |
+    forall x: Real; im(mul(fromReal(x), i)) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem reOfCis: forall t: Real; re(cis(t)) = cos(t)
+proof
+  @generalize-t |
+    fix t: Real {
+      @sum-parts |
+        re(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(re(fromReal(cos(t))), re(mul(fromReal(sin(t)), i)))
+        [using specialize reAdd(fromReal(cos(t)), mul(fromReal(sin(t)), i))]
+      @re-of-cos |
+        re(fromReal(cos(t))) = cos(t)
+        [using specialize reOfReal(cos(t))]
+      @re-of-sin-term |
+        re(mul(fromReal(sin(t)), i)) = RZERO
+        [using specialize reOfImaginaryTerm(sin(t))]
+      @with-cos |
+        re(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(cos(t), re(mul(fromReal(sin(t)), i)))
+        [by rewrite re-of-cos sum-parts]
+      @with-parts |
+        re(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(cos(t), RZERO)
+        [by rewrite re-of-sin-term with-cos]
+      @plus-zero |
+        radd(cos(t), RZERO) = cos(t)
+        [using specialize real.addZeroRight(cos(t))]
+      @conclusion-re-of-cis |
+        re(cis(t)) = cos(t)
+        [using chain with-parts plus-zero]
+    }
+  @conclusion |
+    forall t: Real; re(cis(t)) = cos(t)
+    [by forall_intro generalize-t]
+qed
+
+theorem imOfCis: forall t: Real; im(cis(t)) = sin(t)
+proof
+  @generalize-t |
+    fix t: Real {
+      @sum-parts |
+        im(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(im(fromReal(cos(t))), im(mul(fromReal(sin(t)), i)))
+        [using specialize imAdd(fromReal(cos(t)), mul(fromReal(sin(t)), i))]
+      @im-of-cos |
+        im(fromReal(cos(t))) = RZERO
+        [using specialize imOfReal(cos(t))]
+      @im-of-sin-term |
+        im(mul(fromReal(sin(t)), i)) = sin(t)
+        [using specialize imOfImaginaryTerm(sin(t))]
+      @with-cos |
+        im(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(RZERO, im(mul(fromReal(sin(t)), i)))
+        [by rewrite im-of-cos sum-parts]
+      @with-parts |
+        im(cadd(fromReal(cos(t)), mul(fromReal(sin(t)), i))) = radd(RZERO, sin(t))
+        [by rewrite im-of-sin-term with-cos]
+      @zero-plus |
+        radd(RZERO, sin(t)) = sin(t)
+        [using specialize real.addZeroLeft(sin(t))]
+      @conclusion-im-of-cis |
+        im(cis(t)) = sin(t)
+        [using chain with-parts zero-plus]
+    }
+  @conclusion |
+    forall t: Real; im(cis(t)) = sin(t)
+    [by forall_intro generalize-t]
+qed
+
+// the parts of 1.
+theorem reOfOne: re(ONE) = RONE
+proof
+  @one-embedded |
+    fromReal(RONE) = ONE
+    [by cite fromRealOne]
+  @re-of-embedded |
+    re(fromReal(RONE)) = RONE
+    [using specialize reOfReal(RONE)]
+  @conclusion |
+    re(ONE) = RONE
+    [by rewrite one-embedded re-of-embedded]
+qed
+
+theorem imOfOne: im(ONE) = RZERO
+proof
+  @one-embedded |
+    fromReal(RONE) = ONE
+    [by cite fromRealOne]
+  @im-of-embedded |
+    im(fromReal(RONE)) = RZERO
+    [using specialize imOfReal(RONE)]
+  @conclusion |
+    im(ONE) = RZERO
+    [by rewrite one-embedded im-of-embedded]
+qed
+
+// a complex number whose parts are cos θ, sin θ IS cis θ (extensionality).
+theorem cisByParts: forall t: Real; forall z: Complex; re(z) = cos(t) -> im(z) = sin(t) -> z = cis(t)
+proof
+  @generalize-t |
+    fix t: Real {
+      @generalize-z |
+        fix z: Complex {
+          @given-re |
+            assume re(z) = cos(t) {
+              @given-im |
+                assume im(z) = sin(t) {
+                  @re-z |
+                    re(z) = cos(t)
+                    [by hypothesis given-re]
+                  @im-z |
+                    im(z) = sin(t)
+                    [by hypothesis given-im]
+                  @re-of-cis |
+                    re(cis(t)) = cos(t)
+                    [using specialize reOfCis(t)]
+                  @im-of-cis |
+                    im(cis(t)) = sin(t)
+                    [using specialize imOfCis(t)]
+                  @cos-is-re-of-cis |
+                    cos(t) = re(cis(t))
+                    [by symmetry re-of-cis]
+                  @sin-is-im-of-cis |
+                    sin(t) = im(cis(t))
+                    [by symmetry im-of-cis]
+                  @res-agree |
+                    re(z) = re(cis(t))
+                    [using chain re-z cos-is-re-of-cis]
+                  @ims-agree |
+                    im(z) = im(cis(t))
+                    [using chain im-z sin-is-im-of-cis]
+                  @conclusion-equal |
+                    z = cis(t)
+                    [using specialize complexEq(z, cis(t)) res-agree ims-agree]
+                }
+              @im-implies |
+                im(z) = sin(t) -> z = cis(t)
+                [by implies_intro given-im]
+            }
+          @re-implies |
+            re(z) = cos(t) -> im(z) = sin(t) -> z = cis(t)
+            [by implies_intro given-re]
+        }
+      @discharge-z |
+        forall z: Complex; re(z) = cos(t) -> im(z) = sin(t) -> z = cis(t)
+        [by forall_intro generalize-z]
+    }
+  @conclusion |
+    forall t: Real; forall z: Complex; re(z) = cos(t) -> im(z) = sin(t) -> z = cis(t)
+    [by forall_intro generalize-t]
+qed
+
+// cis 0 = 1 and cis 2π = 1.
+theorem cisZero: ONE = cis(RZERO)
+proof
+  @re-of-one |
+    re(ONE) = RONE
+    [by cite reOfOne]
+  @im-of-one |
+    im(ONE) = RZERO
+    [by cite imOfOne]
+  @cos-zero |
+    cos(RZERO) = RONE
+    [by cite cosZero]
+  @sin-zero |
+    sin(RZERO) = RZERO
+    [by cite sinZero]
+  @re-matches |
+    re(ONE) = cos(RZERO)
+    [by rewrite cos-zero re-of-one]
+  @im-matches |
+    im(ONE) = sin(RZERO)
+    [by rewrite sin-zero im-of-one]
+  @conclusion |
+    ONE = cis(RZERO)
+    [using specialize cisByParts(RZERO, ONE) re-matches im-matches]
+qed
+
+theorem cisTwoPi: ONE = cis(twoPi)
+proof
+  @re-of-one |
+    re(ONE) = RONE
+    [by cite reOfOne]
+  @im-of-one |
+    im(ONE) = RZERO
+    [by cite imOfOne]
+  @cos-two-pi |
+    cos(twoPi) = RONE
+    [by cite cosTwoPi]
+  @sin-two-pi |
+    sin(twoPi) = RZERO
+    [by cite sinTwoPi]
+  @re-matches |
+    re(ONE) = cos(twoPi)
+    [by rewrite cos-two-pi re-of-one]
+  @im-matches |
+    im(ONE) = sin(twoPi)
+    [by rewrite sin-two-pi im-of-one]
+  @conclusion |
+    ONE = cis(twoPi)
+    [using specialize cisByParts(twoPi, ONE) re-matches im-matches]
+qed
+
+// -- the product rule: cis θ · cis φ = cis(θ + φ) ---------------------------------------------
+theorem cisAdd: forall a, b: Real; mul(cis(a), cis(b)) = cis(radd(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @re-of-cis-a |
+            re(cis(a)) = cos(a)
+            [using specialize reOfCis(a)]
+          @im-of-cis-a |
+            im(cis(a)) = sin(a)
+            [using specialize imOfCis(a)]
+          @re-of-cis-b |
+            re(cis(b)) = cos(b)
+            [using specialize reOfCis(b)]
+          @im-of-cis-b |
+            im(cis(b)) = sin(b)
+            [using specialize imOfCis(b)]
+          // the real part.
+          @re-of-product |
+            re(mul(cis(a), cis(b))) = radd(rmul(re(cis(a)), re(cis(b))), rneg(rmul(im(cis(a)), im(cis(b)))))
+            [using specialize reMul(cis(a), cis(b))]
+          @re-of-product-1 |
+            re(mul(cis(a), cis(b))) = radd(rmul(cos(a), re(cis(b))), rneg(rmul(im(cis(a)), im(cis(b)))))
+            [by rewrite re-of-cis-a re-of-product]
+          @re-of-product-2 |
+            re(mul(cis(a), cis(b))) = radd(rmul(cos(a), cos(b)), rneg(rmul(im(cis(a)), im(cis(b)))))
+            [by rewrite re-of-cis-b re-of-product-1]
+          @re-of-product-3 |
+            re(mul(cis(a), cis(b))) = radd(rmul(cos(a), cos(b)), rneg(rmul(sin(a), im(cis(b)))))
+            [by rewrite im-of-cis-a re-of-product-2]
+          @re-of-product-parts |
+            re(mul(cis(a), cis(b))) = radd(rmul(cos(a), cos(b)), rneg(rmul(sin(a), sin(b))))
+            [by rewrite im-of-cis-b re-of-product-3]
+          @cos-of-sum |
+            cos(radd(a, b)) = radd(rmul(cos(a), cos(b)), rneg(rmul(sin(a), sin(b))))
+            [using specialize cosAdd(a, b)]
+          @cos-of-sum-flipped |
+            radd(rmul(cos(a), cos(b)), rneg(rmul(sin(a), sin(b)))) = cos(radd(a, b))
+            [by symmetry cos-of-sum]
+          @re-matches |
+            re(mul(cis(a), cis(b))) = cos(radd(a, b))
+            [using chain re-of-product-parts cos-of-sum-flipped]
+          // the imaginary part.
+          @im-of-product |
+            im(mul(cis(a), cis(b))) = radd(rmul(re(cis(a)), im(cis(b))), rmul(im(cis(a)), re(cis(b))))
+            [using specialize imMul(cis(a), cis(b))]
+          @im-of-product-1 |
+            im(mul(cis(a), cis(b))) = radd(rmul(cos(a), im(cis(b))), rmul(im(cis(a)), re(cis(b))))
+            [by rewrite re-of-cis-a im-of-product]
+          @im-of-product-2 |
+            im(mul(cis(a), cis(b))) = radd(rmul(cos(a), sin(b)), rmul(im(cis(a)), re(cis(b))))
+            [by rewrite im-of-cis-b im-of-product-1]
+          @im-of-product-3 |
+            im(mul(cis(a), cis(b))) = radd(rmul(cos(a), sin(b)), rmul(sin(a), re(cis(b))))
+            [by rewrite im-of-cis-a im-of-product-2]
+          @im-of-product-parts |
+            im(mul(cis(a), cis(b))) = radd(rmul(cos(a), sin(b)), rmul(sin(a), cos(b)))
+            [by rewrite re-of-cis-b im-of-product-3]
+          @sin-of-sum |
+            sin(radd(a, b)) = radd(rmul(sin(a), cos(b)), rmul(cos(a), sin(b)))
+            [using specialize sinAdd(a, b)]
+          @summands-commute |
+            radd(rmul(cos(a), sin(b)), rmul(sin(a), cos(b))) = radd(rmul(sin(a), cos(b)), rmul(cos(a), sin(b)))
+            [using specialize real.addIsCommutative(rmul(cos(a), sin(b)), rmul(sin(a), cos(b)))]
+          @sin-of-sum-flipped |
+            radd(rmul(sin(a), cos(b)), rmul(cos(a), sin(b))) = sin(radd(a, b))
+            [by symmetry sin-of-sum]
+          @im-matches |
+            im(mul(cis(a), cis(b))) = sin(radd(a, b))
+            [using chain im-of-product-parts summands-commute sin-of-sum-flipped]
+          @conclusion-product-is-cis |
+            mul(cis(a), cis(b)) = cis(radd(a, b))
+            [using specialize cisByParts(radd(a, b), mul(cis(a), cis(b))) re-matches im-matches]
+        }
+      @discharge-b |
+        forall b: Real; mul(cis(a), cis(b)) = cis(radd(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; mul(cis(a), cis(b)) = cis(radd(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// |cis θ| = 1.
+theorem normSqOfCis: forall t: Real; normSq(cis(t)) = RONE
+proof
+  @generalize-t |
+    fix t: Real {
+      @re-of-cis |
+        re(cis(t)) = cos(t)
+        [using specialize reOfCis(t)]
+      @im-of-cis |
+        im(cis(t)) = sin(t)
+        [using specialize imOfCis(t)]
+      @unfolded |
+        normSq(cis(t)) = radd(rmul(re(cis(t)), re(cis(t))), rmul(im(cis(t)), im(cis(t))))
+        [by reflexivity]
+      @with-re |
+        normSq(cis(t)) = radd(rmul(cos(t), cos(t)), rmul(im(cis(t)), im(cis(t))))
+        [by rewrite re-of-cis unfolded]
+      @with-parts |
+        normSq(cis(t)) = radd(rmul(cos(t), cos(t)), rmul(sin(t), sin(t)))
+        [by rewrite im-of-cis with-re]
+      @pythagoras |
+        radd(rmul(cos(t), cos(t)), rmul(sin(t), sin(t))) = RONE
+        [using specialize pythagorean(t)]
+      @conclusion-unit |
+        normSq(cis(t)) = RONE
+        [using chain with-parts pythagoras]
+    }
+  @conclusion |
+    forall t: Real; normSq(cis(t)) = RONE
+    [by forall_intro generalize-t]
+qed
+
+theorem absOfCis: forall t: Real; abs(cis(t)) = RONE
+proof
+  @generalize-t |
+    fix t: Real {
+      @unit-normsq |
+        normSq(cis(t)) = RONE
+        [using specialize normSqOfCis(t)]
+      @unfolded |
+        abs(cis(t)) = real.sqrt(normSq(cis(t)))
+        [by reflexivity]
+      @root-of-one-form |
+        abs(cis(t)) = real.sqrt(RONE)
+        [by rewrite unit-normsq unfolded]
+      @root-of-one |
+        real.sqrt(RONE) = RONE
+        [using import(real) sqrtOne]
+      @conclusion-unit |
+        abs(cis(t)) = RONE
+        [using chain root-of-one-form root-of-one]
+    }
+  @conclusion |
+    forall t: Real; abs(cis(t)) = RONE
+    [by forall_intro generalize-t]
+qed
+
+// -- products in polar form: (r cis θ)(s cis φ) = rs cis(θ + φ) --------------------------------
+theorem polarProduct: forall r, s, a, b: Real; mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+proof
+  @generalize-r |
+    fix r: Real {
+      @generalize-s |
+        fix s: Real {
+          @generalize-a |
+            fix a: Real {
+              @generalize-b |
+                fix b: Real {
+                  @regrouped |
+                    mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(mul(fromReal(r), fromReal(s)), mul(cis(a), cis(b)))
+                    [using assoc_commut(complex.mulIsAssociative, complex.mulIsCommutative, complex.mulLeftSwap)]
+                  @moduli-embed |
+                    fromReal(rmul(r, s)) = mul(fromReal(r), fromReal(s))
+                    [using specialize fromRealMul(r, s)]
+                  @moduli-combined |
+                    mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), mul(cis(a), cis(b)))
+                    [by rewrite moduli-embed regrouped]
+                  @angles-add |
+                    mul(cis(a), cis(b)) = cis(radd(a, b))
+                    [using specialize cisAdd(a, b)]
+                  @conclusion-polar-product |
+                    mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+                    [by rewrite angles-add moduli-combined]
+                }
+              @discharge-b |
+                forall b: Real; mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a, b: Real; mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+            [by forall_intro generalize-a]
+        }
+      @discharge-s |
+        forall s, a, b: Real; mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall r, s, a, b: Real; mul(mul(fromReal(r), cis(a)), mul(fromReal(s), cis(b))) = mul(fromReal(rmul(r, s)), cis(radd(a, b)))
+    [by forall_intro generalize-r]
+qed
+
+// -- DeMoivre's theorem: (cis θ)^n = cis(nθ) ---------------------------------------------------
+theorem deMoivre: forall t: Real; forall n: Nat; cpow(cis(t), n) = cis(scale(n, t))
+proof
+  @generalize-t |
+    fix t: Real {
+      @zeroth-power |
+        cpow(cis(t), NZERO) = ONE
+        [using specialize cpowZero(cis(t))]
+      @zero-scale |
+        scale(NZERO, t) = RZERO
+        [using specialize scaleZero(t)]
+      @one-is-cis-zero |
+        ONE = cis(RZERO)
+        [by cite cisZero]
+      @zeroth-power-is-cis-zero |
+        cpow(cis(t), NZERO) = cis(RZERO)
+        [using chain zeroth-power one-is-cis-zero]
+      @base-case |
+        cpow(cis(t), NZERO) = cis(scale(NZERO, t))
+        [by rewrite zero-scale zeroth-power-is-cis-zero]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume cpow(cis(t), k) = cis(scale(k, t)) {
+              @inductive-hypothesis |
+                cpow(cis(t), k) = cis(scale(k, t))
+                [by hypothesis given-inductive-hypothesis]
+              @next-power |
+                cpow(cis(t), succ(k)) = mul(cpow(cis(t), k), cis(t))
+                [using specialize cpowSucc(cis(t), k)]
+              @next-power-with-hypothesis |
+                cpow(cis(t), succ(k)) = mul(cis(scale(k, t)), cis(t))
+                [by rewrite inductive-hypothesis next-power]
+              @angles-add |
+                mul(cis(scale(k, t)), cis(t)) = cis(radd(scale(k, t), t))
+                [using specialize cisAdd(scale(k, t), t)]
+              @next-power-as-cis |
+                cpow(cis(t), succ(k)) = cis(radd(scale(k, t), t))
+                [using chain next-power-with-hypothesis angles-add]
+              @next-scale |
+                scale(succ(k), t) = radd(scale(k, t), t)
+                [using specialize scaleSucc(k, t)]
+              @conclusion-step |
+                cpow(cis(t), succ(k)) = cis(scale(succ(k), t))
+                [by rewrite next-scale next-power-as-cis]
+            }
+          @induction-step-at-k |
+            cpow(cis(t), k) = cis(scale(k, t)) -> cpow(cis(t), succ(k)) = cis(scale(succ(k), t))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; cpow(cis(t), k) = cis(scale(k, t)) -> cpow(cis(t), succ(k)) = cis(scale(succ(k), t))
+        [by forall_intro induction-step]
+      @conclusion-all-n |
+        forall n: Nat; cpow(cis(t), n) = cis(scale(n, t))
+        [using instantiation induction((fun k: Nat => cpow(cis(t), k) = cis(scale(k, t)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall t: Real; forall n: Nat; cpow(cis(t), n) = cis(scale(n, t))
+    [by forall_intro generalize-t]
+qed
+
+// DeMoivre with a modulus: (r cis θ)^n = r^n cis(nθ).
+theorem deMoivrePolar: forall r, t: Real; forall n: Nat; cpow(mul(fromReal(r), cis(t)), n) = mul(fromReal(rpow(r, n)), cis(scale(n, t)))
+proof
+  @generalize-r |
+    fix r: Real {
+      @generalize-t |
+        fix t: Real {
+          @zeroth-power |
+            cpow(mul(fromReal(r), cis(t)), NZERO) = ONE
+            [using specialize cpowZero(mul(fromReal(r), cis(t)))]
+          @zeroth-real-power |
+            rpow(r, NZERO) = RONE
+            [using specialize rpowZero(r)]
+          @zero-scale |
+            scale(NZERO, t) = RZERO
+            [using specialize scaleZero(t)]
+          @one-is-cis-zero |
+            ONE = cis(RZERO)
+            [by cite cisZero]
+          @one-embedded |
+            fromReal(RONE) = ONE
+            [by cite fromRealOne]
+          @one-times-one |
+            mul(ONE, ONE) = ONE
+            [using specialize mulOneLeft(ONE)]
+          @rhs-reflexive |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t)))
+            [by reflexivity]
+          @rhs-with-one |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = mul(fromReal(RONE), cis(scale(NZERO, t)))
+            [by rewrite zeroth-real-power rhs-reflexive]
+          @rhs-with-embedded-one |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = mul(ONE, cis(scale(NZERO, t)))
+            [by rewrite one-embedded rhs-with-one]
+          @rhs-with-zero-angle |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = mul(ONE, cis(RZERO))
+            [by rewrite zero-scale rhs-with-embedded-one]
+          @cis-zero-is-one |
+            cis(RZERO) = ONE
+            [by symmetry one-is-cis-zero]
+          @rhs-with-ones |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = mul(ONE, ONE)
+            [by rewrite cis-zero-is-one rhs-with-zero-angle]
+          @rhs-collapses |
+            mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t))) = ONE
+            [using chain rhs-with-ones one-times-one]
+          @rhs-flipped |
+            ONE = mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t)))
+            [by symmetry rhs-collapses]
+          @base-case |
+            cpow(mul(fromReal(r), cis(t)), NZERO) = mul(fromReal(rpow(r, NZERO)), cis(scale(NZERO, t)))
+            [using chain zeroth-power rhs-flipped]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume cpow(mul(fromReal(r), cis(t)), k) = mul(fromReal(rpow(r, k)), cis(scale(k, t))) {
+                  @inductive-hypothesis |
+                    cpow(mul(fromReal(r), cis(t)), k) = mul(fromReal(rpow(r, k)), cis(scale(k, t)))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-power |
+                    cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(cpow(mul(fromReal(r), cis(t)), k), mul(fromReal(r), cis(t)))
+                    [using specialize cpowSucc(mul(fromReal(r), cis(t)), k)]
+                  @next-power-with-hypothesis |
+                    cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(mul(fromReal(rpow(r, k)), cis(scale(k, t))), mul(fromReal(r), cis(t)))
+                    [by rewrite inductive-hypothesis next-power]
+                  @polar-step |
+                    mul(mul(fromReal(rpow(r, k)), cis(scale(k, t))), mul(fromReal(r), cis(t))) = mul(fromReal(rmul(rpow(r, k), r)), cis(radd(scale(k, t), t)))
+                    [using specialize polarProduct(rpow(r, k), r, scale(k, t), t)]
+                  @next-power-polar |
+                    cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(fromReal(rmul(rpow(r, k), r)), cis(radd(scale(k, t), t)))
+                    [using chain next-power-with-hypothesis polar-step]
+                  @next-real-power |
+                    rpow(r, succ(k)) = rmul(rpow(r, k), r)
+                    [using specialize rpowSucc(r, k)]
+                  @next-scale |
+                    scale(succ(k), t) = radd(scale(k, t), t)
+                    [using specialize scaleSucc(k, t)]
+                  @next-power-with-real-power |
+                    cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(fromReal(rpow(r, succ(k))), cis(radd(scale(k, t), t)))
+                    [by rewrite next-real-power next-power-polar]
+                  @conclusion-step |
+                    cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(fromReal(rpow(r, succ(k))), cis(scale(succ(k), t)))
+                    [by rewrite next-scale next-power-with-real-power]
+                }
+              @induction-step-at-k |
+                cpow(mul(fromReal(r), cis(t)), k) = mul(fromReal(rpow(r, k)), cis(scale(k, t))) -> cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(fromReal(rpow(r, succ(k))), cis(scale(succ(k), t)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; cpow(mul(fromReal(r), cis(t)), k) = mul(fromReal(rpow(r, k)), cis(scale(k, t))) -> cpow(mul(fromReal(r), cis(t)), succ(k)) = mul(fromReal(rpow(r, succ(k))), cis(scale(succ(k), t)))
+            [by forall_intro induction-step]
+          @conclusion-all-n |
+            forall n: Nat; cpow(mul(fromReal(r), cis(t)), n) = mul(fromReal(rpow(r, n)), cis(scale(n, t)))
+            [using instantiation induction((fun k: Nat => cpow(mul(fromReal(r), cis(t)), k) = mul(fromReal(rpow(r, k)), cis(scale(k, t))))) base-case induction-step-for-all-k]
+        }
+      @discharge-t |
+        forall t: Real; forall n: Nat; cpow(mul(fromReal(r), cis(t)), n) = mul(fromReal(rpow(r, n)), cis(scale(n, t)))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall r, t: Real; forall n: Nat; cpow(mul(fromReal(r), cis(t)), n) = mul(fromReal(rpow(r, n)), cis(scale(n, t)))
+    [by forall_intro generalize-r]
+qed
+
+// -- the n-th roots of unity: cis(2kπ/n)^n = 1 ---------------------------------------------------
+
+// 1^k = 1.
+theorem cpowOfOne: forall k: Nat; cpow(ONE, k) = ONE
+proof
+  @base-case |
+    cpow(ONE, NZERO) = ONE
+    [using specialize cpowZero(ONE)]
+  @induction-step |
+    fix m: Nat {
+      @given-inductive-hypothesis |
+        assume cpow(ONE, m) = ONE {
+          @inductive-hypothesis |
+            cpow(ONE, m) = ONE
+            [by hypothesis given-inductive-hypothesis]
+          @next-power |
+            cpow(ONE, succ(m)) = mul(cpow(ONE, m), ONE)
+            [using specialize cpowSucc(ONE, m)]
+          @next-power-with-hypothesis |
+            cpow(ONE, succ(m)) = mul(ONE, ONE)
+            [by rewrite inductive-hypothesis next-power]
+          @one-times-one |
+            mul(ONE, ONE) = ONE
+            [using specialize mulOneLeft(ONE)]
+          @conclusion-step |
+            cpow(ONE, succ(m)) = ONE
+            [using chain next-power-with-hypothesis one-times-one]
+        }
+      @induction-step-at-m |
+        cpow(ONE, m) = ONE -> cpow(ONE, succ(m)) = ONE
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-m |
+    forall m: Nat; cpow(ONE, m) = ONE -> cpow(ONE, succ(m)) = ONE
+    [by forall_intro induction-step]
+  @conclusion |
+    forall k: Nat; cpow(ONE, k) = ONE
+    [using instantiation induction((fun m: Nat => cpow(ONE, m) = ONE)) base-case induction-step-for-all-m]
+qed
+
+// if nθ = 2π then every cis(kθ) is an n-th root of unity: cis(kθ)^n = cis(n·kθ) = cis(k·2π) =
+// cis(2π)^k = 1.
+theorem rootsOfUnity: forall n: Nat; forall theta: Real; scale(n, theta) = twoPi -> forall k: Nat; cpow(cis(scale(k, theta)), n) = ONE
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-theta |
+        fix theta: Real {
+          @given-full-turn |
+            assume scale(n, theta) = twoPi {
+              @full-turn |
+                scale(n, theta) = twoPi
+                [by hypothesis given-full-turn]
+              @generalize-k |
+                fix k: Nat {
+                  @de-moivre |
+                    cpow(cis(scale(k, theta)), n) = cis(scale(n, scale(k, theta)))
+                    [using specialize deMoivre(scale(k, theta), n)]
+                  @scales-swap |
+                    scale(n, scale(k, theta)) = scale(k, scale(n, theta))
+                    [using specialize scaleSwap(k, theta, n)]
+                  @as-k-full-turns |
+                    cpow(cis(scale(k, theta)), n) = cis(scale(k, scale(n, theta)))
+                    [using chain de-moivre scales-swap]
+                  @as-k-two-pi |
+                    cpow(cis(scale(k, theta)), n) = cis(scale(k, twoPi))
+                    [by rewrite full-turn as-k-full-turns]
+                  @de-moivre-at-two-pi |
+                    cpow(cis(twoPi), k) = cis(scale(k, twoPi))
+                    [using specialize deMoivre(twoPi, k)]
+                  @two-pi-power-flipped |
+                    cis(scale(k, twoPi)) = cpow(cis(twoPi), k)
+                    [by symmetry de-moivre-at-two-pi]
+                  @one-is-cis-two-pi |
+                    ONE = cis(twoPi)
+                    [by cite cisTwoPi]
+                  @one-power |
+                    cpow(ONE, k) = ONE
+                    [using specialize cpowOfOne(k)]
+                  @cis-two-pi-power |
+                    cpow(cis(twoPi), k) = ONE
+                    [by rewrite one-is-cis-two-pi one-power]
+                  @conclusion-root |
+                    cpow(cis(scale(k, theta)), n) = ONE
+                    [using chain as-k-two-pi two-pi-power-flipped cis-two-pi-power]
+                }
+              @discharge-k |
+                forall k: Nat; cpow(cis(scale(k, theta)), n) = ONE
+                [by forall_intro generalize-k]
+            }
+          @full-turn-implies |
+            scale(n, theta) = twoPi -> forall k: Nat; cpow(cis(scale(k, theta)), n) = ONE
+            [by implies_intro given-full-turn]
+        }
+      @discharge-theta |
+        forall theta: Real; scale(n, theta) = twoPi -> forall k: Nat; cpow(cis(scale(k, theta)), n) = ONE
+        [by forall_intro generalize-theta]
+    }
+  @conclusion |
+    forall n: Nat; forall theta: Real; scale(n, theta) = twoPi -> forall k: Nat; cpow(cis(scale(k, theta)), n) = ONE
+    [by forall_intro generalize-n]
+qed
+
+// and such a θ exists for every n ≥ 1: θ = 2π/n.
+theorem rootAngleExists: forall m: Nat; exists theta: Real; scale(succ(m), theta) = twoPi
+proof
+  @generalize-m |
+    fix m: Nat {
+      @n-positive |
+        real.less_than(RZERO, toReal(succ(m)))
+        [using specialize toRealOfSuccIsPositive(m)]
+      @zero-not-below-itself |
+        not real.less_than(RZERO, RZERO)
+        [using specialize real.lessThanIrreflexive(RZERO)]
+      @given-n-zero |
+        assume toReal(succ(m)) = RZERO {
+          @n-zero |
+            toReal(succ(m)) = RZERO
+            [by hypothesis given-n-zero]
+          @zero-below-itself |
+            real.less_than(RZERO, RZERO)
+            [by rewrite n-zero n-positive]
+        }
+      @n-zero-implies |
+        toReal(succ(m)) = RZERO -> real.less_than(RZERO, RZERO)
+        [by implies_intro given-n-zero]
+      @n-nonzero |
+        toReal(succ(m)) != RZERO
+        [using tautology n-zero-implies zero-not-below-itself]
+      @scale-as-product |
+        scale(succ(m), rmul(twoPi, rrecip(toReal(succ(m))))) = rmul(toReal(succ(m)), rmul(twoPi, rrecip(toReal(succ(m)))))
+        [using specialize scaleIsProduct(rmul(twoPi, rrecip(toReal(succ(m)))), succ(m))]
+      @swapped |
+        rmul(toReal(succ(m)), rmul(twoPi, rrecip(toReal(succ(m))))) = rmul(twoPi, rmul(toReal(succ(m)), rrecip(toReal(succ(m)))))
+        [using specialize real.mulLeftSwap(toReal(succ(m)), twoPi, rrecip(toReal(succ(m))))]
+      @n-times-recip |
+        rmul(toReal(succ(m)), rrecip(toReal(succ(m)))) = RONE
+        [using specialize real.fieldInverse(toReal(succ(m))) n-nonzero]
+      @swapped-cancelled |
+        rmul(toReal(succ(m)), rmul(twoPi, rrecip(toReal(succ(m))))) = rmul(twoPi, RONE)
+        [by rewrite n-times-recip swapped]
+      @times-one |
+        rmul(twoPi, RONE) = twoPi
+        [using specialize real.mulOneRight(twoPi)]
+      @full-turn |
+        scale(succ(m), rmul(twoPi, rrecip(toReal(succ(m))))) = twoPi
+        [using chain scale-as-product swapped-cancelled times-one]
+      @conclusion-angle-exists |
+        exists theta: Real; scale(succ(m), theta) = twoPi
+        [by exists_intro(rmul(twoPi, rrecip(toReal(succ(m))))) full-turn]
+    }
+  @conclusion |
+    forall m: Nat; exists theta: Real; scale(succ(m), theta) = twoPi
+    [by forall_intro generalize-m]
+qed
+
+// -- the circle group T = { z : |z| = 1 } is a subgroup of ℂ* ---------------------------------
+define onCircle(z) = normSq(z) = RONE
+
+theorem circleHasOne: onCircle(ONE)
+proof
+  @re-of-one |
+    re(ONE) = RONE
+    [by cite reOfOne]
+  @im-of-one |
+    im(ONE) = RZERO
+    [by cite imOfOne]
+  @unfolded |
+    normSq(ONE) = radd(rmul(re(ONE), re(ONE)), rmul(im(ONE), im(ONE)))
+    [by reflexivity]
+  @with-re |
+    normSq(ONE) = radd(rmul(RONE, RONE), rmul(im(ONE), im(ONE)))
+    [by rewrite re-of-one unfolded]
+  @with-parts |
+    normSq(ONE) = radd(rmul(RONE, RONE), rmul(RZERO, RZERO))
+    [by rewrite im-of-one with-re]
+  @arithmetic |
+    radd(rmul(RONE, RONE), rmul(RZERO, RZERO)) = RONE
+    [using polynomial(real)]
+  @conclusion |
+    onCircle(ONE)
+    [using chain with-parts arithmetic]
+qed
+
+theorem circleClosedUnderProduct: forall z, w: Complex; onCircle(z) -> onCircle(w) -> onCircle(mul(z, w))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          @given-z |
+            assume onCircle(z) {
+              @given-w |
+                assume onCircle(w) {
+                  @z-unit |
+                    normSq(z) = RONE
+                    [by hypothesis given-z]
+                  @w-unit |
+                    normSq(w) = RONE
+                    [by hypothesis given-w]
+                  @product-normsq |
+                    normSq(mul(z, w)) = rmul(normSq(z), normSq(w))
+                    [using specialize normSqMul(z, w)]
+                  @product-normsq-z |
+                    normSq(mul(z, w)) = rmul(RONE, normSq(w))
+                    [by rewrite z-unit product-normsq]
+                  @product-normsq-both |
+                    normSq(mul(z, w)) = rmul(RONE, RONE)
+                    [by rewrite w-unit product-normsq-z]
+                  @one-times-one |
+                    rmul(RONE, RONE) = RONE
+                    [using specialize real.mulOneLeft(RONE)]
+                  @conclusion-product-unit |
+                    onCircle(mul(z, w))
+                    [using chain product-normsq-both one-times-one]
+                }
+              @w-implies |
+                onCircle(w) -> onCircle(mul(z, w))
+                [by implies_intro given-w]
+            }
+          @z-implies |
+            onCircle(z) -> onCircle(w) -> onCircle(mul(z, w))
+            [by implies_intro given-z]
+        }
+      @discharge-w |
+        forall w: Complex; onCircle(z) -> onCircle(w) -> onCircle(mul(z, w))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; onCircle(z) -> onCircle(w) -> onCircle(mul(z, w))
+    [by forall_intro generalize-z]
+qed
+
+// on the circle the inverse is the conjugate: z⁻¹ = z̄ / |z|² = z̄.
+theorem circleClosedUnderInverse: forall z: Complex; onCircle(z) -> onCircle(recip(z))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @given-z |
+        assume onCircle(z) {
+          @z-unit |
+            normSq(z) = RONE
+            [by hypothesis given-z]
+          // z ≠ 0, since |0|² = 0 ≠ 1.
+          @zero-embedded |
+            fromReal(RZERO) = ZERO
+            [by cite fromRealZero]
+          @re-of-embedded-zero |
+            re(fromReal(RZERO)) = RZERO
+            [using specialize reOfReal(RZERO)]
+          @im-of-embedded-zero |
+            im(fromReal(RZERO)) = RZERO
+            [using specialize imOfReal(RZERO)]
+          @re-of-zero |
+            re(ZERO) = RZERO
+            [by rewrite zero-embedded re-of-embedded-zero]
+          @im-of-zero |
+            im(ZERO) = RZERO
+            [by rewrite zero-embedded im-of-embedded-zero]
+          @normsq-zero-unfolded |
+            normSq(ZERO) = radd(rmul(re(ZERO), re(ZERO)), rmul(im(ZERO), im(ZERO)))
+            [by reflexivity]
+          @normsq-zero-re |
+            normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(im(ZERO), im(ZERO)))
+            [by rewrite re-of-zero normsq-zero-unfolded]
+          @normsq-zero-parts |
+            normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO))
+            [by rewrite im-of-zero normsq-zero-re]
+          @zero-arithmetic |
+            radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO)) = RZERO
+            [using polynomial(real)]
+          @normsq-of-zero |
+            normSq(ZERO) = RZERO
+            [using chain normsq-zero-parts zero-arithmetic]
+          @one-not-zero |
+            RONE != RZERO
+            [using import(real) oneNotZero]
+          @given-z-zero |
+            assume z = ZERO {
+              @z-zero |
+                z = ZERO
+                [by hypothesis given-z-zero]
+              @normsq-z-is-zero |
+                normSq(z) = RZERO
+                [by rewrite z-zero normsq-of-zero]
+              @one-is-normsq |
+                RONE = normSq(z)
+                [by symmetry z-unit]
+              @one-is-zero |
+                RONE = RZERO
+                [using chain one-is-normsq normsq-z-is-zero]
+            }
+          @z-zero-implies |
+            z = ZERO -> RONE = RZERO
+            [by implies_intro given-z-zero]
+          @z-nonzero |
+            z != ZERO
+            [using tautology z-zero-implies one-not-zero]
+          // recip(z) = z̄ · recip(1) = z̄.
+          @recip-formula |
+            recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+            [using specialize recipIsConjOverNormSq(z) z-nonzero]
+          @recip-formula-unit |
+            recip(z) = mul(conj(z), recip(fromReal(RONE)))
+            [by rewrite z-unit recip-formula]
+          @one-embedded |
+            fromReal(RONE) = ONE
+            [by cite fromRealOne]
+          @recip-formula-one |
+            recip(z) = mul(conj(z), recip(ONE))
+            [by rewrite one-embedded recip-formula-unit]
+          @complex-one-not-zero |
+            ONE != ZERO
+            [using import(complex) oneNotZero]
+          @one-times-recip-one |
+            mul(ONE, recip(ONE)) = ONE
+            [using specialize fieldInverse(ONE) complex-one-not-zero]
+          @one-times-recip-one-unfolds |
+            mul(ONE, recip(ONE)) = recip(ONE)
+            [using specialize mulOneLeft(recip(ONE))]
+          @recip-one-is-product |
+            recip(ONE) = mul(ONE, recip(ONE))
+            [by symmetry one-times-recip-one-unfolds]
+          @recip-of-one |
+            recip(ONE) = ONE
+            [using chain recip-one-is-product one-times-recip-one]
+          @recip-is-conj-times-one |
+            recip(z) = mul(conj(z), ONE)
+            [by rewrite recip-of-one recip-formula-one]
+          @conj-times-one |
+            mul(conj(z), ONE) = conj(z)
+            [using specialize mulOneRight(conj(z))]
+          @recip-is-conj |
+            recip(z) = conj(z)
+            [using chain recip-is-conj-times-one conj-times-one]
+          @conj-normsq |
+            normSq(conj(z)) = normSq(z)
+            [using specialize normSqConj(z)]
+          @conj-unit |
+            normSq(conj(z)) = RONE
+            [using chain conj-normsq z-unit]
+          @conclusion-recip-unit |
+            onCircle(recip(z))
+            [by rewrite recip-is-conj conj-unit]
+        }
+      @z-implies |
+        onCircle(z) -> onCircle(recip(z))
+        [by implies_intro given-z]
+    }
+  @conclusion |
+    forall z: Complex; onCircle(z) -> onCircle(recip(z))
+    [by forall_intro generalize-z]
+qed

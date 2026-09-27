@@ -1,0 +1,376 @@
+// std/real/scaling.b4m — NATURAL MULTIPLES of a real: n·θ = θ + ⋯ + θ, and the embedding
+// ℕ → ℝ. What "nθ" means in DeMoivre's theorem and "2kπ/n" in the roots of unity
+// (std/complex/polar.b4m): scale(n, θ) by two recursion clauses, additive in θ, and
+// equal to toReal(n)·θ.
+
+import real <<< "std/real.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+pred less_than = real.less_than
+theorem addZeroLeft = real.addZeroLeft
+theorem addZeroRight = real.addZeroRight
+theorem addIsAssociative = real.addIsAssociative
+theorem addIsCommutative = real.addIsCommutative
+theorem addLeftSwap = real.addLeftSwap
+theorem mulZeroLeft = real.mulZeroLeft
+theorem mulOneLeft = real.mulOneLeft
+theorem mulAddDistribRight = real.mulAddDistribRight
+theorem lessThanAddRight = real.lessThanAddRight
+theorem lessThanTransitive = real.lessThanTransitive
+theorem zeroLessThanOne = real.zeroLessThanOne
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+axiom induction = peano.induction
+
+func scale(n: Nat, t: Real) => Real
+axiom scaleZero: forall t: Real; scale(NZERO, t) = ZERO
+axiom scaleSucc: forall n: Nat; forall t: Real; scale(succ(n), t) = add(scale(n, t), t)
+
+func toReal(n: Nat) => Real
+axiom toRealZero: toReal(NZERO) = ZERO
+axiom toRealSucc: forall n: Nat; toReal(succ(n)) = add(toReal(n), ONE)
+
+// n·θ = toReal(n)·θ.
+theorem scaleIsProduct: forall t: Real; forall n: Nat; scale(n, t) = mul(toReal(n), t)
+proof
+  @generalize-t |
+    fix t: Real {
+      @zero-scale |
+        scale(NZERO, t) = ZERO
+        [using specialize scaleZero(t)]
+      @zero-image |
+        toReal(NZERO) = ZERO
+        [by cite toRealZero]
+      @zero-times-t |
+        mul(ZERO, t) = ZERO
+        [using specialize mulZeroLeft(t)]
+      @base-case |
+        scale(NZERO, t) = mul(toReal(NZERO), t)
+        [using simplify zero-scale zero-image zero-times-t]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume scale(k, t) = mul(toReal(k), t) {
+              @inductive-hypothesis |
+                scale(k, t) = mul(toReal(k), t)
+                [by hypothesis given-inductive-hypothesis]
+              @next-scale |
+                scale(succ(k), t) = add(scale(k, t), t)
+                [using specialize scaleSucc(k, t)]
+              @next-image |
+                toReal(succ(k)) = add(toReal(k), ONE)
+                [using specialize toRealSucc(k)]
+              @next-scale-with-hypothesis |
+                scale(succ(k), t) = add(mul(toReal(k), t), t)
+                [by rewrite inductive-hypothesis next-scale]
+              @distributed |
+                mul(add(toReal(k), ONE), t) = add(mul(toReal(k), t), mul(ONE, t))
+                [using specialize mulAddDistribRight(toReal(k), ONE, t)]
+              @one-times-t |
+                mul(ONE, t) = t
+                [using specialize mulOneLeft(t)]
+              @distributed-plain |
+                mul(add(toReal(k), ONE), t) = add(mul(toReal(k), t), t)
+                [by rewrite one-times-t distributed]
+              @distributed-flipped |
+                add(mul(toReal(k), t), t) = mul(add(toReal(k), ONE), t)
+                [by symmetry distributed-plain]
+              @next-scale-as-product |
+                scale(succ(k), t) = mul(add(toReal(k), ONE), t)
+                [using chain next-scale-with-hypothesis distributed-flipped]
+              @conclusion-step |
+                scale(succ(k), t) = mul(toReal(succ(k)), t)
+                [by rewrite next-image next-scale-as-product]
+            }
+          @induction-step-at-k |
+            scale(k, t) = mul(toReal(k), t) -> scale(succ(k), t) = mul(toReal(succ(k)), t)
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; scale(k, t) = mul(toReal(k), t) -> scale(succ(k), t) = mul(toReal(succ(k)), t)
+        [by forall_intro induction-step]
+      @conclusion-all-n |
+        forall n: Nat; scale(n, t) = mul(toReal(n), t)
+        [using instantiation induction((fun k: Nat => scale(k, t) = mul(toReal(k), t))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall t: Real; forall n: Nat; scale(n, t) = mul(toReal(n), t)
+    [by forall_intro generalize-t]
+qed
+
+// n·(a + b) = n·a + n·b.
+theorem scaleAdd: forall a, b: Real; forall n: Nat; scale(n, add(a, b)) = add(scale(n, a), scale(n, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @zero-scale-sum |
+            scale(NZERO, add(a, b)) = ZERO
+            [using specialize scaleZero(add(a, b))]
+          @zero-scale-a |
+            scale(NZERO, a) = ZERO
+            [using specialize scaleZero(a)]
+          @zero-scale-b |
+            scale(NZERO, b) = ZERO
+            [using specialize scaleZero(b)]
+          @zero-plus-zero |
+            add(ZERO, ZERO) = ZERO
+            [using specialize addZeroLeft(ZERO)]
+          @base-case |
+            scale(NZERO, add(a, b)) = add(scale(NZERO, a), scale(NZERO, b))
+            [using simplify zero-scale-sum zero-scale-a zero-scale-b zero-plus-zero]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume scale(k, add(a, b)) = add(scale(k, a), scale(k, b)) {
+                  @inductive-hypothesis |
+                    scale(k, add(a, b)) = add(scale(k, a), scale(k, b))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-scale-sum |
+                    scale(succ(k), add(a, b)) = add(scale(k, add(a, b)), add(a, b))
+                    [using specialize scaleSucc(k, add(a, b))]
+                  @next-scale-a |
+                    scale(succ(k), a) = add(scale(k, a), a)
+                    [using specialize scaleSucc(k, a)]
+                  @next-scale-b |
+                    scale(succ(k), b) = add(scale(k, b), b)
+                    [using specialize scaleSucc(k, b)]
+                  @next-with-hypothesis |
+                    scale(succ(k), add(a, b)) = add(add(scale(k, a), scale(k, b)), add(a, b))
+                    [by rewrite inductive-hypothesis next-scale-sum]
+                  @regrouped |
+                    add(add(scale(k, a), scale(k, b)), add(a, b)) = add(add(scale(k, a), a), add(scale(k, b), b))
+                    [using assoc_commut(addIsAssociative, addIsCommutative, addLeftSwap)]
+                  @next-regrouped |
+                    scale(succ(k), add(a, b)) = add(add(scale(k, a), a), add(scale(k, b), b))
+                    [using chain next-with-hypothesis regrouped]
+                  @next-with-a |
+                    scale(succ(k), add(a, b)) = add(scale(succ(k), a), add(scale(k, b), b))
+                    [by rewrite next-scale-a next-regrouped]
+                  @conclusion-step |
+                    scale(succ(k), add(a, b)) = add(scale(succ(k), a), scale(succ(k), b))
+                    [by rewrite next-scale-b next-with-a]
+                }
+              @induction-step-at-k |
+                scale(k, add(a, b)) = add(scale(k, a), scale(k, b)) -> scale(succ(k), add(a, b)) = add(scale(succ(k), a), scale(succ(k), b))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; scale(k, add(a, b)) = add(scale(k, a), scale(k, b)) -> scale(succ(k), add(a, b)) = add(scale(succ(k), a), scale(succ(k), b))
+            [by forall_intro induction-step]
+          @conclusion-all-n |
+            forall n: Nat; scale(n, add(a, b)) = add(scale(n, a), scale(n, b))
+            [using instantiation induction((fun k: Nat => scale(k, add(a, b)) = add(scale(k, a), scale(k, b)))) base-case induction-step-for-all-k]
+        }
+      @discharge-b |
+        forall b: Real; forall n: Nat; scale(n, add(a, b)) = add(scale(n, a), scale(n, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; forall n: Nat; scale(n, add(a, b)) = add(scale(n, a), scale(n, b))
+    [by forall_intro generalize-a]
+qed
+
+// n·(k·t) = k·(n·t).
+theorem scaleSwap: forall k: Nat; forall t: Real; forall n: Nat; scale(n, scale(k, t)) = scale(k, scale(n, t))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-t |
+        fix t: Real {
+          @zero-scale-outer |
+            scale(NZERO, scale(k, t)) = ZERO
+            [using specialize scaleZero(scale(k, t))]
+          @zero-scale-inner |
+            scale(NZERO, t) = ZERO
+            [using specialize scaleZero(t)]
+          @k-times-zero |
+            scale(k, ZERO) = ZERO
+            [using specialize scaleOfZero(k)]
+          @base-case |
+            scale(NZERO, scale(k, t)) = scale(k, scale(NZERO, t))
+            [using simplify zero-scale-outer zero-scale-inner k-times-zero]
+          @induction-step |
+            fix m: Nat {
+              @given-inductive-hypothesis |
+                assume scale(m, scale(k, t)) = scale(k, scale(m, t)) {
+                  @inductive-hypothesis |
+                    scale(m, scale(k, t)) = scale(k, scale(m, t))
+                    [by hypothesis given-inductive-hypothesis]
+                  @next-outer |
+                    scale(succ(m), scale(k, t)) = add(scale(m, scale(k, t)), scale(k, t))
+                    [using specialize scaleSucc(m, scale(k, t))]
+                  @next-inner |
+                    scale(succ(m), t) = add(scale(m, t), t)
+                    [using specialize scaleSucc(m, t)]
+                  @next-outer-with-hypothesis |
+                    scale(succ(m), scale(k, t)) = add(scale(k, scale(m, t)), scale(k, t))
+                    [by rewrite inductive-hypothesis next-outer]
+                  @k-scale-of-sum |
+                    scale(k, add(scale(m, t), t)) = add(scale(k, scale(m, t)), scale(k, t))
+                    [using specialize scaleAdd(scale(m, t), t, k)]
+                  @k-scale-of-sum-flipped |
+                    add(scale(k, scale(m, t)), scale(k, t)) = scale(k, add(scale(m, t), t))
+                    [by symmetry k-scale-of-sum]
+                  @next-outer-as-k-scale |
+                    scale(succ(m), scale(k, t)) = scale(k, add(scale(m, t), t))
+                    [using chain next-outer-with-hypothesis k-scale-of-sum-flipped]
+                  @conclusion-step |
+                    scale(succ(m), scale(k, t)) = scale(k, scale(succ(m), t))
+                    [by rewrite next-inner next-outer-as-k-scale]
+                }
+              @induction-step-at-m |
+                scale(m, scale(k, t)) = scale(k, scale(m, t)) -> scale(succ(m), scale(k, t)) = scale(k, scale(succ(m), t))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-m |
+            forall m: Nat; scale(m, scale(k, t)) = scale(k, scale(m, t)) -> scale(succ(m), scale(k, t)) = scale(k, scale(succ(m), t))
+            [by forall_intro induction-step]
+          @conclusion-all-n |
+            forall n: Nat; scale(n, scale(k, t)) = scale(k, scale(n, t))
+            [using instantiation induction((fun m: Nat => scale(m, scale(k, t)) = scale(k, scale(m, t)))) base-case induction-step-for-all-m]
+        }
+      @discharge-t |
+        forall t: Real; forall n: Nat; scale(n, scale(k, t)) = scale(k, scale(n, t))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall k: Nat; forall t: Real; forall n: Nat; scale(n, scale(k, t)) = scale(k, scale(n, t))
+    [by forall_intro generalize-k]
+qed
+
+// k·0 = 0.
+theorem scaleOfZero: forall k: Nat; scale(k, ZERO) = ZERO
+proof
+  @base-case |
+    scale(NZERO, ZERO) = ZERO
+    [using specialize scaleZero(ZERO)]
+  @induction-step |
+    fix m: Nat {
+      @given-inductive-hypothesis |
+        assume scale(m, ZERO) = ZERO {
+          @inductive-hypothesis |
+            scale(m, ZERO) = ZERO
+            [by hypothesis given-inductive-hypothesis]
+          @next-unfolds |
+            scale(succ(m), ZERO) = add(scale(m, ZERO), ZERO)
+            [using specialize scaleSucc(m, ZERO)]
+          @next-with-hypothesis |
+            scale(succ(m), ZERO) = add(ZERO, ZERO)
+            [by rewrite inductive-hypothesis next-unfolds]
+          @zero-plus-zero |
+            add(ZERO, ZERO) = ZERO
+            [using specialize addZeroLeft(ZERO)]
+          @conclusion-step |
+            scale(succ(m), ZERO) = ZERO
+            [using chain next-with-hypothesis zero-plus-zero]
+        }
+      @induction-step-at-m |
+        scale(m, ZERO) = ZERO -> scale(succ(m), ZERO) = ZERO
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-m |
+    forall m: Nat; scale(m, ZERO) = ZERO -> scale(succ(m), ZERO) = ZERO
+    [by forall_intro induction-step]
+  @conclusion |
+    forall k: Nat; scale(k, ZERO) = ZERO
+    [using instantiation induction((fun m: Nat => scale(m, ZERO) = ZERO)) base-case induction-step-for-all-m]
+qed
+
+// toReal(n + 1) > 0: the image of a natural is nonnegative, and adding 1 makes it positive.
+theorem toRealNonneg: forall n: Nat; real.less_or_equal(ZERO, toReal(n))
+proof
+  @zero-image |
+    toReal(NZERO) = ZERO
+    [by cite toRealZero]
+  @zero-is-zero |
+    ZERO = ZERO
+    [by reflexivity]
+  @zero-at-most-zero |
+    real.less_or_equal(ZERO, ZERO)
+    [using tautology zero-is-zero]
+  @base-case |
+    real.less_or_equal(ZERO, toReal(NZERO))
+    [by rewrite zero-image zero-at-most-zero]
+  @zero-below-one |
+    less_than(ZERO, ONE)
+    [by cite zeroLessThanOne]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume real.less_or_equal(ZERO, toReal(k)) {
+          @inductive-hypothesis |
+            real.less_or_equal(ZERO, toReal(k))
+            [by hypothesis given-inductive-hypothesis]
+          @next-image |
+            toReal(succ(k)) = add(toReal(k), ONE)
+            [using specialize toRealSucc(k)]
+          @zero-at-most-one |
+            real.less_or_equal(ZERO, ONE)
+            [using tautology zero-below-one]
+          @sum-nonneg |
+            real.less_or_equal(ZERO, add(toReal(k), ONE))
+            [using specialize real.addNonneg(toReal(k), ONE) inductive-hypothesis zero-at-most-one]
+          @conclusion-step |
+            real.less_or_equal(ZERO, toReal(succ(k)))
+            [by rewrite next-image sum-nonneg]
+        }
+      @induction-step-at-k |
+        real.less_or_equal(ZERO, toReal(k)) -> real.less_or_equal(ZERO, toReal(succ(k)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; real.less_or_equal(ZERO, toReal(k)) -> real.less_or_equal(ZERO, toReal(succ(k)))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; real.less_or_equal(ZERO, toReal(n))
+    [using instantiation induction((fun k: Nat => real.less_or_equal(ZERO, toReal(k)))) base-case induction-step-for-all-k]
+qed
+
+theorem toRealOfSuccIsPositive: forall n: Nat; less_than(ZERO, toReal(succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @image-nonneg |
+        real.less_or_equal(ZERO, toReal(n))
+        [using specialize toRealNonneg(n)]
+      @zero-below-one |
+        less_than(ZERO, ONE)
+        [by cite zeroLessThanOne]
+      @next-image |
+        toReal(succ(n)) = add(toReal(n), ONE)
+        [using specialize toRealSucc(n)]
+      @sum-positive |
+        less_than(ZERO, add(toReal(n), ONE))
+        [using specialize real.lessOrEqualThenLessThan(ZERO, toReal(n), add(toReal(n), ONE)) image-nonneg image-below-sum]
+      @shifted |
+        less_than(add(ZERO, toReal(n)), add(ONE, toReal(n)))
+        [using specialize lessThanAddRight(ZERO, ONE, toReal(n)) zero-below-one]
+      @zero-plus-image |
+        add(ZERO, toReal(n)) = toReal(n)
+        [using specialize addZeroLeft(toReal(n))]
+      @one-plus-image |
+        add(ONE, toReal(n)) = add(toReal(n), ONE)
+        [using specialize addIsCommutative(ONE, toReal(n))]
+      @shifted-left |
+        less_than(toReal(n), add(ONE, toReal(n)))
+        [by rewrite zero-plus-image shifted]
+      @image-below-sum |
+        less_than(toReal(n), add(toReal(n), ONE))
+        [by rewrite one-plus-image shifted-left]
+      @conclusion-positive |
+        less_than(ZERO, toReal(succ(n)))
+        [by rewrite next-image sum-positive]
+    }
+  @conclusion |
+    forall n: Nat; less_than(ZERO, toReal(succ(n)))
+    [by forall_intro generalize-n]
+qed
