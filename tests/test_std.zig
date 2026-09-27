@@ -168,6 +168,11 @@ pub fn addTests(
     // hasOrder(g,n) RELATION generalizes order over arbitrary elements (orderIsUnique,
     // inverseHasSameOrder = |a|=|a⁻¹|).
     ctx.okSilent(&.{ "check", "std/group/order.b4m" });
+    // the cyclic subgroup ⟨g⟩ of a VARIABLE generator (std/group/generated.b4m, Judson §4.1
+    // exercises 27, 30, 37): inGenerated(g, x) as a two-place relation, its closure laws,
+    // the trivial intersection of coprime-order cyclic subgroups (Bézout), and "no proper
+    // nontrivial (cyclic) subgroups ⟹ cyclic".
+    ctx.okSilent(&.{ "check", "std/group/generated.b4m" });
 
     // the integers mod n (std/integer/mod-n.b4m, Judson §4.1 concrete): ℤ_n as a
     // quotient sort ℤ/nℤ whose group/ring axioms LIFT from ℤ via cls-homomorphism,

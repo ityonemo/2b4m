@@ -12,6 +12,7 @@
 import group_power <<< "std/group/power.b4m"
 import int_divides <<< "std/integer/divides.b4m"
 import integer <<< "std/integer.b4m"
+import group <<< "std/group.b4m"
 
 sort Grp = group_power.Grp
 const E = group_power.E
@@ -24,6 +25,9 @@ const ZERO = group_power.ZERO
 const ONE = integer.ONE
 func add = group_power.add
 func mul = group_power.mul
+func succ = integer.succ
+func prev = integer.prev
+theorem intInduction = group_power.induction
 pred less_than = int_divides.less_than
 pred is_nonneg = int_divides.is_nonneg
 define divides(d, n) = exists k: Int; n = mul(d, k)
@@ -779,5 +783,636 @@ proof
     }
   @conclusion |
     forall g: Grp; forall n: Int; hasOrder(g, n) -> hasOrder(inverse(g), n)
+    [by forall_intro generalize-g]
+qed
+
+// -- conjugation preserves the order (EXERCISES 23(b), 23(c)) --------------------------
+// (g⁻¹ a g)^k = g⁻¹ a^k g, so the conjugate g⁻¹ a g is killed by exactly the exponents
+// that kill a and has the same order; ab and ba = a⁻¹(ab)a are conjugate, so they too.
+
+// g · (g⁻¹ · x) = x.
+theorem inverseCancelsInside: forall g, x: Grp; op(g, op(inverse(g), x)) = x
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-x |
+        fix x: Grp {
+          @regrouped |
+            op(g, op(inverse(g), x)) = op(op(g, inverse(g)), x)
+            [using assoc(group_power.opAssoc)]
+          @g-times-inverse |
+            op(g, inverse(g)) = E
+            [using specialize group_power.opInverseRight(g)]
+          @identity-times-x |
+            op(E, x) = x
+            [using specialize group_power.opIdentityLeft(x)]
+          @pair-cancels |
+            op(op(g, inverse(g)), x) = x
+            [by rewrite g-times-inverse identity-times-x]
+          @conclusion-cancelled |
+            op(g, op(inverse(g), x)) = x
+            [using chain regrouped pair-cancels]
+        }
+      @discharge-x |
+        forall x: Grp; op(g, op(inverse(g), x)) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall g, x: Grp; op(g, op(inverse(g), x)) = x
+    [by forall_intro generalize-g]
+qed
+
+// g⁻¹ · (g · x) = x.
+theorem cancelsInverseInside: forall g, x: Grp; op(inverse(g), op(g, x)) = x
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-x |
+        fix x: Grp {
+          @regrouped |
+            op(inverse(g), op(g, x)) = op(op(inverse(g), g), x)
+            [using assoc(group_power.opAssoc)]
+          @inverse-times-g |
+            op(inverse(g), g) = E
+            [using specialize group_power.opInverseLeft(g)]
+          @identity-times-x |
+            op(E, x) = x
+            [using specialize group_power.opIdentityLeft(x)]
+          @pair-cancels |
+            op(op(inverse(g), g), x) = x
+            [by rewrite inverse-times-g identity-times-x]
+          @conclusion-cancelled |
+            op(inverse(g), op(g, x)) = x
+            [using chain regrouped pair-cancels]
+        }
+      @discharge-x |
+        forall x: Grp; op(inverse(g), op(g, x)) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall g, x: Grp; op(inverse(g), op(g, x)) = x
+    [by forall_intro generalize-g]
+qed
+
+// (g⁻¹ a g)^k = g⁻¹ a^k g: induction on the integer exponent, both ways. Up: (g⁻¹ a^k g)(g⁻¹ a g)
+// regroups to g⁻¹ a^k (g g⁻¹) a g. Down: the same with (g⁻¹ a g)⁻¹ = g⁻¹ a⁻¹ g.
+theorem conjugatePower: forall g, a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-a |
+        fix a: Grp {
+          // base case: both sides are e.
+          @conjugate-zeroth |
+            power(op(op(inverse(g), a), g), ZERO) = E
+            [using specialize group_power.powerZero(op(op(inverse(g), a), g))]
+          @a-zeroth |
+            power(a, ZERO) = E
+            [using specialize group_power.powerZero(a)]
+          @inverse-times-identity |
+            op(inverse(g), E) = inverse(g)
+            [using specialize group_power.opIdentityRight(inverse(g))]
+          @inverse-times-g |
+            op(inverse(g), g) = E
+            [using specialize group_power.opInverseLeft(g)]
+          @base-case |
+            power(op(op(inverse(g), a), g), ZERO) = op(op(inverse(g), power(a, ZERO)), g)
+            [using simplify conjugate-zeroth a-zeroth inverse-times-identity inverse-times-g]
+
+          // step up: multiply by one more conjugate and cancel g g⁻¹ in the middle.
+          @step-up |
+            fix k: Int {
+              @given-conjugate-power |
+                assume power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) {
+                  @conjugate-power |
+                    power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+                    [by hypothesis given-conjugate-power]
+                  @next-unfolds |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(power(op(op(inverse(g), a), g), k), op(op(inverse(g), a), g))
+                    [using specialize group_power.powerSucc(op(op(inverse(g), a), g), k)]
+                  @a-next-unfolds |
+                    power(a, succ(k)) = op(power(a, k), a)
+                    [using specialize group_power.powerSucc(a, k)]
+                  @next-as-product |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(op(op(inverse(g), power(a, k)), g), op(op(inverse(g), a), g))
+                    [by rewrite conjugate-power next-unfolds]
+                  @regrouped |
+                    op(op(op(inverse(g), power(a, k)), g), op(op(inverse(g), a), g)) = op(op(inverse(g), power(a, k)), op(g, op(inverse(g), op(a, g))))
+                    [using assoc(group_power.opAssoc)]
+                  @middle-cancels |
+                    op(g, op(inverse(g), op(a, g))) = op(a, g)
+                    [using specialize inverseCancelsInside(g, op(a, g))]
+                  @next-regrouped |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), power(a, k)), op(g, op(inverse(g), op(a, g))))
+                    [using chain next-as-product regrouped]
+                  @next-cancelled |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), power(a, k)), op(a, g))
+                    [by rewrite middle-cancels next-regrouped]
+                  @regrouped-again |
+                    op(op(inverse(g), power(a, k)), op(a, g)) = op(op(inverse(g), op(power(a, k), a)), g)
+                    [using assoc(group_power.opAssoc)]
+                  @next-as-conjugate |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), op(power(a, k), a)), g)
+                    [using chain next-cancelled regrouped-again]
+                  @conclusion-next |
+                    power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), power(a, succ(k))), g)
+                    [by rewrite a-next-unfolds next-as-conjugate]
+                }
+              @conclusion-step-up |
+                power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) -> power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), power(a, succ(k))), g)
+                [by implies_intro given-conjugate-power]
+            }
+          @step-up-for-all-k |
+            forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) -> power(op(op(inverse(g), a), g), succ(k)) = op(op(inverse(g), power(a, succ(k))), g)
+            [by forall_intro step-up]
+
+          // step down: multiply by the inverse conjugate g⁻¹ a⁻¹ g instead.
+          @inverse-of-conjugate-outer |
+            inverse(op(op(inverse(g), a), g)) = op(inverse(g), inverse(op(inverse(g), a)))
+            [using specialize group_power.invProduct(op(inverse(g), a), g)]
+          @inverse-of-conjugate-inner |
+            inverse(op(inverse(g), a)) = op(inverse(a), inverse(inverse(g)))
+            [using specialize group_power.invProduct(inverse(g), a)]
+          @inverse-twice |
+            inverse(inverse(g)) = g
+            [using specialize group_power.invInvolution(g)]
+          @inverse-of-conjugate-inner-simplified |
+            inverse(op(inverse(g), a)) = op(inverse(a), g)
+            [by rewrite inverse-twice inverse-of-conjugate-inner]
+          @inverse-of-conjugate |
+            inverse(op(op(inverse(g), a), g)) = op(inverse(g), op(inverse(a), g))
+            [by rewrite inverse-of-conjugate-inner-simplified inverse-of-conjugate-outer]
+          @step-down |
+            fix k: Int {
+              @given-conjugate-power |
+                assume power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) {
+                  @conjugate-power |
+                    power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+                    [by hypothesis given-conjugate-power]
+                  @previous-unfolds |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(power(op(op(inverse(g), a), g), k), inverse(op(op(inverse(g), a), g)))
+                    [using specialize group_power.powerPrev(op(op(inverse(g), a), g), k)]
+                  @a-previous-unfolds |
+                    power(a, prev(k)) = op(power(a, k), inverse(a))
+                    [using specialize group_power.powerPrev(a, k)]
+                  @previous-with-power |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(op(inverse(g), power(a, k)), g), inverse(op(op(inverse(g), a), g)))
+                    [by rewrite conjugate-power previous-unfolds]
+                  @previous-as-product |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(op(inverse(g), power(a, k)), g), op(inverse(g), op(inverse(a), g)))
+                    [by rewrite inverse-of-conjugate previous-with-power]
+                  @regrouped |
+                    op(op(op(inverse(g), power(a, k)), g), op(inverse(g), op(inverse(a), g))) = op(op(inverse(g), power(a, k)), op(g, op(inverse(g), op(inverse(a), g))))
+                    [using assoc(group_power.opAssoc)]
+                  @middle-cancels |
+                    op(g, op(inverse(g), op(inverse(a), g))) = op(inverse(a), g)
+                    [using specialize inverseCancelsInside(g, op(inverse(a), g))]
+                  @previous-regrouped |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), power(a, k)), op(g, op(inverse(g), op(inverse(a), g))))
+                    [using chain previous-as-product regrouped]
+                  @previous-cancelled |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), power(a, k)), op(inverse(a), g))
+                    [by rewrite middle-cancels previous-regrouped]
+                  @regrouped-again |
+                    op(op(inverse(g), power(a, k)), op(inverse(a), g)) = op(op(inverse(g), op(power(a, k), inverse(a))), g)
+                    [using assoc(group_power.opAssoc)]
+                  @previous-as-conjugate |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), op(power(a, k), inverse(a))), g)
+                    [using chain previous-cancelled regrouped-again]
+                  @conclusion-previous |
+                    power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), power(a, prev(k))), g)
+                    [by rewrite a-previous-unfolds previous-as-conjugate]
+                }
+              @conclusion-step-down |
+                power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) -> power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), power(a, prev(k))), g)
+                [by implies_intro given-conjugate-power]
+            }
+          @step-down-for-all-k |
+            forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g) -> power(op(op(inverse(g), a), g), prev(k)) = op(op(inverse(g), power(a, prev(k))), g)
+            [by forall_intro step-down]
+          @conclusion-for-all-k |
+            forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+            [using instantiation intInduction((fun k: Int => power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g))) base-case step-up-for-all-k step-down-for-all-k]
+        }
+      @discharge-a |
+        forall a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall g, a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+    [by forall_intro generalize-g]
+qed
+
+// a power of the conjugate is the identity iff the same power of a is: g⁻¹ a^k g = e
+// cancels (on the right by g, then on the left by g⁻¹) to a^k = e, and conversely.
+theorem conjugatePowerIdentityIff: forall g, a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = E iff power(a, k) = E
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-a |
+        fix a: Grp {
+          @generalize-k |
+            fix k: Int {
+              @conjugate-power |
+                power(op(op(inverse(g), a), g), k) = op(op(inverse(g), power(a, k)), g)
+                [using specialize conjugatePower(g, a, k)]
+              @inverse-times-g |
+                op(inverse(g), g) = E
+                [using specialize group_power.opInverseLeft(g)]
+              @inverse-times-identity |
+                op(inverse(g), E) = inverse(g)
+                [using specialize group_power.opIdentityRight(inverse(g))]
+              @given-conjugate-kills |
+                assume power(op(op(inverse(g), a), g), k) = E {
+                  @conjugate-kills |
+                    power(op(op(inverse(g), a), g), k) = E
+                    [by hypothesis given-conjugate-kills]
+                  @conjugate-power-flipped |
+                    op(op(inverse(g), power(a, k)), g) = power(op(op(inverse(g), a), g), k)
+                    [by symmetry conjugate-power]
+                  @identity-as-product |
+                    E = op(inverse(g), g)
+                    [by symmetry inverse-times-g]
+                  @products-agree |
+                    op(op(inverse(g), power(a, k)), g) = op(inverse(g), g)
+                    [using chain conjugate-power-flipped conjugate-kills identity-as-product]
+                  @cancelled-right |
+                    op(inverse(g), power(a, k)) = inverse(g)
+                    [using specialize group.cancelRight(op(inverse(g), power(a, k)), g, inverse(g)) products-agree]
+                  @inverse-as-product |
+                    inverse(g) = op(inverse(g), E)
+                    [by symmetry inverse-times-identity]
+                  @left-factors-agree |
+                    op(inverse(g), power(a, k)) = op(inverse(g), E)
+                    [using chain cancelled-right inverse-as-product]
+                  @conclusion-a-kills |
+                    power(a, k) = E
+                    [using specialize group.cancelLeft(inverse(g), power(a, k), E) left-factors-agree]
+                }
+              @given-a-kills |
+                assume power(a, k) = E {
+                  @a-kills |
+                    power(a, k) = E
+                    [by hypothesis given-a-kills]
+                  @conjugate-of-identity |
+                    power(op(op(inverse(g), a), g), k) = op(op(inverse(g), E), g)
+                    [by rewrite a-kills conjugate-power]
+                  @conjugate-collapses |
+                    power(op(op(inverse(g), a), g), k) = op(inverse(g), g)
+                    [by rewrite inverse-times-identity conjugate-of-identity]
+                  @conclusion-conjugate-kills |
+                    power(op(op(inverse(g), a), g), k) = E
+                    [using chain conjugate-collapses inverse-times-g]
+                }
+              @forward |
+                power(op(op(inverse(g), a), g), k) = E -> power(a, k) = E
+                [by implies_intro given-conjugate-kills]
+              @backward |
+                power(a, k) = E -> power(op(op(inverse(g), a), g), k) = E
+                [by implies_intro given-a-kills]
+              @conclusion-iff |
+                power(op(op(inverse(g), a), g), k) = E iff power(a, k) = E
+                [by iff_intro forward backward]
+            }
+          @discharge-k |
+            forall k: Int; power(op(op(inverse(g), a), g), k) = E iff power(a, k) = E
+            [by forall_intro generalize-k]
+        }
+      @discharge-a |
+        forall a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = E iff power(a, k) = E
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall g, a: Grp; forall k: Int; power(op(op(inverse(g), a), g), k) = E iff power(a, k) = E
+    [by forall_intro generalize-g]
+qed
+
+// EXERCISE 23(b): |a| = |g⁻¹ a g|. The conjugate is killed by n (since a is) and by no
+// smaller positive exponent (that would kill a too).
+theorem conjugateHasSameOrder: forall g, a: Grp; forall n: Int; hasOrder(a, n) -> hasOrder(op(op(inverse(g), a), g), n)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-a |
+        fix a: Grp {
+          @generalize-n |
+            fix n: Int {
+              @given-order |
+                assume hasOrder(a, n) {
+                  @order-facts |
+                    less_than(ZERO, n) and power(a, n) = E and (forall m: Int; less_than(ZERO, m) -> less_than(m, n) -> power(a, m) != E)
+                    [by hypothesis given-order]
+                  @n-positive |
+                    less_than(ZERO, n)
+                    [using tautology order-facts]
+                  @a-kills |
+                    power(a, n) = E
+                    [using tautology order-facts]
+                  @a-minimal |
+                    forall m: Int; less_than(ZERO, m) -> less_than(m, n) -> power(a, m) != E
+                    [using tautology order-facts]
+                  @conjugate-kills-iff |
+                    power(op(op(inverse(g), a), g), n) = E iff power(a, n) = E
+                    [using specialize conjugatePowerIdentityIff(g, a, n)]
+                  @conjugate-kills |
+                    power(op(op(inverse(g), a), g), n) = E
+                    [using tautology conjugate-kills-iff a-kills]
+                  @generalize-m |
+                    fix m: Int {
+                      @given-m-positive |
+                        assume less_than(ZERO, m) {
+                          @given-m-less |
+                            assume less_than(m, n) {
+                              @m-positive |
+                                less_than(ZERO, m)
+                                [by hypothesis given-m-positive]
+                              @m-less-n |
+                                less_than(m, n)
+                                [by hypothesis given-m-less]
+                              @a-m-nonzero |
+                                power(a, m) != E
+                                [using specialize a-minimal(m) m-positive m-less-n]
+                              @conjugate-m-iff |
+                                power(op(op(inverse(g), a), g), m) = E iff power(a, m) = E
+                                [using specialize conjugatePowerIdentityIff(g, a, m)]
+                              @conjugate-m-nonzero |
+                                power(op(op(inverse(g), a), g), m) != E
+                                [using tautology conjugate-m-iff a-m-nonzero]
+                            }
+                          @m-less-implies |
+                            less_than(m, n) -> power(op(op(inverse(g), a), g), m) != E
+                            [by implies_intro given-m-less]
+                        }
+                      @m-positive-implies |
+                        less_than(ZERO, m) -> less_than(m, n) -> power(op(op(inverse(g), a), g), m) != E
+                        [by implies_intro given-m-positive]
+                    }
+                  @conjugate-minimal |
+                    forall m: Int; less_than(ZERO, m) -> less_than(m, n) -> power(op(op(inverse(g), a), g), m) != E
+                    [by forall_intro generalize-m]
+                  @conclusion-has-order |
+                    hasOrder(op(op(inverse(g), a), g), n)
+                    [using tautology n-positive conjugate-kills conjugate-minimal]
+                }
+              @order-implies |
+                hasOrder(a, n) -> hasOrder(op(op(inverse(g), a), g), n)
+                [by implies_intro given-order]
+            }
+          @discharge-n |
+            forall n: Int; hasOrder(a, n) -> hasOrder(op(op(inverse(g), a), g), n)
+            [by forall_intro generalize-n]
+        }
+      @discharge-a |
+        forall a: Grp; forall n: Int; hasOrder(a, n) -> hasOrder(op(op(inverse(g), a), g), n)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall g, a: Grp; forall n: Int; hasOrder(a, n) -> hasOrder(op(op(inverse(g), a), g), n)
+    [by forall_intro generalize-g]
+qed
+
+// EXERCISE 23(c): |ab| = |ba|, since ba = a⁻¹(ab)a is a conjugate of ab.
+theorem productsHaveSameOrder: forall a, b: Grp; forall n: Int; hasOrder(op(a, b), n) -> hasOrder(op(b, a), n)
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-n |
+            fix n: Int {
+              @given-order |
+                assume hasOrder(op(a, b), n) {
+                  @product-order |
+                    hasOrder(op(a, b), n)
+                    [by hypothesis given-order]
+                  @conjugate-order |
+                    hasOrder(op(op(inverse(a), op(a, b)), a), n)
+                    [using specialize conjugateHasSameOrder(a, op(a, b), n) product-order]
+                  @regrouped |
+                    op(op(inverse(a), op(a, b)), a) = op(inverse(a), op(a, op(b, a)))
+                    [using assoc(group_power.opAssoc)]
+                  @a-cancels |
+                    op(inverse(a), op(a, op(b, a))) = op(b, a)
+                    [using specialize cancelsInverseInside(a, op(b, a))]
+                  @conjugate-is-reversed-product |
+                    op(op(inverse(a), op(a, b)), a) = op(b, a)
+                    [using chain regrouped a-cancels]
+                  @conclusion-reversed-order |
+                    hasOrder(op(b, a), n)
+                    [by rewrite conjugate-is-reversed-product conjugate-order]
+                }
+              @order-implies |
+                hasOrder(op(a, b), n) -> hasOrder(op(b, a), n)
+                [by implies_intro given-order]
+            }
+          @discharge-n |
+            forall n: Int; hasOrder(op(a, b), n) -> hasOrder(op(b, a), n)
+            [by forall_intro generalize-n]
+        }
+      @discharge-b |
+        forall b: Grp; forall n: Int; hasOrder(op(a, b), n) -> hasOrder(op(b, a), n)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; forall n: Int; hasOrder(op(a, b), n) -> hasOrder(op(b, a), n)
+    [by forall_intro generalize-a]
+qed
+
+// -- elements of finite order (EXERCISE 31: the torsion subgroup) ------------------------
+// g has FINITE order when some positive exponent kills it. The identity does; inverses
+// and (in an abelian group) products of such elements do — so in an abelian group the
+// elements of finite order form a subgroup.
+define hasFiniteOrder(g) = exists n: Int; less_than(ZERO, n) and power(g, n) = E
+
+// e has finite order: e¹ = e.
+theorem identityHasFiniteOrder: hasFiniteOrder(E)
+proof
+  @one-positive |
+    less_than(ZERO, ONE)
+    [using import(int_divides) zeroLessThanOne]
+  @identity-power |
+    power(E, ONE) = E
+    [using specialize group_power.powerOfIdentity(ONE)]
+  @one-kills-identity |
+    less_than(ZERO, ONE) and power(E, ONE) = E
+    [by and_intro one-positive identity-power]
+  @conclusion |
+    hasFiniteOrder(E)
+    [by exists_intro(ONE) one-kills-identity]
+qed
+
+// an exponent killing g kills g⁻¹.
+theorem inverseHasFiniteOrder: forall g: Grp; hasFiniteOrder(g) -> hasFiniteOrder(inverse(g))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @given-finite |
+        assume hasFiniteOrder(g) {
+          @killer-exists |
+            exists n: Int; less_than(ZERO, n) and power(g, n) = E
+            [by hypothesis given-finite]
+          @with-killer-n |
+            unpack n: Int from killer-exists {
+              @killer-facts |
+                less_than(ZERO, n) and power(g, n) = E
+                [by hypothesis with-killer-n]
+              @n-positive |
+                less_than(ZERO, n)
+                [by and_elim_left killer-facts]
+              @g-kills |
+                power(g, n) = E
+                [by and_elim_right killer-facts]
+              @inverse-kills-iff |
+                power(inverse(g), n) = E iff power(g, n) = E
+                [using specialize inversePowerIdentityIff(g, n)]
+              @inverse-kills |
+                power(inverse(g), n) = E
+                [using tautology inverse-kills-iff g-kills]
+              @n-kills-inverse |
+                less_than(ZERO, n) and power(inverse(g), n) = E
+                [by and_intro n-positive inverse-kills]
+              @conclusion-inverse-finite |
+                hasFiniteOrder(inverse(g))
+                [by exists_intro(n) n-kills-inverse]
+            }
+          @conclusion-with-killer |
+            hasFiniteOrder(inverse(g))
+            [by exists_elim with-killer-n]
+        }
+      @finite-implies |
+        hasFiniteOrder(g) -> hasFiniteOrder(inverse(g))
+        [by implies_intro given-finite]
+    }
+  @conclusion |
+    forall g: Grp; hasFiniteOrder(g) -> hasFiniteOrder(inverse(g))
+    [by forall_intro generalize-g]
+qed
+
+// ABELIAN: if m kills g and n kills h then mn kills gh, since (gh)^(mn) = g^(mn) h^(mn) =
+// (g^m)^n (h^n)^m = e. (The product law for powers is where commutativity enters.)
+theorem productHasFiniteOrderAbelian: forall g, h: Grp; hasFiniteOrder(g) -> hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-h |
+        fix h: Grp {
+          @given-g-finite |
+            assume hasFiniteOrder(g) {
+              @given-h-finite |
+                assume hasFiniteOrder(h) {
+                  @g-killer-exists |
+                    exists n: Int; less_than(ZERO, n) and power(g, n) = E
+                    [by hypothesis given-g-finite]
+                  @h-killer-exists |
+                    exists n: Int; less_than(ZERO, n) and power(h, n) = E
+                    [by hypothesis given-h-finite]
+                  @with-g-killer-m |
+                    unpack m: Int from g-killer-exists {
+                      @g-killer-facts |
+                        less_than(ZERO, m) and power(g, m) = E
+                        [by hypothesis with-g-killer-m]
+                      @with-h-killer-n |
+                        unpack n: Int from h-killer-exists {
+                          @h-killer-facts |
+                            less_than(ZERO, n) and power(h, n) = E
+                            [by hypothesis with-h-killer-n]
+                          @m-positive |
+                            less_than(ZERO, m)
+                            [by and_elim_left g-killer-facts]
+                          @g-kills |
+                            power(g, m) = E
+                            [by and_elim_right g-killer-facts]
+                          @n-positive |
+                            less_than(ZERO, n)
+                            [by and_elim_left h-killer-facts]
+                          @h-kills |
+                            power(h, n) = E
+                            [by and_elim_right h-killer-facts]
+                          @product-positive |
+                            less_than(ZERO, mul(m, n))
+                            [using specialize int_divides.productWithPositiveIsPositive(m, n) m-positive n-positive]
+                          // g^(mn) = (g^m)^n = e^n = e.
+                          @g-power-mul |
+                            power(power(g, m), n) = power(g, mul(m, n))
+                            [using specialize group_power.powerMul(g, m, n)]
+                          @g-power-of-identity |
+                            power(E, n) = E
+                            [using specialize group_power.powerOfIdentity(n)]
+                          @g-mn-as-identity-power |
+                            power(E, n) = power(g, mul(m, n))
+                            [by rewrite g-kills g-power-mul]
+                          @g-mn-flipped |
+                            power(g, mul(m, n)) = power(E, n)
+                            [by symmetry g-mn-as-identity-power]
+                          @g-mn-kills |
+                            power(g, mul(m, n)) = E
+                            [using chain g-mn-flipped g-power-of-identity]
+                          // h^(mn) = h^(nm) = (h^n)^m = e^m = e.
+                          @h-power-mul |
+                            power(power(h, n), m) = power(h, mul(n, m))
+                            [using specialize group_power.powerMul(h, n, m)]
+                          @h-power-of-identity |
+                            power(E, m) = E
+                            [using specialize group_power.powerOfIdentity(m)]
+                          @h-nm-as-identity-power |
+                            power(E, m) = power(h, mul(n, m))
+                            [by rewrite h-kills h-power-mul]
+                          @h-nm-flipped |
+                            power(h, mul(n, m)) = power(E, m)
+                            [by symmetry h-nm-as-identity-power]
+                          @h-nm-kills |
+                            power(h, mul(n, m)) = E
+                            [using chain h-nm-flipped h-power-of-identity]
+                          @exponents-commute |
+                            mul(n, m) = mul(m, n)
+                            [using specialize int_divides.mulIsCommutative(n, m)]
+                          @h-mn-kills |
+                            power(h, mul(m, n)) = E
+                            [by rewrite exponents-commute h-nm-kills]
+                          // (gh)^(mn) = g^(mn) h^(mn) = e e = e.
+                          @product-power-splits |
+                            power(op(g, h), mul(m, n)) = op(power(g, mul(m, n)), power(h, mul(m, n)))
+                            [using specialize group_power.powerProductAbelian(g, h, mul(m, n))]
+                          @product-power-left-killed |
+                            power(op(g, h), mul(m, n)) = op(E, power(h, mul(m, n)))
+                            [by rewrite g-mn-kills product-power-splits]
+                          @product-power-both-killed |
+                            power(op(g, h), mul(m, n)) = op(E, E)
+                            [by rewrite h-mn-kills product-power-left-killed]
+                          @identity-squared |
+                            op(E, E) = E
+                            [using specialize group_power.opIdentityLeft(E)]
+                          @product-mn-kills |
+                            power(op(g, h), mul(m, n)) = E
+                            [using chain product-power-both-killed identity-squared]
+                          @mn-kills-product |
+                            less_than(ZERO, mul(m, n)) and power(op(g, h), mul(m, n)) = E
+                            [by and_intro product-positive product-mn-kills]
+                          @conclusion-product-finite |
+                            hasFiniteOrder(op(g, h))
+                            [by exists_intro(mul(m, n)) mn-kills-product]
+                        }
+                      @conclusion-with-h-killer |
+                        hasFiniteOrder(op(g, h))
+                        [by exists_elim with-h-killer-n]
+                    }
+                  @conclusion-with-g-killer |
+                    hasFiniteOrder(op(g, h))
+                    [by exists_elim with-g-killer-m]
+                }
+              @h-finite-implies |
+                hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
+                [by implies_intro given-h-finite]
+            }
+          @g-finite-implies |
+            hasFiniteOrder(g) -> hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
+            [by implies_intro given-g-finite]
+        }
+      @discharge-h |
+        forall h: Grp; hasFiniteOrder(g) -> hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: Grp; hasFiniteOrder(g) -> hasFiniteOrder(h) -> hasFiniteOrder(op(g, h))
     [by forall_intro generalize-g]
 qed
