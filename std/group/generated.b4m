@@ -30,6 +30,7 @@ func gcd = int_divides.gcd
 pred less_than = int_divides.less_than
 define divides(d, n) = int_divides.divides(d, n)
 define hasOrder(g, n) = group_order.hasOrder(g, n)
+define at_most(a, b) = int_divides.at_most(a, b)
 
 // x ∈ ⟨g⟩ iff x is an integer power of g.
 define inGenerated(g, x) = exists k: Int; x = power(g, k)
@@ -754,4 +755,376 @@ proof
   @conclusion |
     (forall g: Grp; (forall x: Grp; inGenerated(g, x) -> x = E) or (forall x: Grp; inGenerated(g, x))) -> exists g: Grp; forall x: Grp; inGenerated(g, x)
     [by implies_intro given-no-proper-cyclic]
+qed
+
+// -- ABELIAN: coprime orders multiply ---------------------------------------------------------
+// |a| = m, |b| = n, gcd(m, n) = 1 ⟹ |ab| = mn. (ab)^(mn) = a^(mn) b^(mn) = e. If (ab)^k = e then
+// a^k = b^(−k) lies in ⟨a⟩ ∩ ⟨b⟩ = {e}, so m | k and n | k, hence mn | k (Euclid, from a Bézout
+// identity for n and m); a positive such k is at least mn. Commutativity enters through the
+// power-of-a-product law.
+theorem coprimeOrdersMultiplyAbelian: forall a, b: Grp; forall m, n: Int; hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-m |
+            fix m: Int {
+              @generalize-n |
+                fix n: Int {
+                  @given-a-order |
+                    assume hasOrder(a, m) {
+                      @given-b-order |
+                        assume hasOrder(b, n) {
+                          @given-coprime |
+                            assume gcd(m, n) = ONE {
+                              @a-order |
+                                hasOrder(a, m)
+                                [by hypothesis given-a-order]
+                              @b-order |
+                                hasOrder(b, n)
+                                [by hypothesis given-b-order]
+                              @gcd-is-one |
+                                gcd(m, n) = ONE
+                                [by hypothesis given-coprime]
+                              @a-order-facts |
+                                less_than(ZERO, m) and power(a, m) = E and (forall j: Int; less_than(ZERO, j) -> less_than(j, m) -> power(a, j) != E)
+                                [by hypothesis given-a-order]
+                              @b-order-facts |
+                                less_than(ZERO, n) and power(b, n) = E and (forall j: Int; less_than(ZERO, j) -> less_than(j, n) -> power(b, j) != E)
+                                [by hypothesis given-b-order]
+                              @m-positive |
+                                less_than(ZERO, m)
+                                [using tautology a-order-facts]
+                              @a-killed |
+                                power(a, m) = E
+                                [using tautology a-order-facts]
+                              @n-positive |
+                                less_than(ZERO, n)
+                                [using tautology b-order-facts]
+                              @b-killed |
+                                power(b, n) = E
+                                [using tautology b-order-facts]
+                              @product-positive |
+                                less_than(ZERO, mul(m, n))
+                                [using specialize int_divides.productWithPositiveIsPositive(m, n) m-positive n-positive]
+                              // mn kills ab.
+                              @a-power-mul |
+                                power(power(a, m), n) = power(a, mul(m, n))
+                                [using specialize group_power.powerMul(a, m, n)]
+                              @a-mn-as-identity-power |
+                                power(E, n) = power(a, mul(m, n))
+                                [by rewrite a-killed a-power-mul]
+                              @a-mn-flipped |
+                                power(a, mul(m, n)) = power(E, n)
+                                [by symmetry a-mn-as-identity-power]
+                              @identity-power-n |
+                                power(E, n) = E
+                                [using specialize group_power.powerOfIdentity(n)]
+                              @a-mn-killed |
+                                power(a, mul(m, n)) = E
+                                [using chain a-mn-flipped identity-power-n]
+                              @b-power-mul |
+                                power(power(b, n), m) = power(b, mul(n, m))
+                                [using specialize group_power.powerMul(b, n, m)]
+                              @b-nm-as-identity-power |
+                                power(E, m) = power(b, mul(n, m))
+                                [by rewrite b-killed b-power-mul]
+                              @b-nm-flipped |
+                                power(b, mul(n, m)) = power(E, m)
+                                [by symmetry b-nm-as-identity-power]
+                              @identity-power-m |
+                                power(E, m) = E
+                                [using specialize group_power.powerOfIdentity(m)]
+                              @b-nm-killed |
+                                power(b, mul(n, m)) = E
+                                [using chain b-nm-flipped identity-power-m]
+                              @exponents-commute |
+                                mul(n, m) = mul(m, n)
+                                [using specialize int_divides.mulIsCommutative(n, m)]
+                              @b-mn-killed |
+                                power(b, mul(m, n)) = E
+                                [by rewrite exponents-commute b-nm-killed]
+                              @product-mn-splits |
+                                power(op(a, b), mul(m, n)) = op(power(a, mul(m, n)), power(b, mul(m, n)))
+                                [using specialize group_power.powerProductAbelian(a, b, mul(m, n))]
+                              @product-mn-left-killed |
+                                power(op(a, b), mul(m, n)) = op(E, power(b, mul(m, n)))
+                                [by rewrite a-mn-killed product-mn-splits]
+                              @product-mn-both-killed |
+                                power(op(a, b), mul(m, n)) = op(E, E)
+                                [by rewrite b-mn-killed product-mn-left-killed]
+                              @identity-squared |
+                                op(E, E) = E
+                                [using specialize group_power.opIdentityLeft(E)]
+                              @product-killed |
+                                power(op(a, b), mul(m, n)) = E
+                                [using chain product-mn-both-killed identity-squared]
+                              // ⟨a⟩ ∩ ⟨b⟩ = {e}, and a Bézout identity for n and m.
+                              @intersection-trivial |
+                                forall x: Grp; inGenerated(a, x) -> inGenerated(b, x) -> x = E
+                                [using specialize coprimeOrdersGiveTrivialIntersection(a, b, m, n) a-order b-order gcd-is-one]
+                              @zero-not-below-itself |
+                                not less_than(ZERO, ZERO)
+                                [using specialize int_divides.lessThanIrreflexive(ZERO)]
+                              @given-m-zero |
+                                assume m = ZERO {
+                                  @m-zero |
+                                    m = ZERO
+                                    [by hypothesis given-m-zero]
+                                  @zero-below-itself-m |
+                                    less_than(ZERO, ZERO)
+                                    [by rewrite m-zero m-positive]
+                                }
+                              @m-zero-implies |
+                                m = ZERO -> less_than(ZERO, ZERO)
+                                [by implies_intro given-m-zero]
+                              @m-nonzero |
+                                m != ZERO
+                                [using tautology m-zero-implies zero-not-below-itself]
+                              @given-n-zero |
+                                assume n = ZERO {
+                                  @n-zero |
+                                    n = ZERO
+                                    [by hypothesis given-n-zero]
+                                  @zero-below-itself-n |
+                                    less_than(ZERO, ZERO)
+                                    [by rewrite n-zero n-positive]
+                                }
+                              @n-zero-implies |
+                                n = ZERO -> less_than(ZERO, ZERO)
+                                [by implies_intro given-n-zero]
+                              @n-nonzero |
+                                n != ZERO
+                                [using tautology n-zero-implies zero-not-below-itself]
+                              @generalize-divisor |
+                                fix d: Int {
+                                  @given-d-divides-n |
+                                    assume divides(d, n) {
+                                      @given-d-divides-m |
+                                        assume divides(d, m) {
+                                          @d-divides-n |
+                                            divides(d, n)
+                                            [by hypothesis given-d-divides-n]
+                                          @d-divides-m |
+                                            divides(d, m)
+                                            [by hypothesis given-d-divides-m]
+                                          @d-divides-gcd |
+                                            divides(d, gcd(m, n))
+                                            [using specialize int_divides.gcdGreatest(d, m, n) d-divides-m d-divides-n]
+                                          @d-divides-one |
+                                            divides(d, ONE)
+                                            [by rewrite gcd-is-one d-divides-gcd]
+                                          @d-is-a-unit |
+                                            d = ONE or d = neg(ONE)
+                                            [using specialize int_divides.dividesOneImpliesUnit(d) d-divides-one]
+                                        }
+                                      @d-divides-m-implies |
+                                        divides(d, m) -> (d = ONE or d = neg(ONE))
+                                        [by implies_intro given-d-divides-m]
+                                    }
+                                  @d-divides-n-implies |
+                                    divides(d, n) -> divides(d, m) -> (d = ONE or d = neg(ONE))
+                                    [by implies_intro given-d-divides-n]
+                                }
+                              @common-divisors-are-units |
+                                forall d: Int; divides(d, n) -> divides(d, m) -> (d = ONE or d = neg(ONE))
+                                [by forall_intro generalize-divisor]
+                              @bezout-exists |
+                                exists r: Int; exists s: Int; add(mul(n, r), mul(m, s)) = ONE
+                                [using specialize int_divides.coprimeBezout(n, m) n-nonzero m-nonzero common-divisors-are-units]
+                              // minimality: a positive k < mn cannot kill ab.
+                              @generalize-k |
+                                fix k: Int {
+                                  @given-k-positive |
+                                    assume less_than(ZERO, k) {
+                                      @given-k-below |
+                                        assume less_than(k, mul(m, n)) {
+                                          @k-positive |
+                                            less_than(ZERO, k)
+                                            [by hypothesis given-k-positive]
+                                          @k-below-mn |
+                                            less_than(k, mul(m, n))
+                                            [by hypothesis given-k-below]
+                                          @mn-not-below-itself |
+                                            not less_than(mul(m, n), mul(m, n))
+                                            [using specialize int_divides.lessThanIrreflexive(mul(m, n))]
+                                          @given-k-kills |
+                                            assume power(op(a, b), k) = E {
+                                              @k-kills |
+                                                power(op(a, b), k) = E
+                                                [by hypothesis given-k-kills]
+                                              @product-k-splits |
+                                                power(op(a, b), k) = op(power(a, k), power(b, k))
+                                                [using specialize group_power.powerProductAbelian(a, b, k)]
+                                              @factors-flipped |
+                                                op(power(a, k), power(b, k)) = power(op(a, b), k)
+                                                [by symmetry product-k-splits]
+                                              @factors-give-identity |
+                                                op(power(a, k), power(b, k)) = E
+                                                [using chain factors-flipped k-kills]
+                                              // b^k = (a^k)⁻¹ = a^(−k) ∈ ⟨a⟩ ∩ ⟨b⟩, so b^k = e, then a^k = e.
+                                              @b-k-is-inverse-of-a-k |
+                                                power(b, k) = inverse(power(a, k))
+                                                [using specialize group_power.inverseUnique(power(a, k), power(b, k)) factors-give-identity]
+                                              @negated-power |
+                                                power(a, neg(k)) = inverse(power(a, k))
+                                                [using specialize group_power.powerNegInverse(a, k)]
+                                              @inverse-is-negated-power |
+                                                inverse(power(a, k)) = power(a, neg(k))
+                                                [by symmetry negated-power]
+                                              @b-k-is-a-power |
+                                                power(b, k) = power(a, neg(k))
+                                                [using chain b-k-is-inverse-of-a-k inverse-is-negated-power]
+                                              @b-k-in-a |
+                                                inGenerated(a, power(b, k))
+                                                [by exists_intro(neg(k)) b-k-is-a-power]
+                                              @b-k-reflexive |
+                                                power(b, k) = power(b, k)
+                                                [by reflexivity]
+                                              @b-k-in-b |
+                                                inGenerated(b, power(b, k))
+                                                [by exists_intro(k) b-k-reflexive]
+                                              @b-k-is-identity |
+                                                power(b, k) = E
+                                                [using specialize intersection-trivial(power(b, k)) b-k-in-a b-k-in-b]
+                                              @a-k-times-identity |
+                                                op(power(a, k), E) = E
+                                                [by rewrite b-k-is-identity factors-give-identity]
+                                              @a-k-times-identity-unfolds |
+                                                op(power(a, k), E) = power(a, k)
+                                                [using specialize group_power.opIdentityRight(power(a, k))]
+                                              @a-k-unfolded |
+                                                power(a, k) = op(power(a, k), E)
+                                                [by symmetry a-k-times-identity-unfolds]
+                                              @a-k-is-identity |
+                                                power(a, k) = E
+                                                [using chain a-k-unfolded a-k-times-identity]
+                                              // so m | k and n | k.
+                                              @a-killed-iff |
+                                                power(a, k) = E iff divides(m, k)
+                                                [using specialize group_order.killedIffOrderDivides(a, m, k) a-order]
+                                              @m-divides-k |
+                                                divides(m, k)
+                                                [using tautology a-killed-iff a-k-is-identity]
+                                              @b-killed-iff |
+                                                power(b, k) = E iff divides(n, k)
+                                                [using specialize group_order.killedIffOrderDivides(b, n, k) b-order]
+                                              @n-divides-k |
+                                                divides(n, k)
+                                                [using tautology b-killed-iff b-k-is-identity]
+                                              // hence mn | k, so mn ≤ k < mn.
+                                              @with-cofactor-u |
+                                                unpack u: Int from m-divides-k {
+                                                  @k-is-mu |
+                                                    k = mul(m, u)
+                                                    [by hypothesis with-cofactor-u]
+                                                  @n-divides-mu |
+                                                    divides(n, mul(m, u))
+                                                    [by rewrite k-is-mu n-divides-k]
+                                                  @with-bezout-r |
+                                                    unpack r: Int from bezout-exists {
+                                                      @s-exists |
+                                                        exists s: Int; add(mul(n, r), mul(m, s)) = ONE
+                                                        [by hypothesis with-bezout-r]
+                                                      @with-bezout-s |
+                                                        unpack s: Int from s-exists {
+                                                          @bezout-identity |
+                                                            add(mul(n, r), mul(m, s)) = ONE
+                                                            [by hypothesis with-bezout-s]
+                                                          @n-divides-u |
+                                                            divides(n, u)
+                                                            [using specialize int_divides.euclidFromBezout(n, m, u, r, s) bezout-identity n-divides-mu]
+                                                          @with-cofactor-t |
+                                                            unpack t: Int from n-divides-u {
+                                                              @u-is-nt |
+                                                                u = mul(n, t)
+                                                                [by hypothesis with-cofactor-t]
+                                                              @k-is-m-nt |
+                                                                k = mul(m, mul(n, t))
+                                                                [by rewrite u-is-nt k-is-mu]
+                                                              @regrouped |
+                                                                mul(mul(m, n), t) = mul(m, mul(n, t))
+                                                                [using specialize int_divides.mulIsAssociative(m, n, t)]
+                                                              @regrouped-flipped |
+                                                                mul(m, mul(n, t)) = mul(mul(m, n), t)
+                                                                [by symmetry regrouped]
+                                                              @k-is-mn-t |
+                                                                k = mul(mul(m, n), t)
+                                                                [using chain k-is-m-nt regrouped-flipped]
+                                                              @mn-divides-k |
+                                                                divides(mul(m, n), k)
+                                                                [by exists_intro(t) k-is-mn-t]
+                                                              @mn-at-most-k |
+                                                                at_most(mul(m, n), k)
+                                                                [using specialize int_divides.divisorAtMost(mul(m, n), k) product-positive k-positive mn-divides-k]
+                                                              @conclusion-mn-below-itself-inner |
+                                                                less_than(mul(m, n), mul(m, n))
+                                                                [using specialize int_divides.atMostThenLessThan(mul(m, n), k, mul(m, n)) mn-at-most-k k-below-mn]
+                                                            }
+                                                          @conclusion-with-t |
+                                                            less_than(mul(m, n), mul(m, n))
+                                                            [by exists_elim with-cofactor-t]
+                                                        }
+                                                      @conclusion-with-s |
+                                                        less_than(mul(m, n), mul(m, n))
+                                                        [by exists_elim with-bezout-s]
+                                                    }
+                                                  @conclusion-with-r |
+                                                    less_than(mul(m, n), mul(m, n))
+                                                    [by exists_elim with-bezout-r]
+                                                }
+                                              @mn-below-itself |
+                                                less_than(mul(m, n), mul(m, n))
+                                                [by exists_elim with-cofactor-u]
+                                            }
+                                          @k-kills-implies |
+                                            power(op(a, b), k) = E -> less_than(mul(m, n), mul(m, n))
+                                            [by implies_intro given-k-kills]
+                                          @conclusion-k-does-not-kill |
+                                            power(op(a, b), k) != E
+                                            [using tautology k-kills-implies mn-not-below-itself]
+                                        }
+                                      @k-below-implies |
+                                        less_than(k, mul(m, n)) -> power(op(a, b), k) != E
+                                        [by implies_intro given-k-below]
+                                    }
+                                  @k-positive-implies |
+                                    less_than(ZERO, k) -> less_than(k, mul(m, n)) -> power(op(a, b), k) != E
+                                    [by implies_intro given-k-positive]
+                                }
+                              @product-minimal |
+                                forall k: Int; less_than(ZERO, k) -> less_than(k, mul(m, n)) -> power(op(a, b), k) != E
+                                [by forall_intro generalize-k]
+                              @conclusion-product-order |
+                                hasOrder(op(a, b), mul(m, n))
+                                [using tautology product-positive product-killed product-minimal]
+                            }
+                          @coprime-implies |
+                            gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+                            [by implies_intro given-coprime]
+                        }
+                      @b-order-implies |
+                        hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+                        [by implies_intro given-b-order]
+                    }
+                  @a-order-implies |
+                    hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+                    [by implies_intro given-a-order]
+                }
+              @discharge-n |
+                forall n: Int; hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+                [by forall_intro generalize-n]
+            }
+          @discharge-m |
+            forall m, n: Int; hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+            [by forall_intro generalize-m]
+        }
+      @discharge-b |
+        forall b: Grp; forall m, n: Int; hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; forall m, n: Int; hasOrder(a, m) -> hasOrder(b, n) -> gcd(m, n) = ONE -> hasOrder(op(a, b), mul(m, n))
+    [by forall_intro generalize-a]
 qed

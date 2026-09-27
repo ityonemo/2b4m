@@ -1,0 +1,1429 @@
+// std/group/counting.b4m — an element whose order is the size of the group generates it.
+//
+// The bridge between ORDERS (integers: hasOrder(g, n)) and SIZES (naturals: a listing of n
+// distinct elements covering the group). Three steps: (1) a listing of distinct entries all
+// drawn from another listing is no longer than it (pigeonhole, by removing the matched
+// entry); (2) the powers g⁰, …, g^(n−1) of an element of order n are pairwise distinct;
+// (3) so in a group of n elements they are everything — g generates. Used for Judson §4.1,
+// exercise 34.
+
+import group <<< "std/group.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_order <<< "std/group/order.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import int_embedding <<< "std/integer/embedding.b4m"
+
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+func power = group_power.power
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+axiom induction = peano.induction
+axiom addZeroLeft = peano.addZeroLeft
+theorem addZeroRight = peano.addZeroRight
+theorem addSuccRight = peano.addSuccRight
+theorem zeroOrSucc = peano.zeroOrSucc
+axiom lessThanIntro = peano_order.lessThanIntro
+axiom lessThanElim = peano_order.lessThanElim
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem lessThanTransitive = peano_order.lessThanTransitive
+theorem succReflectsOrder = peano_order.succReflectsOrder
+theorem succPreservesOrder = peano_order.succPreservesOrder
+theorem trichotomy = peano_order.trichotomy
+theorem lessOrEqualIsGapExistential = peano_order.lessOrEqualIsGapExistential
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iadd = integer.add
+pred int_less_than = int_order.less_than
+pred nonneg = integer.nonneg
+define int_at_most(a, b) = int_order.less_or_equal(a, b)
+func toInt = int_embedding.toInt
+axiom toIntZero = int_embedding.toIntZero
+axiom toIntSucc = int_embedding.toIntSucc
+theorem toIntNonneg = int_embedding.toIntNonneg
+theorem toIntAdd = int_embedding.toIntAdd
+theorem toIntPreservesOrder = int_embedding.toIntPreservesOrder
+theorem intAddIsCommutative = int_order.addIsCommutative
+theorem intLessOrEqualIsGapExistential = int_order.lessOrEqualIsGapExistential
+theorem atMostThenLessThan = int_divides.atMostThenLessThan
+theorem succOfNonnegIsPositive = int_divides.succOfNonnegIsPositive
+theorem opIdentityRight = group.opIdentityRight
+theorem cancelLeft = group.cancelLeft
+theorem powerAdd = group_power.powerAdd
+
+sort Seq = group_sequence.Seq
+func at = group_sequence.at
+func productUpTo = group_sequence.productUpTo
+axiom seqSingleton = group_sequence.seqSingleton
+axiom seqConcat = group_sequence.seqConcat
+axiom seqRemove = group_sequence.seqRemove
+
+define hasOrder(g, n) = group_order.hasOrder(g, n)
+define listsWithoutRepetition(v, q) = forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v, i) = at(v, j) -> i = j
+define drawnFrom(v, m, w, n) = forall j: Nat; less_than(j, m) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+
+// -- (1) pigeonhole: distinct entries drawn from a listing of length n number at most n -------
+// Induction on the sub-listing's length m. For m + 1: the last entry at(v, m) is some at(w, i0);
+// delete index i0 from w (seqRemove) to get t of length n − 1 holding every other w-entry; the
+// first m entries of v avoid at(v, m) (no repetition), so they are drawn from t, and the
+// inductive hypothesis gives m ≤ n − 1.
+theorem sublistingIsNoLongerThanTheListing: forall m: Nat; forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)
+proof
+  // base case: 0 ≤ n.
+  @base-case-proof |
+    fix v: Seq {
+      @given-v-injective |
+        assume listsWithoutRepetition(v, ZERO) {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-w |
+                fix w: Seq {
+                  @given-drawn |
+                    assume drawnFrom(v, ZERO, w, n) {
+                      @n-zero-or-succ |
+                        n = ZERO or (exists k: Nat; n = succ(k))
+                        [using specialize zeroOrSucc(n)]
+                      @conclusion-zero-at-most |
+                        less_or_equal(ZERO, n)
+                        case n-zero-or-succ {
+                          @when-zero |
+                            assume n = ZERO {
+                              @n-zero |
+                                n = ZERO
+                                [by hypothesis when-zero]
+                              @zero-is-n |
+                                ZERO = n
+                                [by symmetry n-zero]
+                              @conclusion-when-zero |
+                                less_or_equal(ZERO, n)
+                                [using tautology zero-is-n]
+                            }
+                          @when-succ |
+                            assume exists k: Nat; n = succ(k) {
+                              @successor-exists |
+                                exists k: Nat; n = succ(k)
+                                [by hypothesis when-succ]
+                              @with-predecessor-k |
+                                unpack k: Nat from successor-exists {
+                                  @n-is-succ |
+                                    n = succ(k)
+                                    [by hypothesis with-predecessor-k]
+                                  @zero-plus-succ |
+                                    add(ZERO, succ(k)) = succ(k)
+                                    [using specialize addZeroLeft(succ(k))]
+                                  @zero-below-succ |
+                                    less_than(ZERO, succ(k))
+                                    [using specialize lessThanIntro(ZERO, k, succ(k)) zero-plus-succ]
+                                  @zero-below-n |
+                                    less_than(ZERO, n)
+                                    [by rewrite n-is-succ zero-below-succ]
+                                  @conclusion-when-succ-inner |
+                                    less_or_equal(ZERO, n)
+                                    [using tautology zero-below-n]
+                                }
+                              @conclusion-when-succ |
+                                less_or_equal(ZERO, n)
+                                [by exists_elim with-predecessor-k]
+                            }
+                        }
+                    }
+                  @drawn-implies |
+                    drawnFrom(v, ZERO, w, n) -> less_or_equal(ZERO, n)
+                    [by implies_intro given-drawn]
+                }
+              @discharge-w |
+                forall w: Seq; drawnFrom(v, ZERO, w, n) -> less_or_equal(ZERO, n)
+                [by forall_intro generalize-w]
+            }
+          @discharge-n |
+            forall n: Nat; forall w: Seq; drawnFrom(v, ZERO, w, n) -> less_or_equal(ZERO, n)
+            [by forall_intro generalize-n]
+        }
+      @injective-implies |
+        listsWithoutRepetition(v, ZERO) -> forall n: Nat; forall w: Seq; drawnFrom(v, ZERO, w, n) -> less_or_equal(ZERO, n)
+        [by implies_intro given-v-injective]
+    }
+  @base-case |
+    forall v: Seq; listsWithoutRepetition(v, ZERO) -> forall n: Nat; forall w: Seq; drawnFrom(v, ZERO, w, n) -> less_or_equal(ZERO, n)
+    [by forall_intro base-case-proof]
+
+  // inductive step.
+  @induction-step |
+    fix m: Nat {
+      @given-inductive-hypothesis |
+        assume forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n) {
+          @inductive-hypothesis |
+            forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-v |
+            fix v: Seq {
+              @given-v-injective |
+                assume listsWithoutRepetition(v, succ(m)) {
+                  @v-injective |
+                    forall i: Nat; forall j: Nat; less_than(i, succ(m)) -> less_than(j, succ(m)) -> at(v, i) = at(v, j) -> i = j
+                    [by hypothesis given-v-injective]
+                  @m-below-succ |
+                    less_than(m, succ(m))
+                    [using specialize lessThanSelf(m)]
+                  // the first m entries of v still do not repeat.
+                  @generalize-i-prefix |
+                    fix i: Nat {
+                      @generalize-j-prefix |
+                        fix j: Nat {
+                          @given-i-below |
+                            assume less_than(i, m) {
+                              @given-j-below |
+                                assume less_than(j, m) {
+                                  @i-below |
+                                    less_than(i, m)
+                                    [by hypothesis given-i-below]
+                                  @j-below |
+                                    less_than(j, m)
+                                    [by hypothesis given-j-below]
+                                  @i-below-succ |
+                                    less_than(i, succ(m))
+                                    [using specialize lessThanTransitive(i, m, succ(m)) i-below m-below-succ]
+                                  @j-below-succ |
+                                    less_than(j, succ(m))
+                                    [using specialize lessThanTransitive(j, m, succ(m)) j-below m-below-succ]
+                                  @conclusion-prefix-injective |
+                                    at(v, i) = at(v, j) -> i = j
+                                    [using specialize v-injective(i, j) i-below-succ j-below-succ]
+                                }
+                              @j-below-implies |
+                                less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                                [by implies_intro given-j-below]
+                            }
+                          @i-below-implies |
+                            less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                            [by implies_intro given-i-below]
+                        }
+                      @discharge-j-prefix |
+                        forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                        [by forall_intro generalize-j-prefix]
+                    }
+                  @prefix-injective |
+                    listsWithoutRepetition(v, m)
+                    [by forall_intro generalize-i-prefix]
+                  @prefix-bound |
+                    forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)
+                    [using specialize inductive-hypothesis(v) prefix-injective]
+                  @generalize-n |
+                    fix n: Nat {
+                      @generalize-w |
+                        fix w: Seq {
+                          @given-drawn |
+                            assume drawnFrom(v, succ(m), w, n) {
+                              @drawn |
+                                forall j: Nat; less_than(j, succ(m)) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+                                [by hypothesis given-drawn]
+                              // the last entry of v is some at(w, i0), so n is a successor.
+                              @last-entry-drawn |
+                                exists i: Nat; less_than(i, n) and at(v, m) = at(w, i)
+                                [using specialize drawn(m) m-below-succ]
+                              @with-match-i0 |
+                                unpack i0: Nat from last-entry-drawn {
+                                  @match-facts |
+                                    less_than(i0, n) and at(v, m) = at(w, i0)
+                                    [by hypothesis with-match-i0]
+                                  @i0-below-n |
+                                    less_than(i0, n)
+                                    [by and_elim_left match-facts]
+                                  @last-is-w-at-i0 |
+                                    at(v, m) = at(w, i0)
+                                    [by and_elim_right match-facts]
+                                  @n-zero-or-succ |
+                                    n = ZERO or (exists k: Nat; n = succ(k))
+                                    [using specialize zeroOrSucc(n)]
+                                  @conclusion-bound |
+                                    less_or_equal(succ(m), n)
+                                    case n-zero-or-succ {
+                                      @when-n-zero |
+                                        assume n = ZERO {
+                                          @n-zero |
+                                            n = ZERO
+                                            [by hypothesis when-n-zero]
+                                          @i0-below-zero |
+                                            less_than(i0, ZERO)
+                                            [by rewrite n-zero i0-below-n]
+                                          @nothing-below-zero |
+                                            not less_than(i0, ZERO)
+                                            [using specialize notLessThanZero(i0)]
+                                          @conclusion-absurd |
+                                            less_or_equal(succ(m), n)
+                                            [by absurd i0-below-zero nothing-below-zero]
+                                        }
+                                      @when-n-succ |
+                                        assume exists k: Nat; n = succ(k) {
+                                          @predecessor-exists |
+                                            exists k: Nat; n = succ(k)
+                                            [by hypothesis when-n-succ]
+                                          @with-predecessor-p |
+                                            unpack p: Nat from predecessor-exists {
+                                              @n-is-succ-p |
+                                                n = succ(p)
+                                                [by hypothesis with-predecessor-p]
+                                              @i0-below-succ-p |
+                                                less_than(i0, succ(p))
+                                                [by rewrite n-is-succ-p i0-below-n]
+                                              // delete index i0 from w.
+                                              @removal-exists |
+                                                exists t: Seq; op(productUpTo(t, p), at(w, i0)) = productUpTo(w, succ(p)) and (forall i: Nat; less_than(i, i0) -> at(t, i) = at(w, i)) and (forall i: Nat; less_or_equal(i0, i) -> less_than(i, p) -> at(t, i) = at(w, succ(i)))
+                                                [using specialize seqRemove(w, p, i0) i0-below-succ-p]
+                                              @with-removal-t |
+                                                unpack t: Seq from removal-exists {
+                                                  @removal-facts |
+                                                    op(productUpTo(t, p), at(w, i0)) = productUpTo(w, succ(p)) and (forall i: Nat; less_than(i, i0) -> at(t, i) = at(w, i)) and (forall i: Nat; less_or_equal(i0, i) -> less_than(i, p) -> at(t, i) = at(w, succ(i)))
+                                                    [by hypothesis with-removal-t]
+                                                  @below-i0-kept |
+                                                    forall i: Nat; less_than(i, i0) -> at(t, i) = at(w, i)
+                                                    [using tautology removal-facts]
+                                                  @above-i0-shifted |
+                                                    forall i: Nat; less_or_equal(i0, i) -> less_than(i, p) -> at(t, i) = at(w, succ(i))
+                                                    [using tautology removal-facts]
+                                                  // the first m entries of v are drawn from t (they avoid at(w, i0)).
+                                                  @generalize-j |
+                                                    fix j: Nat {
+                                                      @given-j-below-m |
+                                                        assume less_than(j, m) {
+                                                          @j-below-m |
+                                                            less_than(j, m)
+                                                            [by hypothesis given-j-below-m]
+                                                          @j-below-succ-m |
+                                                            less_than(j, succ(m))
+                                                            [using specialize lessThanTransitive(j, m, succ(m)) j-below-m m-below-succ]
+                                                          @j-drawn |
+                                                            exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+                                                            [using specialize drawn(j) j-below-succ-m]
+                                                          @with-match-i |
+                                                            unpack i: Nat from j-drawn {
+                                                              @i-facts |
+                                                                less_than(i, n) and at(v, j) = at(w, i)
+                                                                [by hypothesis with-match-i]
+                                                              @i-below-n |
+                                                                less_than(i, n)
+                                                                [by and_elim_left i-facts]
+                                                              @v-j-is-w-i |
+                                                                at(v, j) = at(w, i)
+                                                                [by and_elim_right i-facts]
+                                                              @i-below-succ-p |
+                                                                less_than(i, succ(p))
+                                                                [by rewrite n-is-succ-p i-below-n]
+                                                              @i0-at-most-p |
+                                                                less_than(i0, p) or i0 = p
+                                                                [using specialize lessThanSuccSplit(i0, p) i0-below-succ-p]
+                                                              // i ≠ i0, else at(v, j) = at(v, m) forces j = m.
+                                                              @given-i-is-i0 |
+                                                                assume i = i0 {
+                                                                  @i-is-i0 |
+                                                                    i = i0
+                                                                    [by hypothesis given-i-is-i0]
+                                                                  @v-j-is-w-i0 |
+                                                                    at(v, j) = at(w, i0)
+                                                                    [by rewrite i-is-i0 v-j-is-w-i]
+                                                                  @w-i0-is-v-m |
+                                                                    at(w, i0) = at(v, m)
+                                                                    [by symmetry last-is-w-at-i0]
+                                                                  @v-j-is-v-m |
+                                                                    at(v, j) = at(v, m)
+                                                                    [using chain v-j-is-w-i0 w-i0-is-v-m]
+                                                                  @j-is-m |
+                                                                    j = m
+                                                                    [using specialize v-injective(j, m) j-below-succ-m m-below-succ v-j-is-v-m]
+                                                                  @j-below-itself |
+                                                                    less_than(j, j)
+                                                                    [by rewrite j-is-m j-below-m]
+                                                                  @j-not-below-itself |
+                                                                    not less_than(j, j)
+                                                                    [using specialize lessThanIrreflexive(j)]
+                                                                  @conclusion-i-is-i0-absurd |
+                                                                    exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                    [by absurd j-below-itself j-not-below-itself]
+                                                                }
+                                                              @i-is-i0-implies |
+                                                                i = i0 -> exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                [by implies_intro given-i-is-i0]
+                                                              @i-versus-i0 |
+                                                                less_than(i, i0) or i = i0 or less_than(i0, i)
+                                                                [using specialize trichotomy(i, i0)]
+                                                              @conclusion-j-drawn-from-t |
+                                                                exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                case i-versus-i0 {
+                                                                  @when-i-below-i0 |
+                                                                    assume less_than(i, i0) {
+                                                                      @i-below-i0 |
+                                                                        less_than(i, i0)
+                                                                        [by hypothesis when-i-below-i0]
+                                                                      @t-i-is-w-i |
+                                                                        at(t, i) = at(w, i)
+                                                                        [using specialize below-i0-kept(i) i-below-i0]
+                                                                      @w-i-is-t-i |
+                                                                        at(w, i) = at(t, i)
+                                                                        [by symmetry t-i-is-w-i]
+                                                                      @v-j-is-t-i |
+                                                                        at(v, j) = at(t, i)
+                                                                        [using chain v-j-is-w-i w-i-is-t-i]
+                                                                      @i-below-p |
+                                                                        less_than(i, p)
+                                                                        case i0-at-most-p {
+                                                                          @when-i0-below-p |
+                                                                            assume less_than(i0, p) {
+                                                                              @i0-below-p |
+                                                                                less_than(i0, p)
+                                                                                [by hypothesis when-i0-below-p]
+                                                                              @conclusion-i-below-p-transitive |
+                                                                                less_than(i, p)
+                                                                                [using specialize lessThanTransitive(i, i0, p) i-below-i0 i0-below-p]
+                                                                            }
+                                                                          @when-i0-is-p |
+                                                                            assume i0 = p {
+                                                                              @i0-is-p |
+                                                                                i0 = p
+                                                                                [by hypothesis when-i0-is-p]
+                                                                              @conclusion-i-below-p-directly |
+                                                                                less_than(i, p)
+                                                                                [by rewrite i0-is-p i-below-i0]
+                                                                            }
+                                                                        }
+                                                                      @i-witnesses |
+                                                                        less_than(i, p) and at(v, j) = at(t, i)
+                                                                        [by and_intro i-below-p v-j-is-t-i]
+                                                                      @conclusion-when-i-below-i0 |
+                                                                        exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                        [by exists_intro(i) i-witnesses]
+                                                                    }
+                                                                  @when-i-is-i0 |
+                                                                    assume i = i0 {
+                                                                      @i-is-i0-again |
+                                                                        i = i0
+                                                                        [by hypothesis when-i-is-i0]
+                                                                      @conclusion-when-i-is-i0 |
+                                                                        exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                        [using specialize i-is-i0-implies i-is-i0-again]
+                                                                    }
+                                                                  @when-i0-below-i |
+                                                                    assume less_than(i0, i) {
+                                                                      @i0-below-i |
+                                                                        less_than(i0, i)
+                                                                        [by hypothesis when-i0-below-i]
+                                                                      @gap-exists |
+                                                                        exists d: Nat; add(i0, succ(d)) = i
+                                                                        [using specialize lessThanElim(i0, i) i0-below-i]
+                                                                      @with-gap-d |
+                                                                        unpack d: Nat from gap-exists {
+                                                                          @gap |
+                                                                            add(i0, succ(d)) = i
+                                                                            [by hypothesis with-gap-d]
+                                                                          @gap-unfolds |
+                                                                            add(i0, succ(d)) = succ(add(i0, d))
+                                                                            [using specialize addSuccRight(i0, d)]
+                                                                          @i-is-gap |
+                                                                            i = add(i0, succ(d))
+                                                                            [by symmetry gap]
+                                                                          @i-is-succ |
+                                                                            i = succ(add(i0, d))
+                                                                            [using chain i-is-gap gap-unfolds]
+                                                                          @gap-witnesses |
+                                                                            exists d2: Nat; add(i0, d2) = add(i0, d)
+                                                                            [by exists_intro(d) gap-reflexive]
+                                                                          @gap-reflexive |
+                                                                            add(i0, d) = add(i0, d)
+                                                                            [by reflexivity]
+                                                                          @gap-iff |
+                                                                            less_or_equal(i0, add(i0, d)) iff (exists d2: Nat; add(i0, d2) = add(i0, d))
+                                                                            [using specialize lessOrEqualIsGapExistential(i0, add(i0, d))]
+                                                                          @i0-at-most-i-pred |
+                                                                            less_or_equal(i0, add(i0, d))
+                                                                            [using tautology gap-iff gap-witnesses]
+                                                                          @succ-i-pred-below-succ-p |
+                                                                            less_than(succ(add(i0, d)), succ(p))
+                                                                            [by rewrite i-is-succ i-below-succ-p]
+                                                                          @i-pred-below-p |
+                                                                            less_than(add(i0, d), p)
+                                                                            [using specialize succReflectsOrder(add(i0, d), p) succ-i-pred-below-succ-p]
+                                                                          @t-i-pred-is-w-i |
+                                                                            at(t, add(i0, d)) = at(w, succ(add(i0, d)))
+                                                                            [using specialize above-i0-shifted(add(i0, d)) i0-at-most-i-pred i-pred-below-p]
+                                                                          @w-i-is-w-succ-pred |
+                                                                            at(w, i) = at(w, succ(add(i0, d)))
+                                                                            [by rewrite i-is-succ w-i-reflexive]
+                                                                          @w-i-reflexive |
+                                                                            at(w, i) = at(w, i)
+                                                                            [by reflexivity]
+                                                                          @w-succ-pred-is-t-pred |
+                                                                            at(w, succ(add(i0, d))) = at(t, add(i0, d))
+                                                                            [by symmetry t-i-pred-is-w-i]
+                                                                          @v-j-is-t-pred |
+                                                                            at(v, j) = at(t, add(i0, d))
+                                                                            [using chain v-j-is-w-i w-i-is-w-succ-pred w-succ-pred-is-t-pred]
+                                                                          @pred-witnesses |
+                                                                            less_than(add(i0, d), p) and at(v, j) = at(t, add(i0, d))
+                                                                            [by and_intro i-pred-below-p v-j-is-t-pred]
+                                                                          @conclusion-when-i0-below-i-inner |
+                                                                            exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                            [by exists_intro(add(i0, d)) pred-witnesses]
+                                                                        }
+                                                                      @conclusion-when-i0-below-i |
+                                                                        exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                                        [by exists_elim with-gap-d]
+                                                                    }
+                                                                }
+                                                            }
+                                                          @conclusion-j-drawn |
+                                                            exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                            [by exists_elim with-match-i]
+                                                        }
+                                                      @j-below-m-implies |
+                                                        less_than(j, m) -> exists i2: Nat; less_than(i2, p) and at(v, j) = at(t, i2)
+                                                        [by implies_intro given-j-below-m]
+                                                    }
+                                                  @prefix-drawn-from-t |
+                                                    drawnFrom(v, m, t, p)
+                                                    [by forall_intro generalize-j]
+                                                  @m-at-most-p |
+                                                    less_or_equal(m, p)
+                                                    [using specialize prefix-bound(p, t) prefix-drawn-from-t]
+                                                  @m-below-or-equal-p |
+                                                    less_than(m, p) or m = p
+                                                    [using tautology m-at-most-p]
+                                                  @succ-m-at-most-succ-p |
+                                                    less_or_equal(succ(m), succ(p))
+                                                    case m-below-or-equal-p {
+                                                      @when-m-below-p |
+                                                        assume less_than(m, p) {
+                                                          @m-below-p |
+                                                            less_than(m, p)
+                                                            [by hypothesis when-m-below-p]
+                                                          @succ-m-below-succ-p |
+                                                            less_than(succ(m), succ(p))
+                                                            [using specialize succPreservesOrder(m, p) m-below-p]
+                                                          @conclusion-when-m-below-p |
+                                                            less_or_equal(succ(m), succ(p))
+                                                            [using tautology succ-m-below-succ-p]
+                                                        }
+                                                      @when-m-is-p |
+                                                        assume m = p {
+                                                          @m-is-p |
+                                                            m = p
+                                                            [by hypothesis when-m-is-p]
+                                                          @succ-m-is-succ-p |
+                                                            succ(m) = succ(p)
+                                                            [by rewrite m-is-p succ-m-reflexive]
+                                                          @succ-m-reflexive |
+                                                            succ(m) = succ(m)
+                                                            [by reflexivity]
+                                                          @conclusion-when-m-is-p |
+                                                            less_or_equal(succ(m), succ(p))
+                                                            [using tautology succ-m-is-succ-p]
+                                                        }
+                                                    }
+                                                  @conclusion-with-t |
+                                                    less_or_equal(succ(m), n)
+                                                    [by rewrite n-is-succ-p succ-m-at-most-succ-p]
+                                                }
+                                              @conclusion-with-removal |
+                                                less_or_equal(succ(m), n)
+                                                [by exists_elim with-removal-t]
+                                            }
+                                          @conclusion-when-n-succ |
+                                            less_or_equal(succ(m), n)
+                                            [by exists_elim with-predecessor-p]
+                                        }
+                                    }
+                                }
+                              @conclusion-with-match |
+                                less_or_equal(succ(m), n)
+                                [by exists_elim with-match-i0]
+                            }
+                          @drawn-implies |
+                            drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n)
+                            [by implies_intro given-drawn]
+                        }
+                      @discharge-w |
+                        forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n)
+                        [by forall_intro generalize-w]
+                    }
+                  @discharge-n |
+                    forall n: Nat; forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n)
+                    [by forall_intro generalize-n]
+                }
+              @injective-implies |
+                listsWithoutRepetition(v, succ(m)) -> forall n: Nat; forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n)
+                [by implies_intro given-v-injective]
+            }
+          @conclusion-step |
+            forall v: Seq; listsWithoutRepetition(v, succ(m)) -> forall n: Nat; forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n)
+            [by forall_intro generalize-v]
+        }
+      @induction-step-at-m |
+        (forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)) -> (forall v: Seq; listsWithoutRepetition(v, succ(m)) -> forall n: Nat; forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-m |
+    forall m: Nat; (forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)) -> (forall v: Seq; listsWithoutRepetition(v, succ(m)) -> forall n: Nat; forall w: Seq; drawnFrom(v, succ(m), w, n) -> less_or_equal(succ(m), n))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall m: Nat; forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)
+    [using instantiation induction((fun m: Nat => forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n))) base-case induction-step-for-all-m]
+qed
+
+// -- (2) the powers g⁰, …, g^(n−1) listed, and distinct below the order ----------------------
+
+// A sequence whose i-th entry is g^i for i below n: induction on n, appending g^n by
+// concatenating with a singleton.
+theorem powersAreListed: forall g: Grp; forall n: Nat; exists v: Seq; forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @some-sequence-exists |
+        exists s: Seq; at(s, ZERO) = E and productUpTo(s, succ(ZERO)) = E
+        [using specialize seqSingleton(E)]
+      @base-case-proof |
+        unpack s0: Seq from some-sequence-exists {
+          @vacuous |
+            fix i: Nat {
+              @nothing-below-zero |
+                not less_than(i, ZERO)
+                [using specialize notLessThanZero(i)]
+              @conclusion-vacuous-entry |
+                less_than(i, ZERO) -> at(s0, i) = power(g, toInt(i))
+                [using tautology nothing-below-zero]
+            }
+          @no-entries |
+            forall i: Nat; less_than(i, ZERO) -> at(s0, i) = power(g, toInt(i))
+            [by forall_intro vacuous]
+          @conclusion-base-witness |
+            exists v: Seq; forall i: Nat; less_than(i, ZERO) -> at(v, i) = power(g, toInt(i))
+            [by exists_intro(s0) no-entries]
+        }
+      @base-case |
+        exists v: Seq; forall i: Nat; less_than(i, ZERO) -> at(v, i) = power(g, toInt(i))
+        [by exists_elim base-case-proof]
+      @induction-step |
+        fix m: Nat {
+          @given-inductive-hypothesis |
+            assume exists v: Seq; forall i: Nat; less_than(i, m) -> at(v, i) = power(g, toInt(i)) {
+              @inductive-hypothesis |
+                exists v: Seq; forall i: Nat; less_than(i, m) -> at(v, i) = power(g, toInt(i))
+                [by hypothesis given-inductive-hypothesis]
+              @with-prefix-w |
+                unpack w: Seq from inductive-hypothesis {
+                  @prefix-entries |
+                    forall i: Nat; less_than(i, m) -> at(w, i) = power(g, toInt(i))
+                    [by hypothesis with-prefix-w]
+                  @singleton-exists |
+                    exists s: Seq; at(s, ZERO) = power(g, toInt(m)) and productUpTo(s, succ(ZERO)) = power(g, toInt(m))
+                    [using specialize seqSingleton(power(g, toInt(m)))]
+                  @with-singleton-s |
+                    unpack s: Seq from singleton-exists {
+                      @singleton-facts |
+                        at(s, ZERO) = power(g, toInt(m)) and productUpTo(s, succ(ZERO)) = power(g, toInt(m))
+                        [by hypothesis with-singleton-s]
+                      @singleton-head |
+                        at(s, ZERO) = power(g, toInt(m))
+                        [by and_elim_left singleton-facts]
+                      @concatenation-exists |
+                        exists u: Seq; (forall i: Nat; less_than(i, m) -> at(u, i) = at(w, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(m, i)) = at(s, i)) and productUpTo(u, add(m, succ(ZERO))) = op(productUpTo(w, m), productUpTo(s, succ(ZERO)))
+                        [using specialize seqConcat(w, s, m, succ(ZERO))]
+                      @with-concatenation-u |
+                        unpack u: Seq from concatenation-exists {
+                          @concatenation-facts |
+                            (forall i: Nat; less_than(i, m) -> at(u, i) = at(w, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(m, i)) = at(s, i)) and productUpTo(u, add(m, succ(ZERO))) = op(productUpTo(w, m), productUpTo(s, succ(ZERO)))
+                            [by hypothesis with-concatenation-u]
+                          @prefix-agrees |
+                            forall i: Nat; less_than(i, m) -> at(u, i) = at(w, i)
+                            [using tautology concatenation-facts]
+                          @block-agrees |
+                            forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(m, i)) = at(s, i)
+                            [using tautology concatenation-facts]
+                          @zero-below-one |
+                            less_than(ZERO, succ(ZERO))
+                            [using specialize lessThanSelf(ZERO)]
+                          @u-at-m-plus-zero |
+                            at(u, add(m, ZERO)) = at(s, ZERO)
+                            [using specialize block-agrees(ZERO) zero-below-one]
+                          @m-plus-zero-is-m |
+                            add(m, ZERO) = m
+                            [using specialize addZeroRight(m)]
+                          @u-at-m |
+                            at(u, m) = at(s, ZERO)
+                            [by rewrite m-plus-zero-is-m u-at-m-plus-zero]
+                          @last-entry-is-the-power |
+                            at(u, m) = power(g, toInt(m))
+                            [using chain u-at-m singleton-head]
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-in-range |
+                                assume less_than(i, succ(m)) {
+                                  @i-in-range |
+                                    less_than(i, succ(m))
+                                    [by hypothesis given-i-in-range]
+                                  @i-splits |
+                                    less_than(i, m) or i = m
+                                    [using specialize lessThanSuccSplit(i, m) i-in-range]
+                                  @conclusion-entry-i |
+                                    at(u, i) = power(g, toInt(i))
+                                    case i-splits {
+                                      @when-old |
+                                        assume less_than(i, m) {
+                                          @i-old |
+                                            less_than(i, m)
+                                            [by hypothesis when-old]
+                                          @entry-is-old-entry |
+                                            at(u, i) = at(w, i)
+                                            [using specialize prefix-agrees(i) i-old]
+                                          @old-entry-is-the-power |
+                                            at(w, i) = power(g, toInt(i))
+                                            [using specialize prefix-entries(i) i-old]
+                                          @conclusion-when-old |
+                                            at(u, i) = power(g, toInt(i))
+                                            [using chain entry-is-old-entry old-entry-is-the-power]
+                                        }
+                                      @when-new |
+                                        assume i = m {
+                                          @i-is-m |
+                                            i = m
+                                            [by hypothesis when-new]
+                                          @conclusion-when-new |
+                                            at(u, i) = power(g, toInt(i))
+                                            [by rewrite i-is-m last-entry-is-the-power]
+                                        }
+                                    }
+                                }
+                              @conclusion-entry-clause |
+                                less_than(i, succ(m)) -> at(u, i) = power(g, toInt(i))
+                                [by implies_intro given-i-in-range]
+                            }
+                          @all-entries |
+                            forall i: Nat; less_than(i, succ(m)) -> at(u, i) = power(g, toInt(i))
+                            [by forall_intro generalize-i]
+                          @conclusion-witness-u |
+                            exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i))
+                            [by exists_intro(u) all-entries]
+                        }
+                      @conclusion-with-u |
+                        exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i))
+                        [by exists_elim with-concatenation-u]
+                    }
+                  @conclusion-with-s |
+                    exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i))
+                    [by exists_elim with-singleton-s]
+                }
+              @conclusion-step |
+                exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i))
+                [by exists_elim with-prefix-w]
+            }
+          @induction-step-at-m |
+            (exists v: Seq; forall i: Nat; less_than(i, m) -> at(v, i) = power(g, toInt(i))) -> (exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-m |
+        forall m: Nat; (exists v: Seq; forall i: Nat; less_than(i, m) -> at(v, i) = power(g, toInt(i))) -> (exists v: Seq; forall i: Nat; less_than(i, succ(m)) -> at(v, i) = power(g, toInt(i)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; exists v: Seq; forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+        [using instantiation induction((fun m: Nat => exists v: Seq; forall i: Nat; less_than(i, m) -> at(v, i) = power(g, toInt(i)))) base-case induction-step-for-all-m]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Nat; exists v: Seq; forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+    [by forall_intro generalize-g]
+qed
+
+// For i < j < n and g of order n, g^i ≠ g^j: j = i + (d+1), so g^j = g^i · g^(d+1); equality
+// would cancel to g^(d+1) = e with 0 < d+1 ≤ j < n, against minimality.
+theorem smallerIndexGivesADifferentPower: forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Nat {
+          @given-order |
+            assume hasOrder(g, toInt(n)) {
+              @order-facts |
+                int_less_than(IZERO, toInt(n)) and power(g, toInt(n)) = E and (forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, toInt(n)) -> power(g, m) != E)
+                [by hypothesis given-order]
+              @minimal |
+                forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, toInt(n)) -> power(g, m) != E
+                [using tautology order-facts]
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @given-i-below-j |
+                        assume less_than(i, j) {
+                          @given-j-below-n |
+                            assume less_than(j, n) {
+                              @i-below-j |
+                                less_than(i, j)
+                                [by hypothesis given-i-below-j]
+                              @j-below-n |
+                                less_than(j, n)
+                                [by hypothesis given-j-below-n]
+                              @gap-exists |
+                                exists d: Nat; add(i, succ(d)) = j
+                                [using specialize lessThanElim(i, j) i-below-j]
+                              @with-gap-d |
+                                unpack d: Nat from gap-exists {
+                                  @gap |
+                                    add(i, succ(d)) = j
+                                    [by hypothesis with-gap-d]
+                                  @image-of-sum |
+                                    toInt(add(i, succ(d))) = iadd(toInt(i), toInt(succ(d)))
+                                    [using specialize toIntAdd(i, succ(d))]
+                                  @image-of-j |
+                                    toInt(j) = iadd(toInt(i), toInt(succ(d)))
+                                    [by rewrite gap image-of-sum]
+                                  // g^j = g^i · g^(d+1).
+                                  @powers-add |
+                                    op(power(g, toInt(i)), power(g, toInt(succ(d)))) = power(g, iadd(toInt(i), toInt(succ(d))))
+                                    [using specialize powerAdd(g, toInt(i), toInt(succ(d)))]
+                                  @j-power-splits |
+                                    op(power(g, toInt(i)), power(g, toInt(succ(d)))) = power(g, toInt(j))
+                                    [by rewrite image-of-j powers-add]
+                                  // 0 < d+1 < n as integers.
+                                  @d-image-nonneg |
+                                    nonneg(toInt(d))
+                                    [using specialize toIntNonneg(d)]
+                                  @succ-d-image |
+                                    toInt(succ(d)) = isucc(toInt(d))
+                                    [using specialize toIntSucc(d)]
+                                  @succ-d-image-positive-unfolded |
+                                    int_less_than(IZERO, isucc(toInt(d)))
+                                    [using specialize succOfNonnegIsPositive(toInt(d)) d-image-nonneg]
+                                  @succ-d-image-positive |
+                                    int_less_than(IZERO, toInt(succ(d)))
+                                    [by rewrite succ-d-image succ-d-image-positive-unfolded]
+                                  @i-image-nonneg |
+                                    nonneg(toInt(i))
+                                    [using specialize toIntNonneg(i)]
+                                  @sum-commutes |
+                                    iadd(toInt(i), toInt(succ(d))) = iadd(toInt(succ(d)), toInt(i))
+                                    [using specialize intAddIsCommutative(toInt(i), toInt(succ(d)))]
+                                  @image-of-j-commuted |
+                                    toInt(j) = iadd(toInt(succ(d)), toInt(i))
+                                    [using chain image-of-j sum-commutes]
+                                  @image-of-j-flipped |
+                                    iadd(toInt(succ(d)), toInt(i)) = toInt(j)
+                                    [by symmetry image-of-j-commuted]
+                                  @gap-witnessed |
+                                    nonneg(toInt(i)) and iadd(toInt(succ(d)), toInt(i)) = toInt(j)
+                                    [by and_intro i-image-nonneg image-of-j-flipped]
+                                  @gap-exists-int |
+                                    exists d2: Int; nonneg(d2) and iadd(toInt(succ(d)), d2) = toInt(j)
+                                    [by exists_intro(toInt(i)) gap-witnessed]
+                                  @gap-iff |
+                                    int_at_most(toInt(succ(d)), toInt(j)) iff (exists d2: Int; nonneg(d2) and iadd(toInt(succ(d)), d2) = toInt(j))
+                                    [using specialize intLessOrEqualIsGapExistential(toInt(succ(d)), toInt(j))]
+                                  @succ-d-at-most-j |
+                                    int_at_most(toInt(succ(d)), toInt(j))
+                                    [using tautology gap-iff gap-exists-int]
+                                  @j-image-below-n-image |
+                                    int_less_than(toInt(j), toInt(n))
+                                    [using specialize toIntPreservesOrder(j, n) j-below-n]
+                                  @succ-d-image-below-n-image |
+                                    int_less_than(toInt(succ(d)), toInt(n))
+                                    [using specialize atMostThenLessThan(toInt(succ(d)), toInt(j), toInt(n)) succ-d-at-most-j j-image-below-n-image]
+                                  @succ-d-power-nonidentity |
+                                    power(g, toInt(succ(d))) != E
+                                    [using specialize minimal(toInt(succ(d))) succ-d-image-positive succ-d-image-below-n-image]
+                                  // equal powers would cancel to g^(d+1) = e.
+                                  @given-powers-equal |
+                                    assume power(g, toInt(i)) = power(g, toInt(j)) {
+                                      @powers-equal |
+                                        power(g, toInt(i)) = power(g, toInt(j))
+                                        [by hypothesis given-powers-equal]
+                                      @i-power-times-identity |
+                                        op(power(g, toInt(i)), E) = power(g, toInt(i))
+                                        [using specialize opIdentityRight(power(g, toInt(i)))]
+                                      @j-power-is-i-power |
+                                        power(g, toInt(j)) = power(g, toInt(i))
+                                        [by symmetry powers-equal]
+                                      @i-power-is-i-power-times-identity |
+                                        power(g, toInt(i)) = op(power(g, toInt(i)), E)
+                                        [by symmetry i-power-times-identity]
+                                      @j-power-is-i-power-times-identity |
+                                        power(g, toInt(j)) = op(power(g, toInt(i)), E)
+                                        [using chain j-power-is-i-power i-power-is-i-power-times-identity]
+                                      @products-agree |
+                                        op(power(g, toInt(i)), power(g, toInt(succ(d)))) = op(power(g, toInt(i)), E)
+                                        [using chain j-power-splits j-power-is-i-power-times-identity]
+                                      @succ-d-power-identity |
+                                        power(g, toInt(succ(d))) = E
+                                        [using specialize cancelLeft(power(g, toInt(i)), power(g, toInt(succ(d))), E) products-agree]
+                                    }
+                                  @powers-equal-implies |
+                                    power(g, toInt(i)) = power(g, toInt(j)) -> power(g, toInt(succ(d))) = E
+                                    [by implies_intro given-powers-equal]
+                                  @conclusion-powers-differ |
+                                    power(g, toInt(i)) != power(g, toInt(j))
+                                    [using tautology powers-equal-implies succ-d-power-nonidentity]
+                                }
+                              @conclusion-with-gap |
+                                power(g, toInt(i)) != power(g, toInt(j))
+                                [by exists_elim with-gap-d]
+                            }
+                          @j-below-n-implies |
+                            less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+                            [by implies_intro given-j-below-n]
+                        }
+                      @i-below-j-implies |
+                        less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+                        [by implies_intro given-i-below-j]
+                    }
+                  @discharge-j |
+                    forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+                    [by forall_intro generalize-j]
+                }
+              @discharge-i |
+                forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+                [by forall_intro generalize-i]
+            }
+          @order-implies |
+            hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+            [by implies_intro given-order]
+        }
+      @discharge-n |
+        forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+    [by forall_intro generalize-g]
+qed
+
+// Below the order, equal powers have equal indices (trichotomy on the indices).
+theorem powersBelowTheOrderAreDistinct: forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Nat {
+          @given-order |
+            assume hasOrder(g, toInt(n)) {
+              @order |
+                hasOrder(g, toInt(n))
+                [by hypothesis given-order]
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @given-i-below-n |
+                        assume less_than(i, n) {
+                          @given-j-below-n |
+                            assume less_than(j, n) {
+                              @given-powers-equal |
+                                assume power(g, toInt(i)) = power(g, toInt(j)) {
+                                  @i-below-n |
+                                    less_than(i, n)
+                                    [by hypothesis given-i-below-n]
+                                  @j-below-n |
+                                    less_than(j, n)
+                                    [by hypothesis given-j-below-n]
+                                  @powers-equal |
+                                    power(g, toInt(i)) = power(g, toInt(j))
+                                    [by hypothesis given-powers-equal]
+                                  @powers-equal-flipped |
+                                    power(g, toInt(j)) = power(g, toInt(i))
+                                    [by symmetry powers-equal]
+                                  @i-versus-j |
+                                    less_than(i, j) or i = j or less_than(j, i)
+                                    [using specialize trichotomy(i, j)]
+                                  @conclusion-indices-equal |
+                                    i = j
+                                    case i-versus-j {
+                                      @when-i-below-j |
+                                        assume less_than(i, j) {
+                                          @i-below-j |
+                                            less_than(i, j)
+                                            [by hypothesis when-i-below-j]
+                                          @powers-differ |
+                                            power(g, toInt(i)) != power(g, toInt(j))
+                                            [using specialize smallerIndexGivesADifferentPower(g, n, i, j) order i-below-j j-below-n]
+                                          @conclusion-when-i-below-j |
+                                            i = j
+                                            [by absurd powers-equal powers-differ]
+                                        }
+                                      @when-equal |
+                                        assume i = j {
+                                          @conclusion-when-equal |
+                                            i = j
+                                            [by hypothesis when-equal]
+                                        }
+                                      @when-j-below-i |
+                                        assume less_than(j, i) {
+                                          @j-below-i |
+                                            less_than(j, i)
+                                            [by hypothesis when-j-below-i]
+                                          @powers-differ |
+                                            power(g, toInt(j)) != power(g, toInt(i))
+                                            [using specialize smallerIndexGivesADifferentPower(g, n, j, i) order j-below-i i-below-n]
+                                          @conclusion-when-j-below-i |
+                                            i = j
+                                            [by absurd powers-equal-flipped powers-differ]
+                                        }
+                                    }
+                                }
+                              @powers-equal-implies |
+                                power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                                [by implies_intro given-powers-equal]
+                            }
+                          @j-below-n-implies |
+                            less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                            [by implies_intro given-j-below-n]
+                        }
+                      @i-below-n-implies |
+                        less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                        [by implies_intro given-i-below-n]
+                    }
+                  @discharge-j |
+                    forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                    [by forall_intro generalize-j]
+                }
+              @discharge-i |
+                forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                [by forall_intro generalize-i]
+            }
+          @order-implies |
+            hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+            [by implies_intro given-order]
+        }
+      @discharge-n |
+        forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+    [by forall_intro generalize-g]
+qed
+
+// -- (3) an element whose order is the group's size generates ------------------------------
+// If y were no power of g, the n distinct powers g⁰, …, g^(n−1) together with y would be n+1
+// distinct elements drawn from the n-element listing of the group — against pigeonhole.
+theorem fullOrderGenerates: forall n: Nat; forall w: Seq; listsWithoutRepetition(w, n) -> (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-w |
+        fix w: Seq {
+          @given-w-injective |
+            assume listsWithoutRepetition(w, n) {
+              @given-w-covers |
+                assume forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y {
+                  @w-covers |
+                    forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y
+                    [by hypothesis given-w-covers]
+                  @generalize-g |
+                    fix g: Grp {
+                      @given-order |
+                        assume hasOrder(g, toInt(n)) {
+                          @order |
+                            hasOrder(g, toInt(n))
+                            [by hypothesis given-order]
+                          @powers-distinct |
+                            forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> power(g, toInt(i)) = power(g, toInt(j)) -> i = j
+                            [using specialize powersBelowTheOrderAreDistinct(g, n) order]
+                          @powers-listed |
+                            exists v: Seq; forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+                            [using specialize powersAreListed(g, n)]
+                          @n-below-succ |
+                            less_than(n, succ(n))
+                            [using specialize lessThanSelf(n)]
+                          @n-not-below-itself |
+                            not less_than(n, n)
+                            [using specialize lessThanIrreflexive(n)]
+                          // succ(n) ≤ n is impossible.
+                          @given-succ-n-at-most-n |
+                            assume less_or_equal(succ(n), n) {
+                              @succ-n-at-most-n |
+                                less_than(succ(n), n) or succ(n) = n
+                                [by hypothesis given-succ-n-at-most-n]
+                              @n-below-itself |
+                                less_than(n, n)
+                                case succ-n-at-most-n {
+                                  @when-below |
+                                    assume less_than(succ(n), n) {
+                                      @succ-n-below-n |
+                                        less_than(succ(n), n)
+                                        [by hypothesis when-below]
+                                      @conclusion-when-below |
+                                        less_than(n, n)
+                                        [using specialize lessThanTransitive(n, succ(n), n) n-below-succ succ-n-below-n]
+                                    }
+                                  @when-equal |
+                                    assume succ(n) = n {
+                                      @succ-n-is-n |
+                                        succ(n) = n
+                                        [by hypothesis when-equal]
+                                      @conclusion-when-equal |
+                                        less_than(n, n)
+                                        [by rewrite succ-n-is-n n-below-succ]
+                                    }
+                                }
+                            }
+                          @succ-n-at-most-n-implies |
+                            less_or_equal(succ(n), n) -> less_than(n, n)
+                            [by implies_intro given-succ-n-at-most-n]
+                          @succ-n-not-at-most-n |
+                            not less_or_equal(succ(n), n)
+                            [using tautology succ-n-at-most-n-implies n-not-below-itself]
+                          @generalize-y |
+                            fix y: Grp {
+                              @given-not-generated |
+                                assume not (exists k: Int; y = power(g, k)) {
+                                  @not-generated |
+                                    not (exists k: Int; y = power(g, k))
+                                    [by hypothesis given-not-generated]
+                                  @with-powers-v |
+                                    unpack v: Seq from powers-listed {
+                                      @v-entries |
+                                        forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+                                        [by hypothesis with-powers-v]
+                                      // y differs from every listed power.
+                                      @generalize-i-avoid |
+                                        fix i: Nat {
+                                          @given-i-below-n |
+                                            assume less_than(i, n) {
+                                              @i-below-n |
+                                                less_than(i, n)
+                                                [by hypothesis given-i-below-n]
+                                              @v-i-is-power |
+                                                at(v, i) = power(g, toInt(i))
+                                                [using specialize v-entries(i) i-below-n]
+                                              @given-y-is-v-i |
+                                                assume y = at(v, i) {
+                                                  @y-is-v-i |
+                                                    y = at(v, i)
+                                                    [by hypothesis given-y-is-v-i]
+                                                  @y-is-power |
+                                                    y = power(g, toInt(i))
+                                                    [using chain y-is-v-i v-i-is-power]
+                                                  @y-generated |
+                                                    exists k: Int; y = power(g, k)
+                                                    [by exists_intro(toInt(i)) y-is-power]
+                                                }
+                                              @y-is-v-i-implies |
+                                                y = at(v, i) -> exists k: Int; y = power(g, k)
+                                                [by implies_intro given-y-is-v-i]
+                                              @y-avoids-v-i |
+                                                y != at(v, i)
+                                                [using tautology y-is-v-i-implies not-generated]
+                                            }
+                                          @i-below-n-implies-avoid |
+                                            less_than(i, n) -> y != at(v, i)
+                                            [by implies_intro given-i-below-n]
+                                        }
+                                      @y-avoids-powers |
+                                        forall i: Nat; less_than(i, n) -> y != at(v, i)
+                                        [by forall_intro generalize-i-avoid]
+                                      // append y to the listing of powers.
+                                      @singleton-exists |
+                                        exists s: Seq; at(s, ZERO) = y and productUpTo(s, succ(ZERO)) = y
+                                        [using specialize seqSingleton(y)]
+                                      @with-singleton-s |
+                                        unpack s: Seq from singleton-exists {
+                                          @singleton-facts |
+                                            at(s, ZERO) = y and productUpTo(s, succ(ZERO)) = y
+                                            [by hypothesis with-singleton-s]
+                                          @singleton-head |
+                                            at(s, ZERO) = y
+                                            [by and_elim_left singleton-facts]
+                                          @concatenation-exists |
+                                            exists u: Seq; (forall i: Nat; less_than(i, n) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(n, i)) = at(s, i)) and productUpTo(u, add(n, succ(ZERO))) = op(productUpTo(v, n), productUpTo(s, succ(ZERO)))
+                                            [using specialize seqConcat(v, s, n, succ(ZERO))]
+                                          @with-concatenation-u |
+                                            unpack u: Seq from concatenation-exists {
+                                              @concatenation-facts |
+                                                (forall i: Nat; less_than(i, n) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(n, i)) = at(s, i)) and productUpTo(u, add(n, succ(ZERO))) = op(productUpTo(v, n), productUpTo(s, succ(ZERO)))
+                                                [by hypothesis with-concatenation-u]
+                                              @prefix-agrees |
+                                                forall i: Nat; less_than(i, n) -> at(u, i) = at(v, i)
+                                                [using tautology concatenation-facts]
+                                              @block-agrees |
+                                                forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(n, i)) = at(s, i)
+                                                [using tautology concatenation-facts]
+                                              @zero-below-one |
+                                                less_than(ZERO, succ(ZERO))
+                                                [using specialize lessThanSelf(ZERO)]
+                                              @u-at-n-plus-zero |
+                                                at(u, add(n, ZERO)) = at(s, ZERO)
+                                                [using specialize block-agrees(ZERO) zero-below-one]
+                                              @n-plus-zero-is-n |
+                                                add(n, ZERO) = n
+                                                [using specialize addZeroRight(n)]
+                                              @u-at-n |
+                                                at(u, n) = at(s, ZERO)
+                                                [by rewrite n-plus-zero-is-n u-at-n-plus-zero]
+                                              @last-entry-is-y |
+                                                at(u, n) = y
+                                                [using chain u-at-n singleton-head]
+                                              // the extended listing does not repeat below n+1.
+                                              @generalize-i |
+                                                fix i: Nat {
+                                                  @generalize-j |
+                                                    fix j: Nat {
+                                                      @given-i-in-range |
+                                                        assume less_than(i, succ(n)) {
+                                                          @given-j-in-range |
+                                                            assume less_than(j, succ(n)) {
+                                                              @given-entries-equal |
+                                                                assume at(u, i) = at(u, j) {
+                                                                  @i-in-range |
+                                                                    less_than(i, succ(n))
+                                                                    [by hypothesis given-i-in-range]
+                                                                  @j-in-range |
+                                                                    less_than(j, succ(n))
+                                                                    [by hypothesis given-j-in-range]
+                                                                  @entries-equal |
+                                                                    at(u, i) = at(u, j)
+                                                                    [by hypothesis given-entries-equal]
+                                                                  @i-splits |
+                                                                    less_than(i, n) or i = n
+                                                                    [using specialize lessThanSuccSplit(i, n) i-in-range]
+                                                                  @j-splits |
+                                                                    less_than(j, n) or j = n
+                                                                    [using specialize lessThanSuccSplit(j, n) j-in-range]
+                                                                  @conclusion-indices-equal |
+                                                                    i = j
+                                                                    case i-splits {
+                                                                      @when-i-old |
+                                                                        assume less_than(i, n) {
+                                                                          @i-old |
+                                                                            less_than(i, n)
+                                                                            [by hypothesis when-i-old]
+                                                                          @u-i-is-v-i |
+                                                                            at(u, i) = at(v, i)
+                                                                            [using specialize prefix-agrees(i) i-old]
+                                                                          @v-i-is-power |
+                                                                            at(v, i) = power(g, toInt(i))
+                                                                            [using specialize v-entries(i) i-old]
+                                                                          @u-i-is-power |
+                                                                            at(u, i) = power(g, toInt(i))
+                                                                            [using chain u-i-is-v-i v-i-is-power]
+                                                                          @conclusion-i-old |
+                                                                            i = j
+                                                                            case j-splits {
+                                                                              @when-j-old |
+                                                                                assume less_than(j, n) {
+                                                                                  @j-old |
+                                                                                    less_than(j, n)
+                                                                                    [by hypothesis when-j-old]
+                                                                                  @u-j-is-v-j |
+                                                                                    at(u, j) = at(v, j)
+                                                                                    [using specialize prefix-agrees(j) j-old]
+                                                                                  @v-j-is-power |
+                                                                                    at(v, j) = power(g, toInt(j))
+                                                                                    [using specialize v-entries(j) j-old]
+                                                                                  @u-j-is-power |
+                                                                                    at(u, j) = power(g, toInt(j))
+                                                                                    [using chain u-j-is-v-j v-j-is-power]
+                                                                                  @i-power-is-u-i |
+                                                                                    power(g, toInt(i)) = at(u, i)
+                                                                                    [by symmetry u-i-is-power]
+                                                                                  @powers-equal |
+                                                                                    power(g, toInt(i)) = power(g, toInt(j))
+                                                                                    [using chain i-power-is-u-i entries-equal u-j-is-power]
+                                                                                  @conclusion-both-old |
+                                                                                    i = j
+                                                                                    [using specialize powers-distinct(i, j) i-old j-old powers-equal]
+                                                                                }
+                                                                              @when-j-last |
+                                                                                assume j = n {
+                                                                                  @j-last |
+                                                                                    j = n
+                                                                                    [by hypothesis when-j-last]
+                                                                                  @u-j-is-y |
+                                                                                    at(u, j) = y
+                                                                                    [by rewrite j-last last-entry-is-y]
+                                                                                  @y-is-u-j |
+                                                                                    y = at(u, j)
+                                                                                    [by symmetry u-j-is-y]
+                                                                                  @u-j-is-u-i |
+                                                                                    at(u, j) = at(u, i)
+                                                                                    [by symmetry entries-equal]
+                                                                                  @y-is-v-i |
+                                                                                    y = at(v, i)
+                                                                                    [using chain y-is-u-j u-j-is-u-i u-i-is-v-i]
+                                                                                  @y-avoids-v-i |
+                                                                                    y != at(v, i)
+                                                                                    [using specialize y-avoids-powers(i) i-old]
+                                                                                  @conclusion-i-old-j-last |
+                                                                                    i = j
+                                                                                    [by absurd y-is-v-i y-avoids-v-i]
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                      @when-i-last |
+                                                                        assume i = n {
+                                                                          @i-last |
+                                                                            i = n
+                                                                            [by hypothesis when-i-last]
+                                                                          @u-i-is-y |
+                                                                            at(u, i) = y
+                                                                            [by rewrite i-last last-entry-is-y]
+                                                                          @conclusion-i-last |
+                                                                            i = j
+                                                                            case j-splits {
+                                                                              @when-j-old |
+                                                                                assume less_than(j, n) {
+                                                                                  @j-old |
+                                                                                    less_than(j, n)
+                                                                                    [by hypothesis when-j-old]
+                                                                                  @u-j-is-v-j |
+                                                                                    at(u, j) = at(v, j)
+                                                                                    [using specialize prefix-agrees(j) j-old]
+                                                                                  @y-is-u-i |
+                                                                                    y = at(u, i)
+                                                                                    [by symmetry u-i-is-y]
+                                                                                  @y-is-v-j |
+                                                                                    y = at(v, j)
+                                                                                    [using chain y-is-u-i entries-equal u-j-is-v-j]
+                                                                                  @y-avoids-v-j |
+                                                                                    y != at(v, j)
+                                                                                    [using specialize y-avoids-powers(j) j-old]
+                                                                                  @conclusion-i-last-j-old |
+                                                                                    i = j
+                                                                                    [by absurd y-is-v-j y-avoids-v-j]
+                                                                                }
+                                                                              @when-j-last |
+                                                                                assume j = n {
+                                                                                  @j-last |
+                                                                                    j = n
+                                                                                    [by hypothesis when-j-last]
+                                                                                  @n-is-j |
+                                                                                    n = j
+                                                                                    [by symmetry j-last]
+                                                                                  @conclusion-both-last |
+                                                                                    i = j
+                                                                                    [using chain i-last n-is-j]
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                              @entries-equal-implies |
+                                                                at(u, i) = at(u, j) -> i = j
+                                                                [by implies_intro given-entries-equal]
+                                                            }
+                                                          @j-in-range-implies |
+                                                            less_than(j, succ(n)) -> at(u, i) = at(u, j) -> i = j
+                                                            [by implies_intro given-j-in-range]
+                                                        }
+                                                      @i-in-range-implies |
+                                                        less_than(i, succ(n)) -> less_than(j, succ(n)) -> at(u, i) = at(u, j) -> i = j
+                                                        [by implies_intro given-i-in-range]
+                                                    }
+                                                  @discharge-j |
+                                                    forall j: Nat; less_than(i, succ(n)) -> less_than(j, succ(n)) -> at(u, i) = at(u, j) -> i = j
+                                                    [by forall_intro generalize-j]
+                                                }
+                                              @u-injective |
+                                                listsWithoutRepetition(u, succ(n))
+                                                [by forall_intro generalize-i]
+                                              // every entry of the extended listing is drawn from w.
+                                              @generalize-j-drawn |
+                                                fix j: Nat {
+                                                  @given-j-in-range-drawn |
+                                                    assume less_than(j, succ(n)) {
+                                                      @entry-covered |
+                                                        exists i: Nat; less_than(i, n) and at(w, i) = at(u, j)
+                                                        [using specialize w-covers(at(u, j))]
+                                                      @with-cover-i |
+                                                        unpack i: Nat from entry-covered {
+                                                          @cover-facts |
+                                                            less_than(i, n) and at(w, i) = at(u, j)
+                                                            [by hypothesis with-cover-i]
+                                                          @i-below-n |
+                                                            less_than(i, n)
+                                                            [by and_elim_left cover-facts]
+                                                          @w-i-is-u-j |
+                                                            at(w, i) = at(u, j)
+                                                            [by and_elim_right cover-facts]
+                                                          @u-j-is-w-i |
+                                                            at(u, j) = at(w, i)
+                                                            [by symmetry w-i-is-u-j]
+                                                          @cover-witnessed |
+                                                            less_than(i, n) and at(u, j) = at(w, i)
+                                                            [by and_intro i-below-n u-j-is-w-i]
+                                                          @conclusion-j-drawn-inner |
+                                                            exists i2: Nat; less_than(i2, n) and at(u, j) = at(w, i2)
+                                                            [by exists_intro(i) cover-witnessed]
+                                                        }
+                                                      @conclusion-j-drawn |
+                                                        exists i2: Nat; less_than(i2, n) and at(u, j) = at(w, i2)
+                                                        [by exists_elim with-cover-i]
+                                                    }
+                                                  @j-in-range-implies-drawn |
+                                                    less_than(j, succ(n)) -> exists i2: Nat; less_than(i2, n) and at(u, j) = at(w, i2)
+                                                    [by implies_intro given-j-in-range-drawn]
+                                                }
+                                              @u-drawn-from-w |
+                                                drawnFrom(u, succ(n), w, n)
+                                                [by forall_intro generalize-j-drawn]
+                                              @conclusion-pigeonhole |
+                                                less_or_equal(succ(n), n)
+                                                [using specialize sublistingIsNoLongerThanTheListing(succ(n), u, n, w) u-injective u-drawn-from-w]
+                                            }
+                                          @conclusion-with-u |
+                                            less_or_equal(succ(n), n)
+                                            [by exists_elim with-concatenation-u]
+                                        }
+                                      @conclusion-with-s |
+                                        less_or_equal(succ(n), n)
+                                        [by exists_elim with-singleton-s]
+                                    }
+                                  @conclusion-with-v |
+                                    less_or_equal(succ(n), n)
+                                    [by exists_elim with-powers-v]
+                                }
+                              @not-generated-implies |
+                                (not (exists k: Int; y = power(g, k))) -> less_or_equal(succ(n), n)
+                                [by implies_intro given-not-generated]
+                              @conclusion-y-generated |
+                                exists k: Int; y = power(g, k)
+                                [using tautology not-generated-implies succ-n-not-at-most-n]
+                            }
+                          @discharge-y |
+                            forall y: Grp; exists k: Int; y = power(g, k)
+                            [by forall_intro generalize-y]
+                        }
+                      @order-implies |
+                        hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+                        [by implies_intro given-order]
+                    }
+                  @discharge-g |
+                    forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+                    [by forall_intro generalize-g]
+                }
+              @covers-implies |
+                (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+                [by implies_intro given-w-covers]
+            }
+          @injective-implies |
+            listsWithoutRepetition(w, n) -> (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+            [by implies_intro given-w-injective]
+        }
+      @discharge-w |
+        forall w: Seq; listsWithoutRepetition(w, n) -> (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall n: Nat; forall w: Seq; listsWithoutRepetition(w, n) -> (forall y: Grp; exists i: Nat; less_than(i, n) and at(w, i) = y) -> forall g: Grp; hasOrder(g, toInt(n)) -> forall y: Grp; exists k: Int; y = power(g, k)
+    [by forall_intro generalize-n]
+qed

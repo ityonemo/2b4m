@@ -177,6 +177,11 @@ pub fn addTests(
     // (std/group/klein.b4m, Judson §4.1 exercise 33): {e, a, b, ab} is closed under the
     // operation and inverses (every member is its own inverse) and has four distinct members.
     ctx.okSilent(&.{ "check", "std/group/klein.b4m" });
+    // orders against SIZES (std/group/counting.b4m, Judson §4.1 exercise 34): pigeonhole for
+    // listings (distinct entries drawn from a listing of length n number at most n), the
+    // powers g⁰..g^(n−1) of an element of order n are distinct, so in a group of n elements
+    // such an element generates. Bridges ℕ-indexed listings to ℤ-valued orders via toInt.
+    ctx.okSilent(&.{ "check", "std/group/counting.b4m" });
 
     // the integers mod n (std/integer/mod-n.b4m, Judson §4.1 concrete): ℤ_n as a
     // quotient sort ℤ/nℤ whose group/ring axioms LIFT from ℤ via cls-homomorphism,
@@ -190,6 +195,10 @@ pub fn addTests(
     // number of generators for n > 2 — by MODEL TRANSFER of std/group/listing.b4m's
     // theorem for all finite groups through one overlay over group, group_power and
     // group_sequence (ZnListing).
+    // the embedding ℕ → ℤ (std/integer/embedding.b4m): toInt by two recursion clauses;
+    // additive, order-preserving/-reflecting, injective, onto the nonnegatives. What lets
+    // ℕ-indexed listings talk about ℤ-valued orders and exponents.
+    ctx.okSilent(&.{ "check", "std/integer/embedding.b4m" });
     ctx.okSilent(&.{ "check", "std/integer/mod-n-listing.b4m" });
     // ℤ_p has no proper nontrivial subgroups (std/integer/mod-n-prime.b4m, Judson §4.1
     // exercise 26): a subgroup (a predicate closed under 0, +, −) is closed under integer
