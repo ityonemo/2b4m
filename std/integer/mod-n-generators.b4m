@@ -77,6 +77,12 @@ theorem intAddZeroRight = integer.addZeroRight
 theorem znIsListedByItsRepresentatives = mod_n_listing.znIsListedByItsRepresentatives
 theorem znGeneratorsAndNonGeneratorsAreListed = mod_n_listing.znGeneratorsAndNonGeneratorsAreListed
 theorem znListingsOfTheSameClassHaveEqualLength = mod_n_listing.znListingsOfTheSameClassHaveEqualLength
+func pow = int_divides.pow
+axiom powZero = int_divides.powZero
+axiom powSucc = int_divides.powSucc
+axiom nonnegInduction = int_order.nonnegInduction
+axiom nonnegSucc = integer.nonnegSucc
+theorem productWithPositiveIsPositive = int_divides.productWithPositiveIsPositive
 
 // ℕ, the index sort
 sort Nat = peano.Nat
@@ -3543,5 +3549,869 @@ proof
     }
   @conclusion |
     forall p, q: Int; is_prime(p) -> is_prime(q) -> p != q -> N = imul(p, q) -> exists v: ZnSeq; exists c: Nat; (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and toInt(c) = imul(isub(p, IONE), isub(q, IONE))
+    [by forall_intro generalize-p]
+qed
+
+// -- prime powers (Judson §4.1, exercise 25) ---------------------------------------------------
+
+// b > 0 ⟹ b^e > 0 for e ≥ 0.
+theorem powOfPositiveIsPositive: forall b: Int; int_less_than(IZERO, b) -> forall e: Int; nonneg(e) -> int_less_than(IZERO, pow(b, e))
+proof
+  @generalize-b |
+    fix b: Int {
+      @given-positive |
+        assume int_less_than(IZERO, b) {
+          @positive |
+            int_less_than(IZERO, b)
+            [by hypothesis given-positive]
+          @zeroth-power |
+            pow(b, IZERO) = IONE
+            [using specialize powZero(b)]
+          @zero-below-one |
+            int_less_than(IZERO, IONE)
+            [by cite intZeroLessThanOne]
+          @base-case |
+            int_less_than(IZERO, pow(b, IZERO))
+            [by rewrite zeroth-power zero-below-one]
+          @induction-step |
+            fix k: Int {
+              @given-nonneg |
+                assume nonneg(k) {
+                  @given-inductive-hypothesis |
+                    assume int_less_than(IZERO, pow(b, k)) {
+                      @inductive-hypothesis |
+                        int_less_than(IZERO, pow(b, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @next-unfolds |
+                        pow(b, isucc(k)) = imul(pow(b, k), b)
+                        [using specialize powSucc(b, k)]
+                      @product-positive |
+                        int_less_than(IZERO, imul(pow(b, k), b))
+                        [using specialize productWithPositiveIsPositive(pow(b, k), b) inductive-hypothesis positive]
+                      @conclusion-step |
+                        int_less_than(IZERO, pow(b, isucc(k)))
+                        [by rewrite next-unfolds product-positive]
+                    }
+                  @conclusion-given-hypothesis |
+                    int_less_than(IZERO, pow(b, k)) -> int_less_than(IZERO, pow(b, isucc(k)))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-at-k |
+                nonneg(k) -> int_less_than(IZERO, pow(b, k)) -> int_less_than(IZERO, pow(b, isucc(k)))
+                [by implies_intro given-nonneg]
+            }
+          @induction-step-for-all-k |
+            forall k: Int; nonneg(k) -> int_less_than(IZERO, pow(b, k)) -> int_less_than(IZERO, pow(b, isucc(k)))
+            [by forall_intro induction-step]
+          @conclusion-all-exponents |
+            forall e: Int; nonneg(e) -> int_less_than(IZERO, pow(b, e))
+            [using instantiation nonnegInduction((fun e: Int => int_less_than(IZERO, pow(b, e)))) base-case induction-step-for-all-k]
+        }
+      @positive-implies |
+        int_less_than(IZERO, b) -> forall e: Int; nonneg(e) -> int_less_than(IZERO, pow(b, e))
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall b: Int; int_less_than(IZERO, b) -> forall e: Int; nonneg(e) -> int_less_than(IZERO, pow(b, e))
+    [by forall_intro generalize-b]
+qed
+
+// Bézout-coprime to p ⟹ Bézout-coprime to every p^e (multiply the identities up).
+theorem bezoutCoprimeToPowers: forall r, p: Int; bezoutCoprime(r, p) -> forall e: Int; nonneg(e) -> bezoutCoprime(r, pow(p, e))
+proof
+  @generalize-r |
+    fix r: Int {
+      @generalize-p |
+        fix p: Int {
+          @given-coprime |
+            assume bezoutCoprime(r, p) {
+              @coprime |
+                bezoutCoprime(r, p)
+                [by hypothesis given-coprime]
+              @zeroth-power |
+                pow(p, IZERO) = IONE
+                [using specialize powZero(p)]
+              @one-identity |
+                iadd(imul(r, IZERO), imul(IONE, IONE)) = IONE
+                [using polynomial(integer)]
+              @one-identity-t |
+                exists t: Int; iadd(imul(r, IZERO), imul(IONE, t)) = IONE
+                [by exists_intro(IONE) one-identity]
+              @coprime-to-one |
+                bezoutCoprime(r, IONE)
+                [by exists_intro(IZERO) one-identity-t]
+              @base-case |
+                bezoutCoprime(r, pow(p, IZERO))
+                [by rewrite zeroth-power coprime-to-one]
+              @induction-step |
+                fix k: Int {
+                  @given-nonneg |
+                    assume nonneg(k) {
+                      @given-inductive-hypothesis |
+                        assume bezoutCoprime(r, pow(p, k)) {
+                          @inductive-hypothesis |
+                            bezoutCoprime(r, pow(p, k))
+                            [by hypothesis given-inductive-hypothesis]
+                          @next-unfolds |
+                            pow(p, isucc(k)) = imul(pow(p, k), p)
+                            [using specialize powSucc(p, k)]
+                          @coprime-to-product |
+                            bezoutCoprime(r, imul(pow(p, k), p))
+                            [using specialize bezoutCoprimeMultiplies(r, pow(p, k), p) inductive-hypothesis coprime]
+                          @conclusion-step |
+                            bezoutCoprime(r, pow(p, isucc(k)))
+                            [by rewrite next-unfolds coprime-to-product]
+                        }
+                      @conclusion-given-hypothesis |
+                        bezoutCoprime(r, pow(p, k)) -> bezoutCoprime(r, pow(p, isucc(k)))
+                        [by implies_intro given-inductive-hypothesis]
+                    }
+                  @induction-step-at-k |
+                    nonneg(k) -> bezoutCoprime(r, pow(p, k)) -> bezoutCoprime(r, pow(p, isucc(k)))
+                    [by implies_intro given-nonneg]
+                }
+              @induction-step-for-all-k |
+                forall k: Int; nonneg(k) -> bezoutCoprime(r, pow(p, k)) -> bezoutCoprime(r, pow(p, isucc(k)))
+                [by forall_intro induction-step]
+              @conclusion-all-exponents |
+                forall e: Int; nonneg(e) -> bezoutCoprime(r, pow(p, e))
+                [using instantiation nonnegInduction((fun e: Int => bezoutCoprime(r, pow(p, e)))) base-case induction-step-for-all-k]
+            }
+          @coprime-implies |
+            bezoutCoprime(r, p) -> forall e: Int; nonneg(e) -> bezoutCoprime(r, pow(p, e))
+            [by implies_intro given-coprime]
+        }
+      @discharge-p |
+        forall p: Int; bezoutCoprime(r, p) -> forall e: Int; nonneg(e) -> bezoutCoprime(r, pow(p, e))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall r, p: Int; bezoutCoprime(r, p) -> forall e: Int; nonneg(e) -> bezoutCoprime(r, pow(p, e))
+    [by forall_intro generalize-r]
+qed
+
+// for N = p^(e+1): cls(r) fails to generate ⟺ p | r.
+theorem nonGeneratorOfPrimePowerIffPrimeDivides: forall p, e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+proof
+  @generalize-p |
+    fix p: Int {
+      @generalize-e |
+        fix e: Int {
+          @given-prime |
+            assume is_prime(p) {
+              @given-nonneg |
+                assume nonneg(e) {
+                  @given-modulus |
+                    assume N = pow(p, isucc(e)) {
+                      @prime |
+                        is_prime(p)
+                        [by hypothesis given-prime]
+                      @e-nonneg |
+                        nonneg(e)
+                        [by hypothesis given-nonneg]
+                      @modulus |
+                        N = pow(p, isucc(e))
+                        [by hypothesis given-modulus]
+                      @succ-e-nonneg |
+                        nonneg(isucc(e))
+                        [using specialize nonnegSucc(e) e-nonneg]
+                      @power-unfolds |
+                        pow(p, isucc(e)) = imul(pow(p, e), p)
+                        [using specialize powSucc(p, e)]
+                      @factors-commute |
+                        imul(pow(p, e), p) = imul(p, pow(p, e))
+                        [using specialize intMulIsCommutative(pow(p, e), p)]
+                      @modulus-factored |
+                        N = imul(p, pow(p, e))
+                        [using chain modulus power-unfolds factors-commute]
+                      @generalize-r |
+                        fix r: Int {
+                          @criterion-at-n |
+                            generates(cls(r)) iff bezoutCoprime(r, N)
+                            [using specialize generatesIffBezoutCoprime(r)]
+                          @criterion |
+                            generates(cls(r)) iff bezoutCoprime(r, pow(p, isucc(e)))
+                            [by rewrite modulus criterion-at-n]
+                          @criterion-factored |
+                            generates(cls(r)) iff bezoutCoprime(r, imul(p, pow(p, e)))
+                            [by rewrite modulus-factored criterion-at-n]
+                          @p-blocks |
+                            divides(p, r) -> (not bezoutCoprime(r, imul(p, pow(p, e))))
+                            [using specialize primeFactorBlocksBezout(p, pow(p, e), r) prime]
+                          @given-not-dividing |
+                            assume not divides(p, r) {
+                              @not-dividing |
+                                not divides(p, r)
+                                [by hypothesis given-not-dividing]
+                              @coprime-to-p |
+                                bezoutCoprime(r, p)
+                                [using specialize primeNotDividingGivesBezout(p, r) prime not-dividing]
+                              @conclusion-coprime-to-power |
+                                bezoutCoprime(r, pow(p, isucc(e)))
+                                [using specialize bezoutCoprimeToPowers(r, p, isucc(e)) coprime-to-p succ-e-nonneg]
+                            }
+                          @not-dividing-implies |
+                            (not divides(p, r)) -> bezoutCoprime(r, pow(p, isucc(e)))
+                            [by implies_intro given-not-dividing]
+                          @conclusion-characterized |
+                            (not generates(cls(r))) iff divides(p, r)
+                            [using tautology criterion criterion-factored p-blocks not-dividing-implies]
+                        }
+                      @discharge-r |
+                        forall r: Int; (not generates(cls(r))) iff divides(p, r)
+                        [by forall_intro generalize-r]
+                    }
+                  @modulus-implies |
+                    N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+                    [by implies_intro given-modulus]
+                }
+              @nonneg-implies |
+                nonneg(e) -> N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+                [by implies_intro given-nonneg]
+            }
+          @prime-implies |
+            is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+            [by implies_intro given-prime]
+        }
+      @discharge-e |
+        forall e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+        [by forall_intro generalize-e]
+    }
+  @conclusion |
+    forall p, e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> forall r: Int; (not generates(cls(r))) iff divides(p, r)
+    [by forall_intro generalize-p]
+qed
+
+// THE NON-GENERATORS OF ℤ_{p^(e+1)}, LISTED: cls(kp) for k < p^e.
+theorem nonGeneratorsOfZPrimePowerAreListed: forall p, e: Int; forall mn: Nat; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z)
+proof
+  @generalize-p |
+    fix p: Int {
+      @generalize-e |
+        fix e: Int {
+          @generalize-mn |
+            fix mn: Nat {
+              @given-prime |
+                assume is_prime(p) {
+                  @given-nonneg |
+                    assume nonneg(e) {
+                      @given-modulus |
+                        assume N = pow(p, isucc(e)) {
+                          @given-image |
+                            assume toInt(mn) = pow(p, e) {
+                              @prime |
+                                is_prime(p)
+                                [by hypothesis given-prime]
+                              @e-nonneg |
+                                nonneg(e)
+                                [by hypothesis given-nonneg]
+                              @modulus |
+                                N = pow(p, isucc(e))
+                                [by hypothesis given-modulus]
+                              @image |
+                                toInt(mn) = pow(p, e)
+                                [by hypothesis given-image]
+                              @p-positive |
+                                int_less_than(IZERO, p)
+                                [using specialize primeIsPositive(p) prime]
+                              @cofactor-positive |
+                                int_less_than(IZERO, pow(p, e))
+                                [using specialize powOfPositiveIsPositive(p, e) p-positive e-nonneg]
+                              @power-unfolds |
+                                pow(p, isucc(e)) = imul(pow(p, e), p)
+                                [using specialize powSucc(p, e)]
+                              @factors-commute |
+                                imul(pow(p, e), p) = imul(p, pow(p, e))
+                                [using specialize intMulIsCommutative(pow(p, e), p)]
+                              @modulus-factored |
+                                N = imul(p, pow(p, e))
+                                [using chain modulus power-unfolds factors-commute]
+                              @characterization |
+                                forall r: Int; (not generates(cls(r))) iff divides(p, r)
+                                [using specialize nonGeneratorOfPrimePowerIffPrimeDivides(p, e) prime e-nonneg modulus]
+                              @injective-multiples |
+                                forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> cls(imul(toInt(i), p)) = cls(imul(toInt(j), p)) -> i = j
+                                [using specialize multiplesDoNotRepeat(p, pow(p, e), mn) modulus-factored p-positive image]
+                              @reduce |
+                                forall c: Int; exists e2: Int; nonneg(e2) and int_less_than(e2, pow(p, e)) and cls(imul(c, p)) = cls(imul(e2, p))
+                                [using specialize coefficientReducesModCofactor(p, pow(p, e)) modulus-factored cofactor-positive]
+                              @listing-exists |
+                                exists w: ZnSeq; forall i: Nat; less_than(i, mn) -> znAt(w, i) = cls(imul(toInt(i), p))
+                                [using specialize sequenceOfMultiplesExists(p, mn)]
+                              @with-u |
+                                unpack u: ZnSeq from listing-exists {
+                                  @u-entries |
+                                    forall i: Nat; less_than(i, mn) -> znAt(u, i) = cls(imul(toInt(i), p))
+                                    [by hypothesis with-u]
+                                  // (a) no entry generates.
+                                  @generalize-j-a |
+                                    fix j: Nat {
+                                      @given-j-below-a |
+                                        assume less_than(j, mn) {
+                                          @j-below-a |
+                                            less_than(j, mn)
+                                            [by hypothesis given-j-below-a]
+                                          @u-j |
+                                            znAt(u, j) = cls(imul(toInt(j), p))
+                                            [using specialize u-entries(j) j-below-a]
+                                          @multiple-commutes |
+                                            imul(toInt(j), p) = imul(p, toInt(j))
+                                            [using specialize intMulIsCommutative(toInt(j), p)]
+                                          @p-divides-multiple |
+                                            divides(p, imul(toInt(j), p))
+                                            [using specialize dividesIntro(imul(toInt(j), p), p, toInt(j)) multiple-commutes]
+                                          @entry-characterized |
+                                            (not generates(cls(imul(toInt(j), p)))) iff divides(p, imul(toInt(j), p))
+                                            [using specialize characterization(imul(toInt(j), p))]
+                                          @closed-non-generator |
+                                            not generates(cls(imul(toInt(j), p)))
+                                            [using tautology entry-characterized p-divides-multiple]
+                                          @conclusion-j-non-generator |
+                                            not generates(znAt(u, j))
+                                            [by rewrite u-j closed-non-generator]
+                                        }
+                                      @j-a-implies |
+                                        less_than(j, mn) -> (not generates(znAt(u, j)))
+                                        [by implies_intro given-j-below-a]
+                                    }
+                                  @no-entry-generates |
+                                    forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))
+                                    [by forall_intro generalize-j-a]
+                                  // (b) no repetition.
+                                  @generalize-i-b |
+                                    fix i: Nat {
+                                      @generalize-j-b |
+                                        fix j: Nat {
+                                          @given-i-below-b |
+                                            assume less_than(i, mn) {
+                                              @given-j-below-b |
+                                                assume less_than(j, mn) {
+                                                  @given-entries-equal |
+                                                    assume znAt(u, i) = znAt(u, j) {
+                                                      @i-below-b |
+                                                        less_than(i, mn)
+                                                        [by hypothesis given-i-below-b]
+                                                      @j-below-b |
+                                                        less_than(j, mn)
+                                                        [by hypothesis given-j-below-b]
+                                                      @entries-equal |
+                                                        znAt(u, i) = znAt(u, j)
+                                                        [by hypothesis given-entries-equal]
+                                                      @u-i |
+                                                        znAt(u, i) = cls(imul(toInt(i), p))
+                                                        [using specialize u-entries(i) i-below-b]
+                                                      @u-j |
+                                                        znAt(u, j) = cls(imul(toInt(j), p))
+                                                        [using specialize u-entries(j) j-below-b]
+                                                      @closed-i-is-u-i |
+                                                        cls(imul(toInt(i), p)) = znAt(u, i)
+                                                        [by symmetry u-i]
+                                                      @closed-entries-equal |
+                                                        cls(imul(toInt(i), p)) = cls(imul(toInt(j), p))
+                                                        [using chain closed-i-is-u-i entries-equal u-j]
+                                                      @conclusion-indices-equal |
+                                                        i = j
+                                                        [using specialize injective-multiples(i, j) i-below-b j-below-b closed-entries-equal]
+                                                    }
+                                                  @entries-equal-implies |
+                                                    znAt(u, i) = znAt(u, j) -> i = j
+                                                    [by implies_intro given-entries-equal]
+                                                }
+                                              @j-below-b-implies |
+                                                less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j
+                                                [by implies_intro given-j-below-b]
+                                            }
+                                          @i-below-b-implies |
+                                            less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j
+                                            [by implies_intro given-i-below-b]
+                                        }
+                                      @discharge-j-b |
+                                        forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j
+                                        [by forall_intro generalize-j-b]
+                                    }
+                                  @no-repetition |
+                                    forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j
+                                    [by forall_intro generalize-i-b]
+                                  // (c) every non-generator appears.
+                                  @generalize-z |
+                                    fix z: Zn {
+                                      @given-non-generator |
+                                        assume not generates(z) {
+                                          @non-generator |
+                                            not generates(z)
+                                            [by hypothesis given-non-generator]
+                                          @z-has-representative |
+                                            exists k: Int; z = cls(k)
+                                            [using specialize clsSurjective(z)]
+                                          @with-representative-r |
+                                            unpack r: Int from z-has-representative {
+                                              @z-is-cls-r |
+                                                z = cls(r)
+                                                [by hypothesis with-representative-r]
+                                              @cls-r-non-generator |
+                                                not generates(cls(r))
+                                                [by rewrite z-is-cls-r non-generator]
+                                              @r-characterized |
+                                                (not generates(cls(r))) iff divides(p, r)
+                                                [using specialize characterization(r)]
+                                              @p-divides-r |
+                                                divides(p, r)
+                                                [using tautology r-characterized cls-r-non-generator]
+                                              @with-cofactor-c |
+                                                unpack c: Int from p-divides-r {
+                                                  @r-is-pc |
+                                                    r = imul(p, c)
+                                                    [by hypothesis with-cofactor-c]
+                                                  @pc-commutes |
+                                                    imul(p, c) = imul(c, p)
+                                                    [using specialize intMulIsCommutative(p, c)]
+                                                  @r-is-cp |
+                                                    r = imul(c, p)
+                                                    [using chain r-is-pc pc-commutes]
+                                                  @reduced |
+                                                    exists e2: Int; nonneg(e2) and int_less_than(e2, pow(p, e)) and cls(imul(c, p)) = cls(imul(e2, p))
+                                                    [using specialize reduce(c)]
+                                                  @with-remainder-e2 |
+                                                    unpack e2: Int from reduced {
+                                                      @remainder-facts |
+                                                        nonneg(e2) and int_less_than(e2, pow(p, e)) and cls(imul(c, p)) = cls(imul(e2, p))
+                                                        [by hypothesis with-remainder-e2]
+                                                      @e2-nonneg |
+                                                        nonneg(e2)
+                                                        [using tautology remainder-facts]
+                                                      @e2-below |
+                                                        int_less_than(e2, pow(p, e))
+                                                        [using tautology remainder-facts]
+                                                      @classes-agree |
+                                                        cls(imul(c, p)) = cls(imul(e2, p))
+                                                        [using tautology remainder-facts]
+                                                      @e2-is-an-image |
+                                                        exists k: Nat; toInt(k) = e2
+                                                        [using specialize everyNonnegIsAnImage(e2) e2-nonneg]
+                                                      @with-index-k |
+                                                        unpack k: Nat from e2-is-an-image {
+                                                          @k-image |
+                                                            toInt(k) = e2
+                                                            [by hypothesis with-index-k]
+                                                          @k-image-below |
+                                                            int_less_than(toInt(k), pow(p, e))
+                                                            [by rewrite k-image e2-below]
+                                                          @k-image-below-mn-image |
+                                                            int_less_than(toInt(k), toInt(mn))
+                                                            [by rewrite image k-image-below]
+                                                          @k-below-mn |
+                                                            less_than(k, mn)
+                                                            [using specialize toIntReflectsOrder(k, mn) k-image-below-mn-image]
+                                                          @u-k |
+                                                            znAt(u, k) = cls(imul(toInt(k), p))
+                                                            [using specialize u-entries(k) k-below-mn]
+                                                          @u-k-is-e2-multiple |
+                                                            znAt(u, k) = cls(imul(e2, p))
+                                                            [by rewrite k-image u-k]
+                                                          @e2-multiple-is-c-multiple |
+                                                            cls(imul(e2, p)) = cls(imul(c, p))
+                                                            [by symmetry classes-agree]
+                                                          @cp-is-r |
+                                                            imul(c, p) = r
+                                                            [by symmetry r-is-cp]
+                                                          @c-multiple-is-cls-r |
+                                                            cls(imul(c, p)) = cls(r)
+                                                            [by rewrite cp-is-r cls-r-reflexive]
+                                                          @cls-r-reflexive |
+                                                            cls(r) = cls(r)
+                                                            [by reflexivity]
+                                                          @cls-r-is-z |
+                                                            cls(r) = z
+                                                            [by symmetry z-is-cls-r]
+                                                          @u-k-is-z |
+                                                            znAt(u, k) = z
+                                                            [using chain u-k-is-e2-multiple e2-multiple-is-c-multiple c-multiple-is-cls-r cls-r-is-z]
+                                                          @k-witnesses |
+                                                            less_than(k, mn) and znAt(u, k) = z
+                                                            [by and_intro k-below-mn u-k-is-z]
+                                                          @conclusion-z-appears-inner |
+                                                            exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                                            [by exists_intro(k) k-witnesses]
+                                                        }
+                                                      @conclusion-with-k |
+                                                        exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                                        [by exists_elim with-index-k]
+                                                    }
+                                                  @conclusion-with-e2 |
+                                                    exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                                    [by exists_elim with-remainder-e2]
+                                                }
+                                              @conclusion-with-c |
+                                                exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                                [by exists_elim with-cofactor-c]
+                                            }
+                                          @conclusion-z-appears |
+                                            exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                            [by exists_elim with-representative-r]
+                                        }
+                                      @non-generator-implies |
+                                        (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                        [by implies_intro given-non-generator]
+                                    }
+                                  @every-non-generator-appears |
+                                    forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                    [by forall_intro generalize-z]
+                                  @u-lists-the-non-generators |
+                                    (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z)
+                                    [using tautology no-entry-generates no-repetition every-non-generator-appears]
+                                  @conclusion-with-u-inner |
+                                    exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                                    [by exists_intro(u) u-lists-the-non-generators]
+                                }
+                              @conclusion-listed |
+                                exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                                [by exists_elim with-u]
+                            }
+                          @image-implies |
+                            toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                            [by implies_intro given-image]
+                        }
+                      @modulus-implies |
+                        N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                        [by implies_intro given-modulus]
+                    }
+                  @nonneg-implies |
+                    nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                    [by implies_intro given-nonneg]
+                }
+              @prime-implies |
+                is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+                [by implies_intro given-prime]
+            }
+          @discharge-mn |
+            forall mn: Nat; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+            [by forall_intro generalize-mn]
+        }
+      @discharge-e |
+        forall e: Int; forall mn: Nat; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u2: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u2, i) = znAt(u2, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u2, j) = z)
+        [by forall_intro generalize-e]
+    }
+  @conclusion |
+    forall p, e: Int; forall mn: Nat; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> toInt(mn) = pow(p, e) -> exists u: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z)
+    [by forall_intro generalize-p]
+qed
+
+// THE COUNT: ℤ_{p^(e+1)} has p^e (p − 1) generators (Judson §4.1, exercise 25).
+theorem generatorCountOfZPrimePower: forall p, e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> exists v: ZnSeq; exists c: Nat; (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and toInt(c) = imul(pow(p, e), isub(p, IONE))
+proof
+  @generalize-p |
+    fix p: Int {
+      @generalize-e |
+        fix e: Int {
+          @given-prime |
+            assume is_prime(p) {
+              @given-nonneg |
+                assume nonneg(e) {
+                  @given-modulus |
+                    assume N = pow(p, isucc(e)) {
+                      @prime |
+                        is_prime(p)
+                        [by hypothesis given-prime]
+                      @e-nonneg |
+                        nonneg(e)
+                        [by hypothesis given-nonneg]
+                      @modulus |
+                        N = pow(p, isucc(e))
+                        [by hypothesis given-modulus]
+                      @p-positive |
+                        int_less_than(IZERO, p)
+                        [using specialize primeIsPositive(p) prime]
+                      @cofactor-positive |
+                        int_less_than(IZERO, pow(p, e))
+                        [using specialize powOfPositiveIsPositive(p, e) p-positive e-nonneg]
+                      @cofactor-nonneg |
+                        nonneg(pow(p, e))
+                        [using specialize positiveIsNonneg(pow(p, e)) cofactor-positive]
+                      @mn-exists |
+                        exists m: Nat; toInt(m) = pow(p, e)
+                        [using specialize everyNonnegIsAnImage(pow(p, e)) cofactor-nonneg]
+                      @power-unfolds |
+                        pow(p, isucc(e)) = imul(pow(p, e), p)
+                        [using specialize powSucc(p, e)]
+                      @listing-exists |
+                        exists m: Nat; exists w: ZnSeq; toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+                        [by cite znIsListedByItsRepresentatives]
+                      @with-mn |
+                        unpack mn: Nat from mn-exists {
+                          @mn-image |
+                            toInt(mn) = pow(p, e)
+                            [by hypothesis with-mn]
+                          @u-exists |
+                            exists u: ZnSeq; (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z)
+                            [using specialize nonGeneratorsOfZPrimePowerAreListed(p, e, mn) prime e-nonneg modulus mn-image]
+                          @with-m |
+                            unpack m: Nat from listing-exists {
+                              @after-m |
+                                exists w: ZnSeq; toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+                                [by hypothesis with-m]
+                              @with-w |
+                                unpack w: ZnSeq from after-m {
+                                  @listing-facts |
+                                    toInt(m) = N and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) and (forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g)
+                                    [by hypothesis with-w]
+                                  @m-image |
+                                    toInt(m) = N
+                                    [using tautology listing-facts]
+                                  @w-injective |
+                                    forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j
+                                    [using tautology listing-facts]
+                                  @w-covers |
+                                    forall g: Zn; exists i: Nat; less_than(i, m) and znAt(w, i) = g
+                                    [using tautology listing-facts]
+                                  @split |
+                                    exists v: ZnSeq; exists c: Nat; exists v2: ZnSeq; exists d: Nat; nadd(c, d) = m and (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and (forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g)
+                                    [using specialize znGeneratorsAndNonGeneratorsAreListed(m, w) w-injective w-covers]
+                                  @with-v |
+                                    unpack v: ZnSeq from split {
+                                      @after-v |
+                                        exists c: Nat; exists v2: ZnSeq; exists d: Nat; nadd(c, d) = m and (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and (forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g)
+                                        [by hypothesis with-v]
+                                      @with-c |
+                                        unpack c: Nat from after-v {
+                                          @after-c |
+                                            exists v2: ZnSeq; exists d: Nat; nadd(c, d) = m and (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and (forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g)
+                                            [by hypothesis with-c]
+                                          @with-v2 |
+                                            unpack v2: ZnSeq from after-c {
+                                              @after-v2 |
+                                                exists d: Nat; nadd(c, d) = m and (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and (forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g)
+                                                [by hypothesis with-v2]
+                                              @with-d |
+                                                unpack d: Nat from after-v2 {
+                                                  @split-facts |
+                                                    nadd(c, d) = m and (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and (forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g)
+                                                    [by hypothesis with-d]
+                                                  @lengths-add |
+                                                    nadd(c, d) = m
+                                                    [using tautology split-facts]
+                                                  @v-generates |
+                                                    forall j: Nat; less_than(j, c) -> generates(znAt(v, j))
+                                                    [using tautology split-facts]
+                                                  @v-injective |
+                                                    forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j
+                                                    [using tautology split-facts]
+                                                  @v-covers |
+                                                    forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g
+                                                    [using tautology split-facts]
+                                                  @v2-non-generators |
+                                                    forall j: Nat; less_than(j, d) -> (not generates(znAt(v2, j)))
+                                                    [using tautology split-facts]
+                                                  @v2-injective |
+                                                    forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> znAt(v2, i) = znAt(v2, j) -> i = j
+                                                    [using tautology split-facts]
+                                                  @v2-covers |
+                                                    forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, d) and znAt(v2, j) = g
+                                                    [using tautology split-facts]
+                                                  @with-u |
+                                                    unpack u: ZnSeq from u-exists {
+                                                      @u-facts |
+                                                        (forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))) and (forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j) and (forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z)
+                                                        [by hypothesis with-u]
+                                                      @u-non-generators |
+                                                        forall j: Nat; less_than(j, mn) -> (not generates(znAt(u, j)))
+                                                        [using tautology u-facts]
+                                                      @u-injective |
+                                                        forall i: Nat; forall j: Nat; less_than(i, mn) -> less_than(j, mn) -> znAt(u, i) = znAt(u, j) -> i = j
+                                                        [using tautology u-facts]
+                                                      @u-covers |
+                                                        forall z: Zn; (not generates(z)) -> exists j: Nat; less_than(j, mn) and znAt(u, j) = z
+                                                        [using tautology u-facts]
+                                                      @generalize-j-v2 |
+                                                        fix j: Nat {
+                                                          @given-j-below-d |
+                                                            assume less_than(j, d) {
+                                                              @j-below-d |
+                                                                less_than(j, d)
+                                                                [by hypothesis given-j-below-d]
+                                                              @v2-j-non-generator |
+                                                                not generates(znAt(v2, j))
+                                                                [using specialize v2-non-generators(j) j-below-d]
+                                                              @v2-j-in-u |
+                                                                exists i: Nat; less_than(i, mn) and znAt(u, i) = znAt(v2, j)
+                                                                [using specialize u-covers(znAt(v2, j)) v2-j-non-generator]
+                                                              @with-match-i |
+                                                                unpack i: Nat from v2-j-in-u {
+                                                                  @match-facts |
+                                                                    less_than(i, mn) and znAt(u, i) = znAt(v2, j)
+                                                                    [by hypothesis with-match-i]
+                                                                  @i-below |
+                                                                    less_than(i, mn)
+                                                                    [by and_elim_left match-facts]
+                                                                  @u-i-is-v2-j |
+                                                                    znAt(u, i) = znAt(v2, j)
+                                                                    [by and_elim_right match-facts]
+                                                                  @v2-j-is-u-i |
+                                                                    znAt(v2, j) = znAt(u, i)
+                                                                    [by symmetry u-i-is-v2-j]
+                                                                  @match-witnessed |
+                                                                    less_than(i, mn) and znAt(v2, j) = znAt(u, i)
+                                                                    [by and_intro i-below v2-j-is-u-i]
+                                                                  @conclusion-j-drawn-inner |
+                                                                    exists i2: Nat; less_than(i2, mn) and znAt(v2, j) = znAt(u, i2)
+                                                                    [by exists_intro(i) match-witnessed]
+                                                                }
+                                                              @conclusion-j-drawn |
+                                                                exists i2: Nat; less_than(i2, mn) and znAt(v2, j) = znAt(u, i2)
+                                                                [by exists_elim with-match-i]
+                                                            }
+                                                          @j-below-d-implies |
+                                                            less_than(j, d) -> exists i2: Nat; less_than(i2, mn) and znAt(v2, j) = znAt(u, i2)
+                                                            [by implies_intro given-j-below-d]
+                                                        }
+                                                      @v2-drawn-from-u |
+                                                        forall j: Nat; less_than(j, d) -> exists i2: Nat; less_than(i2, mn) and znAt(v2, j) = znAt(u, i2)
+                                                        [by forall_intro generalize-j-v2]
+                                                      @generalize-j-u |
+                                                        fix j: Nat {
+                                                          @given-j-below-mn |
+                                                            assume less_than(j, mn) {
+                                                              @j-below-mn |
+                                                                less_than(j, mn)
+                                                                [by hypothesis given-j-below-mn]
+                                                              @u-j-non-generator |
+                                                                not generates(znAt(u, j))
+                                                                [using specialize u-non-generators(j) j-below-mn]
+                                                              @u-j-in-v2 |
+                                                                exists i: Nat; less_than(i, d) and znAt(v2, i) = znAt(u, j)
+                                                                [using specialize v2-covers(znAt(u, j)) u-j-non-generator]
+                                                              @with-match-i |
+                                                                unpack i: Nat from u-j-in-v2 {
+                                                                  @match-facts |
+                                                                    less_than(i, d) and znAt(v2, i) = znAt(u, j)
+                                                                    [by hypothesis with-match-i]
+                                                                  @i-below |
+                                                                    less_than(i, d)
+                                                                    [by and_elim_left match-facts]
+                                                                  @v2-i-is-u-j |
+                                                                    znAt(v2, i) = znAt(u, j)
+                                                                    [by and_elim_right match-facts]
+                                                                  @u-j-is-v2-i |
+                                                                    znAt(u, j) = znAt(v2, i)
+                                                                    [by symmetry v2-i-is-u-j]
+                                                                  @match-witnessed |
+                                                                    less_than(i, d) and znAt(u, j) = znAt(v2, i)
+                                                                    [by and_intro i-below u-j-is-v2-i]
+                                                                  @conclusion-j-drawn-inner |
+                                                                    exists i2: Nat; less_than(i2, d) and znAt(u, j) = znAt(v2, i2)
+                                                                    [by exists_intro(i) match-witnessed]
+                                                                }
+                                                              @conclusion-j-drawn |
+                                                                exists i2: Nat; less_than(i2, d) and znAt(u, j) = znAt(v2, i2)
+                                                                [by exists_elim with-match-i]
+                                                            }
+                                                          @j-below-mn-implies |
+                                                            less_than(j, mn) -> exists i2: Nat; less_than(i2, d) and znAt(u, j) = znAt(v2, i2)
+                                                            [by implies_intro given-j-below-mn]
+                                                        }
+                                                      @u-drawn-from-v2 |
+                                                        forall j: Nat; less_than(j, mn) -> exists i2: Nat; less_than(i2, d) and znAt(u, j) = znAt(v2, i2)
+                                                        [by forall_intro generalize-j-u]
+                                                      @lengths-equal |
+                                                        d = mn
+                                                        [using specialize znListingsOfTheSameClassHaveEqualLength(d, v2, mn, u) v2-injective u-injective v2-drawn-from-u u-drawn-from-v2]
+                                                      @sum-with-mn |
+                                                        nadd(c, mn) = m
+                                                        [by rewrite lengths-equal lengths-add]
+                                                      @sum-image-raw |
+                                                        toInt(nadd(c, mn)) = iadd(toInt(c), toInt(mn))
+                                                        [using specialize toIntAdd(c, mn)]
+                                                      @m-image-as-sum |
+                                                        toInt(m) = iadd(toInt(c), toInt(mn))
+                                                        [by rewrite sum-with-mn sum-image-raw]
+                                                      @m-image-closed |
+                                                        toInt(m) = iadd(toInt(c), pow(p, e))
+                                                        [by rewrite mn-image m-image-as-sum]
+                                                      @n-is-m-image |
+                                                        N = toInt(m)
+                                                        [by symmetry m-image]
+                                                      @power-is-m-image |
+                                                        pow(p, isucc(e)) = toInt(m)
+                                                        [by rewrite modulus n-is-m-image]
+                                                      @product-is-sum |
+                                                        imul(pow(p, e), p) = iadd(toInt(c), pow(p, e))
+                                                        [using chain power-unfolds-flipped power-is-m-image m-image-closed]
+                                                      @power-unfolds-flipped |
+                                                        imul(pow(p, e), p) = pow(p, isucc(e))
+                                                        [by symmetry power-unfolds]
+                                                      @sum-is-product |
+                                                        iadd(toInt(c), pow(p, e)) = imul(pow(p, e), p)
+                                                        [by symmetry product-is-sum]
+                                                      @c-recovered |
+                                                        toInt(c) = iadd(iadd(toInt(c), pow(p, e)), ineg(pow(p, e)))
+                                                        [using polynomial(integer)]
+                                                      @c-from-product |
+                                                        toInt(c) = iadd(imul(pow(p, e), p), ineg(pow(p, e)))
+                                                        [by rewrite sum-is-product c-recovered]
+                                                      @closed-form |
+                                                        iadd(imul(pow(p, e), p), ineg(pow(p, e))) = imul(pow(p, e), isub(p, IONE))
+                                                        [using polynomial(integer)]
+                                                      @count |
+                                                        toInt(c) = imul(pow(p, e), isub(p, IONE))
+                                                        [using chain c-from-product closed-form]
+                                                      @packaged |
+                                                        (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and toInt(c) = imul(pow(p, e), isub(p, IONE))
+                                                        [using tautology v-generates v-injective v-covers count]
+                                                      @conclusion-with-count |
+                                                        exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                                        [by exists_intro(c) packaged]
+                                                    }
+                                                  @conclusion-with-u |
+                                                    exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                                    [by exists_elim with-u]
+                                                }
+                                              @conclusion-with-d |
+                                                exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                                [by exists_elim with-d]
+                                            }
+                                          @conclusion-with-v2 |
+                                            exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                            [by exists_elim with-v2]
+                                        }
+                                      @conclusion-with-c |
+                                        exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                        [by exists_elim with-c]
+                                      @conclusion-with-v-inner |
+                                        exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                        [by exists_intro(v) conclusion-with-c]
+                                    }
+                                  @conclusion-with-v |
+                                    exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                    [by exists_elim with-v]
+                                }
+                              @conclusion-with-w |
+                                exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                                [by exists_elim with-w]
+                            }
+                          @conclusion-with-m |
+                            exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                            [by exists_elim with-m]
+                        }
+                      @conclusion-counted |
+                        exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                        [by exists_elim with-mn]
+                    }
+                  @modulus-implies |
+                    N = pow(p, isucc(e)) -> exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                    [by implies_intro given-modulus]
+                }
+              @nonneg-implies |
+                nonneg(e) -> N = pow(p, isucc(e)) -> exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+                [by implies_intro given-nonneg]
+            }
+          @prime-implies |
+            is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+            [by implies_intro given-prime]
+        }
+      @discharge-e |
+        forall e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> exists v3: ZnSeq; exists c2: Nat; (forall j: Nat; less_than(j, c2) -> generates(znAt(v3, j))) and (forall i: Nat; forall j: Nat; less_than(i, c2) -> less_than(j, c2) -> znAt(v3, i) = znAt(v3, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c2) and znAt(v3, j) = g) and toInt(c2) = imul(pow(p, e), isub(p, IONE))
+        [by forall_intro generalize-e]
+    }
+  @conclusion |
+    forall p, e: Int; is_prime(p) -> nonneg(e) -> N = pow(p, isucc(e)) -> exists v: ZnSeq; exists c: Nat; (forall j: Nat; less_than(j, c) -> generates(znAt(v, j))) and (forall i: Nat; forall j: Nat; less_than(i, c) -> less_than(j, c) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, c) and znAt(v, j) = g) and toInt(c) = imul(pow(p, e), isub(p, IONE))
     [by forall_intro generalize-p]
 qed
