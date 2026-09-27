@@ -1,0 +1,45 @@
+// std/peano/power.b4m — the POWER b^e on ℕ: b^0 = 1, b^(e+1) = b · b^e.
+//
+// (Two axioms rather than a definition block — a bare constant on a clause's right-hand
+// side is read as a clause variable; see CHAPTER5-PAINPOINTS.)
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func mul = peano.mul
+axiom induction = peano.induction
+axiom oneIsSuccZero = peano.oneIsSuccZero
+theorem mulOneRight = peano.mulOneRight
+
+func pow(base: Nat, e: Nat) => Nat
+axiom powZero: forall b: Nat; pow(b, ZERO) = ONE
+axiom powSucc: forall b: Nat; forall e: Nat; pow(b, succ(e)) = mul(b, pow(b, e))
+
+// b^1 = b.
+theorem powOne: forall b: Nat; pow(b, succ(ZERO)) = b
+proof
+  @generalize-b |
+    fix b: Nat {
+      @unfolds |
+        pow(b, succ(ZERO)) = mul(b, pow(b, ZERO))
+        [using specialize powSucc(b, ZERO)]
+      @zeroth-power |
+        pow(b, ZERO) = ONE
+        [using specialize powZero(b)]
+      @times-one |
+        pow(b, succ(ZERO)) = mul(b, ONE)
+        [by rewrite zeroth-power unfolds]
+      @one-is-neutral |
+        mul(b, ONE) = b
+        [using specialize mulOneRight(b)]
+      @conclusion-first-power |
+        pow(b, succ(ZERO)) = b
+        [using chain times-one one-is-neutral]
+    }
+  @conclusion |
+    forall b: Nat; pow(b, succ(ZERO)) = b
+    [by forall_intro generalize-b]
+qed
