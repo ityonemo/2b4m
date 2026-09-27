@@ -173,6 +173,10 @@ pub fn addTests(
     // the trivial intersection of coprime-order cyclic subgroups (Bézout), and "no proper
     // nontrivial (cyclic) subgroups ⟹ cyclic".
     ctx.okSilent(&.{ "check", "std/group/generated.b4m" });
+    // two distinct order-2 elements of an ABELIAN group span a subgroup of order 4
+    // (std/group/klein.b4m, Judson §4.1 exercise 33): {e, a, b, ab} is closed under the
+    // operation and inverses (every member is its own inverse) and has four distinct members.
+    ctx.okSilent(&.{ "check", "std/group/klein.b4m" });
 
     // the integers mod n (std/integer/mod-n.b4m, Judson §4.1 concrete): ℤ_n as a
     // quotient sort ℤ/nℤ whose group/ring axioms LIFT from ℤ via cls-homomorphism,
