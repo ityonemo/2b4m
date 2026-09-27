@@ -1978,9 +1978,13 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     const base = tokName(rtok);
     const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else blk: {
         const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
+        // the qualifier is an IMPORT of the citing file; like every other qualified
+        // reference (resolveRefs), an unfetched one is DEMANDED — racked and suspended on —
+        // never diagnosed as unknown. (Before: a passive lookup, so a source theory none of
+        // whose OWN symbols the file had touched — an alias-only re-export like
+        // std/group/listing.b4m — read as "unknown namespace".)
         const imp_state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = rtok.qualifier }) orelse {
-            self.ctx.sink.add(self.diagFile(), rtok.start, "unknown namespace '{s}'", .{qtext}) catch return error.OutOfMemory;
-            return .failed;
+            return .{ .blocked = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = self.file, .name = rtok.qualifier, .loc = rtok.start, .loc_file = self.file })) };
         };
         break :blk switch (imp_state) {
             .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
