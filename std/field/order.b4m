@@ -599,3 +599,529 @@ proof
     forall a, b: OrderedField; less_than(a, ONE) -> less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
     [by forall_intro generalize-a]
 qed
+
+// -- the non-strict order, and squares ----------------------------------------------------
+
+theorem lessOrEqualRefl: forall a: OrderedField; less_or_equal(a, a)
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @a-is-a |
+        a = a
+        [by reflexivity]
+      @conclusion-refl |
+        less_or_equal(a, a)
+        [using tautology a-is-a]
+    }
+  @conclusion |
+    forall a: OrderedField; less_or_equal(a, a)
+    [by forall_intro generalize-a]
+qed
+
+// a ≤ b and b < c ⟹ a < c.
+theorem lessOrEqualThenLessThan: forall a, b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @given-b-below-c |
+                    assume less_than(b, c) {
+                      @a-at-most-b |
+                        less_than(a, b) or a = b
+                        [by hypothesis given-a-at-most-b]
+                      @b-below-c |
+                        less_than(b, c)
+                        [by hypothesis given-b-below-c]
+                      @conclusion-a-below-c |
+                        less_than(a, c)
+                        case a-at-most-b {
+                          @when-below |
+                            assume less_than(a, b) {
+                              @a-below-b |
+                                less_than(a, b)
+                                [by hypothesis when-below]
+                              @conclusion-when-below |
+                                less_than(a, c)
+                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                            }
+                          @when-equal |
+                            assume a = b {
+                              @a-is-b |
+                                a = b
+                                [by hypothesis when-equal]
+                              @conclusion-when-equal |
+                                less_than(a, c)
+                                [by rewrite a-is-b b-below-c]
+                            }
+                        }
+                    }
+                  @b-below-c-implies |
+                    less_than(b, c) -> less_than(a, c)
+                    [by implies_intro given-b-below-c]
+                }
+              @a-at-most-b-implies |
+                less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+                [by implies_intro given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+    [by forall_intro generalize-a]
+qed
+
+// a < b and b ≤ c ⟹ a < c.
+theorem lessThanThenLessOrEqual: forall a, b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @given-a-below-b |
+                assume less_than(a, b) {
+                  @given-b-at-most-c |
+                    assume less_or_equal(b, c) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis given-a-below-b]
+                      @b-at-most-c |
+                        less_than(b, c) or b = c
+                        [by hypothesis given-b-at-most-c]
+                      @conclusion-a-below-c |
+                        less_than(a, c)
+                        case b-at-most-c {
+                          @when-below |
+                            assume less_than(b, c) {
+                              @b-below-c |
+                                less_than(b, c)
+                                [by hypothesis when-below]
+                              @conclusion-when-below |
+                                less_than(a, c)
+                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                            }
+                          @when-equal |
+                            assume b = c {
+                              @b-is-c |
+                                b = c
+                                [by hypothesis when-equal]
+                              @conclusion-when-equal |
+                                less_than(a, c)
+                                [by rewrite b-is-c a-below-b]
+                            }
+                        }
+                    }
+                  @b-at-most-c-implies |
+                    less_or_equal(b, c) -> less_than(a, c)
+                    [by implies_intro given-b-at-most-c]
+                }
+              @a-below-b-implies |
+                less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+                [by implies_intro given-a-below-b]
+            }
+          @discharge-c |
+            forall c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+    [by forall_intro generalize-a]
+qed
+
+theorem lessOrEqualTransitive: forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @given-b-at-most-c |
+                    assume less_or_equal(b, c) {
+                      @a-at-most-b |
+                        less_or_equal(a, b)
+                        [by hypothesis given-a-at-most-b]
+                      @b-at-most-c |
+                        less_than(b, c) or b = c
+                        [by hypothesis given-b-at-most-c]
+                      @conclusion-a-at-most-c |
+                        less_or_equal(a, c)
+                        case b-at-most-c {
+                          @when-below |
+                            assume less_than(b, c) {
+                              @b-below-c |
+                                less_than(b, c)
+                                [by hypothesis when-below]
+                              @a-below-c |
+                                less_than(a, c)
+                                [using specialize lessOrEqualThenLessThan(a, b, c) a-at-most-b b-below-c]
+                              @conclusion-when-below |
+                                less_or_equal(a, c)
+                                [using tautology a-below-c]
+                            }
+                          @when-equal |
+                            assume b = c {
+                              @b-is-c |
+                                b = c
+                                [by hypothesis when-equal]
+                              @conclusion-when-equal |
+                                less_or_equal(a, c)
+                                [by rewrite b-is-c a-at-most-b]
+                            }
+                        }
+                    }
+                  @b-at-most-c-implies |
+                    less_or_equal(b, c) -> less_or_equal(a, c)
+                    [by implies_intro given-b-at-most-c]
+                }
+              @a-at-most-b-implies |
+                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+                [by implies_intro given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+    [by forall_intro generalize-a]
+qed
+
+// a ≤ b ⟹ a + c ≤ b + c.
+theorem lessOrEqualAddRight: forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @a-at-most-b |
+                    less_than(a, b) or a = b
+                    [by hypothesis given-a-at-most-b]
+                  @conclusion-shifted |
+                    less_or_equal(add(a, c), add(b, c))
+                    case a-at-most-b {
+                      @when-below |
+                        assume less_than(a, b) {
+                          @a-below-b |
+                            less_than(a, b)
+                            [by hypothesis when-below]
+                          @shifted-below |
+                            less_than(add(a, c), add(b, c))
+                            [using specialize lessThanAddRight(a, b, c) a-below-b]
+                          @conclusion-when-below |
+                            less_or_equal(add(a, c), add(b, c))
+                            [using tautology shifted-below]
+                        }
+                      @when-equal |
+                        assume a = b {
+                          @a-is-b |
+                            a = b
+                            [by hypothesis when-equal]
+                          @sum-reflexive |
+                            add(a, c) = add(a, c)
+                            [by reflexivity]
+                          @sums-equal |
+                            add(a, c) = add(b, c)
+                            [by rewrite a-is-b sum-reflexive]
+                          @conclusion-when-equal |
+                            less_or_equal(add(a, c), add(b, c))
+                            [using tautology sums-equal]
+                        }
+                    }
+                }
+              @a-at-most-b-implies |
+                less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+                [by implies_intro given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: OrderedField; less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+    [by forall_intro generalize-a]
+qed
+
+// a ≤ b and c ≤ d ⟹ a + c ≤ b + d.
+theorem lessOrEqualAddBoth: forall a, b, c, d: OrderedField; less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @generalize-d |
+                fix d: OrderedField {
+                  @given-a-at-most-b |
+                    assume less_or_equal(a, b) {
+                      @given-c-at-most-d |
+                        assume less_or_equal(c, d) {
+                          @a-at-most-b |
+                            less_or_equal(a, b)
+                            [by hypothesis given-a-at-most-b]
+                          @c-at-most-d |
+                            less_or_equal(c, d)
+                            [by hypothesis given-c-at-most-d]
+                          @first-shift |
+                            less_or_equal(add(a, c), add(b, c))
+                            [using specialize lessOrEqualAddRight(a, b, c) a-at-most-b]
+                          @second-shift |
+                            less_or_equal(add(c, b), add(d, b))
+                            [using specialize lessOrEqualAddRight(c, d, b) c-at-most-d]
+                          @bc-commutes |
+                            add(c, b) = add(b, c)
+                            [using specialize addIsCommutative(c, b)]
+                          @db-commutes |
+                            add(d, b) = add(b, d)
+                            [using specialize addIsCommutative(d, b)]
+                          @second-shift-left |
+                            less_or_equal(add(b, c), add(d, b))
+                            [by rewrite bc-commutes second-shift]
+                          @second-shift-both |
+                            less_or_equal(add(b, c), add(b, d))
+                            [by rewrite db-commutes second-shift-left]
+                          @conclusion-both-shifted |
+                            less_or_equal(add(a, c), add(b, d))
+                            [using specialize lessOrEqualTransitive(add(a, c), add(b, c), add(b, d)) first-shift second-shift-both]
+                        }
+                      @c-at-most-d-implies |
+                        less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+                        [by implies_intro given-c-at-most-d]
+                    }
+                  @a-at-most-b-implies |
+                    less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+                    [by implies_intro given-a-at-most-b]
+                }
+              @discharge-d |
+                forall d: OrderedField; less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: OrderedField; less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: OrderedField; less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: OrderedField; less_or_equal(a, b) -> less_or_equal(c, d) -> less_or_equal(add(a, c), add(b, d))
+    [by forall_intro generalize-a]
+qed
+
+// 0 ≤ x < y ⟹ x² < y²: x·x ≤ x·y < y·y.
+theorem squareStrictlyMonotone: forall x, y: OrderedField; less_or_equal(ZERO, x) -> less_than(x, y) -> less_than(mul(x, x), mul(y, y))
+proof
+  @generalize-x |
+    fix x: OrderedField {
+      @generalize-y |
+        fix y: OrderedField {
+          @given-x-nonneg |
+            assume less_or_equal(ZERO, x) {
+              @given-x-below-y |
+                assume less_than(x, y) {
+                  @x-nonneg |
+                    less_than(ZERO, x) or ZERO = x
+                    [by hypothesis given-x-nonneg]
+                  @x-nonneg-folded |
+                    less_or_equal(ZERO, x)
+                    [by hypothesis given-x-nonneg]
+                  @x-below-y |
+                    less_than(x, y)
+                    [by hypothesis given-x-below-y]
+                  @y-positive |
+                    less_than(ZERO, y)
+                    [using specialize lessOrEqualThenLessThan(ZERO, x, y) x-nonneg-folded x-below-y]
+                  @xy-below-yy |
+                    less_than(mul(x, y), mul(y, y))
+                    [using specialize lessThanMulPositiveRight(x, y, y) x-below-y y-positive]
+                  @xx-at-most-xy |
+                    less_or_equal(mul(x, x), mul(x, y))
+                    case x-nonneg {
+                      @when-x-positive |
+                        assume less_than(ZERO, x) {
+                          @x-positive |
+                            less_than(ZERO, x)
+                            [by hypothesis when-x-positive]
+                          @xx-below-yx |
+                            less_than(mul(x, x), mul(y, x))
+                            [using specialize lessThanMulPositiveRight(x, y, x) x-below-y x-positive]
+                          @yx-commutes |
+                            mul(y, x) = mul(x, y)
+                            [using specialize mulIsCommutative(y, x)]
+                          @xx-below-xy |
+                            less_than(mul(x, x), mul(x, y))
+                            [by rewrite yx-commutes xx-below-yx]
+                          @conclusion-when-x-positive |
+                            less_or_equal(mul(x, x), mul(x, y))
+                            [using tautology xx-below-xy]
+                        }
+                      @when-x-zero |
+                        assume ZERO = x {
+                          @zero-is-x |
+                            ZERO = x
+                            [by hypothesis when-x-zero]
+                          @x-is-zero |
+                            x = ZERO
+                            [by symmetry zero-is-x]
+                          @xx-is-zero-x |
+                            mul(x, x) = mul(ZERO, x)
+                            [by rewrite x-is-zero xx-reflexive]
+                          @xx-reflexive |
+                            mul(x, x) = mul(x, x)
+                            [by reflexivity]
+                          @zero-times-x |
+                            mul(ZERO, x) = ZERO
+                            [using specialize mulZeroLeft(x)]
+                          @xy-is-zero-y |
+                            mul(x, y) = mul(ZERO, y)
+                            [by rewrite x-is-zero xy-reflexive]
+                          @xy-reflexive |
+                            mul(x, y) = mul(x, y)
+                            [by reflexivity]
+                          @zero-times-y |
+                            mul(ZERO, y) = ZERO
+                            [using specialize mulZeroLeft(y)]
+                          @xy-is-zero |
+                            mul(x, y) = ZERO
+                            [using chain xy-is-zero-y zero-times-y]
+                          @zero-is-xy |
+                            ZERO = mul(x, y)
+                            [by symmetry xy-is-zero]
+                          @xx-is-xy |
+                            mul(x, x) = mul(x, y)
+                            [using chain xx-is-zero-x zero-times-x zero-is-xy]
+                          @conclusion-when-x-zero |
+                            less_or_equal(mul(x, x), mul(x, y))
+                            [using tautology xx-is-xy]
+                        }
+                    }
+                  @conclusion-squares |
+                    less_than(mul(x, x), mul(y, y))
+                    [using specialize lessOrEqualThenLessThan(mul(x, x), mul(x, y), mul(y, y)) xx-at-most-xy xy-below-yy]
+                }
+              @x-below-y-implies |
+                less_than(x, y) -> less_than(mul(x, x), mul(y, y))
+                [by implies_intro given-x-below-y]
+            }
+          @x-nonneg-implies |
+            less_or_equal(ZERO, x) -> less_than(x, y) -> less_than(mul(x, x), mul(y, y))
+            [by implies_intro given-x-nonneg]
+        }
+      @discharge-y |
+        forall y: OrderedField; less_or_equal(ZERO, x) -> less_than(x, y) -> less_than(mul(x, x), mul(y, y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: OrderedField; less_or_equal(ZERO, x) -> less_than(x, y) -> less_than(mul(x, x), mul(y, y))
+    [by forall_intro generalize-x]
+qed
+
+// 0 ≤ y and x² ≤ y² ⟹ x ≤ y (else 0 ≤ y < x gives y² < x²).
+theorem squareBoundGivesBound: forall x, y: OrderedField; less_or_equal(ZERO, y) -> less_or_equal(mul(x, x), mul(y, y)) -> less_or_equal(x, y)
+proof
+  @generalize-x |
+    fix x: OrderedField {
+      @generalize-y |
+        fix y: OrderedField {
+          @given-y-nonneg |
+            assume less_or_equal(ZERO, y) {
+              @given-squares |
+                assume less_or_equal(mul(x, x), mul(y, y)) {
+                  @y-nonneg |
+                    less_or_equal(ZERO, y)
+                    [by hypothesis given-y-nonneg]
+                  @squares |
+                    less_or_equal(mul(x, x), mul(y, y))
+                    [by hypothesis given-squares]
+                  @x-versus-y |
+                    less_than(x, y) or x = y or less_than(y, x)
+                    [using specialize lessThanTrichotomy(x, y)]
+                  @conclusion-x-at-most-y |
+                    less_or_equal(x, y)
+                    case x-versus-y {
+                      @when-below |
+                        assume less_than(x, y) {
+                          @x-below-y |
+                            less_than(x, y)
+                            [by hypothesis when-below]
+                          @conclusion-when-below |
+                            less_or_equal(x, y)
+                            [using tautology x-below-y]
+                        }
+                      @when-equal |
+                        assume x = y {
+                          @x-is-y |
+                            x = y
+                            [by hypothesis when-equal]
+                          @conclusion-when-equal |
+                            less_or_equal(x, y)
+                            [using tautology x-is-y]
+                        }
+                      @when-above |
+                        assume less_than(y, x) {
+                          @y-below-x |
+                            less_than(y, x)
+                            [by hypothesis when-above]
+                          @yy-below-xx |
+                            less_than(mul(y, y), mul(x, x))
+                            [using specialize squareStrictlyMonotone(y, x) y-nonneg y-below-x]
+                          @yy-below-yy |
+                            less_than(mul(y, y), mul(y, y))
+                            [using specialize lessThanThenLessOrEqual(mul(y, y), mul(x, x), mul(y, y)) yy-below-xx squares]
+                          @yy-not-below-itself |
+                            not less_than(mul(y, y), mul(y, y))
+                            [using specialize lessThanIrreflexive(mul(y, y))]
+                          @conclusion-when-above |
+                            less_or_equal(x, y)
+                            [by absurd yy-below-yy yy-not-below-itself]
+                        }
+                    }
+                }
+              @squares-implies |
+                less_or_equal(mul(x, x), mul(y, y)) -> less_or_equal(x, y)
+                [by implies_intro given-squares]
+            }
+          @y-nonneg-implies |
+            less_or_equal(ZERO, y) -> less_or_equal(mul(x, x), mul(y, y)) -> less_or_equal(x, y)
+            [by implies_intro given-y-nonneg]
+        }
+      @discharge-y |
+        forall y: OrderedField; less_or_equal(ZERO, y) -> less_or_equal(mul(x, x), mul(y, y)) -> less_or_equal(x, y)
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: OrderedField; less_or_equal(ZERO, y) -> less_or_equal(mul(x, x), mul(y, y)) -> less_or_equal(x, y)
+    [by forall_intro generalize-x]
+qed

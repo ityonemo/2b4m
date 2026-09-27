@@ -121,3 +121,100 @@ proof
     forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(ZERO, y) -> sqrt(mul(x, y)) = mul(sqrt(x), sqrt(y))
     [by forall_intro generalize-x]
 qed
+
+// sqrt is MONOTONE on the nonnegatives: 0 ≤ x ≤ y ⟹ sqrt(x) ≤ sqrt(y). Otherwise
+// sqrt(y) < sqrt(x) with both nonnegative squares to y < x.
+theorem sqrtMonotone: forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(x, y) -> less_or_equal(sqrt(x), sqrt(y))
+proof
+  @generalize-x |
+    fix x: Real {
+      @generalize-y |
+        fix y: Real {
+          @given-x-nonneg |
+            assume less_or_equal(ZERO, x) {
+              @given-x-at-most-y |
+                assume less_or_equal(x, y) {
+                  @x-nonneg |
+                    less_or_equal(ZERO, x)
+                    [by hypothesis given-x-nonneg]
+                  @x-at-most-y |
+                    less_or_equal(x, y)
+                    [by hypothesis given-x-at-most-y]
+                  @y-nonneg |
+                    less_or_equal(ZERO, y)
+                    [using specialize real.lessOrEqualTransitive(ZERO, x, y) x-nonneg x-at-most-y]
+                  @root-y-nonneg |
+                    less_or_equal(ZERO, sqrt(y))
+                    [using specialize sqrtNonneg(y) y-nonneg]
+                  @root-x-squares |
+                    mul(sqrt(x), sqrt(x)) = x
+                    [using specialize sqrtSquare(x) x-nonneg]
+                  @root-y-squares |
+                    mul(sqrt(y), sqrt(y)) = y
+                    [using specialize sqrtSquare(y) y-nonneg]
+                  @roots-compared |
+                    less_than(sqrt(x), sqrt(y)) or sqrt(x) = sqrt(y) or less_than(sqrt(y), sqrt(x))
+                    [using specialize real.lessThanTrichotomy(sqrt(x), sqrt(y))]
+                  @conclusion-roots-ordered |
+                    less_or_equal(sqrt(x), sqrt(y))
+                    case roots-compared {
+                      @when-below |
+                        assume less_than(sqrt(x), sqrt(y)) {
+                          @root-x-below-root-y |
+                            less_than(sqrt(x), sqrt(y))
+                            [by hypothesis when-below]
+                          @conclusion-when-below |
+                            less_or_equal(sqrt(x), sqrt(y))
+                            [using tautology root-x-below-root-y]
+                        }
+                      @when-equal |
+                        assume sqrt(x) = sqrt(y) {
+                          @roots-equal |
+                            sqrt(x) = sqrt(y)
+                            [by hypothesis when-equal]
+                          @conclusion-when-equal |
+                            less_or_equal(sqrt(x), sqrt(y))
+                            [using tautology roots-equal]
+                        }
+                      @when-above |
+                        assume less_than(sqrt(y), sqrt(x)) {
+                          @root-y-below-root-x |
+                            less_than(sqrt(y), sqrt(x))
+                            [by hypothesis when-above]
+                          @squares-ordered |
+                            less_than(mul(sqrt(y), sqrt(y)), mul(sqrt(x), sqrt(x)))
+                            [using specialize real.squareStrictlyMonotone(sqrt(y), sqrt(x)) root-y-nonneg root-y-below-root-x]
+                          @y-below-root-x-square |
+                            less_than(y, mul(sqrt(x), sqrt(x)))
+                            [by rewrite root-y-squares squares-ordered]
+                          @y-below-x |
+                            less_than(y, x)
+                            [by rewrite root-x-squares y-below-root-x-square]
+                          @y-below-y |
+                            less_than(y, y)
+                            [using specialize real.lessThanThenLessOrEqual(y, x, y) y-below-x x-at-most-y]
+                          @y-not-below-itself |
+                            not less_than(y, y)
+                            [using specialize real.lessThanIrreflexive(y)]
+                          @conclusion-when-above |
+                            less_or_equal(sqrt(x), sqrt(y))
+                            [by absurd y-below-y y-not-below-itself]
+                        }
+                    }
+                }
+              @x-at-most-y-implies |
+                less_or_equal(x, y) -> less_or_equal(sqrt(x), sqrt(y))
+                [by implies_intro given-x-at-most-y]
+            }
+          @x-nonneg-implies |
+            less_or_equal(ZERO, x) -> less_or_equal(x, y) -> less_or_equal(sqrt(x), sqrt(y))
+            [by implies_intro given-x-nonneg]
+        }
+      @discharge-y |
+        forall y: Real; less_or_equal(ZERO, x) -> less_or_equal(x, y) -> less_or_equal(sqrt(x), sqrt(y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Real; less_or_equal(ZERO, x) -> less_or_equal(x, y) -> less_or_equal(sqrt(x), sqrt(y))
+    [by forall_intro generalize-x]
+qed
