@@ -340,4 +340,11 @@ pub fn addTests(
     // permutation of n letters, so n+1 blocks of n! entries (blocks concatenate by seqConcat,
     // a block is a swap mapped over the n-letter listing by mappedSequenceExists).
     ctx.okSilent(&.{ "check", "std/permutation/count.b4m" });
+
+    // LISTING TOOLS (std/permutation/listing.b4m): SPLITTING a listing by a predicate (theorem
+    // schemas in the predicate — sub-listings extend or skip an entry, an induction over the
+    // prefix, lengths add up) and EQUAL LENGTHS of listings in bijection through an invertible
+    // map (the index map, by definite description, bijects the two segments;
+    // segmentSizeIsUnique). What |A_n| = n!/2 in aata/5.1 runs on.
+    ctx.okSilent(&.{ "check", "std/permutation/listing.b4m" });
 }
