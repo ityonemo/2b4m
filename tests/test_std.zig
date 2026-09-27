@@ -347,4 +347,12 @@ pub fn addTests(
     // map (the index map, by definite description, bijects the two segments;
     // segmentSizeIsUnique). What |A_n| = n!/2 in aata/5.1 runs on.
     ctx.okSilent(&.{ "check", "std/permutation/listing.b4m" });
+
+    // THE DIHEDRAL GROUP (std/permutation/dihedral.b4m): |D_n| = 2n for n ≥ 3, as a listing.
+    // The rotation ρ is the n-cycle on the list of letters (cycle theory), the reflection σ
+    // (i ↦ n - i, fixing 0) by definite description; a rigid motion preserves adjacency
+    // (ρx = y or ρy = x). Powers of a map, the relation σρ = ρ⁻¹σ on the letters, ρ^k and
+    // ρ^k∘σ are motions, EXHAUSTION by walking the letters (t(i+2) is a neighbour of
+    // u(i+1) other than u(i)), the listing (powers ++ reflected powers), distinctness.
+    ctx.okSilent(&.{ "check", "std/permutation/dihedral.b4m" });
 }
