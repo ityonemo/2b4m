@@ -68,7 +68,7 @@ theorem addSubCancel = peano_subtraction.addSubCancel
 theorem zeroBelowSucc = cycle_theory.zeroBelowSucc
 
 // t IS A TRANSPOSITION: it exchanges some two points
-define isATransposition(t) = exists u: Element; exists v: Element; t = transposition(u, v)
+define isATransposition(t) = exists u: Element; exists v: Element; u != v and t = transposition(u, v)
 
 // g IS A PRODUCT OF TRANSPOSITIONS: some sequence of r transpositions multiplies to g
 define isAProductOfTranspositions(g) = exists w: Seq; exists r: Nat;
@@ -79,7 +79,7 @@ define isAProductOfTranspositions(g) = exists w: Seq; exists r: Nat;
 // Induction on the length: the one-cycle is the identity, the empty product of any
 // sequence; and (a₀ … a_{k+1}) = (a₀ a_{k+1}) ∘ (a₀ … a_k) is that transposition prepended
 // to the sequence for the shorter cycle.
-theorem cycleIsAProductOfTranspositions: forall s: Points; forall k: Nat;
+theorem cycleIsAProductOfTranspositions: forall s: Points; forall k: Nat; cycle_theory.distinct(s, succ(k)) ->
   exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
 proof
   @generalize-s |
@@ -124,168 +124,213 @@ proof
             exists w2: Seq; (forall i: Nat; less_than(i, ZERO) -> isATransposition(at(w2, i))) and productUpTo(w2, ZERO) = cycle(s, succ(ZERO))
             [by exists_intro(w) base-clauses]
         }
-      @base-case |
+      @base-case-unconditional |
         exists w2: Seq; (forall i: Nat; less_than(i, ZERO) -> isATransposition(at(w2, i))) and productUpTo(w2, ZERO) = cycle(s, succ(ZERO))
         [by exists_elim base-case-proof]
+      @base-case |
+        cycle_theory.distinct(s, succ(ZERO)) -> exists w2: Seq; (forall i: Nat; less_than(i, ZERO) -> isATransposition(at(w2, i))) and productUpTo(w2, ZERO) = cycle(s, succ(ZERO))
+        [using tautology base-case-unconditional]
       // inductive step: prepend the new transposition
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
-            assume exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k)) {
-              @inductive-hypothesis |
-                exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
-                [by hypothesis given-inductive-hypothesis]
-              @with-sequence-w |
-                unpack w: Seq from inductive-hypothesis {
-                  @sequence-facts |
-                    (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
-                    [by hypothesis with-sequence-w]
-                  @entries-are-transpositions |
-                    forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))
-                    [by and_elim_left sequence-facts]
-                  @product-is-the-shorter-cycle |
-                    productUpTo(w, k) = cycle(s, succ(k))
-                    [by and_elim_right sequence-facts]
-                  @new-transposition-invertible |
-                    invertible(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))))
-                    [using specialize transpositionIsAPermutation(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))]
-                  @prepend-for-it |
-                    forall t: Seq; exists u: Seq; at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(t, i))
-                    [using specialize seqPrepend(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))) new-transposition-invertible]
-                  @prepended-exists |
-                    exists u: Seq; at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(w, i))
-                    [using specialize prepend-for-it(w)]
-                  @with-prepended-u |
-                    unpack u: Seq from prepended-exists {
-                      @prepend-facts |
-                        at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(w, i))
-                        [by hypothesis with-prepended-u]
-                      @head-is-the-transposition |
-                        at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))
-                        [by and_elim_left prepend-facts]
-                      @tail-shifts |
-                        forall i: Nat; at(u, succ(i)) = at(w, i)
-                        [by and_elim_right prepend-facts]
-                      @product-of-prepend |
-                        forall n: Nat; productUpTo(u, succ(n)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), productUpTo(w, n))
-                        [using specialize productOfPrepend(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), w, u) head-is-the-transposition tail-shifts]
-                      @product-at-k |
-                        productUpTo(u, succ(k)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), productUpTo(w, k))
-                        [using specialize product-of-prepend(k)]
-                      @product-through-the-shorter-cycle |
-                        productUpTo(u, succ(k)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), cycle(s, succ(k)))
-                        [by rewrite product-is-the-shorter-cycle product-at-k]
-                      @longer-cycle-unfolds |
-                        cycle(s, succ(succ(k))) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), cycle(s, succ(k)))
-                        [using specialize cycleSucc(s, succ(k))]
-                      @product-is-the-longer-cycle |
-                        productUpTo(u, succ(k)) = cycle(s, succ(succ(k)))
-                        [by rewrite longer-cycle-unfolds product-through-the-shorter-cycle]
-                      // every entry is a transposition
-                      @generalize-i |
-                        fix i: Nat {
-                          @given-i-in-range |
-                            assume less_than(i, succ(k)) {
-                              @i-in-range |
-                                less_than(i, succ(k))
-                                [by hypothesis given-i-in-range]
-                              @i-is-zero-or-a-successor |
-                                i = ZERO or (exists i2: Nat; i = succ(i2))
-                                [using specialize zeroOrSucc(i)]
-                              @conclusion-entry |
-                                isATransposition(at(u, i))
-                                case i-is-zero-or-a-successor {
-                                  @when-head |
-                                    assume i = ZERO {
-                                      @i-is-zero |
-                                        i = ZERO
-                                        [by hypothesis when-head]
-                                      @the-transposition-is-itself |
-                                        transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))
-                                        [by reflexivity]
-                                      @inner-witness |
-                                        exists v: Element; transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) = transposition(cycle_theory.at(s, ZERO), v)
-                                        [by exists_intro(cycle_theory.at(s, succ(k))) the-transposition-is-itself]
-                                      @head-value-is-a-transposition |
-                                        isATransposition(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))))
-                                        [by exists_intro(cycle_theory.at(s, ZERO)) inner-witness]
-                                      @head-is-a-transposition |
-                                        isATransposition(at(u, ZERO))
-                                        [by rewrite head-is-the-transposition head-value-is-a-transposition]
-                                      @conclusion-head |
-                                        isATransposition(at(u, i))
-                                        [by rewrite i-is-zero head-is-a-transposition]
-                                    }
-                                  @when-tail |
-                                    assume exists i2: Nat; i = succ(i2) {
-                                      @predecessor-exists |
-                                        exists i2: Nat; i = succ(i2)
-                                        [by hypothesis when-tail]
-                                      @with-predecessor-i2 |
-                                        unpack i2: Nat from predecessor-exists {
-                                          @i-is-succ-i2 |
-                                            i = succ(i2)
-                                            [by hypothesis with-predecessor-i2]
-                                          @succ-i2-in-range |
-                                            less_than(succ(i2), succ(k))
-                                            [by rewrite i-is-succ-i2 i-in-range]
-                                          @i2-in-range |
-                                            less_than(i2, k)
-                                            [using specialize succReflectsOrder(i2, k) succ-i2-in-range]
-                                          @tail-entry-is-a-transposition |
-                                            isATransposition(at(w, i2))
-                                            [using specialize entries-are-transpositions(i2) i2-in-range]
-                                          @shifted |
-                                            at(u, succ(i2)) = at(w, i2)
-                                            [using specialize tail-shifts(i2)]
-                                          @shifted-is-a-transposition |
-                                            isATransposition(at(u, succ(i2)))
-                                            [by rewrite shifted tail-entry-is-a-transposition]
-                                          @conclusion-tail |
+            assume cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k)) {
+              @given-distinct |
+                assume cycle_theory.distinct(s, succ(succ(k))) {
+                  @distinct-longer |
+                    cycle_theory.distinct(s, succ(succ(k)))
+                    [by hypothesis given-distinct]
+                  @distinct-shorter |
+                    cycle_theory.distinct(s, succ(k))
+                    [using specialize cycle_theory.distinctPrefix(s, succ(k)) distinct-longer]
+                  @inductive-implication |
+                    cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
+                    [by hypothesis given-inductive-hypothesis]
+                  @inductive-hypothesis |
+                    exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
+                    [by modus_ponens inductive-implication distinct-shorter]
+                  @zero-below-longer |
+                    less_than(ZERO, succ(succ(k)))
+                    [using specialize zeroBelowSucc(succ(k))]
+                  @succ-k-below-longer |
+                    less_than(succ(k), succ(succ(k)))
+                    [using specialize peano_order.lessThanSelf(succ(k))]
+                  @succ-k-not-zero |
+                    succ(k) != ZERO
+                    [using specialize peano.succNotZero(k)]
+                  @generalize-for-flip |
+                    assume ZERO = succ(k) {
+                      @zero-is-succ-k |
+                        ZERO = succ(k)
+                        [by hypothesis generalize-for-flip]
+                      @succ-k-is-zero |
+                        succ(k) = ZERO
+                        [by symmetry zero-is-succ-k]
+                    }
+                  @zero-not-succ-k |
+                    ZERO != succ(k)
+                    [by not_intro generalize-for-flip succ-k-is-zero succ-k-not-zero]
+                  @endpoints-differ |
+                    cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(k))
+                    [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(k)), ZERO, succ(k)) distinct-longer zero-below-longer succ-k-below-longer zero-not-succ-k]
+                  @with-sequence-w |
+                    unpack w: Seq from inductive-hypothesis {
+                      @sequence-facts |
+                        (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
+                        [by hypothesis with-sequence-w]
+                      @entries-are-transpositions |
+                        forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))
+                        [by and_elim_left sequence-facts]
+                      @product-is-the-shorter-cycle |
+                        productUpTo(w, k) = cycle(s, succ(k))
+                        [by and_elim_right sequence-facts]
+                      @new-transposition-invertible |
+                        invertible(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))))
+                        [using specialize transpositionIsAPermutation(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))]
+                      @prepend-for-it |
+                        forall t: Seq; exists u: Seq; at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(t, i))
+                        [using specialize seqPrepend(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))) new-transposition-invertible]
+                      @prepended-exists |
+                        exists u: Seq; at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(w, i))
+                        [using specialize prepend-for-it(w)]
+                      @with-prepended-u |
+                        unpack u: Seq from prepended-exists {
+                          @prepend-facts |
+                            at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) and (forall i: Nat; at(u, succ(i)) = at(w, i))
+                            [by hypothesis with-prepended-u]
+                          @head-is-the-transposition |
+                            at(u, ZERO) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))
+                            [by and_elim_left prepend-facts]
+                          @tail-shifts |
+                            forall i: Nat; at(u, succ(i)) = at(w, i)
+                            [by and_elim_right prepend-facts]
+                          @product-of-prepend |
+                            forall n: Nat; productUpTo(u, succ(n)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), productUpTo(w, n))
+                            [using specialize productOfPrepend(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), w, u) head-is-the-transposition tail-shifts]
+                          @product-at-k |
+                            productUpTo(u, succ(k)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), productUpTo(w, k))
+                            [using specialize product-of-prepend(k)]
+                          @product-through-the-shorter-cycle |
+                            productUpTo(u, succ(k)) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), cycle(s, succ(k)))
+                            [by rewrite product-is-the-shorter-cycle product-at-k]
+                          @longer-cycle-unfolds |
+                            cycle(s, succ(succ(k))) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))), cycle(s, succ(k)))
+                            [using specialize cycleSucc(s, succ(k))]
+                          @product-is-the-longer-cycle |
+                            productUpTo(u, succ(k)) = cycle(s, succ(succ(k)))
+                            [by rewrite longer-cycle-unfolds product-through-the-shorter-cycle]
+                          // every entry is a transposition
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-in-range |
+                                assume less_than(i, succ(k)) {
+                                  @i-in-range |
+                                    less_than(i, succ(k))
+                                    [by hypothesis given-i-in-range]
+                                  @i-is-zero-or-a-successor |
+                                    i = ZERO or (exists i2: Nat; i = succ(i2))
+                                    [using specialize zeroOrSucc(i)]
+                                  @conclusion-entry |
+                                    isATransposition(at(u, i))
+                                    case i-is-zero-or-a-successor {
+                                      @when-head |
+                                        assume i = ZERO {
+                                          @i-is-zero |
+                                            i = ZERO
+                                            [by hypothesis when-head]
+                                          @the-transposition-is-itself |
+                                            transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))
+                                            [by reflexivity]
+                                          @head-facts |
+                                            cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(k)) and transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k)))
+                                            [by and_intro endpoints-differ the-transposition-is-itself]
+                                          @inner-witness |
+                                            exists v: Element; cycle_theory.at(s, ZERO) != v and transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))) = transposition(cycle_theory.at(s, ZERO), v)
+                                            [by exists_intro(cycle_theory.at(s, succ(k))) head-facts]
+                                          @head-value-is-a-transposition |
+                                            isATransposition(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(k))))
+                                            [by exists_intro(cycle_theory.at(s, ZERO)) inner-witness]
+                                          @head-is-a-transposition |
+                                            isATransposition(at(u, ZERO))
+                                            [by rewrite head-is-the-transposition head-value-is-a-transposition]
+                                          @conclusion-head |
                                             isATransposition(at(u, i))
-                                            [by rewrite i-is-succ-i2 shifted-is-a-transposition]
+                                            [by rewrite i-is-zero head-is-a-transposition]
                                         }
-                                      @conclusion-when-tail |
-                                        isATransposition(at(u, i))
-                                        [by exists_elim with-predecessor-i2]
+                                      @when-tail |
+                                        assume exists i2: Nat; i = succ(i2) {
+                                          @predecessor-exists |
+                                            exists i2: Nat; i = succ(i2)
+                                            [by hypothesis when-tail]
+                                          @with-predecessor-i2 |
+                                            unpack i2: Nat from predecessor-exists {
+                                              @i-is-succ-i2 |
+                                                i = succ(i2)
+                                                [by hypothesis with-predecessor-i2]
+                                              @succ-i2-in-range |
+                                                less_than(succ(i2), succ(k))
+                                                [by rewrite i-is-succ-i2 i-in-range]
+                                              @i2-in-range |
+                                                less_than(i2, k)
+                                                [using specialize succReflectsOrder(i2, k) succ-i2-in-range]
+                                              @tail-entry-is-a-transposition |
+                                                isATransposition(at(w, i2))
+                                                [using specialize entries-are-transpositions(i2) i2-in-range]
+                                              @shifted |
+                                                at(u, succ(i2)) = at(w, i2)
+                                                [using specialize tail-shifts(i2)]
+                                              @shifted-is-a-transposition |
+                                                isATransposition(at(u, succ(i2)))
+                                                [by rewrite shifted tail-entry-is-a-transposition]
+                                              @conclusion-tail |
+                                                isATransposition(at(u, i))
+                                                [by rewrite i-is-succ-i2 shifted-is-a-transposition]
+                                            }
+                                          @conclusion-when-tail |
+                                            isATransposition(at(u, i))
+                                            [by exists_elim with-predecessor-i2]
+                                        }
                                     }
                                 }
+                              @conclusion-entry-clause |
+                                less_than(i, succ(k)) -> isATransposition(at(u, i))
+                                [by implies_intro given-i-in-range]
                             }
-                          @conclusion-entry-clause |
-                            less_than(i, succ(k)) -> isATransposition(at(u, i))
-                            [by implies_intro given-i-in-range]
+                          @all-entries |
+                            forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(u, i))
+                            [by forall_intro generalize-i]
+                          @step-clauses |
+                            (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(u, i))) and productUpTo(u, succ(k)) = cycle(s, succ(succ(k)))
+                            [by and_intro all-entries product-is-the-longer-cycle]
+                          @conclusion-step-witness |
+                            exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k)))
+                            [by exists_intro(u) step-clauses]
                         }
-                      @all-entries |
-                        forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(u, i))
-                        [by forall_intro generalize-i]
-                      @step-clauses |
-                        (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(u, i))) and productUpTo(u, succ(k)) = cycle(s, succ(succ(k)))
-                        [by and_intro all-entries product-is-the-longer-cycle]
-                      @conclusion-step-witness |
+                      @conclusion-with-u |
                         exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k)))
-                        [by exists_intro(u) step-clauses]
+                        [by exists_elim with-prepended-u]
                     }
-                  @conclusion-with-u |
+                  @conclusion-step-given-distinct |
                     exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k)))
-                    [by exists_elim with-prepended-u]
+                    [by exists_elim with-sequence-w]
                 }
               @conclusion-step |
-                exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k)))
-                [by exists_elim with-sequence-w]
+                cycle_theory.distinct(s, succ(succ(k))) -> exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k)))
+                [by implies_intro given-distinct]
             }
           @induction-step-at-k |
-            (exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))) -> (exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k))))
+            (cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))) -> (cycle_theory.distinct(s, succ(succ(k))) -> exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k))))
             [by implies_intro given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
-        forall k: Nat; (exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))) -> (exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k))))
+        forall k: Nat; (cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))) -> (cycle_theory.distinct(s, succ(succ(k))) -> exists w2: Seq; (forall i: Nat; less_than(i, succ(k)) -> isATransposition(at(w2, i))) and productUpTo(w2, succ(k)) = cycle(s, succ(succ(k))))
         [by forall_intro induction-step]
       @conclusion-for-all-k |
-        forall k: Nat; exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
-        [using instantiation induction((fun k: Nat => exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k)))) base-case induction-step-for-all-k]
+        forall k: Nat; cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
+        [using instantiation induction((fun k: Nat => cycle_theory.distinct(s, succ(k)) -> exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k)))) base-case induction-step-for-all-k]
     }
   @conclusion |
-    forall s: Points; forall k: Nat;
+    forall s: Points; forall k: Nat; cycle_theory.distinct(s, succ(k)) ->
       exists w: Seq; (forall i: Nat; less_than(i, k) -> isATransposition(at(w, i))) and productUpTo(w, k) = cycle(s, succ(k))
     [by forall_intro generalize-s]
 qed
@@ -770,9 +815,12 @@ proof
                                   @entry-is-the-cycle |
                                     at(w, i) = cycle(s, succ(p))
                                     [by and_elim_right cycle-facts]
+                                  @list-is-distinct |
+                                    cycle_theory.distinct(s, succ(p))
+                                    [by and_elim_left cycle-facts]
                                   @cycle-is-a-product |
                                     exists v: Seq; (forall j: Nat; less_than(j, p) -> isATransposition(at(v, j))) and productUpTo(v, p) = cycle(s, succ(p))
-                                    [using specialize cycleIsAProductOfTranspositions(s, p)]
+                                    [using specialize cycleIsAProductOfTranspositions(s, p) list-is-distinct]
                                   @with-transposition-sequence-v |
                                     unpack v: Seq from cycle-is-a-product {
                                       @v-facts |
