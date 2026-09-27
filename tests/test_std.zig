@@ -175,6 +175,14 @@ pub fn addTests(
     // group (UnitsGroup). An abstract TEMPLATE modeled at a concrete n.
     ctx.okSilent(&.{ "check", "std/integer/mod-n.b4m" });
 
+    // ℤ_n COUNTED (std/integer/mod-n-listing.b4m): the n classes as a listing (a ℕ → ℤ
+    // embedding, the quotient identification with the bounded-remainder lemma for
+    // distinctness, the division algorithm for coverage), and Judson §4.1 Ex 29 — an even
+    // number of generators for n > 2 — by MODEL TRANSFER of std/group/listing.b4m's
+    // theorem for all finite groups through one overlay over group, group_power and
+    // group_sequence (ZnListing).
+    ctx.okSilent(&.{ "check", "std/integer/mod-n-listing.b4m" });
+
     // the ring theory (std/ring.b4m): an additive abelian group + associative,
     // distributing multiplication. Its additive half MODELS std/group.b4m (a
     // TWO-LEVEL structure — a model inside a modelable theory). Judson's first
