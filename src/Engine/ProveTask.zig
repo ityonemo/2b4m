@@ -702,13 +702,28 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
         var se = Elab.init(self.arena, self.io, self, self.interner, &self.idents, prove.pool, self.sink, source, &sort_walk, resolve_ns, &prove.fresh_counter);
         se.model = task.model;
         var guards: std.ArrayList(*const ast.Expr) = .empty; // in param order (outermost first)
+        // the guarded params: each schema value param at its sort token's image, then the EXTRA
+        // params `Prove.freeFvarParams` appended — the args' free variables, whose source sort is
+        // the durable source arg's (their guard is the image's qualifier, like any value param).
+        const Guarded = struct { name: InternPool.Index, image: InternPool.Index };
+        var guarded: std.ArrayList(Guarded) = .empty;
         for (schema_fact.params.?) |p| {
             if (p.arg_sorts.len != 0) continue; // a generator param has no element to guard
             const image = se.resolveSortTok(p.result) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => break, // diagnosed into the sink; the instance proof reports it
             };
-            const image_ix: InternPool.Index = @enumFromInt(@intFromEnum(image));
+            try guarded.append(self.arena, .{ .name = p.name.name, .image = @enumFromInt(@intFromEnum(image)) });
+        }
+        const nschema = schema_fact.params.?.len;
+        if (inst.params.len > nschema) {
+            for (inst.params[nschema..], inst.args_source[nschema..]) |pname, darg| {
+                const src_sort: InternPool.Index = @enumFromInt(@intFromEnum(darg.value.sort));
+                try guarded.append(self.arena, .{ .name = pname, .image = self.interner.applyModel(task.model, src_sort) });
+            }
+        }
+        for (guarded.items) |gp| {
+            const image_ix = gp.image;
             if (!self.interner.isRefined(image_ix)) continue;
             const quals = try self.interner.qualifiersOf(self.arena, image_ix);
             for (quals) |q| switch (self.interner.keyOf(q)) {
@@ -716,14 +731,14 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
                 // delaborates to the param's name and re-resolves as the schema arg) for `#g0`.
                 .guard => |g| {
                     const t = try prove.pool.copyIn(self.interner, g.term);
-                    const pv = try prove.pool.add(.{ .fvar = .{ .name = p.name.name, .sort = @enumFromInt(@intFromEnum(g.carrier)) } });
+                    const pv = try prove.pool.add(.{ .fvar = .{ .name = gp.name, .sort = @enumFromInt(@intFromEnum(g.carrier)) } });
                     const g0 = self.interner.internString("#g0") catch return error.OutOfMemory;
                     const at_p = try prove.pool.substFvar(t, g0, pv);
                     try guards.append(self.arena, try Delaborate.runExact(self.arena, prove.pool, self.interner, at_p, schema_fact.name.start));
                 },
                 else => {
                     const arg1 = try self.arena.alloc(*const ast.Expr, 1);
-                    arg1[0] = try b.nameExpr(p.name.name);
+                    arg1[0] = try b.nameExpr(gp.name);
                     const call = try self.arena.create(ast.Expr);
                     call.* = .{ .call = .{ .callee = b.symTok(q, true), .args = arg1 } };
                     try guards.append(self.arena, call);

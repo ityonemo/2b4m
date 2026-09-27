@@ -412,6 +412,10 @@ pub fn addTests(
     // ρ^k∘σ are motions, EXHAUSTION by walking the letters (t(i+2) is a neighbour of
     // u(i+1) other than u(i)), the listing (powers ++ reflected powers), distinctness.
     ctx.okSilent(&.{ "check", "std/permutation/dihedral.b4m" });
+    // INTEGER POWERS of a permutation (std/permutation/power.b4m): f^k for k ∈ ℤ by the three
+    // group-power clauses; Perm as a GUARDED model of std/group/power.b4m, so the exponent laws
+    // and the order theory (f^k = id ⟺ |f| divides k, conjugates share an order) transfer.
+    ctx.okSilent(&.{ "check", "std/permutation/power.b4m" });
 
     // LISTINGS OF GROUP ELEMENTS (std/group/listing.b4m): splitting an injective listing by a
     // predicate (theorem schemas, as std/permutation/listing.b4m for maps), the PAIRING lemma
