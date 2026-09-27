@@ -358,4 +358,11 @@ pub fn addTests(
     // ρ^k∘σ are motions, EXHAUSTION by walking the letters (t(i+2) is a neighbour of
     // u(i+1) other than u(i)), the listing (powers ++ reflected powers), distinctness.
     ctx.okSilent(&.{ "check", "std/permutation/dihedral.b4m" });
+
+    // LISTINGS OF GROUP ELEMENTS (std/group/listing.b4m): splitting an injective listing by a
+    // predicate (theorem schemas, as std/permutation/listing.b4m for maps), the PAIRING lemma
+    // (a listing with no self-inverse entry and closed under inverse has even length — strong
+    // induction, splitting off {g, g⁻¹}), and a finite group of even order has an element of
+    // order 2 (Judson §3.2 Ex 32).
+    ctx.okSilent(&.{ "check", "std/group/listing.b4m" });
 }
