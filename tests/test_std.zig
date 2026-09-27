@@ -37,6 +37,9 @@ pub fn addTests(
     // definition-block clause's right-hand side reads as a clause variable), never zero
     ctx.okSilent(&.{ "check", "std/peano/factorial.b4m" });
 
+    // power: b^e on ℕ by its two recursion clauses (axioms, as factorial); b^1 = b
+    ctx.okSilent(&.{ "check", "std/peano/power.b4m" });
+
     // the ℤ base std/integer.b4m now bundles the ring algebra (left/right
     // recursion, commutativity, associativity, n+(-n)=0, mul lemmas), the nonneg
     // subclass + its transferred Peano induction, DERIVED bidirectional induction,
