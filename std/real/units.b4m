@@ -1,0 +1,208 @@
+// std/real/units.b4m — ℝ* = ℝ ∖ {0}, the multiplicative group of ℝ, and its elements of
+// finite order.
+//
+// ℝ is an ordered field, so everything in std/field/units.b4m holds of it: ℝ* is a group
+// under multiplication (a GUARDED model of std/group.b4m on the nonzero cut), and the only
+// elements of finite order — x^n = 1 for some positive n — are ±1 (Judson §4.1, exercise 10).
+// One model block, `RealUnits`, overlays field_order + field_units onto ℝ; the group model
+// is restated on the cut with the transferred closure facts.
+
+import group <<< "std/group.b4m"
+import field_order <<< "std/field/order.b4m"
+import field_units <<< "std/field/units.b4m"
+import real <<< "std/real.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+func neg = real.neg
+func recip = real.recip
+pred less_than = real.less_than
+axiom addIsAssociative = real.addIsAssociative
+axiom addZeroLeft = real.addZeroLeft
+axiom addNegLeft = real.addNegLeft
+axiom addIsCommutative = real.addIsCommutative
+axiom mulIsAssociative = real.mulIsAssociative
+axiom mulAddDistribLeft = real.mulAddDistribLeft
+axiom mulAddDistribRight = real.mulAddDistribRight
+axiom mulIsCommutative = real.mulIsCommutative
+axiom mulOneLeft = real.mulOneLeft
+axiom fieldInverse = real.fieldInverse
+axiom oneNotZero = real.oneNotZero
+axiom lessThanIrreflexive = real.lessThanIrreflexive
+axiom lessThanTransitive = real.lessThanTransitive
+axiom lessThanTrichotomy = real.lessThanTrichotomy
+axiom lessThanAddRight = real.lessThanAddRight
+axiom lessThanAddCancel = real.lessThanAddCancel
+axiom positiveProduct = real.positiveProduct
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+func succ = peano.succ
+pred nat_less_than = peano.less_than
+
+// -- the nonzero cut and natural powers, in ℝ's own symbols --------------------------------
+pred nonzero(a: Real)
+axiom nonzeroCharacterization: forall a: Real; nonzero(a) iff a != ZERO
+sort RStar = Real where nonzero
+
+func pow(x: Real, n: Nat) => Real
+axiom powZero: forall x: Real; pow(x, NZERO) = ONE
+axiom powSucc: forall x: Real; forall n: Nat; pow(x, succ(n)) = mul(pow(x, n), x)
+
+// -- ℝ models the ordered field together with its multiplicative theory ------------------
+model RealUnits {
+  field_order.OrderedField: Real
+  field_order.ZERO: ZERO
+  field_order.ONE: ONE
+  field_order.add: add
+  field_order.mul: mul
+  field_order.neg: neg
+  field_order.recip: recip
+  field_order.less_than: less_than
+  field_units.nonzero: nonzero
+  field_units.pow: pow
+  field_order.addIsAssociative <- addIsAssociative
+  field_order.addZeroLeft <- addZeroLeft
+  field_order.addNegLeft <- addNegLeft
+  field_order.addIsCommutative <- addIsCommutative
+  field_order.mulIsAssociative <- mulIsAssociative
+  field_order.mulAddDistribLeft <- mulAddDistribLeft
+  field_order.mulAddDistribRight <- mulAddDistribRight
+  field_order.mulIsCommutative <- mulIsCommutative
+  field_order.mulOneLeft <- mulOneLeft
+  field_order.fieldInverse <- fieldInverse
+  field_order.oneNotZero <- oneNotZero
+  field_order.lessThanIrreflexive <- lessThanIrreflexive
+  field_order.lessThanTransitive <- lessThanTransitive
+  field_order.lessThanTrichotomy <- lessThanTrichotomy
+  field_order.lessThanAddRight <- lessThanAddRight
+  field_order.lessThanAddCancel <- lessThanAddCancel
+  field_order.positiveProduct <- positiveProduct
+  field_units.nonzeroCharacterization <- nonzeroCharacterization
+  field_units.powZero <- powZero
+  field_units.powSucc <- powSucc
+}
+
+// the closure facts, transferred.
+theorem oneIsNonzero: nonzero(ONE)
+proof
+  @conclusion |
+    nonzero(ONE)
+    [using model(RealUnits) field_units.oneIsNonzero]
+qed
+
+theorem productOfNonzeroIsNonzero: forall a, b: Real; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Real; nonzero(a) -> nonzero(b) -> nonzero(mul(a, b))
+    [using model(RealUnits) field_units.productOfNonzeroIsNonzero]
+qed
+
+theorem recipOfNonzeroIsNonzero: forall a: Real; nonzero(a) -> nonzero(recip(a))
+proof
+  @conclusion |
+    forall a: Real; nonzero(a) -> nonzero(recip(a))
+    [using model(RealUnits) field_units.recipOfNonzeroIsNonzero]
+qed
+
+// the group laws on the cut.
+theorem unitsAssoc: forall x, y, z: RStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+proof
+  @generalize-x |
+    fix x: RStar {
+      @generalize-y |
+        fix y: RStar {
+          @generalize-z |
+            fix z: RStar {
+              @conclusion-inner |
+                mul(mul(x, y), z) = mul(x, mul(y, z))
+                [using specialize mulIsAssociative(x, y, z)]
+            }
+          @discharge-z |
+            forall z: RStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: RStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: RStar; mul(mul(x, y), z) = mul(x, mul(y, z))
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsIdentityLeft: forall x: RStar; mul(ONE, x) = x
+proof
+  @generalize-x |
+    fix x: RStar {
+      @conclusion-inner |
+        mul(ONE, x) = x
+        [using specialize mulOneLeft(x)]
+    }
+  @conclusion |
+    forall x: RStar; mul(ONE, x) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem unitsInverseLeft: forall x: RStar; mul(recip(x), x) = ONE
+proof
+  @recip-on-the-left |
+    forall a: Real; a != ZERO -> mul(recip(a), a) = ONE
+    [using model(RealUnits) field_order.recipMulLeft]
+  @generalize-x |
+    fix x: RStar {
+      @x-nonzero |
+        nonzero(x)
+        [by predicate generalize-x]
+      @x-characterized |
+        nonzero(x) iff x != ZERO
+        [using specialize nonzeroCharacterization(x)]
+      @x-not-zero |
+        x != ZERO
+        [using tautology x-characterized x-nonzero]
+      @conclusion-inner |
+        mul(recip(x), x) = ONE
+        [using specialize recip-on-the-left(x) x-not-zero]
+    }
+  @conclusion |
+    forall x: RStar; mul(recip(x), x) = ONE
+    [by forall_intro generalize-x]
+qed
+
+// ℝ* is a GROUP under multiplication.
+model RealUnitsGroup {
+  group.Grp: RStar
+  group.E: ONE(oneIsNonzero)
+  group.op: mul -| productOfNonzeroIsNonzero
+  group.inverse: recip -| recipOfNonzeroIsNonzero
+  group.opAssoc <- unitsAssoc
+  group.opIdentityLeft <- unitsIdentityLeft
+  group.opInverseLeft <- unitsInverseLeft
+}
+
+// PAYOFF: the group corpus on ℝ*.
+theorem unitsCancelLeft: forall a, b, c: RStar; mul(a, b) = mul(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: RStar; mul(a, b) = mul(a, c) -> b = c
+    [using model(RealUnitsGroup) group.cancelLeft]
+qed
+
+theorem recipIsUnique: forall a, b: RStar; mul(a, b) = ONE -> b = recip(a)
+proof
+  @conclusion |
+    forall a, b: RStar; mul(a, b) = ONE -> b = recip(a)
+    [using model(RealUnitsGroup) group.inverseUnique]
+qed
+
+// THE ELEMENTS OF FINITE ORDER IN ℝ* ARE ±1 — transferred from the ordered-field proof.
+theorem finiteOrderIsPlusOrMinusOne: forall x: Real; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+proof
+  @conclusion |
+    forall x: Real; (exists n: Nat; nat_less_than(NZERO, n) and pow(x, n) = ONE) iff (x = ONE or x = neg(ONE))
+    [using model(RealUnits) field_units.finiteOrderIsPlusOrMinusOne]
+qed

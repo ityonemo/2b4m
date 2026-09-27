@@ -221,3 +221,381 @@ proof
     forall a, b: OrderedField; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
     [using model(FieldIsOrdered) field.noZeroDivisors]
 qed
+
+// -- the field's ring corpus, transferred (std/field.b4m via FieldIsOrdered) ----------
+// Shims under the well-known names, so `polynomial(field_order)` and downstream files
+// (std/field/units.b4m) find them in THIS module.
+
+theorem mulZeroRight: forall a: OrderedField; mul(a, ZERO) = ZERO
+proof
+  @conclusion |
+    forall a: OrderedField; mul(a, ZERO) = ZERO
+    [using model(FieldIsOrdered) field.mulZeroRight]
+qed
+
+theorem mulZeroLeft: forall a: OrderedField; mul(ZERO, a) = ZERO
+proof
+  @conclusion |
+    forall a: OrderedField; mul(ZERO, a) = ZERO
+    [using model(FieldIsOrdered) field.mulZeroLeft]
+qed
+
+theorem addZeroRight: forall a: OrderedField; add(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: OrderedField; add(a, ZERO) = a
+    [using model(FieldIsOrdered) field.addZeroRight]
+qed
+
+theorem negZero: neg(ZERO) = ZERO
+proof
+  @conclusion |
+    neg(ZERO) = ZERO
+    [using model(FieldIsOrdered) field.negZero]
+qed
+
+theorem negNeg: forall a: OrderedField; neg(neg(a)) = a
+proof
+  @conclusion |
+    forall a: OrderedField; neg(neg(a)) = a
+    [using model(FieldIsOrdered) field.negNeg]
+qed
+
+theorem mulNegLeft: forall a, b: OrderedField; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: OrderedField; mul(neg(a), b) = neg(mul(a, b))
+    [using model(FieldIsOrdered) field.mulNegLeft]
+qed
+
+theorem mulNegRight: forall a, b: OrderedField; mul(a, neg(b)) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: OrderedField; mul(a, neg(b)) = neg(mul(a, b))
+    [using model(FieldIsOrdered) field.mulNegRight]
+qed
+
+theorem negAdd: forall a, b: OrderedField; neg(add(a, b)) = add(neg(a), neg(b))
+proof
+  @conclusion |
+    forall a, b: OrderedField; neg(add(a, b)) = add(neg(a), neg(b))
+    [using model(FieldIsOrdered) field.negAdd]
+qed
+
+theorem mulLeftSwap: forall x, y, r: OrderedField; mul(x, mul(y, r)) = mul(y, mul(x, r))
+proof
+  @conclusion |
+    forall x, y, r: OrderedField; mul(x, mul(y, r)) = mul(y, mul(x, r))
+    [using model(FieldIsOrdered) field.mulLeftSwap]
+qed
+
+theorem addLeftSwap: forall x, y, r: OrderedField; add(x, add(y, r)) = add(y, add(x, r))
+proof
+  @conclusion |
+    forall x, y, r: OrderedField; add(x, add(y, r)) = add(y, add(x, r))
+    [using model(FieldIsOrdered) field.addLeftSwap]
+qed
+
+theorem recipMulLeft: forall a: OrderedField; a != ZERO -> mul(recip(a), a) = ONE
+proof
+  @conclusion |
+    forall a: OrderedField; a != ZERO -> mul(recip(a), a) = ONE
+    [using model(FieldIsOrdered) field.recipMulLeft]
+qed
+
+// -- order lemmas for products (what std/field/units.b4m's powers need) ------------------
+
+// x < 0 ⟹ 0 < −x (add −x to both sides).
+theorem negOfNegativeIsPositive: forall x: OrderedField; less_than(x, ZERO) -> less_than(ZERO, neg(x))
+proof
+  @generalize-x |
+    fix x: OrderedField {
+      @given-negative |
+        assume less_than(x, ZERO) {
+          @negative |
+            less_than(x, ZERO)
+            [by hypothesis given-negative]
+          @shifted |
+            less_than(add(x, neg(x)), add(ZERO, neg(x)))
+            [using specialize lessThanAddRight(x, ZERO, neg(x)) negative]
+          @x-minus-x |
+            add(x, neg(x)) = ZERO
+            [using specialize addNegRight(x)]
+          @zero-plus-neg-x |
+            add(ZERO, neg(x)) = neg(x)
+            [using specialize addZeroLeft(neg(x))]
+          @shifted-left |
+            less_than(ZERO, add(ZERO, neg(x)))
+            [by rewrite x-minus-x shifted]
+          @conclusion-neg-positive |
+            less_than(ZERO, neg(x))
+            [by rewrite zero-plus-neg-x shifted-left]
+        }
+      @negative-implies |
+        less_than(x, ZERO) -> less_than(ZERO, neg(x))
+        [by implies_intro given-negative]
+    }
+  @conclusion |
+    forall x: OrderedField; less_than(x, ZERO) -> less_than(ZERO, neg(x))
+    [by forall_intro generalize-x]
+qed
+
+// 0 < x ⟹ −x < 0.
+theorem negOfPositiveIsNegative: forall x: OrderedField; less_than(ZERO, x) -> less_than(neg(x), ZERO)
+proof
+  @generalize-x |
+    fix x: OrderedField {
+      @given-positive |
+        assume less_than(ZERO, x) {
+          @positive |
+            less_than(ZERO, x)
+            [by hypothesis given-positive]
+          @shifted |
+            less_than(add(ZERO, neg(x)), add(x, neg(x)))
+            [using specialize lessThanAddRight(ZERO, x, neg(x)) positive]
+          @x-minus-x |
+            add(x, neg(x)) = ZERO
+            [using specialize addNegRight(x)]
+          @zero-plus-neg-x |
+            add(ZERO, neg(x)) = neg(x)
+            [using specialize addZeroLeft(neg(x))]
+          @shifted-right |
+            less_than(add(ZERO, neg(x)), ZERO)
+            [by rewrite x-minus-x shifted]
+          @conclusion-neg-negative |
+            less_than(neg(x), ZERO)
+            [by rewrite zero-plus-neg-x shifted-right]
+        }
+      @positive-implies |
+        less_than(ZERO, x) -> less_than(neg(x), ZERO)
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall x: OrderedField; less_than(ZERO, x) -> less_than(neg(x), ZERO)
+    [by forall_intro generalize-x]
+qed
+
+// −1 < 0, and so 1 ≠ −1.
+theorem negOneLessThanZero: less_than(neg(ONE), ZERO)
+proof
+  @zero-below-one |
+    less_than(ZERO, ONE)
+    [by cite zeroLessThanOne]
+  @conclusion |
+    less_than(neg(ONE), ZERO)
+    [using specialize negOfPositiveIsNegative(ONE) zero-below-one]
+qed
+
+theorem oneIsNotNegOne: ONE != neg(ONE)
+proof
+  @zero-below-one |
+    less_than(ZERO, ONE)
+    [by cite zeroLessThanOne]
+  @neg-one-below-zero |
+    less_than(neg(ONE), ZERO)
+    [by cite negOneLessThanZero]
+  @zero-not-below-itself |
+    not less_than(ZERO, ZERO)
+    [using specialize lessThanIrreflexive(ZERO)]
+  @given-equal |
+    assume ONE = neg(ONE) {
+      @one-is-neg-one |
+        ONE = neg(ONE)
+        [by hypothesis given-equal]
+      @one-below-zero |
+        less_than(ONE, ZERO)
+        [by rewrite one-is-neg-one neg-one-below-zero]
+      @zero-below-itself |
+        less_than(ZERO, ZERO)
+        [using specialize lessThanTransitive(ZERO, ONE, ZERO) zero-below-one one-below-zero]
+    }
+  @equal-implies |
+    ONE = neg(ONE) -> less_than(ZERO, ZERO)
+    [by implies_intro given-equal]
+  @conclusion |
+    ONE != neg(ONE)
+    [using tautology equal-implies zero-not-below-itself]
+qed
+
+// a < b and 0 < c ⟹ ac < bc: (b − a)c > 0, i.e. bc − ac > 0; add ac to both sides.
+theorem lessThanMulPositiveRight: forall a, b, c: OrderedField; less_than(a, b) -> less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @generalize-c |
+            fix c: OrderedField {
+              @given-a-below-b |
+                assume less_than(a, b) {
+                  @given-c-positive |
+                    assume less_than(ZERO, c) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis given-a-below-b]
+                      @c-positive |
+                        less_than(ZERO, c)
+                        [by hypothesis given-c-positive]
+                      @difference-shifted |
+                        less_than(add(a, neg(a)), add(b, neg(a)))
+                        [using specialize lessThanAddRight(a, b, neg(a)) a-below-b]
+                      @a-minus-a |
+                        add(a, neg(a)) = ZERO
+                        [using specialize addNegRight(a)]
+                      @difference-positive |
+                        less_than(ZERO, add(b, neg(a)))
+                        [by rewrite a-minus-a difference-shifted]
+                      @product-positive |
+                        less_than(ZERO, mul(add(b, neg(a)), c))
+                        [using specialize positiveProduct(add(b, neg(a)), c) difference-positive c-positive]
+                      @product-expands |
+                        mul(add(b, neg(a)), c) = add(mul(b, c), neg(mul(a, c)))
+                        [using polynomial]
+                      @expanded-positive |
+                        less_than(ZERO, add(mul(b, c), neg(mul(a, c))))
+                        [by rewrite product-expands product-positive]
+                      @shifted |
+                        less_than(add(ZERO, mul(a, c)), add(add(mul(b, c), neg(mul(a, c))), mul(a, c)))
+                        [using specialize lessThanAddRight(ZERO, add(mul(b, c), neg(mul(a, c))), mul(a, c)) expanded-positive]
+                      @zero-plus-ac |
+                        add(ZERO, mul(a, c)) = mul(a, c)
+                        [using specialize addZeroLeft(mul(a, c))]
+                      @shifted-left |
+                        less_than(mul(a, c), add(add(mul(b, c), neg(mul(a, c))), mul(a, c)))
+                        [by rewrite zero-plus-ac shifted]
+                      @cancels |
+                        add(add(mul(b, c), neg(mul(a, c))), mul(a, c)) = mul(b, c)
+                        [using polynomial]
+                      @conclusion-scaled |
+                        less_than(mul(a, c), mul(b, c))
+                        [by rewrite cancels shifted-left]
+                    }
+                  @c-positive-implies |
+                    less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+                    [by implies_intro given-c-positive]
+                }
+              @a-below-b-implies |
+                less_than(a, b) -> less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+                [by implies_intro given-a-below-b]
+            }
+          @discharge-c |
+            forall c: OrderedField; less_than(a, b) -> less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: OrderedField; less_than(a, b) -> less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: OrderedField; less_than(a, b) -> less_than(ZERO, c) -> less_than(mul(a, c), mul(b, c))
+    [by forall_intro generalize-a]
+qed
+
+// 1 < a and 1 < b ⟹ 1 < ab: b = 1·b < a·b and 1 < b.
+theorem productAboveOne: forall a, b: OrderedField; less_than(ONE, a) -> less_than(ONE, b) -> less_than(ONE, mul(a, b))
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @given-a-above-one |
+            assume less_than(ONE, a) {
+              @given-b-above-one |
+                assume less_than(ONE, b) {
+                  @a-above-one |
+                    less_than(ONE, a)
+                    [by hypothesis given-a-above-one]
+                  @b-above-one |
+                    less_than(ONE, b)
+                    [by hypothesis given-b-above-one]
+                  @zero-below-one |
+                    less_than(ZERO, ONE)
+                    [by cite zeroLessThanOne]
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [using specialize lessThanTransitive(ZERO, ONE, b) zero-below-one b-above-one]
+                  @scaled |
+                    less_than(mul(ONE, b), mul(a, b))
+                    [using specialize lessThanMulPositiveRight(ONE, a, b) a-above-one b-positive]
+                  @one-times-b |
+                    mul(ONE, b) = b
+                    [using specialize mulOneLeft(b)]
+                  @b-below-product |
+                    less_than(b, mul(a, b))
+                    [by rewrite one-times-b scaled]
+                  @conclusion-product-above-one |
+                    less_than(ONE, mul(a, b))
+                    [using specialize lessThanTransitive(ONE, b, mul(a, b)) b-above-one b-below-product]
+                }
+              @b-above-one-implies |
+                less_than(ONE, b) -> less_than(ONE, mul(a, b))
+                [by implies_intro given-b-above-one]
+            }
+          @a-above-one-implies |
+            less_than(ONE, a) -> less_than(ONE, b) -> less_than(ONE, mul(a, b))
+            [by implies_intro given-a-above-one]
+        }
+      @discharge-b |
+        forall b: OrderedField; less_than(ONE, a) -> less_than(ONE, b) -> less_than(ONE, mul(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: OrderedField; less_than(ONE, a) -> less_than(ONE, b) -> less_than(ONE, mul(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// a < 1 and 0 < b < 1 ⟹ ab < 1: ab < 1·b = b < 1.
+theorem productBelowOne: forall a, b: OrderedField; less_than(a, ONE) -> less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
+proof
+  @generalize-a |
+    fix a: OrderedField {
+      @generalize-b |
+        fix b: OrderedField {
+          @given-a-below-one |
+            assume less_than(a, ONE) {
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @given-b-below-one |
+                    assume less_than(b, ONE) {
+                      @a-below-one |
+                        less_than(a, ONE)
+                        [by hypothesis given-a-below-one]
+                      @b-positive |
+                        less_than(ZERO, b)
+                        [by hypothesis given-b-positive]
+                      @b-below-one |
+                        less_than(b, ONE)
+                        [by hypothesis given-b-below-one]
+                      @scaled |
+                        less_than(mul(a, b), mul(ONE, b))
+                        [using specialize lessThanMulPositiveRight(a, ONE, b) a-below-one b-positive]
+                      @one-times-b |
+                        mul(ONE, b) = b
+                        [using specialize mulOneLeft(b)]
+                      @product-below-b |
+                        less_than(mul(a, b), b)
+                        [by rewrite one-times-b scaled]
+                      @conclusion-product-below-one |
+                        less_than(mul(a, b), ONE)
+                        [using specialize lessThanTransitive(mul(a, b), b, ONE) product-below-b b-below-one]
+                    }
+                  @b-below-one-implies |
+                    less_than(b, ONE) -> less_than(mul(a, b), ONE)
+                    [by implies_intro given-b-below-one]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
+                [by implies_intro given-b-positive]
+            }
+          @a-below-one-implies |
+            less_than(a, ONE) -> less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
+            [by implies_intro given-a-below-one]
+        }
+      @discharge-b |
+        forall b: OrderedField; less_than(a, ONE) -> less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: OrderedField; less_than(a, ONE) -> less_than(ZERO, b) -> less_than(b, ONE) -> less_than(mul(a, b), ONE)
+    [by forall_intro generalize-a]
+qed
