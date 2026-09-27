@@ -205,6 +205,11 @@ pub fn addTests(
     // multiples; a nonzero member cls(a) has N ∤ a, so for PRIME N Bézout puts cls(1) in it.
     // The schema is exhibited at an opaque subgroup predicate.
     ctx.okSilent(&.{ "check", "std/integer/mod-n-prime.b4m" });
+    // the generators of ℤ_N (std/integer/mod-n-generators.b4m, Judson §4.1 corollary +
+    // exercise 24): cls(r) generates iff r is Bézout-coprime to N; for N = pq (distinct primes)
+    // the non-generators are the multiples of p or q, listed explicitly as q + (p − 1) classes,
+    // so the generators number (p − 1)(q − 1) — by pigeonhole on listings.
+    ctx.okSilent(&.{ "check", "std/integer/mod-n-generators.b4m" });
 
     // the ring theory (std/ring.b4m): an additive abelian group + associative,
     // distributing multiplication. Its additive half MODELS std/group.b4m (a

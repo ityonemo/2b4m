@@ -19,6 +19,7 @@ import group <<< "std/group.b4m"
 import group_power <<< "std/group/power.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
 import group_listing <<< "std/group/listing.b4m"
+import group_counting <<< "std/group/counting.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import peano_parity <<< "std/peano/parity.b4m"
@@ -107,6 +108,13 @@ axiom znSeqConcat: forall s: ZnSeq; forall t: ZnSeq; forall j: Nat; forall k: Na
   (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
   and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
   and znProductUpTo(u, nadd(j, k)) = add(znProductUpTo(s, j), znProductUpTo(t, k))
+// REMOVAL (std/group/sequence.b4m's seqRemove): s with the entry at index m deleted.
+axiom znSeqRemove: forall s: ZnSeq; forall k: Nat; forall m: Nat;
+  less_than(m, succ(k)) ->
+  exists t: ZnSeq;
+  add(znProductUpTo(t, k), znAt(s, m)) = znProductUpTo(s, succ(k))
+  and (forall i: Nat; less_than(i, m) -> znAt(t, i) = znAt(s, i))
+  and (forall i: Nat; peano.less_or_equal(m, i) -> less_than(i, k) -> znAt(t, i) = znAt(s, succ(i)))
 
 // -- ℤ_n is a model of the listed-group stack --------------------------------------------------
 //
@@ -132,6 +140,7 @@ model ZnListing {
   group_sequence.productUpToSucc <- znProductUpToSucc
   group_sequence.seqSingleton <- znSeqSingleton
   group_sequence.seqConcat <- znSeqConcat
+  group_sequence.seqRemove <- znSeqRemove
 }
 
 // z GENERATES ℤ_n: every class is an integer multiple of it.
@@ -842,4 +851,50 @@ proof
       and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
       and peano.divides(peano_parity.TWO, p)
     [by implies_intro given-three-classes]
+qed
+
+// -- counting tools, transported ---------------------------------------------------------------
+
+// two injective listings of the same class of ℤ_n have the same length.
+theorem znListingsOfTheSameClassHaveEqualLength: forall m: Nat; forall v: ZnSeq; forall n: Nat; forall w: ZnSeq;
+  (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(v, i) = znAt(v, j) -> i = j) ->
+  (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+  (forall j: Nat; less_than(j, m) -> exists i: Nat; less_than(i, n) and znAt(v, j) = znAt(w, i)) ->
+  (forall j: Nat; less_than(j, n) -> exists i: Nat; less_than(i, m) and znAt(w, j) = znAt(v, i)) ->
+  m = n
+proof
+  @conclusion |
+    forall m: Nat; forall v: ZnSeq; forall n: Nat; forall w: ZnSeq;
+      (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(v, i) = znAt(v, j) -> i = j) ->
+      (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+      (forall j: Nat; less_than(j, m) -> exists i: Nat; less_than(i, n) and znAt(v, j) = znAt(w, i)) ->
+      (forall j: Nat; less_than(j, n) -> exists i: Nat; less_than(i, m) and znAt(w, j) = znAt(v, i)) ->
+      m = n
+    [using model(ZnListing) group_counting.listingsOfTheSameClassHaveEqualLength]
+qed
+
+// the generators and the non-generators of a listed ℤ_n, each listed, lengths adding to n.
+theorem znGeneratorsAndNonGeneratorsAreListed: forall n: Nat; forall w: ZnSeq;
+  (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+  (forall g: Zn; exists i: Nat; less_than(i, n) and znAt(w, i) = g) ->
+  exists v: ZnSeq; exists p: Nat; exists v2: ZnSeq; exists q: Nat; nadd(p, q) = n
+  and (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+  and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+  and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+  and (forall j: Nat; less_than(j, q) -> (not generates(znAt(v2, j))))
+  and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> znAt(v2, i) = znAt(v2, j) -> i = j)
+  and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, q) and znAt(v2, j) = g)
+proof
+  @conclusion |
+    forall n: Nat; forall w: ZnSeq;
+      (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> znAt(w, i) = znAt(w, j) -> i = j) ->
+      (forall g: Zn; exists i: Nat; less_than(i, n) and znAt(w, i) = g) ->
+      exists v: ZnSeq; exists p: Nat; exists v2: ZnSeq; exists q: Nat; nadd(p, q) = n
+      and (forall j: Nat; less_than(j, p) -> generates(znAt(v, j)))
+      and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j)
+      and (forall g: Zn; generates(g) -> exists j: Nat; less_than(j, p) and znAt(v, j) = g)
+      and (forall j: Nat; less_than(j, q) -> (not generates(znAt(v2, j))))
+      and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> znAt(v2, i) = znAt(v2, j) -> i = j)
+      and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, q) and znAt(v2, j) = g)
+    [using model(ZnListing) group_listing.generatorsAndNonGeneratorsAreListed]
 qed
