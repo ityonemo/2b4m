@@ -1,0 +1,906 @@
+// std/group/klein.b4m — two distinct elements of order 2 in an ABELIAN group span a
+// subgroup of order 4 (Judson §4.1, exercise 33).
+//
+// If a and b are distinct involutions (a² = b² = e, a, b ≠ e) and the group is abelian,
+// then K = {e, a, b, ab} is closed under the operation and inverses (every member is its
+// own inverse), and its four members are pairwise distinct — a Klein four-group inside
+// the given group. Commutativity is cited where products are reordered.
+
+import group <<< "std/group.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_order <<< "std/group/order.b4m"
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import int_wellordering <<< "std/integer/wellordering.b4m"
+
+sort Grp = group_power.Grp
+const E = group_power.E
+func op = group_power.op
+func inverse = group_power.inverse
+func power = group_power.power
+
+sort Int = group_power.Int
+const ZERO = group_power.ZERO
+func succ = group_power.succ
+pred less_than = int_divides.less_than
+define hasOrder(g, n) = group_order.hasOrder(g, n)
+define TWO = succ(succ(ZERO))
+
+// x ∈ K = {e, a, b, ab}.
+define inKlein(a, b, x) = x = E or x = a or x = b or x = op(a, b)
+
+// -- (abelian) a · (b · c) = b · (a · c) --------------------------------------------------
+theorem opLeftSwapAbelian: forall a, b, c: Grp; op(a, op(b, c)) = op(b, op(a, c))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-c |
+            fix c: Grp {
+              @regrouped |
+                op(a, op(b, c)) = op(op(a, b), c)
+                [using assoc(group_power.opAssoc)]
+              @front-commutes |
+                op(a, b) = op(b, a)
+                [using specialize group_power.opCommutative(a, b)]
+              @front-swapped |
+                op(a, op(b, c)) = op(op(b, a), c)
+                [by rewrite front-commutes regrouped]
+              @regrouped-again |
+                op(op(b, a), c) = op(b, op(a, c))
+                [using assoc(group_power.opAssoc)]
+              @conclusion-swapped |
+                op(a, op(b, c)) = op(b, op(a, c))
+                [using chain front-swapped regrouped-again]
+            }
+          @discharge-c |
+            forall c: Grp; op(a, op(b, c)) = op(b, op(a, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Grp; op(a, op(b, c)) = op(b, op(a, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Grp; op(a, op(b, c)) = op(b, op(a, c))
+    [by forall_intro generalize-a]
+qed
+
+// -- order 2 means: an involution other than e ------------------------------------------
+// |a| = 2 ⟹ a ≠ e (1 is a smaller positive exponent, and a¹ = a) and a² = e.
+theorem orderTwoIsAnInvolution: forall a: Grp; hasOrder(a, TWO) -> (a != E and op(a, a) = E)
+proof
+  @generalize-a |
+    fix a: Grp {
+      @given-order-two |
+        assume hasOrder(a, TWO) {
+          @order-facts |
+            less_than(ZERO, TWO) and power(a, TWO) = E and (forall m: Int; less_than(ZERO, m) -> less_than(m, TWO) -> power(a, m) != E)
+            [by hypothesis given-order-two]
+          @square-kills |
+            power(a, TWO) = E
+            [using tautology order-facts]
+          @minimal |
+            forall m: Int; less_than(ZERO, m) -> less_than(m, TWO) -> power(a, m) != E
+            [using tautology order-facts]
+          // a² = a¹ · a = a · a.
+          @square-unfolds |
+            power(a, succ(succ(ZERO))) = op(power(a, succ(ZERO)), a)
+            [using specialize group_power.powerSucc(a, succ(ZERO))]
+          @first-power |
+            power(a, succ(ZERO)) = a
+            [using specialize group_power.powerOne(a)]
+          @square-is-product |
+            power(a, succ(succ(ZERO))) = op(a, a)
+            [by rewrite first-power square-unfolds]
+          @product-is-square |
+            op(a, a) = power(a, succ(succ(ZERO)))
+            [by symmetry square-is-product]
+          @product-is-identity |
+            op(a, a) = E
+            [using chain product-is-square square-kills]
+          // 0 < 1 < 2, so a¹ ≠ e, i.e. a ≠ e.
+          @zero-below-one |
+            less_than(ZERO, succ(ZERO))
+            [using specialize int_wellordering.lessThanSelf(ZERO)]
+          @one-below-two |
+            less_than(succ(ZERO), succ(succ(ZERO)))
+            [using specialize int_wellordering.lessThanSelf(succ(ZERO))]
+          @first-power-not-identity |
+            power(a, succ(ZERO)) != E
+            [using specialize minimal(succ(ZERO)) zero-below-one one-below-two]
+          @a-not-identity |
+            a != E
+            [by rewrite first-power first-power-not-identity]
+          @conclusion-involution |
+            a != E and op(a, a) = E
+            [by and_intro a-not-identity product-is-identity]
+        }
+      @order-two-implies |
+        hasOrder(a, TWO) -> (a != E and op(a, a) = E)
+        [by implies_intro given-order-two]
+    }
+  @conclusion |
+    forall a: Grp; hasOrder(a, TWO) -> (a != E and op(a, a) = E)
+    [by forall_intro generalize-a]
+qed
+
+// -- K is closed under multiplication by a and by b --------------------------------------
+
+// a · K ⊆ K: a·e = a, a·a = e, a·b = ab, a·(ab) = b.
+theorem kleinAbsorbsA: forall a, b: Grp; op(a, a) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-square |
+            assume op(a, a) = E {
+              @a-square |
+                op(a, a) = E
+                [by hypothesis given-a-square]
+              @generalize-x |
+                fix x: Grp {
+                  @given-x-in |
+                    assume inKlein(a, b, x) {
+                      @x-cases |
+                        x = E or x = a or x = b or x = op(a, b)
+                        [by hypothesis given-x-in]
+                      @conclusion-a-x-in |
+                        inKlein(a, b, op(a, x))
+                        case x-cases {
+                          @when-identity |
+                            assume x = E {
+                              @x-is-identity |
+                                x = E
+                                [by hypothesis when-identity]
+                              @a-times-identity |
+                                op(a, E) = a
+                                [using specialize group_power.opIdentityRight(a)]
+                              @a-times-x |
+                                op(a, x) = a
+                                [by rewrite x-is-identity a-times-identity]
+                              @conclusion-when-identity |
+                                inKlein(a, b, op(a, x))
+                                [using tautology a-times-x]
+                            }
+                          @when-a |
+                            assume x = a {
+                              @x-is-a |
+                                x = a
+                                [by hypothesis when-a]
+                              @a-times-x |
+                                op(a, x) = E
+                                [by rewrite x-is-a a-square]
+                              @conclusion-when-a |
+                                inKlein(a, b, op(a, x))
+                                [using tautology a-times-x]
+                            }
+                          @when-b |
+                            assume x = b {
+                              @x-is-b |
+                                x = b
+                                [by hypothesis when-b]
+                              @a-times-b-reflexive |
+                                op(a, b) = op(a, b)
+                                [by reflexivity]
+                              @a-times-x |
+                                op(a, x) = op(a, b)
+                                [by rewrite x-is-b a-times-b-reflexive]
+                              @conclusion-when-b |
+                                inKlein(a, b, op(a, x))
+                                [using tautology a-times-x]
+                            }
+                          @when-ab |
+                            assume x = op(a, b) {
+                              @x-is-ab |
+                                x = op(a, b)
+                                [by hypothesis when-ab]
+                              @a-times-ab-regrouped |
+                                op(a, op(a, b)) = op(op(a, a), b)
+                                [using assoc(group_power.opAssoc)]
+                              @a-times-ab-cancelled |
+                                op(a, op(a, b)) = op(E, b)
+                                [by rewrite a-square a-times-ab-regrouped]
+                              @identity-times-b |
+                                op(E, b) = b
+                                [using specialize group_power.opIdentityLeft(b)]
+                              @a-times-ab |
+                                op(a, op(a, b)) = b
+                                [using chain a-times-ab-cancelled identity-times-b]
+                              @a-times-x |
+                                op(a, x) = b
+                                [by rewrite x-is-ab a-times-ab]
+                              @conclusion-when-ab |
+                                inKlein(a, b, op(a, x))
+                                [using tautology a-times-x]
+                            }
+                        }
+                    }
+                  @x-in-implies |
+                    inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+                    [by implies_intro given-x-in]
+                }
+              @discharge-x |
+                forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+                [by forall_intro generalize-x]
+            }
+          @a-square-implies |
+            op(a, a) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+            [by implies_intro given-a-square]
+        }
+      @discharge-b |
+        forall b: Grp; op(a, a) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; op(a, a) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(a, x))
+    [by forall_intro generalize-a]
+qed
+
+// b · K ⊆ K (abelian): b·e = b, b·a = ab, b·b = e, b·(ab) = a·(bb) = a.
+theorem kleinAbsorbsB: forall a, b: Grp; op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-b-square |
+            assume op(b, b) = E {
+              @b-square |
+                op(b, b) = E
+                [by hypothesis given-b-square]
+              @generalize-x |
+                fix x: Grp {
+                  @given-x-in |
+                    assume inKlein(a, b, x) {
+                      @x-cases |
+                        x = E or x = a or x = b or x = op(a, b)
+                        [by hypothesis given-x-in]
+                      @conclusion-b-x-in |
+                        inKlein(a, b, op(b, x))
+                        case x-cases {
+                          @when-identity |
+                            assume x = E {
+                              @x-is-identity |
+                                x = E
+                                [by hypothesis when-identity]
+                              @b-times-identity |
+                                op(b, E) = b
+                                [using specialize group_power.opIdentityRight(b)]
+                              @b-times-x |
+                                op(b, x) = b
+                                [by rewrite x-is-identity b-times-identity]
+                              @conclusion-when-identity |
+                                inKlein(a, b, op(b, x))
+                                [using tautology b-times-x]
+                            }
+                          @when-a |
+                            assume x = a {
+                              @x-is-a |
+                                x = a
+                                [by hypothesis when-a]
+                              @b-times-a |
+                                op(b, a) = op(a, b)
+                                [using specialize group_power.opCommutative(b, a)]
+                              @b-times-x |
+                                op(b, x) = op(a, b)
+                                [by rewrite x-is-a b-times-a]
+                              @conclusion-when-a |
+                                inKlein(a, b, op(b, x))
+                                [using tautology b-times-x]
+                            }
+                          @when-b |
+                            assume x = b {
+                              @x-is-b |
+                                x = b
+                                [by hypothesis when-b]
+                              @b-times-x |
+                                op(b, x) = E
+                                [by rewrite x-is-b b-square]
+                              @conclusion-when-b |
+                                inKlein(a, b, op(b, x))
+                                [using tautology b-times-x]
+                            }
+                          @when-ab |
+                            assume x = op(a, b) {
+                              @x-is-ab |
+                                x = op(a, b)
+                                [by hypothesis when-ab]
+                              @b-times-ab-swapped |
+                                op(b, op(a, b)) = op(a, op(b, b))
+                                [using specialize opLeftSwapAbelian(b, a, b)]
+                              @b-times-ab-cancelled |
+                                op(b, op(a, b)) = op(a, E)
+                                [by rewrite b-square b-times-ab-swapped]
+                              @a-times-identity |
+                                op(a, E) = a
+                                [using specialize group_power.opIdentityRight(a)]
+                              @b-times-ab |
+                                op(b, op(a, b)) = a
+                                [using chain b-times-ab-cancelled a-times-identity]
+                              @b-times-x |
+                                op(b, x) = a
+                                [by rewrite x-is-ab b-times-ab]
+                              @conclusion-when-ab |
+                                inKlein(a, b, op(b, x))
+                                [using tautology b-times-x]
+                            }
+                        }
+                    }
+                  @x-in-implies |
+                    inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+                    [by implies_intro given-x-in]
+                }
+              @discharge-x |
+                forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+                [by forall_intro generalize-x]
+            }
+          @b-square-implies |
+            op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+            [by implies_intro given-b-square]
+        }
+      @discharge-b |
+        forall b: Grp; op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, op(b, x))
+    [by forall_intro generalize-a]
+qed
+
+// -- K is a subgroup ---------------------------------------------------------------------
+
+// closure under the operation (abelian): x·e = x; x·a = a·x; x·b = b·x; x·(ab) = a·(b·x).
+theorem kleinClosedOp: forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-square |
+            assume op(a, a) = E {
+              @given-b-square |
+                assume op(b, b) = E {
+                  @a-square |
+                    op(a, a) = E
+                    [by hypothesis given-a-square]
+                  @b-square |
+                    op(b, b) = E
+                    [by hypothesis given-b-square]
+                  @generalize-x |
+                    fix x: Grp {
+                      @generalize-y |
+                        fix y: Grp {
+                          @given-x-in |
+                            assume inKlein(a, b, x) {
+                              @given-y-in |
+                                assume inKlein(a, b, y) {
+                                  @x-in |
+                                    inKlein(a, b, x)
+                                    [by hypothesis given-x-in]
+                                  @y-cases |
+                                    y = E or y = a or y = b or y = op(a, b)
+                                    [by hypothesis given-y-in]
+                                  @conclusion-product-in |
+                                    inKlein(a, b, op(x, y))
+                                    case y-cases {
+                                      @when-identity |
+                                        assume y = E {
+                                          @y-is-identity |
+                                            y = E
+                                            [by hypothesis when-identity]
+                                          @x-times-identity |
+                                            op(x, E) = x
+                                            [using specialize group_power.opIdentityRight(x)]
+                                          @x-times-y |
+                                            op(x, y) = x
+                                            [by rewrite y-is-identity x-times-identity]
+                                          @conclusion-when-identity |
+                                            inKlein(a, b, op(x, y))
+                                            [by rewrite x-times-y x-in]
+                                        }
+                                      @when-a |
+                                        assume y = a {
+                                          @y-is-a |
+                                            y = a
+                                            [by hypothesis when-a]
+                                          @a-times-x-in |
+                                            inKlein(a, b, op(a, x))
+                                            [using specialize kleinAbsorbsA(a, b, x) a-square x-in]
+                                          @x-times-a |
+                                            op(x, a) = op(a, x)
+                                            [using specialize group_power.opCommutative(x, a)]
+                                          @x-times-a-in |
+                                            inKlein(a, b, op(x, a))
+                                            [by rewrite x-times-a a-times-x-in]
+                                          @conclusion-when-a |
+                                            inKlein(a, b, op(x, y))
+                                            [by rewrite y-is-a x-times-a-in]
+                                        }
+                                      @when-b |
+                                        assume y = b {
+                                          @y-is-b |
+                                            y = b
+                                            [by hypothesis when-b]
+                                          @b-times-x-in |
+                                            inKlein(a, b, op(b, x))
+                                            [using specialize kleinAbsorbsB(a, b, x) b-square x-in]
+                                          @x-times-b |
+                                            op(x, b) = op(b, x)
+                                            [using specialize group_power.opCommutative(x, b)]
+                                          @x-times-b-in |
+                                            inKlein(a, b, op(x, b))
+                                            [by rewrite x-times-b b-times-x-in]
+                                          @conclusion-when-b |
+                                            inKlein(a, b, op(x, y))
+                                            [by rewrite y-is-b x-times-b-in]
+                                        }
+                                      @when-ab |
+                                        assume y = op(a, b) {
+                                          @y-is-ab |
+                                            y = op(a, b)
+                                            [by hypothesis when-ab]
+                                          @b-times-x-in |
+                                            inKlein(a, b, op(b, x))
+                                            [using specialize kleinAbsorbsB(a, b, x) b-square x-in]
+                                          @a-times-b-times-x-in |
+                                            inKlein(a, b, op(a, op(b, x)))
+                                            [using specialize kleinAbsorbsA(a, b, op(b, x)) a-square b-times-x-in]
+                                          @x-times-ab-commuted |
+                                            op(x, op(a, b)) = op(op(a, b), x)
+                                            [using specialize group_power.opCommutative(x, op(a, b))]
+                                          @ab-times-x-regrouped |
+                                            op(op(a, b), x) = op(a, op(b, x))
+                                            [using assoc(group_power.opAssoc)]
+                                          @x-times-ab |
+                                            op(x, op(a, b)) = op(a, op(b, x))
+                                            [using chain x-times-ab-commuted ab-times-x-regrouped]
+                                          @x-times-ab-in |
+                                            inKlein(a, b, op(x, op(a, b)))
+                                            [by rewrite x-times-ab a-times-b-times-x-in]
+                                          @conclusion-when-ab |
+                                            inKlein(a, b, op(x, y))
+                                            [by rewrite y-is-ab x-times-ab-in]
+                                        }
+                                    }
+                                }
+                              @y-in-implies |
+                                inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                                [by implies_intro given-y-in]
+                            }
+                          @x-in-implies |
+                            inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                            [by implies_intro given-x-in]
+                        }
+                      @discharge-y |
+                        forall y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                        [by forall_intro generalize-y]
+                    }
+                  @discharge-x |
+                    forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                    [by forall_intro generalize-x]
+                }
+              @b-square-implies |
+                op(b, b) = E -> forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                [by implies_intro given-b-square]
+            }
+          @a-square-implies |
+            op(a, a) = E -> op(b, b) = E -> forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+            [by implies_intro given-a-square]
+        }
+      @discharge-b |
+        forall b: Grp; op(a, a) = E -> op(b, b) = E -> forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+    [by forall_intro generalize-a]
+qed
+
+// every member of K is its own inverse: e, a, b are, and (ab)(ab) = (aa)(bb) = e.
+theorem kleinMembersAreSelfInverse: forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-square |
+            assume op(a, a) = E {
+              @given-b-square |
+                assume op(b, b) = E {
+                  @a-square |
+                    op(a, a) = E
+                    [by hypothesis given-a-square]
+                  @b-square |
+                    op(b, b) = E
+                    [by hypothesis given-b-square]
+                  @generalize-x |
+                    fix x: Grp {
+                      @given-x-in |
+                        assume inKlein(a, b, x) {
+                          @x-cases |
+                            x = E or x = a or x = b or x = op(a, b)
+                            [by hypothesis given-x-in]
+                          @conclusion-self-inverse |
+                            inverse(x) = x
+                            case x-cases {
+                              @when-identity |
+                                assume x = E {
+                                  @x-is-identity |
+                                    x = E
+                                    [by hypothesis when-identity]
+                                  @identity-self-inverse |
+                                    inverse(E) = E
+                                    [using import(group_power) inverseOfIdentity]
+                                  @conclusion-when-identity |
+                                    inverse(x) = x
+                                    [by rewrite x-is-identity identity-self-inverse]
+                                }
+                              @when-a |
+                                assume x = a {
+                                  @x-is-a |
+                                    x = a
+                                    [by hypothesis when-a]
+                                  @a-is-its-inverse |
+                                    a = inverse(a)
+                                    [using specialize group_power.inverseUnique(a, a) a-square]
+                                  @a-self-inverse |
+                                    inverse(a) = a
+                                    [by symmetry a-is-its-inverse]
+                                  @conclusion-when-a |
+                                    inverse(x) = x
+                                    [by rewrite x-is-a a-self-inverse]
+                                }
+                              @when-b |
+                                assume x = b {
+                                  @x-is-b |
+                                    x = b
+                                    [by hypothesis when-b]
+                                  @b-is-its-inverse |
+                                    b = inverse(b)
+                                    [using specialize group_power.inverseUnique(b, b) b-square]
+                                  @b-self-inverse |
+                                    inverse(b) = b
+                                    [by symmetry b-is-its-inverse]
+                                  @conclusion-when-b |
+                                    inverse(x) = x
+                                    [by rewrite x-is-b b-self-inverse]
+                                }
+                              @when-ab |
+                                assume x = op(a, b) {
+                                  @x-is-ab |
+                                    x = op(a, b)
+                                    [by hypothesis when-ab]
+                                  @ab-squared-regrouped |
+                                    op(op(a, b), op(a, b)) = op(op(a, a), op(b, b))
+                                    [using assoc_commut(group_power.opAssoc, group_power.opCommutative, opLeftSwapAbelian)]
+                                  @ab-squared-a-cancelled |
+                                    op(op(a, b), op(a, b)) = op(E, op(b, b))
+                                    [by rewrite a-square ab-squared-regrouped]
+                                  @ab-squared-b-cancelled |
+                                    op(op(a, b), op(a, b)) = op(E, E)
+                                    [by rewrite b-square ab-squared-a-cancelled]
+                                  @identity-squared |
+                                    op(E, E) = E
+                                    [using specialize group_power.opIdentityLeft(E)]
+                                  @ab-square |
+                                    op(op(a, b), op(a, b)) = E
+                                    [using chain ab-squared-b-cancelled identity-squared]
+                                  @ab-is-its-inverse |
+                                    op(a, b) = inverse(op(a, b))
+                                    [using specialize group_power.inverseUnique(op(a, b), op(a, b)) ab-square]
+                                  @ab-self-inverse |
+                                    inverse(op(a, b)) = op(a, b)
+                                    [by symmetry ab-is-its-inverse]
+                                  @conclusion-when-ab |
+                                    inverse(x) = x
+                                    [by rewrite x-is-ab ab-self-inverse]
+                                }
+                            }
+                        }
+                      @x-in-implies |
+                        inKlein(a, b, x) -> inverse(x) = x
+                        [by implies_intro given-x-in]
+                    }
+                  @discharge-x |
+                    forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+                    [by forall_intro generalize-x]
+                }
+              @b-square-implies |
+                op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+                [by implies_intro given-b-square]
+            }
+          @a-square-implies |
+            op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+            [by implies_intro given-a-square]
+        }
+      @discharge-b |
+        forall b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inverse(x) = x
+    [by forall_intro generalize-a]
+qed
+
+// closure under inverses: x⁻¹ = x ∈ K.
+theorem kleinClosedInverse: forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-square |
+            assume op(a, a) = E {
+              @given-b-square |
+                assume op(b, b) = E {
+                  @a-square |
+                    op(a, a) = E
+                    [by hypothesis given-a-square]
+                  @b-square |
+                    op(b, b) = E
+                    [by hypothesis given-b-square]
+                  @generalize-x |
+                    fix x: Grp {
+                      @given-x-in |
+                        assume inKlein(a, b, x) {
+                          @x-in |
+                            inKlein(a, b, x)
+                            [by hypothesis given-x-in]
+                          @x-self-inverse |
+                            inverse(x) = x
+                            [using specialize kleinMembersAreSelfInverse(a, b, x) a-square b-square x-in]
+                          @conclusion-inverse-in |
+                            inKlein(a, b, inverse(x))
+                            [by rewrite x-self-inverse x-in]
+                        }
+                      @x-in-implies |
+                        inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+                        [by implies_intro given-x-in]
+                    }
+                  @discharge-x |
+                    forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+                    [by forall_intro generalize-x]
+                }
+              @b-square-implies |
+                op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+                [by implies_intro given-b-square]
+            }
+          @a-square-implies |
+            op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+            [by implies_intro given-a-square]
+        }
+      @discharge-b |
+        forall b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; op(a, a) = E -> op(b, b) = E -> forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+    [by forall_intro generalize-a]
+qed
+
+// -- K has four elements: ab is none of e, a, b -----------------------------------------
+// (e, a, b are pairwise distinct by hypothesis.) ab = e would make b = a⁻¹ = a; ab = a
+// would cancel to b = e; ab = b would cancel to a = e.
+theorem kleinProductIsNew: forall a, b: Grp; a != E -> b != E -> a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-nonidentity |
+            assume a != E {
+              @given-b-nonidentity |
+                assume b != E {
+                  @given-distinct |
+                    assume a != b {
+                      @given-a-square |
+                        assume op(a, a) = E {
+                          @a-nonidentity |
+                            a != E
+                            [by hypothesis given-a-nonidentity]
+                          @b-nonidentity |
+                            b != E
+                            [by hypothesis given-b-nonidentity]
+                          @distinct |
+                            a != b
+                            [by hypothesis given-distinct]
+                          @a-square |
+                            op(a, a) = E
+                            [by hypothesis given-a-square]
+                          @a-is-its-inverse |
+                            a = inverse(a)
+                            [using specialize group_power.inverseUnique(a, a) a-square]
+                          // ab ≠ e.
+                          @given-ab-identity |
+                            assume E = op(a, b) {
+                              @identity-is-ab |
+                                E = op(a, b)
+                                [by hypothesis given-ab-identity]
+                              @ab-is-identity |
+                                op(a, b) = E
+                                [by symmetry identity-is-ab]
+                              @b-is-inverse-of-a |
+                                b = inverse(a)
+                                [using specialize group_power.inverseUnique(a, b) ab-is-identity]
+                              @inverse-of-a-is-a |
+                                inverse(a) = a
+                                [by symmetry a-is-its-inverse]
+                              @b-is-a |
+                                b = a
+                                [using chain b-is-inverse-of-a inverse-of-a-is-a]
+                              @a-is-b |
+                                a = b
+                                [by symmetry b-is-a]
+                            }
+                          @ab-identity-implies |
+                            E = op(a, b) -> a = b
+                            [by implies_intro given-ab-identity]
+                          @ab-not-identity |
+                            E != op(a, b)
+                            [using tautology ab-identity-implies distinct]
+                          // ab ≠ a.
+                          @given-ab-is-a |
+                            assume a = op(a, b) {
+                              @a-is-ab |
+                                a = op(a, b)
+                                [by hypothesis given-ab-is-a]
+                              @a-times-identity |
+                                op(a, E) = a
+                                [using specialize group_power.opIdentityRight(a)]
+                              @a-times-identity-is-ab |
+                                op(a, E) = op(a, b)
+                                [using chain a-times-identity a-is-ab]
+                              @identity-is-b |
+                                E = b
+                                [using specialize group.cancelLeft(a, E, b) a-times-identity-is-ab]
+                              @b-is-identity |
+                                b = E
+                                [by symmetry identity-is-b]
+                            }
+                          @ab-is-a-implies |
+                            a = op(a, b) -> b = E
+                            [by implies_intro given-ab-is-a]
+                          @ab-not-a |
+                            a != op(a, b)
+                            [using tautology ab-is-a-implies b-nonidentity]
+                          // ab ≠ b.
+                          @given-ab-is-b |
+                            assume b = op(a, b) {
+                              @b-is-ab |
+                                b = op(a, b)
+                                [by hypothesis given-ab-is-b]
+                              @identity-times-b |
+                                op(E, b) = b
+                                [using specialize group_power.opIdentityLeft(b)]
+                              @identity-times-b-is-ab |
+                                op(E, b) = op(a, b)
+                                [using chain identity-times-b b-is-ab]
+                              @identity-is-a |
+                                E = a
+                                [using specialize group.cancelRight(E, b, a) identity-times-b-is-ab]
+                              @a-is-identity |
+                                a = E
+                                [by symmetry identity-is-a]
+                            }
+                          @ab-is-b-implies |
+                            b = op(a, b) -> a = E
+                            [by implies_intro given-ab-is-b]
+                          @ab-not-b |
+                            b != op(a, b)
+                            [using tautology ab-is-b-implies a-nonidentity]
+                          @conclusion-product-new |
+                            E != op(a, b) and a != op(a, b) and b != op(a, b)
+                            [using tautology ab-not-identity ab-not-a ab-not-b]
+                        }
+                      @a-square-implies |
+                        op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+                        [by implies_intro given-a-square]
+                    }
+                  @distinct-implies |
+                    a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+                    [by implies_intro given-distinct]
+                }
+              @b-nonidentity-implies |
+                b != E -> a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+                [by implies_intro given-b-nonidentity]
+            }
+          @a-nonidentity-implies |
+            a != E -> b != E -> a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+            [by implies_intro given-a-nonidentity]
+        }
+      @discharge-b |
+        forall b: Grp; a != E -> b != E -> a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; a != E -> b != E -> a != b -> op(a, a) = E -> (E != op(a, b) and a != op(a, b) and b != op(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// -- EXERCISE 33: two distinct order-2 elements of an abelian group span a subgroup of order 4
+// K = {e, a, b, ab} contains e, is closed under the operation and inverses, and its four
+// listed members are pairwise distinct (a, b, ab are not e; a ≠ b; ab is neither a nor b).
+theorem twoInvolutionsSpanAnOrderFourSubgroup: forall a, b: Grp; hasOrder(a, TWO) -> hasOrder(b, TWO) -> a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-order |
+            assume hasOrder(a, TWO) {
+              @given-b-order |
+                assume hasOrder(b, TWO) {
+                  @given-distinct |
+                    assume a != b {
+                      @a-order |
+                        hasOrder(a, TWO)
+                        [by hypothesis given-a-order]
+                      @b-order |
+                        hasOrder(b, TWO)
+                        [by hypothesis given-b-order]
+                      @distinct |
+                        a != b
+                        [by hypothesis given-distinct]
+                      @a-involution |
+                        a != E and op(a, a) = E
+                        [using specialize orderTwoIsAnInvolution(a) a-order]
+                      @b-involution |
+                        b != E and op(b, b) = E
+                        [using specialize orderTwoIsAnInvolution(b) b-order]
+                      @a-nonidentity |
+                        a != E
+                        [by and_elim_left a-involution]
+                      @a-square |
+                        op(a, a) = E
+                        [by and_elim_right a-involution]
+                      @b-nonidentity |
+                        b != E
+                        [by and_elim_left b-involution]
+                      @b-square |
+                        op(b, b) = E
+                        [by and_elim_right b-involution]
+                      @identity-reflexive |
+                        E = E
+                        [by reflexivity]
+                      @identity-in |
+                        inKlein(a, b, E)
+                        [using tautology identity-reflexive]
+                      @closed-op |
+                        forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))
+                        [using specialize kleinClosedOp(a, b) a-square b-square]
+                      @closed-inverse |
+                        forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))
+                        [using specialize kleinClosedInverse(a, b) a-square b-square]
+                      @product-new |
+                        E != op(a, b) and a != op(a, b) and b != op(a, b)
+                        [using specialize kleinProductIsNew(a, b) a-nonidentity b-nonidentity distinct a-square]
+                      @four-distinct |
+                        a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)
+                        [using tautology a-nonidentity b-nonidentity product-new]
+                      @conclusion-order-four-subgroup |
+                        inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b))
+                        [using tautology identity-in closed-op closed-inverse four-distinct]
+                    }
+                  @distinct-implies |
+                    a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+                    [by implies_intro given-distinct]
+                }
+              @b-order-implies |
+                hasOrder(b, TWO) -> a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+                [by implies_intro given-b-order]
+            }
+          @a-order-implies |
+            hasOrder(a, TWO) -> hasOrder(b, TWO) -> a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+            [by implies_intro given-a-order]
+        }
+      @discharge-b |
+        forall b: Grp; hasOrder(a, TWO) -> hasOrder(b, TWO) -> a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; hasOrder(a, TWO) -> hasOrder(b, TWO) -> a != b -> (inKlein(a, b, E) and (forall x, y: Grp; inKlein(a, b, x) -> inKlein(a, b, y) -> inKlein(a, b, op(x, y))) and (forall x: Grp; inKlein(a, b, x) -> inKlein(a, b, inverse(x))) and (a != E and b != E and E != op(a, b) and a != op(a, b) and b != op(a, b)))
+    [by forall_intro generalize-a]
+qed
