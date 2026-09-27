@@ -225,6 +225,12 @@ pub fn addTests(
     // universe origin, handing the transferred proof base's untransferred `op(U, U) = U`
     // against a target-sort claim (found modeling std/group/sequence onto Perm).
     ctx.okSilent(&.{ "check", "tests/cases/model_alias_borrowed.b4m" });
+    // ... and a cite whose namespace is otherwise UNTOUCHED: `[using model(M) mid.unitThrice]`
+    // where `mid` re-exports base by alias only, so the model block never names it. The cite
+    // DEMANDS the import (racked FetchTask, suspend), like every other qualified reference.
+    // Regression: a passive ident lookup → "unknown namespace 'mid'" (found citing
+    // std/group/listing.b4m, an alias-only re-export, from std/integer/mod-n-listing.b4m).
+    ctx.okSilent(&.{ "check", "tests/cases/model_cite_untouched_namespace.b4m" });
     // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.
