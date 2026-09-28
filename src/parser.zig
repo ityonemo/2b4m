@@ -528,19 +528,42 @@ pub const Parser = struct {
     /// Wrap one clause in `forall` over the declaration's params plus any extra free
     /// variables it mentions, and stage it as an axiom.
     fn stageDefinitionAxiom(self: *Parser, name: Token, params: []const ast.Binder, clause: *const ast.Expr, arm: usize) ParseError!void {
+        // The clause's free lower-case names, in FIRST-APPEARANCE order (a function of the
+        // text, never of a traversal accident). A declared param among them is quantified at
+        // its declared sort — a param the clause does not mention is NOT quantified (the axiom
+        // is the clause exactly as written, `forall s; cycle(s, ZERO) = id`, with no vacuous
+        // `forall k` for a citer to peel). Any other name (`k` in `add(s(k), b) = s(add(k, b))`)
+        // is quantified with NO sort (`inferred`): the parser cannot know whether a lower-case
+        // name is a clause variable or a global the file declares (`identityFn`), nor which sort
+        // a variable has; the elaborator settles both from the declarations (ast.Binder.inferred).
+        var mentioned: std.ArrayList(ast.Binder) = .empty;
+        try self.collectClauseVars(clause, &mentioned);
         var binders: std.ArrayList(ast.Binder) = .empty;
-        try binders.appendSlice(self.arena, params);
-        // Extra free variables the CLAUSE mentions beyond the declaration's params (`k` in
-        // `add(s(k), b) = s(add(k, b))`) are quantified too, at the params' sorts. Collected
-        // in FIRST-APPEARANCE order so the binder list is a function of the text, never of a
-        // traversal accident. A clause naming a variable at no known sort is diagnosed
-        // downstream as an unresolved reference, which is the right error and the right place.
-        try self.collectClauseVars(clause, &binders);
-        const formula = if (binders.items.len == 0) clause else blk: {
-            const node = try self.arena.create(ast.Expr);
-            node.* = .{ .quant = .{ .q = .forall, .tok = name, .binders = try binders.toOwnedSlice(self.arena), .body = clause } };
-            break :blk node;
+        for (params) |p| for (mentioned.items) |m| if (m.name.name == p.name.name) {
+            try binders.append(self.arena, p);
+            break;
         };
+        for (mentioned.items) |m| {
+            var is_param = false;
+            for (params) |p| if (p.name.name == m.name.name) {
+                is_param = true;
+                break;
+            };
+            if (!is_param) try binders.append(self.arena, m);
+        }
+        // NESTED single-binder quantifiers (innermost = last binder): a quantifier node shares
+        // ONE sort across its binders, so `func cycle(s: Points, k: Nat)` must not become
+        // `forall s, k: Points`; and an inferred binder is settled per node.
+        var formula = clause;
+        var i = binders.items.len;
+        while (i > 0) {
+            i -= 1;
+            const one = try self.arena.alloc(ast.Binder, 1);
+            one[0] = binders.items[i];
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .quant = .{ .q = .forall, .tok = name, .binders = one, .body = formula } };
+            formula = node;
+        }
         // The emitted axiom's name is MANGLED — it cannot be the declaration's own, which
         // already names the pred/func (that collision is what `definition{…}` avoids). The
         // mangling is DETERMINISTIC in (symbol, arm), so `[by definition(N) f]` finds the
@@ -559,19 +582,18 @@ pub const Parser = struct {
     }
 
     /// Append every `.name` leaf of `e` that is not already bound (by the declaration's
-    /// params, an inner quantifier, or an earlier find) to `out`, at the sort of the FIRST
-    /// declared param. Lower-case single-token names only: an upper-case or qualified name
-    /// is a global (a const, another symbol), not a clause variable.
+    /// params, an inner quantifier, or an earlier find) to `out` as an INFERRED binder (no
+    /// sort; the elaborator decides global-vs-variable and the variable's sort). Lower-case
+    /// single-token names only: an upper-case or qualified name is a global (a const, another
+    /// symbol) by convention, so a mistyped `ZER0` still reads as an unresolved reference.
     fn collectClauseVars(self: *Parser, e: *const ast.Expr, out: *std.ArrayList(ast.Binder)) ParseError!void {
-        if (out.items.len == 0) return; // no param sort to give them — nothing to infer from
-        const sort = out.items[0].sort;
         switch (e.*) {
             .name => |t| {
                 if (t.qualifier != InternPool.StrId.none) return; // qualified: a global
                 const txt = self.text(t);
                 if (txt.len == 0 or !std.ascii.isLower(txt[0])) return; // ALLCAPS/Camel: a global
                 for (out.items) |b| if (b.name.name == t.name) return; // already bound
-                try out.append(self.arena, .{ .name = t, .sort = sort });
+                try out.append(self.arena, .{ .name = t, .sort = t, .inferred = true });
             },
             .call => |c| for (c.args) |a| try self.collectClauseVars(a, out),
             .binary => |b| {

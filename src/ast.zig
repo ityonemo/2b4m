@@ -9,7 +9,11 @@ const Token = @import("lexer.zig").Token;
 /// A binder `x: S` or an INLINE-REFINED binder `x: S where inH` — the optional
 /// `guard` predicate-NAME mints an anonymous refined sort (`S` narrowed by inH,
 /// applied to the binder variable). Bare pred name; conjunctions use a `define`d pred.
-pub const Binder = struct { name: Token, sort: Token, guard: ?Token = null };
+/// `inferred`: a DEFINITION CLAUSE's free name, quantified by the parser with NO sort (`sort`
+/// is a placeholder — the name token itself). The elaborator settles it: a name the file
+/// declares is that global (the quantifier dissolves), else a clause variable whose sort is
+/// read off its first use. Always alone in its quantifier node.
+pub const Binder = struct { name: Token, sort: Token, guard: ?Token = null, inferred: bool = false };
 
 /// Schema parameter, e.g. `P: nat -> prop`. arg_sorts empty = plain value param.
 pub const SchemaParam = struct { name: Token, arg_sorts: []const Token, result: Token };

@@ -261,7 +261,19 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
             .quant => |q| {
                 // ENTER: resolve the shared binder sort, compute quals, push scope entries,
                 // snapshot the TCC/result-fact windows — then elaborate the body, then LEAVE.
-                const refined = try self.resolveBinderSort(q.binders[0]);
+                const refined: SortId = if (q.binders[0].inferred) blk: {
+                    // an INFERRED binder (a definition clause's free name; alone in its node):
+                    // a name this file declares is that GLOBAL, not a variable — the
+                    // quantifier dissolves and the body elaborates in its place. Otherwise it
+                    // is a clause variable, sorted by its first use in the body.
+                    const bname = try self.localName(q.binders[0].name);
+                    if (self.lookupIdent(self.ns, bname) != null) {
+                        try frames.append(wa, .{ .require_prop_body = q.body });
+                        try frames.append(wa, .{ .elaborate = q.body });
+                        continue;
+                    }
+                    break :blk try self.inferBinderSort(q.body, bname, q.binders[0].name);
+                } else try self.resolveBinderSort(q.binders[0]);
                 const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
                 // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
                 // already-elaborated (already-relativized) terms — re-injecting guards here would
@@ -780,6 +792,75 @@ pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     const nm = self.interner.internString(label) catch return error.OutOfMemory;
     const ix = self.interner.mintSort(.{ .name = nm, .loc = b.sort.start, .refinement = .{ .parent = @enumFromInt(@intFromEnum(base)), .qualifiers = quals } }) catch return error.OutOfMemory;
     return @enumFromInt(@intFromEnum(ix));
+}
+
+/// The sort of an inferred clause variable `bname`, read off its FIRST use in `body`: the
+/// parameter sort at the argument position it fills in a call to a declared func/pred (a
+/// refined parameter sort refines the variable — the clause then holds under that guard,
+/// which is exactly what the call's obligation needs), or, failing that, the result sort of
+/// the declared call it is equated with. Iterative walk (task #92), first-appearance order.
+fn inferBinderSort(self: *Elab, body: *const ast.Expr, bname: StrId, tok: lexer.Token) Error!SortId {
+    var stack: std.ArrayList(*const ast.Expr) = .empty;
+    try stack.append(self.arena, body);
+    while (stack.pop()) |e| switch (e.*) {
+        .name => {},
+        .call => |c| {
+            if (self.calleeSig(c.callee)) |sig| if (sig.args.len == c.args.len) {
+                for (c.args, sig.args) |a, expected| if (isBareName(a, bname)) return @enumFromInt(@intFromEnum(expected));
+            };
+            var i = c.args.len;
+            while (i > 0) {
+                i -= 1;
+                try stack.append(self.arena, c.args[i]);
+            }
+        },
+        .binary => |b| {
+            if (b.op == .equal or b.op == .not_equal) {
+                if (isBareName(b.lhs, bname)) if (self.callResultSort(b.rhs)) |s| return s;
+                if (isBareName(b.rhs, bname)) if (self.callResultSort(b.lhs)) |s| return s;
+            }
+            try stack.append(self.arena, b.rhs);
+            try stack.append(self.arena, b.lhs);
+        },
+        .not => |n| try stack.append(self.arena, n.operand),
+        .quant => |q| if (!bindsName(q.binders, bname)) try stack.append(self.arena, q.body),
+        .lambda => |l| if (!bindsName(l.binders, bname)) try stack.append(self.arena, l.body),
+    };
+    return self.fail(tok.start, "cannot infer the sort of '{s}': it fills no argument of a declared symbol in this clause (declare it, or use it where its sort is determined)", .{self.text(tok)});
+}
+
+fn isBareName(e: *const ast.Expr, name: StrId) bool {
+    return e.* == .name and e.name.tag != .symbol and e.name.qualifier == InternPool.Index.none and e.name.name == name;
+}
+
+fn bindsName(binders: []const ast.Binder, name: StrId) bool {
+    for (binders) |b| if (b.name.name == name) return true;
+    return false;
+}
+
+/// The signature of a call's callee if it resolves to a declared func/pred (a schema
+/// generator param, an unknown name, or a non-callable yields null — the elaboration proper
+/// diagnoses those).
+fn calleeSig(self: *Elab, callee: lexer.Token) ?InternPool.Key.Sig {
+    const dotted = callee.tag != .symbol and callee.qualifier != InternPool.Index.none;
+    const target: Qualified = if (dotted)
+        self.resolveQualified(callee) catch return null
+    else
+        .{ .ns = self.ns, .base = tokName(callee) };
+    if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base) != null) return null;
+    const sym = self.resolveSymbolTok(callee) orelse self.lookupIdent(target.ns, target.base) orelse return null;
+    const callable = switch (self.interner.keyOf(sym)) {
+        .func, .pred => |cb| cb,
+        else => return null,
+    };
+    return self.interner.keyOf(callable.sig).sig;
+}
+
+/// The result sort of `e` when it is a call to a declared func; null otherwise.
+fn callResultSort(self: *Elab, e: *const ast.Expr) ?SortId {
+    if (e.* != .call) return null;
+    const sig = self.calleeSig(e.call.callee) orelse return null;
+    return @enumFromInt(@intFromEnum(sig.result));
 }
 
 /// Build the guard proposition for a refinement qualifier at `arg`: an opaque predicate

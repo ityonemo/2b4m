@@ -323,6 +323,19 @@ A predicate has one clause and writes its own connective (`iff` for a
 proposition). A function may have several — a recursive definition needs one per
 case, and neither clause alone is the definition.
 
+**What a clause quantifies.** The declaration's params that the clause MENTIONS,
+at their declared sorts (a param it does not mention is not quantified: the base
+clause above becomes `forall b: Nat; add(ZERO, b) = b`, exactly as you would write
+it by hand), then the clause's own free variables (`k` in `add(succ(k), b)`), in
+first-appearance order. A clause variable's sort is inferred from its USE — the
+parameter sort at the argument position it fills (`k` is a `Nat` because `succ`
+takes one; `x` in `member(x, union(a, b)) iff …` is an `Element` because `member`'s
+first argument is), or the result sort of the declared call it is equated with. A
+lower-case name the file DECLARES (`identityFn` in `cycle(s, ZERO) = identityFn`)
+is that global, never a variable. A variable that fills no argument of a declared
+symbol is an error ("cannot infer the sort of …"): declare it, or use it where its
+sort is determined.
+
 **Clause guards.** When the heads do not themselves distinguish the cases, a
 clause may carry a guard, `when` after the head:
 
@@ -347,7 +360,7 @@ that, exactly as it does not for hand-written axiom pairs.
   [by definition isZero]
 
 @base-clause |
-  forall a, b: Nat; add(ZERO, b) = b
+  forall b: Nat; add(ZERO, b) = b
   [by definition(0) add]
 ```
 

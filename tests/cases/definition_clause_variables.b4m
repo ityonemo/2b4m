@@ -1,0 +1,82 @@
+// DEFINITION CLAUSE VARIABLES are settled by the ELABORATOR, not the parser (regression for
+// three bugs logged in CHAPTER5-PAINPOINTS):
+//   1. a clause's free name takes its sort from USE — `x` in `member(x, union(a, b))` is an
+//      Element (member's first argument), not the first param's Set;
+//   2. a lower-case name the file DECLARES (`identityFn`) is that global, not a fresh clause
+//      variable — the quantifier dissolves;
+//   3. params of DIFFERENT sorts each keep their own (`cycle(s: Element, k: Nat)`), and a param
+//      the clause does not mention is not quantified (no vacuous `forall k` on the base clause).
+sort Element
+sort Set
+pred member(x: Element, s: Set)
+
+func union(a: Set, b: Set) => Set:
+  member(x, union(a, b)) iff (member(x, a) or member(x, b))
+
+sort Fn
+const identityFn: Fn
+func compose(f: Fn, g: Fn) => Fn
+sort Nat
+const ZERO: Nat
+func succ(n: Nat) => Nat
+
+func cycle(s: Element, k: Nat) => Fn:
+  cycle(s, ZERO) = identityFn;
+  cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
+
+// 1. x : Element, quantified after the params it rides with.
+theorem leftIsInUnion: forall a, b: Set; forall x: Element; member(x, a) -> member(x, union(a, b))
+proof
+  @union-clause |
+    forall a2: Set; forall b2: Set; forall x2: Element; member(x2, union(a2, b2)) iff (member(x2, a2) or member(x2, b2))
+    [by definition union]
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-x |
+            fix x: Element {
+              @given-in-a |
+                assume member(x, a) {
+                  @in-a |
+                    member(x, a)
+                    [by hypothesis given-in-a]
+                  @union-at-a-b-x |
+                    member(x, union(a, b)) iff (member(x, a) or member(x, b))
+                    [by forall_elim(a, b, x) union-clause]
+                  @conclusion-in-union |
+                    member(x, union(a, b))
+                    [using tautology union-at-a-b-x in-a]
+                }
+              @in-a-implies |
+                member(x, a) -> member(x, union(a, b))
+                [by implies_intro given-in-a]
+            }
+          @discharge-x |
+            forall x: Element; member(x, a) -> member(x, union(a, b))
+            [by forall_intro generalize-x]
+        }
+      @discharge-b |
+        forall b: Set; forall x: Element; member(x, a) -> member(x, union(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Set; forall x: Element; member(x, a) -> member(x, union(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// 2 + 3. identityFn is the constant; the base clause binds only s.
+theorem cycleAtZero: forall s: Element; cycle(s, ZERO) = identityFn
+proof
+  @conclusion |
+    forall s: Element; cycle(s, ZERO) = identityFn
+    [by definition(0) cycle]
+qed
+
+// 3. s : Element and k : Nat, each its own.
+theorem cycleStep: forall s: Element; forall k: Nat; cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
+proof
+  @conclusion |
+    forall s: Element; forall k: Nat; cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
+    [by definition(1) cycle]
+qed

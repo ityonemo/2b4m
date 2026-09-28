@@ -67,24 +67,18 @@ Both introduce the predicate and nothing else constrains it.
 These ARE definitions — `union` means exactly "membership is disjunction" — but
 the clause's head is `member(x, union(a,b))`, not `union(a,b)`.
 
-**BLOCKED today — verified 2026-09-24, not speculation.** This fails:
+**UNBLOCKED 2026-09-27.** This now checks (fixture
+`tests/cases/definition_clause_variables.b4m`):
 
     func union(a: Set, b: Set) => Set:
       member(x, union(a, b)) iff (member(x, a) or member(x, b))
-    -- error: expected sort 'Set', got 'Element'   (at `x`)
 
-The cause is the known limitation in the clause-variable rule: a free variable
-the declaration does not bind takes the FIRST PARAM'S SORT. For a recursive
-definition that is always right (`k` in `add(succ(k), b)` is a `Nat` like `a`);
-here `x` is an `Element` while the first param is a `Set`, so it is simply wrong.
-
-Two ways to unblock, neither built:
-  - infer the variable's sort from its USE in the clause (`member`'s first
-    argument sort pins `x : Element`) — the right fix, and it subsumes the
-    first-param heuristic entirely;
-  - allow an explicit binder on the clause.
-
-Until then TIER 2 cannot migrate. TIER 1 is unaffected and verified working.
+A clause variable's sort is inferred from its USE (`member`'s first argument sort
+pins `x : Element`) — the elaborator settles clause variables, the parser only
+collects them (see GUIDE.md "What a clause quantifies"). The same fix made a
+DECLARED lower-case name on a clause's right-hand side (`identityFn`) resolve as
+the global, gave mixed-sort params their own sorts, and stopped quantifying params
+a clause does not mention. TIER 2 can migrate; nothing has been migrated yet.
 
 ---
 
@@ -116,9 +110,8 @@ the feature pays: the reader sees the clauses as one definition, `--axioms` stop
 listing 30+ construction equations beside genuine assumptions, and nobody invents
 another `…Def` name.
 
-TIER 2 is BLOCKED until clause variables take their sort from USE rather than
-from the first param (see above) — a fix worth making on its own merits, since
-the current rule is right only by luck for the recursive cases.
+TIER 2 is unblocked (2026-09-27: clause variables take their sort from USE) and
+can follow TIER 1, one theory per commit.
 
 TIER 3 never — and the `--axioms` report is the reason to be careful: its value
 is that it lists what a result ASSUMES, which TIER 1 migrations sharpen (fewer

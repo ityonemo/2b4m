@@ -33,6 +33,7 @@ const lexer = @import("../../lexer.zig");
 const InternPool = @import("../../InternPool.zig");
 const StrId = InternPool.StrId;
 const Walk = @import("Walk.zig");
+const Context = @import("../../Context.zig");
 
 /// One global name candidate a step references.
 pub const Ref = struct {
@@ -67,6 +68,11 @@ walk: *const Walk,
 /// instance's schema_args, not as globals); empty for an ordinary proof. Set by the
 /// instance ProveTask before scanning its schema body/steps.
 schema_params: []const StrId = &.{},
+/// The scanned file's declaration registry, for INFERRED binders (a definition clause's free
+/// name, ast.Binder.inferred): a name this file DECLARES is a global to fetch, any other is a
+/// clause variable. Null = every inferred binder reads as a variable (standalone scans).
+ctx: ?*const Context = null,
+file: InternPool.Index = .none,
 
 out: std.ArrayList(Ref) = .empty,
 seen: std.AutoHashMapUnmanaged(SeenKey, void) = .empty,
@@ -270,6 +276,17 @@ fn scanExpr(self: *Scanner, root: *const ast.Expr) Allocator.Error!void {
 fn pushBinderBody(self: *Scanner, stack: *std.ArrayList(ScanItem), binders: []const ast.Binder, body: *const ast.Expr) Allocator.Error!void {
     const mark = self.expr_locals.items.len;
     for (binders) |b| {
+        if (b.inferred) {
+            // a definition clause's free name: the GLOBAL this file declares under it (fetch it;
+            // the elaborator dissolves the binder), else a clause variable — nothing to fetch,
+            // and its sort placeholder is not a sort token.
+            if (self.isDeclared(b.name.name)) {
+                try self.addTok(b.name, .ident);
+            } else {
+                try self.expr_locals.append(self.arena, b.name.name);
+            }
+            continue;
+        }
         try self.addTok(b.sort, .ident);
         if (b.guard) |g| try self.addTok(g, .ident);
         try self.expr_locals.append(self.arena, b.name.name);
@@ -277,6 +294,13 @@ fn pushBinderBody(self: *Scanner, stack: *std.ArrayList(ScanItem), binders: []co
     // pop_scope goes on FIRST (deepest) so it runs after the body is scanned.
     try stack.append(self.arena, .{ .pop_scope = mark });
     try stack.append(self.arena, .{ .expr = body });
+}
+
+/// Does the scanned file declare `name` (any decl kind)? False without a registry.
+fn isDeclared(self: *const Scanner, name: StrId) bool {
+    const ctx = self.ctx orelse return false;
+    const fid = ctx.fileOf(self.file) orelse return false;
+    return ctx.declOf(fid, name) != null;
 }
 
 /// An expression NAME position: skip expression-local and proof-local binders (only a
