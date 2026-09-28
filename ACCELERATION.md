@@ -67,6 +67,11 @@ argument on each tactic:
   `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
   what the `aata/*.md` files do — aliasing the book's notation onto the std
   names — and what `set.b4m` did aliasing the element sort.)
+- **GUARDED cuts and accelerants** — an abstract theory whose laws are proved BY an
+  accelerant cannot currently instantiate at a predicated-cut target: the factor axioms
+  transfer relativized and the generated proof drops the guard premise. Open, pinned in
+  `ACCELERANT-ON-GUARDED-SETS.md` (three readings, plus the generality test that rules
+  out any fix resting on closure nominations).
 - **`model`** overrides a whole signature at once — the industrial-strength
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
