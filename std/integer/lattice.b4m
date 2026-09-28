@@ -1,0 +1,1593 @@
+// std/integer/lattice.b4m — DISTRIBUTIVITY OF THE DIVISOR LATTICE:
+//   gcd(N, lcm(m, n)) = lcm(gcd(N, m), gcd(N, n)),
+// in the form a consumer needs: a common multiple of gcd(N, m) and gcd(N, n) is a multiple
+// of gcd(N, lcm(m, n)) (`commonMultipleOfGcdsIsMultipleOfGcdOfLcm`). This is what makes
+// ⟨a^m⟩ ∩ ⟨a^n⟩ = ⟨a^lcm(m, n)⟩ in a cyclic group of FINITE order (AATA §4.1 Ex 28).
+//
+// No prime factorization: the proof runs on Bézout coefficients (derived here from
+// std/integer/divides.b4m's coprimeBezout by dividing out the gcd), the product formula
+// lcm(a, b)·gcd(a, b) = ab (from Euclid's lemma), and the universal properties. The crux is
+// the inequality gcd(N, L)·gcd(N, g) | gcd(N, m)·gcd(N, n) for L = lcm(m, n), g = gcd(m, n):
+// expanding gcd(N, m)·gcd(N, n) = (N s₁ + m t₁)(N s₂ + n t₂), every summand is divisible by
+// the product on the left (N·N, N·n, N·m, and m·n = L·g), and cancelling gcd(d₁, d₂) out of
+// lcm(d₁, d₂)·gcd(d₁, d₂) = d₁ d₂ leaves gcd(N, L) | lcm(d₁, d₂).
+//
+// A gcd is taken EXISTENTIALLY (`isGcd`: positive, a common divisor, divisible by every
+// common divisor — exactly what divides.b4m's `bezout` provides), so no sign facts about the
+// concrete `gcd` function are needed; the concrete `lcm` is used through its axioms.
+
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func add = integer.add
+func mul = integer.mul
+func neg = integer.neg
+pred less_than = int_order.less_than
+pred nonneg = integer.nonneg
+define divides(d, n) = int_divides.divides(d, n)
+func lcm = int_divides.lcm
+
+axiom mulZeroLeft = integer.mulZeroLeft
+theorem mulZeroRight = integer.mulZeroRight
+theorem mulOneRight = integer.mulOneRight
+theorem mulNegRight = integer.mulNegRight
+theorem addZeroRight = integer.addZeroRight
+theorem addNegRight = integer.addNegRight
+theorem lessThanIrreflexive = int_order.lessThanIrreflexive
+theorem lessThanTransitive = int_order.lessThanTransitive
+theorem additionPreservesOrder = int_order.additionPreservesOrder
+theorem signTrichotomy = int_order.signTrichotomy
+theorem negativeNegIsPositive = int_order.negativeNegIsPositive
+theorem positiveIsNonneg = int_order.positiveIsNonneg
+theorem dividesRefl = int_divides.dividesRefl
+theorem dividesMul = int_divides.dividesMul
+theorem dividesAdd = int_divides.dividesAdd
+theorem dividesTransitive = int_divides.dividesTransitive
+theorem dividesIntro = int_divides.dividesIntro
+theorem dividesOneImpliesUnit = int_divides.dividesOneImpliesUnit
+theorem mulCancelLeft = int_divides.mulCancelLeft
+theorem mulCancelRight = int_divides.mulCancelRight
+theorem positiveMul = int_divides.positiveMul
+theorem mutualDivisorsNonnegEqual = int_divides.mutualDivisorsNonnegEqual
+axiom lcmNonneg = int_divides.lcmNonneg
+axiom lcmCommonMultipleLeft = int_divides.lcmCommonMultipleLeft
+axiom lcmCommonMultipleRight = int_divides.lcmCommonMultipleRight
+axiom lcmLeast = int_divides.lcmLeast
+theorem coprimeBezout = int_divides.coprimeBezout
+theorem euclidFromBezout = int_divides.euclidFromBezout
+
+// -- gcds, existentially ---------------------------------------------------------------------
+// d is A gcd of a and b: positive, a common divisor, and divisible by every common divisor.
+define isGcd(d, a, b) = less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d))
+
+// divides.b4m's `bezout` gives a gcd for nonzero a, b — plus the Bézout representation, which
+// `isGcd` does not carry. Weaken it to the four defining clauses.
+theorem bezout = int_divides.bezout
+
+theorem gcdExists: forall a, b: Int; a != ZERO -> b != ZERO -> exists d: Int; isGcd(d, a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-nonzero |
+            assume a != ZERO {
+              @given-b-nonzero |
+                assume b != ZERO {
+                  @a-nonzero |
+                    a != ZERO
+                    [by hypothesis given-a-nonzero]
+                  @b-nonzero |
+                    b != ZERO
+                    [by hypothesis given-b-nonzero]
+                  @bezout-gcd-exists |
+                    exists d: Int; less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)) and (exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s)))
+                    [using specialize bezout(a, b) a-nonzero b-nonzero]
+                  @with-bezout-gcd |
+                    unpack d: Int from bezout-gcd-exists {
+                      @bezout-facts |
+                        less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)) and (exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s)))
+                        [by hypothesis with-bezout-gcd]
+                      @d-is-a-gcd |
+                        isGcd(d, a, b)
+                        [using tautology bezout-facts]
+                      @conclusion-a-gcd-exists-with-witness |
+                        exists d2: Int; isGcd(d2, a, b)
+                        [by exists_intro(d) d-is-a-gcd]
+                    }
+                  @conclusion-a-gcd-exists |
+                    exists d: Int; isGcd(d, a, b)
+                    [by exists_elim with-bezout-gcd]
+                }
+              @b-nonzero-implies |
+                b != ZERO -> exists d: Int; isGcd(d, a, b)
+                [by implies_intro given-b-nonzero]
+            }
+          @a-nonzero-implies |
+            a != ZERO -> b != ZERO -> exists d: Int; isGcd(d, a, b)
+            [by implies_intro given-a-nonzero]
+        }
+      @discharge-b |
+        forall b: Int; a != ZERO -> b != ZERO -> exists d: Int; isGcd(d, a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; a != ZERO -> b != ZERO -> exists d: Int; isGcd(d, a, b)
+    [by forall_intro generalize-a]
+qed
+
+// -- small divisibility and sign facts -------------------------------------------------------
+// a positive x is not ZERO.
+theorem positiveIsNonzero: forall x: Int; less_than(ZERO, x) -> x != ZERO
+proof
+  @generalize-x |
+    fix x: Int {
+      @given-positive |
+        assume less_than(ZERO, x) {
+          @positive |
+            less_than(ZERO, x)
+            [by hypothesis given-positive]
+          @given-zero |
+            assume x = ZERO {
+              @x-zero |
+                x = ZERO
+                [by hypothesis given-zero]
+              @conclusion-zero-below-zero |
+                less_than(ZERO, ZERO)
+                [by rewrite x-zero positive]
+            }
+          @zero-gives-absurdity |
+            x = ZERO -> less_than(ZERO, ZERO)
+            [by implies_intro given-zero]
+          @zero-not-below-itself |
+            not less_than(ZERO, ZERO)
+            [using specialize lessThanIrreflexive(ZERO)]
+          @conclusion-nonzero |
+            x != ZERO
+            [using tautology zero-gives-absurdity zero-not-below-itself]
+        }
+      @positive-implies |
+        less_than(ZERO, x) -> x != ZERO
+        [by implies_intro given-positive]
+    }
+  @conclusion |
+    forall x: Int; less_than(ZERO, x) -> x != ZERO
+    [by forall_intro generalize-x]
+qed
+
+// divisibility multiplies: x | a and y | b give xy | ab.
+theorem dividesMulBoth: forall x, y, a, b: Int; divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+proof
+  @generalize-x |
+    fix x: Int {
+      @generalize-y |
+        fix y: Int {
+          @generalize-a |
+            fix a: Int {
+              @generalize-b |
+                fix b: Int {
+                  @given-x-divides-a |
+                    assume divides(x, a) {
+                      @given-y-divides-b |
+                        assume divides(y, b) {
+                          @a-is-a-multiple |
+                            exists k: Int; a = mul(x, k)
+                            [by hypothesis given-x-divides-a]
+                          @b-is-a-multiple |
+                            exists k: Int; b = mul(y, k)
+                            [by hypothesis given-y-divides-b]
+                          @with-cofactor-k |
+                            unpack k: Int from a-is-a-multiple {
+                              @a-is |
+                                a = mul(x, k)
+                                [by hypothesis with-cofactor-k]
+                              @with-cofactor-j |
+                                unpack j: Int from b-is-a-multiple {
+                                  @b-is |
+                                    b = mul(y, j)
+                                    [by hypothesis with-cofactor-j]
+                                  @product-reflexive |
+                                    mul(a, b) = mul(a, b)
+                                    [by reflexivity]
+                                  @product-with-a-expanded |
+                                    mul(a, b) = mul(mul(x, k), b)
+                                    [by rewrite a-is product-reflexive]
+                                  @product-expanded |
+                                    mul(a, b) = mul(mul(x, k), mul(y, j))
+                                    [by rewrite b-is product-with-a-expanded]
+                                  @product-regrouped |
+                                    mul(mul(x, k), mul(y, j)) = mul(mul(x, y), mul(k, j))
+                                    [using polynomial(integer)]
+                                  @product-is-a-multiple |
+                                    mul(a, b) = mul(mul(x, y), mul(k, j))
+                                    [using chain product-expanded product-regrouped]
+                                  @conclusion-product-divides |
+                                    divides(mul(x, y), mul(a, b))
+                                    [using specialize dividesIntro(mul(a, b), mul(x, y), mul(k, j)) product-is-a-multiple]
+                                }
+                              @conclusion-with-k |
+                                divides(mul(x, y), mul(a, b))
+                                [by exists_elim with-cofactor-j]
+                            }
+                          @conclusion-divides |
+                            divides(mul(x, y), mul(a, b))
+                            [by exists_elim with-cofactor-k]
+                        }
+                      @y-divides-implies |
+                        divides(y, b) -> divides(mul(x, y), mul(a, b))
+                        [by implies_intro given-y-divides-b]
+                    }
+                  @x-divides-implies |
+                    divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+                    [by implies_intro given-x-divides-a]
+                }
+              @discharge-b |
+                forall b: Int; divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+                [by forall_intro generalize-b]
+            }
+          @discharge-a |
+            forall a, b: Int; divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+            [by forall_intro generalize-a]
+        }
+      @discharge-y |
+        forall y, a, b: Int; divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, a, b: Int; divides(x, a) -> divides(y, b) -> divides(mul(x, y), mul(a, b))
+    [by forall_intro generalize-x]
+qed
+
+// a common positive factor cancels out of a divisibility: xp | yp gives x | y.
+theorem dividesCancelFactor: forall p, x, y: Int; less_than(ZERO, p) -> divides(mul(x, p), mul(y, p)) -> divides(x, y)
+proof
+  @generalize-p |
+    fix p: Int {
+      @generalize-x |
+        fix x: Int {
+          @generalize-y |
+            fix y: Int {
+              @given-positive |
+                assume less_than(ZERO, p) {
+                  @given-divides |
+                    assume divides(mul(x, p), mul(y, p)) {
+                      @p-positive |
+                        less_than(ZERO, p)
+                        [by hypothesis given-positive]
+                      @yp-is-a-multiple |
+                        exists k: Int; mul(y, p) = mul(mul(x, p), k)
+                        [by hypothesis given-divides]
+                      @with-cofactor-k |
+                        unpack k: Int from yp-is-a-multiple {
+                          @yp-is |
+                            mul(y, p) = mul(mul(x, p), k)
+                            [by hypothesis with-cofactor-k]
+                          @cofactor-regrouped |
+                            mul(mul(x, p), k) = mul(mul(x, k), p)
+                            [using polynomial(integer)]
+                          @yp-is-xkp |
+                            mul(y, p) = mul(mul(x, k), p)
+                            [using chain yp-is cofactor-regrouped]
+                          @y-is |
+                            y = mul(x, k)
+                            [using specialize mulCancelRight(p, y, mul(x, k)) p-positive yp-is-xkp]
+                          @conclusion-x-divides-y |
+                            divides(x, y)
+                            [using specialize dividesIntro(y, x, k) y-is]
+                        }
+                      @conclusion-divides |
+                        divides(x, y)
+                        [by exists_elim with-cofactor-k]
+                    }
+                  @divides-implies |
+                    divides(mul(x, p), mul(y, p)) -> divides(x, y)
+                    [by implies_intro given-divides]
+                }
+              @positive-implies |
+                less_than(ZERO, p) -> divides(mul(x, p), mul(y, p)) -> divides(x, y)
+                [by implies_intro given-positive]
+            }
+          @discharge-y |
+            forall y: Int; less_than(ZERO, p) -> divides(mul(x, p), mul(y, p)) -> divides(x, y)
+            [by forall_intro generalize-y]
+        }
+      @discharge-x |
+        forall x, y: Int; less_than(ZERO, p) -> divides(mul(x, p), mul(y, p)) -> divides(x, y)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall p, x, y: Int; less_than(ZERO, p) -> divides(mul(x, p), mul(y, p)) -> divides(x, y)
+    [by forall_intro generalize-p]
+qed
+
+// a positive product with a positive factor has a positive other factor.
+theorem positiveFactor: forall g, x: Int; less_than(ZERO, g) -> less_than(ZERO, mul(g, x)) -> less_than(ZERO, x)
+proof
+  @generalize-g |
+    fix g: Int {
+      @generalize-x |
+        fix x: Int {
+          @given-g-positive |
+            assume less_than(ZERO, g) {
+              @given-product-positive |
+                assume less_than(ZERO, mul(g, x)) {
+                  @g-positive |
+                    less_than(ZERO, g)
+                    [by hypothesis given-g-positive]
+                  @product-positive |
+                    less_than(ZERO, mul(g, x))
+                    [by hypothesis given-product-positive]
+                  @sign-cases |
+                    less_than(ZERO, x) or x = ZERO or less_than(x, ZERO)
+                    [using specialize signTrichotomy(x)]
+                  @zero-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize lessThanIrreflexive(ZERO)]
+                  @conclusion-x-positive |
+                    less_than(ZERO, x)
+                    case sign-cases {
+                      @when-positive |
+                        assume less_than(ZERO, x) {
+                          @conclusion-positive |
+                            less_than(ZERO, x)
+                            [by hypothesis when-positive]
+                        }
+                      @when-zero |
+                        assume x = ZERO {
+                          @x-zero |
+                            x = ZERO
+                            [by hypothesis when-zero]
+                          @product-at-zero-positive |
+                            less_than(ZERO, mul(g, ZERO))
+                            [by rewrite x-zero product-positive]
+                          @product-at-zero |
+                            mul(g, ZERO) = ZERO
+                            [using specialize mulZeroRight(g)]
+                          @zero-below-zero |
+                            less_than(ZERO, ZERO)
+                            [by rewrite product-at-zero product-at-zero-positive]
+                          @conclusion-positive-by-absurdity |
+                            less_than(ZERO, x)
+                            [using tautology zero-below-zero zero-not-below-itself]
+                        }
+                      @when-negative |
+                        assume less_than(x, ZERO) {
+                          @x-negative |
+                            less_than(x, ZERO)
+                            [by hypothesis when-negative]
+                          @neg-x-positive |
+                            less_than(ZERO, neg(x))
+                            [using specialize negativeNegIsPositive(x) x-negative]
+                          @g-times-neg-x-positive |
+                            less_than(ZERO, mul(g, neg(x)))
+                            [using specialize positiveMul(g, neg(x)) g-positive neg-x-positive]
+                          @g-times-neg-x |
+                            mul(g, neg(x)) = neg(mul(g, x))
+                            [using specialize mulNegRight(g, x)]
+                          @neg-product-positive |
+                            less_than(ZERO, neg(mul(g, x)))
+                            [by rewrite g-times-neg-x g-times-neg-x-positive]
+                          // add the product to both sides of 0 < −(gx): gx < 0.
+                          @shifted |
+                            less_than(add(mul(g, x), ZERO), add(mul(g, x), neg(mul(g, x))))
+                            [using specialize additionPreservesOrder(ZERO, neg(mul(g, x)), mul(g, x)) neg-product-positive]
+                          @left-collapses |
+                            add(mul(g, x), ZERO) = mul(g, x)
+                            [using specialize addZeroRight(mul(g, x))]
+                          @right-collapses |
+                            add(mul(g, x), neg(mul(g, x))) = ZERO
+                            [using specialize addNegRight(mul(g, x))]
+                          @shifted-left |
+                            less_than(mul(g, x), add(mul(g, x), neg(mul(g, x))))
+                            [by rewrite left-collapses shifted]
+                          @product-negative |
+                            less_than(mul(g, x), ZERO)
+                            [by rewrite right-collapses shifted-left]
+                          @zero-below-zero |
+                            less_than(ZERO, ZERO)
+                            [using specialize lessThanTransitive(ZERO, mul(g, x), ZERO) product-positive product-negative]
+                          @conclusion-positive-by-contradiction |
+                            less_than(ZERO, x)
+                            [using tautology zero-below-zero zero-not-below-itself]
+                        }
+                    }
+                }
+              @product-positive-implies |
+                less_than(ZERO, mul(g, x)) -> less_than(ZERO, x)
+                [by implies_intro given-product-positive]
+            }
+          @g-positive-implies |
+            less_than(ZERO, g) -> less_than(ZERO, mul(g, x)) -> less_than(ZERO, x)
+            [by implies_intro given-g-positive]
+        }
+      @discharge-x |
+        forall x: Int; less_than(ZERO, g) -> less_than(ZERO, mul(g, x)) -> less_than(ZERO, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall g, x: Int; less_than(ZERO, g) -> less_than(ZERO, mul(g, x)) -> less_than(ZERO, x)
+    [by forall_intro generalize-g]
+qed
+
+// -- Bézout coefficients for a gcd ---------------------------------------------------------
+// Divide a = d a', b = d b' by the gcd: every common divisor of a', b' is a unit (d·e | d
+// forces e | 1), so coprimeBezout gives a' r + b' s = 1, and scaling by d gives a r + b s = d.
+theorem gcdIsLinearCombination: forall a, b, d: Int; a != ZERO -> b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-d |
+            fix d: Int {
+              @given-a-nonzero |
+                assume a != ZERO {
+                  @given-b-nonzero |
+                    assume b != ZERO {
+                      @given-gcd |
+                        assume isGcd(d, a, b) {
+                          @a-nonzero |
+                            a != ZERO
+                            [by hypothesis given-a-nonzero]
+                          @b-nonzero |
+                            b != ZERO
+                            [by hypothesis given-b-nonzero]
+                          @gcd-facts |
+                            isGcd(d, a, b)
+                            [by hypothesis given-gcd]
+                          @d-positive |
+                            less_than(ZERO, d)
+                            [using tautology gcd-facts]
+                          @d-divides-a |
+                            exists k: Int; a = mul(d, k)
+                            [using tautology gcd-facts]
+                          @d-divides-b |
+                            exists k: Int; b = mul(d, k)
+                            [using tautology gcd-facts]
+                          @d-greatest |
+                            forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)
+                            [using tautology gcd-facts]
+                          @with-cofactor-a1 |
+                            unpack a1: Int from d-divides-a {
+                              @a-is |
+                                a = mul(d, a1)
+                                [by hypothesis with-cofactor-a1]
+                              @with-cofactor-b1 |
+                                unpack b1: Int from d-divides-b {
+                                  @b-is |
+                                    b = mul(d, b1)
+                                    [by hypothesis with-cofactor-b1]
+                                  // the cofactors are nonzero, since a, b are.
+                                  @given-a1-zero |
+                                    assume a1 = ZERO {
+                                      @a1-zero |
+                                        a1 = ZERO
+                                        [by hypothesis given-a1-zero]
+                                      @a-is-d-zero |
+                                        a = mul(d, ZERO)
+                                        [by rewrite a1-zero a-is]
+                                      @d-zero |
+                                        mul(d, ZERO) = ZERO
+                                        [using specialize mulZeroRight(d)]
+                                      @conclusion-a-zero |
+                                        a = ZERO
+                                        [using chain a-is-d-zero d-zero]
+                                    }
+                                  @a1-zero-implies |
+                                    a1 = ZERO -> a = ZERO
+                                    [by implies_intro given-a1-zero]
+                                  @a1-nonzero |
+                                    a1 != ZERO
+                                    [using tautology a1-zero-implies a-nonzero]
+                                  @given-b1-zero |
+                                    assume b1 = ZERO {
+                                      @b1-zero |
+                                        b1 = ZERO
+                                        [by hypothesis given-b1-zero]
+                                      @b-is-d-zero |
+                                        b = mul(d, ZERO)
+                                        [by rewrite b1-zero b-is]
+                                      @d-zero-again |
+                                        mul(d, ZERO) = ZERO
+                                        [using specialize mulZeroRight(d)]
+                                      @conclusion-b-zero |
+                                        b = ZERO
+                                        [using chain b-is-d-zero d-zero-again]
+                                    }
+                                  @b1-zero-implies |
+                                    b1 = ZERO -> b = ZERO
+                                    [by implies_intro given-b1-zero]
+                                  @b1-nonzero |
+                                    b1 != ZERO
+                                    [using tautology b1-zero-implies b-nonzero]
+                                  // every common divisor e of the cofactors is a unit: d e | a, d e | b,
+                                  // so d e | d, so e | 1.
+                                  @generalize-e |
+                                    fix e: Int {
+                                      @given-e-divides-a1 |
+                                        assume divides(e, a1) {
+                                          @given-e-divides-b1 |
+                                            assume divides(e, b1) {
+                                              @e-divides-a1 |
+                                                divides(e, a1)
+                                                [by hypothesis given-e-divides-a1]
+                                              @e-divides-b1 |
+                                                divides(e, b1)
+                                                [by hypothesis given-e-divides-b1]
+                                              @d-divides-d |
+                                                divides(d, d)
+                                                [using specialize dividesRefl(d)]
+                                              @de-divides-da1 |
+                                                divides(mul(d, e), mul(d, a1))
+                                                [using specialize dividesMulBoth(d, e, d, a1) d-divides-d e-divides-a1]
+                                              @de-divides-a |
+                                                divides(mul(d, e), a)
+                                                [by rewrite a-is de-divides-da1]
+                                              @de-divides-db1 |
+                                                divides(mul(d, e), mul(d, b1))
+                                                [using specialize dividesMulBoth(d, e, d, b1) d-divides-d e-divides-b1]
+                                              @de-divides-b |
+                                                divides(mul(d, e), b)
+                                                [by rewrite b-is de-divides-db1]
+                                              @de-divides-d |
+                                                exists k: Int; d = mul(mul(d, e), k)
+                                                [using specialize d-greatest(mul(d, e)) de-divides-a de-divides-b]
+                                              @with-cofactor-k |
+                                                unpack k: Int from de-divides-d {
+                                                  @d-is-dek |
+                                                    d = mul(mul(d, e), k)
+                                                    [by hypothesis with-cofactor-k]
+                                                  @dek-regrouped |
+                                                    mul(mul(d, e), k) = mul(d, mul(e, k))
+                                                    [using polynomial(integer)]
+                                                  @d-is-d-times-ek |
+                                                    d = mul(d, mul(e, k))
+                                                    [using chain d-is-dek dek-regrouped]
+                                                  @d-times-one |
+                                                    mul(d, ONE) = d
+                                                    [using specialize mulOneRight(d)]
+                                                  @d-times-one-is-d-times-ek |
+                                                    mul(d, ONE) = mul(d, mul(e, k))
+                                                    [using chain d-times-one d-is-d-times-ek]
+                                                  @one-is-ek |
+                                                    ONE = mul(e, k)
+                                                    [using specialize mulCancelLeft(d, ONE, mul(e, k)) d-positive d-times-one-is-d-times-ek]
+                                                  @e-divides-one |
+                                                    divides(e, ONE)
+                                                    [using specialize dividesIntro(ONE, e, k) one-is-ek]
+                                                  @conclusion-e-is-a-unit |
+                                                    e = ONE or e = neg(ONE)
+                                                    [using specialize dividesOneImpliesUnit(e) e-divides-one]
+                                                }
+                                              @conclusion-unit |
+                                                e = ONE or e = neg(ONE)
+                                                [by exists_elim with-cofactor-k]
+                                            }
+                                          @e-divides-b1-implies |
+                                            divides(e, b1) -> (e = ONE or e = neg(ONE))
+                                            [by implies_intro given-e-divides-b1]
+                                        }
+                                      @e-divides-a1-implies |
+                                        divides(e, a1) -> divides(e, b1) -> (e = ONE or e = neg(ONE))
+                                        [by implies_intro given-e-divides-a1]
+                                    }
+                                  @common-divisors-are-units |
+                                    forall e: Int; divides(e, a1) -> divides(e, b1) -> (e = ONE or e = neg(ONE))
+                                    [by forall_intro generalize-e]
+                                  @coprime-combination-exists |
+                                    exists r: Int; exists s: Int; add(mul(a1, r), mul(b1, s)) = ONE
+                                    [using specialize coprimeBezout(a1, b1) a1-nonzero b1-nonzero common-divisors-are-units]
+                                  @with-coefficient-r |
+                                    unpack r: Int from coprime-combination-exists {
+                                      @s-exists |
+                                        exists s: Int; add(mul(a1, r), mul(b1, s)) = ONE
+                                        [by hypothesis with-coefficient-r]
+                                      @with-coefficient-s |
+                                        unpack s: Int from s-exists {
+                                          @cofactor-combination |
+                                            add(mul(a1, r), mul(b1, s)) = ONE
+                                            [by hypothesis with-coefficient-s]
+                                          @scaled-combination-factored |
+                                            add(mul(mul(d, a1), r), mul(mul(d, b1), s)) = mul(d, add(mul(a1, r), mul(b1, s)))
+                                            [using polynomial(integer)]
+                                          @combination-with-a |
+                                            add(mul(a, r), mul(mul(d, b1), s)) = mul(d, add(mul(a1, r), mul(b1, s)))
+                                            [by rewrite a-is scaled-combination-factored]
+                                          @combination-with-a-b |
+                                            add(mul(a, r), mul(b, s)) = mul(d, add(mul(a1, r), mul(b1, s)))
+                                            [by rewrite b-is combination-with-a]
+                                          @d-times-combination-reflexive |
+                                            mul(d, add(mul(a1, r), mul(b1, s))) = mul(d, add(mul(a1, r), mul(b1, s)))
+                                            [by reflexivity]
+                                          @d-times-combination |
+                                            mul(d, add(mul(a1, r), mul(b1, s))) = mul(d, ONE)
+                                            [by rewrite cofactor-combination d-times-combination-reflexive]
+                                          @d-times-one-again |
+                                            mul(d, ONE) = d
+                                            [using specialize mulOneRight(d)]
+                                          @combination-is-d |
+                                            add(mul(a, r), mul(b, s)) = d
+                                            [using chain combination-with-a-b d-times-combination d-times-one-again]
+                                          @s-witnesses |
+                                            exists s2: Int; add(mul(a, r), mul(b, s2)) = d
+                                            [by exists_intro(s) combination-is-d]
+                                          @conclusion-r-witnesses |
+                                            exists r2: Int; exists s2: Int; add(mul(a, r2), mul(b, s2)) = d
+                                            [by exists_intro(r) s-witnesses]
+                                        }
+                                      @conclusion-with-r |
+                                        exists r2: Int; exists s2: Int; add(mul(a, r2), mul(b, s2)) = d
+                                        [by exists_elim with-coefficient-s]
+                                    }
+                                  @conclusion-with-b1 |
+                                    exists r2: Int; exists s2: Int; add(mul(a, r2), mul(b, s2)) = d
+                                    [by exists_elim with-coefficient-r]
+                                }
+                              @conclusion-with-a1 |
+                                exists r2: Int; exists s2: Int; add(mul(a, r2), mul(b, s2)) = d
+                                [by exists_elim with-cofactor-b1]
+                            }
+                          @conclusion-combination |
+                            exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+                            [by exists_elim with-cofactor-a1]
+                        }
+                      @gcd-implies |
+                        isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+                        [by implies_intro given-gcd]
+                    }
+                  @b-nonzero-implies |
+                    b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+                    [by implies_intro given-b-nonzero]
+                }
+              @a-nonzero-implies |
+                a != ZERO -> b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+                [by implies_intro given-a-nonzero]
+            }
+          @discharge-d |
+            forall d: Int; a != ZERO -> b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+            [by forall_intro generalize-d]
+        }
+      @discharge-b |
+        forall b, d: Int; a != ZERO -> b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, d: Int; a != ZERO -> b != ZERO -> isGcd(d, a, b) -> exists r, s: Int; add(mul(a, r), mul(b, s)) = d
+    [by forall_intro generalize-a]
+qed
+
+// -- the product formula lcm(a, b)·gcd(a, b) = ab ------------------------------------------
+// With a = g a', b = g b' and a' r + b' s = 1: P = a b' (= b a') is a common multiple, and any
+// common multiple n = a u = b v has a' u = b' v, so b' | a' u, so b' | u by Euclid, so P | n.
+// P and lcm(a, b) divide each other and are nonneg, hence equal; then lcm·g = a b' g = a b.
+theorem lcmTimesGcd: forall a, b, g: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @generalize-g |
+            fix g: Int {
+              @given-a-positive |
+                assume less_than(ZERO, a) {
+                  @given-b-positive |
+                    assume less_than(ZERO, b) {
+                      @given-gcd |
+                        assume isGcd(g, a, b) {
+                          @a-positive |
+                            less_than(ZERO, a)
+                            [by hypothesis given-a-positive]
+                          @b-positive |
+                            less_than(ZERO, b)
+                            [by hypothesis given-b-positive]
+                          @gcd-facts |
+                            isGcd(g, a, b)
+                            [by hypothesis given-gcd]
+                          @a-nonzero |
+                            a != ZERO
+                            [using specialize positiveIsNonzero(a) a-positive]
+                          @b-nonzero |
+                            b != ZERO
+                            [using specialize positiveIsNonzero(b) b-positive]
+                          @g-positive |
+                            less_than(ZERO, g)
+                            [using tautology gcd-facts]
+                          @g-divides-a |
+                            exists k: Int; a = mul(g, k)
+                            [using tautology gcd-facts]
+                          @g-divides-b |
+                            exists k: Int; b = mul(g, k)
+                            [using tautology gcd-facts]
+                          @combination-exists |
+                            exists r, s: Int; add(mul(a, r), mul(b, s)) = g
+                            [using specialize gcdIsLinearCombination(a, b, g) a-nonzero b-nonzero gcd-facts]
+                          @with-cofactor-a1 |
+                            unpack a1: Int from g-divides-a {
+                              @a-is |
+                                a = mul(g, a1)
+                                [by hypothesis with-cofactor-a1]
+                              @with-cofactor-b1 |
+                                unpack b1: Int from g-divides-b {
+                                  @b-is |
+                                    b = mul(g, b1)
+                                    [by hypothesis with-cofactor-b1]
+                                  @with-coefficient-r |
+                                    unpack r: Int from combination-exists {
+                                      @s-exists |
+                                        exists s: Int; add(mul(a, r), mul(b, s)) = g
+                                        [by hypothesis with-coefficient-r]
+                                      @with-coefficient-s |
+                                        unpack s: Int from s-exists {
+                                          @combination |
+                                            add(mul(a, r), mul(b, s)) = g
+                                            [by hypothesis with-coefficient-s]
+                                          // divide the Bézout relation by g: a' r + b' s = 1.
+                                          @combination-with-a |
+                                            add(mul(mul(g, a1), r), mul(b, s)) = g
+                                            [by rewrite a-is combination]
+                                          @combination-expanded |
+                                            add(mul(mul(g, a1), r), mul(mul(g, b1), s)) = g
+                                            [by rewrite b-is combination-with-a]
+                                          @combination-factored |
+                                            mul(g, add(mul(a1, r), mul(b1, s))) = add(mul(mul(g, a1), r), mul(mul(g, b1), s))
+                                            [using polynomial(integer)]
+                                          @g-times-one |
+                                            mul(g, ONE) = g
+                                            [using specialize mulOneRight(g)]
+                                          @g-is-g-times-one |
+                                            g = mul(g, ONE)
+                                            [by symmetry g-times-one]
+                                          @g-times-cofactor-combination |
+                                            mul(g, add(mul(a1, r), mul(b1, s))) = mul(g, ONE)
+                                            [using chain combination-factored combination-expanded g-is-g-times-one]
+                                          @cofactor-combination |
+                                            add(mul(a1, r), mul(b1, s)) = ONE
+                                            [using specialize mulCancelLeft(g, add(mul(a1, r), mul(b1, s)), ONE) g-positive g-times-cofactor-combination]
+                                          @cofactor-combination-swapped-form |
+                                            add(mul(b1, s), mul(a1, r)) = add(mul(a1, r), mul(b1, s))
+                                            [using polynomial(integer)]
+                                          @cofactor-combination-swapped |
+                                            add(mul(b1, s), mul(a1, r)) = ONE
+                                            [using chain cofactor-combination-swapped-form cofactor-combination]
+                                          // P = a b' is a common multiple.
+                                          @a-divides-a |
+                                            divides(a, a)
+                                            [using specialize dividesRefl(a)]
+                                          @a-divides-p |
+                                            divides(a, mul(a, b1))
+                                            [using specialize dividesMul(a, a, b1) a-divides-a]
+                                          @p-reflexive |
+                                            mul(a, b1) = mul(a, b1)
+                                            [by reflexivity]
+                                          @p-with-a-expanded |
+                                            mul(a, b1) = mul(mul(g, a1), b1)
+                                            [by rewrite a-is p-reflexive]
+                                          @p-regrouped |
+                                            mul(mul(g, a1), b1) = mul(mul(g, b1), a1)
+                                            [using polynomial(integer)]
+                                          @gb1-a1-reflexive |
+                                            mul(mul(g, b1), a1) = mul(mul(g, b1), a1)
+                                            [by reflexivity]
+                                          @gb1-a1-is-b-a1 |
+                                            mul(mul(g, b1), a1) = mul(b, a1)
+                                            [by rewrite b-is gb1-a1-reflexive]
+                                          @p-is-b-a1 |
+                                            mul(a, b1) = mul(b, a1)
+                                            [using chain p-with-a-expanded p-regrouped gb1-a1-is-b-a1]
+                                          @b-divides-b |
+                                            divides(b, b)
+                                            [using specialize dividesRefl(b)]
+                                          @b-divides-b-a1 |
+                                            divides(b, mul(b, a1))
+                                            [using specialize dividesMul(b, b, a1) b-divides-b]
+                                          @b-divides-p |
+                                            divides(b, mul(a, b1))
+                                            [by rewrite p-is-b-a1 b-divides-b-a1]
+                                          @lcm-divides-p |
+                                            divides(lcm(a, b), mul(a, b1))
+                                            [using specialize lcmLeast(a, b, mul(a, b1)) a-divides-p b-divides-p]
+                                          // and P divides the lcm: lcm = a u = b v gives a' u = b' v, so b' | u.
+                                          @a-divides-lcm |
+                                            exists k: Int; lcm(a, b) = mul(a, k)
+                                            [using specialize lcmCommonMultipleLeft(a, b)]
+                                          @b-divides-lcm |
+                                            exists k: Int; lcm(a, b) = mul(b, k)
+                                            [using specialize lcmCommonMultipleRight(a, b)]
+                                          @with-cofactor-u |
+                                            unpack u: Int from a-divides-lcm {
+                                              @lcm-is-a-u |
+                                                lcm(a, b) = mul(a, u)
+                                                [by hypothesis with-cofactor-u]
+                                              @with-cofactor-v |
+                                                unpack v: Int from b-divides-lcm {
+                                                  @lcm-is-b-v |
+                                                    lcm(a, b) = mul(b, v)
+                                                    [by hypothesis with-cofactor-v]
+                                                  @a-u-is-lcm |
+                                                    mul(a, u) = lcm(a, b)
+                                                    [by symmetry lcm-is-a-u]
+                                                  @a-u-is-b-v |
+                                                    mul(a, u) = mul(b, v)
+                                                    [using chain a-u-is-lcm lcm-is-b-v]
+                                                  @a-u-reflexive |
+                                                    mul(a, u) = mul(a, u)
+                                                    [by reflexivity]
+                                                  @a-u-expanded |
+                                                    mul(a, u) = mul(mul(g, a1), u)
+                                                    [by rewrite a-is a-u-reflexive]
+                                                  @a-u-regrouped |
+                                                    mul(mul(g, a1), u) = mul(g, mul(a1, u))
+                                                    [using polynomial(integer)]
+                                                  @g-a1-u-is-a-u |
+                                                    mul(g, mul(a1, u)) = mul(a, u)
+                                                    [using chain a-u-regrouped-flipped a-u-expanded-flipped]
+                                                  @a-u-regrouped-flipped |
+                                                    mul(g, mul(a1, u)) = mul(mul(g, a1), u)
+                                                    [by symmetry a-u-regrouped]
+                                                  @a-u-expanded-flipped |
+                                                    mul(mul(g, a1), u) = mul(a, u)
+                                                    [by symmetry a-u-expanded]
+                                                  @b-v-reflexive |
+                                                    mul(b, v) = mul(b, v)
+                                                    [by reflexivity]
+                                                  @b-v-expanded |
+                                                    mul(b, v) = mul(mul(g, b1), v)
+                                                    [by rewrite b-is b-v-reflexive]
+                                                  @b-v-regrouped |
+                                                    mul(mul(g, b1), v) = mul(g, mul(b1, v))
+                                                    [using polynomial(integer)]
+                                                  @g-a1-u-is-g-b1-v |
+                                                    mul(g, mul(a1, u)) = mul(g, mul(b1, v))
+                                                    [using chain g-a1-u-is-a-u a-u-is-b-v b-v-expanded b-v-regrouped]
+                                                  @a1-u-is-b1-v |
+                                                    mul(a1, u) = mul(b1, v)
+                                                    [using specialize mulCancelLeft(g, mul(a1, u), mul(b1, v)) g-positive g-a1-u-is-g-b1-v]
+                                                  @b1-divides-a1-u |
+                                                    divides(b1, mul(a1, u))
+                                                    [using specialize dividesIntro(mul(a1, u), b1, v) a1-u-is-b1-v]
+                                                  @b1-divides-u |
+                                                    exists k: Int; u = mul(b1, k)
+                                                    [using specialize euclidFromBezout(b1, a1, u, s, r) cofactor-combination-swapped b1-divides-a1-u]
+                                                  @with-cofactor-w |
+                                                    unpack w: Int from b1-divides-u {
+                                                      @u-is |
+                                                        u = mul(b1, w)
+                                                        [by hypothesis with-cofactor-w]
+                                                      @lcm-is-a-b1-w |
+                                                        lcm(a, b) = mul(a, mul(b1, w))
+                                                        [by rewrite u-is lcm-is-a-u]
+                                                      @a-b1-w-regrouped |
+                                                        mul(a, mul(b1, w)) = mul(mul(a, b1), w)
+                                                        [using polynomial(integer)]
+                                                      @lcm-is-p-w |
+                                                        lcm(a, b) = mul(mul(a, b1), w)
+                                                        [using chain lcm-is-a-b1-w a-b1-w-regrouped]
+                                                      @p-divides-lcm |
+                                                        divides(mul(a, b1), lcm(a, b))
+                                                        [using specialize dividesIntro(lcm(a, b), mul(a, b1), w) lcm-is-p-w]
+                                                      // both nonneg: P = a b' with b' > 0 since g b' = b > 0.
+                                                      @g-b1-positive |
+                                                        less_than(ZERO, mul(g, b1))
+                                                        [by rewrite b-is b-positive]
+                                                      @b1-positive |
+                                                        less_than(ZERO, b1)
+                                                        [using specialize positiveFactor(g, b1) g-positive g-b1-positive]
+                                                      @p-positive |
+                                                        less_than(ZERO, mul(a, b1))
+                                                        [using specialize positiveMul(a, b1) a-positive b1-positive]
+                                                      @p-nonneg |
+                                                        nonneg(mul(a, b1))
+                                                        [using specialize positiveIsNonneg(mul(a, b1)) p-positive]
+                                                      @lcm-nonneg |
+                                                        nonneg(lcm(a, b))
+                                                        [using specialize lcmNonneg(a, b)]
+                                                      @p-is-lcm |
+                                                        mul(a, b1) = lcm(a, b)
+                                                        [using specialize mutualDivisorsNonnegEqual(mul(a, b1), lcm(a, b)) p-nonneg lcm-nonneg p-divides-lcm lcm-divides-p]
+                                                      // lcm·g = a b' g = a (g b') = a b.
+                                                      @lcm-times-g-reflexive |
+                                                        mul(lcm(a, b), g) = mul(lcm(a, b), g)
+                                                        [by reflexivity]
+                                                      @lcm-times-g-is-p-times-g |
+                                                        mul(lcm(a, b), g) = mul(mul(a, b1), g)
+                                                        [by rewrite p-is-lcm lcm-times-g-reflexive]
+                                                      @p-times-g-regrouped |
+                                                        mul(mul(a, b1), g) = mul(a, mul(g, b1))
+                                                        [using polynomial(integer)]
+                                                      @g-b1-is-b |
+                                                        mul(g, b1) = b
+                                                        [by symmetry b-is]
+                                                      @a-times-g-b1-reflexive |
+                                                        mul(a, mul(g, b1)) = mul(a, mul(g, b1))
+                                                        [by reflexivity]
+                                                      @a-times-g-b1-is-a-b |
+                                                        mul(a, mul(g, b1)) = mul(a, b)
+                                                        [by rewrite g-b1-is-b a-times-g-b1-reflexive]
+                                                      @conclusion-product-formula |
+                                                        mul(lcm(a, b), g) = mul(a, b)
+                                                        [using chain lcm-times-g-is-p-times-g p-times-g-regrouped a-times-g-b1-is-a-b]
+                                                    }
+                                                  @conclusion-with-w |
+                                                    mul(lcm(a, b), g) = mul(a, b)
+                                                    [by exists_elim with-cofactor-w]
+                                                }
+                                              @conclusion-with-v |
+                                                mul(lcm(a, b), g) = mul(a, b)
+                                                [by exists_elim with-cofactor-v]
+                                            }
+                                          @conclusion-with-u |
+                                            mul(lcm(a, b), g) = mul(a, b)
+                                            [by exists_elim with-cofactor-u]
+                                        }
+                                      @conclusion-with-s |
+                                        mul(lcm(a, b), g) = mul(a, b)
+                                        [by exists_elim with-coefficient-s]
+                                    }
+                                  @conclusion-with-r |
+                                    mul(lcm(a, b), g) = mul(a, b)
+                                    [by exists_elim with-coefficient-r]
+                                }
+                              @conclusion-with-b1 |
+                                mul(lcm(a, b), g) = mul(a, b)
+                                [by exists_elim with-cofactor-b1]
+                            }
+                          @conclusion-formula |
+                            mul(lcm(a, b), g) = mul(a, b)
+                            [by exists_elim with-cofactor-a1]
+                        }
+                      @gcd-implies |
+                        isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+                        [by implies_intro given-gcd]
+                    }
+                  @b-positive-implies |
+                    less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+                    [by implies_intro given-b-positive]
+                }
+              @a-positive-implies |
+                less_than(ZERO, a) -> less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+                [by implies_intro given-a-positive]
+            }
+          @discharge-g |
+            forall g: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+            [by forall_intro generalize-g]
+        }
+      @discharge-b |
+        forall b, g: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, g: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> isGcd(g, a, b) -> mul(lcm(a, b), g) = mul(a, b)
+    [by forall_intro generalize-a]
+qed
+
+// -- gcd(gcd(N, m), gcd(N, n)) divides gcd(N, gcd(m, n)) ------------------------------------
+// A common divisor e of d₁ = gcd(N, m) and d₂ = gcd(N, n) divides N, m and n, hence
+// g = gcd(m, n), hence B = gcd(N, g).
+theorem gcdOfGcdsDividesGcdWithGcd: forall N, m, n, d1, d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+proof
+  @generalize-N |
+    fix N: Int {
+      @generalize-m |
+        fix m: Int {
+          @generalize-n |
+            fix n: Int {
+              @generalize-d1 |
+                fix d1: Int {
+                  @generalize-d2 |
+                    fix d2: Int {
+                      @generalize-g |
+                        fix g: Int {
+                          @generalize-e |
+                            fix e: Int {
+                              @generalize-B |
+                                fix B: Int {
+                                  @given-d1 |
+                                    assume isGcd(d1, N, m) {
+                                      @given-d2 |
+                                        assume isGcd(d2, N, n) {
+                                          @given-g |
+                                            assume isGcd(g, m, n) {
+                                              @given-e |
+                                                assume isGcd(e, d1, d2) {
+                                                  @given-B |
+                                                    assume isGcd(B, N, g) {
+                                                      @d1-facts |
+                                                        isGcd(d1, N, m)
+                                                        [by hypothesis given-d1]
+                                                      @d2-facts |
+                                                        isGcd(d2, N, n)
+                                                        [by hypothesis given-d2]
+                                                      @g-facts |
+                                                        isGcd(g, m, n)
+                                                        [by hypothesis given-g]
+                                                      @e-facts |
+                                                        isGcd(e, d1, d2)
+                                                        [by hypothesis given-e]
+                                                      @B-facts |
+                                                        isGcd(B, N, g)
+                                                        [by hypothesis given-B]
+                                                      @e-divides-d1 |
+                                                        divides(e, d1)
+                                                        [using tautology e-facts]
+                                                      @e-divides-d2 |
+                                                        divides(e, d2)
+                                                        [using tautology e-facts]
+                                                      @d1-divides-N |
+                                                        divides(d1, N)
+                                                        [using tautology d1-facts]
+                                                      @d1-divides-m |
+                                                        divides(d1, m)
+                                                        [using tautology d1-facts]
+                                                      @d2-divides-n |
+                                                        divides(d2, n)
+                                                        [using tautology d2-facts]
+                                                      @g-greatest |
+                                                        forall e2: Int; divides(e2, m) -> divides(e2, n) -> divides(e2, g)
+                                                        [using tautology g-facts]
+                                                      @B-greatest |
+                                                        forall e2: Int; divides(e2, N) -> divides(e2, g) -> divides(e2, B)
+                                                        [using tautology B-facts]
+                                                      @e-divides-N |
+                                                        divides(e, N)
+                                                        [using specialize dividesTransitive(e, d1, N) e-divides-d1 d1-divides-N]
+                                                      @e-divides-m |
+                                                        divides(e, m)
+                                                        [using specialize dividesTransitive(e, d1, m) e-divides-d1 d1-divides-m]
+                                                      @e-divides-n |
+                                                        divides(e, n)
+                                                        [using specialize dividesTransitive(e, d2, n) e-divides-d2 d2-divides-n]
+                                                      @e-divides-g |
+                                                        divides(e, g)
+                                                        [using specialize g-greatest(e) e-divides-m e-divides-n]
+                                                      @conclusion-e-divides-B |
+                                                        divides(e, B)
+                                                        [using specialize B-greatest(e) e-divides-N e-divides-g]
+                                                    }
+                                                  @B-implies |
+                                                    isGcd(B, N, g) -> divides(e, B)
+                                                    [by implies_intro given-B]
+                                                }
+                                              @e-implies |
+                                                isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                                                [by implies_intro given-e]
+                                            }
+                                          @g-implies |
+                                            isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                                            [by implies_intro given-g]
+                                        }
+                                      @d2-implies |
+                                        isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                                        [by implies_intro given-d2]
+                                    }
+                                  @d1-implies |
+                                    isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                                    [by implies_intro given-d1]
+                                }
+                              @discharge-B |
+                                forall B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                                [by forall_intro generalize-B]
+                            }
+                          @discharge-e |
+                            forall e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                            [by forall_intro generalize-e]
+                        }
+                      @discharge-g |
+                        forall g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                        [by forall_intro generalize-g]
+                    }
+                  @discharge-d2 |
+                    forall d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                    [by forall_intro generalize-d2]
+                }
+              @discharge-d1 |
+                forall d1, d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+                [by forall_intro generalize-d1]
+            }
+          @discharge-n |
+            forall n, d1, d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m, n, d1, d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall N, m, n, d1, d2, g, e, B: Int; isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(e, d1, d2) -> isGcd(B, N, g) -> divides(e, B)
+    [by forall_intro generalize-N]
+qed
+
+// -- the crux: gcd(N, L)·gcd(N, g) divides gcd(N, m)·gcd(N, n) ------------------------------
+// With d₁ = N s₁ + m t₁ and d₂ = N s₂ + n t₂, the product d₁ d₂ = N·N s₁s₂ + N·n s₁t₂ +
+// N·m t₁s₂ + m n t₁t₂, and A·B divides each summand: A | N, B | N | n, m via g, and
+// m n = L g with A | L, B | g.
+theorem productOfGcdsDividesProductOfGcds: forall N, m, n, d1, d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+proof
+  @generalize-N |
+    fix N: Int {
+      @generalize-m |
+        fix m: Int {
+          @generalize-n |
+            fix n: Int {
+              @generalize-d1 |
+                fix d1: Int {
+                  @generalize-d2 |
+                    fix d2: Int {
+                      @generalize-g |
+                        fix g: Int {
+                          @generalize-A |
+                            fix A: Int {
+                              @generalize-B |
+                                fix B: Int {
+                                  @given-N-positive |
+                                    assume less_than(ZERO, N) {
+                                      @given-m-positive |
+                                        assume less_than(ZERO, m) {
+                                          @given-n-positive |
+                                            assume less_than(ZERO, n) {
+                                              @given-d1 |
+                                                assume isGcd(d1, N, m) {
+                                                  @given-d2 |
+                                                    assume isGcd(d2, N, n) {
+                                                      @given-g |
+                                                        assume isGcd(g, m, n) {
+                                                          @given-A |
+                                                            assume isGcd(A, N, lcm(m, n)) {
+                                                              @given-B |
+                                                                assume isGcd(B, N, g) {
+                                                                  @N-positive |
+                                                                    less_than(ZERO, N)
+                                                                    [by hypothesis given-N-positive]
+                                                                  @m-positive |
+                                                                    less_than(ZERO, m)
+                                                                    [by hypothesis given-m-positive]
+                                                                  @n-positive |
+                                                                    less_than(ZERO, n)
+                                                                    [by hypothesis given-n-positive]
+                                                                  @d1-facts |
+                                                                    isGcd(d1, N, m)
+                                                                    [by hypothesis given-d1]
+                                                                  @d2-facts |
+                                                                    isGcd(d2, N, n)
+                                                                    [by hypothesis given-d2]
+                                                                  @g-facts |
+                                                                    isGcd(g, m, n)
+                                                                    [by hypothesis given-g]
+                                                                  @A-facts |
+                                                                    isGcd(A, N, lcm(m, n))
+                                                                    [by hypothesis given-A]
+                                                                  @B-facts |
+                                                                    isGcd(B, N, g)
+                                                                    [by hypothesis given-B]
+                                                                  @N-nonzero |
+                                                                    N != ZERO
+                                                                    [using specialize positiveIsNonzero(N) N-positive]
+                                                                  @m-nonzero |
+                                                                    m != ZERO
+                                                                    [using specialize positiveIsNonzero(m) m-positive]
+                                                                  @n-nonzero |
+                                                                    n != ZERO
+                                                                    [using specialize positiveIsNonzero(n) n-positive]
+                                                                  @A-divides-N |
+                                                                    divides(A, N)
+                                                                    [using tautology A-facts]
+                                                                  @A-divides-lcm |
+                                                                    divides(A, lcm(m, n))
+                                                                    [using tautology A-facts]
+                                                                  @B-divides-N |
+                                                                    divides(B, N)
+                                                                    [using tautology B-facts]
+                                                                  @B-divides-g |
+                                                                    divides(B, g)
+                                                                    [using tautology B-facts]
+                                                                  @g-divides-m |
+                                                                    divides(g, m)
+                                                                    [using tautology g-facts]
+                                                                  @g-divides-n |
+                                                                    divides(g, n)
+                                                                    [using tautology g-facts]
+                                                                  @B-divides-m |
+                                                                    divides(B, m)
+                                                                    [using specialize dividesTransitive(B, g, m) B-divides-g g-divides-m]
+                                                                  @B-divides-n |
+                                                                    divides(B, n)
+                                                                    [using specialize dividesTransitive(B, g, n) B-divides-g g-divides-n]
+                                                                  // the four products A·B divides.
+                                                                  @AB-divides-NN |
+                                                                    divides(mul(A, B), mul(N, N))
+                                                                    [using specialize dividesMulBoth(A, B, N, N) A-divides-N B-divides-N]
+                                                                  @AB-divides-Nn |
+                                                                    divides(mul(A, B), mul(N, n))
+                                                                    [using specialize dividesMulBoth(A, B, N, n) A-divides-N B-divides-n]
+                                                                  @AB-divides-Nm |
+                                                                    divides(mul(A, B), mul(N, m))
+                                                                    [using specialize dividesMulBoth(A, B, N, m) A-divides-N B-divides-m]
+                                                                  @AB-divides-lcm-g |
+                                                                    divides(mul(A, B), mul(lcm(m, n), g))
+                                                                    [using specialize dividesMulBoth(A, B, lcm(m, n), g) A-divides-lcm B-divides-g]
+                                                                  @lcm-g-is-mn |
+                                                                    mul(lcm(m, n), g) = mul(m, n)
+                                                                    [using specialize lcmTimesGcd(m, n, g) m-positive n-positive g-facts]
+                                                                  @AB-divides-mn |
+                                                                    divides(mul(A, B), mul(m, n))
+                                                                    [by rewrite lcm-g-is-mn AB-divides-lcm-g]
+                                                                  // Bézout coefficients for d₁ and d₂.
+                                                                  @d1-combination-exists |
+                                                                    exists r, s: Int; add(mul(N, r), mul(m, s)) = d1
+                                                                    [using specialize gcdIsLinearCombination(N, m, d1) N-nonzero m-nonzero d1-facts]
+                                                                  @d2-combination-exists |
+                                                                    exists r, s: Int; add(mul(N, r), mul(n, s)) = d2
+                                                                    [using specialize gcdIsLinearCombination(N, n, d2) N-nonzero n-nonzero d2-facts]
+                                                                  @with-s1 |
+                                                                    unpack s1: Int from d1-combination-exists {
+                                                                      @t1-exists |
+                                                                        exists s: Int; add(mul(N, s1), mul(m, s)) = d1
+                                                                        [by hypothesis with-s1]
+                                                                      @with-t1 |
+                                                                        unpack t1: Int from t1-exists {
+                                                                          @d1-combination |
+                                                                            add(mul(N, s1), mul(m, t1)) = d1
+                                                                            [by hypothesis with-t1]
+                                                                          @with-s2 |
+                                                                            unpack s2: Int from d2-combination-exists {
+                                                                              @t2-exists |
+                                                                                exists s: Int; add(mul(N, s2), mul(n, s)) = d2
+                                                                                [by hypothesis with-s2]
+                                                                              @with-t2 |
+                                                                                unpack t2: Int from t2-exists {
+                                                                                  @d2-combination |
+                                                                                    add(mul(N, s2), mul(n, t2)) = d2
+                                                                                    [by hypothesis with-t2]
+                                                                                  @AB-divides-first |
+                                                                                    divides(mul(A, B), mul(mul(N, N), mul(s1, s2)))
+                                                                                    [using specialize dividesMul(mul(A, B), mul(N, N), mul(s1, s2)) AB-divides-NN]
+                                                                                  @AB-divides-second |
+                                                                                    divides(mul(A, B), mul(mul(N, n), mul(s1, t2)))
+                                                                                    [using specialize dividesMul(mul(A, B), mul(N, n), mul(s1, t2)) AB-divides-Nn]
+                                                                                  @AB-divides-third |
+                                                                                    divides(mul(A, B), mul(mul(N, m), mul(t1, s2)))
+                                                                                    [using specialize dividesMul(mul(A, B), mul(N, m), mul(t1, s2)) AB-divides-Nm]
+                                                                                  @AB-divides-fourth |
+                                                                                    divides(mul(A, B), mul(mul(m, n), mul(t1, t2)))
+                                                                                    [using specialize dividesMul(mul(A, B), mul(m, n), mul(t1, t2)) AB-divides-mn]
+                                                                                  @AB-divides-first-two |
+                                                                                    divides(mul(A, B), add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))))
+                                                                                    [using specialize dividesAdd(mul(A, B), mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))) AB-divides-first AB-divides-second]
+                                                                                  @AB-divides-first-three |
+                                                                                    divides(mul(A, B), add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))))
+                                                                                    [using specialize dividesAdd(mul(A, B), add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))) AB-divides-first-two AB-divides-third]
+                                                                                  @AB-divides-sum |
+                                                                                    divides(mul(A, B), add(add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))), mul(mul(m, n), mul(t1, t2))))
+                                                                                    [using specialize dividesAdd(mul(A, B), add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))), mul(mul(m, n), mul(t1, t2))) AB-divides-first-three AB-divides-fourth]
+                                                                                  @combinations-multiply-out |
+                                                                                    mul(add(mul(N, s1), mul(m, t1)), add(mul(N, s2), mul(n, t2))) = add(add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))), mul(mul(m, n), mul(t1, t2)))
+                                                                                    [using polynomial(integer)]
+                                                                                  @d1-times-combination |
+                                                                                    mul(d1, add(mul(N, s2), mul(n, t2))) = add(add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))), mul(mul(m, n), mul(t1, t2)))
+                                                                                    [by rewrite d1-combination combinations-multiply-out]
+                                                                                  @d1-times-d2 |
+                                                                                    mul(d1, d2) = add(add(add(mul(mul(N, N), mul(s1, s2)), mul(mul(N, n), mul(s1, t2))), mul(mul(N, m), mul(t1, s2))), mul(mul(m, n), mul(t1, t2)))
+                                                                                    [by rewrite d2-combination d1-times-combination]
+                                                                                  @conclusion-AB-divides-d1-d2 |
+                                                                                    divides(mul(A, B), mul(d1, d2))
+                                                                                    [by rewrite d1-times-d2 AB-divides-sum]
+                                                                                }
+                                                                              @conclusion-with-t2 |
+                                                                                divides(mul(A, B), mul(d1, d2))
+                                                                                [by exists_elim with-t2]
+                                                                            }
+                                                                          @conclusion-with-s2 |
+                                                                            divides(mul(A, B), mul(d1, d2))
+                                                                            [by exists_elim with-s2]
+                                                                        }
+                                                                      @conclusion-with-t1 |
+                                                                        divides(mul(A, B), mul(d1, d2))
+                                                                        [by exists_elim with-t1]
+                                                                    }
+                                                                  @conclusion-divides |
+                                                                    divides(mul(A, B), mul(d1, d2))
+                                                                    [by exists_elim with-s1]
+                                                                }
+                                                              @B-implies |
+                                                                isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                                                [by implies_intro given-B]
+                                                            }
+                                                          @A-implies |
+                                                            isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                                            [by implies_intro given-A]
+                                                        }
+                                                      @g-implies |
+                                                        isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                                        [by implies_intro given-g]
+                                                    }
+                                                  @d2-implies |
+                                                    isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                                    [by implies_intro given-d2]
+                                                }
+                                              @d1-implies |
+                                                isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                                [by implies_intro given-d1]
+                                            }
+                                          @n-positive-implies |
+                                            less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                            [by implies_intro given-n-positive]
+                                        }
+                                      @m-positive-implies |
+                                        less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                        [by implies_intro given-m-positive]
+                                    }
+                                  @N-positive-implies |
+                                    less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                    [by implies_intro given-N-positive]
+                                }
+                              @discharge-B |
+                                forall B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                                [by forall_intro generalize-B]
+                            }
+                          @discharge-A |
+                            forall A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                            [by forall_intro generalize-A]
+                        }
+                      @discharge-g |
+                        forall g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                        [by forall_intro generalize-g]
+                    }
+                  @discharge-d2 |
+                    forall d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                    [by forall_intro generalize-d2]
+                }
+              @discharge-d1 |
+                forall d1, d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+                [by forall_intro generalize-d1]
+            }
+          @discharge-n |
+            forall n, d1, d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m, n, d1, d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall N, m, n, d1, d2, g, A, B: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(g, m, n) -> isGcd(A, N, lcm(m, n)) -> isGcd(B, N, g) -> divides(mul(A, B), mul(d1, d2))
+    [by forall_intro generalize-N]
+qed
+
+// -- PAYOFF: a common multiple of gcd(N, m), gcd(N, n) is a multiple of gcd(N, lcm(m, n)) ---
+// Let L' = lcm(d₁, d₂), e = gcd(d₁, d₂), B = gcd(N, gcd(m, n)). The crux gives A·B | d₁ d₂ =
+// L'·e; e | B, say B = e c, so A·c·e | L'·e, cancel e: A c | L', so A | L' | k.
+theorem commonMultipleOfGcdsIsMultipleOfGcdOfLcm: forall N, m, n, d1, d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+proof
+  @generalize-N |
+    fix N: Int {
+      @generalize-m |
+        fix m: Int {
+          @generalize-n |
+            fix n: Int {
+              @generalize-d1 |
+                fix d1: Int {
+                  @generalize-d2 |
+                    fix d2: Int {
+                      @generalize-A |
+                        fix A: Int {
+                          @given-N-positive |
+                            assume less_than(ZERO, N) {
+                              @given-m-positive |
+                                assume less_than(ZERO, m) {
+                                  @given-n-positive |
+                                    assume less_than(ZERO, n) {
+                                      @given-d1 |
+                                        assume isGcd(d1, N, m) {
+                                          @given-d2 |
+                                            assume isGcd(d2, N, n) {
+                                              @given-A |
+                                                assume isGcd(A, N, lcm(m, n)) {
+                                                  @N-positive |
+                                                    less_than(ZERO, N)
+                                                    [by hypothesis given-N-positive]
+                                                  @m-positive |
+                                                    less_than(ZERO, m)
+                                                    [by hypothesis given-m-positive]
+                                                  @n-positive |
+                                                    less_than(ZERO, n)
+                                                    [by hypothesis given-n-positive]
+                                                  @d1-facts |
+                                                    isGcd(d1, N, m)
+                                                    [by hypothesis given-d1]
+                                                  @d2-facts |
+                                                    isGcd(d2, N, n)
+                                                    [by hypothesis given-d2]
+                                                  @A-facts |
+                                                    isGcd(A, N, lcm(m, n))
+                                                    [by hypothesis given-A]
+                                                  @N-nonzero |
+                                                    N != ZERO
+                                                    [using specialize positiveIsNonzero(N) N-positive]
+                                                  @m-nonzero |
+                                                    m != ZERO
+                                                    [using specialize positiveIsNonzero(m) m-positive]
+                                                  @n-nonzero |
+                                                    n != ZERO
+                                                    [using specialize positiveIsNonzero(n) n-positive]
+                                                  @d1-positive |
+                                                    less_than(ZERO, d1)
+                                                    [using tautology d1-facts]
+                                                  @d2-positive |
+                                                    less_than(ZERO, d2)
+                                                    [using tautology d2-facts]
+                                                  @d1-nonzero |
+                                                    d1 != ZERO
+                                                    [using specialize positiveIsNonzero(d1) d1-positive]
+                                                  @d2-nonzero |
+                                                    d2 != ZERO
+                                                    [using specialize positiveIsNonzero(d2) d2-positive]
+                                                  // the auxiliary gcds g = gcd(m, n), e = gcd(d₁, d₂), B = gcd(N, g).
+                                                  @g-exists |
+                                                    exists g: Int; isGcd(g, m, n)
+                                                    [using specialize gcdExists(m, n) m-nonzero n-nonzero]
+                                                  @e-exists |
+                                                    exists e: Int; isGcd(e, d1, d2)
+                                                    [using specialize gcdExists(d1, d2) d1-nonzero d2-nonzero]
+                                                  @with-gcd-g |
+                                                    unpack g: Int from g-exists {
+                                                      @g-facts |
+                                                        isGcd(g, m, n)
+                                                        [by hypothesis with-gcd-g]
+                                                      @g-positive |
+                                                        less_than(ZERO, g)
+                                                        [using tautology g-facts]
+                                                      @g-nonzero |
+                                                        g != ZERO
+                                                        [using specialize positiveIsNonzero(g) g-positive]
+                                                      @B-exists |
+                                                        exists B: Int; isGcd(B, N, g)
+                                                        [using specialize gcdExists(N, g) N-nonzero g-nonzero]
+                                                      @with-gcd-B |
+                                                        unpack B: Int from B-exists {
+                                                          @B-facts |
+                                                            isGcd(B, N, g)
+                                                            [by hypothesis with-gcd-B]
+                                                          @with-gcd-e |
+                                                            unpack e: Int from e-exists {
+                                                              @e-facts |
+                                                                isGcd(e, d1, d2)
+                                                                [by hypothesis with-gcd-e]
+                                                              @e-positive |
+                                                                less_than(ZERO, e)
+                                                                [using tautology e-facts]
+                                                              @AB-divides-d1-d2 |
+                                                                divides(mul(A, B), mul(d1, d2))
+                                                                [using specialize productOfGcdsDividesProductOfGcds(N, m, n, d1, d2, g, A, B) N-positive m-positive n-positive d1-facts d2-facts g-facts A-facts B-facts]
+                                                              @lcm-e-is-d1-d2 |
+                                                                mul(lcm(d1, d2), e) = mul(d1, d2)
+                                                                [using specialize lcmTimesGcd(d1, d2, e) d1-positive d2-positive e-facts]
+                                                              @AB-divides-lcm-e |
+                                                                divides(mul(A, B), mul(lcm(d1, d2), e))
+                                                                [by rewrite lcm-e-is-d1-d2 AB-divides-d1-d2]
+                                                              @e-divides-B |
+                                                                exists k: Int; B = mul(e, k)
+                                                                [using specialize gcdOfGcdsDividesGcdWithGcd(N, m, n, d1, d2, g, e, B) d1-facts d2-facts g-facts e-facts B-facts]
+                                                              @with-cofactor-c |
+                                                                unpack c: Int from e-divides-B {
+                                                                  @B-is |
+                                                                    B = mul(e, c)
+                                                                    [by hypothesis with-cofactor-c]
+                                                                  @A-times-ec-divides-lcm-e |
+                                                                    divides(mul(A, mul(e, c)), mul(lcm(d1, d2), e))
+                                                                    [by rewrite B-is AB-divides-lcm-e]
+                                                                  @A-ec-regrouped |
+                                                                    mul(A, mul(e, c)) = mul(mul(A, c), e)
+                                                                    [using polynomial(integer)]
+                                                                  @Ac-times-e-divides-lcm-e |
+                                                                    divides(mul(mul(A, c), e), mul(lcm(d1, d2), e))
+                                                                    [by rewrite A-ec-regrouped A-times-ec-divides-lcm-e]
+                                                                  @Ac-divides-lcm |
+                                                                    divides(mul(A, c), lcm(d1, d2))
+                                                                    [using specialize dividesCancelFactor(e, mul(A, c), lcm(d1, d2)) e-positive Ac-times-e-divides-lcm-e]
+                                                                  @A-divides-A |
+                                                                    divides(A, A)
+                                                                    [using specialize dividesRefl(A)]
+                                                                  @A-divides-Ac |
+                                                                    divides(A, mul(A, c))
+                                                                    [using specialize dividesMul(A, A, c) A-divides-A]
+                                                                  @A-divides-lcm |
+                                                                    divides(A, lcm(d1, d2))
+                                                                    [using specialize dividesTransitive(A, mul(A, c), lcm(d1, d2)) A-divides-Ac Ac-divides-lcm]
+                                                                  @generalize-k |
+                                                                    fix k: Int {
+                                                                      @given-d1-divides-k |
+                                                                        assume divides(d1, k) {
+                                                                          @given-d2-divides-k |
+                                                                            assume divides(d2, k) {
+                                                                              @d1-divides-k |
+                                                                                divides(d1, k)
+                                                                                [by hypothesis given-d1-divides-k]
+                                                                              @d2-divides-k |
+                                                                                divides(d2, k)
+                                                                                [by hypothesis given-d2-divides-k]
+                                                                              @lcm-divides-k |
+                                                                                divides(lcm(d1, d2), k)
+                                                                                [using specialize lcmLeast(d1, d2, k) d1-divides-k d2-divides-k]
+                                                                              @conclusion-A-divides-k |
+                                                                                divides(A, k)
+                                                                                [using specialize dividesTransitive(A, lcm(d1, d2), k) A-divides-lcm lcm-divides-k]
+                                                                            }
+                                                                          @d2-divides-implies |
+                                                                            divides(d2, k) -> divides(A, k)
+                                                                            [by implies_intro given-d2-divides-k]
+                                                                        }
+                                                                      @d1-divides-implies |
+                                                                        divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                                        [by implies_intro given-d1-divides-k]
+                                                                    }
+                                                                  @conclusion-for-all-k |
+                                                                    forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                                    [by forall_intro generalize-k]
+                                                                }
+                                                              @conclusion-with-c |
+                                                                forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                                [by exists_elim with-cofactor-c]
+                                                            }
+                                                          @conclusion-with-e |
+                                                            forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                            [by exists_elim with-gcd-e]
+                                                        }
+                                                      @conclusion-with-B |
+                                                        forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                        [by exists_elim with-gcd-B]
+                                                    }
+                                                  @conclusion-multiples |
+                                                    forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                    [by exists_elim with-gcd-g]
+                                                }
+                                              @A-implies |
+                                                isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                                [by implies_intro given-A]
+                                            }
+                                          @d2-implies |
+                                            isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                            [by implies_intro given-d2]
+                                        }
+                                      @d1-implies |
+                                        isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                        [by implies_intro given-d1]
+                                    }
+                                  @n-positive-implies |
+                                    less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                    [by implies_intro given-n-positive]
+                                }
+                              @m-positive-implies |
+                                less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                                [by implies_intro given-m-positive]
+                            }
+                          @N-positive-implies |
+                            less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                            [by implies_intro given-N-positive]
+                        }
+                      @discharge-A |
+                        forall A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                        [by forall_intro generalize-A]
+                    }
+                  @discharge-d2 |
+                    forall d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                    [by forall_intro generalize-d2]
+                }
+              @discharge-d1 |
+                forall d1, d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+                [by forall_intro generalize-d1]
+            }
+          @discharge-n |
+            forall n, d1, d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+            [by forall_intro generalize-n]
+        }
+      @discharge-m |
+        forall m, n, d1, d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall N, m, n, d1, d2, A: Int; less_than(ZERO, N) -> less_than(ZERO, m) -> less_than(ZERO, n) -> isGcd(d1, N, m) -> isGcd(d2, N, n) -> isGcd(A, N, lcm(m, n)) -> forall k: Int; divides(d1, k) -> divides(d2, k) -> divides(A, k)
+    [by forall_intro generalize-N]
+qed

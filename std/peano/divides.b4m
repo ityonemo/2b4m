@@ -951,3 +951,228 @@ proof
     forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, gcd(a, b))
     [by forall_intro reorder-d]
 qed
+
+// A divisor of ONE is ONE: with ONE = mul(d, k), neither factor can be ZERO (the product
+// would be ZERO, not the successor ONE), so both are successors — and mul(succ(a), succ(b))
+// = succ(a + mul(a, b) + b) forces a = b = ZERO by succInjective.
+theorem dividesOneIsOne: forall d: Nat; divides(d, ONE) -> d = ONE
+proof
+  @generalize-d |
+    fix d: Nat {
+      @given-divides-one |
+        assume divides(d, ONE) {
+          @divides-one |
+            divides(d, ONE)
+            [by hypothesis given-divides-one]
+          @quotient-exists |
+            exists k: Nat; ONE = mul(d, k)
+            [using tautology divides-one]
+          @one-is-succ-zero |
+            ONE = succ(ZERO)
+            [by cite peano.oneIsSuccZero]
+          @with-quotient-k |
+            unpack k: Nat from quotient-exists {
+              @product-is-one |
+                ONE = mul(d, k)
+                [by hypothesis with-quotient-k]
+              @d-cases |
+                d = ZERO or (exists m: Nat; d = succ(m))
+                [using specialize zeroOrSucc(d)]
+              @conclusion-d-is-one-by-cases |
+                d = ONE
+                case d-cases {
+                  @when-d-zero |
+                    assume d = ZERO {
+                      @d-zero |
+                        d = ZERO
+                        [by hypothesis when-d-zero]
+                      @zero-times-k |
+                        mul(ZERO, k) = ZERO
+                        [using specialize peano.mulZeroLeft(k)]
+                      @one-is-zero-product |
+                        ONE = mul(ZERO, k)
+                        [by rewrite d-zero product-is-one]
+                      @one-is-zero |
+                        ONE = ZERO
+                        [using chain one-is-zero-product zero-times-k]
+                      @succ-zero-is-zero |
+                        succ(ZERO) = ZERO
+                        [by rewrite one-is-succ-zero one-is-zero]
+                      @succ-is-not-zero |
+                        succ(ZERO) != ZERO
+                        [using specialize succNotZero(ZERO)]
+                      @conclusion-d-is-one-when-zero |
+                        d = ONE
+                        [using tautology succ-zero-is-zero succ-is-not-zero]
+                    }
+                  @when-d-succ |
+                    assume exists m: Nat; d = succ(m) {
+                      @d-is-a-successor |
+                        exists m: Nat; d = succ(m)
+                        [by hypothesis when-d-succ]
+                      @with-predecessor-m |
+                        unpack m: Nat from d-is-a-successor {
+                          @d-is-succ-m |
+                            d = succ(m)
+                            [by hypothesis with-predecessor-m]
+                          @k-cases |
+                            k = ZERO or (exists j: Nat; k = succ(j))
+                            [using specialize zeroOrSucc(k)]
+                          @conclusion-d-is-one-by-k |
+                            d = ONE
+                            case k-cases {
+                              @when-k-zero |
+                                assume k = ZERO {
+                                  @k-zero |
+                                    k = ZERO
+                                    [by hypothesis when-k-zero]
+                                  @d-times-zero |
+                                    mul(d, ZERO) = ZERO
+                                    [using specialize mulZeroRight(d)]
+                                  @one-is-d-times-zero |
+                                    ONE = mul(d, ZERO)
+                                    [by rewrite k-zero product-is-one]
+                                  @one-is-zero-again |
+                                    ONE = ZERO
+                                    [using chain one-is-d-times-zero d-times-zero]
+                                  @succ-zero-is-zero-again |
+                                    succ(ZERO) = ZERO
+                                    [by rewrite one-is-succ-zero one-is-zero-again]
+                                  @succ-is-not-zero-again |
+                                    succ(ZERO) != ZERO
+                                    [using specialize succNotZero(ZERO)]
+                                  @conclusion-d-is-one-when-k-zero |
+                                    d = ONE
+                                    [using tautology succ-zero-is-zero-again succ-is-not-zero-again]
+                                }
+                              @when-k-succ |
+                                assume exists j: Nat; k = succ(j) {
+                                  @k-is-a-successor |
+                                    exists j: Nat; k = succ(j)
+                                    [by hypothesis when-k-succ]
+                                  @with-quotient-predecessor-j |
+                                    unpack j: Nat from k-is-a-successor {
+                                      @k-is-succ-j |
+                                        k = succ(j)
+                                        [by hypothesis with-quotient-predecessor-j]
+                                      // ONE = succ(m) * succ(j) = succ(m*succ(j) + j), so
+                                      // m*succ(j) + j = ZERO, and j = ZERO makes k = ONE.
+                                      @product-at-successors |
+                                        ONE = mul(succ(m), succ(j))
+                                        [by rewrite d-is-succ-m product-is-one-at-k]
+                                      @product-is-one-at-k |
+                                        ONE = mul(d, succ(j))
+                                        [by rewrite k-is-succ-j product-is-one]
+                                      // succ(m)*succ(j) = m*succ(j) + succ(j) = succ(m*succ(j) + j).
+                                      @product-peels-left |
+                                        mul(succ(m), succ(j)) = add(mul(m, succ(j)), succ(j))
+                                        [using specialize peano.mulSuccLeft(m, succ(j))]
+                                      @sum-peels-successor |
+                                        add(mul(m, succ(j)), succ(j)) = succ(add(mul(m, succ(j)), j))
+                                        [using specialize peano.addSuccRight(mul(m, succ(j)), j)]
+                                      @successor-product-expands |
+                                        mul(succ(m), succ(j)) = succ(add(mul(m, succ(j)), j))
+                                        [using chain product-peels-left sum-peels-successor]
+                                      @one-is-that-successor |
+                                        ONE = succ(add(mul(m, succ(j)), j))
+                                        [using chain product-at-successors successor-product-expands]
+                                      @successors-agree |
+                                        succ(ZERO) = succ(add(mul(m, succ(j)), j))
+                                        [by rewrite one-is-succ-zero one-is-that-successor]
+                                      @sum-is-zero |
+                                        ZERO = add(mul(m, succ(j)), j)
+                                        [using specialize peano.succInjective(ZERO, add(mul(m, succ(j)), j)) successors-agree]
+                                      // a + j = ZERO forces j = ZERO: were j = succ(i), the sum
+                                      // would be succ(a + i), never ZERO.
+                                      @sum-is-zero-flipped |
+                                        add(mul(m, succ(j)), j) = ZERO
+                                        [by symmetry sum-is-zero]
+                                      @j-cases |
+                                        j = ZERO or (exists i: Nat; j = succ(i))
+                                        [using specialize zeroOrSucc(j)]
+                                      @j-is-zero |
+                                        j = ZERO
+                                        case j-cases {
+                                          @when-j-zero |
+                                            assume j = ZERO {
+                                              @conclusion-j-is-zero-directly |
+                                                j = ZERO
+                                                [by hypothesis when-j-zero]
+                                            }
+                                          @when-j-succ |
+                                            assume exists i: Nat; j = succ(i) {
+                                              @j-is-a-successor |
+                                                exists i: Nat; j = succ(i)
+                                                [by hypothesis when-j-succ]
+                                              @with-j-predecessor-i |
+                                                unpack i: Nat from j-is-a-successor {
+                                                  @j-is-succ-i |
+                                                    j = succ(i)
+                                                    [by hypothesis with-j-predecessor-i]
+                                                  @sum-at-succ-i |
+                                                    add(mul(m, succ(j)), succ(i)) = ZERO
+                                                    [by rewrite j-is-succ-i sum-is-zero-flipped]
+                                                  @sum-peels |
+                                                    add(mul(m, succ(j)), succ(i)) = succ(add(mul(m, succ(j)), i))
+                                                    [using specialize peano.addSuccRight(mul(m, succ(j)), i)]
+                                                  @successor-is-zero |
+                                                    succ(add(mul(m, succ(j)), i)) = ZERO
+                                                    [using chain sum-peels-flipped sum-at-succ-i]
+                                                  @sum-peels-flipped |
+                                                    succ(add(mul(m, succ(j)), i)) = add(mul(m, succ(j)), succ(i))
+                                                    [by symmetry sum-peels]
+                                                  @successor-is-not-zero |
+                                                    succ(add(mul(m, succ(j)), i)) != ZERO
+                                                    [using specialize succNotZero(add(mul(m, succ(j)), i))]
+                                                  @conclusion-j-is-zero-by-absurdity |
+                                                    j = ZERO
+                                                    [using tautology successor-is-zero successor-is-not-zero]
+                                                }
+                                              @conclusion-j-is-zero-when-succ |
+                                                j = ZERO
+                                                [by exists_elim with-j-predecessor-i]
+                                            }
+                                        }
+                                      @product-is-m-times-one |
+                                        ONE = mul(succ(m), succ(ZERO))
+                                        [by rewrite j-is-zero product-at-successors]
+                                      @times-one-at-one |
+                                        mul(succ(m), ONE) = succ(m)
+                                        [using specialize mulOneRight(succ(m))]
+                                      @times-one |
+                                        mul(succ(m), succ(ZERO)) = succ(m)
+                                        [by rewrite one-is-succ-zero times-one-at-one]
+                                      @one-is-succ-m |
+                                        ONE = succ(m)
+                                        [using chain product-is-m-times-one times-one]
+                                      @succ-m-is-one |
+                                        succ(m) = ONE
+                                        [by symmetry one-is-succ-m]
+                                      @conclusion-d-is-one-when-k-succ-inner |
+                                        d = ONE
+                                        [using chain d-is-succ-m succ-m-is-one]
+                                    }
+                                  @conclusion-d-is-one-when-k-succ |
+                                    d = ONE
+                                    [by exists_elim with-quotient-predecessor-j]
+                                }
+                            }
+                        }
+                      @conclusion-d-is-one-when-succ |
+                        d = ONE
+                        [by exists_elim with-predecessor-m]
+                    }
+                }
+            }
+          @conclusion-d-is-one |
+            d = ONE
+            [by exists_elim with-quotient-k]
+        }
+      @divides-one-implies |
+        divides(d, ONE) -> d = ONE
+        [by implies_intro given-divides-one]
+    }
+  @conclusion |
+    forall d: Nat; divides(d, ONE) -> d = ONE
+    [by forall_intro generalize-d]
+qed

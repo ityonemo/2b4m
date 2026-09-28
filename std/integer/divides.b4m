@@ -5359,6 +5359,968 @@ proof
     [by forall_intro generalize-a]
 qed
 
+// ── THE gcd·lcm IDENTITY (Judson's §2.2 Exercise 24) ─────────────────────────
+// Four small facts first: zero divides only zero; a product of positives is positive
+// (nonneg by nonnegMul, nonzero by cancellation); two nonneg integers that divide each
+// other are equal (both zero, or both positive and divisorAtMost twice); and the gcd's
+// SIGN — gcd(a, b) is nonneg whenever b is positive (strong induction along gcdStep,
+// the last remainder being nonneg) and then positive, since it divides b ≠ 0.
+
+theorem zeroDividesOnlyZero: forall n: Int; divides(ZERO, n) -> n = ZERO
+proof
+  @generalize-n |
+    fix n: Int {
+      @given-zero-divides |
+        assume divides(ZERO, n) {
+          @multiple-exists |
+            exists k: Int; n = mul(ZERO, k)
+            [by hypothesis given-zero-divides]
+          @with-multiplier-k |
+            unpack k: Int from multiple-exists {
+              @n-is-zero-times-k |
+                n = mul(ZERO, k)
+                [by hypothesis with-multiplier-k]
+              @zero-times-k |
+                mul(ZERO, k) = ZERO
+                [using specialize mulZeroLeft(k)]
+              @conclusion-n-is-zero |
+                n = ZERO
+                [using chain n-is-zero-times-k zero-times-k]
+            }
+          @conclusion-n-is-zero-outer |
+            n = ZERO
+            [by exists_elim with-multiplier-k]
+        }
+      @zero-divides-implies |
+        divides(ZERO, n) -> n = ZERO
+        [by implies_intro given-zero-divides]
+    }
+  @conclusion |
+    forall n: Int; divides(ZERO, n) -> n = ZERO
+    [by forall_intro generalize-n]
+qed
+
+theorem positiveMul: forall a, b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-positive |
+            assume less_than(ZERO, a) {
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @a-positive |
+                    less_than(ZERO, a)
+                    [by hypothesis given-a-positive]
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  @a-nonneg |
+                    is_nonneg(a)
+                    [using specialize positiveIsNonneg(a) a-positive]
+                  @b-nonneg |
+                    is_nonneg(b)
+                    [using specialize positiveIsNonneg(b) b-positive]
+                  @product-nonneg |
+                    is_nonneg(mul(a, b))
+                    [using specialize nonnegMul(a, b) a-nonneg b-nonneg]
+                  @a-times-zero |
+                    mul(a, ZERO) = ZERO
+                    [using specialize mulZeroRight(a)]
+                  // if the product were not positive it would be zero, and cancelling a
+                  // would make b zero.
+                  @given-product-not-positive |
+                    assume not less_than(ZERO, mul(a, b)) {
+                      @product-not-positive |
+                        not less_than(ZERO, mul(a, b))
+                        [by hypothesis given-product-not-positive]
+                      @product-is-zero |
+                        mul(a, b) = ZERO
+                        [using specialize nonnegNotPositiveIsZero(mul(a, b)) product-nonneg product-not-positive]
+                      @zero-is-a-times-zero |
+                        ZERO = mul(a, ZERO)
+                        [by symmetry a-times-zero]
+                      @product-is-a-times-zero |
+                        mul(a, b) = mul(a, ZERO)
+                        [using chain product-is-zero zero-is-a-times-zero]
+                      @b-is-zero |
+                        b = ZERO
+                        [using specialize mulCancelLeft(a, b, ZERO) a-positive product-is-a-times-zero]
+                      @conclusion-zero-below-itself |
+                        less_than(ZERO, ZERO)
+                        [by rewrite b-is-zero b-positive]
+                    }
+                  @not-positive-gives-absurdity |
+                    (not less_than(ZERO, mul(a, b))) -> less_than(ZERO, ZERO)
+                    [by implies_intro given-product-not-positive]
+                  @zero-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize lessThanIrreflexive(ZERO)]
+                  @conclusion-product-positive |
+                    less_than(ZERO, mul(a, b))
+                    [using tautology not-positive-gives-absurdity zero-not-below-itself]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+                [by implies_intro given-b-positive]
+            }
+          @a-positive-implies |
+            less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+            [by implies_intro given-a-positive]
+        }
+      @discharge-b |
+        forall b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+    [by forall_intro generalize-a]
+qed
+
+theorem mutualDivisorsNonnegEqual: forall x, y: Int; is_nonneg(x) -> is_nonneg(y) -> divides(x, y) -> divides(y, x) -> x = y
+proof
+  @generalize-x |
+    fix x: Int {
+      @generalize-y |
+        fix y: Int {
+          @given-x-nonneg |
+            assume is_nonneg(x) {
+              @given-y-nonneg |
+                assume is_nonneg(y) {
+                  @given-x-divides-y |
+                    assume divides(x, y) {
+                      @given-y-divides-x |
+                        assume divides(y, x) {
+                          @x-nonneg |
+                            is_nonneg(x)
+                            [by hypothesis given-x-nonneg]
+                          @y-nonneg |
+                            is_nonneg(y)
+                            [by hypothesis given-y-nonneg]
+                          @x-divides-y |
+                            divides(x, y)
+                            [by hypothesis given-x-divides-y]
+                          @y-divides-x |
+                            divides(y, x)
+                            [by hypothesis given-y-divides-x]
+                          @x-positive-or-not |
+                            less_than(ZERO, x) or (not less_than(ZERO, x))
+                            [using tautology]
+                          @conclusion-equal |
+                            x = y
+                            case x-positive-or-not {
+                              @when-x-positive |
+                                assume less_than(ZERO, x) {
+                                  @x-positive |
+                                    less_than(ZERO, x)
+                                    [by hypothesis when-x-positive]
+                                  // y is positive too: were it zero, x = y·k would be zero.
+                                  @given-y-not-positive |
+                                    assume not less_than(ZERO, y) {
+                                      @y-not-positive |
+                                        not less_than(ZERO, y)
+                                        [by hypothesis given-y-not-positive]
+                                      @y-is-zero |
+                                        y = ZERO
+                                        [using specialize nonnegNotPositiveIsZero(y) y-nonneg y-not-positive]
+                                      @zero-divides-x |
+                                        divides(ZERO, x)
+                                        [by rewrite y-is-zero y-divides-x]
+                                      @x-is-zero |
+                                        x = ZERO
+                                        [using specialize zeroDividesOnlyZero(x) zero-divides-x]
+                                      @conclusion-zero-below-itself |
+                                        less_than(ZERO, ZERO)
+                                        [by rewrite x-is-zero x-positive]
+                                    }
+                                  @y-not-positive-gives-absurdity |
+                                    (not less_than(ZERO, y)) -> less_than(ZERO, ZERO)
+                                    [by implies_intro given-y-not-positive]
+                                  @zero-not-below-itself |
+                                    not less_than(ZERO, ZERO)
+                                    [using specialize lessThanIrreflexive(ZERO)]
+                                  @y-positive |
+                                    less_than(ZERO, y)
+                                    [using tautology y-not-positive-gives-absurdity zero-not-below-itself]
+                                  @x-at-most-y |
+                                    at_most(x, y)
+                                    [using specialize divisorAtMost(x, y) x-positive y-positive x-divides-y]
+                                  @y-at-most-x |
+                                    at_most(y, x)
+                                    [using specialize divisorAtMost(y, x) y-positive x-positive y-divides-x]
+                                  @conclusion-equal-when-positive |
+                                    x = y
+                                    [using specialize lessOrEqualAntisymmetric(x, y) x-at-most-y y-at-most-x]
+                                }
+                              @when-x-not-positive |
+                                assume not less_than(ZERO, x) {
+                                  @x-not-positive |
+                                    not less_than(ZERO, x)
+                                    [by hypothesis when-x-not-positive]
+                                  @x-is-zero |
+                                    x = ZERO
+                                    [using specialize nonnegNotPositiveIsZero(x) x-nonneg x-not-positive]
+                                  @zero-divides-y |
+                                    divides(ZERO, y)
+                                    [by rewrite x-is-zero x-divides-y]
+                                  @y-is-zero |
+                                    y = ZERO
+                                    [using specialize zeroDividesOnlyZero(y) zero-divides-y]
+                                  @zero-is-y |
+                                    ZERO = y
+                                    [by symmetry y-is-zero]
+                                  @conclusion-equal-when-zero |
+                                    x = y
+                                    [using chain x-is-zero zero-is-y]
+                                }
+                            }
+                        }
+                      @y-divides-x-implies |
+                        divides(y, x) -> x = y
+                        [by implies_intro given-y-divides-x]
+                    }
+                  @x-divides-y-implies |
+                    divides(x, y) -> divides(y, x) -> x = y
+                    [by implies_intro given-x-divides-y]
+                }
+              @y-nonneg-implies |
+                is_nonneg(y) -> divides(x, y) -> divides(y, x) -> x = y
+                [by implies_intro given-y-nonneg]
+            }
+          @x-nonneg-implies |
+            is_nonneg(x) -> is_nonneg(y) -> divides(x, y) -> divides(y, x) -> x = y
+            [by implies_intro given-x-nonneg]
+        }
+      @discharge-y |
+        forall y: Int; is_nonneg(x) -> is_nonneg(y) -> divides(x, y) -> divides(y, x) -> x = y
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Int; is_nonneg(x) -> is_nonneg(y) -> divides(x, y) -> divides(y, x) -> x = y
+    [by forall_intro generalize-x]
+qed
+
+// gcd(a, b) is nonneg for positive b: gcd(a, b) = gcd(b, mod(a, b)) with the modulus
+// nonneg and below b — a positive modulus recurses (strong induction), a zero one
+// leaves gcd(b, ZERO) = b, positive.
+theorem gcdNonnegOfPositive: forall a, b: Int; less_than(ZERO, b) -> is_nonneg(gcd(a, b))
+proof
+  @induction-step |
+    fix b: Int {
+      @given-b-nonneg |
+        assume is_nonneg(b) {
+          @given-strong-inductive-hypothesis |
+            assume forall m: Int; is_nonneg(m) -> less_than(m, b) -> (less_than(ZERO, m) -> (forall a: Int; is_nonneg(gcd(a, m)))) {
+              @strong-inductive-hypothesis |
+                forall m: Int; is_nonneg(m) -> less_than(m, b) -> (less_than(ZERO, m) -> (forall a: Int; is_nonneg(gcd(a, m))))
+                [by hypothesis given-strong-inductive-hypothesis]
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  @b-nonneg |
+                    is_nonneg(b)
+                    [by hypothesis given-b-nonneg]
+                  @generalize-a |
+                    fix a: Int {
+                      @gcd-recurses |
+                        gcd(a, b) = gcd(b, mod(a, b))
+                        [using specialize gcdStep(b, a) b-positive]
+                      @mod-nonneg |
+                        is_nonneg(mod(a, b))
+                        [using specialize modNonneg(b, a) b-positive]
+                      @mod-below-b |
+                        less_than(mod(a, b), b)
+                        [using specialize modBound(b, a) b-positive]
+                      @mod-positive-or-not |
+                        less_than(ZERO, mod(a, b)) or (not less_than(ZERO, mod(a, b)))
+                        [using tautology]
+                      @conclusion-gcd-nonneg |
+                        is_nonneg(gcd(a, b))
+                        case mod-positive-or-not {
+                          @when-mod-positive |
+                            assume less_than(ZERO, mod(a, b)) {
+                              @mod-positive |
+                                less_than(ZERO, mod(a, b))
+                                [by hypothesis when-mod-positive]
+                              @inductive-hypothesis-at-mod |
+                                forall a2: Int; is_nonneg(gcd(a2, mod(a, b)))
+                                [using specialize strong-inductive-hypothesis(mod(a, b)) mod-nonneg mod-below-b mod-positive]
+                              @gcd-b-mod-nonneg |
+                                is_nonneg(gcd(b, mod(a, b)))
+                                [using specialize inductive-hypothesis-at-mod(b)]
+                              @conclusion-gcd-nonneg-when-mod-positive |
+                                is_nonneg(gcd(a, b))
+                                [by rewrite gcd-recurses gcd-b-mod-nonneg]
+                            }
+                          @when-mod-zero |
+                            assume not less_than(ZERO, mod(a, b)) {
+                              @mod-not-positive |
+                                not less_than(ZERO, mod(a, b))
+                                [by hypothesis when-mod-zero]
+                              @mod-is-zero |
+                                mod(a, b) = ZERO
+                                [using specialize nonnegNotPositiveIsZero(mod(a, b)) mod-nonneg mod-not-positive]
+                              @gcd-with-zero-is-b |
+                                gcd(b, ZERO) = b
+                                [using specialize gcdZero(b)]
+                              @gcd-b-mod-is-gcd-b-zero |
+                                gcd(b, mod(a, b)) = gcd(b, ZERO)
+                                [by rewrite mod-is-zero gcd-b-zero-reflexive]
+                              @gcd-b-zero-reflexive |
+                                gcd(b, ZERO) = gcd(b, ZERO)
+                                [by reflexivity]
+                              @gcd-is-b |
+                                gcd(a, b) = b
+                                [using chain gcd-recurses gcd-b-mod-is-gcd-b-zero gcd-with-zero-is-b]
+                              @conclusion-gcd-nonneg-when-mod-zero |
+                                is_nonneg(gcd(a, b))
+                                [by rewrite gcd-is-b b-nonneg]
+                            }
+                        }
+                    }
+                  @discharge-a |
+                    forall a: Int; is_nonneg(gcd(a, b))
+                    [by forall_intro generalize-a]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) -> (forall a: Int; is_nonneg(gcd(a, b)))
+                [by implies_intro given-b-positive]
+            }
+          @induction-step-at-b |
+            (forall m: Int; is_nonneg(m) -> less_than(m, b) -> (less_than(ZERO, m) -> (forall a: Int; is_nonneg(gcd(a, m))))) -> (less_than(ZERO, b) -> (forall a: Int; is_nonneg(gcd(a, b))))
+            [by implies_intro given-strong-inductive-hypothesis]
+        }
+      @induction-step-guarded |
+        is_nonneg(b) -> (forall m: Int; is_nonneg(m) -> less_than(m, b) -> (less_than(ZERO, m) -> (forall a: Int; is_nonneg(gcd(a, m))))) -> (less_than(ZERO, b) -> (forall a: Int; is_nonneg(gcd(a, b))))
+        [by implies_intro given-b-nonneg]
+    }
+  @induction-step-for-all-b |
+    forall b: Int; is_nonneg(b) -> (forall m: Int; is_nonneg(m) -> less_than(m, b) -> (less_than(ZERO, m) -> (forall a: Int; is_nonneg(gcd(a, m))))) -> (less_than(ZERO, b) -> (forall a: Int; is_nonneg(gcd(a, b))))
+    [by forall_intro induction-step]
+  @gcd-nonneg-swapped |
+    forall b: Int; is_nonneg(b) -> (less_than(ZERO, b) -> (forall a: Int; is_nonneg(gcd(a, b))))
+    [using instantiation nonnegStrongInduction((fun n: Int => less_than(ZERO, n) -> (forall a: Int; is_nonneg(gcd(a, n))))) induction-step-for-all-b]
+  // re-quantify in first-appearance order (a before b).
+  @reorder-a |
+    fix a: Int {
+      @reorder-b |
+        fix b: Int {
+          @given-b-positive-reorder |
+            assume less_than(ZERO, b) {
+              @b-positive-reorder |
+                less_than(ZERO, b)
+                [by hypothesis given-b-positive-reorder]
+              @b-nonneg-reorder |
+                is_nonneg(b)
+                [using specialize positiveIsNonneg(b) b-positive-reorder]
+              @gcd-nonneg-reordered |
+                is_nonneg(gcd(a, b))
+                [using specialize gcd-nonneg-swapped(b, a) b-nonneg-reorder b-positive-reorder]
+            }
+          @gcd-nonneg-if-positive |
+            less_than(ZERO, b) -> is_nonneg(gcd(a, b))
+            [by implies_intro given-b-positive-reorder]
+        }
+      @reorder-discharge-b |
+        forall b: Int; less_than(ZERO, b) -> is_nonneg(gcd(a, b))
+        [by forall_intro reorder-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(ZERO, b) -> is_nonneg(gcd(a, b))
+    [by forall_intro reorder-a]
+qed
+
+// … and positive: it divides b, and zero divides only zero.
+theorem gcdPositive: forall a, b: Int; less_than(ZERO, b) -> less_than(ZERO, gcd(a, b))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-b-positive |
+            assume less_than(ZERO, b) {
+              @b-positive |
+                less_than(ZERO, b)
+                [by hypothesis given-b-positive]
+              @gcd-nonneg |
+                is_nonneg(gcd(a, b))
+                [using specialize gcdNonnegOfPositive(a, b) b-positive]
+              @gcd-divides-both |
+                divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                [using specialize gcdDividesBoth(a, b)]
+              @gcd-divides-b |
+                divides(gcd(a, b), b)
+                [by and_elim_right gcd-divides-both]
+              @given-gcd-not-positive |
+                assume not less_than(ZERO, gcd(a, b)) {
+                  @gcd-not-positive |
+                    not less_than(ZERO, gcd(a, b))
+                    [by hypothesis given-gcd-not-positive]
+                  @gcd-is-zero |
+                    gcd(a, b) = ZERO
+                    [using specialize nonnegNotPositiveIsZero(gcd(a, b)) gcd-nonneg gcd-not-positive]
+                  @zero-divides-b |
+                    divides(ZERO, b)
+                    [by rewrite gcd-is-zero gcd-divides-b]
+                  @b-is-zero |
+                    b = ZERO
+                    [using specialize zeroDividesOnlyZero(b) zero-divides-b]
+                  @conclusion-zero-below-itself |
+                    less_than(ZERO, ZERO)
+                    [by rewrite b-is-zero b-positive]
+                }
+              @gcd-not-positive-gives-absurdity |
+                (not less_than(ZERO, gcd(a, b))) -> less_than(ZERO, ZERO)
+                [by implies_intro given-gcd-not-positive]
+              @zero-not-below-itself |
+                not less_than(ZERO, ZERO)
+                [using specialize lessThanIrreflexive(ZERO)]
+              @conclusion-gcd-positive |
+                less_than(ZERO, gcd(a, b))
+                [using tautology gcd-not-positive-gives-absurdity zero-not-below-itself]
+            }
+          @b-positive-implies |
+            less_than(ZERO, b) -> less_than(ZERO, gcd(a, b))
+            [by implies_intro given-b-positive]
+        }
+      @discharge-b |
+        forall b: Int; less_than(ZERO, b) -> less_than(ZERO, gcd(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(ZERO, b) -> less_than(ZERO, gcd(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// gcd(a, b) IS a Bézout combination a·r + b·s (a ≠ 0, b positive): bezout's d and
+// gcd(a, b) divide each other (each is greatest) and both are positive, so they are equal.
+theorem gcdIsCombination: forall a, b: Int; a != ZERO -> less_than(ZERO, b) -> exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-nonzero |
+            assume a != ZERO {
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @a-nonzero |
+                    a != ZERO
+                    [by hypothesis given-a-nonzero]
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  @zero-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize lessThanIrreflexive(ZERO)]
+                  @given-b-zero |
+                    assume b = ZERO {
+                      @b-zero |
+                        b = ZERO
+                        [by hypothesis given-b-zero]
+                      @conclusion-zero-below-itself |
+                        less_than(ZERO, ZERO)
+                        [by rewrite b-zero b-positive]
+                    }
+                  @b-zero-gives-absurdity |
+                    b = ZERO -> less_than(ZERO, ZERO)
+                    [by implies_intro given-b-zero]
+                  @b-nonzero |
+                    b != ZERO
+                    [using tautology b-zero-gives-absurdity zero-not-below-itself]
+                  @bezout-witness-exists |
+                    exists d: Int; less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)) and (exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s)))
+                    [using specialize bezout(a, b) a-nonzero b-nonzero]
+                  @gcd-divides-both |
+                    divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                    [using specialize gcdDividesBoth(a, b)]
+                  @gcd-divides-a |
+                    divides(gcd(a, b), a)
+                    [by and_elim_left gcd-divides-both]
+                  @gcd-divides-b |
+                    divides(gcd(a, b), b)
+                    [by and_elim_right gcd-divides-both]
+                  @gcd-positive |
+                    less_than(ZERO, gcd(a, b))
+                    [using specialize gcdPositive(a, b) b-positive]
+                  @with-bezout-d |
+                    unpack d: Int from bezout-witness-exists {
+                      @d-facts |
+                        less_than(ZERO, d) and divides(d, a) and divides(d, b) and (forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)) and (exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s)))
+                        [by hypothesis with-bezout-d]
+                      @d-positive |
+                        less_than(ZERO, d)
+                        [using tautology d-facts]
+                      @d-divides-a |
+                        divides(d, a)
+                        [using tautology d-facts]
+                      @d-divides-b |
+                        divides(d, b)
+                        [using tautology d-facts]
+                      @d-greatest |
+                        forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, d)
+                        [using tautology d-facts]
+                      @d-is-a-combination |
+                        exists r: Int; exists s: Int; d = add(mul(a, r), mul(b, s))
+                        [using tautology d-facts]
+                      @gcd-divides-d |
+                        divides(gcd(a, b), d)
+                        [using specialize d-greatest(gcd(a, b)) gcd-divides-a gcd-divides-b]
+                      @d-divides-gcd |
+                        divides(d, gcd(a, b))
+                        [using specialize gcdGreatest(d, a, b) d-divides-a d-divides-b]
+                      @d-at-most-gcd |
+                        at_most(d, gcd(a, b))
+                        [using specialize divisorAtMost(d, gcd(a, b)) d-positive gcd-positive d-divides-gcd]
+                      @gcd-at-most-d |
+                        at_most(gcd(a, b), d)
+                        [using specialize divisorAtMost(gcd(a, b), d) gcd-positive d-positive gcd-divides-d]
+                      @d-is-gcd |
+                        d = gcd(a, b)
+                        [using specialize lessOrEqualAntisymmetric(d, gcd(a, b)) d-at-most-gcd gcd-at-most-d]
+                      @conclusion-gcd-is-a-combination |
+                        exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+                        [by rewrite d-is-gcd d-is-a-combination]
+                    }
+                  @conclusion-gcd-is-a-combination-outer |
+                    exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+                    [by exists_elim with-bezout-d]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) -> exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+                [by implies_intro given-b-positive]
+            }
+          @a-nonzero-implies |
+            a != ZERO -> less_than(ZERO, b) -> exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+            [by implies_intro given-a-nonzero]
+        }
+      @discharge-b |
+        forall b: Int; a != ZERO -> less_than(ZERO, b) -> exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; a != ZERO -> less_than(ZERO, b) -> exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+    [by forall_intro generalize-a]
+qed
+
+// gcd(a, b)·lcm(a, b) = a·b for positive a, b. Both sides are nonneg and divide each
+// other: with gcd = a·r + b·s and lcm = a·u = b·v, gcd·lcm = a·b·(r·v + s·u); and with
+// a = gcd·a₁, b = gcd·b₁, the product gcd·a₁·b₁ (= a·b₁ = b·a₁) is a common multiple, so
+// lcm divides it, and a·b = gcd·(gcd·a₁·b₁) is a multiple of gcd·lcm.
+theorem gcdTimesLcm: forall a, b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-a-positive |
+            assume less_than(ZERO, a) {
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @a-positive |
+                    less_than(ZERO, a)
+                    [by hypothesis given-a-positive]
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  @zero-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize lessThanIrreflexive(ZERO)]
+                  @given-a-zero |
+                    assume a = ZERO {
+                      @a-zero |
+                        a = ZERO
+                        [by hypothesis given-a-zero]
+                      @conclusion-zero-below-itself |
+                        less_than(ZERO, ZERO)
+                        [by rewrite a-zero a-positive]
+                    }
+                  @a-zero-gives-absurdity |
+                    a = ZERO -> less_than(ZERO, ZERO)
+                    [by implies_intro given-a-zero]
+                  @a-nonzero |
+                    a != ZERO
+                    [using tautology a-zero-gives-absurdity zero-not-below-itself]
+                  // the two sides are nonneg.
+                  @gcd-positive |
+                    less_than(ZERO, gcd(a, b))
+                    [using specialize gcdPositive(a, b) b-positive]
+                  @gcd-nonneg |
+                    is_nonneg(gcd(a, b))
+                    [using specialize positiveIsNonneg(gcd(a, b)) gcd-positive]
+                  @lcm-nonneg |
+                    is_nonneg(lcm(a, b))
+                    [using specialize lcmNonneg(a, b)]
+                  @gcd-times-lcm-nonneg |
+                    is_nonneg(mul(gcd(a, b), lcm(a, b)))
+                    [using specialize nonnegMul(gcd(a, b), lcm(a, b)) gcd-nonneg lcm-nonneg]
+                  @a-times-b-positive |
+                    less_than(ZERO, mul(a, b))
+                    [using specialize positiveMul(a, b) a-positive b-positive]
+                  @a-times-b-nonneg |
+                    is_nonneg(mul(a, b))
+                    [using specialize positiveIsNonneg(mul(a, b)) a-times-b-positive]
+                  // the raw material: gcd | a, gcd | b, a | lcm, b | lcm, gcd = a·r + b·s.
+                  @gcd-divides-both |
+                    divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                    [using specialize gcdDividesBoth(a, b)]
+                  @gcd-divides-a |
+                    exists k: Int; a = mul(gcd(a, b), k)
+                    [by and_elim_left gcd-divides-both]
+                  @gcd-divides-b |
+                    exists k: Int; b = mul(gcd(a, b), k)
+                    [by and_elim_right gcd-divides-both]
+                  @a-divides-lcm |
+                    exists k: Int; lcm(a, b) = mul(a, k)
+                    [using specialize lcmCommonMultipleLeft(a, b)]
+                  @b-divides-lcm |
+                    exists k: Int; lcm(a, b) = mul(b, k)
+                    [using specialize lcmCommonMultipleRight(a, b)]
+                  @gcd-combination-exists |
+                    exists r: Int; exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+                    [using specialize gcdIsCombination(a, b) a-nonzero b-positive]
+
+                  // a·b divides gcd·lcm: gcd·lcm = (a·r + b·s)·lcm = a·r·(b·v) + b·s·(a·u).
+                  @with-coefficient-r |
+                    unpack r: Int from gcd-combination-exists {
+                      @combination-with-s-exists |
+                        exists s: Int; gcd(a, b) = add(mul(a, r), mul(b, s))
+                        [by hypothesis with-coefficient-r]
+                      @with-coefficient-s |
+                        unpack s: Int from combination-with-s-exists {
+                          @gcd-is-combination |
+                            gcd(a, b) = add(mul(a, r), mul(b, s))
+                            [by hypothesis with-coefficient-s]
+                          @with-lcm-over-a-u |
+                            unpack u: Int from a-divides-lcm {
+                              @lcm-is-a-u |
+                                lcm(a, b) = mul(a, u)
+                                [by hypothesis with-lcm-over-a-u]
+                              @with-lcm-over-b-v |
+                                unpack v: Int from b-divides-lcm {
+                                  @lcm-is-b-v |
+                                    lcm(a, b) = mul(b, v)
+                                    [by hypothesis with-lcm-over-b-v]
+                                  @gcd-times-lcm-reflexive |
+                                    mul(gcd(a, b), lcm(a, b)) = mul(gcd(a, b), lcm(a, b))
+                                    [by reflexivity]
+                                  @gcd-times-lcm-unfolds |
+                                    mul(gcd(a, b), lcm(a, b)) = mul(add(mul(a, r), mul(b, s)), lcm(a, b))
+                                    [by rewrite gcd-is-combination gcd-times-lcm-reflexive]
+                                  @distributes |
+                                    mul(add(mul(a, r), mul(b, s)), lcm(a, b)) = add(mul(mul(a, r), lcm(a, b)), mul(mul(b, s), lcm(a, b)))
+                                    [using polynomial]
+                                  @first-summand-reflexive |
+                                    mul(mul(a, r), mul(b, v)) = mul(mul(a, r), mul(b, v))
+                                    [by reflexivity]
+                                  @first-summand-via-v |
+                                    mul(mul(a, r), lcm(a, b)) = mul(mul(a, r), mul(b, v))
+                                    [by rewrite lcm-is-b-v first-summand-reflexive]
+                                  @second-summand-reflexive |
+                                    mul(mul(b, s), mul(a, u)) = mul(mul(b, s), mul(a, u))
+                                    [by reflexivity]
+                                  @second-summand-via-u |
+                                    mul(mul(b, s), lcm(a, b)) = mul(mul(b, s), mul(a, u))
+                                    [by rewrite lcm-is-a-u second-summand-reflexive]
+                                  @both-summands-reflexive |
+                                    add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), mul(a, u))) = add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), mul(a, u)))
+                                    [by reflexivity]
+                                  @second-summand-substituted |
+                                    add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), lcm(a, b))) = add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), mul(a, u)))
+                                    [by rewrite second-summand-via-u both-summands-reflexive]
+                                  @both-summands-substituted |
+                                    add(mul(mul(a, r), lcm(a, b)), mul(mul(b, s), lcm(a, b))) = add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), mul(a, u)))
+                                    [by rewrite first-summand-via-v second-summand-substituted]
+                                  @factor-out-a-b |
+                                    add(mul(mul(a, r), mul(b, v)), mul(mul(b, s), mul(a, u))) = mul(mul(a, b), add(mul(r, v), mul(s, u)))
+                                    [using polynomial]
+                                  @gcd-times-lcm-is-a-multiple-of-a-b |
+                                    mul(gcd(a, b), lcm(a, b)) = mul(mul(a, b), add(mul(r, v), mul(s, u)))
+                                    [using chain gcd-times-lcm-unfolds distributes both-summands-substituted factor-out-a-b]
+                                  @conclusion-a-b-divides-gcd-times-lcm-v |
+                                    divides(mul(a, b), mul(gcd(a, b), lcm(a, b)))
+                                    [using specialize dividesIntro(mul(gcd(a, b), lcm(a, b)), mul(a, b), add(mul(r, v), mul(s, u))) gcd-times-lcm-is-a-multiple-of-a-b]
+                                }
+                              @conclusion-a-b-divides-gcd-times-lcm-u |
+                                divides(mul(a, b), mul(gcd(a, b), lcm(a, b)))
+                                [by exists_elim with-lcm-over-b-v]
+                            }
+                          @conclusion-a-b-divides-gcd-times-lcm-s |
+                            divides(mul(a, b), mul(gcd(a, b), lcm(a, b)))
+                            [by exists_elim with-lcm-over-a-u]
+                        }
+                      @conclusion-a-b-divides-gcd-times-lcm-r |
+                        divides(mul(a, b), mul(gcd(a, b), lcm(a, b)))
+                        [by exists_elim with-coefficient-s]
+                    }
+                  @a-b-divides-gcd-times-lcm |
+                    divides(mul(a, b), mul(gcd(a, b), lcm(a, b)))
+                    [by exists_elim with-coefficient-r]
+
+                  // gcd·lcm divides a·b: gcd·a₁·b₁ is a common multiple, so lcm | gcd·a₁·b₁,
+                  // and a·b = gcd·(gcd·a₁·b₁).
+                  @with-cofactor-a1 |
+                    unpack a1: Int from gcd-divides-a {
+                      @a-factors |
+                        a = mul(gcd(a, b), a1)
+                        [by hypothesis with-cofactor-a1]
+                      @with-cofactor-b1 |
+                        unpack b1: Int from gcd-divides-b {
+                          @b-factors |
+                            b = mul(gcd(a, b), b1)
+                            [by hypothesis with-cofactor-b1]
+                          // gcd·a₁·b₁ = a·b₁ is a multiple of a.
+                          @candidate-regrouped-for-a |
+                            mul(gcd(a, b), mul(a1, b1)) = mul(mul(gcd(a, b), a1), b1)
+                            [using assoc(mulIsAssociative)]
+                          @a-times-b1-reflexive |
+                            mul(a, b1) = mul(a, b1)
+                            [by reflexivity]
+                          @candidate-folds-to-a-times-b1 |
+                            mul(mul(gcd(a, b), a1), b1) = mul(a, b1)
+                            [by rewrite a-factors a-times-b1-reflexive]
+                          @candidate-is-a-times-b1 |
+                            mul(gcd(a, b), mul(a1, b1)) = mul(a, b1)
+                            [using chain candidate-regrouped-for-a candidate-folds-to-a-times-b1]
+                          @a-divides-candidate |
+                            divides(a, mul(gcd(a, b), mul(a1, b1)))
+                            [using specialize dividesIntro(mul(gcd(a, b), mul(a1, b1)), a, b1) candidate-is-a-times-b1]
+                          // … and = b·a₁, a multiple of b.
+                          @cofactors-commute |
+                            mul(a1, b1) = mul(b1, a1)
+                            [using specialize mulIsCommutative(a1, b1)]
+                          @candidate-commuted-reflexive |
+                            mul(gcd(a, b), mul(b1, a1)) = mul(gcd(a, b), mul(b1, a1))
+                            [by reflexivity]
+                          @candidate-commuted |
+                            mul(gcd(a, b), mul(a1, b1)) = mul(gcd(a, b), mul(b1, a1))
+                            [by rewrite cofactors-commute candidate-commuted-reflexive]
+                          @candidate-regrouped-for-b |
+                            mul(gcd(a, b), mul(b1, a1)) = mul(mul(gcd(a, b), b1), a1)
+                            [using assoc(mulIsAssociative)]
+                          @b-times-a1-reflexive |
+                            mul(b, a1) = mul(b, a1)
+                            [by reflexivity]
+                          @candidate-folds-to-b-times-a1 |
+                            mul(mul(gcd(a, b), b1), a1) = mul(b, a1)
+                            [by rewrite b-factors b-times-a1-reflexive]
+                          @candidate-is-b-times-a1 |
+                            mul(gcd(a, b), mul(a1, b1)) = mul(b, a1)
+                            [using chain candidate-commuted candidate-regrouped-for-b candidate-folds-to-b-times-a1]
+                          @b-divides-candidate |
+                            divides(b, mul(gcd(a, b), mul(a1, b1)))
+                            [using specialize dividesIntro(mul(gcd(a, b), mul(a1, b1)), b, a1) candidate-is-b-times-a1]
+                          @lcm-divides-candidate |
+                            exists k: Int; mul(gcd(a, b), mul(a1, b1)) = mul(lcm(a, b), k)
+                            [using specialize lcmLeast(a, b, mul(gcd(a, b), mul(a1, b1))) a-divides-candidate b-divides-candidate]
+                          @with-cofactor-t |
+                            unpack t: Int from lcm-divides-candidate {
+                              @candidate-is-lcm-times-t |
+                                mul(gcd(a, b), mul(a1, b1)) = mul(lcm(a, b), t)
+                                [by hypothesis with-cofactor-t]
+                              // a·b = (gcd·a₁)·(gcd·b₁) = gcd·(gcd·a₁·b₁) = gcd·(lcm·t) = (gcd·lcm)·t.
+                              @a-times-b-reflexive |
+                                mul(a, b) = mul(a, b)
+                                [by reflexivity]
+                              @b-unfolded |
+                                mul(a, b) = mul(a, mul(gcd(a, b), b1))
+                                [by rewrite b-factors a-times-b-reflexive]
+                              @a-times-unfolded-b-reflexive |
+                                mul(a, mul(gcd(a, b), b1)) = mul(a, mul(gcd(a, b), b1))
+                                [by reflexivity]
+                              @a-unfolded |
+                                mul(a, mul(gcd(a, b), b1)) = mul(mul(gcd(a, b), a1), mul(gcd(a, b), b1))
+                                [by rewrite a-factors a-times-unfolded-b-reflexive]
+                              @gcd-factored-out |
+                                mul(mul(gcd(a, b), a1), mul(gcd(a, b), b1)) = mul(gcd(a, b), mul(gcd(a, b), mul(a1, b1)))
+                                [using polynomial]
+                              @gcd-times-lcm-t-reflexive |
+                                mul(gcd(a, b), mul(lcm(a, b), t)) = mul(gcd(a, b), mul(lcm(a, b), t))
+                                [by reflexivity]
+                              @candidate-replaced |
+                                mul(gcd(a, b), mul(gcd(a, b), mul(a1, b1))) = mul(gcd(a, b), mul(lcm(a, b), t))
+                                [by rewrite candidate-is-lcm-times-t gcd-times-lcm-t-reflexive]
+                              @regrouped-to-gcd-times-lcm |
+                                mul(gcd(a, b), mul(lcm(a, b), t)) = mul(mul(gcd(a, b), lcm(a, b)), t)
+                                [using assoc(mulIsAssociative)]
+                              @a-times-b-is-a-multiple-of-gcd-times-lcm |
+                                mul(a, b) = mul(mul(gcd(a, b), lcm(a, b)), t)
+                                [using chain b-unfolded a-unfolded gcd-factored-out candidate-replaced regrouped-to-gcd-times-lcm]
+                              @conclusion-gcd-times-lcm-divides-a-b-t |
+                                divides(mul(gcd(a, b), lcm(a, b)), mul(a, b))
+                                [using specialize dividesIntro(mul(a, b), mul(gcd(a, b), lcm(a, b)), t) a-times-b-is-a-multiple-of-gcd-times-lcm]
+                            }
+                          @conclusion-gcd-times-lcm-divides-a-b-b1 |
+                            divides(mul(gcd(a, b), lcm(a, b)), mul(a, b))
+                            [by exists_elim with-cofactor-t]
+                        }
+                      @conclusion-gcd-times-lcm-divides-a-b-a1 |
+                        divides(mul(gcd(a, b), lcm(a, b)), mul(a, b))
+                        [by exists_elim with-cofactor-b1]
+                    }
+                  @gcd-times-lcm-divides-a-b |
+                    divides(mul(gcd(a, b), lcm(a, b)), mul(a, b))
+                    [by exists_elim with-cofactor-a1]
+
+                  @conclusion-gcd-times-lcm-is-a-b |
+                    mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+                    [using specialize mutualDivisorsNonnegEqual(mul(gcd(a, b), lcm(a, b)), mul(a, b)) gcd-times-lcm-nonneg a-times-b-nonneg gcd-times-lcm-divides-a-b a-b-divides-gcd-times-lcm]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) -> mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+                [by implies_intro given-b-positive]
+            }
+          @a-positive-implies |
+            less_than(ZERO, a) -> less_than(ZERO, b) -> mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+            [by implies_intro given-a-positive]
+        }
+      @discharge-b |
+        forall b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(ZERO, a) -> less_than(ZERO, b) -> mul(gcd(a, b), lcm(a, b)) = mul(a, b)
+    [by forall_intro generalize-a]
+qed
+
+// ── COPRIMALITY: gcd = 1 ⟺ every common divisor is a unit ─────────────────────
+// (the unit-divisor form is what coprimeBezout consumes; the gcd form is Judson's).
+theorem gcdOneImpliesUnitDivisors: forall a, c: Int; gcd(a, c) = ONE -> forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-c |
+        fix c: Int {
+          @given-coprime |
+            assume gcd(a, c) = ONE {
+              @coprime |
+                gcd(a, c) = ONE
+                [by hypothesis given-coprime]
+              @generalize-e |
+                fix e: Int {
+                  @given-e-divides-a |
+                    assume divides(e, a) {
+                      @given-e-divides-c |
+                        assume divides(e, c) {
+                          @e-divides-a |
+                            divides(e, a)
+                            [by hypothesis given-e-divides-a]
+                          @e-divides-c |
+                            divides(e, c)
+                            [by hypothesis given-e-divides-c]
+                          @e-divides-gcd |
+                            divides(e, gcd(a, c))
+                            [using specialize gcdGreatest(e, a, c) e-divides-a e-divides-c]
+                          @e-divides-one |
+                            divides(e, ONE)
+                            [by rewrite coprime e-divides-gcd]
+                          @conclusion-e-is-a-unit |
+                            e = ONE or e = neg(ONE)
+                            [using specialize dividesOneImpliesUnit(e) e-divides-one]
+                        }
+                      @e-divides-c-implies |
+                        divides(e, c) -> (e = ONE or e = neg(ONE))
+                        [by implies_intro given-e-divides-c]
+                    }
+                  @e-divides-a-implies |
+                    divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+                    [by implies_intro given-e-divides-a]
+                }
+              @discharge-e |
+                forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+                [by forall_intro generalize-e]
+            }
+          @coprime-implies |
+            gcd(a, c) = ONE -> forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+            [by implies_intro given-coprime]
+        }
+      @discharge-c |
+        forall c: Int; gcd(a, c) = ONE -> forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall a, c: Int; gcd(a, c) = ONE -> forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+    [by forall_intro generalize-a]
+qed
+
+// Conversely (c positive, so the gcd is nonneg): the gcd is itself a common divisor,
+// hence a unit, and the nonneg unit is ONE.
+theorem unitDivisorsImplyGcdOne: forall a, c: Int; less_than(ZERO, c) -> (forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))) -> gcd(a, c) = ONE
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-c |
+        fix c: Int {
+          @given-c-positive |
+            assume less_than(ZERO, c) {
+              @given-unit-divisors |
+                assume forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE)) {
+                  @c-positive |
+                    less_than(ZERO, c)
+                    [by hypothesis given-c-positive]
+                  @unit-divisors |
+                    forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))
+                    [by hypothesis given-unit-divisors]
+                  @gcd-divides-both |
+                    divides(gcd(a, c), a) and divides(gcd(a, c), c)
+                    [using specialize gcdDividesBoth(a, c)]
+                  @gcd-divides-a |
+                    divides(gcd(a, c), a)
+                    [by and_elim_left gcd-divides-both]
+                  @gcd-divides-c |
+                    divides(gcd(a, c), c)
+                    [by and_elim_right gcd-divides-both]
+                  @gcd-is-a-unit |
+                    gcd(a, c) = ONE or gcd(a, c) = neg(ONE)
+                    [using specialize unit-divisors(gcd(a, c)) gcd-divides-a gcd-divides-c]
+                  @gcd-nonneg |
+                    is_nonneg(gcd(a, c))
+                    [using specialize gcdNonnegOfPositive(a, c) c-positive]
+                  @given-gcd-is-neg-one |
+                    assume gcd(a, c) = neg(ONE) {
+                      @gcd-is-neg-one |
+                        gcd(a, c) = neg(ONE)
+                        [by hypothesis given-gcd-is-neg-one]
+                      @neg-one-nonneg |
+                        is_nonneg(neg(ONE))
+                        [by rewrite gcd-is-neg-one gcd-nonneg]
+                      @neg-one-not-below-zero |
+                        not less_than(neg(ONE), ZERO)
+                        [using specialize nonnegNotLessThanZero(neg(ONE)) neg-one-nonneg]
+                      @neg-one-below-zero |
+                        less_than(neg(ONE), ZERO)
+                        [by cite negOneLessThanZero]
+                      @conclusion-neg-one-absurd |
+                        gcd(a, c) = ONE
+                        [using tautology neg-one-not-below-zero neg-one-below-zero]
+                    }
+                  @neg-one-implies |
+                    gcd(a, c) = neg(ONE) -> gcd(a, c) = ONE
+                    [by implies_intro given-gcd-is-neg-one]
+                  @conclusion-gcd-is-one |
+                    gcd(a, c) = ONE
+                    [using tautology gcd-is-a-unit neg-one-implies]
+                }
+              @unit-divisors-imply |
+                (forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))) -> gcd(a, c) = ONE
+                [by implies_intro given-unit-divisors]
+            }
+          @c-positive-implies |
+            less_than(ZERO, c) -> (forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))) -> gcd(a, c) = ONE
+            [by implies_intro given-c-positive]
+        }
+      @discharge-c |
+        forall c: Int; less_than(ZERO, c) -> (forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))) -> gcd(a, c) = ONE
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall a, c: Int; less_than(ZERO, c) -> (forall e: Int; divides(e, a) -> divides(e, c) -> (e = ONE or e = neg(ONE))) -> gcd(a, c) = ONE
+    [by forall_intro generalize-a]
+qed
+
 // Euclid's coprimality lemma (Bézout form): if u and v are coprime witnessed by a
 // Bézout identity u·r + v·s = 1, and u divides v·w, then u divides w. Multiply the
 // identity by w: w = w·u·r + w·v·s; u divides the first summand (multiple of u) and the

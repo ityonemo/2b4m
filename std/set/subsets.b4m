@@ -1,0 +1,1637 @@
+// std/set/subsets.b4m — THE POWER SET, COUNTED: the subsets of {0, …, n−1} LISTED, with
+// 2^n entries (Judson §2.1 Exercise 12: a set with n elements has 2^n subsets).
+//
+// The repo's counting idiom is a LISTING, not a cardinality function (std/permutation/count.b4m
+// lists S_n with n! entries): a sequence of sets `w` LISTS THE SUBSETS of segment(n) with m
+// entries when every entry is a subset, the entries are pairwise distinct, and every subset is
+// an entry. The count is Judson's own induction: the subsets of {0, …, n} are the subsets of
+// {0, …, n−1} followed by each of those with n adjoined — two disjoint halves of equal length,
+// so the listing DOUBLES.
+//
+// `SetSeq` is a sequence of sets read by `setAt`, with the three postulates the doubling
+// needs: a one-entry sequence, concatenation, and the sequence obtained by adjoining one
+// element to every entry. (The repo's sequence theories restate std/sequence's postulates per
+// value sort — see std/permutation/sequence.b4m, std/integer/mod-n-listing.b4m.)
+
+import set <<< "std/set.b4m"
+import element <<< "std/element.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import peano_power <<< "std/peano/power.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+const emptyset = set.emptyset
+pred member = set.member
+func union = set.union
+func difference = set.difference
+func singleton = set.singleton
+axiom unionMember = set.unionMember
+axiom differenceMember = set.differenceMember
+axiom singletonMember = set.singletonMember
+axiom emptysetMember = set.emptysetMember
+axiom extensionality = set.extensionality
+define subset(a, b) = set.subset(a, b)
+theorem unionSingletonMember = set.unionSingletonMember
+theorem differenceSingletonMember = set.differenceSingletonMember
+theorem restoringAnElement = set.restoringAnElement
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom lessThanIntro = peano_order.lessThanIntro
+axiom lessThanElim = peano_order.lessThanElim
+theorem additionPreservesOrder = peano_order.additionPreservesOrder
+theorem lessThanAddCancelLeft = peano_order.lessThanAddCancelLeft
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem trichotomy = peano_order.trichotomy
+theorem addCancelLeft = peano.addCancelLeft
+theorem addZeroRight = peano.addZeroRight
+theorem addIsAssociative = peano.addIsAssociative
+axiom addSuccLeft = peano.addSuccLeft
+axiom oneIsSuccZero = peano.oneIsSuccZero
+theorem lessThanSelf = peano_order.lessThanSelf
+
+func numeral = set_finite.numeral
+func segment = set_finite.segment
+theorem segmentGrows = set_finite.segmentGrows
+theorem segmentSuccSplits = set_finite.segmentSuccSplits
+theorem topIsInTheBiggerSegment = set_finite.topIsInTheBiggerSegment
+theorem topIsNotInTheSmallerSegment = set_finite.topIsNotInTheSmallerSegment
+theorem segmentZeroIsEmpty = set_finite.segmentZeroIsEmpty
+
+func pow = peano_power.pow
+axiom powZero = peano_power.powZero
+axiom powSucc = peano_power.powSucc
+// 2 as 1 + 1, so `polynomial` reads it as the numeral 2 (std/peano/parity.b4m's convention).
+define TWO = add(ONE, ONE)
+
+// -- sequences of sets -----------------------------------------------------------------------
+sort SetSeq
+func setAt(s: SetSeq, i: Nat) => Set
+// the one-entry sequence [a]
+axiom setSeqSingleton: forall a: Set; exists s: SetSeq; setAt(s, ZERO) = a
+// the concatenation of s (first j entries) and t (first k entries)
+axiom setSeqConcat: forall s: SetSeq; forall t: SetSeq; forall j: Nat; forall k: Nat;
+  exists u: SetSeq;
+  (forall i: Nat; less_than(i, j) -> setAt(u, i) = setAt(s, i))
+  and (forall i: Nat; less_than(i, k) -> setAt(u, add(j, i)) = setAt(t, i))
+// the first m entries of s, each with the element x adjoined
+axiom setSeqAdjoin: forall s: SetSeq; forall x: Element; forall m: Nat;
+  exists v: SetSeq; forall i: Nat; less_than(i, m) -> setAt(v, i) = union(setAt(s, i), singleton(x))
+
+// -- index arithmetic for a doubled listing --------------------------------------------------
+// An index below 1 is 0.
+theorem belowOneIsZero: forall i: Nat; less_than(i, succ(ZERO)) -> i = ZERO
+proof
+  @generalize-i |
+    fix i: Nat {
+      @given-below-one |
+        assume less_than(i, succ(ZERO)) {
+          @below-one |
+            less_than(i, succ(ZERO))
+            [by hypothesis given-below-one]
+          @below-zero-or-zero |
+            less_than(i, ZERO) or i = ZERO
+            [using specialize lessThanSuccSplit(i, ZERO) below-one]
+          @not-below-zero |
+            not less_than(i, ZERO)
+            [using specialize notLessThanZero(i)]
+          @conclusion-zero |
+            i = ZERO
+            [using tautology below-zero-or-zero not-below-zero]
+        }
+      @below-one-implies |
+        less_than(i, succ(ZERO)) -> i = ZERO
+        [by implies_intro given-below-one]
+    }
+  @conclusion |
+    forall i: Nat; less_than(i, succ(ZERO)) -> i = ZERO
+    [by forall_intro generalize-i]
+qed
+
+// An index in the first half is below the double: i < p ⟹ i < p + p, because p + p =
+// i + succ(d + p) when p = i + succ(d).
+theorem firstHalfIndex: forall p: Nat; forall i: Nat; less_than(i, p) -> less_than(i, add(p, p))
+proof
+  @generalize-p |
+    fix p: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @given-below |
+            assume less_than(i, p) {
+              @below |
+                less_than(i, p)
+                [by hypothesis given-below]
+              @gap-exists |
+                exists d: Nat; add(i, succ(d)) = p
+                [using specialize lessThanElim(i, p) below]
+              @with-gap-d |
+                unpack d: Nat from gap-exists {
+                  @gap |
+                    add(i, succ(d)) = p
+                    [by hypothesis with-gap-d]
+                  @double-reflexive |
+                    add(p, p) = add(p, p)
+                    [by reflexivity]
+                  @double-unfolded-left |
+                    add(p, p) = add(add(i, succ(d)), p)
+                    [by rewrite gap double-reflexive]
+                  @regrouped |
+                    add(add(i, succ(d)), p) = add(i, add(succ(d), p))
+                    [using specialize addIsAssociative(i, succ(d), p)]
+                  @succ-out |
+                    add(succ(d), p) = succ(add(d, p))
+                    [using specialize addSuccLeft(d, p)]
+                  @regrouped-succ-out |
+                    add(add(i, succ(d)), p) = add(i, succ(add(d, p)))
+                    [by rewrite succ-out regrouped]
+                  @double-as-gap |
+                    add(p, p) = add(i, succ(add(d, p)))
+                    [using chain double-unfolded-left regrouped-succ-out]
+                  @gap-as-double |
+                    add(i, succ(add(d, p))) = add(p, p)
+                    [by symmetry double-as-gap]
+                  @conclusion-below-double |
+                    less_than(i, add(p, p))
+                    [using specialize lessThanIntro(i, add(d, p), add(p, p)) gap-as-double]
+                }
+              @conclusion-below-double-outer |
+                less_than(i, add(p, p))
+                [by exists_elim with-gap-d]
+            }
+          @below-implies |
+            less_than(i, p) -> less_than(i, add(p, p))
+            [by implies_intro given-below]
+        }
+      @discharge-i |
+        forall i: Nat; less_than(i, p) -> less_than(i, add(p, p))
+        [by forall_intro generalize-i]
+    }
+  @conclusion |
+    forall p: Nat; forall i: Nat; less_than(i, p) -> less_than(i, add(p, p))
+    [by forall_intro generalize-p]
+qed
+
+// An index in the second half, p + d with d < p, is below the double.
+theorem secondHalfIndex: forall p: Nat; forall d: Nat; less_than(d, p) -> less_than(add(p, d), add(p, p))
+proof
+  @generalize-p |
+    fix p: Nat {
+      @generalize-d |
+        fix d: Nat {
+          @given-below |
+            assume less_than(d, p) {
+              @below |
+                less_than(d, p)
+                [by hypothesis given-below]
+              @conclusion-shifted-below |
+                less_than(add(p, d), add(p, p))
+                [using specialize additionPreservesOrder(d, p, p) below]
+            }
+          @below-implies |
+            less_than(d, p) -> less_than(add(p, d), add(p, p))
+            [by implies_intro given-below]
+        }
+      @discharge-d |
+        forall d: Nat; less_than(d, p) -> less_than(add(p, d), add(p, p))
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall p: Nat; forall d: Nat; less_than(d, p) -> less_than(add(p, d), add(p, p))
+    [by forall_intro generalize-p]
+qed
+
+// An index below the double that is not in the first half is p + d for some d < p: by
+// trichotomy it is p itself (d = 0, and p < p + p forces 0 < p) or above p (the gap d, and
+// p + succ(d) < p + p cancels to succ(d) < p).
+theorem secondHalfIndexSplit: forall p: Nat; forall i: Nat; less_than(i, add(p, p)) -> (not less_than(i, p)) -> exists d: Nat; less_than(d, p) and i = add(p, d)
+proof
+  @generalize-p |
+    fix p: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @given-below-double |
+            assume less_than(i, add(p, p)) {
+              @given-not-first-half |
+                assume not less_than(i, p) {
+                  @below-double |
+                    less_than(i, add(p, p))
+                    [by hypothesis given-below-double]
+                  @not-first-half |
+                    not less_than(i, p)
+                    [by hypothesis given-not-first-half]
+                  @three-ways |
+                    less_than(i, p) or i = p or less_than(p, i)
+                    [using specialize trichotomy(i, p)]
+                  @two-ways |
+                    i = p or less_than(p, i)
+                    [using tautology three-ways not-first-half]
+                  @conclusion-second-half |
+                    exists d: Nat; less_than(d, p) and i = add(p, d)
+                    case two-ways {
+                      @when-at-p |
+                        assume i = p {
+                          @at-p |
+                            i = p
+                            [by hypothesis when-at-p]
+                          @p-below-double |
+                            less_than(p, add(p, p))
+                            [by rewrite at-p below-double]
+                          @p-plus-zero |
+                            add(p, ZERO) = p
+                            [using specialize addZeroRight(p)]
+                          @p-plus-zero-below-double |
+                            less_than(add(p, ZERO), add(p, p))
+                            [by rewrite p-plus-zero p-below-double]
+                          @zero-below-p |
+                            less_than(ZERO, p)
+                            [using specialize lessThanAddCancelLeft(p, ZERO, p) p-plus-zero-below-double]
+                          @p-is-p-plus-zero |
+                            i = add(p, ZERO)
+                            [using chain at-p p-plus-zero-flipped]
+                          @p-plus-zero-flipped |
+                            p = add(p, ZERO)
+                            [by symmetry p-plus-zero]
+                          @zero-witnesses |
+                            less_than(ZERO, p) and i = add(p, ZERO)
+                            [by and_intro zero-below-p p-is-p-plus-zero]
+                          @conclusion-when-at-p |
+                            exists d: Nat; less_than(d, p) and i = add(p, d)
+                            [by exists_intro(ZERO) zero-witnesses]
+                        }
+                      @when-above-p |
+                        assume less_than(p, i) {
+                          @above-p |
+                            less_than(p, i)
+                            [by hypothesis when-above-p]
+                          @gap-exists |
+                            exists e: Nat; add(p, succ(e)) = i
+                            [using specialize lessThanElim(p, i) above-p]
+                          @with-gap-e |
+                            unpack e: Nat from gap-exists {
+                              @gap |
+                                add(p, succ(e)) = i
+                                [by hypothesis with-gap-e]
+                              @i-is-gap |
+                                i = add(p, succ(e))
+                                [by symmetry gap]
+                              @gap-below-double |
+                                less_than(add(p, succ(e)), add(p, p))
+                                [by rewrite i-is-gap below-double]
+                              @succ-e-below-p |
+                                less_than(succ(e), p)
+                                [using specialize lessThanAddCancelLeft(p, succ(e), p) gap-below-double]
+                              @succ-e-witnesses |
+                                less_than(succ(e), p) and i = add(p, succ(e))
+                                [by and_intro succ-e-below-p i-is-gap]
+                              @conclusion-when-above-p-inner |
+                                exists d: Nat; less_than(d, p) and i = add(p, d)
+                                [by exists_intro(succ(e)) succ-e-witnesses]
+                            }
+                          @conclusion-when-above-p |
+                            exists d: Nat; less_than(d, p) and i = add(p, d)
+                            [by exists_elim with-gap-e]
+                        }
+                    }
+                }
+              @not-first-half-implies |
+                (not less_than(i, p)) -> exists d: Nat; less_than(d, p) and i = add(p, d)
+                [by implies_intro given-not-first-half]
+            }
+          @below-double-implies |
+            less_than(i, add(p, p)) -> (not less_than(i, p)) -> exists d: Nat; less_than(d, p) and i = add(p, d)
+            [by implies_intro given-below-double]
+        }
+      @discharge-i |
+        forall i: Nat; less_than(i, add(p, p)) -> (not less_than(i, p)) -> exists d: Nat; less_than(d, p) and i = add(p, d)
+        [by forall_intro generalize-i]
+    }
+  @conclusion |
+    forall p: Nat; forall i: Nat; less_than(i, add(p, p)) -> (not less_than(i, p)) -> exists d: Nat; less_than(d, p) and i = add(p, d)
+    [by forall_intro generalize-p]
+qed
+
+// 2^(n+1) = 2^n + 2^n.
+theorem twoPowSucc: forall n: Nat; pow(TWO, succ(n)) = add(pow(TWO, n), pow(TWO, n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @unfolds |
+        pow(TWO, succ(n)) = mul(TWO, pow(TWO, n))
+        [using specialize powSucc(TWO, n)]
+      @twice-is-double |
+        mul(TWO, pow(TWO, n)) = add(pow(TWO, n), pow(TWO, n))
+        [using polynomial(peano)]
+      @conclusion-doubles |
+        pow(TWO, succ(n)) = add(pow(TWO, n), pow(TWO, n))
+        [using chain unfolds twice-is-double]
+    }
+  @conclusion |
+    forall n: Nat; pow(TWO, succ(n)) = add(pow(TWO, n), pow(TWO, n))
+    [by forall_intro generalize-n]
+qed
+
+// -- adjoining an element to a subset ---------------------------------------------------------
+// A member of a stays a member of b when a ∪ {t} = b ∪ {t} and t ∉ a: it is in b ∪ {t} and is
+// not t.
+theorem memberOfAdjoinedIsMember: forall a: Set; forall b: Set; forall t: Element; (not member(t, a)) -> union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-t |
+            fix t: Element {
+              @given-t-outside |
+                assume not member(t, a) {
+                  @given-adjoined-equal |
+                    assume union(a, singleton(t)) = union(b, singleton(t)) {
+                      @t-outside |
+                        not member(t, a)
+                        [by hypothesis given-t-outside]
+                      @adjoined-equal |
+                        union(a, singleton(t)) = union(b, singleton(t))
+                        [by hypothesis given-adjoined-equal]
+                      @generalize-x |
+                        fix x: Element {
+                          @given-in-a |
+                            assume member(x, a) {
+                              @in-a |
+                                member(x, a)
+                                [by hypothesis given-in-a]
+                              @adjoined-a-membership |
+                                member(x, union(a, singleton(t))) iff (member(x, a) or x = t)
+                                [using specialize unionSingletonMember(a, t, x)]
+                              @in-adjoined-a |
+                                member(x, union(a, singleton(t)))
+                                [using tautology adjoined-a-membership in-a]
+                              @in-adjoined-b |
+                                member(x, union(b, singleton(t)))
+                                [by rewrite adjoined-equal in-adjoined-a]
+                              @adjoined-b-membership |
+                                member(x, union(b, singleton(t))) iff (member(x, b) or x = t)
+                                [using specialize unionSingletonMember(b, t, x)]
+                              @given-x-is-t |
+                                assume x = t {
+                                  @x-is-t |
+                                    x = t
+                                    [by hypothesis given-x-is-t]
+                                  @conclusion-t-in-a |
+                                    member(t, a)
+                                    [by rewrite x-is-t in-a]
+                                }
+                              @x-is-t-implies |
+                                x = t -> member(t, a)
+                                [by implies_intro given-x-is-t]
+                              @conclusion-in-b |
+                                member(x, b)
+                                [using tautology in-adjoined-b adjoined-b-membership x-is-t-implies t-outside]
+                            }
+                          @in-a-implies |
+                            member(x, a) -> member(x, b)
+                            [by implies_intro given-in-a]
+                        }
+                      @conclusion-inclusion |
+                        forall x: Element; member(x, a) -> member(x, b)
+                        [by forall_intro generalize-x]
+                    }
+                  @adjoined-equal-implies |
+                    union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+                    [by implies_intro given-adjoined-equal]
+                }
+              @t-outside-implies |
+                (not member(t, a)) -> union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+                [by implies_intro given-t-outside]
+            }
+          @discharge-t |
+            forall t: Element; (not member(t, a)) -> union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+            [by forall_intro generalize-t]
+        }
+      @discharge-b |
+        forall b: Set; forall t: Element; (not member(t, a)) -> union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall t: Element; (not member(t, a)) -> union(a, singleton(t)) = union(b, singleton(t)) -> forall x: Element; member(x, a) -> member(x, b)
+    [by forall_intro generalize-a]
+qed
+
+// Adjoining an outsider is injective: a ∪ {t} = b ∪ {t} with t ∉ a, t ∉ b forces a = b.
+theorem adjoiningIsInjective: forall a: Set; forall b: Set; forall t: Element; (not member(t, a)) -> (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-t |
+            fix t: Element {
+              @given-t-outside-a |
+                assume not member(t, a) {
+                  @given-t-outside-b |
+                    assume not member(t, b) {
+                      @given-adjoined-equal |
+                        assume union(a, singleton(t)) = union(b, singleton(t)) {
+                          @t-outside-a |
+                            not member(t, a)
+                            [by hypothesis given-t-outside-a]
+                          @t-outside-b |
+                            not member(t, b)
+                            [by hypothesis given-t-outside-b]
+                          @adjoined-equal |
+                            union(a, singleton(t)) = union(b, singleton(t))
+                            [by hypothesis given-adjoined-equal]
+                          @adjoined-equal-flipped |
+                            union(b, singleton(t)) = union(a, singleton(t))
+                            [by symmetry adjoined-equal]
+                          @a-inside-b |
+                            forall x: Element; member(x, a) -> member(x, b)
+                            [using specialize memberOfAdjoinedIsMember(a, b, t) t-outside-a adjoined-equal]
+                          @b-inside-a |
+                            forall x: Element; member(x, b) -> member(x, a)
+                            [using specialize memberOfAdjoinedIsMember(b, a, t) t-outside-b adjoined-equal-flipped]
+                          @conclusion-equal |
+                            a = b
+                            [using specialize extensionality(a, b) a-inside-b b-inside-a]
+                        }
+                      @adjoined-equal-implies |
+                        union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+                        [by implies_intro given-adjoined-equal]
+                    }
+                  @t-outside-b-implies |
+                    (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+                    [by implies_intro given-t-outside-b]
+                }
+              @t-outside-a-implies |
+                (not member(t, a)) -> (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+                [by implies_intro given-t-outside-a]
+            }
+          @discharge-t |
+            forall t: Element; (not member(t, a)) -> (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+            [by forall_intro generalize-t]
+        }
+      @discharge-b |
+        forall b: Set; forall t: Element; (not member(t, a)) -> (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; forall t: Element; (not member(t, a)) -> (not member(t, b)) -> union(a, singleton(t)) = union(b, singleton(t)) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// The adjoined element is a member of the adjoined set.
+theorem adjoinedIsMember: forall a: Set; forall t: Element; member(t, union(a, singleton(t)))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-t |
+        fix t: Element {
+          @membership |
+            member(t, union(a, singleton(t))) iff (member(t, a) or t = t)
+            [using specialize unionSingletonMember(a, t, t)]
+          @t-is-t |
+            t = t
+            [by reflexivity]
+          @conclusion-member |
+            member(t, union(a, singleton(t)))
+            [using tautology membership t-is-t]
+        }
+      @discharge-t |
+        forall t: Element; member(t, union(a, singleton(t)))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall a: Set; forall t: Element; member(t, union(a, singleton(t)))
+    [by forall_intro generalize-a]
+qed
+
+// -- subsets of a segment and its successor ----------------------------------------------------
+// A subset of {0, …, n−1} does not contain n.
+theorem subsetOfSegmentOmitsTop: forall n: Nat; forall a: Set; subset(a, segment(n)) -> (not member(numeral(n), a))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(n)) {
+              @is-subset |
+                subset(a, segment(n))
+                [by hypothesis given-subset]
+              @given-top-in-a |
+                assume member(numeral(n), a) {
+                  @top-in-a |
+                    member(numeral(n), a)
+                    [by hypothesis given-top-in-a]
+                  @conclusion-top-in-segment |
+                    member(numeral(n), segment(n))
+                    [using specialize is-subset(numeral(n)) top-in-a]
+                }
+              @top-in-a-implies |
+                member(numeral(n), a) -> member(numeral(n), segment(n))
+                [by implies_intro given-top-in-a]
+              @top-not-in-segment |
+                not member(numeral(n), segment(n))
+                [using specialize topIsNotInTheSmallerSegment(n)]
+              @conclusion-top-outside |
+                not member(numeral(n), a)
+                [using tautology top-in-a-implies top-not-in-segment]
+            }
+          @subset-implies |
+            subset(a, segment(n)) -> (not member(numeral(n), a))
+            [by implies_intro given-subset]
+        }
+      @discharge-a |
+        forall a: Set; subset(a, segment(n)) -> (not member(numeral(n), a))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Set; subset(a, segment(n)) -> (not member(numeral(n), a))
+    [by forall_intro generalize-n]
+qed
+
+// A subset of {0, …, n−1} is a subset of {0, …, n}.
+theorem subsetGrows: forall n: Nat; forall a: Set; subset(a, segment(n)) -> subset(a, segment(succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(n)) {
+              @is-subset |
+                subset(a, segment(n))
+                [by hypothesis given-subset]
+              @generalize-x |
+                fix x: Element {
+                  @given-in-a |
+                    assume member(x, a) {
+                      @in-a |
+                        member(x, a)
+                        [by hypothesis given-in-a]
+                      @in-segment |
+                        member(x, segment(n))
+                        [using specialize is-subset(x) in-a]
+                      @conclusion-in-bigger-segment |
+                        member(x, segment(succ(n)))
+                        [using specialize segmentGrows(n, x) in-segment]
+                    }
+                  @in-a-implies |
+                    member(x, a) -> member(x, segment(succ(n)))
+                    [by implies_intro given-in-a]
+                }
+              @conclusion-subset-of-bigger |
+                subset(a, segment(succ(n)))
+                [by forall_intro generalize-x]
+            }
+          @subset-implies |
+            subset(a, segment(n)) -> subset(a, segment(succ(n)))
+            [by implies_intro given-subset]
+        }
+      @discharge-a |
+        forall a: Set; subset(a, segment(n)) -> subset(a, segment(succ(n)))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Set; subset(a, segment(n)) -> subset(a, segment(succ(n)))
+    [by forall_intro generalize-n]
+qed
+
+// A subset of {0, …, n} that omits n is a subset of {0, …, n−1}.
+theorem subsetWithoutTop: forall n: Nat; forall a: Set; subset(a, segment(succ(n))) -> (not member(numeral(n), a)) -> subset(a, segment(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(succ(n))) {
+              @given-top-outside |
+                assume not member(numeral(n), a) {
+                  @is-subset |
+                    subset(a, segment(succ(n)))
+                    [by hypothesis given-subset]
+                  @top-outside |
+                    not member(numeral(n), a)
+                    [by hypothesis given-top-outside]
+                  @generalize-x |
+                    fix x: Element {
+                      @given-in-a |
+                        assume member(x, a) {
+                          @in-a |
+                            member(x, a)
+                            [by hypothesis given-in-a]
+                          @in-bigger-segment |
+                            member(x, segment(succ(n)))
+                            [using specialize is-subset(x) in-a]
+                          @in-segment-or-top |
+                            member(x, segment(n)) or x = numeral(n)
+                            [using specialize segmentSuccSplits(n, x) in-bigger-segment]
+                          @given-x-is-top |
+                            assume x = numeral(n) {
+                              @x-is-top |
+                                x = numeral(n)
+                                [by hypothesis given-x-is-top]
+                              @conclusion-top-in-a |
+                                member(numeral(n), a)
+                                [by rewrite x-is-top in-a]
+                            }
+                          @x-is-top-implies |
+                            x = numeral(n) -> member(numeral(n), a)
+                            [by implies_intro given-x-is-top]
+                          @conclusion-in-segment |
+                            member(x, segment(n))
+                            [using tautology in-segment-or-top x-is-top-implies top-outside]
+                        }
+                      @in-a-implies |
+                        member(x, a) -> member(x, segment(n))
+                        [by implies_intro given-in-a]
+                    }
+                  @conclusion-subset-of-smaller |
+                    subset(a, segment(n))
+                    [by forall_intro generalize-x]
+                }
+              @top-outside-implies |
+                (not member(numeral(n), a)) -> subset(a, segment(n))
+                [by implies_intro given-top-outside]
+            }
+          @subset-implies |
+            subset(a, segment(succ(n))) -> (not member(numeral(n), a)) -> subset(a, segment(n))
+            [by implies_intro given-subset]
+        }
+      @discharge-a |
+        forall a: Set; subset(a, segment(succ(n))) -> (not member(numeral(n), a)) -> subset(a, segment(n))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Set; subset(a, segment(succ(n))) -> (not member(numeral(n), a)) -> subset(a, segment(n))
+    [by forall_intro generalize-n]
+qed
+
+// Removing n from a subset of {0, …, n} leaves a subset of {0, …, n−1}.
+theorem removingTopGivesSubset: forall n: Nat; forall a: Set; subset(a, segment(succ(n))) -> subset(difference(a, singleton(numeral(n))), segment(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(succ(n))) {
+              @is-subset |
+                subset(a, segment(succ(n)))
+                [by hypothesis given-subset]
+              @generalize-x |
+                fix x: Element {
+                  @given-in-remainder |
+                    assume member(x, difference(a, singleton(numeral(n)))) {
+                      @in-remainder |
+                        member(x, difference(a, singleton(numeral(n))))
+                        [by hypothesis given-in-remainder]
+                      @remainder-membership |
+                        member(x, difference(a, singleton(numeral(n)))) iff (member(x, a) and x != numeral(n))
+                        [using specialize differenceSingletonMember(a, numeral(n), x)]
+                      @in-a |
+                        member(x, a)
+                        [using tautology in-remainder remainder-membership]
+                      @not-top |
+                        x != numeral(n)
+                        [using tautology in-remainder remainder-membership]
+                      @in-bigger-segment |
+                        member(x, segment(succ(n)))
+                        [using specialize is-subset(x) in-a]
+                      @in-segment-or-top |
+                        member(x, segment(n)) or x = numeral(n)
+                        [using specialize segmentSuccSplits(n, x) in-bigger-segment]
+                      @conclusion-in-segment |
+                        member(x, segment(n))
+                        [using tautology in-segment-or-top not-top]
+                    }
+                  @in-remainder-implies |
+                    member(x, difference(a, singleton(numeral(n)))) -> member(x, segment(n))
+                    [by implies_intro given-in-remainder]
+                }
+              @conclusion-remainder-is-subset |
+                subset(difference(a, singleton(numeral(n))), segment(n))
+                [by forall_intro generalize-x]
+            }
+          @subset-implies |
+            subset(a, segment(succ(n))) -> subset(difference(a, singleton(numeral(n))), segment(n))
+            [by implies_intro given-subset]
+        }
+      @discharge-a |
+        forall a: Set; subset(a, segment(succ(n))) -> subset(difference(a, singleton(numeral(n))), segment(n))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Set; subset(a, segment(succ(n))) -> subset(difference(a, singleton(numeral(n))), segment(n))
+    [by forall_intro generalize-n]
+qed
+
+// Adjoining n to a subset of {0, …, n−1} gives a subset of {0, …, n}.
+theorem adjoinedIsSubset: forall n: Nat; forall a: Set; subset(a, segment(n)) -> subset(union(a, singleton(numeral(n))), segment(succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(n)) {
+              @is-subset |
+                subset(a, segment(n))
+                [by hypothesis given-subset]
+              @top-in-bigger-segment |
+                member(numeral(n), segment(succ(n)))
+                [using specialize topIsInTheBiggerSegment(n)]
+              @generalize-x |
+                fix x: Element {
+                  @given-in-adjoined |
+                    assume member(x, union(a, singleton(numeral(n)))) {
+                      @in-adjoined |
+                        member(x, union(a, singleton(numeral(n))))
+                        [by hypothesis given-in-adjoined]
+                      @adjoined-membership |
+                        member(x, union(a, singleton(numeral(n)))) iff (member(x, a) or x = numeral(n))
+                        [using specialize unionSingletonMember(a, numeral(n), x)]
+                      @given-in-a |
+                        assume member(x, a) {
+                          @in-a |
+                            member(x, a)
+                            [by hypothesis given-in-a]
+                          @in-segment |
+                            member(x, segment(n))
+                            [using specialize is-subset(x) in-a]
+                          @conclusion-grown |
+                            member(x, segment(succ(n)))
+                            [using specialize segmentGrows(n, x) in-segment]
+                        }
+                      @in-a-implies |
+                        member(x, a) -> member(x, segment(succ(n)))
+                        [by implies_intro given-in-a]
+                      @given-x-is-top |
+                        assume x = numeral(n) {
+                          @x-is-top |
+                            x = numeral(n)
+                            [by hypothesis given-x-is-top]
+                          @conclusion-top-case |
+                            member(x, segment(succ(n)))
+                            [by rewrite x-is-top top-in-bigger-segment]
+                        }
+                      @x-is-top-implies |
+                        x = numeral(n) -> member(x, segment(succ(n)))
+                        [by implies_intro given-x-is-top]
+                      @conclusion-in-bigger-segment |
+                        member(x, segment(succ(n)))
+                        [using tautology in-adjoined adjoined-membership in-a-implies x-is-top-implies]
+                    }
+                  @in-adjoined-implies |
+                    member(x, union(a, singleton(numeral(n)))) -> member(x, segment(succ(n)))
+                    [by implies_intro given-in-adjoined]
+                }
+              @conclusion-adjoined-is-subset |
+                subset(union(a, singleton(numeral(n))), segment(succ(n)))
+                [by forall_intro generalize-x]
+            }
+          @subset-implies |
+            subset(a, segment(n)) -> subset(union(a, singleton(numeral(n))), segment(succ(n)))
+            [by implies_intro given-subset]
+        }
+      @discharge-a |
+        forall a: Set; subset(a, segment(n)) -> subset(union(a, singleton(numeral(n))), segment(succ(n)))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Set; subset(a, segment(n)) -> subset(union(a, singleton(numeral(n))), segment(succ(n)))
+    [by forall_intro generalize-n]
+qed
+
+// ∅ is inside every set.
+theorem emptyIsInsideEverything: forall b: Set; forall x: Element; member(x, emptyset) -> member(x, b)
+proof
+  @generalize-b |
+    fix b: Set {
+      @generalize-x |
+        fix x: Element {
+          @given-in-empty |
+            assume member(x, emptyset) {
+              @in-empty |
+                member(x, emptyset)
+                [by hypothesis given-in-empty]
+              @not-in-empty |
+                not member(x, emptyset)
+                [using specialize emptysetMember(x)]
+              @conclusion-anything |
+                member(x, b)
+                [by absurd in-empty not-in-empty]
+            }
+          @in-empty-implies |
+            member(x, emptyset) -> member(x, b)
+            [by implies_intro given-in-empty]
+        }
+      @discharge-x |
+        forall x: Element; member(x, emptyset) -> member(x, b)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall b: Set; forall x: Element; member(x, emptyset) -> member(x, b)
+    [by forall_intro generalize-b]
+qed
+
+// The only subset of the empty segment is ∅.
+theorem onlyEmptyBelowZero: forall a: Set; subset(a, segment(ZERO)) -> a = emptyset
+proof
+  @generalize-a |
+    fix a: Set {
+      @given-subset |
+        assume subset(a, segment(ZERO)) {
+          @is-subset |
+            subset(a, segment(ZERO))
+            [by hypothesis given-subset]
+          @segment-zero-empty |
+            segment(ZERO) = emptyset
+            [by cite segmentZeroIsEmpty]
+          @a-inside-empty |
+            subset(a, emptyset)
+            [by rewrite segment-zero-empty is-subset]
+          @empty-inside-a |
+            forall x: Element; member(x, emptyset) -> member(x, a)
+            [using specialize emptyIsInsideEverything(a)]
+          @conclusion-empty |
+            a = emptyset
+            [using specialize extensionality(a, emptyset) a-inside-empty empty-inside-a]
+        }
+      @subset-implies |
+        subset(a, segment(ZERO)) -> a = emptyset
+        [by implies_intro given-subset]
+    }
+  @conclusion |
+    forall a: Set; subset(a, segment(ZERO)) -> a = emptyset
+    [by forall_intro generalize-a]
+qed
+
+// -- the listing ------------------------------------------------------------------------------
+// w LISTS THE SUBSETS of {0, …, n−1} with m entries: every entry is a subset, the entries are
+// pairwise distinct, and every subset is an entry.
+define listsTheSubsets(w, n, m) = (forall i: Nat; less_than(i, m) -> subset(setAt(w, i), segment(n))) and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> setAt(w, i) = setAt(w, j) -> i = j) and (forall a: Set; subset(a, segment(n)) -> exists i: Nat; less_than(i, m) and setAt(w, i) = a)
+
+// BASE: the one subset of the empty segment, ∅, listed by [∅].
+theorem subsetsOfTheEmptySegmentAreListed: exists w: SetSeq; listsTheSubsets(w, ZERO, succ(ZERO))
+proof
+  @singleton-exists |
+    exists s: SetSeq; setAt(s, ZERO) = emptyset
+    [using specialize setSeqSingleton(emptyset)]
+  @with-singleton-s |
+    unpack s: SetSeq from singleton-exists {
+      @entry-is-empty |
+        setAt(s, ZERO) = emptyset
+        [by hypothesis with-singleton-s]
+      // every entry is a subset: the only index is 0, the only entry ∅.
+      @generalize-i |
+        fix i: Nat {
+          @given-below-one |
+            assume less_than(i, succ(ZERO)) {
+              @below-one |
+                less_than(i, succ(ZERO))
+                [by hypothesis given-below-one]
+              @i-is-zero |
+                i = ZERO
+                [using specialize belowOneIsZero(i) below-one]
+              @empty-is-subset |
+                subset(emptyset, segment(ZERO))
+                [using specialize emptyIsInsideEverything(segment(ZERO))]
+              @entry-at-zero-is-subset |
+                subset(setAt(s, ZERO), segment(ZERO))
+                [by rewrite entry-is-empty empty-is-subset]
+              @conclusion-entry-is-subset |
+                subset(setAt(s, i), segment(ZERO))
+                [by rewrite i-is-zero entry-at-zero-is-subset]
+            }
+          @below-one-implies |
+            less_than(i, succ(ZERO)) -> subset(setAt(s, i), segment(ZERO))
+            [by implies_intro given-below-one]
+        }
+      @entries-are-subsets |
+        forall i: Nat; less_than(i, succ(ZERO)) -> subset(setAt(s, i), segment(ZERO))
+        [by forall_intro generalize-i]
+      // distinct: two indices below 1 are both 0.
+      @generalize-i2 |
+        fix i2: Nat {
+          @generalize-j |
+            fix j: Nat {
+              @given-i2-below-one |
+                assume less_than(i2, succ(ZERO)) {
+                  @given-j-below-one |
+                    assume less_than(j, succ(ZERO)) {
+                      @given-entries-equal |
+                        assume setAt(s, i2) = setAt(s, j) {
+                          @i2-below-one |
+                            less_than(i2, succ(ZERO))
+                            [by hypothesis given-i2-below-one]
+                          @j-below-one |
+                            less_than(j, succ(ZERO))
+                            [by hypothesis given-j-below-one]
+                          @i2-is-zero |
+                            i2 = ZERO
+                            [using specialize belowOneIsZero(i2) i2-below-one]
+                          @j-is-zero |
+                            j = ZERO
+                            [using specialize belowOneIsZero(j) j-below-one]
+                          @zero-is-j |
+                            ZERO = j
+                            [by symmetry j-is-zero]
+                          @conclusion-same-index |
+                            i2 = j
+                            [using chain i2-is-zero zero-is-j]
+                        }
+                      @entries-equal-implies |
+                        setAt(s, i2) = setAt(s, j) -> i2 = j
+                        [by implies_intro given-entries-equal]
+                    }
+                  @j-below-one-implies |
+                    less_than(j, succ(ZERO)) -> setAt(s, i2) = setAt(s, j) -> i2 = j
+                    [by implies_intro given-j-below-one]
+                }
+              @i2-below-one-implies |
+                less_than(i2, succ(ZERO)) -> less_than(j, succ(ZERO)) -> setAt(s, i2) = setAt(s, j) -> i2 = j
+                [by implies_intro given-i2-below-one]
+            }
+          @discharge-j |
+            forall j: Nat; less_than(i2, succ(ZERO)) -> less_than(j, succ(ZERO)) -> setAt(s, i2) = setAt(s, j) -> i2 = j
+            [by forall_intro generalize-j]
+        }
+      @entries-are-distinct |
+        forall i: Nat; forall j: Nat; less_than(i, succ(ZERO)) -> less_than(j, succ(ZERO)) -> setAt(s, i) = setAt(s, j) -> i = j
+        [by forall_intro generalize-i2]
+      // exhaustive: a subset of the empty segment is ∅, the entry at 0.
+      @zero-below-one |
+        less_than(ZERO, succ(ZERO))
+        [using specialize lessThanSelf(ZERO)]
+      @generalize-a |
+        fix a: Set {
+          @given-subset |
+            assume subset(a, segment(ZERO)) {
+              @is-subset |
+                subset(a, segment(ZERO))
+                [by hypothesis given-subset]
+              @a-is-empty |
+                a = emptyset
+                [using specialize onlyEmptyBelowZero(a) is-subset]
+              @empty-is-a |
+                emptyset = a
+                [by symmetry a-is-empty]
+              @entry-is-a |
+                setAt(s, ZERO) = a
+                [using chain entry-is-empty empty-is-a]
+              @zero-witnesses |
+                less_than(ZERO, succ(ZERO)) and setAt(s, ZERO) = a
+                [by and_intro zero-below-one entry-is-a]
+              @conclusion-a-is-listed |
+                exists i: Nat; less_than(i, succ(ZERO)) and setAt(s, i) = a
+                [by exists_intro(ZERO) zero-witnesses]
+            }
+          @subset-implies |
+            subset(a, segment(ZERO)) -> exists i: Nat; less_than(i, succ(ZERO)) and setAt(s, i) = a
+            [by implies_intro given-subset]
+        }
+      @every-subset-is-listed |
+        forall a: Set; subset(a, segment(ZERO)) -> exists i: Nat; less_than(i, succ(ZERO)) and setAt(s, i) = a
+        [by forall_intro generalize-a]
+      @s-lists |
+        listsTheSubsets(s, ZERO, succ(ZERO))
+        [using tautology entries-are-subsets entries-are-distinct every-subset-is-listed]
+      @conclusion-listing-exists |
+        exists w: SetSeq; listsTheSubsets(w, ZERO, succ(ZERO))
+        [by exists_intro(s) s-lists]
+    }
+  @conclusion |
+    exists w: SetSeq; listsTheSubsets(w, ZERO, succ(ZERO))
+    [by exists_elim with-singleton-s]
+qed
+
+// STEP: a listing of the subsets of {0, …, n−1} with p entries doubles to a listing of the
+// subsets of {0, …, n} with p + p entries — the first half copied, the second half each entry
+// with n adjoined. Entries are subsets (a copy grows into the bigger segment; an adjoined entry
+// is a subset by adjoinedIsSubset); distinct (two copies by the given distinctness, two adjoined
+// entries by adjoiningIsInjective since n is outside every copy, a copy and an adjoined entry
+// differ at n); exhaustive (a subset omitting n is a copy, one containing n is its remainder
+// with n adjoined).
+theorem doublingTheListing: forall n: Nat; forall p: Nat; forall w: SetSeq; listsTheSubsets(w, n, p) -> exists u: SetSeq; listsTheSubsets(u, succ(n), add(p, p))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-p |
+        fix p: Nat {
+          @generalize-w |
+            fix w: SetSeq {
+              @given-listing |
+                assume listsTheSubsets(w, n, p) {
+                  @listing |
+                    listsTheSubsets(w, n, p)
+                    [by hypothesis given-listing]
+                  @entries-are-subsets |
+                    forall i: Nat; less_than(i, p) -> subset(setAt(w, i), segment(n))
+                    [using tautology listing]
+                  @entries-are-distinct |
+                    forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> setAt(w, i) = setAt(w, j) -> i = j
+                    [using tautology listing]
+                  @every-subset-is-listed |
+                    forall a: Set; subset(a, segment(n)) -> exists i: Nat; less_than(i, p) and setAt(w, i) = a
+                    [using tautology listing]
+                  @adjoined-exists |
+                    exists v: SetSeq; forall i: Nat; less_than(i, p) -> setAt(v, i) = union(setAt(w, i), singleton(numeral(n)))
+                    [using specialize setSeqAdjoin(w, numeral(n), p)]
+                  @with-adjoined-v |
+                    unpack v: SetSeq from adjoined-exists {
+                      @adjoined-entries |
+                        forall i: Nat; less_than(i, p) -> setAt(v, i) = union(setAt(w, i), singleton(numeral(n)))
+                        [by hypothesis with-adjoined-v]
+                      @concat-exists |
+                        exists u: SetSeq; (forall i: Nat; less_than(i, p) -> setAt(u, i) = setAt(w, i)) and (forall i: Nat; less_than(i, p) -> setAt(u, add(p, i)) = setAt(v, i))
+                        [using specialize setSeqConcat(w, v, p, p)]
+                      @with-doubled-u |
+                        unpack u: SetSeq from concat-exists {
+                          @halves |
+                            (forall i: Nat; less_than(i, p) -> setAt(u, i) = setAt(w, i)) and (forall i: Nat; less_than(i, p) -> setAt(u, add(p, i)) = setAt(v, i))
+                            [by hypothesis with-doubled-u]
+                          @first-half |
+                            forall i: Nat; less_than(i, p) -> setAt(u, i) = setAt(w, i)
+                            [by and_elim_left halves]
+                          @second-half |
+                            forall i: Nat; less_than(i, p) -> setAt(u, add(p, i)) = setAt(v, i)
+                            [by and_elim_right halves]
+
+                          // every entry of the doubled listing is a subset of the bigger segment.
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-below-double |
+                                assume less_than(i, add(p, p)) {
+                                  @below-double |
+                                    less_than(i, add(p, p))
+                                    [by hypothesis given-below-double]
+                                  @first-or-not |
+                                    less_than(i, p) or (not less_than(i, p))
+                                    [using tautology]
+                                  @conclusion-entry-is-subset |
+                                    subset(setAt(u, i), segment(succ(n)))
+                                    case first-or-not {
+                                      @when-first-half |
+                                        assume less_than(i, p) {
+                                          @in-first-half |
+                                            less_than(i, p)
+                                            [by hypothesis when-first-half]
+                                          @entry-copied |
+                                            setAt(u, i) = setAt(w, i)
+                                            [using specialize first-half(i) in-first-half]
+                                          @source-is-subset-first |
+                                            subset(setAt(w, i), segment(n))
+                                            [using specialize entries-are-subsets(i) in-first-half]
+                                          @source-is-subset-of-bigger |
+                                            subset(setAt(w, i), segment(succ(n)))
+                                            [using specialize subsetGrows(n, setAt(w, i)) source-is-subset-first]
+                                          @conclusion-when-first-half |
+                                            subset(setAt(u, i), segment(succ(n)))
+                                            [by rewrite entry-copied source-is-subset-of-bigger]
+                                        }
+                                      @when-second-half |
+                                        assume not less_than(i, p) {
+                                          @not-first-half |
+                                            not less_than(i, p)
+                                            [by hypothesis when-second-half]
+                                          @offset-exists |
+                                            exists d: Nat; less_than(d, p) and i = add(p, d)
+                                            [using specialize secondHalfIndexSplit(p, i) below-double not-first-half]
+                                          @with-offset-d |
+                                            unpack d: Nat from offset-exists {
+                                              @offset-facts |
+                                                less_than(d, p) and i = add(p, d)
+                                                [by hypothesis with-offset-d]
+                                              @offset-below |
+                                                less_than(d, p)
+                                                [by and_elim_left offset-facts]
+                                              @i-is-offset |
+                                                i = add(p, d)
+                                                [by and_elim_right offset-facts]
+                                              @entry-shifted |
+                                                setAt(u, add(p, d)) = setAt(v, d)
+                                                [using specialize second-half(d) offset-below]
+                                              @entry-adjoined |
+                                                setAt(v, d) = union(setAt(w, d), singleton(numeral(n)))
+                                                [using specialize adjoined-entries(d) offset-below]
+                                              @entry-at-offset |
+                                                setAt(u, add(p, d)) = union(setAt(w, d), singleton(numeral(n)))
+                                                [using chain entry-shifted entry-adjoined]
+                                              @entry-at-i |
+                                                setAt(u, i) = union(setAt(w, d), singleton(numeral(n)))
+                                                [by rewrite i-is-offset entry-at-offset]
+                                              @source-is-subset-second |
+                                                subset(setAt(w, d), segment(n))
+                                                [using specialize entries-are-subsets(d) offset-below]
+                                              @adjoined-is-subset |
+                                                subset(union(setAt(w, d), singleton(numeral(n))), segment(succ(n)))
+                                                [using specialize adjoinedIsSubset(n, setAt(w, d)) source-is-subset-second]
+                                              @conclusion-when-second-half-inner |
+                                                subset(setAt(u, i), segment(succ(n)))
+                                                [by rewrite entry-at-i adjoined-is-subset]
+                                            }
+                                          @conclusion-when-second-half |
+                                            subset(setAt(u, i), segment(succ(n)))
+                                            [by exists_elim with-offset-d]
+                                        }
+                                    }
+                                }
+                              @below-double-implies |
+                                less_than(i, add(p, p)) -> subset(setAt(u, i), segment(succ(n)))
+                                [by implies_intro given-below-double]
+                            }
+                          @doubled-entries-are-subsets |
+                            forall i: Nat; less_than(i, add(p, p)) -> subset(setAt(u, i), segment(succ(n)))
+                            [by forall_intro generalize-i]
+
+                          // the entries of the doubled listing are pairwise distinct.
+                          @generalize-i2 |
+                            fix i2: Nat {
+                              @generalize-j |
+                                fix j: Nat {
+                                  @given-i2-below-double |
+                                    assume less_than(i2, add(p, p)) {
+                                      @given-j-below-double |
+                                        assume less_than(j, add(p, p)) {
+                                          @given-entries-equal |
+                                            assume setAt(u, i2) = setAt(u, j) {
+                                              @i2-below-double |
+                                                less_than(i2, add(p, p))
+                                                [by hypothesis given-i2-below-double]
+                                              @j-below-double |
+                                                less_than(j, add(p, p))
+                                                [by hypothesis given-j-below-double]
+                                              @entries-equal |
+                                                setAt(u, i2) = setAt(u, j)
+                                                [by hypothesis given-entries-equal]
+                                              @i2-first-or-not |
+                                                less_than(i2, p) or (not less_than(i2, p))
+                                                [using tautology]
+                                              @j-first-or-not |
+                                                less_than(j, p) or (not less_than(j, p))
+                                                [using tautology]
+                                              @conclusion-same-index |
+                                                i2 = j
+                                                case i2-first-or-not {
+                                                  @when-i2-first |
+                                                    assume less_than(i2, p) {
+                                                      @i2-first |
+                                                        less_than(i2, p)
+                                                        [by hypothesis when-i2-first]
+                                                      @i2-entry-copied |
+                                                        setAt(u, i2) = setAt(w, i2)
+                                                        [using specialize first-half(i2) i2-first]
+                                                      @i2-source-is-subset |
+                                                        subset(setAt(w, i2), segment(n))
+                                                        [using specialize entries-are-subsets(i2) i2-first]
+                                                      @top-outside-i2-source |
+                                                        not member(numeral(n), setAt(w, i2))
+                                                        [using specialize subsetOfSegmentOmitsTop(n, setAt(w, i2)) i2-source-is-subset]
+                                                      @left-copied |
+                                                        setAt(w, i2) = setAt(u, j)
+                                                        [by rewrite i2-entry-copied entries-equal]
+                                                      @conclusion-when-i2-first |
+                                                        i2 = j
+                                                        case j-first-or-not {
+                                                          @when-both-first |
+                                                            assume less_than(j, p) {
+                                                              @j-first |
+                                                                less_than(j, p)
+                                                                [by hypothesis when-both-first]
+                                                              @j-entry-copied |
+                                                                setAt(u, j) = setAt(w, j)
+                                                                [using specialize first-half(j) j-first]
+                                                              @source-entries-equal |
+                                                                setAt(w, i2) = setAt(w, j)
+                                                                [by rewrite j-entry-copied left-copied]
+                                                              @conclusion-when-both-first |
+                                                                i2 = j
+                                                                [using specialize entries-are-distinct(i2, j) i2-first j-first source-entries-equal]
+                                                            }
+                                                          @when-j-second |
+                                                            assume not less_than(j, p) {
+                                                              @j-not-first |
+                                                                not less_than(j, p)
+                                                                [by hypothesis when-j-second]
+                                                              @j-offset-exists |
+                                                                exists e: Nat; less_than(e, p) and j = add(p, e)
+                                                                [using specialize secondHalfIndexSplit(p, j) j-below-double j-not-first]
+                                                              @with-j-offset-e |
+                                                                unpack e: Nat from j-offset-exists {
+                                                                  @e-facts |
+                                                                    less_than(e, p) and j = add(p, e)
+                                                                    [by hypothesis with-j-offset-e]
+                                                                  @e-below |
+                                                                    less_than(e, p)
+                                                                    [by and_elim_left e-facts]
+                                                                  @j-is-offset |
+                                                                    j = add(p, e)
+                                                                    [by and_elim_right e-facts]
+                                                                  @j-entry-shifted |
+                                                                    setAt(u, add(p, e)) = setAt(v, e)
+                                                                    [using specialize second-half(e) e-below]
+                                                                  @j-entry-adjoined |
+                                                                    setAt(v, e) = union(setAt(w, e), singleton(numeral(n)))
+                                                                    [using specialize adjoined-entries(e) e-below]
+                                                                  @j-entry-at-offset |
+                                                                    setAt(u, add(p, e)) = union(setAt(w, e), singleton(numeral(n)))
+                                                                    [using chain j-entry-shifted j-entry-adjoined]
+                                                                  @j-entry |
+                                                                    setAt(u, j) = union(setAt(w, e), singleton(numeral(n)))
+                                                                    [by rewrite j-is-offset j-entry-at-offset]
+                                                                  @copied-equals-adjoined |
+                                                                    setAt(w, i2) = union(setAt(w, e), singleton(numeral(n)))
+                                                                    [by rewrite j-entry left-copied]
+                                                                  @top-in-adjoined-e |
+                                                                    member(numeral(n), union(setAt(w, e), singleton(numeral(n))))
+                                                                    [using specialize adjoinedIsMember(setAt(w, e), numeral(n))]
+                                                                  @top-in-i2-source |
+                                                                    member(numeral(n), setAt(w, i2))
+                                                                    [by rewrite copied-equals-adjoined top-in-adjoined-e]
+                                                                  @conclusion-when-j-second-inner |
+                                                                    i2 = j
+                                                                    [by absurd top-in-i2-source top-outside-i2-source]
+                                                                }
+                                                              @conclusion-when-j-second |
+                                                                i2 = j
+                                                                [by exists_elim with-j-offset-e]
+                                                            }
+                                                        }
+                                                    }
+                                                  @when-i2-second |
+                                                    assume not less_than(i2, p) {
+                                                      @i2-not-first |
+                                                        not less_than(i2, p)
+                                                        [by hypothesis when-i2-second]
+                                                      @i2-offset-exists |
+                                                        exists d: Nat; less_than(d, p) and i2 = add(p, d)
+                                                        [using specialize secondHalfIndexSplit(p, i2) i2-below-double i2-not-first]
+                                                      @with-i2-offset-d |
+                                                        unpack d: Nat from i2-offset-exists {
+                                                          @d-facts |
+                                                            less_than(d, p) and i2 = add(p, d)
+                                                            [by hypothesis with-i2-offset-d]
+                                                          @d-below |
+                                                            less_than(d, p)
+                                                            [by and_elim_left d-facts]
+                                                          @i2-is-offset |
+                                                            i2 = add(p, d)
+                                                            [by and_elim_right d-facts]
+                                                          @i2-entry-shifted |
+                                                            setAt(u, add(p, d)) = setAt(v, d)
+                                                            [using specialize second-half(d) d-below]
+                                                          @i2-entry-adjoined |
+                                                            setAt(v, d) = union(setAt(w, d), singleton(numeral(n)))
+                                                            [using specialize adjoined-entries(d) d-below]
+                                                          @i2-entry-at-offset |
+                                                            setAt(u, add(p, d)) = union(setAt(w, d), singleton(numeral(n)))
+                                                            [using chain i2-entry-shifted i2-entry-adjoined]
+                                                          @i2-entry |
+                                                            setAt(u, i2) = union(setAt(w, d), singleton(numeral(n)))
+                                                            [by rewrite i2-is-offset i2-entry-at-offset]
+                                                          @d-source-is-subset |
+                                                            subset(setAt(w, d), segment(n))
+                                                            [using specialize entries-are-subsets(d) d-below]
+                                                          @top-outside-d-source |
+                                                            not member(numeral(n), setAt(w, d))
+                                                            [using specialize subsetOfSegmentOmitsTop(n, setAt(w, d)) d-source-is-subset]
+                                                          @left-adjoined |
+                                                            union(setAt(w, d), singleton(numeral(n))) = setAt(u, j)
+                                                            [by rewrite i2-entry entries-equal]
+                                                          @top-in-adjoined-d |
+                                                            member(numeral(n), union(setAt(w, d), singleton(numeral(n))))
+                                                            [using specialize adjoinedIsMember(setAt(w, d), numeral(n))]
+                                                          @conclusion-when-i2-second-inner |
+                                                            i2 = j
+                                                            case j-first-or-not {
+                                                              @when-j-first-i2-second |
+                                                                assume less_than(j, p) {
+                                                                  @j-first2 |
+                                                                    less_than(j, p)
+                                                                    [by hypothesis when-j-first-i2-second]
+                                                                  @j-entry-copied2 |
+                                                                    setAt(u, j) = setAt(w, j)
+                                                                    [using specialize first-half(j) j-first2]
+                                                                  @j-source-is-subset |
+                                                                    subset(setAt(w, j), segment(n))
+                                                                    [using specialize entries-are-subsets(j) j-first2]
+                                                                  @top-outside-j-source |
+                                                                    not member(numeral(n), setAt(w, j))
+                                                                    [using specialize subsetOfSegmentOmitsTop(n, setAt(w, j)) j-source-is-subset]
+                                                                  @adjoined-equals-copied |
+                                                                    union(setAt(w, d), singleton(numeral(n))) = setAt(w, j)
+                                                                    [by rewrite j-entry-copied2 left-adjoined]
+                                                                  @top-in-j-source |
+                                                                    member(numeral(n), setAt(w, j))
+                                                                    [by rewrite adjoined-equals-copied top-in-adjoined-d]
+                                                                  @conclusion-when-j-first-i2-second |
+                                                                    i2 = j
+                                                                    [by absurd top-in-j-source top-outside-j-source]
+                                                                }
+                                                              @when-both-second |
+                                                                assume not less_than(j, p) {
+                                                                  @j-not-first2 |
+                                                                    not less_than(j, p)
+                                                                    [by hypothesis when-both-second]
+                                                                  @j-offset-exists2 |
+                                                                    exists e: Nat; less_than(e, p) and j = add(p, e)
+                                                                    [using specialize secondHalfIndexSplit(p, j) j-below-double j-not-first2]
+                                                                  @with-j-offset-e2 |
+                                                                    unpack e: Nat from j-offset-exists2 {
+                                                                      @e-facts2 |
+                                                                        less_than(e, p) and j = add(p, e)
+                                                                        [by hypothesis with-j-offset-e2]
+                                                                      @e-below2 |
+                                                                        less_than(e, p)
+                                                                        [by and_elim_left e-facts2]
+                                                                      @j-is-offset2 |
+                                                                        j = add(p, e)
+                                                                        [by and_elim_right e-facts2]
+                                                                      @j-entry-shifted2 |
+                                                                        setAt(u, add(p, e)) = setAt(v, e)
+                                                                        [using specialize second-half(e) e-below2]
+                                                                      @j-entry-adjoined2 |
+                                                                        setAt(v, e) = union(setAt(w, e), singleton(numeral(n)))
+                                                                        [using specialize adjoined-entries(e) e-below2]
+                                                                      @j-entry-at-offset2 |
+                                                                        setAt(u, add(p, e)) = union(setAt(w, e), singleton(numeral(n)))
+                                                                        [using chain j-entry-shifted2 j-entry-adjoined2]
+                                                                      @j-entry2 |
+                                                                        setAt(u, j) = union(setAt(w, e), singleton(numeral(n)))
+                                                                        [by rewrite j-is-offset2 j-entry-at-offset2]
+                                                                      @e-source-is-subset |
+                                                                        subset(setAt(w, e), segment(n))
+                                                                        [using specialize entries-are-subsets(e) e-below2]
+                                                                      @top-outside-e-source |
+                                                                        not member(numeral(n), setAt(w, e))
+                                                                        [using specialize subsetOfSegmentOmitsTop(n, setAt(w, e)) e-source-is-subset]
+                                                                      @adjoined-entries-equal |
+                                                                        union(setAt(w, d), singleton(numeral(n))) = union(setAt(w, e), singleton(numeral(n)))
+                                                                        [by rewrite j-entry2 left-adjoined]
+                                                                      @sources-equal |
+                                                                        setAt(w, d) = setAt(w, e)
+                                                                        [using specialize adjoiningIsInjective(setAt(w, d), setAt(w, e), numeral(n)) top-outside-d-source top-outside-e-source adjoined-entries-equal]
+                                                                      @offsets-equal |
+                                                                        d = e
+                                                                        [using specialize entries-are-distinct(d, e) d-below e-below2 sources-equal]
+                                                                      @i2-is-shifted-e |
+                                                                        i2 = add(p, e)
+                                                                        [by rewrite offsets-equal i2-is-offset]
+                                                                      @offset-e-is-j |
+                                                                        add(p, e) = j
+                                                                        [by symmetry j-is-offset2]
+                                                                      @conclusion-when-both-second-inner |
+                                                                        i2 = j
+                                                                        [using chain i2-is-shifted-e offset-e-is-j]
+                                                                    }
+                                                                  @conclusion-when-both-second |
+                                                                    i2 = j
+                                                                    [by exists_elim with-j-offset-e2]
+                                                                }
+                                                            }
+                                                        }
+                                                      @conclusion-when-i2-second |
+                                                        i2 = j
+                                                        [by exists_elim with-i2-offset-d]
+                                                    }
+                                                }
+                                            }
+                                          @entries-equal-implies |
+                                            setAt(u, i2) = setAt(u, j) -> i2 = j
+                                            [by implies_intro given-entries-equal]
+                                        }
+                                      @j-below-double-implies |
+                                        less_than(j, add(p, p)) -> setAt(u, i2) = setAt(u, j) -> i2 = j
+                                        [by implies_intro given-j-below-double]
+                                    }
+                                  @i2-below-double-implies |
+                                    less_than(i2, add(p, p)) -> less_than(j, add(p, p)) -> setAt(u, i2) = setAt(u, j) -> i2 = j
+                                    [by implies_intro given-i2-below-double]
+                                }
+                              @discharge-j |
+                                forall j: Nat; less_than(i2, add(p, p)) -> less_than(j, add(p, p)) -> setAt(u, i2) = setAt(u, j) -> i2 = j
+                                [by forall_intro generalize-j]
+                            }
+                          @doubled-entries-are-distinct |
+                            forall i: Nat; forall j: Nat; less_than(i, add(p, p)) -> less_than(j, add(p, p)) -> setAt(u, i) = setAt(u, j) -> i = j
+                            [by forall_intro generalize-i2]
+
+                          // every subset of the bigger segment is an entry of the doubled listing.
+                          @generalize-a |
+                            fix a: Set {
+                              @given-subset |
+                                assume subset(a, segment(succ(n))) {
+                                  @is-subset |
+                                    subset(a, segment(succ(n)))
+                                    [by hypothesis given-subset]
+                                  @top-in-or-out |
+                                    (not member(numeral(n), a)) or member(numeral(n), a)
+                                    [using tautology]
+                                  @conclusion-a-is-listed |
+                                    exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                    case top-in-or-out {
+                                      @when-top-outside |
+                                        assume not member(numeral(n), a) {
+                                          @top-outside |
+                                            not member(numeral(n), a)
+                                            [by hypothesis when-top-outside]
+                                          @a-is-smaller-subset |
+                                            subset(a, segment(n))
+                                            [using specialize subsetWithoutTop(n, a) is-subset top-outside]
+                                          @a-listed-in-w |
+                                            exists i: Nat; less_than(i, p) and setAt(w, i) = a
+                                            [using specialize every-subset-is-listed(a) a-is-smaller-subset]
+                                          @with-index-k |
+                                            unpack k: Nat from a-listed-in-w {
+                                              @k-facts |
+                                                less_than(k, p) and setAt(w, k) = a
+                                                [by hypothesis with-index-k]
+                                              @k-below |
+                                                less_than(k, p)
+                                                [by and_elim_left k-facts]
+                                              @w-entry-is-a |
+                                                setAt(w, k) = a
+                                                [by and_elim_right k-facts]
+                                              @k-below-double |
+                                                less_than(k, add(p, p))
+                                                [using specialize firstHalfIndex(p, k) k-below]
+                                              @u-entry-copied |
+                                                setAt(u, k) = setAt(w, k)
+                                                [using specialize first-half(k) k-below]
+                                              @u-entry-is-a |
+                                                setAt(u, k) = a
+                                                [using chain u-entry-copied w-entry-is-a]
+                                              @k-witnesses |
+                                                less_than(k, add(p, p)) and setAt(u, k) = a
+                                                [by and_intro k-below-double u-entry-is-a]
+                                              @conclusion-when-top-outside-inner |
+                                                exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                                [by exists_intro(k) k-witnesses]
+                                            }
+                                          @conclusion-when-top-outside |
+                                            exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                            [by exists_elim with-index-k]
+                                        }
+                                      @when-top-inside |
+                                        assume member(numeral(n), a) {
+                                          @top-inside |
+                                            member(numeral(n), a)
+                                            [by hypothesis when-top-inside]
+                                          @remainder-is-subset |
+                                            subset(difference(a, singleton(numeral(n))), segment(n))
+                                            [using specialize removingTopGivesSubset(n, a) is-subset]
+                                          @remainder-listed-in-w |
+                                            exists i: Nat; less_than(i, p) and setAt(w, i) = difference(a, singleton(numeral(n)))
+                                            [using specialize every-subset-is-listed(difference(a, singleton(numeral(n)))) remainder-is-subset]
+                                          @with-index-k2 |
+                                            unpack k2: Nat from remainder-listed-in-w {
+                                              @k2-facts |
+                                                less_than(k2, p) and setAt(w, k2) = difference(a, singleton(numeral(n)))
+                                                [by hypothesis with-index-k2]
+                                              @k2-below |
+                                                less_than(k2, p)
+                                                [by and_elim_left k2-facts]
+                                              @w-entry-is-remainder |
+                                                setAt(w, k2) = difference(a, singleton(numeral(n)))
+                                                [by and_elim_right k2-facts]
+                                              @shifted-below-double |
+                                                less_than(add(p, k2), add(p, p))
+                                                [using specialize secondHalfIndex(p, k2) k2-below]
+                                              @u-entry-shifted |
+                                                setAt(u, add(p, k2)) = setAt(v, k2)
+                                                [using specialize second-half(k2) k2-below]
+                                              @v-entry-adjoined |
+                                                setAt(v, k2) = union(setAt(w, k2), singleton(numeral(n)))
+                                                [using specialize adjoined-entries(k2) k2-below]
+                                              @adjoined-remainder-reflexive |
+                                                union(difference(a, singleton(numeral(n))), singleton(numeral(n))) = union(difference(a, singleton(numeral(n))), singleton(numeral(n)))
+                                                [by reflexivity]
+                                              @adjoined-remainder |
+                                                union(setAt(w, k2), singleton(numeral(n))) = union(difference(a, singleton(numeral(n))), singleton(numeral(n)))
+                                                [by rewrite w-entry-is-remainder adjoined-remainder-reflexive]
+                                              @restored |
+                                                union(difference(a, singleton(numeral(n))), singleton(numeral(n))) = a
+                                                [using specialize restoringAnElement(a, numeral(n)) top-inside]
+                                              @u-entry-is-a-shifted |
+                                                setAt(u, add(p, k2)) = a
+                                                [using chain u-entry-shifted v-entry-adjoined adjoined-remainder restored]
+                                              @shifted-witnesses |
+                                                less_than(add(p, k2), add(p, p)) and setAt(u, add(p, k2)) = a
+                                                [by and_intro shifted-below-double u-entry-is-a-shifted]
+                                              @conclusion-when-top-inside-inner |
+                                                exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                                [by exists_intro(add(p, k2)) shifted-witnesses]
+                                            }
+                                          @conclusion-when-top-inside |
+                                            exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                            [by exists_elim with-index-k2]
+                                        }
+                                    }
+                                }
+                              @subset-implies |
+                                subset(a, segment(succ(n))) -> exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                                [by implies_intro given-subset]
+                            }
+                          @every-subset-of-bigger-is-listed |
+                            forall a: Set; subset(a, segment(succ(n))) -> exists i: Nat; less_than(i, add(p, p)) and setAt(u, i) = a
+                            [by forall_intro generalize-a]
+
+                          @u-lists |
+                            listsTheSubsets(u, succ(n), add(p, p))
+                            [using tautology doubled-entries-are-subsets doubled-entries-are-distinct every-subset-of-bigger-is-listed]
+                          @conclusion-doubled-listing-exists |
+                            exists u2: SetSeq; listsTheSubsets(u2, succ(n), add(p, p))
+                            [by exists_intro(u) u-lists]
+                        }
+                      @conclusion-from-concat |
+                        exists u2: SetSeq; listsTheSubsets(u2, succ(n), add(p, p))
+                        [by exists_elim with-doubled-u]
+                    }
+                  @conclusion-from-adjoined |
+                    exists u2: SetSeq; listsTheSubsets(u2, succ(n), add(p, p))
+                    [by exists_elim with-adjoined-v]
+                }
+              @listing-implies |
+                listsTheSubsets(w, n, p) -> exists u: SetSeq; listsTheSubsets(u, succ(n), add(p, p))
+                [by implies_intro given-listing]
+            }
+          @discharge-w |
+            forall w: SetSeq; listsTheSubsets(w, n, p) -> exists u: SetSeq; listsTheSubsets(u, succ(n), add(p, p))
+            [by forall_intro generalize-w]
+        }
+      @discharge-p |
+        forall p: Nat; forall w: SetSeq; listsTheSubsets(w, n, p) -> exists u: SetSeq; listsTheSubsets(u, succ(n), add(p, p))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall n: Nat; forall p: Nat; forall w: SetSeq; listsTheSubsets(w, n, p) -> exists u: SetSeq; listsTheSubsets(u, succ(n), add(p, p))
+    [by forall_intro generalize-n]
+qed
+
+// PAYOFF (Judson §2.1 Exercise 12): the subsets of an n-element set, LISTED, with 2^n
+// entries. Induction on n: the empty segment has the one subset ∅ (2^0 = 1), and each step
+// doubles both the listing (`doublingTheListing`) and the count (`twoPowSucc`).
+theorem subsetsOfASegmentAreListedByTwoToTheN: forall n: Nat; exists w: SetSeq; listsTheSubsets(w, n, pow(TWO, n))
+proof
+  @two-to-the-zero |
+    pow(TWO, ZERO) = ONE
+    [using specialize powZero(TWO)]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @two-to-the-zero-is-one |
+    pow(TWO, ZERO) = succ(ZERO)
+    [using chain two-to-the-zero one-is-succ-zero]
+  @empty-segment-listed |
+    exists w: SetSeq; listsTheSubsets(w, ZERO, succ(ZERO))
+    [by cite subsetsOfTheEmptySegmentAreListed]
+  @base-case |
+    exists w: SetSeq; listsTheSubsets(w, ZERO, pow(TWO, ZERO))
+    [by rewrite two-to-the-zero-is-one empty-segment-listed]
+
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume exists w: SetSeq; listsTheSubsets(w, k, pow(TWO, k)) {
+          @inductive-hypothesis |
+            exists w: SetSeq; listsTheSubsets(w, k, pow(TWO, k))
+            [by hypothesis given-inductive-hypothesis]
+          @count-doubles |
+            pow(TWO, succ(k)) = add(pow(TWO, k), pow(TWO, k))
+            [using specialize twoPowSucc(k)]
+          @with-listing-w |
+            unpack w: SetSeq from inductive-hypothesis {
+              @w-lists-the-subsets |
+                listsTheSubsets(w, k, pow(TWO, k))
+                [by hypothesis with-listing-w]
+              @doubled-listing-exists |
+                exists u: SetSeq; listsTheSubsets(u, succ(k), add(pow(TWO, k), pow(TWO, k)))
+                [using specialize doublingTheListing(k, pow(TWO, k), w) w-lists-the-subsets]
+              @conclusion-doubled-at-the-power |
+                exists u: SetSeq; listsTheSubsets(u, succ(k), pow(TWO, succ(k)))
+                [by rewrite count-doubles doubled-listing-exists]
+            }
+          @conclusion-next-listing |
+            exists w: SetSeq; listsTheSubsets(w, succ(k), pow(TWO, succ(k)))
+            [by exists_elim with-listing-w]
+        }
+      @induction-step-at-k |
+        (exists w: SetSeq; listsTheSubsets(w, k, pow(TWO, k))) -> (exists w: SetSeq; listsTheSubsets(w, succ(k), pow(TWO, succ(k))))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (exists w: SetSeq; listsTheSubsets(w, k, pow(TWO, k))) -> (exists w: SetSeq; listsTheSubsets(w, succ(k), pow(TWO, succ(k))))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; exists w: SetSeq; listsTheSubsets(w, n, pow(TWO, n))
+    [using instantiation induction((fun n: Nat => exists w: SetSeq; listsTheSubsets(w, n, pow(TWO, n)))) base-case induction-step-for-all-k]
+qed

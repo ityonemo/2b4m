@@ -1,0 +1,157 @@
+// std/group/product.b4m — the DIRECT PRODUCT G × H of two groups (AATA §3.2, Example 3.14).
+//
+// Pairs (g, h) multiply componentwise: (g, h)(g', h') = (gg', hh'); the identity is (e, e) and
+// the inverse is (g⁻¹, h⁻¹). The two factors are declared HERE, abstractly: namespaces are
+// identity-by-origin, so importing std/group.b4m twice names ONE theory, not two — a product
+// needs its own pair of factor theories, each with the three group axioms. A pair is
+// characterized by its projections (fstPair, sndPair) and extensionality (a pair is the pair of
+// its projections). The product laws are proved, and `model ProductGroup` makes G × H a group
+// so the whole corpus transfers. A CONCRETE product (ℤ_n × ℤ_n, ℝ* × ℤ) models THIS theory —
+// its factors' laws discharge the factor axioms, a concrete pair sort discharges the three
+// pair axioms — and inherits everything below.
+
+import group <<< "std/group.b4m"
+
+// -- the first factor G ---------------------------------------------------------------------
+sort G
+const EG: G
+func opG(a: G, b: G) => G
+func invG(a: G) => G
+axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
+axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
+
+// -- the second factor H --------------------------------------------------------------------
+sort H
+const EH: H
+func opH(a: H, b: H) => H
+func invH(a: H) => H
+axiom opHAssoc: forall a, b, c: H; opH(opH(a, b), c) = opH(a, opH(b, c))
+axiom opHIdentityLeft: forall a: H; opH(EH, a) = a
+axiom opHInverseLeft: forall a: H; opH(invH(a), a) = EH
+
+// -- pairs -----------------------------------------------------------------------------------
+sort Pair
+func pair(g: G, h: H) => Pair
+func fst(p: Pair) => G
+func snd(p: Pair) => H
+axiom fstPair: forall g: G; forall h: H; fst(pair(g, h)) = g
+axiom sndPair: forall g: G; forall h: H; snd(pair(g, h)) = h
+axiom pairExtensionality: forall p: Pair; pair(fst(p), snd(p)) = p
+
+// -- the componentwise structure -------------------------------------------------------------
+// REAL symbols with NAMED defining axioms, not defines or definition blocks: a concrete product
+// models this theory, and a model block discharges axioms BY NAME (`product.prodOpDef <- …`) —
+// a define has no name to discharge and a definition clause's is mangled. (Mapping a source
+// symbol onto a define also trips the accelerant steps of the transferred group proofs.)
+func prodOp(p: Pair, q: Pair) => Pair
+func prodInv(p: Pair) => Pair
+const prodE: Pair
+axiom prodOpDef: forall p, q: Pair; prodOp(p, q) = pair(opG(fst(p), fst(q)), opH(snd(p), snd(q)))
+axiom prodInvDef: forall p: Pair; prodInv(p) = pair(invG(fst(p)), invH(snd(p)))
+axiom prodEDef: prodE = pair(EG, EH)
+
+// The projections of a product are the products of the projections.
+theorem fstOfProduct: forall p, q: Pair; fst(prodOp(p, q)) = opG(fst(p), fst(q))
+proof
+  @conclusion |
+    forall p, q: Pair; fst(prodOp(p, q)) = opG(fst(p), fst(q))
+    [using simplify_quantified prodOpDef fstPair]
+qed
+
+theorem sndOfProduct: forall p, q: Pair; snd(prodOp(p, q)) = opH(snd(p), snd(q))
+proof
+  @conclusion |
+    forall p, q: Pair; snd(prodOp(p, q)) = opH(snd(p), snd(q))
+    [using simplify_quantified prodOpDef sndPair]
+qed
+
+// -- the group laws, componentwise -----------------------------------------------------------
+// Each is: project (fstPair/sndPair), apply the factor's law in each component, repack.
+theorem prodAssoc: forall p, q, r: Pair; prodOp(prodOp(p, q), r) = prodOp(p, prodOp(q, r))
+proof
+  @conclusion |
+    forall p, q, r: Pair; prodOp(prodOp(p, q), r) = prodOp(p, prodOp(q, r))
+    [using simplify_quantified prodOpDef fstPair sndPair opGAssoc opHAssoc]
+qed
+
+theorem prodIdentityLeft: forall p: Pair; prodOp(prodE, p) = p
+proof
+  @conclusion |
+    forall p: Pair; prodOp(prodE, p) = p
+    [using simplify_quantified prodOpDef prodEDef fstPair sndPair opGIdentityLeft opHIdentityLeft pairExtensionality]
+qed
+
+theorem prodInverseLeft: forall p: Pair; prodOp(prodInv(p), p) = prodE
+proof
+  @conclusion |
+    forall p: Pair; prodOp(prodInv(p), p) = prodE
+    [using simplify_quantified prodOpDef prodInvDef prodEDef fstPair sndPair opGInverseLeft opHInverseLeft]
+qed
+
+// G × H is a GROUP.
+model ProductGroup {
+  group.Grp: Pair
+  group.E: prodE
+  group.op: prodOp
+  group.inverse: prodInv
+  group.opAssoc <- prodAssoc
+  group.opIdentityLeft <- prodIdentityLeft
+  group.opInverseLeft <- prodInverseLeft
+}
+
+// PAYOFF: the group corpus on the product.
+theorem prodIdentityRight: forall p: Pair; prodOp(p, prodE) = p
+proof
+  @conclusion |
+    forall p: Pair; prodOp(p, prodE) = p
+    [using model(ProductGroup) group.opIdentityRight]
+qed
+
+theorem prodInverseRight: forall p: Pair; prodOp(p, prodInv(p)) = prodE
+proof
+  @conclusion |
+    forall p: Pair; prodOp(p, prodInv(p)) = prodE
+    [using model(ProductGroup) group.opInverseRight]
+qed
+
+theorem prodCancelLeft: forall a, b, c: Pair; prodOp(a, b) = prodOp(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: Pair; prodOp(a, b) = prodOp(a, c) -> b = c
+    [using model(ProductGroup) group.cancelLeft]
+qed
+
+// -- an exponent law that sees the components ------------------------------------------------
+// A pair whose components are each killed by cubing is killed by cubing: (p·p)·p = (e, e).
+// (For ℤ₃ × ℤ₃ this is the fact that separates it from ℤ₉ — AATA §3.2 Ex 34.)
+theorem cubeIsIdentityComponentwise: forall p: Pair; opG(opG(fst(p), fst(p)), fst(p)) = EG -> opH(opH(snd(p), snd(p)), snd(p)) = EH -> prodOp(prodOp(p, p), p) = prodE
+proof
+  @generalize-p |
+    fix p: Pair {
+      @given-first-cubes-to-identity |
+        assume opG(opG(fst(p), fst(p)), fst(p)) = EG {
+          @given-second-cubes-to-identity |
+            assume opH(opH(snd(p), snd(p)), snd(p)) = EH {
+              @first-cubes-to-identity |
+                opG(opG(fst(p), fst(p)), fst(p)) = EG
+                [by hypothesis given-first-cubes-to-identity]
+              @second-cubes-to-identity |
+                opH(opH(snd(p), snd(p)), snd(p)) = EH
+                [by hypothesis given-second-cubes-to-identity]
+              @conclusion-cube-is-identity |
+                prodOp(prodOp(p, p), p) = prodE
+                [using simplify prodOpDef prodEDef fstPair sndPair first-cubes-to-identity second-cubes-to-identity]
+            }
+          @second-implies |
+            opH(opH(snd(p), snd(p)), snd(p)) = EH -> prodOp(prodOp(p, p), p) = prodE
+            [by implies_intro given-second-cubes-to-identity]
+        }
+      @first-implies |
+        opG(opG(fst(p), fst(p)), fst(p)) = EG -> opH(opH(snd(p), snd(p)), snd(p)) = EH -> prodOp(prodOp(p, p), p) = prodE
+        [by implies_intro given-first-cubes-to-identity]
+    }
+  @conclusion |
+    forall p: Pair; opG(opG(fst(p), fst(p)), fst(p)) = EG -> opH(opH(snd(p), snd(p)), snd(p)) = EH -> prodOp(prodOp(p, p), p) = prodE
+    [by forall_intro generalize-p]
+qed

@@ -1,0 +1,1010 @@
+// std/primes/classes.b4m — PRIMES IN A RESIDUE CLASS: infinitely many primes of the form
+// 6n + 5 and of the form 4n + 3 (AATA §2.3 Exercises 29, 30). Euclid's argument for the
+// class −1: for any finite list of primes, N = m·(their product) − 1 is ≡ −1 (mod m); a
+// number ≡ −1 cannot have every prime factor ≡ 1 (a product of numbers ≡ 1 is ≡ 1), so it
+// has a prime factor q ≢ 1 — which, for m = 6 and m = 4, forces q ≡ −1 (the other residues
+// make q divisible by 2 or 3, i.e. q = 2 or q = 3, and neither divides N); and q is not
+// listed, since it would then divide 1. The "some prime factor ≢ 1" step is strong induction
+// on N (`minusOneClassHasPrimeFactorOutsideOneClass`, for every modulus m > 2).
+//
+// Numerals are spelled ADDITIVELY (TWO = ONE + ONE, …) so `polynomial(integer)` can fold
+// them; the one place a successor form is needed (splitting a remainder r < 6 into cases)
+// bridges with `simplify`.
+
+import integer <<< "std/integer.b4m"
+import order <<< "std/integer/order.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import sequence <<< "std/integer/product.b4m"
+import wellordering <<< "std/integer/wellordering.b4m"
+import primes <<< "std/primes.b4m"
+
+sort Int = integer.Int
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func succ = integer.succ
+func add = integer.add
+func mul = integer.mul
+func sub = integer.sub
+func neg = integer.neg
+define TWO = add(ONE, ONE)
+define THREE = add(TWO, ONE)
+define FOUR = add(THREE, ONE)
+define FIVE = add(FOUR, ONE)
+define SIX = add(FIVE, ONE)
+
+pred is_nonneg = order.nonneg
+sort NonNegZ = integer.NonNeg
+pred less_than = order.less_than
+define at_most(a, b) = order.less_or_equal(a, b)
+define does_divide(d, n) = int_divides.divides(d, n)
+define is_prime(p) = primes.is_prime(p)
+
+sort Seq = sequence.Seq
+func productUpTo = sequence.productUpTo
+pred inSeqBefore = sequence.inSeqBefore
+theorem memberDividesProduct = sequence.memberDividesProduct
+
+axiom oneIsSuccZero = integer.oneIsSuccZero
+axiom addSuccRight = integer.addSuccRight
+theorem addZeroRight = integer.addZeroRight
+axiom nonnegZero = order.nonnegZero
+axiom nonnegSucc = order.nonnegSucc
+theorem nonnegAdd = order.nonnegAdd
+theorem nonnegMul = order.nonnegMul
+axiom lessThanIntro = order.lessThanIntro
+axiom lessThanElim = order.lessThanElim
+theorem lessThanIrreflexive = order.lessThanIrreflexive
+theorem lessThanTransitive = order.lessThanTransitive
+theorem lessThanSelf = wellordering.lessThanSelf
+theorem lessThanSuccSplit = wellordering.lessThanSuccSplit
+theorem nonnegNotLessThanZero = wellordering.nonnegNotLessThanZero
+theorem lessOrEqualSplit = order.lessOrEqualSplit
+theorem lessOrEqualIsGapExistential = order.lessOrEqualIsGapExistential
+theorem signTrichotomy = order.signTrichotomy
+theorem positiveIsNonneg = order.positiveIsNonneg
+theorem negativeNegIsPositive = order.negativeNegIsPositive
+theorem additionPreservesOrder = order.additionPreservesOrder
+theorem zeroLessThanOne = order.zeroLessThanOne
+theorem negOneLessThanZero = order.negOneLessThanZero
+theorem mulNegRight = order.mulNegRight
+theorem mulIsCommutative = integer.mulIsCommutative
+theorem nonnegStrongInduction = wellordering.nonnegStrongInduction
+
+theorem dividesMul = int_divides.dividesMul
+theorem dividesSubtracts = int_divides.dividesSubtracts
+theorem dividesTransitive = int_divides.dividesTransitive
+theorem dividesIntro = int_divides.dividesIntro
+theorem dividesOneImpliesUnit = int_divides.dividesOneImpliesUnit
+theorem divisorAtMost = int_divides.divisorAtMost
+theorem atMostThenLessThan = int_divides.atMostThenLessThan
+theorem oneAtMostPositive = int_divides.oneAtMostPositive
+theorem positiveMul = int_divides.positiveMul
+theorem divisionAlgorithmExists = int_divides.divisionAlgorithmExists
+theorem dividesElim = primes.dividesElim
+theorem dividesDecidable = primes.dividesDecidable
+theorem primeFactorExists = primes.primeFactorExists
+theorem primeDoesNotDivideOne = primes.primeDoesNotDivideOne
+
+// -- numerals ------------------------------------------------------------------------------
+theorem succIsAddOne: forall x: Int; succ(x) = add(x, ONE)
+proof
+  @generalize-x |
+    fix x: Int {
+      @conclusion-succ-is-add-one |
+        succ(x) = add(x, ONE)
+        [using simplify oneIsSuccZero addSuccRight addZeroRight]
+    }
+  @conclusion |
+    forall x: Int; succ(x) = add(x, ONE)
+    [by forall_intro generalize-x]
+qed
+
+// `lessThanIntro` with the gap written additively: a + d + 1 = b, d ≥ 0 ⟹ a < b.
+theorem lessThanIntroAddOne: forall a, d, b: Int; is_nonneg(d) -> add(add(a, d), ONE) = b -> less_than(a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-d |
+        fix d: Int {
+          @generalize-b |
+            fix b: Int {
+              @given-d-nonneg |
+                assume is_nonneg(d) {
+                  @given-gap |
+                    assume add(add(a, d), ONE) = b {
+                      @d-nonneg |
+                        is_nonneg(d)
+                        [by hypothesis given-d-nonneg]
+                      @gap |
+                        add(add(a, d), ONE) = b
+                        [by hypothesis given-gap]
+                      @succ-of-d |
+                        succ(d) = add(d, ONE)
+                        [using specialize succIsAddOne(d)]
+                      @regrouped |
+                        add(a, add(d, ONE)) = add(add(a, d), ONE)
+                        [using polynomial(integer)]
+                      @gap-with-succ |
+                        add(a, succ(d)) = b
+                        [by rewrite succ-of-d gap-regrouped]
+                      @gap-regrouped |
+                        add(a, add(d, ONE)) = b
+                        [using chain regrouped gap]
+                      @conclusion-less-than |
+                        less_than(a, b)
+                        [using specialize lessThanIntro(a, d, b) d-nonneg gap-with-succ]
+                    }
+                  @gap-implies |
+                    add(add(a, d), ONE) = b -> less_than(a, b)
+                    [by implies_intro given-gap]
+                }
+              @nonneg-implies |
+                is_nonneg(d) -> add(add(a, d), ONE) = b -> less_than(a, b)
+                [by implies_intro given-d-nonneg]
+            }
+          @discharge-b |
+            forall b: Int; is_nonneg(d) -> add(add(a, d), ONE) = b -> less_than(a, b)
+            [by forall_intro generalize-b]
+        }
+      @discharge-d |
+        forall d, b: Int; is_nonneg(d) -> add(add(a, d), ONE) = b -> less_than(a, b)
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall a, d, b: Int; is_nonneg(d) -> add(add(a, d), ONE) = b -> less_than(a, b)
+    [by forall_intro generalize-a]
+qed
+
+theorem oneIsNonneg: is_nonneg(ONE)
+proof
+  @succ-zero-nonneg |
+    is_nonneg(succ(ZERO))
+    [using specialize nonnegSucc(ZERO) zero-nonneg]
+  @zero-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @conclusion |
+    is_nonneg(ONE)
+    [by rewrite one-is-succ-zero succ-zero-nonneg]
+qed
+
+theorem twoIsNonneg: is_nonneg(TWO)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @conclusion |
+    is_nonneg(TWO)
+    [using specialize nonnegAdd(ONE, ONE) one-nonneg one-nonneg]
+qed
+
+theorem threeIsNonneg: is_nonneg(THREE)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @two-nonneg |
+    is_nonneg(TWO)
+    [by cite twoIsNonneg]
+  @conclusion |
+    is_nonneg(THREE)
+    [using specialize nonnegAdd(TWO, ONE) two-nonneg one-nonneg]
+qed
+
+theorem fourIsNonneg: is_nonneg(FOUR)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @three-nonneg |
+    is_nonneg(THREE)
+    [by cite threeIsNonneg]
+  @conclusion |
+    is_nonneg(FOUR)
+    [using specialize nonnegAdd(THREE, ONE) three-nonneg one-nonneg]
+qed
+
+theorem fiveIsNonneg: is_nonneg(FIVE)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @four-nonneg |
+    is_nonneg(FOUR)
+    [by cite fourIsNonneg]
+  @conclusion |
+    is_nonneg(FIVE)
+    [using specialize nonnegAdd(FOUR, ONE) four-nonneg one-nonneg]
+qed
+
+theorem oneLessThanTwo: less_than(ONE, TWO)
+proof
+  @zero-nonneg |
+    is_nonneg(ZERO)
+    [by cite nonnegZero]
+  @gap |
+    add(add(ONE, ZERO), ONE) = TWO
+    [using polynomial(integer)]
+  @conclusion |
+    less_than(ONE, TWO)
+    [using specialize lessThanIntroAddOne(ONE, ZERO, TWO) zero-nonneg gap]
+qed
+
+theorem oneLessThanThree: less_than(ONE, THREE)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @gap |
+    add(add(ONE, ONE), ONE) = THREE
+    [using polynomial(integer)]
+  @conclusion |
+    less_than(ONE, THREE)
+    [using specialize lessThanIntroAddOne(ONE, ONE, THREE) one-nonneg gap]
+qed
+
+theorem twoLessThanFour: less_than(TWO, FOUR)
+proof
+  @one-nonneg |
+    is_nonneg(ONE)
+    [by cite oneIsNonneg]
+  @gap |
+    add(add(TWO, ONE), ONE) = FOUR
+    [using polynomial(integer)]
+  @conclusion |
+    less_than(TWO, FOUR)
+    [using specialize lessThanIntroAddOne(TWO, ONE, FOUR) one-nonneg gap]
+qed
+
+theorem twoLessThanSix: less_than(TWO, SIX)
+proof
+  @three-nonneg |
+    is_nonneg(THREE)
+    [by cite threeIsNonneg]
+  @gap |
+    add(add(TWO, THREE), ONE) = SIX
+    [using polynomial(integer)]
+  @conclusion |
+    less_than(TWO, SIX)
+    [using specialize lessThanIntroAddOne(TWO, THREE, SIX) three-nonneg gap]
+qed
+
+// -- small divisibility facts --------------------------------------------------------------
+// A divisor d > 1 of a prime is the prime.
+theorem properDivisorOfPrimeIsIt: forall q, d: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(d, q) -> d = q
+proof
+  @generalize-q |
+    fix q: Int {
+      @generalize-d |
+        fix d: Int {
+          @given-prime |
+            assume is_prime(q) {
+              @given-d-above-one |
+                assume less_than(ONE, d) {
+                  @given-d-divides |
+                    assume does_divide(d, q) {
+                      @prime |
+                        less_than(ONE, q) and (forall e: Int; less_than(ZERO, e) -> does_divide(e, q) -> (e = ONE or e = q))
+                        [by hypothesis given-prime]
+                      @d-above-one |
+                        less_than(ONE, d)
+                        [by hypothesis given-d-above-one]
+                      @d-divides |
+                        does_divide(d, q)
+                        [by hypothesis given-d-divides]
+                      @divisors-of-q |
+                        forall e: Int; less_than(ZERO, e) -> does_divide(e, q) -> (e = ONE or e = q)
+                        [by and_elim_right prime]
+                      @zero-below-one |
+                        less_than(ZERO, ONE)
+                        [by cite zeroLessThanOne]
+                      @d-positive |
+                        less_than(ZERO, d)
+                        [using specialize lessThanTransitive(ZERO, ONE, d) zero-below-one d-above-one]
+                      @d-is-one-or-q |
+                        d = ONE or d = q
+                        [using specialize divisors-of-q(d) d-positive d-divides]
+                      @given-d-is-one |
+                        assume d = ONE {
+                          @d-is-one |
+                            d = ONE
+                            [by hypothesis given-d-is-one]
+                          @conclusion-one-below-itself |
+                            less_than(ONE, ONE)
+                            [by rewrite d-is-one d-above-one]
+                        }
+                      @d-is-one-implies |
+                        d = ONE -> less_than(ONE, ONE)
+                        [by implies_intro given-d-is-one]
+                      @one-not-below-itself |
+                        not less_than(ONE, ONE)
+                        [using specialize lessThanIrreflexive(ONE)]
+                      @conclusion-d-is-q |
+                        d = q
+                        [using tautology d-is-one-or-q d-is-one-implies one-not-below-itself]
+                    }
+                  @divides-implies |
+                    does_divide(d, q) -> d = q
+                    [by implies_intro given-d-divides]
+                }
+              @above-one-implies |
+                less_than(ONE, d) -> does_divide(d, q) -> d = q
+                [by implies_intro given-d-above-one]
+            }
+          @prime-implies |
+            is_prime(q) -> less_than(ONE, d) -> does_divide(d, q) -> d = q
+            [by implies_intro given-prime]
+        }
+      @discharge-d |
+        forall d: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(d, q) -> d = q
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall q, d: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(d, q) -> d = q
+    [by forall_intro generalize-q]
+qed
+
+// No d > 1 divides two consecutive integers: it would divide their difference, 1.
+theorem noDivisorOfBothNeighbors: forall d, a: Int; less_than(ONE, d) -> does_divide(d, a) -> (not does_divide(d, add(a, ONE)))
+proof
+  @generalize-d |
+    fix d: Int {
+      @generalize-a |
+        fix a: Int {
+          @given-d-above-one |
+            assume less_than(ONE, d) {
+              @given-d-divides-a |
+                assume does_divide(d, a) {
+                  @d-above-one |
+                    less_than(ONE, d)
+                    [by hypothesis given-d-above-one]
+                  @d-divides-a |
+                    does_divide(d, a)
+                    [by hypothesis given-d-divides-a]
+                  @given-d-divides-next |
+                    assume does_divide(d, add(a, ONE)) {
+                      @d-divides-next |
+                        does_divide(d, add(a, ONE))
+                        [by hypothesis given-d-divides-next]
+                      @d-divides-difference |
+                        does_divide(d, sub(add(a, ONE), a))
+                        [using specialize dividesSubtracts(d, add(a, ONE), a) d-divides-next d-divides-a]
+                      @difference-is-one |
+                        sub(add(a, ONE), a) = ONE
+                        [using polynomial(integer)]
+                      @d-divides-one |
+                        does_divide(d, ONE)
+                        [by rewrite difference-is-one d-divides-difference]
+                      @d-is-a-unit |
+                        d = ONE or d = neg(ONE)
+                        [using specialize dividesOneImpliesUnit(d) d-divides-one]
+                      @given-d-is-one |
+                        assume d = ONE {
+                          @d-is-one |
+                            d = ONE
+                            [by hypothesis given-d-is-one]
+                          @conclusion-one-below-itself |
+                            less_than(ONE, ONE)
+                            [by rewrite d-is-one d-above-one]
+                        }
+                      @d-is-one-implies |
+                        d = ONE -> less_than(ONE, ONE)
+                        [by implies_intro given-d-is-one]
+                      @given-d-is-neg-one |
+                        assume d = neg(ONE) {
+                          @d-is-neg-one |
+                            d = neg(ONE)
+                            [by hypothesis given-d-is-neg-one]
+                          @one-below-neg-one |
+                            less_than(ONE, neg(ONE))
+                            [by rewrite d-is-neg-one d-above-one]
+                          @neg-one-below-zero |
+                            less_than(neg(ONE), ZERO)
+                            [by cite negOneLessThanZero]
+                          @zero-below-one |
+                            less_than(ZERO, ONE)
+                            [by cite zeroLessThanOne]
+                          @neg-one-below-one |
+                            less_than(neg(ONE), ONE)
+                            [using specialize lessThanTransitive(neg(ONE), ZERO, ONE) neg-one-below-zero zero-below-one]
+                          @conclusion-one-below-itself-again |
+                            less_than(ONE, ONE)
+                            [using specialize lessThanTransitive(ONE, neg(ONE), ONE) one-below-neg-one neg-one-below-one]
+                        }
+                      @d-is-neg-one-implies |
+                        d = neg(ONE) -> less_than(ONE, ONE)
+                        [by implies_intro given-d-is-neg-one]
+                      @conclusion-absurd |
+                        less_than(ONE, ONE)
+                        [using tautology d-is-a-unit d-is-one-implies d-is-neg-one-implies]
+                    }
+                  @divides-next-implies |
+                    does_divide(d, add(a, ONE)) -> less_than(ONE, ONE)
+                    [by implies_intro given-d-divides-next]
+                  @one-not-below-itself |
+                    not less_than(ONE, ONE)
+                    [using specialize lessThanIrreflexive(ONE)]
+                  @conclusion-not-divides-next |
+                    not does_divide(d, add(a, ONE))
+                    [using tautology divides-next-implies one-not-below-itself]
+                }
+              @divides-a-implies |
+                does_divide(d, a) -> (not does_divide(d, add(a, ONE)))
+                [by implies_intro given-d-divides-a]
+            }
+          @above-one-implies |
+            less_than(ONE, d) -> does_divide(d, a) -> (not does_divide(d, add(a, ONE)))
+            [by implies_intro given-d-above-one]
+        }
+      @discharge-a |
+        forall a: Int; less_than(ONE, d) -> does_divide(d, a) -> (not does_divide(d, add(a, ONE)))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall d, a: Int; less_than(ONE, d) -> does_divide(d, a) -> (not does_divide(d, add(a, ONE)))
+    [by forall_intro generalize-d]
+qed
+
+// A prime dividing a is not divisible by any d > 1 that divides a + 1 (else it IS d).
+theorem primeFactorAvoidsDivisorOfNext: forall q, d, a: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+proof
+  @generalize-q |
+    fix q: Int {
+      @generalize-d |
+        fix d: Int {
+          @generalize-a |
+            fix a: Int {
+              @given-prime |
+                assume is_prime(q) {
+                  @given-d-above-one |
+                    assume less_than(ONE, d) {
+                      @given-q-divides-a |
+                        assume does_divide(q, a) {
+                          @given-d-divides-next |
+                            assume does_divide(d, add(a, ONE)) {
+                              @prime |
+                                is_prime(q)
+                                [by hypothesis given-prime]
+                              @d-above-one |
+                                less_than(ONE, d)
+                                [by hypothesis given-d-above-one]
+                              @q-divides-a |
+                                does_divide(q, a)
+                                [by hypothesis given-q-divides-a]
+                              @d-divides-next |
+                                does_divide(d, add(a, ONE))
+                                [by hypothesis given-d-divides-next]
+                              @given-d-divides-q |
+                                assume does_divide(d, q) {
+                                  @d-divides-q |
+                                    does_divide(d, q)
+                                    [by hypothesis given-d-divides-q]
+                                  @d-is-q |
+                                    d = q
+                                    [using specialize properDivisorOfPrimeIsIt(q, d) prime d-above-one d-divides-q]
+                                  @d-divides-a |
+                                    does_divide(d, a)
+                                    [by rewrite d-is-q q-divides-a]
+                                  @conclusion-d-does-not-divide-next |
+                                    not does_divide(d, add(a, ONE))
+                                    [using specialize noDivisorOfBothNeighbors(d, a) d-above-one d-divides-a]
+                                }
+                              @d-divides-q-implies |
+                                does_divide(d, q) -> (not does_divide(d, add(a, ONE)))
+                                [by implies_intro given-d-divides-q]
+                              @conclusion-d-does-not-divide-q |
+                                not does_divide(d, q)
+                                [using tautology d-divides-q-implies d-divides-next]
+                            }
+                          @next-implies |
+                            does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+                            [by implies_intro given-d-divides-next]
+                        }
+                      @divides-a-implies |
+                        does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+                        [by implies_intro given-q-divides-a]
+                    }
+                  @above-one-implies |
+                    less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+                    [by implies_intro given-d-above-one]
+                }
+              @prime-implies |
+                is_prime(q) -> less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+                [by implies_intro given-prime]
+            }
+          @discharge-a |
+            forall a: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+            [by forall_intro generalize-a]
+        }
+      @discharge-d |
+        forall d, a: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall q, d, a: Int; is_prime(q) -> less_than(ONE, d) -> does_divide(q, a) -> does_divide(d, add(a, ONE)) -> (not does_divide(d, q))
+    [by forall_intro generalize-q]
+qed
+
+// -- quotients ---------------------------------------------------------------------------
+// q > 0 and q·k > 0 force k > 0: k = 0 gives q·k = 0, k < 0 gives q·k < 0.
+theorem positiveQuotient: forall q, k: Int; less_than(ZERO, q) -> less_than(ZERO, mul(q, k)) -> less_than(ZERO, k)
+proof
+  @generalize-q |
+    fix q: Int {
+      @generalize-k |
+        fix k: Int {
+          @given-q-positive |
+            assume less_than(ZERO, q) {
+              @given-product-positive |
+                assume less_than(ZERO, mul(q, k)) {
+                  @q-positive |
+                    less_than(ZERO, q)
+                    [by hypothesis given-q-positive]
+                  @product-positive |
+                    less_than(ZERO, mul(q, k))
+                    [by hypothesis given-product-positive]
+                  @sign-of-k |
+                    less_than(ZERO, k) or k = ZERO or less_than(k, ZERO)
+                    [using specialize signTrichotomy(k)]
+                  @given-k-zero |
+                    assume k = ZERO {
+                      @k-zero |
+                        k = ZERO
+                        [by hypothesis given-k-zero]
+                      @product-at-zero |
+                        less_than(ZERO, mul(q, ZERO))
+                        [by rewrite k-zero product-positive]
+                      @times-zero |
+                        mul(q, ZERO) = ZERO
+                        [using polynomial(integer)]
+                      @conclusion-zero-below-itself |
+                        less_than(ZERO, ZERO)
+                        [by rewrite times-zero product-at-zero]
+                    }
+                  @k-zero-implies |
+                    k = ZERO -> less_than(ZERO, ZERO)
+                    [by implies_intro given-k-zero]
+                  @given-k-negative |
+                    assume less_than(k, ZERO) {
+                      @k-negative |
+                        less_than(k, ZERO)
+                        [by hypothesis given-k-negative]
+                      @neg-k-positive |
+                        less_than(ZERO, neg(k))
+                        [using specialize negativeNegIsPositive(k) k-negative]
+                      @product-with-neg-positive |
+                        less_than(ZERO, mul(q, neg(k)))
+                        [using specialize positiveMul(q, neg(k)) q-positive neg-k-positive]
+                      @product-with-neg-is-neg-product |
+                        mul(q, neg(k)) = neg(mul(q, k))
+                        [using specialize mulNegRight(q, k)]
+                      @neg-product-positive |
+                        less_than(ZERO, neg(mul(q, k)))
+                        [by rewrite product-with-neg-is-neg-product product-with-neg-positive]
+                      @shifted |
+                        less_than(add(mul(q, k), ZERO), add(mul(q, k), neg(mul(q, k))))
+                        [using specialize additionPreservesOrder(ZERO, neg(mul(q, k)), mul(q, k)) neg-product-positive]
+                      @left-is-product |
+                        add(mul(q, k), ZERO) = mul(q, k)
+                        [using polynomial(integer)]
+                      @right-is-zero |
+                        add(mul(q, k), neg(mul(q, k))) = ZERO
+                        [using polynomial(integer)]
+                      @product-below-zero-left |
+                        less_than(mul(q, k), add(mul(q, k), neg(mul(q, k))))
+                        [by rewrite left-is-product shifted]
+                      @product-below-zero |
+                        less_than(mul(q, k), ZERO)
+                        [by rewrite right-is-zero product-below-zero-left]
+                      @conclusion-zero-below-itself-negative |
+                        less_than(ZERO, ZERO)
+                        [using specialize lessThanTransitive(ZERO, mul(q, k), ZERO) product-positive product-below-zero]
+                    }
+                  @k-negative-implies |
+                    less_than(k, ZERO) -> less_than(ZERO, ZERO)
+                    [by implies_intro given-k-negative]
+                  @zero-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize lessThanIrreflexive(ZERO)]
+                  @conclusion-k-positive |
+                    less_than(ZERO, k)
+                    [using tautology sign-of-k k-zero-implies k-negative-implies zero-not-below-itself]
+                }
+              @product-positive-implies |
+                less_than(ZERO, mul(q, k)) -> less_than(ZERO, k)
+                [by implies_intro given-product-positive]
+            }
+          @q-positive-implies |
+            less_than(ZERO, q) -> less_than(ZERO, mul(q, k)) -> less_than(ZERO, k)
+            [by implies_intro given-q-positive]
+        }
+      @discharge-k |
+        forall k: Int; less_than(ZERO, q) -> less_than(ZERO, mul(q, k)) -> less_than(ZERO, k)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall q, k: Int; less_than(ZERO, q) -> less_than(ZERO, mul(q, k)) -> less_than(ZERO, k)
+    [by forall_intro generalize-q]
+qed
+
+// A factor k > 0 is below its product with any q > 1: q·k − k = (q − 1)·k > 0.
+theorem factorBelowProduct: forall q, k: Int; less_than(ONE, q) -> less_than(ZERO, k) -> less_than(k, mul(q, k))
+proof
+  @generalize-q |
+    fix q: Int {
+      @generalize-k |
+        fix k: Int {
+          @given-q-above-one |
+            assume less_than(ONE, q) {
+              @given-k-positive |
+                assume less_than(ZERO, k) {
+                  @q-above-one |
+                    less_than(ONE, q)
+                    [by hypothesis given-q-above-one]
+                  @k-positive |
+                    less_than(ZERO, k)
+                    [by hypothesis given-k-positive]
+                  @shifted-by-neg-one |
+                    less_than(add(neg(ONE), ONE), add(neg(ONE), q))
+                    [using specialize additionPreservesOrder(ONE, q, neg(ONE)) q-above-one]
+                  @left-is-zero |
+                    add(neg(ONE), ONE) = ZERO
+                    [using polynomial(integer)]
+                  @right-is-q-minus-one |
+                    add(neg(ONE), q) = sub(q, ONE)
+                    [using polynomial(integer)]
+                  @zero-below-shifted-q |
+                    less_than(ZERO, add(neg(ONE), q))
+                    [by rewrite left-is-zero shifted-by-neg-one]
+                  @q-minus-one-positive |
+                    less_than(ZERO, sub(q, ONE))
+                    [by rewrite right-is-q-minus-one zero-below-shifted-q]
+                  @gap-positive |
+                    less_than(ZERO, mul(sub(q, ONE), k))
+                    [using specialize positiveMul(sub(q, ONE), k) q-minus-one-positive k-positive]
+                  @shifted-by-k |
+                    less_than(add(k, ZERO), add(k, mul(sub(q, ONE), k)))
+                    [using specialize additionPreservesOrder(ZERO, mul(sub(q, ONE), k), k) gap-positive]
+                  @k-plus-zero |
+                    add(k, ZERO) = k
+                    [using polynomial(integer)]
+                  @k-plus-gap |
+                    add(k, mul(sub(q, ONE), k)) = mul(q, k)
+                    [using polynomial(integer)]
+                  @k-below-shifted |
+                    less_than(k, add(k, mul(sub(q, ONE), k)))
+                    [by rewrite k-plus-zero shifted-by-k]
+                  @conclusion-k-below-product |
+                    less_than(k, mul(q, k))
+                    [by rewrite k-plus-gap k-below-shifted]
+                }
+              @k-positive-implies |
+                less_than(ZERO, k) -> less_than(k, mul(q, k))
+                [by implies_intro given-k-positive]
+            }
+          @q-above-one-implies |
+            less_than(ONE, q) -> less_than(ZERO, k) -> less_than(k, mul(q, k))
+            [by implies_intro given-q-above-one]
+        }
+      @discharge-k |
+        forall k: Int; less_than(ONE, q) -> less_than(ZERO, k) -> less_than(k, mul(q, k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall q, k: Int; less_than(ONE, q) -> less_than(ZERO, k) -> less_than(k, mul(q, k))
+    [by forall_intro generalize-q]
+qed
+
+// -- the engine: a number ≡ −1 (mod m) has a prime factor ≢ 1 (mod m) -------------------------
+// Strong induction on n > 1 with m | n + 1. Take a prime factor p of n. If m ∤ p − 1 we are
+// done. Otherwise n = p·k with m | k + 1 (m divides (n + 1) − k(p − 1) = k + 1); k > 1, since
+// k = 1 would make m divide both p − 1 and p + 1, hence 2, against m > 2; and k < n, so a
+// prime factor of k outside the class 1 — which the induction provides — divides n too.
+theorem minusOneClassHasPrimeFactorOutsideOneClass: forall m: Int; less_than(TWO, m) -> forall n: Int; less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+proof
+  @generalize-m |
+    fix m: Int {
+      @given-m-above-two |
+        assume less_than(TWO, m) {
+          @m-above-two |
+            less_than(TWO, m)
+            [by hypothesis given-m-above-two]
+          @one-below-two |
+            less_than(ONE, TWO)
+            [by cite oneLessThanTwo]
+          @zero-below-one |
+            less_than(ZERO, ONE)
+            [by cite zeroLessThanOne]
+          @m-above-one |
+            less_than(ONE, m)
+            [using specialize lessThanTransitive(ONE, TWO, m) one-below-two m-above-two]
+          @m-positive |
+            less_than(ZERO, m)
+            [using specialize lessThanTransitive(ZERO, ONE, m) zero-below-one m-above-one]
+          @two-positive |
+            less_than(ZERO, TWO)
+            [using specialize lessThanTransitive(ZERO, ONE, TWO) zero-below-one one-below-two]
+          @m-not-below-itself |
+            not less_than(m, m)
+            [using specialize lessThanIrreflexive(m)]
+
+          // the strong step.
+          @strong-step |
+            fix n: Int {
+              @given-n-nonneg |
+                assume is_nonneg(n) {
+                  @given-inductive-hypothesis |
+                    assume forall j: Int; is_nonneg(j) -> less_than(j, n) -> (less_than(ONE, j) -> does_divide(m, add(j, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, j) and (not does_divide(m, sub(q, ONE)))) {
+                      @inductive-hypothesis |
+                        forall j: Int; is_nonneg(j) -> less_than(j, n) -> (less_than(ONE, j) -> does_divide(m, add(j, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, j) and (not does_divide(m, sub(q, ONE))))
+                        [by hypothesis given-inductive-hypothesis]
+                      @given-n-above-one |
+                        assume less_than(ONE, n) {
+                          @given-m-divides-next |
+                            assume does_divide(m, add(n, ONE)) {
+                              @n-above-one |
+                                less_than(ONE, n)
+                                [by hypothesis given-n-above-one]
+                              @m-divides-next |
+                                does_divide(m, add(n, ONE))
+                                [by hypothesis given-m-divides-next]
+                              @n-positive |
+                                less_than(ZERO, n)
+                                [using specialize lessThanTransitive(ZERO, ONE, n) zero-below-one n-above-one]
+                              @prime-factor-exists |
+                                exists p: Int; is_prime(p) and does_divide(p, n)
+                                [using specialize primeFactorExists(n) n-above-one]
+                              @with-prime-factor-p |
+                                unpack p: Int from prime-factor-exists {
+                                  @p-facts |
+                                    is_prime(p) and does_divide(p, n)
+                                    [by hypothesis with-prime-factor-p]
+                                  @p-prime |
+                                    is_prime(p)
+                                    [by and_elim_left p-facts]
+                                  @p-divides-n |
+                                    does_divide(p, n)
+                                    [by and_elim_right p-facts]
+                                  @p-above-one |
+                                    less_than(ONE, p)
+                                    [by and_elim_left p-prime]
+                                  @p-positive |
+                                    less_than(ZERO, p)
+                                    [using specialize lessThanTransitive(ZERO, ONE, p) zero-below-one p-above-one]
+                                  @class-of-p |
+                                    (not does_divide(m, sub(p, ONE))) or does_divide(m, sub(p, ONE))
+                                    [using tautology decide-class-of-p]
+                                  @decide-class-of-p |
+                                    does_divide(m, sub(p, ONE)) or (not does_divide(m, sub(p, ONE)))
+                                    [using specialize dividesDecidable(m, sub(p, ONE)) m-positive]
+                                  @conclusion-factor-found |
+                                    exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                    case class-of-p {
+                                      @when-p-outside |
+                                        assume not does_divide(m, sub(p, ONE)) {
+                                          @p-outside |
+                                            not does_divide(m, sub(p, ONE))
+                                            [by hypothesis when-p-outside]
+                                          @p-qualifies |
+                                            is_prime(p) and does_divide(p, n) and (not does_divide(m, sub(p, ONE)))
+                                            [using tautology p-prime p-divides-n p-outside]
+                                          @conclusion-p-is-it |
+                                            exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                            [by exists_intro(p) p-qualifies]
+                                        }
+                                      @when-p-inside |
+                                        assume does_divide(m, sub(p, ONE)) {
+                                          @p-inside |
+                                            does_divide(m, sub(p, ONE))
+                                            [by hypothesis when-p-inside]
+                                          @quotient-exists |
+                                            exists k: Int; n = mul(p, k)
+                                            [using specialize dividesElim(p, n) p-divides-n]
+                                          @with-quotient-k |
+                                            unpack k: Int from quotient-exists {
+                                              @n-is-product |
+                                                n = mul(p, k)
+                                                [by hypothesis with-quotient-k]
+                                              @product-positive |
+                                                less_than(ZERO, mul(p, k))
+                                                [by rewrite n-is-product n-positive]
+                                              @k-positive |
+                                                less_than(ZERO, k)
+                                                [using specialize positiveQuotient(p, k) p-positive product-positive]
+                                              @k-nonneg |
+                                                is_nonneg(k)
+                                                [using specialize positiveIsNonneg(k) k-positive]
+                                              // k ≠ 1: else n = p and m | (p + 1) − (p − 1) = 2.
+                                              @given-k-one |
+                                                assume k = ONE {
+                                                  @k-one |
+                                                    k = ONE
+                                                    [by hypothesis given-k-one]
+                                                  @n-is-p-times-one |
+                                                    n = mul(p, ONE)
+                                                    [by rewrite k-one n-is-product]
+                                                  @p-times-one |
+                                                    mul(p, ONE) = p
+                                                    [using polynomial(integer)]
+                                                  @n-is-p |
+                                                    n = p
+                                                    [using chain n-is-p-times-one p-times-one]
+                                                  @m-divides-p-plus-one |
+                                                    does_divide(m, add(p, ONE))
+                                                    [by rewrite n-is-p m-divides-next]
+                                                  @m-divides-two-as-difference |
+                                                    does_divide(m, sub(add(p, ONE), sub(p, ONE)))
+                                                    [using specialize dividesSubtracts(m, add(p, ONE), sub(p, ONE)) m-divides-p-plus-one p-inside]
+                                                  @difference-is-two |
+                                                    sub(add(p, ONE), sub(p, ONE)) = TWO
+                                                    [using polynomial(integer)]
+                                                  @m-divides-two |
+                                                    does_divide(m, TWO)
+                                                    [by rewrite difference-is-two m-divides-two-as-difference]
+                                                  @m-at-most-two |
+                                                    at_most(m, TWO)
+                                                    [using specialize divisorAtMost(m, TWO) m-positive two-positive m-divides-two]
+                                                  @conclusion-m-below-itself |
+                                                    less_than(m, m)
+                                                    [using specialize atMostThenLessThan(m, TWO, m) m-at-most-two m-above-two]
+                                                }
+                                              @k-one-implies |
+                                                k = ONE -> less_than(m, m)
+                                                [by implies_intro given-k-one]
+                                              @one-at-most-k |
+                                                at_most(ONE, k)
+                                                [using specialize oneAtMostPositive(k) k-positive]
+                                              @one-below-or-is-k |
+                                                less_than(ONE, k) or ONE = k
+                                                [using specialize lessOrEqualSplit(ONE, k) one-at-most-k]
+                                              @given-one-is-k |
+                                                assume ONE = k {
+                                                  @one-is-k |
+                                                    ONE = k
+                                                    [by hypothesis given-one-is-k]
+                                                  @k-is-one |
+                                                    k = ONE
+                                                    [by symmetry one-is-k]
+                                                  @conclusion-m-below-itself-again |
+                                                    less_than(m, m)
+                                                    [by modus_ponens k-one-implies k-is-one]
+                                                }
+                                              @one-is-k-implies |
+                                                ONE = k -> less_than(m, m)
+                                                [by implies_intro given-one-is-k]
+                                              @k-above-one |
+                                                less_than(ONE, k)
+                                                [using tautology one-below-or-is-k one-is-k-implies m-not-below-itself]
+                                              @k-below-product |
+                                                less_than(k, mul(p, k))
+                                                [using specialize factorBelowProduct(p, k) p-above-one k-positive]
+                                              @k-below-n |
+                                                less_than(k, n)
+                                                [by rewrite n-is-product k-below-product]
+                                              // m | k + 1 = (n + 1) − (p − 1)k.
+                                              @m-divides-gap-multiple |
+                                                does_divide(m, mul(sub(p, ONE), k))
+                                                [using specialize dividesMul(m, sub(p, ONE), k) p-inside]
+                                              @m-divides-difference |
+                                                does_divide(m, sub(add(n, ONE), mul(sub(p, ONE), k)))
+                                                [using specialize dividesSubtracts(m, add(n, ONE), mul(sub(p, ONE), k)) m-divides-next m-divides-gap-multiple]
+                                              @m-divides-difference-expanded |
+                                                does_divide(m, sub(add(mul(p, k), ONE), mul(sub(p, ONE), k)))
+                                                [by rewrite n-is-product m-divides-difference]
+                                              @difference-is-k-plus-one |
+                                                sub(add(mul(p, k), ONE), mul(sub(p, ONE), k)) = add(k, ONE)
+                                                [using polynomial(integer)]
+                                              @m-divides-k-plus-one |
+                                                does_divide(m, add(k, ONE))
+                                                [by rewrite difference-is-k-plus-one m-divides-difference-expanded]
+                                              @k-has-factor-outside |
+                                                exists q: Int; is_prime(q) and does_divide(q, k) and (not does_divide(m, sub(q, ONE)))
+                                                [using specialize inductive-hypothesis(k) k-nonneg k-below-n k-above-one m-divides-k-plus-one]
+                                              @with-factor-q |
+                                                unpack q: Int from k-has-factor-outside {
+                                                  @q-facts |
+                                                    is_prime(q) and does_divide(q, k) and (not does_divide(m, sub(q, ONE)))
+                                                    [by hypothesis with-factor-q]
+                                                  @q-divides-k |
+                                                    does_divide(q, k)
+                                                    [using tautology q-facts]
+                                                  @product-commuted |
+                                                    mul(p, k) = mul(k, p)
+                                                    [using polynomial(integer)]
+                                                  @n-is-k-times-p |
+                                                    n = mul(k, p)
+                                                    [using chain n-is-product product-commuted]
+                                                  @k-divides-n |
+                                                    does_divide(k, n)
+                                                    [using specialize dividesIntro(n, k, p) n-is-k-times-p]
+                                                  @q-divides-n |
+                                                    does_divide(q, n)
+                                                    [using specialize dividesTransitive(q, k, n) q-divides-k k-divides-n]
+                                                  @q-qualifies |
+                                                    is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                                    [using tautology q-facts q-divides-n]
+                                                  @conclusion-q-is-it |
+                                                    exists q2: Int; is_prime(q2) and does_divide(q2, n) and (not does_divide(m, sub(q2, ONE)))
+                                                    [by exists_intro(q) q-qualifies]
+                                                }
+                                              @conclusion-from-k |
+                                                exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                                [by exists_elim with-factor-q]
+                                            }
+                                          @conclusion-p-inside |
+                                            exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                            [by exists_elim with-quotient-k]
+                                        }
+                                    }
+                                }
+                              @conclusion-step |
+                                exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                                [by exists_elim with-prime-factor-p]
+                            }
+                          @divides-next-implies |
+                            does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                            [by implies_intro given-m-divides-next]
+                        }
+                      @above-one-implies |
+                        less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                        [by implies_intro given-n-above-one]
+                    }
+                  @inductive-hypothesis-implies |
+                    (forall j: Int; is_nonneg(j) -> less_than(j, n) -> (less_than(ONE, j) -> does_divide(m, add(j, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, j) and (not does_divide(m, sub(q, ONE))))) -> (less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE))))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @nonneg-implies |
+                is_nonneg(n) -> (forall j: Int; is_nonneg(j) -> less_than(j, n) -> (less_than(ONE, j) -> does_divide(m, add(j, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, j) and (not does_divide(m, sub(q, ONE))))) -> (less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE))))
+                [by implies_intro given-n-nonneg]
+            }
+          @strong-step-for-all |
+            forall n: Int; is_nonneg(n) -> (forall j: Int; is_nonneg(j) -> less_than(j, n) -> (less_than(ONE, j) -> does_divide(m, add(j, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, j) and (not does_divide(m, sub(q, ONE))))) -> (less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE))))
+            [by forall_intro strong-step]
+          @for-every-nonneg |
+            forall n: Int; is_nonneg(n) -> (less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE))))
+            [using instantiation nonnegStrongInduction((fun n: Int => less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE))))) strong-step-for-all]
+          @generalize-n |
+            fix n: Int {
+              @given-n-above-one-final |
+                assume less_than(ONE, n) {
+                  @given-m-divides-next-final |
+                    assume does_divide(m, add(n, ONE)) {
+                      @n-above-one-final |
+                        less_than(ONE, n)
+                        [by hypothesis given-n-above-one-final]
+                      @m-divides-next-final |
+                        does_divide(m, add(n, ONE))
+                        [by hypothesis given-m-divides-next-final]
+                      @n-positive-final |
+                        less_than(ZERO, n)
+                        [using specialize lessThanTransitive(ZERO, ONE, n) zero-below-one n-above-one-final]
+                      @n-nonneg-final |
+                        is_nonneg(n)
+                        [using specialize positiveIsNonneg(n) n-positive-final]
+                      @conclusion-for-n |
+                        exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                        [using specialize for-every-nonneg(n) n-nonneg-final n-above-one-final m-divides-next-final]
+                    }
+                  @divides-next-implies-final |
+                    does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                    [by implies_intro given-m-divides-next-final]
+                }
+              @above-one-implies-final |
+                less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+                [by implies_intro given-n-above-one-final]
+            }
+          @discharge-n |
+            forall n: Int; less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+            [by forall_intro generalize-n]
+        }
+      @above-two-implies |
+        less_than(TWO, m) -> forall n: Int; less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+        [by implies_intro given-m-above-two]
+    }
+  @conclusion |
+    forall m: Int; less_than(TWO, m) -> forall n: Int; less_than(ONE, n) -> does_divide(m, add(n, ONE)) -> exists q: Int; is_prime(q) and does_divide(q, n) and (not does_divide(m, sub(q, ONE)))
+    [by forall_intro generalize-m]
+qed
