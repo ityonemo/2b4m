@@ -1,0 +1,480 @@
+// std/integer/mod-n-product.b4m — ℤ_n × ℤ_n, the direct product of the concrete cyclic group
+// with itself, and what separates ℤ₃ × ℤ₃ from ℤ₉ (AATA §3.2 Ex 34).
+//
+// A pair sort over ℤ_n with its two projections models std/group/product.b4m (both factors
+// ℤ_n, the factor laws discharged by mod-n's lifted group laws, the pair axioms by the local
+// ones), so the product's group laws — and through them the whole group corpus — transfer. The
+// modulus N stays abstract, as in mod-n.b4m; a concrete value enters as a HYPOTHESIS (N = 3,
+// N = 9): every element of ℤ₃ × ℤ₃ is killed by cubing (each component is: 3k ≡ 0 mod 3),
+// whereas the class of 1 in ℤ₉ is not (3 ≢ 0 mod 9) — a property an isomorphism would have to
+// preserve, so the two groups are not the same. Listing the subgroups of ℤ₃ × ℤ₃ is finite
+// enumeration and stays prose.
+
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import product <<< "std/group/product.b4m"
+import group <<< "std/group.b4m"
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+const IONE = integer.ONE
+func isucc = integer.succ
+func iadd = integer.add
+func imul = integer.mul
+func ineg = integer.neg
+func isub = integer.sub
+pred int_less_than = int_divides.less_than
+pred nonneg = integer.nonneg
+axiom definitionOfSubtraction = integer.definitionOfSubtraction
+axiom negZero = integer.negZero
+axiom mulZeroLeft = integer.mulZeroLeft
+axiom mulSuccLeft = integer.mulSuccLeft
+axiom addZeroLeft = integer.addZeroLeft
+theorem addZeroRight = integer.addZeroRight
+theorem addSuccRight = integer.addSuccRight
+axiom nonnegZero = integer.nonnegZero
+axiom nonnegSucc = integer.nonnegSucc
+axiom nonnegSuccNotZero = integer.nonnegSuccNotZero
+theorem succInjective = integer.succInjective
+axiom lessThanIntro = integer.lessThanIntro
+theorem lessThanIrreflexive = integer.lessThanIrreflexive
+theorem lessThanTransitive = integer.lessThanTransitive
+theorem lessOrEqualSplit = integer.lessOrEqualSplit
+theorem divisorAtMost = int_divides.divisorAtMost
+define divides(d, k) = int_divides.divides(d, k)
+
+sort Zn = mod_n.Zn
+func cls = mod_n.cls
+const N = mod_n.N
+const ZERO = mod_n.ZERO
+func add = mod_n.add
+func neg = mod_n.neg
+axiom clsSurjective = mod_n.clsSurjective
+axiom clsCongruent = mod_n.clsCongruent
+axiom zeroIsClsZero = mod_n.zeroIsClsZero
+axiom addHom = mod_n.addHom
+theorem addAssoc = mod_n.addAssoc
+theorem addIdentityLeft = mod_n.addIdentityLeft
+theorem addInverseLeft = mod_n.addInverseLeft
+
+// -- pairs of classes ------------------------------------------------------------------------
+sort ZnPair
+func znPair(x: Zn, y: Zn) => ZnPair
+func znFst(p: ZnPair) => Zn
+func znSnd(p: ZnPair) => Zn
+axiom znFstPair: forall x, y: Zn; znFst(znPair(x, y)) = x
+axiom znSndPair: forall x, y: Zn; znSnd(znPair(x, y)) = y
+axiom znPairExtensionality: forall p: ZnPair; znPair(znFst(p), znSnd(p)) = p
+
+func znProdOp(p: ZnPair, q: ZnPair) => ZnPair
+func znProdInv(p: ZnPair) => ZnPair
+const znProdE: ZnPair
+axiom znProdOpDef: forall p, q: ZnPair; znProdOp(p, q) = znPair(add(znFst(p), znFst(q)), add(znSnd(p), znSnd(q)))
+axiom znProdInvDef: forall p: ZnPair; znProdInv(p) = znPair(neg(znFst(p)), neg(znSnd(p)))
+axiom znProdEDef: znProdE = znPair(ZERO, ZERO)
+
+// -- ℤ_n × ℤ_n models the direct product ----------------------------------------------------
+model ZnProduct {
+  product.G: Zn
+  product.EG: ZERO
+  product.opG: add
+  product.invG: neg
+  product.H: Zn
+  product.EH: ZERO
+  product.opH: add
+  product.invH: neg
+  product.Pair: ZnPair
+  product.pair: znPair
+  product.fst: znFst
+  product.snd: znSnd
+  product.prodOp: znProdOp
+  product.prodInv: znProdInv
+  product.prodE: znProdE
+  product.opGAssoc <- addAssoc
+  product.opGIdentityLeft <- addIdentityLeft
+  product.opGInverseLeft <- addInverseLeft
+  product.opHAssoc <- addAssoc
+  product.opHIdentityLeft <- addIdentityLeft
+  product.opHInverseLeft <- addInverseLeft
+  product.fstPair <- znFstPair
+  product.sndPair <- znSndPair
+  product.pairExtensionality <- znPairExtensionality
+  product.prodOpDef <- znProdOpDef
+  product.prodInvDef <- znProdInvDef
+  product.prodEDef <- znProdEDef
+}
+
+// PAYOFF: the product's group laws on ℤ_n × ℤ_n.
+theorem znProdAssoc: forall p, q, r: ZnPair; znProdOp(znProdOp(p, q), r) = znProdOp(p, znProdOp(q, r))
+proof
+  @conclusion |
+    forall p, q, r: ZnPair; znProdOp(znProdOp(p, q), r) = znProdOp(p, znProdOp(q, r))
+    [using model(ZnProduct) product.prodAssoc]
+qed
+
+theorem znProdIdentityLeft: forall p: ZnPair; znProdOp(znProdE, p) = p
+proof
+  @conclusion |
+    forall p: ZnPair; znProdOp(znProdE, p) = p
+    [using model(ZnProduct) product.prodIdentityLeft]
+qed
+
+theorem znProdInverseLeft: forall p: ZnPair; znProdOp(znProdInv(p), p) = znProdE
+proof
+  @conclusion |
+    forall p: ZnPair; znProdOp(znProdInv(p), p) = znProdE
+    [using model(ZnProduct) product.prodInverseLeft]
+qed
+
+theorem znCubeIsIdentityComponentwise: forall p: ZnPair; add(add(znFst(p), znFst(p)), znFst(p)) = ZERO -> add(add(znSnd(p), znSnd(p)), znSnd(p)) = ZERO -> znProdOp(znProdOp(p, p), p) = znProdE
+proof
+  @conclusion |
+    forall p: ZnPair; add(add(znFst(p), znFst(p)), znFst(p)) = ZERO -> add(add(znSnd(p), znSnd(p)), znSnd(p)) = ZERO -> znProdOp(znProdOp(p, p), p) = znProdE
+    [using model(ZnProduct) product.cubeIsIdentityComponentwise]
+qed
+
+// ℤ_n × ℤ_n is a GROUP, and the group corpus follows.
+model ZnProductGroup {
+  group.Grp: ZnPair
+  group.E: znProdE
+  group.op: znProdOp
+  group.inverse: znProdInv
+  group.opAssoc <- znProdAssoc
+  group.opIdentityLeft <- znProdIdentityLeft
+  group.opInverseLeft <- znProdInverseLeft
+}
+
+theorem znProdCancelLeft: forall a, b, c: ZnPair; znProdOp(a, b) = znProdOp(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: ZnPair; znProdOp(a, b) = znProdOp(a, c) -> b = c
+    [using model(ZnProductGroup) group.cancelLeft]
+qed
+
+// -- ℤ₃ × ℤ₃ against ℤ₉ ---------------------------------------------------------------------
+define THREE = isucc(isucc(isucc(IZERO)))
+define NINE = isucc(isucc(isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))))))
+
+// Modulo 3 every class is killed by tripling: k + k + k = 3·k ≡ 0.
+theorem everyClassTripledIsZeroModThree: N = THREE -> forall x: Zn; add(add(x, x), x) = ZERO
+proof
+  @given-modulus-three |
+    assume N = THREE {
+      @modulus-three |
+        N = THREE
+        [by hypothesis given-modulus-three]
+      @generalize-x |
+        fix x: Zn {
+          @representative-exists |
+            exists k: Int; x = cls(k)
+            [using specialize clsSurjective(x)]
+          @with-representative-k |
+            unpack k: Int from representative-exists {
+              @x-is-class |
+                x = cls(k)
+                [by hypothesis with-representative-k]
+              @doubled |
+                add(cls(k), cls(k)) = cls(iadd(k, k))
+                [using specialize addHom(k, k)]
+              @tripled |
+                add(cls(iadd(k, k)), cls(k)) = cls(iadd(iadd(k, k), k))
+                [using specialize addHom(iadd(k, k), k)]
+              @tripled-class-reflexive |
+                add(add(cls(k), cls(k)), cls(k)) = add(add(cls(k), cls(k)), cls(k))
+                [by reflexivity]
+              @tripled-class-folded-once |
+                add(add(cls(k), cls(k)), cls(k)) = add(cls(iadd(k, k)), cls(k))
+                [by rewrite doubled tripled-class-reflexive]
+              @tripled-class |
+                add(add(cls(k), cls(k)), cls(k)) = cls(iadd(iadd(k, k), k))
+                [using chain tripled-class-folded-once tripled]
+              // 3·k = k + k + k, so the difference from 0 is a multiple of N = 3.
+              @three-times-k-unfolds |
+                imul(THREE, k) = iadd(imul(isucc(isucc(IZERO)), k), k)
+                [using specialize mulSuccLeft(isucc(isucc(IZERO)), k)]
+              @two-times-k-unfolds |
+                imul(isucc(isucc(IZERO)), k) = iadd(imul(isucc(IZERO), k), k)
+                [using specialize mulSuccLeft(isucc(IZERO), k)]
+              @one-times-k-unfolds |
+                imul(isucc(IZERO), k) = iadd(imul(IZERO, k), k)
+                [using specialize mulSuccLeft(IZERO, k)]
+              @zero-times-k |
+                imul(IZERO, k) = IZERO
+                [using specialize mulZeroLeft(k)]
+              @one-times-k |
+                imul(isucc(IZERO), k) = iadd(IZERO, k)
+                [by rewrite zero-times-k one-times-k-unfolds]
+              @zero-plus-k |
+                iadd(IZERO, k) = k
+                [using specialize addZeroLeft(k)]
+              @one-times-k-is-k |
+                imul(isucc(IZERO), k) = k
+                [using chain one-times-k zero-plus-k]
+              @two-times-k |
+                imul(isucc(isucc(IZERO)), k) = iadd(k, k)
+                [by rewrite one-times-k-is-k two-times-k-unfolds]
+              @three-times-k |
+                imul(THREE, k) = iadd(iadd(k, k), k)
+                [by rewrite two-times-k three-times-k-unfolds]
+              @difference-unfolds |
+                isub(iadd(iadd(k, k), k), IZERO) = iadd(iadd(iadd(k, k), k), ineg(IZERO))
+                [using specialize definitionOfSubtraction(iadd(iadd(k, k), k), IZERO)]
+              @neg-zero |
+                ineg(IZERO) = IZERO
+                [by cite negZero]
+              @difference-plus-zero |
+                isub(iadd(iadd(k, k), k), IZERO) = iadd(iadd(iadd(k, k), k), IZERO)
+                [by rewrite neg-zero difference-unfolds]
+              @plus-zero |
+                iadd(iadd(iadd(k, k), k), IZERO) = iadd(iadd(k, k), k)
+                [using specialize addZeroRight(iadd(iadd(k, k), k))]
+              @three-times-k-flipped |
+                iadd(iadd(k, k), k) = imul(THREE, k)
+                [by symmetry three-times-k]
+              @difference-is-multiple-of-three |
+                isub(iadd(iadd(k, k), k), IZERO) = imul(THREE, k)
+                [using chain difference-plus-zero plus-zero three-times-k-flipped]
+              @difference-is-multiple-of-modulus |
+                isub(iadd(iadd(k, k), k), IZERO) = imul(N, k)
+                [by rewrite modulus-three difference-is-multiple-of-three]
+              @modulus-divides-difference |
+                divides(N, isub(iadd(iadd(k, k), k), IZERO))
+                [by exists_intro(k) difference-is-multiple-of-modulus]
+              @classes-congruent |
+                cls(iadd(iadd(k, k), k)) = cls(IZERO) iff divides(N, isub(iadd(iadd(k, k), k), IZERO))
+                [using specialize clsCongruent(iadd(iadd(k, k), k), IZERO)]
+              @tripled-class-is-zero-class |
+                cls(iadd(iadd(k, k), k)) = cls(IZERO)
+                [using tautology classes-congruent modulus-divides-difference]
+              @zero-is-zero-class |
+                ZERO = cls(IZERO)
+                [by cite zeroIsClsZero]
+              @zero-class-is-zero |
+                cls(IZERO) = ZERO
+                [by symmetry zero-is-zero-class]
+              @tripled-representative-is-zero |
+                add(add(cls(k), cls(k)), cls(k)) = ZERO
+                [using chain tripled-class tripled-class-is-zero-class zero-class-is-zero]
+              @conclusion-tripled-is-zero |
+                add(add(x, x), x) = ZERO
+                [by rewrite x-is-class tripled-representative-is-zero]
+            }
+          @conclusion-x-tripled-is-zero |
+            add(add(x, x), x) = ZERO
+            [by exists_elim with-representative-k]
+        }
+      @conclusion-all-tripled-zero |
+        forall x: Zn; add(add(x, x), x) = ZERO
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    N = THREE -> forall x: Zn; add(add(x, x), x) = ZERO
+    [by implies_intro given-modulus-three]
+qed
+
+// So every element of ℤ₃ × ℤ₃ is killed by cubing.
+theorem everyPairCubedIsIdentityModThree: N = THREE -> forall p: ZnPair; znProdOp(znProdOp(p, p), p) = znProdE
+proof
+  @given-modulus-three |
+    assume N = THREE {
+      @modulus-three |
+        N = THREE
+        [by hypothesis given-modulus-three]
+      @classes-tripled |
+        forall x: Zn; add(add(x, x), x) = ZERO
+        [using specialize everyClassTripledIsZeroModThree modulus-three]
+      @generalize-p |
+        fix p: ZnPair {
+          @first-tripled |
+            add(add(znFst(p), znFst(p)), znFst(p)) = ZERO
+            [using specialize classes-tripled(znFst(p))]
+          @second-tripled |
+            add(add(znSnd(p), znSnd(p)), znSnd(p)) = ZERO
+            [using specialize classes-tripled(znSnd(p))]
+          @conclusion-cubed |
+            znProdOp(znProdOp(p, p), p) = znProdE
+            [using specialize znCubeIsIdentityComponentwise(p) first-tripled second-tripled]
+        }
+      @conclusion-all-cubed |
+        forall p: ZnPair; znProdOp(znProdOp(p, p), p) = znProdE
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    N = THREE -> forall p: ZnPair; znProdOp(znProdOp(p, p), p) = znProdE
+    [by implies_intro given-modulus-three]
+qed
+
+// Modulo 9 the class of 1 is NOT killed by tripling: 1 + 1 + 1 = 3, and 9 ∤ 3 (a positive
+// divisor is at most what it divides, but 3 < 9).
+theorem classOfOneTripledIsNotZeroModNine: N = NINE -> add(add(cls(IONE), cls(IONE)), cls(IONE)) != ZERO
+proof
+  @given-modulus-nine |
+    assume N = NINE {
+      @modulus-nine |
+        N = NINE
+        [by hypothesis given-modulus-nine]
+      @doubled |
+        add(cls(IONE), cls(IONE)) = cls(iadd(IONE, IONE))
+        [using specialize addHom(IONE, IONE)]
+      @tripled |
+        add(cls(iadd(IONE, IONE)), cls(IONE)) = cls(iadd(iadd(IONE, IONE), IONE))
+        [using specialize addHom(iadd(IONE, IONE), IONE)]
+      @tripled-class-reflexive |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) = add(add(cls(IONE), cls(IONE)), cls(IONE))
+        [by reflexivity]
+      @tripled-class-folded-once |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) = add(cls(iadd(IONE, IONE)), cls(IONE))
+        [by rewrite doubled tripled-class-reflexive]
+      @tripled-class |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) = cls(iadd(iadd(IONE, IONE), IONE))
+        [using chain tripled-class-folded-once tripled]
+      @three-as-sum |
+        iadd(iadd(IONE, IONE), IONE) = THREE
+        [using simplify integer.oneIsSuccZero addSuccRight addZeroRight]
+      @tripled-class-is-three |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) = cls(THREE)
+        [by rewrite three-as-sum tripled-class]
+      @zero-is-zero-class |
+        ZERO = cls(IZERO)
+        [by cite zeroIsClsZero]
+      @classes-congruent |
+        cls(THREE) = cls(IZERO) iff divides(N, isub(THREE, IZERO))
+        [using specialize clsCongruent(THREE, IZERO)]
+      @difference-unfolds |
+        isub(THREE, IZERO) = iadd(THREE, ineg(IZERO))
+        [using specialize definitionOfSubtraction(THREE, IZERO)]
+      @neg-zero |
+        ineg(IZERO) = IZERO
+        [by cite negZero]
+      @difference-plus-zero |
+        isub(THREE, IZERO) = iadd(THREE, IZERO)
+        [by rewrite neg-zero difference-unfolds]
+      @plus-zero |
+        iadd(THREE, IZERO) = THREE
+        [using specialize addZeroRight(THREE)]
+      @difference-is-three |
+        isub(THREE, IZERO) = THREE
+        [using chain difference-plus-zero plus-zero]
+      // the order facts: 0 < 9, 0 < 3, 3 < 9.
+      @zero-nonneg |
+        nonneg(IZERO)
+        [by cite nonnegZero]
+      @one-nonneg |
+        nonneg(isucc(IZERO))
+        [using specialize nonnegSucc(IZERO) zero-nonneg]
+      @two-nonneg |
+        nonneg(isucc(isucc(IZERO)))
+        [using specialize nonnegSucc(isucc(IZERO)) one-nonneg]
+      @three-nonneg |
+        nonneg(THREE)
+        [using specialize nonnegSucc(isucc(isucc(IZERO))) two-nonneg]
+      @four-nonneg |
+        nonneg(isucc(THREE))
+        [using specialize nonnegSucc(THREE) three-nonneg]
+      @five-nonneg |
+        nonneg(isucc(isucc(THREE)))
+        [using specialize nonnegSucc(isucc(THREE)) four-nonneg]
+      @six-nonneg |
+        nonneg(isucc(isucc(isucc(THREE))))
+        [using specialize nonnegSucc(isucc(isucc(THREE))) five-nonneg]
+      @seven-nonneg |
+        nonneg(isucc(isucc(isucc(isucc(THREE)))))
+        [using specialize nonnegSucc(isucc(isucc(isucc(THREE)))) six-nonneg]
+      @eight-nonneg |
+        nonneg(isucc(isucc(isucc(isucc(isucc(THREE))))))
+        [using specialize nonnegSucc(isucc(isucc(isucc(isucc(THREE))))) seven-nonneg]
+      @zero-plus-nine |
+        iadd(IZERO, NINE) = NINE
+        [using specialize addZeroLeft(NINE)]
+      @zero-below-nine |
+        int_less_than(IZERO, NINE)
+        [using specialize lessThanIntro(IZERO, isucc(isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))))), NINE) eight-nonneg zero-plus-nine]
+      @zero-plus-three |
+        iadd(IZERO, THREE) = THREE
+        [using specialize addZeroLeft(THREE)]
+      @zero-below-three |
+        int_less_than(IZERO, THREE)
+        [using specialize lessThanIntro(IZERO, isucc(isucc(IZERO)), THREE) two-nonneg zero-plus-three]
+      @three-plus-six |
+        iadd(THREE, isucc(isucc(isucc(isucc(isucc(isucc(IZERO))))))) = NINE
+        [using simplify addSuccRight addZeroRight]
+      @three-below-nine |
+        int_less_than(THREE, NINE)
+        [using specialize lessThanIntro(THREE, isucc(isucc(isucc(isucc(isucc(IZERO))))), NINE) five-nonneg three-plus-six]
+      @three-not-below-itself |
+        not int_less_than(THREE, THREE)
+        [using specialize lessThanIrreflexive(THREE)]
+      // suppose the tripled class were zero: then 9 | 3.
+      @given-tripled-is-zero |
+        assume add(add(cls(IONE), cls(IONE)), cls(IONE)) = ZERO {
+          @tripled-is-zero |
+            add(add(cls(IONE), cls(IONE)), cls(IONE)) = ZERO
+            [by hypothesis given-tripled-is-zero]
+          @three-class-is-tripled |
+            cls(THREE) = add(add(cls(IONE), cls(IONE)), cls(IONE))
+            [by symmetry tripled-class-is-three]
+          @three-class-is-zero-class |
+            cls(THREE) = cls(IZERO)
+            [using chain three-class-is-tripled tripled-is-zero zero-is-zero-class]
+          @modulus-divides-difference |
+            divides(N, isub(THREE, IZERO))
+            [using tautology classes-congruent three-class-is-zero-class]
+          @modulus-divides-three |
+            divides(N, THREE)
+            [by rewrite difference-is-three modulus-divides-difference]
+          @nine-divides-three |
+            divides(NINE, THREE)
+            [by rewrite modulus-nine modulus-divides-three]
+          @nine-at-most-three |
+            int_divides.at_most(NINE, THREE)
+            [using specialize divisorAtMost(NINE, THREE) zero-below-nine zero-below-three nine-divides-three]
+          @nine-below-three-or-equal |
+            int_less_than(NINE, THREE) or NINE = THREE
+            [using specialize lessOrEqualSplit(NINE, THREE) nine-at-most-three]
+          @conclusion-absurd |
+            int_less_than(THREE, THREE)
+            case nine-below-three-or-equal {
+              @when-nine-below-three |
+                assume int_less_than(NINE, THREE) {
+                  @nine-below-three |
+                    int_less_than(NINE, THREE)
+                    [by hypothesis when-nine-below-three]
+                  @conclusion-three-below-itself |
+                    int_less_than(THREE, THREE)
+                    [using specialize lessThanTransitive(THREE, NINE, THREE) three-below-nine nine-below-three]
+                }
+              @when-nine-is-three |
+                assume NINE = THREE {
+                  @nine-is-three |
+                    NINE = THREE
+                    [by hypothesis when-nine-is-three]
+                  @eight-is-two |
+                    isucc(isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))))) = isucc(isucc(IZERO))
+                    [using specialize succInjective(isucc(isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))))), isucc(isucc(IZERO))) nine-is-three]
+                  @seven-is-one |
+                    isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO))))))) = isucc(IZERO)
+                    [using specialize succInjective(isucc(isucc(isucc(isucc(isucc(isucc(isucc(IZERO))))))), isucc(IZERO)) eight-is-two]
+                  @six-is-zero |
+                    isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))) = IZERO
+                    [using specialize succInjective(isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))), IZERO) seven-is-one]
+                  @six-is-not-zero |
+                    isucc(isucc(isucc(isucc(isucc(isucc(IZERO)))))) != IZERO
+                    [using specialize nonnegSuccNotZero(isucc(isucc(isucc(isucc(isucc(IZERO)))))) five-nonneg]
+                  @conclusion-three-below-itself-by-absurdity |
+                    int_less_than(THREE, THREE)
+                    [using tautology six-is-zero six-is-not-zero]
+                }
+            }
+        }
+      @tripled-zero-implies-absurd |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) = ZERO -> int_less_than(THREE, THREE)
+        [by implies_intro given-tripled-is-zero]
+      @conclusion-tripled-is-not-zero |
+        add(add(cls(IONE), cls(IONE)), cls(IONE)) != ZERO
+        [using tautology tripled-zero-implies-absurd three-not-below-itself]
+    }
+  @conclusion |
+    N = NINE -> add(add(cls(IONE), cls(IONE)), cls(IONE)) != ZERO
+    [by implies_intro given-modulus-nine]
+qed

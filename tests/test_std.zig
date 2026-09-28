@@ -78,6 +78,11 @@ pub fn addTests(
     // its coprime specialization `coprimeBezout`, the engine of Euclid's Lemma). An
     // independent std development of the theory AATA §2.2/§2.3 prove inline.
     ctx.okSilent(&.{ "check", "std/integer/divides.b4m" });
+    // the DIVISOR LATTICE (std/integer/lattice.b4m): gcd and lcm as the meet and join —
+    // gcd(lcm(m, n), N) = lcm(gcd(m, N), gcd(n, N)), the distributivity AATA §4.1 Ex 28's
+    // finite-order half needs. Proved from the gcd/lcm universal properties and Bézout,
+    // with no prime factorization.
+    ctx.okSilent(&.{ "check", "std/integer/lattice.b4m" });
 
     // the abstract, ℕ-indexed sequence + FOLD theory (std/sequence.b4m): an opaque
     // `Seq` over an abstract `Value` with an `at` accessor, an abstract `combine`/
@@ -119,6 +124,11 @@ pub fn addTests(
     // of primes — an independent std development of the facts that aata/2.3-primes.md
     // proves inline. Layers over std/integer/divides.b4m + std/integer-sequence.b4m.
     ctx.okSilent(&.{ "check", "std/primes.b4m" });
+    // PRIMES IN A RESIDUE CLASS (std/primes/classes.b4m): the Dirichlet-type constructions
+    // Euclid's argument still reaches — infinitely many primes ≡ 5 (mod 6) and ≡ 3 (mod 4),
+    // by strong induction ("a number ≡ 5 mod 6 above 1 has a prime factor ≡ 5 mod 6"), plus
+    // the Mersenne divisibility (2^a − 1) | (2^ab − 1).
+    ctx.okSilent(&.{ "check", "std/primes/classes.b4m" });
 
     // the group theory (std/group.b4m): THREE axioms (associativity + LEFT identity
     // + LEFT inverse) + an opt-in `opCommutative`; the right-sided laws and the
@@ -200,6 +210,11 @@ pub fn addTests(
     // ℕ-indexed listings talk about ℤ-valued orders and exponents.
     ctx.okSilent(&.{ "check", "std/integer/embedding.b4m" });
     ctx.okSilent(&.{ "check", "std/integer/mod-n-listing.b4m" });
+    // the DIRECT PRODUCT of two groups (std/group/product.b4m): the pair sort with
+    // componentwise operation, as a model of std/group.b4m so its theorems transfer; and
+    // (std/integer/mod-n-product.b4m) ℤ_n × ℤ_n as one instance of it.
+    ctx.okSilent(&.{ "check", "std/group/product.b4m" });
+    ctx.okSilent(&.{ "check", "std/integer/mod-n-product.b4m" });
     // ℤ_p has no proper nontrivial subgroups (std/integer/mod-n-prime.b4m, Judson §4.1
     // exercise 26): a subgroup (a predicate closed under 0, +, −) is closed under integer
     // multiples; a nonzero member cls(a) has N ∤ a, so for PRIME N Bézout puts cls(1) in it.
@@ -256,6 +271,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/real.b4m" });
     // ℝ* (std/real/units.b4m): the same for ℝ.
     ctx.okSilent(&.{ "check", "std/real/units.b4m" });
+    // INTEGER POWERS on ℝ* (std/real/units-power.b4m): x^k for k ∈ ℤ, making ℝ* a model of
+    // the group-power theory so the exponent laws and cyclic subgroups transfer.
+    ctx.okSilent(&.{ "check", "std/real/units-power.b4m" });
+    // ℝ∖{−1} UNDER a∗b = a + b + ab (std/real/affine-group.b4m): multiplication in disguise
+    // ((1+a)(1+b) = 1 + a∗b), as a guarded model of std/group.b4m — AATA §3.2 Ex 7.
+    ctx.okSilent(&.{ "check", "std/real/affine-group.b4m" });
 
     // the nonnegative square root on ℝ (std/real/sqrt.b4m): sqrt pinned by its
     // guarded defining axioms (sqrt(x)·sqrt(x)=x, sqrt≥0 for x≥0); proves
@@ -297,6 +318,10 @@ pub fn addTests(
     // an inductive count — so the vocabulary also covers infinite sets. The empty set has
     // size ZERO and is the ONLY set of that size (the base case of size uniqueness).
     ctx.okSilent(&.{ "check", "std/set/finite.b4m" });
+    // THE POWER SET, COUNTED (std/set/subsets.b4m): the subsets of segment(n) as a LISTING
+    // with 2^n entries — each subset of segment(n+1) is one of segment(n)'s either as it
+    // stands or with the new letter added. AATA §2.1 Ex 12.
+    ctx.okSilent(&.{ "check", "std/set/subsets.b4m" });
 
     // collections (std/collection.b4m): sets of sets, one level up. A Collection MODELS
     // std/set.b4m with set.Element -> Set, set.Set -> Collection, so the whole set

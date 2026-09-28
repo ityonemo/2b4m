@@ -1,0 +1,546 @@
+// std/real/affine-group.b4m — ℝ ∖ {−1} under a ∗ b = a + b + ab is a GROUP (AATA §3.2 Ex 7).
+//
+// The operation is the affine change of variable x ↦ 1 + x transported from multiplication:
+// (1 + a)(1 + b) = 1 + a ∗ b. So ∗ is associative and has identity 0 because · is and has
+// identity 1, the excluded point −1 is the image of 0, and the inverse of a is −a/(1 + a).
+// The set is carved as the predicated cut `NotMinusOne = Real where notMinusOne`; the three
+// group laws are proved on ℝ and relativized to the cut, and a guarded model of std/group.b4m
+// transfers the group corpus.
+
+import real <<< "std/real.b4m"
+import group <<< "std/group.b4m"
+
+sort Real = real.Real
+const ZERO = real.ZERO
+const ONE = real.ONE
+func add = real.add
+func mul = real.mul
+func neg = real.neg
+func recip = real.recip
+axiom fieldInverse = real.fieldInverse
+axiom oneNotZero = real.oneNotZero
+axiom mulIsCommutative = real.mulIsCommutative
+theorem addZeroRight = real.addZeroRight
+theorem addNegRight = real.addNegRight
+theorem mulOneRight = real.mulOneRight
+theorem negNeg = real.negNeg
+theorem negZero = real.negZero
+theorem noZeroDivisors = real.noZeroDivisors
+
+// -- the operation and the cut ---------------------------------------------------------------
+func star(a: Real, b: Real) => Real:
+  star(a, b) = add(add(a, b), mul(a, b))
+
+func starInverse(a: Real) => Real:
+  starInverse(a) = mul(neg(a), recip(add(ONE, a)))
+
+// the cut predicate is OPAQUE (like real/units' `nonzero`), pinned by its characterization,
+// so it stays folded through the model transfer.
+pred notMinusOne(a: Real)
+axiom notMinusOneCharacterization: forall a: Real; notMinusOne(a) iff a != neg(ONE)
+sort NotMinusOne = Real where notMinusOne
+
+// -- the laws on ℝ ----------------------------------------------------------------------------
+// a ∗ b unfolded, as a step to rewrite with.
+theorem starUnfolds: forall a, b: Real; star(a, b) = add(add(a, b), mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Real; star(a, b) = add(add(a, b), mul(a, b))
+    [by definition(0) star]
+qed
+
+theorem starInverseUnfolds: forall a: Real; starInverse(a) = mul(neg(a), recip(add(ONE, a)))
+proof
+  @conclusion |
+    forall a: Real; starInverse(a) = mul(neg(a), recip(add(ONE, a)))
+    [by definition(0) starInverse]
+qed
+
+// (a ∗ b) ∗ c = a ∗ (b ∗ c): both are a + b + c + ab + ac + bc + abc.
+theorem starIsAssociative: forall a, b, c: Real; star(star(a, b), c) = star(a, star(b, c))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @generalize-c |
+            fix c: Real {
+              @left-inner |
+                star(a, b) = add(add(a, b), mul(a, b))
+                [using specialize starUnfolds(a, b)]
+              @right-inner |
+                star(b, c) = add(add(b, c), mul(b, c))
+                [using specialize starUnfolds(b, c)]
+              @left-outer |
+                star(star(a, b), c) = add(add(star(a, b), c), mul(star(a, b), c))
+                [using specialize starUnfolds(star(a, b), c)]
+              @right-outer |
+                star(a, star(b, c)) = add(add(a, star(b, c)), mul(a, star(b, c)))
+                [using specialize starUnfolds(a, star(b, c))]
+              @left-expanded |
+                star(star(a, b), c) = add(add(add(add(a, b), mul(a, b)), c), mul(add(add(a, b), mul(a, b)), c))
+                [by rewrite left-inner left-outer]
+              @right-expanded |
+                star(a, star(b, c)) = add(add(a, add(add(b, c), mul(b, c))), mul(a, add(add(b, c), mul(b, c))))
+                [by rewrite right-inner right-outer]
+              @expansions-agree |
+                add(add(add(add(a, b), mul(a, b)), c), mul(add(add(a, b), mul(a, b)), c)) = add(add(a, add(add(b, c), mul(b, c))), mul(a, add(add(b, c), mul(b, c))))
+                [using polynomial(real)]
+              @right-expanded-flipped |
+                add(add(a, add(add(b, c), mul(b, c))), mul(a, add(add(b, c), mul(b, c)))) = star(a, star(b, c))
+                [by symmetry right-expanded]
+              @conclusion-associative |
+                star(star(a, b), c) = star(a, star(b, c))
+                [using chain left-expanded expansions-agree right-expanded-flipped]
+            }
+          @discharge-c |
+            forall c: Real; star(star(a, b), c) = star(a, star(b, c))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Real; star(star(a, b), c) = star(a, star(b, c))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Real; star(star(a, b), c) = star(a, star(b, c))
+    [by forall_intro generalize-a]
+qed
+
+// 0 ∗ a = a.
+theorem starZeroLeft: forall a: Real; star(ZERO, a) = a
+proof
+  @generalize-a |
+    fix a: Real {
+      @unfolded |
+        star(ZERO, a) = add(add(ZERO, a), mul(ZERO, a))
+        [using specialize starUnfolds(ZERO, a)]
+      @collapses |
+        add(add(ZERO, a), mul(ZERO, a)) = a
+        [using polynomial(real)]
+      @conclusion-identity |
+        star(ZERO, a) = a
+        [using chain unfolded collapses]
+    }
+  @conclusion |
+    forall a: Real; star(ZERO, a) = a
+    [by forall_intro generalize-a]
+qed
+
+// a ≠ −1 ⟺ 1 + a ≠ 0: the shift by one.
+theorem shiftedIsNonzero: forall a: Real; a != neg(ONE) -> add(ONE, a) != ZERO
+proof
+  @generalize-a |
+    fix a: Real {
+      @given-not-minus-one |
+        assume a != neg(ONE) {
+          @not-minus-one |
+            a != neg(ONE)
+            [by hypothesis given-not-minus-one]
+          @given-shift-zero |
+            assume add(ONE, a) = ZERO {
+              @shift-zero |
+                add(ONE, a) = ZERO
+                [by hypothesis given-shift-zero]
+              @a-through-shift |
+                a = add(neg(ONE), add(ONE, a))
+                [using polynomial(real)]
+              @a-is-shifted-zero |
+                a = add(neg(ONE), ZERO)
+                [by rewrite shift-zero a-through-shift]
+              @minus-one-plus-zero |
+                add(neg(ONE), ZERO) = neg(ONE)
+                [using specialize addZeroRight(neg(ONE))]
+              @conclusion-a-is-minus-one |
+                a = neg(ONE)
+                [using chain a-is-shifted-zero minus-one-plus-zero]
+            }
+          @shift-zero-implies |
+            add(ONE, a) = ZERO -> a = neg(ONE)
+            [by implies_intro given-shift-zero]
+          @conclusion-shift-nonzero |
+            add(ONE, a) != ZERO
+            [using tautology shift-zero-implies not-minus-one]
+        }
+      @not-minus-one-implies |
+        a != neg(ONE) -> add(ONE, a) != ZERO
+        [by implies_intro given-not-minus-one]
+    }
+  @conclusion |
+    forall a: Real; a != neg(ONE) -> add(ONE, a) != ZERO
+    [by forall_intro generalize-a]
+qed
+
+// a⁻¹ ∗ a = 0 for a ≠ −1: (−a·r) ∗ a = a − a·(r·(1 + a)) with r = 1/(1 + a), and r(1 + a) = 1.
+theorem starInverseLeftOnReals: forall a: Real; a != neg(ONE) -> star(starInverse(a), a) = ZERO
+proof
+  @generalize-a |
+    fix a: Real {
+      @given-not-minus-one |
+        assume a != neg(ONE) {
+          @not-minus-one |
+            a != neg(ONE)
+            [by hypothesis given-not-minus-one]
+          @shift-nonzero |
+            add(ONE, a) != ZERO
+            [using specialize shiftedIsNonzero(a) not-minus-one]
+          @shift-times-recip |
+            mul(add(ONE, a), recip(add(ONE, a))) = ONE
+            [using specialize fieldInverse(add(ONE, a)) shift-nonzero]
+          @recip-times-shift-commuted |
+            mul(recip(add(ONE, a)), add(ONE, a)) = mul(add(ONE, a), recip(add(ONE, a)))
+            [using specialize mulIsCommutative(recip(add(ONE, a)), add(ONE, a))]
+          @recip-times-shift |
+            mul(recip(add(ONE, a)), add(ONE, a)) = ONE
+            [using chain recip-times-shift-commuted shift-times-recip]
+          @inverse-unfolds |
+            starInverse(a) = mul(neg(a), recip(add(ONE, a)))
+            [using specialize starInverseUnfolds(a)]
+          @star-unfolds |
+            star(starInverse(a), a) = add(add(starInverse(a), a), mul(starInverse(a), a))
+            [using specialize starUnfolds(starInverse(a), a)]
+          @star-expanded |
+            star(starInverse(a), a) = add(add(mul(neg(a), recip(add(ONE, a))), a), mul(mul(neg(a), recip(add(ONE, a))), a))
+            [by rewrite inverse-unfolds star-unfolds]
+          @regrouped |
+            add(add(mul(neg(a), recip(add(ONE, a))), a), mul(mul(neg(a), recip(add(ONE, a))), a)) = add(a, mul(neg(a), mul(recip(add(ONE, a)), add(ONE, a))))
+            [using polynomial(real)]
+          @recip-cancelled |
+            add(a, mul(neg(a), mul(recip(add(ONE, a)), add(ONE, a)))) = add(a, mul(neg(a), ONE))
+            [by rewrite recip-times-shift recip-cancelled-reflexive]
+          @recip-cancelled-reflexive |
+            add(a, mul(neg(a), mul(recip(add(ONE, a)), add(ONE, a)))) = add(a, mul(neg(a), mul(recip(add(ONE, a)), add(ONE, a))))
+            [by reflexivity]
+          @collapses |
+            add(a, mul(neg(a), ONE)) = ZERO
+            [using polynomial(real)]
+          @conclusion-inverse-left |
+            star(starInverse(a), a) = ZERO
+            [using chain star-expanded regrouped recip-cancelled collapses]
+        }
+      @not-minus-one-implies |
+        a != neg(ONE) -> star(starInverse(a), a) = ZERO
+        [by implies_intro given-not-minus-one]
+    }
+  @conclusion |
+    forall a: Real; a != neg(ONE) -> star(starInverse(a), a) = ZERO
+    [by forall_intro generalize-a]
+qed
+
+// -- closure of the cut -------------------------------------------------------------------------
+// 0 ≠ −1.
+theorem zeroIsNotMinusOne: notMinusOne(ZERO)
+proof
+  @characterized |
+    notMinusOne(ZERO) iff ZERO != neg(ONE)
+    [using specialize notMinusOneCharacterization(ZERO)]
+  @given-zero-is-minus-one |
+    assume ZERO = neg(ONE) {
+      @zero-is-minus-one |
+        ZERO = neg(ONE)
+        [by hypothesis given-zero-is-minus-one]
+      @neg-neg-one |
+        neg(neg(ONE)) = ONE
+        [using specialize negNeg(ONE)]
+      @neg-zero-is-one |
+        neg(ZERO) = ONE
+        [by rewrite zero-is-minus-one neg-neg-one]
+      @neg-zero |
+        neg(ZERO) = ZERO
+        [by cite negZero]
+      @zero-is-neg-zero |
+        ZERO = neg(ZERO)
+        [by symmetry neg-zero]
+      @conclusion-zero-is-one |
+        ZERO = ONE
+        [using chain zero-is-neg-zero neg-zero-is-one]
+    }
+  @zero-is-minus-one-implies |
+    ZERO = neg(ONE) -> ZERO = ONE
+    [by implies_intro given-zero-is-minus-one]
+  @one-not-zero |
+    ONE != ZERO
+    [by cite oneNotZero]
+  @given-zero-is-one |
+    assume ZERO = ONE {
+      @zero-is-one |
+        ZERO = ONE
+        [by hypothesis given-zero-is-one]
+      @conclusion-one-is-zero |
+        ONE = ZERO
+        [by symmetry zero-is-one]
+    }
+  @zero-is-one-implies |
+    ZERO = ONE -> ONE = ZERO
+    [by implies_intro given-zero-is-one]
+  @conclusion |
+    notMinusOne(ZERO)
+    [using tautology characterized zero-is-minus-one-implies zero-is-one-implies one-not-zero]
+qed
+
+// a, b ≠ −1 ⟹ a ∗ b ≠ −1: 1 + a ∗ b = (1 + a)(1 + b), a product of nonzeros.
+theorem starClosed: forall a, b: Real; notMinusOne(a) -> notMinusOne(b) -> notMinusOne(star(a, b))
+proof
+  @generalize-a |
+    fix a: Real {
+      @generalize-b |
+        fix b: Real {
+          @given-a |
+            assume notMinusOne(a) {
+              @given-b |
+                assume notMinusOne(b) {
+                  @a-in |
+                    notMinusOne(a)
+                    [by hypothesis given-a]
+                  @b-in |
+                    notMinusOne(b)
+                    [by hypothesis given-b]
+                  @a-characterized |
+                    notMinusOne(a) iff a != neg(ONE)
+                    [using specialize notMinusOneCharacterization(a)]
+                  @b-characterized |
+                    notMinusOne(b) iff b != neg(ONE)
+                    [using specialize notMinusOneCharacterization(b)]
+                  @product-characterized |
+                    notMinusOne(star(a, b)) iff star(a, b) != neg(ONE)
+                    [using specialize notMinusOneCharacterization(star(a, b))]
+                  @a-not-minus-one |
+                    a != neg(ONE)
+                    [using tautology a-characterized a-in]
+                  @b-not-minus-one |
+                    b != neg(ONE)
+                    [using tautology b-characterized b-in]
+                  @a-shift-nonzero |
+                    add(ONE, a) != ZERO
+                    [using specialize shiftedIsNonzero(a) a-not-minus-one]
+                  @b-shift-nonzero |
+                    add(ONE, b) != ZERO
+                    [using specialize shiftedIsNonzero(b) b-not-minus-one]
+                  @unfolded |
+                    star(a, b) = add(add(a, b), mul(a, b))
+                    [using specialize starUnfolds(a, b)]
+                  @given-product-is-minus-one |
+                    assume star(a, b) = neg(ONE) {
+                      @product-is-minus-one |
+                        star(a, b) = neg(ONE)
+                        [by hypothesis given-product-is-minus-one]
+                      @expansion-is-minus-one |
+                        add(add(a, b), mul(a, b)) = neg(ONE)
+                        [by rewrite unfolded product-is-minus-one]
+                      @shifts-multiply |
+                        mul(add(ONE, a), add(ONE, b)) = add(ONE, add(add(a, b), mul(a, b)))
+                        [using polynomial(real)]
+                      @shifts-multiply-to-zero-sum |
+                        mul(add(ONE, a), add(ONE, b)) = add(ONE, neg(ONE))
+                        [by rewrite expansion-is-minus-one shifts-multiply]
+                      @one-minus-one |
+                        add(ONE, neg(ONE)) = ZERO
+                        [using specialize addNegRight(ONE)]
+                      @product-of-shifts-is-zero |
+                        mul(add(ONE, a), add(ONE, b)) = ZERO
+                        [using chain shifts-multiply-to-zero-sum one-minus-one]
+                      @a-shift-or-b-shift-zero |
+                        add(ONE, a) = ZERO or add(ONE, b) = ZERO
+                        [using specialize noZeroDivisors(add(ONE, a), add(ONE, b)) product-of-shifts-is-zero]
+                      @conclusion-absurd |
+                        ZERO = ONE
+                        [using tautology a-shift-or-b-shift-zero a-shift-nonzero b-shift-nonzero]
+                    }
+                  @product-is-minus-one-implies |
+                    star(a, b) = neg(ONE) -> ZERO = ONE
+                    [by implies_intro given-product-is-minus-one]
+                  @one-not-zero |
+                    ONE != ZERO
+                    [by cite oneNotZero]
+                  @given-zero-is-one |
+                    assume ZERO = ONE {
+                      @zero-is-one |
+                        ZERO = ONE
+                        [by hypothesis given-zero-is-one]
+                      @conclusion-one-is-zero |
+                        ONE = ZERO
+                        [by symmetry zero-is-one]
+                    }
+                  @zero-is-one-implies |
+                    ZERO = ONE -> ONE = ZERO
+                    [by implies_intro given-zero-is-one]
+                  @conclusion-product-in |
+                    notMinusOne(star(a, b))
+                    [using tautology product-characterized product-is-minus-one-implies zero-is-one-implies one-not-zero]
+                }
+              @b-implies |
+                notMinusOne(b) -> notMinusOne(star(a, b))
+                [by implies_intro given-b]
+            }
+          @a-implies |
+            notMinusOne(a) -> notMinusOne(b) -> notMinusOne(star(a, b))
+            [by implies_intro given-a]
+        }
+      @discharge-b |
+        forall b: Real; notMinusOne(a) -> notMinusOne(b) -> notMinusOne(star(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Real; notMinusOne(a) -> notMinusOne(b) -> notMinusOne(star(a, b))
+    [by forall_intro generalize-a]
+qed
+
+// a ≠ −1 ⟹ a⁻¹ ≠ −1: were a⁻¹ = −1, then (−1) ∗ a = 0 by the inverse law, but (−1) ∗ a = −1.
+theorem starInverseClosed: forall a: Real; notMinusOne(a) -> notMinusOne(starInverse(a))
+proof
+  @zero-in |
+    notMinusOne(ZERO)
+    [by cite zeroIsNotMinusOne]
+  @zero-characterized |
+    notMinusOne(ZERO) iff ZERO != neg(ONE)
+    [using specialize notMinusOneCharacterization(ZERO)]
+  @zero-not-minus-one |
+    ZERO != neg(ONE)
+    [using tautology zero-characterized zero-in]
+  @generalize-a |
+    fix a: Real {
+      @given-a |
+        assume notMinusOne(a) {
+          @a-in |
+            notMinusOne(a)
+            [by hypothesis given-a]
+          @a-characterized |
+            notMinusOne(a) iff a != neg(ONE)
+            [using specialize notMinusOneCharacterization(a)]
+          @inverse-characterized |
+            notMinusOne(starInverse(a)) iff starInverse(a) != neg(ONE)
+            [using specialize notMinusOneCharacterization(starInverse(a))]
+          @a-not-minus-one |
+            a != neg(ONE)
+            [using tautology a-characterized a-in]
+          @inverse-law |
+            star(starInverse(a), a) = ZERO
+            [using specialize starInverseLeftOnReals(a) a-not-minus-one]
+          @minus-one-star-a-unfolds |
+            star(neg(ONE), a) = add(add(neg(ONE), a), mul(neg(ONE), a))
+            [using specialize starUnfolds(neg(ONE), a)]
+          @minus-one-star-a-collapses |
+            add(add(neg(ONE), a), mul(neg(ONE), a)) = neg(ONE)
+            [using polynomial(real)]
+          @minus-one-star-a |
+            star(neg(ONE), a) = neg(ONE)
+            [using chain minus-one-star-a-unfolds minus-one-star-a-collapses]
+          @minus-one-is-its-star |
+            neg(ONE) = star(neg(ONE), a)
+            [by symmetry minus-one-star-a]
+          @given-inverse-is-minus-one |
+            assume starInverse(a) = neg(ONE) {
+              @inverse-is-minus-one |
+                starInverse(a) = neg(ONE)
+                [by hypothesis given-inverse-is-minus-one]
+              @minus-one-star-a-is-zero |
+                star(neg(ONE), a) = ZERO
+                [by rewrite inverse-is-minus-one inverse-law]
+              @minus-one-is-zero |
+                neg(ONE) = ZERO
+                [using chain minus-one-is-its-star minus-one-star-a-is-zero]
+              @conclusion-zero-is-minus-one |
+                ZERO = neg(ONE)
+                [by symmetry minus-one-is-zero]
+            }
+          @inverse-is-minus-one-implies |
+            starInverse(a) = neg(ONE) -> ZERO = neg(ONE)
+            [by implies_intro given-inverse-is-minus-one]
+          @conclusion-inverse-in |
+            notMinusOne(starInverse(a))
+            [using tautology inverse-characterized inverse-is-minus-one-implies zero-not-minus-one]
+        }
+      @a-implies |
+        notMinusOne(a) -> notMinusOne(starInverse(a))
+        [by implies_intro given-a]
+    }
+  @conclusion |
+    forall a: Real; notMinusOne(a) -> notMinusOne(starInverse(a))
+    [by forall_intro generalize-a]
+qed
+
+// -- the group laws on the cut ------------------------------------------------------------------
+theorem starAssociativeOnCut: forall x, y, z: NotMinusOne; star(star(x, y), z) = star(x, star(y, z))
+proof
+  @generalize-x |
+    fix x: NotMinusOne {
+      @generalize-y |
+        fix y: NotMinusOne {
+          @generalize-z |
+            fix z: NotMinusOne {
+              @conclusion-associative |
+                star(star(x, y), z) = star(x, star(y, z))
+                [using specialize starIsAssociative(x, y, z)]
+            }
+          @discharge-z |
+            forall z: NotMinusOne; star(star(x, y), z) = star(x, star(y, z))
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: NotMinusOne; star(star(x, y), z) = star(x, star(y, z))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: NotMinusOne; star(star(x, y), z) = star(x, star(y, z))
+    [by forall_intro generalize-x]
+qed
+
+theorem starZeroLeftOnCut: forall x: NotMinusOne; star(ZERO, x) = x
+proof
+  @generalize-x |
+    fix x: NotMinusOne {
+      @conclusion-identity |
+        star(ZERO, x) = x
+        [using specialize starZeroLeft(x)]
+    }
+  @conclusion |
+    forall x: NotMinusOne; star(ZERO, x) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem starInverseLeftOnCut: forall x: NotMinusOne; star(starInverse(x), x) = ZERO
+proof
+  @generalize-x |
+    fix x: NotMinusOne {
+      @x-in |
+        notMinusOne(x)
+        [by predicate generalize-x]
+      @x-characterized |
+        notMinusOne(x) iff x != neg(ONE)
+        [using specialize notMinusOneCharacterization(x)]
+      @x-not-minus-one |
+        x != neg(ONE)
+        [using tautology x-characterized x-in]
+      @conclusion-inverse-left |
+        star(starInverse(x), x) = ZERO
+        [using specialize starInverseLeftOnReals(x) x-not-minus-one]
+    }
+  @conclusion |
+    forall x: NotMinusOne; star(starInverse(x), x) = ZERO
+    [by forall_intro generalize-x]
+qed
+
+// (ℝ ∖ {−1}, ∗) is a GROUP.
+model AffineGroup {
+  group.Grp: NotMinusOne
+  group.E: ZERO(zeroIsNotMinusOne)
+  group.op: star -| starClosed
+  group.inverse: starInverse -| starInverseClosed
+  group.opAssoc <- starAssociativeOnCut
+  group.opIdentityLeft <- starZeroLeftOnCut
+  group.opInverseLeft <- starInverseLeftOnCut
+}
+
+// PAYOFF: the group corpus on ℝ ∖ {−1}.
+theorem starCancelLeft: forall a, b, c: NotMinusOne; star(a, b) = star(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: NotMinusOne; star(a, b) = star(a, c) -> b = c
+    [using model(AffineGroup) group.cancelLeft]
+qed
+
+theorem starInverseIsUnique: forall a, b: NotMinusOne; star(a, b) = ZERO -> b = starInverse(a)
+proof
+  @conclusion |
+    forall a, b: NotMinusOne; star(a, b) = ZERO -> b = starInverse(a)
+    [using model(AffineGroup) group.inverseUnique]
+qed

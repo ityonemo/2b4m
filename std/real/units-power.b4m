@@ -1,0 +1,199 @@
+// std/real/units-power.b4m — INTEGER POWERS in ℝ*: x^k for k ∈ ℤ, and ℝ* as a model of
+// std/group/power.b4m.
+//
+// x^0 = 1, x^(k+1) = x^k · x, x^(k−1) = x^k · x⁻¹ — the three clauses of group_power's
+// `power`, on reals. They are stated as AXIOMS, as group_power and std/permutation/power.b4m
+// state theirs: a function recursing on ℤ in both directions has no termination story a
+// definition block could honestly claim, so the clauses are postulated and the model below
+// is what makes them coherent (the same postulates hold in every group). A power of a nonzero
+// real is nonzero (bidirectional integer induction), so RStar = Real where nonzero is a
+// GUARDED model of the group-power theory, and the exponent laws (x^m x^n = x^(m+n),
+// x^(−m) = (x^m)⁻¹) and the cyclic subgroup ⟨x⟩ = {x^k} (std/group/generated.b4m) transfer.
+// aata/3.3-subgroups-exercises.md uses this for H = {2^k} ≤ ℝ* (Judson §3.3 Ex 37).
+
+import real <<< "std/real.b4m"
+import real_units <<< "std/real/units.b4m"
+import group <<< "std/group.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_generated <<< "std/group/generated.b4m"
+import integer <<< "std/integer.b4m"
+
+sort Real = real.Real
+const ONE = real.ONE
+func mul = real.mul
+func recip = real.recip
+pred nonzero = real_units.nonzero
+sort RStar = real_units.RStar
+theorem oneIsNonzero = real_units.oneIsNonzero
+theorem productOfNonzeroIsNonzero = real_units.productOfNonzeroIsNonzero
+theorem recipOfNonzeroIsNonzero = real_units.recipOfNonzeroIsNonzero
+theorem unitsAssoc = real_units.unitsAssoc
+theorem unitsIdentityLeft = real_units.unitsIdentityLeft
+theorem unitsInverseLeft = real_units.unitsInverseLeft
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iprev = integer.prev
+func iadd = integer.add
+func ineg = integer.neg
+theorem intInduction = integer.induction
+
+// -- the integer power -----------------------------------------------------------------------
+func ipow(x: Real, k: Int) => Real
+axiom ipowZero: forall x: Real; ipow(x, IZERO) = ONE
+axiom ipowSucc: forall x: Real; forall k: Int; ipow(x, isucc(k)) = mul(ipow(x, k), x)
+axiom ipowPrev: forall x: Real; forall k: Int; ipow(x, iprev(k)) = mul(ipow(x, k), recip(x))
+
+// a power of a nonzero real is nonzero: 1 is, and each step multiplies by x or x⁻¹.
+theorem ipowIsNonzero: forall x: Real; forall k: Int; nonzero(x) -> nonzero(ipow(x, k))
+proof
+  @generalize-x |
+    fix x: Real {
+      @generalize-k |
+        fix k: Int {
+          @given-nonzero |
+            assume nonzero(x) {
+              @x-nonzero |
+                nonzero(x)
+                [by hypothesis given-nonzero]
+              @recip-nonzero |
+                nonzero(recip(x))
+                [using specialize recipOfNonzeroIsNonzero(x) x-nonzero]
+              @zeroth-power |
+                ipow(x, IZERO) = ONE
+                [using specialize ipowZero(x)]
+              @one-nonzero |
+                nonzero(ONE)
+                [by cite oneIsNonzero]
+              @base-case |
+                nonzero(ipow(x, IZERO))
+                [by rewrite zeroth-power one-nonzero]
+              @step-up |
+                fix k2: Int {
+                  @given-power-nonzero |
+                    assume nonzero(ipow(x, k2)) {
+                      @power-nonzero |
+                        nonzero(ipow(x, k2))
+                        [by hypothesis given-power-nonzero]
+                      @next-unfolds |
+                        ipow(x, isucc(k2)) = mul(ipow(x, k2), x)
+                        [using specialize ipowSucc(x, k2)]
+                      @product-nonzero |
+                        nonzero(mul(ipow(x, k2), x))
+                        [using specialize productOfNonzeroIsNonzero(ipow(x, k2), x) power-nonzero x-nonzero]
+                      @conclusion-next-nonzero |
+                        nonzero(ipow(x, isucc(k2)))
+                        [by rewrite next-unfolds product-nonzero]
+                    }
+                  @conclusion-step-up |
+                    nonzero(ipow(x, k2)) -> nonzero(ipow(x, isucc(k2)))
+                    [by implies_intro given-power-nonzero]
+                }
+              @step-up-for-all |
+                forall k2: Int; nonzero(ipow(x, k2)) -> nonzero(ipow(x, isucc(k2)))
+                [by forall_intro step-up]
+              @step-down |
+                fix k2: Int {
+                  @given-power-nonzero |
+                    assume nonzero(ipow(x, k2)) {
+                      @power-nonzero |
+                        nonzero(ipow(x, k2))
+                        [by hypothesis given-power-nonzero]
+                      @previous-unfolds |
+                        ipow(x, iprev(k2)) = mul(ipow(x, k2), recip(x))
+                        [using specialize ipowPrev(x, k2)]
+                      @product-nonzero |
+                        nonzero(mul(ipow(x, k2), recip(x)))
+                        [using specialize productOfNonzeroIsNonzero(ipow(x, k2), recip(x)) power-nonzero recip-nonzero]
+                      @conclusion-previous-nonzero |
+                        nonzero(ipow(x, iprev(k2)))
+                        [by rewrite previous-unfolds product-nonzero]
+                    }
+                  @conclusion-step-down |
+                    nonzero(ipow(x, k2)) -> nonzero(ipow(x, iprev(k2)))
+                    [by implies_intro given-power-nonzero]
+                }
+              @step-down-for-all |
+                forall k2: Int; nonzero(ipow(x, k2)) -> nonzero(ipow(x, iprev(k2)))
+                [by forall_intro step-down]
+              @all-powers-nonzero |
+                forall k2: Int; nonzero(ipow(x, k2))
+                [using instantiation intInduction((fun k2: Int => nonzero(ipow(x, k2)))) base-case step-up-for-all step-down-for-all]
+              @conclusion-power-nonzero |
+                nonzero(ipow(x, k))
+                [using specialize all-powers-nonzero(k)]
+            }
+          @nonzero-implies |
+            nonzero(x) -> nonzero(ipow(x, k))
+            [by implies_intro given-nonzero]
+        }
+      @discharge-k |
+        forall k: Int; nonzero(x) -> nonzero(ipow(x, k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall x: Real; forall k: Int; nonzero(x) -> nonzero(ipow(x, k))
+    [by forall_intro generalize-x]
+qed
+
+// -- ℝ* models the group-power theory (guarded by `nonzero`) ---------------------------------
+model RealUnitsPower {
+  group_power.Grp: RStar
+  group_power.E: ONE(oneIsNonzero)
+  group_power.op: mul -| productOfNonzeroIsNonzero
+  group_power.inverse: recip -| recipOfNonzeroIsNonzero
+  group_power.power: ipow -| ipowIsNonzero
+  group_power.opAssoc <- unitsAssoc
+  group_power.opIdentityLeft <- unitsIdentityLeft
+  group_power.opInverseLeft <- unitsInverseLeft
+  group_power.powerZero <- ipowZero
+  group_power.powerSucc <- ipowSucc
+  group_power.powerPrev <- ipowPrev
+}
+
+// PAYOFF: the exponent laws on ℝ*.
+theorem ipowOne: forall x: RStar; ipow(x, isucc(IZERO)) = x
+proof
+  @conclusion |
+    forall x: RStar; ipow(x, isucc(IZERO)) = x
+    [using model(RealUnitsPower) group_power.powerOne]
+qed
+
+theorem ipowAdd: forall x: RStar; forall m, n: Int; mul(ipow(x, m), ipow(x, n)) = ipow(x, iadd(m, n))
+proof
+  @conclusion |
+    forall x: RStar; forall m, n: Int; mul(ipow(x, m), ipow(x, n)) = ipow(x, iadd(m, n))
+    [using model(RealUnitsPower) group_power.powerAdd]
+qed
+
+theorem ipowNegRecip: forall x: RStar; forall m: Int; ipow(x, ineg(m)) = recip(ipow(x, m))
+proof
+  @conclusion |
+    forall x: RStar; forall m: Int; ipow(x, ineg(m)) = recip(ipow(x, m))
+    [using model(RealUnitsPower) group_power.powerNegInverse]
+qed
+
+// -- and the cyclic subgroup ⟨g⟩ = { g^k : k ∈ ℤ } of ℝ* ------------------------------------------
+define isPowerOf(g, x) = exists k: Int; x = ipow(g, k)
+
+theorem powersContainOne: forall g: RStar; isPowerOf(g, ONE)
+proof
+  @conclusion |
+    forall g: RStar; isPowerOf(g, ONE)
+    [using model(RealUnitsPower) group_generated.generatedHasIdentity]
+qed
+
+theorem powersClosedUnderProduct: forall g: RStar; forall x, y: RStar; isPowerOf(g, x) -> isPowerOf(g, y) -> isPowerOf(g, mul(x, y))
+proof
+  @conclusion |
+    forall g: RStar; forall x, y: RStar; isPowerOf(g, x) -> isPowerOf(g, y) -> isPowerOf(g, mul(x, y))
+    [using model(RealUnitsPower) group_generated.generatedClosedOp]
+qed
+
+theorem powersClosedUnderRecip: forall g: RStar; forall x: RStar; isPowerOf(g, x) -> isPowerOf(g, recip(x))
+proof
+  @conclusion |
+    forall g: RStar; forall x: RStar; isPowerOf(g, x) -> isPowerOf(g, recip(x))
+    [using model(RealUnitsPower) group_generated.generatedClosedInverse]
+qed
