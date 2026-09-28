@@ -286,6 +286,8 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     };
     var scanner = RefScan.init(self.arena, self.interner, st.source, st.walk);
     scanner.schema_params = st.prove.schema_params;
+    scanner.ctx = self;
+    scanner.file = task.file;
     const refs = try scanner.scanFormula(formula);
     // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
     // ns — a model transfer's source names resolve there + get overlay-redirected.

@@ -241,6 +241,9 @@ pub fn addTests(
     // `[using import(I) thm]`: the import cite resolves to the TRANSFERRED copy, as `by cite` does.
     // Regression: it handed the kernel the untransferred source statement.
     ctx.okSilent(&.{ "check", "tests/cases/model_import_cite.b4m" });
+    // a schema instantiated by QUALIFIED name from another file: its parameter sorts are
+    // demanded in the SCHEMA's namespace first. Regression: "unknown sort" at the declaration.
+    ctx.okSilent(&.{ "check", "tests/cases/schema_qualified_instantiation.b4m" });
     // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.

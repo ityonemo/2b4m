@@ -100,6 +100,16 @@ pub fn addTests(
     // real, kernel-checked facts (the theorems instantiate them).
     ctx.okSilent(&.{ "check", "tests/cases/definition_blocks.b4m" });
     ctx.okSilent(&.{ "fmt", "--check", "tests/cases/definition_blocks.b4m" });
+    // CLAUSE VARIABLES are settled by the elaborator: sort from USE (`x` in `member(x, …)` is
+    // an Element, not the first param's Set), a DECLARED lower-case name is that global (the
+    // quantifier dissolves), mixed-sort params each keep their own, unmentioned params are not
+    // quantified. A variable filling no declared argument is diagnosed, not guessed.
+    ctx.okSilent(&.{ "check", "tests/cases/definition_clause_variables.b4m" });
+    ctx.okSilent(&.{ "fmt", "--check", "tests/cases/definition_clause_variables.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/definition_clause_uninferable_bad.b4m" },
+        \\tests/cases/definition_clause_uninferable_bad.b4m:6:20: error: cannot infer the sort of 'y': it fills no argument of a declared symbol in this clause (declare it, or use it where its sort is determined)
+        \\
+    );
     // `--axioms` discloses a definition clause DIFFERENTLY from an assumption: a definition
     // introduces a symbol (doubting it is not coherent), an assumption constrains a
     // primitive, and only the second is something a reader should weigh. Reported under the
@@ -108,8 +118,8 @@ pub fn addTests(
         \\OK: 15 declarations, 3 theorems proven
         \\  — rests on 3 axiom(s):
         \\      isZero (clause 0)  (tests/cases/definition_blocks.b4m:10)  — DEFINITION
-        \\      add (clause 0)  (tests/cases/definition_blocks.b4m:14)  — DEFINITION
-        \\      add (clause 1)  (tests/cases/definition_blocks.b4m:14)  — DEFINITION
+        \\      add (clause 0)  (tests/cases/definition_blocks.b4m:16)  — DEFINITION
+        \\      add (clause 1)  (tests/cases/definition_blocks.b4m:16)  — DEFINITION
         \\
     );
     ctx.okSilent(&.{ "check", "tests/cases/imp_chain.b4m" });

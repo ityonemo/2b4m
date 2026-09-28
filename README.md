@@ -1,7 +1,7 @@
-# 2b4m - a proof assistant
+# 2b4m (too big for margin) - a proof assistant
 
-*2b4m* is named for Fermat's note that his proof was too large for the margin.  b4m
-proofs are unapologetically large, and not expected to be written by humans.
+*2b4m* is named for Fermat's note that his proof was too big for the margin.  
+2b4m proofs are unapologetically large, and not expected to be written by humans.
 At the same time, they are expected to be extremely easy for humans to check.
 
 A proof checker written in Zig. It consumes `.b4m` files containing

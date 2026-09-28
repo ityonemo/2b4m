@@ -501,6 +501,8 @@ pub fn elaborateFactStatement(
     walk.* = Walk.init(self.arena, self.interner, source, self.sink);
 
     var scanner = RefScan.init(self.arena, self.interner, source, walk);
+    scanner.ctx = self;
+    scanner.file = file;
     const refs = try scanner.scanFormula(formula);
     if (try resolveRefs(self, h, file, resolve_ns, model, null, refs)) |blocker| {
         h.suspendOn(blocker);
@@ -543,6 +545,8 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     }
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params; // skip param names when driving a schema instance
+    scanner.ctx = self.ctx;
+    scanner.file = self.file;
     const refs = try scanner.scanStep(step);
     if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, refs)) |blocker| return blocker;
 
@@ -614,6 +618,8 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // are here to AVOID). Model/import NAMES are ident-domain, so they resolve here.
     var scanner = RefScan.init(self.ctx.arena, self.ctx.interner, self.source, w);
     scanner.schema_params = self.schema_params;
+    scanner.ctx = self.ctx;
+    scanner.file = self.file;
     const refs = try scanner.scanStep(step);
     const idents = try self.ctx.arena.alloc(RefScan.Ref, refs.len);
     var n: usize = 0;
@@ -1676,6 +1682,9 @@ fn resolveQualifier(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
 /// after the read pass resolved the `.schema` locator to `done`.
 const ResolvedSchema = struct {
     file: InternPool.Index,
+    /// the schema's ORIGIN namespace (universe-of-`file`) — where its parameter sort tokens
+    /// resolve. NOT the citing qualifier's namespace: a fact-alias resolves to the same schema
+    /// from a different namespace, and its param sorts still live in the declaring file.
     ns: InternPool.Index,
     name: StrId, // the schema's name (keys the AST registry + the instance payload)
     /// the schema's Fact (params + formula) — a schema is an axiom/theorem/hole whose
@@ -1706,9 +1715,10 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
     // a schema is an axiom/theorem/hole with params; extract its Fact decl-kind-agnostically.
     const fact = ast.factOf(decl) orelse
         return self.fail(tok.start, "'{s}' is not a schema", .{self.text(tok)});
+    const origin_ns = self.ctx.interner.namespace(.universe, loc.file) catch return error.OutOfMemory;
     return .{
         .file = loc.file,
-        .ns = ns,
+        .ns = origin_ns,
         .name = loc.name,
         .fact = fact,
         .source = self.ctx.files.get(@intFromEnum(fid)).source,
@@ -1860,6 +1870,12 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     };
+    // the schema's PARAM SORT tokens are ITS file's names: demand them in its namespace before
+    // binding the args. A schema is checked only at an instantiation, so nothing has fetched
+    // them yet — a QUALIFIED cite from another file (`a.tauto`) found `Fn` absent from a's
+    // namespace and failed "unknown sort" at the declaration; an aliased cite only worked when
+    // the citing file happened to declare the same sort name.
+    if (try self.demandSchemaParamSorts(rs)) |blocker| return .{ .blocked = blocker };
     const args = self.bindSchemaArgs(e, rs, c, false) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -1924,6 +1940,30 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
     }));
     return .{ .blocked = blocker };
+}
+
+/// Demand (fetch) every sort token of `rs`'s parameter list in the schema's own namespace —
+/// `T` in `x: T` and `T -> Prop`. `Prop` and already-resolved `.symbol` tokens need nothing.
+/// Returns a blocker to suspend on, or null when all are done.
+fn demandSchemaParamSorts(self: *Prove, rs: ResolvedSchema) Allocator.Error!?Engine.TaskIndex {
+    var refs: std.ArrayList(RefScan.Ref) = .empty;
+    for (rs.fact.params.?) |p| {
+        for (p.arg_sorts) |t| try appendSortRef(self.ctx.arena, &refs, t);
+        try appendSortRef(self.ctx.arena, &refs, p.result);
+    }
+    if (refs.items.len == 0) return null;
+    return resolveRefs(self.ctx, self.h, rs.file, rs.ns, self.model, self.self_key, refs.items);
+}
+
+fn appendSortRef(arena: Allocator, refs: *std.ArrayList(RefScan.Ref), tok: lexer.Token) Allocator.Error!void {
+    if (tok.tag == .symbol) return;
+    if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return;
+    try refs.append(arena, .{
+        .ns = if (tok.qualifier == InternPool.Index.none) null else tok.qualifier,
+        .name = tokName(tok),
+        .domain = .ident,
+        .loc = tok.start,
+    });
 }
 
 /// FREE VARIABLES of a schema instance's args — a caller-local `fix`/`unpack` variable riding

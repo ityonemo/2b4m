@@ -419,7 +419,13 @@ const Expander = struct {
                     for (binders, nb) |b, *out| {
                         const fresh_name = if (x.env.symbolize) try self.fresh(b.name.name) else b.name.name;
                         try self.scope.append(self.arena, .{ .name = b.name.name, .fresh = fresh_name });
-                        out.* = .{
+                        // an INFERRED binder (a definition clause's free name) has no sort token
+                        // to resolve — its `sort` is a placeholder the elaborator never reads.
+                        out.* = if (b.inferred) .{
+                            .name = nameTok(x.env, b.name, fresh_name),
+                            .sort = b.sort,
+                            .inferred = true,
+                        } else .{
                             .name = nameTok(x.env, b.name, fresh_name),
                             .sort = try self.globalTok(x.env, b.sort),
                             // a binder GUARD naming a define is desugared away above; one that

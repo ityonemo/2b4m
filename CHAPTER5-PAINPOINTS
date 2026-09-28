@@ -20,7 +20,14 @@ combinatorics, `1e655af` cycle notation, `c5d2dae` orbits, `b9c78ce` the period,
 |A_n| = n!/2, `f5f7eca` |D_n| = 2n, `2612aa7`/`0e55135` model transfer across three
 theories + the passive-namespace model-cite bug, `6ef3b05` the transposition
 soundness fix (u ≠ v — the assumed parity lemma had made the chapter's axioms
-inconsistent; LESSON kept below), `0969362` orders in D_n.)
+inconsistent; LESSON kept below), `0969362` orders in D_n. Same day, the three
+CHECKER bugs logged here were fixed: definition-clause variables take their sort
+from USE and a declared lower-case name on a clause's RHS is the global (the
+elaborator settles clause variables; params a clause does not mention are no longer
+quantified), and a schema instantiated by QUALIFIED name from another file demands
+its parameter sorts in its own namespace — fixtures
+`tests/cases/definition_clause_variables.b4m`, `…_uninferable_bad.b4m`,
+`tests/cases/schema_qualified_instantiation.b4m`.)
 
 ---
 
@@ -57,49 +64,6 @@ downstream of the lemma is proved.
 ---
 
 ## Open, smaller
-
-### Clause variables in a definition block take the FIRST PARAM'S SORT
-
-Found while surveying the corpus for definition migrations (`7dff5a4`). A free
-variable a definition's declaration does not bind takes the sort of the first
-param. Right by luck for recursive clauses (`k` in `add(succ(k), b)` is a `Nat`
-like `a`), wrong for the membership style:
-
-    func union(a: Set, b: Set) => Set:
-      member(x, union(a, b)) iff (member(x, a) or member(x, b))
-    -- error: expected sort 'Element', got 'Set'   (at `x`; re-probed 2026-09-27)
-
-The fix is to take the sort from USE (`member`'s first argument pins
-`x : Element`), which subsumes the first-param heuristic. Blocks TIER 2 of
-DEFINITION-MIGRATION-CANDIDATES. Hit again 2026-09-26 writing `cycle`:
-
-    func cycle(s: Points, k: Nat) => Fn:
-      cycle(s, ZERO) = identityFn;
-      cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
-    -- error: expected sort 'Nat', got 'Points'   (at `k`)
-
-Also why `std/peano/factorial.b4m` states n! as two axioms rather than a block.
-
-### A bare constant on a clause's RIGHT-HAND side is read as a clause variable
-
-Same probe, first clause: `cycle(s, ZERO) = identityFn` is rejected with
-"'identityFn' shadows a declaration; choose a fresh name" — the RHS constant is
-taken for a fresh clause variable. (`ZERO` in the HEAD is accepted as a pattern.)
-Resolution should look identifiers up before minting clause variables. Until
-both are fixed, `std/permutation/cycle.b4m` states its two clauses as plain
-axioms (`cycleZero`, `cycleSucc`). Re-probed 2026-09-27: still minted — the RHS
-`identityFn` now reports "expected sort 'Fn', got 'Nat'" (a fresh clause variable
-of the first param's sort, i.e. the bug above compounding this one).
-
-### Instantiating a schema by QUALIFIED name resolves its parameter sort in the wrong scope
-
-    [using instantiation a.tauto((fun g: Fn => g = identityFn))]
-    -- error: unknown sort 'Fn'   AT THE SCHEMA'S DECLARATION in a.b4m
-
-`a.b4m` has `sort Fn = function.Fn` and `theorem tauto(prop: Fn -> Prop)`; citing
-it qualified from another file fails, aliasing first (`theorem tauto = a.tauto`)
-passes. Every schema use across std aliases for this reason. Re-probed 2026-09-27
-(three-file scratch: a / b_qualified / b_aliased).
 
 ### A theorem SCHEMA is checked only at a concrete instantiation
 
