@@ -11,203 +11,30 @@ how they were fixed, see the commits — `1845ce1` import naming, `8fd59d8` the
 model-transfer diagnostic, `fc1bf60`/`c2c8479` the proof tree, `6662d29` the
 parity theory, `36d087a` finite cardinality, `8b40243` definition blocks.)
 
+(Ablated 2026-09-27: the FINITENESS entry — "the one real blocker" — is resolved
+end to end, and its running log is gone. The record is in the commits: `3ae5cd4`/
+`6fc6d43` size uniqueness + the counting function, `46c8935` finite-set
+combinatorics, `1e655af` cycle notation, `c5d2dae` orbits, `b9c78ce` the period,
+`a413284` the cycle of an orbit, `1bdf6df` the disjoint-cycle decomposition,
+`b0102cb` §5.1's cycle structure cited from std, `3457d11` |S_n| = n!, `b545763`
+|A_n| = n!/2, `f5f7eca` |D_n| = 2n, `2612aa7`/`0e55135` model transfer across three
+theories + the passive-namespace model-cite bug, `6ef3b05` the transposition
+soundness fix (u ≠ v — the assumed parity lemma had made the chapter's axioms
+inconsistent; LESSON kept below), `0969362` orders in D_n.)
+
 ---
 
-## STILL MISSING — the one real blocker
+## STILL MISSING
 
-### FINITENESS — and it is ONE gap, not two
+### Cube motions and the even/odd vertex split (§5.2)
 
-Cycle notation and cardinality look like separate blockers; they are the same
-missing piece, and the distinction matters for what to build.
-
-- **Cycle notation is NOT blocked on sequences.** `std/sequence.b4m`'s `Value` is
-  a bare abstract sort and several theories already model it at different targets,
-  so a finite list of POINTS is available today. What a cycle needs beyond the
-  list is its SUPPORT — {x : σ(x) ≠ x} — to be finite. "Disjoint" quantifies over
-  the support and the decomposition theorem inducts on it.
-- **The finiteness is not a convenience — the theorem is FALSE without it.**
-  "Every permutation is a product of disjoint cycles" fails on an infinite set,
-  where a permutation may move infinitely many points. The obstacle is not that
-  2b4m cannot express the theorem; it is that the theorem needs a hypothesis 2b4m
-  cannot state.
-- **Cardinality** (`|S_n| = n!`, `|A_n| = n!/2`, `|D_n| = 2n`) needs the same
-  thing plus a counting function.
-
-PARTIAL PROGRESS (`36d087a`, then 2026-09-25/26): `std/set/finite.b4m` defines
-EQUINUMEROSITY by bijection and finiteness as equinumerosity with an initial
-segment, and now has the whole counting core: size UNIQUENESS (the pigeonhole
-induction `segmentSizeIsUnique`, via `swap` + the restriction lemma), symmetry of
-equinumerosity (bijections invert, by definite description), `hasSizeIsUnique` for
-any set, and the COUNTING FUNCTION `size(a)` (`sizeIsTheSize`, `sizeOfSegment`,
-`sizeOfEmptyset`). `std/permutation.b4m` adds the SUPPORT of a permutation as a set
-(`supportMember`), that a permutation preserves its support, disjoint-support
-permutations COMMUTE, transpositions (involution, permutation, own inverse), and
-`permutes(f, a)` closed under identity/composition/inverse/transpositions.
-
-2026-09-26 later: the FINITE-SET COMBINATORICS landed in `std/set/finite.b4m`
-(with `singleton`/`subset` and the one-element-at-a-time set facts added to
-`std/set.b4m`): removing an element from a set of size n+1 leaves size n, adding
-a fresh one to size n gives n+1 (`removingAnElementDropsTheSize`,
-`addingAnElementRaisesTheSize`), a SUBSET of a finite set is finite and no larger
-(`subsetOfFiniteIsFinite`), a PROPER subset is strictly smaller
-(`properSubsetIsSmaller`), and DISJOINT SIZES ADD (`disjointUnionSizesAdd`).
-
-2026-09-26, later still: CYCLE NOTATION landed as `std/permutation/cycle.b4m` —
-a `Points` list sort read by `at`, `distinct`/`avoids`, and `cycle(s, k)` =
-(a₀ … a_{k-1}) DEFINED by Judson's factorization (a₀ a_{k-1})∘(a₀ … a_{k-2}); a
-permutation by induction; the textbook action proved under distinctness
-(`cycleFixesTheUnlisted`, `cycleWrapsAround`, `cycleAdvances`); one-cycle =
-identity, two-cycle = transposition.
-
-ORBITS landed the same day: `std/function/iterate.b4m` (f^n(x), with
-f^(n+1)(x) = f^n(f(x)) and f^(m+n) = f^m ∘ f^n) and `std/permutation/orbit.b4m`
-(the orbit as a comprehension set; the point is in it, it is closed under the
-map, it lies inside support(f) ∪ {x}, so it is finite when the support is).
-
-The PERIOD landed too: `std/set/finite.b4m` now has the PIGEONHOLE principle
-(a map from a set of size n+1 into one of size n sends two points to the same
-place), and `std/permutation/period.b4m` packages i ↦ f^i(x) as a map on the
-numerals, collides it on the finite orbit, cancels the collision to a return
-f^(p+1)(x) = x, and takes the least such p by well-ordering.
-
-And the CYCLE OF AN ORBIT: `Points` has singleton/prepend postulates, the list
-of iterates up to the least period exists and is distinct, and
-`std/permutation/orbit-cycle.b4m`'s `orbitIsACycle` says the cycle on it agrees
-with f on the orbit and fixes everything else — the one-orbit case of the
-decomposition.
-
-THE DECOMPOSITION THEOREM IS PROVED (`std/permutation/decomposition.b4m`,
-`everyPermutationOfAFiniteSetIsAProductOfDisjointCycles`): peel one orbit's
-cycle off, the remainder's support is a proper subset, strong induction on
-`size(support)`, prepend the cycle to the remainder's sequence. So is the
-TRANSPOSITION decomposition (`std/permutation/transpositions.b4m`, Judson's
-Proposition 5.12): a cycle's list of transpositions is its definition read as
-a prepend fold, and the disjoint cycles' lists concatenate. Both are cited from
-`aata/5.1-permutation-groups.md`; its two cycle-structure placeholders are gone.
-What 5.1 still assumes is exactly one thing: Judson's parity lemma.
-
-For the counts: a size of S_n means counting a set of FUNCTIONS, which needs sets
-of `Fn` (`element.Element` is the only member sort) — OR a Nat-indexed enumeration
-of the permutations, which is the route taken (2026-09-27). `std/permutation/count.b4m`
-proves `|S_n| = n!` as a LISTING: `forall n; exists w: Seq; enumerates(w, n,
-factorial(n))`, where `enumerates` = every entry is a permutation of n letters
-(`permutesTheSegment`: a `Perm` bijecting segment(n) onto itself and fixing the
-rest), entries pairwise distinct, every permutation of n letters an entry. Judson's
-own exercise argument: block k of the n+1-letter listing is (k n) mapped over the
-n-letter listing (`mappedSequenceExists`), blocks concatenate (`seqConcat`);
-`theTopGoesOneWay` separates blocks, `undoingTheSwap` separates entries within one.
-`std/peano/factorial.b4m` supplies n! (two axioms, not a definition block — see the
-clause-variable bug above). Its `--axioms` footprint is the function/peano/set
-postulates + factorialZero/Succ + the three Seq postulates it uses.
-
-`|A_n| = n!/2` (2026-09-27, later the same day): `std/permutation/listing.b4m`
-adds the two generic listing tools — SPLITTING a listing by a predicate (theorem
-SCHEMAS in the predicate: `skippingAnEntry`, `extendingASublisting`, the prefix
-induction `splittingAPrefix`, `translatingASublisting`, `splittingAListing`) and
-EQUAL LENGTHS of two listings in bijection through an invertible map
-(`listingsInBijectionHaveEqualLengths`: the index map i ↦ j, by definite
-description, bijects segment(p) onto segment(q); `segmentSizeIsUnique`). The
-chapter then does Judson's proposition on listings: every permutation of n letters
-is even or odd (finite support → product of transpositions → `evenOrOdd`), none is
-both (`parityIsWellDefined` + "2 divides no two consecutive numbers"), λ_σ flips
-parity (prepend σ: `seqPrepend` + `productOfPrepend`), and with σ = (0 1) the even
-listing and the non-even listing are in bijection: p = q and p + q = n!. Stated as
-`alternatingGroupHasHalfTheElements`: for n ≥ 2, some sequence lists A_n (the even
-permutations of n letters) with h entries and h + h = n!.
-
-Two checker facts met on the way:
-- A theorem SCHEMA is checked only at a concrete instantiation ("'X' is a schema;
-  it is checked at its instantiations") — a file of schemas alone verifies NOTHING,
-  so listing.b4m ends with a concrete instance (`splittingOffTheIdentity`) to
-  exercise the whole chain. (Contradicts the memory note that strict check
-  verifies a schema at declaration.)
-- BUG: instantiating a schema by QUALIFIED name from another file
-  (`[using instantiation a.tauto((fun g: Fn => …))]`) fails with "unknown sort
-  'Fn'" AT THE SCHEMA'S DECLARATION — the parameter sort is resolved in the
-  wrong scope. Aliasing first (`theorem tauto = a.tauto`) works. Minimal repro:
-  scratch `qs/{a,b_qualified,b_aliased}.b4m` (a: `sort Fn = function.Fn` +
-  `theorem tauto(prop: Fn -> Prop)`; b_qualified fails, b_aliased passes).
-
-`|D_n| = 2n` (2026-09-27, same day): `std/permutation/dihedral.b4m` (47 thms) does
-Judson's §5.2 count on the CONCRETE n-gon. Vertices = the letters of segment(n);
-ρ = the n-cycle on the list of letters (`lettersListExists` builds the Points list
-by prepend with a base offset; `rotationExists` reads cycleAdvances/WrapsAround/
-FixesTheUnlisted off it — `isTheRotation(rho, n)` characterizes ρ by its values, so
-everything downstream is over ANY such ρ, no definite-description term needed);
-σ = i ↦ n - i fixing 0, by functionFromGraph (`reflectionSpec`, three-way spec:
-letter 0 / positive letter / outside), invertible because it undoes itself
-(`selfUndoingIsInvertible` via invertibleDef with the map as its own inverse);
-`power(f, k)` (axioms) with powerApply = iterate, powerCommutes(+Pointwise,
-+WithInverse), powerFixesAFixedPoint, powerPermutesTheSegment. A RIGID MOTION =
-permutesTheSegment ∧ preserves `adjacent(rho, x, y)` = (ρx = y ∨ ρy = x). The
-relation σρ = ρ⁻¹σ on letters (`reflectionReversesAdvance`, wrap case included in
-`reflectionReversesTheRotation`) makes ρ^k∘σ a motion. EXHAUSTION is
-`walkingTheLetters`: for ANY u stepping by a direction d ∈ {ρ, ρ⁻¹} (dback the
-other) and agreeing with t on letters 0 and 1, t = u — induction on i with the
-two-step invariant (t î = u î ∧ t(succ î) = u(succ î)); the step uses only that
-t(i+2) is adjacent to u(i+1), that u(i+2) = d(u(i+1)) and u(i) = dback(u(i+1)),
-and t injective. Listing = powers ++ (powers ∘ σ) (`powersSequenceExists`,
-`rightMappedSequenceExists`, seqConcat); distinctness by values at letter 0 (powers)
-and letter 1 (a rotation equal to a reflection forces σ(1) = 1, i.e. n = 2 — hence
-n ≥ 3), and cancelling σ on the right. Headline `dihedralGroupHasTwiceNElements`:
-n ≥ 3 → ∃ρ ∃σ; isTheRotation ∧ isTheReflection ∧ ∃w: Seq listing the motions with
-n + n entries. Cited from aata/5.2.
-
-SOUNDNESS FIX (2026-09-27, found while triaging the exercises): the chapter's
-`isTransposition(t)` (and std's `isATransposition`) was `exists u, v; t =
-transposition(u, v)` with NO u ≠ v — so (a a) = id counted as a transposition, and
-the one-entry sequence [(a a)] is a "product of one transposition equal to the
-identity". Judson's assumed lemma `identityIsEvenLength` then yields 2 | 1: the
-chapter's axiom set was INCONSISTENT, and everything downstream of the lemma
-(parityIsWellDefined, A_n, |A_n| = n!/2) was vacuously "proved". Fixed by adding
-`u != v` to both defines; `cycleIsAProductOfTranspositions` now takes
-`distinct(s, succ(k))` (the new factor (a₀ a_{k+1}) is genuine by
-distinctEntriesDiffer — the count of factors, k for a (k+1)-cycle, was already
-Judson's), its use in everyPermutationOfAFiniteSetIsAProductOfTranspositions passes
-the cycle's distinctness, and the chapter's σ = (0 1) carries numeral 0 ≠ numeral 1.
-LESSON: an ASSUMED axiom is never exercised by a proof — check it against the
-degenerate instances of every define it quantifies over (here: the trivial
-transposition). `--axioms` shows what is assumed; nothing shows what is
-inconsistent.
-
-EXERCISES (2026-09-27): `aata/5.1-permutation-groups-exercises.md` proves Ex 17
-(S_n nonabelian, two transpositions disagreeing at a letter), Ex 24 (a 3-cycle is
-even: two transpositions by cycleIsAProductOfTranspositions), Ex 27 (λ_g is a
-permutation, over std/group), Ex 31 (conjugacy is an equivalence relation over
-Fn with an invertible conjugator); forwards Ex 20/22/28/34; skips the finite
-computations; defers 4, 12, 13, 18, 21, 23, 25, 26, 30, 32, 33, 35, 36 with the
-construction each needs named in place. `aata/5.2-dihedral-groups-exercises.md`
-proves Ex 19 (D_n nonabelian: ρσ(0) = 1, σρ(0) = n - 1) and aliases the concrete
-relations for Ex 37(a); defers 15, 16, 29, 37(b, c); skips 14. A literate chapter
-CAN be imported by another file (`import chapter <<< "5.1-permutation-groups.md"`,
-relative to the importing file's directory) — its defines and theorems are then
-`chapter.isEvenPerm(t)`, `[using import(chapter) evenIsNotOdd]`; but importing it
-by an ABSOLUTE path made its `sort Fn = function.Fn` a DIFFERENT origin from a
-relative `std/function.b4m` import ("expected sort 'Fn', got 'Fn'") — path
-canonicalization decides identity, so import everything the same way.
-
-MODEL TRANSFER ACROSS THREE THEORIES (2026-09-27, §4.1 Ex 29): `std/integer/
-mod-n-listing.b4m`'s `model ZnListing` maps group + group_power + group_sequence
-onto ℤ_n/ZnSeq in ONE block and transports std/group/listing.b4m's
-generatorsOfAFiniteGroupAreEvenInNumber (proved for every finite group) with one
-citation. CHECKER BUG (FIXED same day): `[using model(M) ns.thm]` failed with
-"unknown namespace 'ns'" when `ns` appeared nowhere else in the file — group_listing
-only re-exports aliases, so the model block never named it. Cause: demandTransfer
-looked the cite's qualifier up PASSIVELY instead of demanding the import (racking a
-FetchTask) like every other qualified reference. Fixture
-tests/cases/model_cite_untouched_namespace.b4m; the block now maps `group.Grp: Zn`.
-The transferred statement is the source statement with
-defines expanded in source space (generates → znPower). `--library` accepted the
-ZnSeq product axioms that are only used as model discharges.
-
-Blocks, in chapter 5, after 2026-09-27: the whole cube-motions section (needs a
-concrete cube: 8 vertices, its 12 edges as adjacency, and 24 as a listing — the
-same machinery would apply, but "six faces on top × four rotations" is a
-geometric count with no n to induct on; everything would be finite case work) and
-the even/odd vertex split in §5.2. The cycle-structure results, the transposition
-decomposition, `|S_n| = n!`, `|A_n| = n!/2` and `|D_n| = 2n` are done. Also the
-standing "finite sets + cardinality" cluster across chapters 3 and 4
-(`aata/EXERCISES-DEFERRED`).
+The whole cube-motions section needs a concrete cube: 8 vertices, its 12 edges as
+adjacency, and 24 motions as a listing. The n-gon machinery of
+`std/permutation/dihedral.b4m` (adjacency-preserving permutations, exhaustion by
+walking the vertices, listing = powers ++ reflected powers) would apply, but "six
+faces on top × four rotations" is a geometric count with no n to induct on —
+everything would be finite case work. The even/odd vertex split of §5.2 is prose
+for the same reason. Both remain `// this section cannot currently be encoded`.
 
 ### Well-founded / lexicographic induction
 
@@ -240,7 +67,7 @@ like `a`), wrong for the membership style:
 
     func union(a: Set, b: Set) => Set:
       member(x, union(a, b)) iff (member(x, a) or member(x, b))
-    -- error: expected sort 'Set', got 'Element'   (at `x`)
+    -- error: expected sort 'Element', got 'Set'   (at `x`; re-probed 2026-09-27)
 
 The fix is to take the sort from USE (`member`'s first argument pins
 `x : Element`), which subsumes the first-param heuristic. Blocks TIER 2 of
@@ -251,6 +78,8 @@ DEFINITION-MIGRATION-CANDIDATES. Hit again 2026-09-26 writing `cycle`:
       cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
     -- error: expected sort 'Nat', got 'Points'   (at `k`)
 
+Also why `std/peano/factorial.b4m` states n! as two axioms rather than a block.
+
 ### A bare constant on a clause's RIGHT-HAND side is read as a clause variable
 
 Same probe, first clause: `cycle(s, ZERO) = identityFn` is rejected with
@@ -258,14 +87,35 @@ Same probe, first clause: `cycle(s, ZERO) = identityFn` is rejected with
 taken for a fresh clause variable. (`ZERO` in the HEAD is accepted as a pattern.)
 Resolution should look identifiers up before minting clause variables. Until
 both are fixed, `std/permutation/cycle.b4m` states its two clauses as plain
-axioms (`cycleZero`, `cycleSucc`).
+axioms (`cycleZero`, `cycleSucc`). Re-probed 2026-09-27: still minted — the RHS
+`identityFn` now reports "expected sort 'Fn', got 'Nat'" (a fresh clause variable
+of the first param's sort, i.e. the bug above compounding this one).
+
+### Instantiating a schema by QUALIFIED name resolves its parameter sort in the wrong scope
+
+    [using instantiation a.tauto((fun g: Fn => g = identityFn))]
+    -- error: unknown sort 'Fn'   AT THE SCHEMA'S DECLARATION in a.b4m
+
+`a.b4m` has `sort Fn = function.Fn` and `theorem tauto(prop: Fn -> Prop)`; citing
+it qualified from another file fails, aliasing first (`theorem tauto = a.tauto`)
+passes. Every schema use across std aliases for this reason. Re-probed 2026-09-27
+(three-file scratch: a / b_qualified / b_aliased).
+
+### A theorem SCHEMA is checked only at a concrete instantiation
+
+"'X' is a schema; it is checked at its instantiations" — a file of schemas alone
+verifies NOTHING, so `std/permutation/listing.b4m` ends with a concrete instance
+(`splittingOffTheIdentity`) to exercise the whole chain. Not a bug by the current
+design, but a file-level trap worth a diagnostic (a schema no instance ever
+exercises is as unverified as a hole). Contradicts the older memory note that
+strict check verifies a schema at declaration.
 
 ---
 
 ## From §5.2 (dihedral groups, 2026-09-24)
 
-Nothing NEW is missing — §5.2 is blocked by the same finiteness gap as §5.1, and
-the presentation half went through cleanly. Two notes worth keeping:
+Nothing NEW is missing — the presentation half went through cleanly, and the
+count is done (above). Two notes worth keeping:
 
 - **`rewrite` needs a TARGET STEP, not a bare formula.** Repeatedly I wrote
   `[by rewrite <equation> <something-that-was-not-a-step>]` and got "unknown
@@ -286,6 +136,16 @@ the presentation half went through cleanly. Two notes worth keeping:
   opaque atom. A goal needing reasoning INSIDE a quantifier wants an explicit
   `fix` + `specialize`, not a tactic. Cost me two wrong turns in the parity work;
   the countermodel it prints is what makes this obvious.
+- An ASSUMED axiom is never exercised by a proof — check it against the
+  degenerate instances of every define it quantifies over (the trivial
+  transposition (a a) = id made Judson's assumed parity lemma yield 2 | 1, and
+  everything downstream was vacuously "proved" until `6ef3b05`). `--axioms` shows
+  what is assumed; nothing shows what is inconsistent.
+- A literate chapter CAN be imported by another file (`import chapter <<<
+  "5.1-permutation-groups.md"`, relative to the importing file), but importing it
+  by an ABSOLUTE path made its `sort Fn = function.Fn` a DIFFERENT origin from a
+  relative `std/function.b4m` import ("expected sort 'Fn', got 'Fn'") — path
+  canonicalization decides identity, so import everything the same way.
 - A test-harness failure message ECHOES the expected output. Twice I read those
   echoed lines as program output and went hunting for a nondeterminism bug that
   did not exist. Read what the gate ASSERTS before believing a diff.
