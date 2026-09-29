@@ -51,6 +51,14 @@ func succ = peano.succ
 func nadd = peano.add
 pred nat_less_than = peano.less_than
 define ndivides(d, n) = peano_divides.divides(d, n)
+
+// A map IS a transposition when it exchanges two DISTINCT points (without u != v the trivial
+// swap would count and the parity lemma would be false — see the 2026-09-27 soundness fix).
+define isTransposition(t) = exists u: Element; exists v: Element; u != v and t = transposition(u, v)
+define allTranspositions(s, n) = forall i: Nat; nat_less_than(i, n) -> isTransposition(at(s, i))
+// The goal of the whole file, as a define so the inductions read cleanly: SOME product of
+// exactly n transpositions is the identity.
+define someProductOfLengthIsIdentity(n) = exists t: Seq; allTranspositions(t, n) and productUpTo(t, n) = identityFn
 axiom natInduction = peano.induction
 theorem strongInduction = peano_order.strongInduction
 theorem natLessThanSuccSplit = peano_order.lessThanSuccSplit
@@ -1101,10 +1109,11 @@ qed
 
 // -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
 // Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. The
-// sequence surgery itself (a `seqReplaceTwo` existence postulate in the style of this layer's
-// other sequence axioms) is deferred until the induction that consumes it is built — the
-// library gate rightly rejects an unused axiom. What is proved here is the PAYOFF: given any
-// two sequences related that way, the products agree.
+// sequence surgery itself is an existence postulate (`seqReplaceTwo`, in the style of this
+// layer's other sequence axioms) and is written out in the WHAT REMAINS note at the end of the
+// file — it is held back until STEP 2 consumes it, because `--library` rightly fails on an
+// unused axiom. What is proved here is the PAYOFF, which needs no surgery to state: given any
+// two sequences so related, the products agree.
 // Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
 // unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
 theorem replacingAPairKeepsTheProduct: forall s: Seq; forall u: Seq; forall k: Nat;
@@ -1258,7 +1267,27 @@ proof
     [by forall_intro generalize-s]
 qed
 
-// -- WHAT REMAINS -----------------------------------------------------------------------------
+// -- WHAT REMAINS (updated 2026-09-29) --------------------------------------------------------
+// STEPS 1 and 3 are DONE (adjacentPairCancelsOrShiftsOff; productActsAsItsFirstFactor +
+// identityProductForcesFirstFactorToFix). What is left is STEP 2, the inner induction, and
+// STEP 4, the outer one. The design below is unchanged; two notes from attempting STEP 2:
+//
+//  * State the inner step at `succ(m)` rather than at `j`, so the predecessor is literally `m`
+//    and no truncating `sub` appears. Its conclusion is a DISJUNCTION (cancellation available,
+//    or a new sequence with the letter pushed one place left), so every enclosing `->` needs
+//    explicit parens — the checker rejects `A or B -> C` outright.
+//  * The surgery postulate STEP 2 will need, held back until then so the library gate stays
+//    honest:
+//      axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
+//        invertible(p) -> invertible(q) ->
+//        exists u: Seq; at(u, k) = p and at(u, succ(k)) = q
+//        and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
+//        and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i))
+//  * The letter `a` must be CHOSEN as one that entry 0 moves; that is where isTransposition's
+//    existential gets unpacked (entry 0 = (u v) with u != v, so it moves u). Without that
+//    choice the fixed-point argument at j = 0 has nothing to contradict.
+//
+// -- THE ORIGINAL DESIGN ----------------------------------------------------------------------
 // Everything above is the algebraic and structural input to Judson's lemma. The remaining
 // piece is ONE induction plus a fixed-point argument, specified here so it can be picked up
 // without re-deriving the design.
