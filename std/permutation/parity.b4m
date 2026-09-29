@@ -1208,3 +1208,65 @@ proof
     forall s: Seq; forall u: Seq; forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
     [by forall_intro generalize-s]
 qed
+
+// -- DELETING a cancelling pair --------------------------------------------------------------
+// The other exit from the inner loop: when the pair at (k, k+1) is the same transposition
+// twice it composes to the identity, so deleting both entries drops the length by two and
+// leaves the product alone. The sequence surgery is again a postulate of this layer.
+axiom seqDeleteTwo: forall s: Seq; forall k: Nat;
+  exists u: Seq;
+  (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
+  and (forall i: Nat; at(u, nadd(k, i)) = at(s, nadd(succ(succ(k)), i)))
+
+// Deleting a pair that composes to the identity keeps every product from k+2 onward: the
+// prefix is shared, and productUpTo(u, k) = productUpTo(s, k) = productUpTo(s, k+2).
+theorem deletingACancellingPairKeepsTheProduct: forall s: Seq; forall k: Nat;
+  compose(at(s, k), at(s, succ(k))) = identityFn ->
+  productUpTo(s, succ(succ(k))) = productUpTo(s, k)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @given-cancels |
+            assume compose(at(s, k), at(s, succ(k))) = identityFn {
+              @cancels |
+                compose(at(s, k), at(s, succ(k))) = identityFn
+                [by hypothesis given-cancels]
+              @unfolds-once |
+                productUpTo(s, succ(succ(k))) = compose(productUpTo(s, succ(k)), at(s, succ(k)))
+                [using specialize productUpToSucc(s, succ(k))]
+              @unfolds-twice |
+                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                [using specialize productUpToSucc(s, k)]
+              @expanded |
+                productUpTo(s, succ(succ(k))) = compose(compose(productUpTo(s, k), at(s, k)), at(s, succ(k)))
+                [by rewrite unfolds-twice unfolds-once]
+              @regrouped |
+                compose(compose(productUpTo(s, k), at(s, k)), at(s, succ(k))) = compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k))))
+                [using assoc(composeAssoc)]
+              @as-prefix-times-pair |
+                productUpTo(s, succ(succ(k))) = compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k))))
+                [using chain expanded regrouped]
+              @with-identity |
+                productUpTo(s, succ(succ(k))) = compose(productUpTo(s, k), identityFn)
+                [by rewrite cancels as-prefix-times-pair]
+              @identity-on-the-right |
+                compose(productUpTo(s, k), identityFn) = productUpTo(s, k)
+                [using specialize composeIdentityRight(productUpTo(s, k))]
+              @conclusion-drops-by-two |
+                productUpTo(s, succ(succ(k))) = productUpTo(s, k)
+                [using chain with-identity identity-on-the-right]
+            }
+          @cancels-implies |
+            compose(at(s, k), at(s, succ(k))) = identityFn -> productUpTo(s, succ(succ(k))) = productUpTo(s, k)
+            [by implies_intro given-cancels]
+        }
+      @discharge-k |
+        forall k: Nat; compose(at(s, k), at(s, succ(k))) = identityFn -> productUpTo(s, succ(succ(k))) = productUpTo(s, k)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Seq; forall k: Nat; compose(at(s, k), at(s, succ(k))) = identityFn -> productUpTo(s, succ(succ(k))) = productUpTo(s, k)
+    [by forall_intro generalize-s]
+qed
