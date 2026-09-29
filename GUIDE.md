@@ -430,6 +430,33 @@ hole-bearing result is never mistaken for complete. `--draft` allows holes
 flags: `--fast` never accepts a hole; only `--draft` does. Once you prove a
 hole, turn it into a `theorem`.
 
+**Scaffolding with holes — the top-down workflow.** The primary use. State the goal as a
+`theorem`, every missing piece as a `hole`, and write the goal's proof first; then
+discharge the holes leaf-first. The payoff is that the CONSUMER fixes each interface
+instead of you guessing it, which is where inventing a signature bottom-up goes wrong.
+Practical notes, from proving Judson's parity lemma this way (2026-09-29):
+
+- **The checker is your worklist.** Each `check --draft` reports the next unresolved
+  reference by name; stub it as a hole and continue. You do not have to foresee the
+  helper set.
+- **A hole in a LIBRARY directory poisons its gate.** One hole anywhere under a directory
+  checked with `--library` forces that whole sweep into `--draft`, which hides every other
+  file's problems. Keep hole-bearing scaffolds outside the library (this repo uses
+  `drafts/`) and move them in once filled.
+- **An UNCITED hole is invisible.** Disclosure is driven by what DEPENDS on a hole, so a
+  stub nothing cites is silently ignored rather than reported. Holes are load-bearing
+  stubs, not a to-do list.
+- **There is no mid-proof stub.** `[by hole]` is a parse error — `hole` is a top-level
+  declaration only. A gap inside a proof must be lifted to its own named hole with a fully
+  written statement, so top-down front-loads the design thinking rather than deferring it.
+- **Finish on plain `check`.** Default mode prints each remaining hole with its
+  `file:line` and the theorems resting on it, which makes an exact regression golden while
+  the work is in progress.
+
+**When NOT to bother.** If the statement is already given — a textbook's own lemma, a
+signature the source dictates — build it bottom-up; its shape is not in question and the
+hole machinery only adds the costs above.
+
 ### KEYWORD: schematic
 
 Schematic axioms and theorems.
