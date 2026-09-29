@@ -628,7 +628,7 @@ const Expander = struct {
             else => return,
         };
         for (def.params) |param| if (callee.qualifier == Index.none and callee.name == param.name) return;
-        if (self.ctx.expand_linted.contains(.{ .file = site.file, .name = site.name })) return;
+        if (self.ctx.expandAlreadyLinted(.{ .file = site.file, .name = site.name })) return;
         switch (try self.resolveDefine(ienv, callee)) {
             .define, .pending => return, // forwards a define / not resolvable yet — no verdict
             .other => {},
@@ -640,7 +640,7 @@ const Expander = struct {
             .pred => "pred",
             else => return,
         };
-        try self.ctx.expand_linted.put(self.ctx.arena, .{ .file = site.file, .name = site.name }, {});
+        try self.ctx.recordExpandLinted(.{ .file = site.file, .name = site.name });
         const cname = if (callee.qualifier != Index.none)
             try std.fmt.allocPrint(self.arena, "{s}.{s}", .{ self.text(callee.qualifier), self.text(callee.name) })
         else
