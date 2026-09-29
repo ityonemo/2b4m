@@ -1747,3 +1747,319 @@ proof
     forall a, b, u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
     [by forall_intro generalize-a]
 qed
+
+// ZERO is below every successor — ordinary induction: ZERO < succ(ZERO) is lessThanSelf at
+// ZERO, and ZERO < succ(k) gives ZERO < succ(succ(k)) by lessThanSuccRight.
+theorem zeroIsBelowEverySuccessor: forall n: Nat; nat_less_than(NZERO, succ(n))
+proof
+  @base-case |
+    nat_less_than(NZERO, succ(NZERO))
+    [using specialize natLessThanSelf(NZERO)]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume nat_less_than(NZERO, succ(k)) {
+          @inductive-hypothesis |
+            nat_less_than(NZERO, succ(k))
+            [by hypothesis given-inductive-hypothesis]
+          @conclusion-next |
+            nat_less_than(NZERO, succ(succ(k)))
+            [using specialize peano_order.lessThanSuccRight(NZERO, succ(k)) inductive-hypothesis]
+        }
+      @induction-step-at-k |
+        nat_less_than(NZERO, succ(k)) -> nat_less_than(NZERO, succ(succ(k)))
+        [by implies_intro given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; nat_less_than(NZERO, succ(k)) -> nat_less_than(NZERO, succ(succ(k)))
+    [by forall_intro induction-step]
+  @conclusion |
+    forall n: Nat; nat_less_than(NZERO, succ(n))
+    [using instantiation natInduction((fun n: Nat => nat_less_than(NZERO, succ(n)))) base-case induction-step-for-all-k]
+qed
+
+// A natural is ZERO or POSITIVE — `zeroOrSucc` phrased for the order, which is the form the
+// induction below splits on.
+theorem zeroOrPositive: forall n: Nat; n = NZERO or nat_less_than(NZERO, n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @cases |
+        n = NZERO or (exists m: Nat; n = succ(m))
+        [using specialize peano.zeroOrSucc(n)]
+      @conclusion-split |
+        n = NZERO or nat_less_than(NZERO, n)
+        case cases {
+          @when-zero |
+            assume n = NZERO {
+              @is-zero |
+                n = NZERO
+                [by hypothesis when-zero]
+              @conclusion-zero |
+                n = NZERO or nat_less_than(NZERO, n)
+                [by or_intro_left is-zero]
+            }
+          @when-successor |
+            assume exists m: Nat; n = succ(m) {
+              @is-a-successor |
+                exists m: Nat; n = succ(m)
+                [by hypothesis when-successor]
+              @with-predecessor |
+                unpack m: Nat from is-a-successor {
+                  @is-succ-m |
+                    n = succ(m)
+                    [by hypothesis with-predecessor]
+                  // ZERO < succ(m): ZERO < succ(ZERO) by lessThanSelf, and m = ZERO or
+                  // ZERO < m gives ZERO < succ(m) either way — but the direct route is
+                  // simpler: zeroIsBelowEverySuccessor, proved just above.
+                  @zero-below-succ |
+                    nat_less_than(NZERO, succ(m))
+                    [using specialize zeroIsBelowEverySuccessor(m)]
+                  @zero-below-n |
+                    nat_less_than(NZERO, n)
+                    [by rewrite is-succ-m zero-below-succ]
+                  @conclusion-positive-inner |
+                    n = NZERO or nat_less_than(NZERO, n)
+                    [by or_intro_right zero-below-n]
+                }
+              @conclusion-positive |
+                n = NZERO or nat_less_than(NZERO, n)
+                [by exists_elim with-predecessor]
+            }
+        }
+    }
+  @conclusion |
+    forall n: Nat; n = NZERO or nat_less_than(NZERO, n)
+    [by forall_intro generalize-n]
+qed
+
+// -- STEP 3: the product cannot leave `a` in only the first factor ----------------------------
+// Judson's "the latter case cannot occur". If every factor above index 0 fixes `a`, the whole
+// product sends `a` wherever entry 0 does — so if the product is the identity, entry 0 fixes
+// `a` too. Proved as the positive statement: a product whose factors above 0 all fix `a` acts
+// on `a` exactly as its first factor does.
+theorem productActsAsItsFirstFactor: forall s: Seq; forall a: Element; forall n: Nat;
+  (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) ->
+  nat_less_than(NZERO, n) ->
+  apply(productUpTo(s, n), a) = apply(at(s, NZERO), a)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-a |
+        fix a: Element {
+          // induction on n, carrying the whole statement (the hypothesis mentions n).
+          @base-case |
+            (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, NZERO) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, NZERO) -> apply(productUpTo(s, NZERO), a) = apply(at(s, NZERO), a)
+            [using tautology zero-not-below-zero]
+          @zero-not-below-zero |
+            not nat_less_than(NZERO, NZERO)
+            [using specialize peano_order.lessThanIrreflexive(NZERO)]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, k) -> apply(productUpTo(s, k), a) = apply(at(s, NZERO), a) {
+                  @inductive-hypothesis |
+                    (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, k) -> apply(productUpTo(s, k), a) = apply(at(s, NZERO), a)
+                    [by hypothesis given-inductive-hypothesis]
+                  @given-fixed-above |
+                    assume forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, succ(k)) -> apply(at(s, i), a) = a {
+                      @fixed-above |
+                        forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, succ(k)) -> apply(at(s, i), a) = a
+                        [by hypothesis given-fixed-above]
+                      @given-positive |
+                        assume nat_less_than(NZERO, succ(k)) {
+                          // the product up to k+1 is (product up to k) ∘ entry k.
+                          @unfolds |
+                            productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                            [using specialize productUpToSucc(s, k)]
+                          @applies |
+                            apply(compose(productUpTo(s, k), at(s, k)), a) = apply(productUpTo(s, k), apply(at(s, k), a))
+                            [using specialize composeApply(productUpTo(s, k), at(s, k), a)]
+                          @product-at-a |
+                            apply(productUpTo(s, succ(k)), a) = apply(productUpTo(s, k), apply(at(s, k), a))
+                            [by rewrite unfolds applies]
+                          // k is either 0 (so the product IS entry 0 composed with the empty
+                          // product) or positive (so entry k fixes a, and the hypothesis applies).
+                          @k-is-zero-or-positive |
+                            k = NZERO or nat_less_than(NZERO, k)
+                            [using specialize zeroOrPositive(k)]
+                          @conclusion-acts-as-first |
+                            apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a)
+                            case k-is-zero-or-positive {
+                              @when-k-is-zero |
+                                assume k = NZERO {
+                                  @k-is-zero |
+                                    k = NZERO
+                                    [by hypothesis when-k-is-zero]
+                                  @empty-product |
+                                    productUpTo(s, NZERO) = identityFn
+                                    [using specialize productUpToZero(s)]
+                                  @product-at-zero |
+                                    apply(productUpTo(s, succ(k)), a) = apply(productUpTo(s, NZERO), apply(at(s, NZERO), a))
+                                    [by rewrite k-is-zero product-at-a]
+                                  @with-identity |
+                                    apply(productUpTo(s, succ(k)), a) = apply(identityFn, apply(at(s, NZERO), a))
+                                    [by rewrite empty-product product-at-zero]
+                                  @identity-applies |
+                                    apply(identityFn, apply(at(s, NZERO), a)) = apply(at(s, NZERO), a)
+                                    [using specialize identityApply(apply(at(s, NZERO), a))]
+                                  @conclusion-when-zero |
+                                    apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a)
+                                    [using chain with-identity identity-applies]
+                                }
+                              @when-k-is-positive |
+                                assume nat_less_than(NZERO, k) {
+                                  @k-positive |
+                                    nat_less_than(NZERO, k)
+                                    [by hypothesis when-k-is-positive]
+                                  @k-below-succ |
+                                    nat_less_than(k, succ(k))
+                                    [using specialize natLessThanSelf(k)]
+                                  @entry-k-fixes-a |
+                                    apply(at(s, k), a) = a
+                                    [using specialize fixed-above(k) k-positive k-below-succ]
+                                  @product-collapses |
+                                    apply(productUpTo(s, succ(k)), a) = apply(productUpTo(s, k), a)
+                                    [by rewrite entry-k-fixes-a product-at-a]
+                                  // the hypothesis needs "fixes above 0, below k", weaker than
+                                  // what we have (below k+1).
+                                  @fixed-below-k |
+                                    forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a
+                                    [by forall_intro weaken-bound]
+                                  @weaken-bound |
+                                    fix i: Nat {
+                                      @given-i-positive |
+                                        assume nat_less_than(NZERO, i) {
+                                          @given-i-below-k |
+                                            assume nat_less_than(i, k) {
+                                              @i-positive |
+                                                nat_less_than(NZERO, i)
+                                                [by hypothesis given-i-positive]
+                                              @i-below-k |
+                                                nat_less_than(i, k)
+                                                [by hypothesis given-i-below-k]
+                                              @i-below-succ-k |
+                                                nat_less_than(i, succ(k))
+                                                [using specialize peano_order.lessThanSuccRight(i, k) i-below-k]
+                                              @conclusion-i-fixes |
+                                                apply(at(s, i), a) = a
+                                                [using specialize fixed-above(i) i-positive i-below-succ-k]
+                                            }
+                                          @below-k-implies |
+                                            nat_less_than(i, k) -> apply(at(s, i), a) = a
+                                            [by implies_intro given-i-below-k]
+                                        }
+                                      @positive-implies |
+                                        nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a
+                                        [by implies_intro given-i-positive]
+                                    }
+                                  @product-up-to-k |
+                                    apply(productUpTo(s, k), a) = apply(at(s, NZERO), a)
+                                    [using tautology inductive-hypothesis fixed-below-k k-positive]
+                                  @conclusion-when-positive |
+                                    apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a)
+                                    [using chain product-collapses product-up-to-k]
+                                }
+                            }
+                        }
+                      @positive-implies |
+                        nat_less_than(NZERO, succ(k)) -> apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a)
+                        [by implies_intro given-positive]
+                    }
+                  @fixed-implies |
+                    (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, succ(k)) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, succ(k)) -> apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a)
+                    [by implies_intro given-fixed-above]
+                }
+              @induction-step-at-k |
+                ((forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, k) -> apply(productUpTo(s, k), a) = apply(at(s, NZERO), a)) -> ((forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, succ(k)) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, succ(k)) -> apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; ((forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, k) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, k) -> apply(productUpTo(s, k), a) = apply(at(s, NZERO), a)) -> ((forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, succ(k)) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, succ(k)) -> apply(productUpTo(s, succ(k)), a) = apply(at(s, NZERO), a))
+            [by forall_intro induction-step]
+          @conclusion-for-all-n |
+            forall n: Nat; (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(productUpTo(s, n), a) = apply(at(s, NZERO), a)
+            [using instantiation natInduction((fun n: Nat => (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(productUpTo(s, n), a) = apply(at(s, NZERO), a))) base-case induction-step-for-all-k]
+        }
+      @discharge-a |
+        forall a: Element; forall n: Nat; (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(productUpTo(s, n), a) = apply(at(s, NZERO), a)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall s: Seq; forall a: Element; forall n: Nat; (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(productUpTo(s, n), a) = apply(at(s, NZERO), a)
+    [by forall_intro generalize-s]
+qed
+
+// The contradiction Judson draws from it: if the product is the IDENTITY and every factor above
+// index 0 fixes `a`, then entry 0 fixes `a` too. So a letter moved by entry 0 must be moved by
+// some later entry as well — which is what forbids the inner loop from running off the end.
+theorem identityProductForcesFirstFactorToFix: forall s: Seq; forall a: Element; forall n: Nat;
+  productUpTo(s, n) = identityFn ->
+  (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) ->
+  nat_less_than(NZERO, n) ->
+  apply(at(s, NZERO), a) = a
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-a |
+        fix a: Element {
+          @generalize-n |
+            fix n: Nat {
+              @given-identity |
+                assume productUpTo(s, n) = identityFn {
+                  @given-fixed-above |
+                    assume forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a {
+                      @given-positive |
+                        assume nat_less_than(NZERO, n) {
+                          @is-identity |
+                            productUpTo(s, n) = identityFn
+                            [by hypothesis given-identity]
+                          @fixed-above |
+                            forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a
+                            [by hypothesis given-fixed-above]
+                          @positive |
+                            nat_less_than(NZERO, n)
+                            [by hypothesis given-positive]
+                          @acts-as-first |
+                            apply(productUpTo(s, n), a) = apply(at(s, NZERO), a)
+                            [using specialize productActsAsItsFirstFactor(s, a, n) fixed-above positive]
+                          @identity-at-a |
+                            apply(identityFn, a) = a
+                            [using specialize identityApply(a)]
+                          @product-at-a-is-a |
+                            apply(productUpTo(s, n), a) = a
+                            [by rewrite is-identity identity-at-a]
+                          @a-is-first-image |
+                            a = apply(at(s, NZERO), a)
+                            [using chain product-at-a-is-a-flipped acts-as-first]
+                          @product-at-a-is-a-flipped |
+                            a = apply(productUpTo(s, n), a)
+                            [by symmetry product-at-a-is-a]
+                          @conclusion-first-fixes |
+                            apply(at(s, NZERO), a) = a
+                            [by symmetry a-is-first-image]
+                        }
+                      @positive-implies |
+                        nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+                        [by implies_intro given-positive]
+                    }
+                  @fixed-implies |
+                    (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+                    [by implies_intro given-fixed-above]
+                }
+              @identity-implies |
+                productUpTo(s, n) = identityFn -> (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+                [by implies_intro given-identity]
+            }
+          @discharge-n |
+            forall n: Nat; productUpTo(s, n) = identityFn -> (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+            [by forall_intro generalize-n]
+        }
+      @discharge-a |
+        forall a: Element; forall n: Nat; productUpTo(s, n) = identityFn -> (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall s: Seq; forall a: Element; forall n: Nat; productUpTo(s, n) = identityFn -> (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+    [by forall_intro generalize-s]
+qed
