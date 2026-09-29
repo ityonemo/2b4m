@@ -634,8 +634,75 @@ hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
 
 // At position ZERO the invariant is IMPOSSIBLE: entry 0 moves `a` and everything above it
 // fixes `a`, so the product moves `a` — but the product is the identity. STEP 3, packaged.
-hole invariantFailsAtZero: forall a: Element; forall r: Nat;
+theorem invariantFailsAtZero: forall a: Element; forall r: Nat;
   nat_less_than(NZERO, r) -> (not loopInvariant(a, NZERO, r))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-r |
+        fix r: Nat {
+          @given-positive |
+            assume nat_less_than(NZERO, r) {
+              @positive |
+                nat_less_than(NZERO, r)
+                [by hypothesis given-positive]
+              @given-invariant |
+                assume loopInvariant(a, NZERO, r) {
+                  @invariant |
+                    loopInvariant(a, NZERO, r)
+                    [by hypothesis given-invariant]
+                  @witness-exists |
+                    exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
+                    [using tautology invariant]
+                  @with-witness |
+                    unpack w: Seq from witness-exists {
+                      @w-facts |
+                        allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
+                        [by hypothesis with-witness]
+                      @is-identity |
+                        productUpTo(w, r) = identityFn
+                        [using tautology w-facts]
+                      @first-moves-a |
+                        apply(at(w, NZERO), a) != a
+                        [using tautology w-facts]
+                      @above-fixed |
+                        forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a
+                        [using tautology w-facts]
+                      // STEP 3: the product is the identity and everything above 0 fixes `a`,
+                      // so entry 0 fixes `a` — contradicting that it moves it.
+                      @first-fixes-a |
+                        apply(at(w, NZERO), a) = a
+                        [using specialize permutation_parity.identityProductForcesFirstFactorToFix(w, a, r) is-identity above-fixed positive]
+                      @conclusion-contradiction |
+                        nat_less_than(NZERO, NZERO)
+                        [using tautology first-fixes-a first-moves-a]
+                    }
+                  @contradiction |
+                    nat_less_than(NZERO, NZERO)
+                    [by exists_elim with-witness]
+                }
+              @invariant-implies-absurdity |
+                loopInvariant(a, NZERO, r) -> nat_less_than(NZERO, NZERO)
+                [by implies_intro given-invariant]
+              @zero-not-below-itself |
+                not nat_less_than(NZERO, NZERO)
+                [using specialize peano_order.lessThanIrreflexive(NZERO)]
+              @conclusion-impossible |
+                not loopInvariant(a, NZERO, r)
+                [using tautology invariant-implies-absurdity zero-not-below-itself]
+            }
+          @positive-implies |
+            nat_less_than(NZERO, r) -> (not loopInvariant(a, NZERO, r))
+            [by implies_intro given-positive]
+        }
+      @discharge-r |
+        forall r: Nat; nat_less_than(NZERO, r) -> (not loopInvariant(a, NZERO, r))
+        [by forall_intro generalize-r]
+    }
+  @conclusion |
+    forall a: Element; forall r: Nat; nat_less_than(NZERO, r) -> (not loopInvariant(a, NZERO, r))
+    [by forall_intro generalize-a]
+qed
 
 // The loop RUN: strong induction on the position. At 0 the invariant is impossible, so the
 // length must already have dropped; above 0 the body either drops it or descends.
@@ -748,7 +815,30 @@ proof
     [by forall_intro generalize-a]
 qed
 
-hole zeroIsBelowTheLength: forall m: Nat; forall d: Nat; nat_less_than(NZERO, nadd(succ(succ(m)), d))
+theorem zeroIsBelowTheLength: forall m: Nat; forall d: Nat; nat_less_than(NZERO, nadd(succ(succ(m)), d))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-d |
+        fix d: Nat {
+          @length-is-a-successor |
+            nadd(succ(succ(m)), d) = succ(nadd(succ(m), d))
+            [using specialize peano.addSuccLeft(succ(m), d)]
+          @zero-below-successor |
+            nat_less_than(NZERO, succ(nadd(succ(m), d)))
+            [using specialize permutation_parity.zeroIsBelowEverySuccessor(nadd(succ(m), d))]
+          @conclusion-positive |
+            nat_less_than(NZERO, nadd(succ(succ(m)), d))
+            [by rewrite length-is-a-successor zero-below-successor]
+        }
+      @discharge-d |
+        forall d: Nat; nat_less_than(NZERO, nadd(succ(succ(m)), d))
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall m: Nat; forall d: Nat; nat_less_than(NZERO, nadd(succ(succ(m)), d))
+    [by forall_intro generalize-m]
+qed
 
 // -- and the hole the outer induction consumes, now PROVED from those --------------------------
 theorem innerLoopDropsTwo: forall m: Nat; forall d: Nat;
