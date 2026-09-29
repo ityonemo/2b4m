@@ -626,11 +626,129 @@ qed
 // hole anyone depends on — so it was removed by hand. Worth knowing: holes are disclosed by what
 // DEPENDS on them, which means a stub you never wire up is invisible rather than flagged.
 
-// The loop RUN: iterate the body until the position reaches 0, where STEP 3 forbids the
-// invariant outright — so the length must have dropped.
-hole loopTerminates: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
-  loopInvariant(a, j, nadd(succ(succ(m)), d)) ->
-  someProductOfLengthIsIdentity(nadd(m, d))
+// The loop BODY: from the invariant at succ(j), either the length has dropped or the
+// invariant holds at j. This is where the classification meets the surgery.
+hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
+  loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) ->
+  (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+
+// At position ZERO the invariant is IMPOSSIBLE: entry 0 moves `a` and everything above it
+// fixes `a`, so the product moves `a` — but the product is the identity. STEP 3, packaged.
+hole invariantFailsAtZero: forall a: Element; forall r: Nat;
+  nat_less_than(NZERO, r) -> (not loopInvariant(a, NZERO, r))
+
+// The loop RUN: strong induction on the position. At 0 the invariant is impossible, so the
+// length must already have dropped; above 0 the body either drops it or descends.
+theorem loopTerminates: forall a: Element; forall base: Nat; forall d: Nat; forall j: Nat;
+  loopInvariant(a, j, nadd(succ(succ(base)), d)) ->
+  someProductOfLengthIsIdentity(nadd(base, d))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-base |
+        fix base: Nat {
+          @generalize-d |
+            fix d: Nat {
+              @length-is-positive |
+                nat_less_than(NZERO, nadd(succ(succ(base)), d))
+                [using specialize zeroIsBelowTheLength(base, d)]
+              @strong-step |
+                fix j: Nat {
+                  @given-smaller |
+                    assume forall k: Nat; nat_less_than(k, j) -> (loopInvariant(a, k, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))) {
+                      @smaller-cases |
+                        forall k: Nat; nat_less_than(k, j) -> (loopInvariant(a, k, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))
+                        [by hypothesis given-smaller]
+                      @given-invariant |
+                        assume loopInvariant(a, j, nadd(succ(succ(base)), d)) {
+                          @invariant |
+                            loopInvariant(a, j, nadd(succ(succ(base)), d))
+                            [by hypothesis given-invariant]
+                          @j-shape |
+                            j = NZERO or (exists p: Nat; j = succ(p))
+                            [using specialize peano.zeroOrSucc(j)]
+                          @conclusion-drops |
+                            someProductOfLengthIsIdentity(nadd(base, d))
+                            case j-shape {
+                              @when-zero |
+                                assume j = NZERO {
+                                  @j-is-zero |
+                                    j = NZERO
+                                    [by hypothesis when-zero]
+                                  @invariant-at-zero |
+                                    loopInvariant(a, NZERO, nadd(succ(succ(base)), d))
+                                    [by rewrite j-is-zero invariant]
+                                  @impossible |
+                                    not loopInvariant(a, NZERO, nadd(succ(succ(base)), d))
+                                    [using specialize invariantFailsAtZero(a, nadd(succ(succ(base)), d)) length-is-positive]
+                                  @conclusion-absurd |
+                                    someProductOfLengthIsIdentity(nadd(base, d))
+                                    [using tautology invariant-at-zero impossible]
+                                }
+                              @when-successor |
+                                assume exists p: Nat; j = succ(p) {
+                                  @has-predecessor |
+                                    exists p: Nat; j = succ(p)
+                                    [by hypothesis when-successor]
+                                  @with-predecessor |
+                                    unpack p: Nat from has-predecessor {
+                                      @j-is-succ-p |
+                                        j = succ(p)
+                                        [by hypothesis with-predecessor]
+                                      @invariant-at-succ-p |
+                                        loopInvariant(a, succ(p), nadd(succ(succ(base)), d))
+                                        [by rewrite j-is-succ-p invariant]
+                                      @body |
+                                        someProductOfLengthIsIdentity(nadd(base, d)) or loopInvariant(a, p, nadd(succ(succ(base)), d))
+                                        [using specialize loopBody(a, p, base, d) invariant-at-succ-p]
+                                      @p-below-j |
+                                        nat_less_than(p, j)
+                                        [by rewrite j-is-succ-p p-below-succ-p]
+                                      @p-below-succ-p |
+                                        nat_less_than(p, succ(p))
+                                        [using specialize natLessThanSelf(p)]
+                                      @descend |
+                                        loopInvariant(a, p, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+                                        [using specialize smaller-cases(p) p-below-j]
+                                      @conclusion-either-way |
+                                        someProductOfLengthIsIdentity(nadd(base, d))
+                                        [using tautology body descend]
+                                    }
+                                  @conclusion-with-predecessor |
+                                    someProductOfLengthIsIdentity(nadd(base, d))
+                                    [by exists_elim with-predecessor]
+                                }
+                            }
+                        }
+                      @invariant-implies |
+                        loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+                        [by implies_intro given-invariant]
+                    }
+                  @strong-step-at-j |
+                    (forall k: Nat; nat_less_than(k, j) -> (loopInvariant(a, k, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))) -> (loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))
+                    [by implies_intro given-smaller]
+                }
+              @strong-step-for-all |
+                forall j: Nat; (forall k: Nat; nat_less_than(k, j) -> (loopInvariant(a, k, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))) -> (loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))
+                [by forall_intro strong-step]
+              @conclusion-for-all-j |
+                forall j: Nat; loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+                [using instantiation strongInduction((fun j: Nat => loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d)))) strong-step-for-all]
+            }
+          @discharge-d |
+            forall d: Nat; forall j: Nat; loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+            [by forall_intro generalize-d]
+        }
+      @discharge-base |
+        forall base: Nat; forall d: Nat; forall j: Nat; loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+        [by forall_intro generalize-base]
+    }
+  @conclusion |
+    forall a: Element; forall base: Nat; forall d: Nat; forall j: Nat; loopInvariant(a, j, nadd(succ(succ(base)), d)) -> someProductOfLengthIsIdentity(nadd(base, d))
+    [by forall_intro generalize-a]
+qed
+
+hole zeroIsBelowTheLength: forall m: Nat; forall d: Nat; nat_less_than(NZERO, nadd(succ(succ(m)), d))
 
 // -- and the hole the outer induction consumes, now PROVED from those --------------------------
 theorem innerLoopDropsTwo: forall m: Nat; forall d: Nat;
@@ -696,7 +814,7 @@ proof
                         [by rewrite length-is-a-successor invariant-at-top]
                       @conclusion-drops |
                         someProductOfLengthIsIdentity(nadd(m, d))
-                        [using specialize loopTerminates(a, nadd(succ(m), d), m, d) invariant-at-the-original-length]
+                        [using specialize loopTerminates(a, m, d, nadd(succ(m), d)) invariant-at-the-original-length]
                     }
                   @conclusion-with-letter |
                     someProductOfLengthIsIdentity(nadd(m, d))
