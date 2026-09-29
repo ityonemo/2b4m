@@ -2956,3 +2956,86 @@ proof
     forall s: Seq; forall u: Seq; forall k: Nat; forall n: Nat; allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
     [by forall_intro generalize-s]
 qed
+
+// A point moved by a swap must be one of the two letters — the contrapositive of
+// transpositionElsewhere.
+theorem movedBySwapIsOneOfItsLetters: forall x, y, z: Element; apply(transposition(x, y), z) != z -> (z = x or z = y)
+proof
+  @generalize-x |
+    fix x: Element {
+      @generalize-y |
+        fix y: Element {
+          @generalize-z |
+            fix z: Element {
+              @given-moved |
+                assume apply(transposition(x, y), z) != z {
+                  @moved |
+                    apply(transposition(x, y), z) != z
+                    [by hypothesis given-moved]
+                  @is-x-or-not |
+                    z = x or z != x
+                    [using tautology]
+                  @conclusion-one-of-them |
+                    z = x or z = y
+                    case is-x-or-not {
+                      @when-is-x |
+                        assume z = x {
+                          @is-x |
+                            z = x
+                            [by hypothesis when-is-x]
+                          @conclusion-is-x |
+                            z = x or z = y
+                            [by or_intro_left is-x]
+                        }
+                      @when-not-x |
+                        assume z != x {
+                          @not-x |
+                            z != x
+                            [by hypothesis when-not-x]
+                          @is-y-or-not |
+                            z = y or z != y
+                            [using tautology]
+                          @conclusion-not-x |
+                            z = x or z = y
+                            case is-y-or-not {
+                              @when-is-y |
+                                assume z = y {
+                                  @is-y |
+                                    z = y
+                                    [by hypothesis when-is-y]
+                                  @conclusion-is-y |
+                                    z = x or z = y
+                                    [by or_intro_right is-y]
+                                }
+                              @when-not-y |
+                                assume z != y {
+                                  @not-y |
+                                    z != y
+                                    [by hypothesis when-not-y]
+                                  @fixed |
+                                    apply(transposition(x, y), z) = z
+                                    [using specialize transpositionElsewhere(x, y, z) not-x not-y]
+                                  @conclusion-absurd |
+                                    z = x or z = y
+                                    [using tautology fixed moved]
+                                }
+                            }
+                        }
+                    }
+                }
+              @moved-implies |
+                apply(transposition(x, y), z) != z -> (z = x or z = y)
+                [by implies_intro given-moved]
+            }
+          @discharge-z |
+            forall z: Element; apply(transposition(x, y), z) != z -> (z = x or z = y)
+            [by forall_intro generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Element; apply(transposition(x, y), z) != z -> (z = x or z = y)
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Element; apply(transposition(x, y), z) != z -> (z = x or z = y)
+    [by forall_intro generalize-x]
+qed
