@@ -22,7 +22,11 @@
 import function <<< "std/function.b4m"
 import function_invertible <<< "std/function/invertible.b4m"
 import permutation <<< "std/permutation.b4m"
+import permutation_sequence <<< "std/permutation/sequence.b4m"
 import element <<< "std/element.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import peano_divides <<< "std/peano/divides.b4m"
 
 sort Element = element.Element
 sort Fn = function.Fn
@@ -35,6 +39,31 @@ axiom composeApply = function.composeApply
 axiom identityApply = function.identityApply
 
 func transposition = permutation.transposition
+theorem composeAssoc = function_invertible.composeAssoc
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem composeIdentityRight = function_invertible.composeIdentityRight
+theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
+
+sort Nat = peano.Nat
+const NZERO = peano.ZERO
+const NTWO = peano.TWO
+func succ = peano.succ
+func nadd = peano.add
+pred nat_less_than = peano.less_than
+define ndivides(d, n) = peano_divides.divides(d, n)
+axiom natInduction = peano.induction
+theorem strongInduction = peano_order.strongInduction
+theorem natLessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem natNotLessThanZero = peano_order.notLessThanZero
+theorem natLessThanSelf = peano_order.lessThanSelf
+
+sort Seq = permutation_sequence.Seq
+func at = permutation_sequence.at
+func productUpTo = permutation_sequence.productUpTo
+axiom atIsAPermutation = permutation_sequence.atIsAPermutation
+axiom productUpToZero = permutation_sequence.productUpToZero
+axiom productUpToSucc = permutation_sequence.productUpToSucc
+theorem productUpToIsAPermutation = permutation_sequence.productUpToIsAPermutation
 theorem transpositionAtFirst = permutation.transpositionAtFirst
 theorem transpositionAtSecond = permutation.transpositionAtSecond
 theorem transpositionElsewhere = permutation.transpositionElsewhere
@@ -1068,4 +1097,114 @@ proof
   @conclusion |
     forall a, b, c: Element; a != b -> b != c -> a != c -> compose(transposition(a, c), transposition(a, b)) = compose(transposition(a, b), transposition(b, c))
     [by forall_intro generalize-a]
+qed
+
+// -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
+// Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. A sequence
+// with two entries replaced exists, and its product up to any length is unchanged when the
+// replacement is an equal composite — the postulate is the SEQUENCE surgery, and the product
+// equality is then a consequence of productUpTo's fold.
+axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
+  invertible(p) -> invertible(q) ->
+  exists u: Seq;
+  at(u, k) = p
+  and at(u, succ(k)) = q
+  and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
+  and (forall i: Nat; at(u, nadd(succ(succ(k)), i)) = at(s, nadd(succ(succ(k)), i)))
+
+// Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
+// unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
+theorem replacingAPairKeepsTheProduct: forall s: Seq; forall u: Seq; forall k: Nat;
+  (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) ->
+  compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) ->
+  productUpTo(u, k) = productUpTo(s, k) ->
+  productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-u |
+        fix u: Seq {
+          @generalize-k |
+            fix k: Nat {
+              @given-prefix |
+                assume forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i) {
+                  @given-pair |
+                    assume compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) {
+                      @given-prefix-product |
+                        assume productUpTo(u, k) = productUpTo(s, k) {
+                          @pair-equal |
+                            compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k)))
+                            [by hypothesis given-pair]
+                          @prefix-product-equal |
+                            productUpTo(u, k) = productUpTo(s, k)
+                            [by hypothesis given-prefix-product]
+                          // productUpTo(·, k+2) = ((·|k) ∘ at(·,k)) ∘ at(·,k+1), regrouped to
+                          // (·|k) ∘ (at(·,k) ∘ at(·,k+1)) so the pair appears as one factor.
+                          @u-unfolds-once |
+                            productUpTo(u, succ(succ(k))) = compose(productUpTo(u, succ(k)), at(u, succ(k)))
+                            [using specialize productUpToSucc(u, succ(k))]
+                          @u-unfolds-twice |
+                            productUpTo(u, succ(k)) = compose(productUpTo(u, k), at(u, k))
+                            [using specialize productUpToSucc(u, k)]
+                          @u-expanded |
+                            productUpTo(u, succ(succ(k))) = compose(compose(productUpTo(u, k), at(u, k)), at(u, succ(k)))
+                            [by rewrite u-unfolds-twice u-unfolds-once]
+                          @u-regrouped |
+                            compose(compose(productUpTo(u, k), at(u, k)), at(u, succ(k))) = compose(productUpTo(u, k), compose(at(u, k), at(u, succ(k))))
+                            [using assoc(composeAssoc)]
+                          @u-as-prefix-times-pair |
+                            productUpTo(u, succ(succ(k))) = compose(productUpTo(u, k), compose(at(u, k), at(u, succ(k))))
+                            [using chain u-expanded u-regrouped]
+                          @s-unfolds-once |
+                            productUpTo(s, succ(succ(k))) = compose(productUpTo(s, succ(k)), at(s, succ(k)))
+                            [using specialize productUpToSucc(s, succ(k))]
+                          @s-unfolds-twice |
+                            productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                            [using specialize productUpToSucc(s, k)]
+                          @s-expanded |
+                            productUpTo(s, succ(succ(k))) = compose(compose(productUpTo(s, k), at(s, k)), at(s, succ(k)))
+                            [by rewrite s-unfolds-twice s-unfolds-once]
+                          @s-regrouped |
+                            compose(compose(productUpTo(s, k), at(s, k)), at(s, succ(k))) = compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k))))
+                            [using assoc(composeAssoc)]
+                          @s-as-prefix-times-pair |
+                            productUpTo(s, succ(succ(k))) = compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k))))
+                            [using chain s-expanded s-regrouped]
+                          // substitute the equal pair, then the equal prefix
+                          @u-with-s-pair |
+                            productUpTo(u, succ(succ(k))) = compose(productUpTo(u, k), compose(at(s, k), at(s, succ(k))))
+                            [by rewrite pair-equal u-as-prefix-times-pair]
+                          @u-with-s-prefix |
+                            productUpTo(u, succ(succ(k))) = compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k))))
+                            [by rewrite prefix-product-equal u-with-s-pair]
+                          @s-flipped |
+                            compose(productUpTo(s, k), compose(at(s, k), at(s, succ(k)))) = productUpTo(s, succ(succ(k)))
+                            [by symmetry s-as-prefix-times-pair]
+                          @conclusion-products-agree |
+                            productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+                            [using chain u-with-s-prefix s-flipped]
+                        }
+                      @prefix-product-implies |
+                        productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+                        [by implies_intro given-prefix-product]
+                    }
+                  @pair-implies |
+                    compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+                    [by implies_intro given-pair]
+                }
+              @prefix-implies |
+                (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+                [by implies_intro given-prefix]
+            }
+          @discharge-k |
+            forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+            [by forall_intro generalize-k]
+        }
+      @discharge-u |
+        forall u: Seq; forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall s: Seq; forall u: Seq; forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) -> productUpTo(u, k) = productUpTo(s, k) -> productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+    [by forall_intro generalize-s]
 qed
