@@ -301,3 +301,343 @@ proof
     forall p, q, u, v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
     [by forall_intro generalize-p]
 qed
+
+// -- disequality is symmetric (not a propositional fact: `tautology` sees two atoms) --------
+theorem distinctSymmetric: forall a, b: Element; a != b -> b != a
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @given-distinct |
+            assume a != b {
+              @distinct |
+                a != b
+                [by hypothesis given-distinct]
+              @b-is-a-or-not |
+                b = a or b != a
+                [using tautology]
+              @conclusion-flipped |
+                b != a
+                case b-is-a-or-not {
+                  @when-b-is-a |
+                    assume b = a {
+                      @b-is-a |
+                        b = a
+                        [by hypothesis when-b-is-a]
+                      @a-is-b |
+                        a = b
+                        [by symmetry b-is-a]
+                      @conclusion-absurd |
+                        b != a
+                        [using tautology a-is-b distinct]
+                    }
+                  @when-b-is-not-a |
+                    assume b != a {
+                      @conclusion-directly |
+                        b != a
+                        [by hypothesis when-b-is-not-a]
+                    }
+                }
+            }
+          @distinct-implies |
+            a != b -> b != a
+            [by implies_intro given-distinct]
+        }
+      @discharge-b |
+        forall b: Element; a != b -> b != a
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Element; a != b -> b != a
+    [by forall_intro generalize-a]
+qed
+
+// -- Judson's identity (3): DISJOINT transpositions commute, (cd)(ab) = (ab)(cd) ------------
+// At any point at most one of the two swaps moves it, so the order cannot matter. Five cases
+// on where x sits; each is two citations of the composite-value lemmas above.
+theorem disjointTranspositionsCommute: forall a, b, c, d: Element;
+  a != b -> c != d -> a != c -> a != d -> b != c -> b != d ->
+  compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-ab |
+                    assume a != b {
+                      @given-cd |
+                        assume c != d {
+                          @given-ac |
+                            assume a != c {
+                              @given-ad |
+                                assume a != d {
+                                  @given-bc |
+                                    assume b != c {
+                                      @given-bd |
+                                        assume b != d {
+                                          @ac |
+                                            a != c
+                                            [by hypothesis given-ac]
+                                          @ad |
+                                            a != d
+                                            [by hypothesis given-ad]
+                                          @bc |
+                                            b != c
+                                            [by hypothesis given-bc]
+                                          @bd |
+                                            b != d
+                                            [by hypothesis given-bd]
+                                          @ca |
+                                            c != a
+                                            [using specialize distinctSymmetric(a, c) ac]
+                                          @da |
+                                            d != a
+                                            [using specialize distinctSymmetric(a, d) ad]
+                                          @cb |
+                                            c != b
+                                            [using specialize distinctSymmetric(b, c) bc]
+                                          @db |
+                                            d != b
+                                            [using specialize distinctSymmetric(b, d) bd]
+                                          // AT a: left = (cd)(b) = b; right = (ab)(a)… careful:
+                                          // left  ((cd)(ab))(a) = (cd)(b) = b
+                                          // right ((ab)(cd))(a) = (ab)(a) = b
+                                          @left-at-a |
+                                            apply(compose(transposition(c, d), transposition(a, b)), a) = apply(transposition(c, d), b)
+                                            [using specialize compositeAtFirstOfInner(a, b, c, d)]
+                                          @cd-fixes-b |
+                                            apply(transposition(c, d), b) = b
+                                            [using specialize transpositionElsewhere(c, d, b) bc bd]
+                                          @left-at-a-is-b |
+                                            apply(compose(transposition(c, d), transposition(a, b)), a) = b
+                                            [using chain left-at-a cd-fixes-b]
+                                          @right-at-a |
+                                            apply(compose(transposition(a, b), transposition(c, d)), a) = apply(transposition(a, b), a)
+                                            [using specialize compositeElsewhereOfInner(c, d, a, b, a) ac ad]
+                                          @ab-at-a |
+                                            apply(transposition(a, b), a) = b
+                                            [using specialize transpositionAtFirst(a, b)]
+                                          @right-at-a-is-b |
+                                            apply(compose(transposition(a, b), transposition(c, d)), a) = b
+                                            [using chain right-at-a ab-at-a]
+                                          @b-is-right-at-a |
+                                            b = apply(compose(transposition(a, b), transposition(c, d)), a)
+                                            [by symmetry right-at-a-is-b]
+                                          @agree-at-a |
+                                            apply(compose(transposition(c, d), transposition(a, b)), a) = apply(compose(transposition(a, b), transposition(c, d)), a)
+                                            [using chain left-at-a-is-b b-is-right-at-a]
+                                          // AT b: left = (cd)(a) = a; right = (ab)(b) = a
+                                          @left-at-b |
+                                            apply(compose(transposition(c, d), transposition(a, b)), b) = apply(transposition(c, d), a)
+                                            [using specialize compositeAtSecondOfInner(a, b, c, d)]
+                                          @cd-fixes-a |
+                                            apply(transposition(c, d), a) = a
+                                            [using specialize transpositionElsewhere(c, d, a) ac ad]
+                                          @left-at-b-is-a |
+                                            apply(compose(transposition(c, d), transposition(a, b)), b) = a
+                                            [using chain left-at-b cd-fixes-a]
+                                          @right-at-b |
+                                            apply(compose(transposition(a, b), transposition(c, d)), b) = apply(transposition(a, b), b)
+                                            [using specialize compositeElsewhereOfInner(c, d, a, b, b) bc bd]
+                                          @ab-at-b |
+                                            apply(transposition(a, b), b) = a
+                                            [using specialize transpositionAtSecond(a, b)]
+                                          @right-at-b-is-a |
+                                            apply(compose(transposition(a, b), transposition(c, d)), b) = a
+                                            [using chain right-at-b ab-at-b]
+                                          @a-is-right-at-b |
+                                            a = apply(compose(transposition(a, b), transposition(c, d)), b)
+                                            [by symmetry right-at-b-is-a]
+                                          @agree-at-b |
+                                            apply(compose(transposition(c, d), transposition(a, b)), b) = apply(compose(transposition(a, b), transposition(c, d)), b)
+                                            [using chain left-at-b-is-a a-is-right-at-b]
+                                          // AT c: left = (cd)(c) = d; right = (ab)(d) = d
+                                          @left-at-c |
+                                            apply(compose(transposition(c, d), transposition(a, b)), c) = apply(transposition(c, d), c)
+                                            [using specialize compositeElsewhereOfInner(a, b, c, d, c) ca cb]
+                                          @cd-at-c |
+                                            apply(transposition(c, d), c) = d
+                                            [using specialize transpositionAtFirst(c, d)]
+                                          @left-at-c-is-d |
+                                            apply(compose(transposition(c, d), transposition(a, b)), c) = d
+                                            [using chain left-at-c cd-at-c]
+                                          @right-at-c |
+                                            apply(compose(transposition(a, b), transposition(c, d)), c) = apply(transposition(a, b), d)
+                                            [using specialize compositeAtFirstOfInner(c, d, a, b)]
+                                          @ab-fixes-d |
+                                            apply(transposition(a, b), d) = d
+                                            [using specialize transpositionElsewhere(a, b, d) da db]
+                                          @right-at-c-is-d |
+                                            apply(compose(transposition(a, b), transposition(c, d)), c) = d
+                                            [using chain right-at-c ab-fixes-d]
+                                          @d-is-right-at-c |
+                                            d = apply(compose(transposition(a, b), transposition(c, d)), c)
+                                            [by symmetry right-at-c-is-d]
+                                          @agree-at-c |
+                                            apply(compose(transposition(c, d), transposition(a, b)), c) = apply(compose(transposition(a, b), transposition(c, d)), c)
+                                            [using chain left-at-c-is-d d-is-right-at-c]
+                                          // AT d: left = (cd)(d) = c; right = (ab)(c) = c
+                                          @left-at-d |
+                                            apply(compose(transposition(c, d), transposition(a, b)), d) = apply(transposition(c, d), d)
+                                            [using specialize compositeElsewhereOfInner(a, b, c, d, d) da db]
+                                          @cd-at-d |
+                                            apply(transposition(c, d), d) = c
+                                            [using specialize transpositionAtSecond(c, d)]
+                                          @left-at-d-is-c |
+                                            apply(compose(transposition(c, d), transposition(a, b)), d) = c
+                                            [using chain left-at-d cd-at-d]
+                                          @right-at-d |
+                                            apply(compose(transposition(a, b), transposition(c, d)), d) = apply(transposition(a, b), c)
+                                            [using specialize compositeAtSecondOfInner(c, d, a, b)]
+                                          @ab-fixes-c |
+                                            apply(transposition(a, b), c) = c
+                                            [using specialize transpositionElsewhere(a, b, c) ca cb]
+                                          @right-at-d-is-c |
+                                            apply(compose(transposition(a, b), transposition(c, d)), d) = c
+                                            [using chain right-at-d ab-fixes-c]
+                                          @c-is-right-at-d |
+                                            c = apply(compose(transposition(a, b), transposition(c, d)), d)
+                                            [by symmetry right-at-d-is-c]
+                                          @agree-at-d |
+                                            apply(compose(transposition(c, d), transposition(a, b)), d) = apply(compose(transposition(a, b), transposition(c, d)), d)
+                                            [using chain left-at-d-is-c c-is-right-at-d]
+                                          @generalize-x |
+                                            fix x: Element {
+                                              @x-cases |
+                                                x = a or x = b or x = c or x = d or (x != a and x != b and x != c and x != d)
+                                                [using tautology]
+                                              @conclusion-agree-at-x |
+                                                apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                case x-cases {
+                                                  @when-x-is-a |
+                                                    assume x = a {
+                                                      @x-is-a |
+                                                        x = a
+                                                        [by hypothesis when-x-is-a]
+                                                      @conclusion-at-a |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [by rewrite x-is-a agree-at-a]
+                                                    }
+                                                  @when-x-is-b |
+                                                    assume x = b {
+                                                      @x-is-b |
+                                                        x = b
+                                                        [by hypothesis when-x-is-b]
+                                                      @conclusion-at-b |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [by rewrite x-is-b agree-at-b]
+                                                    }
+                                                  @when-x-is-c |
+                                                    assume x = c {
+                                                      @x-is-c |
+                                                        x = c
+                                                        [by hypothesis when-x-is-c]
+                                                      @conclusion-at-c |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [by rewrite x-is-c agree-at-c]
+                                                    }
+                                                  @when-x-is-d |
+                                                    assume x = d {
+                                                      @x-is-d |
+                                                        x = d
+                                                        [by hypothesis when-x-is-d]
+                                                      @conclusion-at-d |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [by rewrite x-is-d agree-at-d]
+                                                    }
+                                                  @when-x-is-none |
+                                                    assume x != a and x != b and x != c and x != d {
+                                                      @none |
+                                                        x != a and x != b and x != c and x != d
+                                                        [by hypothesis when-x-is-none]
+                                                      @not-a |
+                                                        x != a
+                                                        [using tautology none]
+                                                      @not-b |
+                                                        x != b
+                                                        [using tautology none]
+                                                      @not-c |
+                                                        x != c
+                                                        [using tautology none]
+                                                      @not-d |
+                                                        x != d
+                                                        [using tautology none]
+                                                      @left-outer |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(transposition(c, d), x)
+                                                        [using specialize compositeElsewhereOfInner(a, b, c, d, x) not-a not-b]
+                                                      @cd-fixes-x |
+                                                        apply(transposition(c, d), x) = x
+                                                        [using specialize transpositionElsewhere(c, d, x) not-c not-d]
+                                                      @left-is-x |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = x
+                                                        [using chain left-outer cd-fixes-x]
+                                                      @right-outer |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(transposition(a, b), x)
+                                                        [using specialize compositeElsewhereOfInner(c, d, a, b, x) not-c not-d]
+                                                      @ab-fixes-x |
+                                                        apply(transposition(a, b), x) = x
+                                                        [using specialize transpositionElsewhere(a, b, x) not-a not-b]
+                                                      @right-is-x |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = x
+                                                        [using chain right-outer ab-fixes-x]
+                                                      @x-is-right |
+                                                        x = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [by symmetry right-is-x]
+                                                      @conclusion-at-none |
+                                                        apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                                        [using chain left-is-x x-is-right]
+                                                    }
+                                                }
+                                            }
+                                          @pointwise |
+                                            forall x: Element; apply(compose(transposition(c, d), transposition(a, b)), x) = apply(compose(transposition(a, b), transposition(c, d)), x)
+                                            [by forall_intro generalize-x]
+                                          @conclusion-commute |
+                                            compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                                            [using specialize composedTranspositionsAgree(transposition(c, d), transposition(a, b), transposition(a, b), transposition(c, d)) pointwise]
+                                        }
+                                      @bd-implies |
+                                        b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                                        [by implies_intro given-bd]
+                                    }
+                                  @bc-implies |
+                                    b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                                    [by implies_intro given-bc]
+                                }
+                              @ad-implies |
+                                a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                                [by implies_intro given-ad]
+                            }
+                          @ac-implies |
+                            a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                            [by implies_intro given-ac]
+                        }
+                      @cd-implies |
+                        c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                        [by implies_intro given-cd]
+                    }
+                  @ab-implies |
+                    a != b -> c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                    [by implies_intro given-ab]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> c != d -> a != c -> a != d -> b != c -> b != d -> compose(transposition(c, d), transposition(a, b)) = compose(transposition(a, b), transposition(c, d))
+    [by forall_intro generalize-a]
+qed
