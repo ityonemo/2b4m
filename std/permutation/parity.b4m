@@ -3040,413 +3040,85 @@ proof
     [by forall_intro generalize-x]
 qed
 
-// -- TOP-DOWN: the inner loop as a HOLE, so the outer induction fixes its statement -----------
-// Stated as what the OUTER induction needs, not as what the pieces happen to provide: from a
-// product of r transpositions equal to the identity, with r at least 2, SOME product of r − 2
-// transpositions is the identity. That is the whole content of Judson's inner loop, and it is
-// the only thing the outer strong induction consumes.
-// The four arithmetic/structural facts the outer proof turned out to need. Stated as holes
-// FIRST — the outer induction dictated each signature — then discharged below.
-// Every natural is 0, 1, or of the form (m+2)+d — peel two successors and take d = 0.
-theorem atLeastTwoOrSmall: forall r: Nat; r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
+// A transposition moves something — its first letter.
+theorem aTranspositionMovesSomething: forall t: Fn; isTransposition(t) -> exists z: Element; apply(t, z) != z
 proof
-  @generalize-r |
-    fix r: Nat {
-      @outer-cases |
-        r = NZERO or (exists p: Nat; r = succ(p))
-        [using specialize peano.zeroOrSucc(r)]
-      @conclusion-shape |
-        r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-        case outer-cases {
-          @when-zero |
-            assume r = NZERO {
-              @is-zero |
-                r = NZERO
-                [by hypothesis when-zero]
-              @conclusion-zero |
-                r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                [using tautology is-zero]
-            }
-          @when-successor |
-            assume exists p: Nat; r = succ(p) {
-              @has-predecessor |
-                exists p: Nat; r = succ(p)
-                [by hypothesis when-successor]
-              @with-predecessor |
-                unpack p: Nat from has-predecessor {
-                  @r-is-succ-p |
-                    r = succ(p)
-                    [by hypothesis with-predecessor]
-                  @inner-cases |
-                    p = NZERO or (exists q: Nat; p = succ(q))
-                    [using specialize peano.zeroOrSucc(p)]
-                  @conclusion-successor |
-                    r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                    case inner-cases {
-                      @when-p-zero |
-                        assume p = NZERO {
-                          @p-is-zero |
-                            p = NZERO
-                            [by hypothesis when-p-zero]
-                          @r-is-one |
-                            r = succ(NZERO)
-                            [by rewrite p-is-zero r-is-succ-p]
-                          @conclusion-one |
-                            r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                            [using tautology r-is-one]
-                        }
-                      @when-p-successor |
-                        assume exists q: Nat; p = succ(q) {
-                          @p-has-predecessor |
-                            exists q: Nat; p = succ(q)
-                            [by hypothesis when-p-successor]
-                          @with-p-predecessor |
-                            unpack q: Nat from p-has-predecessor {
-                              @p-is-succ-q |
-                                p = succ(q)
-                                [by hypothesis with-p-predecessor]
-                              @r-is-two-more |
-                                r = succ(succ(q))
-                                [by rewrite p-is-succ-q r-is-succ-p]
-                              @sum-at-zero |
-                                nadd(succ(succ(q)), NZERO) = succ(succ(q))
-                                [using specialize peano.addZeroRight(succ(succ(q)))]
-                              @sum-flipped |
-                                succ(succ(q)) = nadd(succ(succ(q)), NZERO)
-                                [by symmetry sum-at-zero]
-                              @r-is-the-sum |
-                                r = nadd(succ(succ(q)), NZERO)
-                                [using chain r-is-two-more sum-flipped]
-                              @inner-witness |
-                                exists d: Nat; r = nadd(succ(succ(q)), d)
-                                [by exists_intro(NZERO) r-is-the-sum]
-                              @outer-witness |
-                                exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d)
-                                [by exists_intro(q) inner-witness]
-                              @conclusion-at-least-two-inner |
-                                r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                                [using tautology outer-witness]
-                            }
-                          @conclusion-at-least-two |
-                            r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                            [by exists_elim with-p-predecessor]
-                        }
+  @generalize-t |
+    fix t: Fn {
+      @given-transposition |
+        assume isTransposition(t) {
+          @is-a-transposition |
+            isTransposition(t)
+            [by hypothesis given-transposition]
+          @letters-exist |
+            exists x: Element; exists y: Element; x != y and t = transposition(x, y)
+            [using tautology is-a-transposition]
+          @with-first |
+            unpack x: Element from letters-exist {
+              @second-exists |
+                exists y: Element; x != y and t = transposition(x, y)
+                [by hypothesis with-first]
+              @with-second |
+                unpack y: Element from second-exists {
+                  @facts |
+                    x != y and t = transposition(x, y)
+                    [by hypothesis with-second]
+                  @distinct |
+                    x != y
+                    [by and_elim_left facts]
+                  @t-is-the-swap |
+                    t = transposition(x, y)
+                    [by and_elim_right facts]
+                  @swap-at-x |
+                    apply(transposition(x, y), x) = y
+                    [using specialize transpositionAtFirst(x, y)]
+                  @t-at-x |
+                    apply(t, x) = y
+                    [by rewrite t-is-the-swap swap-at-x]
+                  @given-fixed |
+                    assume apply(t, x) = x {
+                      @fixed |
+                        apply(t, x) = x
+                        [by hypothesis given-fixed]
+                      @y-is-x |
+                        y = x
+                        [using chain t-at-x-flipped fixed]
+                      @t-at-x-flipped |
+                        y = apply(t, x)
+                        [by symmetry t-at-x]
+                      @x-is-y |
+                        x = y
+                        [by symmetry y-is-x]
+                      @conclusion-absurd |
+                        apply(t, x) != x
+                        [using tautology x-is-y distinct]
                     }
+                  @fixed-implies |
+                    apply(t, x) = x -> apply(t, x) != x
+                    [by implies_intro given-fixed]
+                  @fixed-or-not |
+                    apply(t, x) = x or apply(t, x) != x
+                    [using tautology]
+                  @t-moves-x |
+                    apply(t, x) != x
+                    [using tautology fixed-implies fixed-or-not]
+                  @conclusion-witness |
+                    exists z: Element; apply(t, z) != z
+                    [by exists_intro(x) t-moves-x]
                 }
-              @conclusion-with-predecessor |
-                r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                [by exists_elim with-predecessor]
+              @conclusion-second |
+                exists z: Element; apply(t, z) != z
+                [by exists_elim with-second]
             }
+          @conclusion-first |
+            exists z: Element; apply(t, z) != z
+            [by exists_elim with-first]
         }
+      @transposition-implies |
+        isTransposition(t) -> exists z: Element; apply(t, z) != z
+        [by implies_intro given-transposition]
     }
   @conclusion |
-    forall r: Nat; r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-    [by forall_intro generalize-r]
-qed
-// A ONE-factor product is its single transposition, which is not the identity.
-theorem noOneFactorIdentity: not someProductOfLengthIsIdentity(succ(NZERO))
-proof
-  @given-such-a-product |
-    assume someProductOfLengthIsIdentity(succ(NZERO)) {
-      @such-a-product |
-        someProductOfLengthIsIdentity(succ(NZERO))
-        [by hypothesis given-such-a-product]
-      @sequence-exists |
-        exists t: Seq; allTranspositions(t, succ(NZERO)) and productUpTo(t, succ(NZERO)) = identityFn
-        [using tautology such-a-product]
-      @with-sequence |
-        unpack t: Seq from sequence-exists {
-          @t-facts |
-            allTranspositions(t, succ(NZERO)) and productUpTo(t, succ(NZERO)) = identityFn
-            [by hypothesis with-sequence]
-          @t-all |
-            allTranspositions(t, succ(NZERO))
-            [by and_elim_left t-facts]
-          @t-product-is-identity |
-            productUpTo(t, succ(NZERO)) = identityFn
-            [by and_elim_right t-facts]
-          @zero-below-one |
-            nat_less_than(NZERO, succ(NZERO))
-            [using specialize natLessThanSelf(NZERO)]
-          @entry-is-a-transposition |
-            isTransposition(at(t, NZERO))
-            [using specialize t-all(NZERO) zero-below-one]
-          // the one-factor product IS that entry: identity ∘ at(t,0) = at(t,0).
-          @unfolds |
-            productUpTo(t, succ(NZERO)) = compose(productUpTo(t, NZERO), at(t, NZERO))
-            [using specialize productUpToSucc(t, NZERO)]
-          @empty-is-identity |
-            productUpTo(t, NZERO) = identityFn
-            [using specialize productUpToZero(t)]
-          @with-identity |
-            productUpTo(t, succ(NZERO)) = compose(identityFn, at(t, NZERO))
-            [by rewrite empty-is-identity unfolds]
-          @identity-composes-away |
-            compose(identityFn, at(t, NZERO)) = at(t, NZERO)
-            [using specialize composeIdentityLeft(at(t, NZERO))]
-          @product-is-the-entry |
-            productUpTo(t, succ(NZERO)) = at(t, NZERO)
-            [using chain with-identity identity-composes-away]
-          @entry-is-identity |
-            at(t, NZERO) = identityFn
-            [using chain product-is-the-entry-flipped t-product-is-identity]
-          @product-is-the-entry-flipped |
-            at(t, NZERO) = productUpTo(t, succ(NZERO))
-            [by symmetry product-is-the-entry]
-          @entry-is-not-identity |
-            at(t, NZERO) != identityFn
-            [using specialize transpositionIsNotIdentity(at(t, NZERO)) entry-is-a-transposition]
-          @conclusion-contradiction |
-            nat_less_than(NZERO, NZERO)
-            [using tautology entry-is-identity entry-is-not-identity]
-        }
-      @contradiction |
-        nat_less_than(NZERO, NZERO)
-        [by exists_elim with-sequence]
-    }
-  @product-implies-absurdity |
-    someProductOfLengthIsIdentity(succ(NZERO)) -> nat_less_than(NZERO, NZERO)
-    [by implies_intro given-such-a-product]
-  @zero-not-below-itself |
-    not nat_less_than(NZERO, NZERO)
-    [using specialize peano_order.lessThanIrreflexive(NZERO)]
-  @conclusion |
-    not someProductOfLengthIsIdentity(succ(NZERO))
-    [using tautology product-implies-absurdity zero-not-below-itself]
-qed
-theorem twoMoreCommutes: forall m: Nat; forall d: Nat; nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-proof
-  @generalize-m |
-    fix m: Nat {
-      @generalize-d |
-        fix d: Nat {
-          @peel-outer |
-            nadd(succ(succ(m)), d) = succ(nadd(succ(m), d))
-            [using specialize peano.addSuccLeft(succ(m), d)]
-          @peel-inner |
-            nadd(succ(m), d) = succ(nadd(m, d))
-            [using specialize peano.addSuccLeft(m, d)]
-          @conclusion-commutes |
-            nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-            [by rewrite peel-inner peel-outer]
-        }
-      @discharge-d |
-        forall d: Nat; nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-        [by forall_intro generalize-d]
-    }
-  @conclusion |
-    forall m: Nat; forall d: Nat; nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-    [by forall_intro generalize-m]
-qed
-
-theorem droppingTwoIsSmaller: forall m: Nat; forall d: Nat; nat_less_than(nadd(m, d), nadd(succ(succ(m)), d))
-proof
-  @generalize-m |
-    fix m: Nat {
-      @generalize-d |
-        fix d: Nat {
-          @sum-is-two-more |
-            nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-            [using specialize twoMoreCommutes(m, d)]
-          @below-own-successor |
-            nat_less_than(nadd(m, d), succ(nadd(m, d)))
-            [using specialize natLessThanSelf(nadd(m, d))]
-          @below-two-more |
-            nat_less_than(nadd(m, d), succ(succ(nadd(m, d))))
-            [using specialize peano_order.lessThanSuccRight(nadd(m, d), succ(nadd(m, d))) below-own-successor]
-          @conclusion-smaller |
-            nat_less_than(nadd(m, d), nadd(succ(succ(m)), d))
-            [by rewrite sum-is-two-more below-two-more]
-        }
-      @discharge-d |
-        forall d: Nat; nat_less_than(nadd(m, d), nadd(succ(succ(m)), d))
-        [by forall_intro generalize-d]
-    }
-  @conclusion |
-    forall m: Nat; forall d: Nat; nat_less_than(nadd(m, d), nadd(succ(succ(m)), d))
-    [by forall_intro generalize-m]
-qed
-
-theorem twoDividesPlusTwo: forall n: Nat; forall r: Nat; ndivides(NTWO, n) -> r = succ(succ(n)) -> ndivides(NTWO, r)
-proof
-  @generalize-n |
-    fix n: Nat {
-      @generalize-r |
-        fix r: Nat {
-          @given-divides |
-            assume ndivides(NTWO, n) {
-              @given-two-more |
-                assume r = succ(succ(n)) {
-                  @divides-n |
-                    ndivides(NTWO, n)
-                    [by hypothesis given-divides]
-                  @is-two-more |
-                    r = succ(succ(n))
-                    [by hypothesis given-two-more]
-                  @two-divides-two |
-                    ndivides(NTWO, NTWO)
-                    [using specialize peano_divides.dividesRefl(NTWO)]
-                  @divides-the-sum |
-                    ndivides(NTWO, nadd(n, NTWO))
-                    [using specialize peano_divides.dividesAdd(NTWO, n, NTWO) divides-n two-divides-two]
-                  // n + 2 = succ(succ(n))
-                  @sum-peels-once |
-                    nadd(n, succ(succ(NZERO))) = succ(nadd(n, succ(NZERO)))
-                    [using specialize peano.addSuccRight(n, succ(NZERO))]
-                  @sum-peels-twice |
-                    nadd(n, succ(NZERO)) = succ(nadd(n, NZERO))
-                    [using specialize peano.addSuccRight(n, NZERO)]
-                  @sum-at-zero |
-                    nadd(n, NZERO) = n
-                    [using specialize peano.addZeroRight(n)]
-                  @sum-is-succ-n |
-                    nadd(n, succ(NZERO)) = succ(n)
-                    [by rewrite sum-at-zero sum-peels-twice]
-                  @sum-is-two-more |
-                    nadd(n, succ(succ(NZERO))) = succ(succ(n))
-                    [by rewrite sum-is-succ-n sum-peels-once]
-                  @divides-two-more |
-                    ndivides(NTWO, succ(succ(n)))
-                    [by rewrite sum-is-two-more divides-the-sum]
-                  @conclusion-divides-r |
-                    ndivides(NTWO, r)
-                    [by rewrite is-two-more divides-two-more]
-                }
-              @two-more-implies |
-                r = succ(succ(n)) -> ndivides(NTWO, r)
-                [by implies_intro given-two-more]
-            }
-          @divides-implies |
-            ndivides(NTWO, n) -> r = succ(succ(n)) -> ndivides(NTWO, r)
-            [by implies_intro given-divides]
-        }
-      @discharge-r |
-        forall r: Nat; ndivides(NTWO, n) -> r = succ(succ(n)) -> ndivides(NTWO, r)
-        [by forall_intro generalize-r]
-    }
-  @conclusion |
-    forall n: Nat; forall r: Nat; ndivides(NTWO, n) -> r = succ(succ(n)) -> ndivides(NTWO, r)
-    [by forall_intro generalize-n]
-qed
-
-hole innerLoopDropsTwo: forall m: Nat; forall d: Nat;
-  someProductOfLengthIsIdentity(nadd(succ(succ(m)), d)) ->
-  someProductOfLengthIsIdentity(nadd(m, d))
-
-// -- STEP 4: THE PARITY LEMMA, by strong induction on the factor count ------------------------
-// r = 0 is even. r = 1 is impossible: a one-factor product is its single transposition, which is
-// not the identity. For r >= 2 the inner loop gives a product of r − 2, even by the hypothesis,
-// so r is even.
-theorem identityIsEvenLength: forall r: Nat; someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r)
-proof
-  @strong-step |
-    fix r: Nat {
-      @given-smaller-cases |
-        assume forall q: Nat; nat_less_than(q, r) -> (someProductOfLengthIsIdentity(q) -> ndivides(NTWO, q)) {
-          @smaller-cases |
-            forall q: Nat; nat_less_than(q, r) -> (someProductOfLengthIsIdentity(q) -> ndivides(NTWO, q))
-            [by hypothesis given-smaller-cases]
-          @given-identity-product |
-            assume someProductOfLengthIsIdentity(r) {
-              @identity-product |
-                someProductOfLengthIsIdentity(r)
-                [by hypothesis given-identity-product]
-              // r is 0, 1, or at least 2 — and only the last needs the loop.
-              @r-shape |
-                r = NZERO or r = succ(NZERO) or (exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d))
-                [using specialize atLeastTwoOrSmall(r)]
-              @conclusion-even |
-                ndivides(NTWO, r)
-                case r-shape {
-                  @when-zero |
-                    assume r = NZERO {
-                      @is-zero |
-                        r = NZERO
-                        [by hypothesis when-zero]
-                      @two-divides-zero |
-                        ndivides(NTWO, NZERO)
-                        [using specialize peano_divides.dividesZero(NTWO)]
-                      @conclusion-zero-is-even |
-                        ndivides(NTWO, r)
-                        [by rewrite is-zero two-divides-zero]
-                    }
-                  @when-one |
-                    assume r = succ(NZERO) {
-                      @is-one |
-                        r = succ(NZERO)
-                        [by hypothesis when-one]
-                      @one-product |
-                        someProductOfLengthIsIdentity(succ(NZERO))
-                        [by rewrite is-one identity-product]
-                      @no-single-transposition |
-                        not someProductOfLengthIsIdentity(succ(NZERO))
-                        [by cite noOneFactorIdentity]
-                      @conclusion-one-absurd |
-                        ndivides(NTWO, r)
-                        [using tautology one-product no-single-transposition]
-                    }
-                  @when-at-least-two |
-                    assume exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d) {
-                      @decomposes |
-                        exists m: Nat; exists d: Nat; r = nadd(succ(succ(m)), d)
-                        [by hypothesis when-at-least-two]
-                      @with-m |
-                        unpack m: Nat from decomposes {
-                          @d-exists |
-                            exists d: Nat; r = nadd(succ(succ(m)), d)
-                            [by hypothesis with-m]
-                          @with-d |
-                            unpack d: Nat from d-exists {
-                              @r-is-sum |
-                                r = nadd(succ(succ(m)), d)
-                                [by hypothesis with-d]
-                              @product-at-sum |
-                                someProductOfLengthIsIdentity(nadd(succ(succ(m)), d))
-                                [by rewrite r-is-sum identity-product]
-                              @shorter-product |
-                                someProductOfLengthIsIdentity(nadd(m, d))
-                                [using specialize innerLoopDropsTwo(m, d) product-at-sum]
-                              @shorter-is-smaller |
-                                nat_less_than(nadd(m, d), r)
-                                [by rewrite r-is-sum shorter-below-sum]
-                              @shorter-below-sum |
-                                nat_less_than(nadd(m, d), nadd(succ(succ(m)), d))
-                                [using specialize droppingTwoIsSmaller(m, d)]
-                              @shorter-is-even |
-                                ndivides(NTWO, nadd(m, d))
-                                [using specialize smaller-cases(nadd(m, d)) shorter-is-smaller shorter-product]
-                              @conclusion-sum-is-even |
-                                ndivides(NTWO, r)
-                                [using specialize twoDividesPlusTwo(nadd(m, d), r) shorter-is-even r-is-two-more]
-                              @r-is-two-more |
-                                r = succ(succ(nadd(m, d)))
-                                [using chain r-is-sum sum-is-two-more]
-                              @sum-is-two-more |
-                                nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
-                                [using specialize twoMoreCommutes(m, d)]
-                            }
-                          @conclusion-with-d |
-                            ndivides(NTWO, r)
-                            [by exists_elim with-d]
-                        }
-                      @conclusion-at-least-two |
-                        ndivides(NTWO, r)
-                        [by exists_elim with-m]
-                    }
-                }
-            }
-          @product-implies |
-            someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r)
-            [by implies_intro given-identity-product]
-        }
-      @strong-step-at-r |
-        (forall q: Nat; nat_less_than(q, r) -> (someProductOfLengthIsIdentity(q) -> ndivides(NTWO, q))) -> (someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r))
-        [by implies_intro given-smaller-cases]
-    }
-  @strong-step-for-all |
-    forall r: Nat; (forall q: Nat; nat_less_than(q, r) -> (someProductOfLengthIsIdentity(q) -> ndivides(NTWO, q))) -> (someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r))
-    [by forall_intro strong-step]
-  @conclusion |
-    forall r: Nat; someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r)
-    [using instantiation strongInduction((fun r: Nat => someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r))) strong-step-for-all]
+    forall t: Fn; isTransposition(t) -> exists z: Element; apply(t, z) != z
+    [by forall_intro generalize-t]
 qed
