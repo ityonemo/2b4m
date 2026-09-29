@@ -415,12 +415,15 @@ pub fn addTests(
     // Judson's Proposition 5.12 — every permutation of a finite set is a product of
     // transpositions (no "at least two elements": the identity is the empty product).
     ctx.okSilent(&.{ "check", "std/permutation/transpositions.b4m" });
-    // THE PARITY THEORY (std/permutation/parity.b4m): the algebraic input to Judson's lemma
-    // that the identity is a product of an EVEN number of transpositions — all four of his
-    // rewrite identities on adjacent factors, proved pointwise over concrete transpositions,
-    // plus the sequence surgeries (replace a pair, delete a cancelling pair) that keep the
-    // product. The two inductions that drive them are specified in the file, not yet built.
+    // THE PARITY THEORY (std/permutation/parity.b4m): the PROVED input to Judson's lemma that
+    // the identity is a product of an EVEN number of transpositions — his four rewrite
+    // identities over concrete transpositions, the classification of an adjacent pair, the
+    // sequence surgeries that keep the product, and the fixed-point argument. Hole-free, so it
+    // lives in the library. The lemma's own top-down scaffold, still carrying two holes, is
+    // `drafts/parity-lemma.b4m` — deliberately OUTSIDE std, since a hole in std would force the
+    // whole `check std --library` sweep into --draft and blind it to every other file.
     ctx.okSilent(&.{ "check", "std/permutation/parity.b4m" });
+    ctx.okSilent(&.{ "check", "--draft", "drafts/parity-lemma.b4m" });
 
     // THE COUNT (std/permutation/count.b4m): |S_n| = n!, stated as a LISTING — a sequence
     // of n! permutations of the segment {0..n-1}, pairwise distinct, hitting every one.
