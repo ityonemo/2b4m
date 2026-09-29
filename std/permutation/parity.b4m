@@ -1454,13 +1454,53 @@ proof
     [by forall_intro generalize-a]
 qed
 
+// A swap of two DISTINCT letters is a transposition — the existential, witnessed by the letters
+// themselves. Needed because the classification below must report that its witnesses are
+// transpositions, so a rewrite keeps the sequence's entries transpositions.
+theorem swapIsATransposition: forall x, y: Element; x != y -> isTransposition(transposition(x, y))
+proof
+  @generalize-x |
+    fix x: Element {
+      @generalize-y |
+        fix y: Element {
+          @given-distinct |
+            assume x != y {
+              @distinct |
+                x != y
+                [by hypothesis given-distinct]
+              @reflexive |
+                transposition(x, y) = transposition(x, y)
+                [by reflexivity]
+              @witnessed |
+                x != y and transposition(x, y) = transposition(x, y)
+                [by and_intro distinct reflexive]
+              @inner-exists |
+                exists v: Element; x != v and transposition(x, y) = transposition(x, v)
+                [by exists_intro(y) witnessed]
+              @conclusion-is-a-transposition |
+                isTransposition(transposition(x, y))
+                [by exists_intro(x) inner-exists]
+            }
+          @distinct-implies |
+            x != y -> isTransposition(transposition(x, y))
+            [by implies_intro given-distinct]
+        }
+      @discharge-y |
+        forall y: Element; x != y -> isTransposition(transposition(x, y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: Element; x != y -> isTransposition(transposition(x, y))
+    [by forall_intro generalize-x]
+qed
+
 // -- CLASSIFYING an adjacent pair whose right factor moves `a` -------------------------------
 // The engine of the inner loop. For a != b and u != v the pair (u v)(a b) — whose RIGHT factor
 // moves `a` — either composes to the identity, or equals a pair whose right factor FIXES `a`.
 // Which of Judson's identities applies is decided by how {u, v} meets {a, b}: six branches,
 // two of them cancellations, the other four citing the identity proved for that shape above.
 theorem adjacentPairCancelsOrShiftsOff: forall a, b, u, v: Element; a != b -> u != v ->
-  (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+  (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
 proof
   @generalize-a |
     fix a: Element {
@@ -1484,7 +1524,7 @@ proof
                             u = a or u = b or (u != a and u != b)
                             [using tautology]
                           @conclusion-classified |
-                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                             case u-cases {
                               @when-u-is-a |
                                 assume u = a {
@@ -1498,7 +1538,7 @@ proof
                                     v = b or v != b
                                     [using tautology]
                                   @conclusion-u-is-a |
-                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                     case v-is-b-or-not {
                                       @when-v-is-b |
                                         assume v = b {
@@ -1515,7 +1555,7 @@ proof
                                             compose(transposition(u, v), transposition(a, b)) = identityFn
                                             [by rewrite v-is-b pair-at-u]
                                           @conclusion-cancel |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_left pair-cancels]
                                         }
                                       @when-v-is-not-b |
@@ -1538,17 +1578,23 @@ proof
                                           @right-fixes-a |
                                             apply(transposition(b, v), a) = a
                                             [using specialize transpositionElsewhere(b, v, a) ab a-not-v]
+                                          @left-is-a-transposition |
+                                            isTransposition(transposition(a, b))
+                                            [using specialize swapIsATransposition(a, b) ab]
+                                          @right-is-a-transposition |
+                                            isTransposition(transposition(b, v))
+                                            [using specialize swapIsATransposition(b, v) bv]
                                           @witnessed |
-                                            compose(transposition(a, b), transposition(b, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, v), a) = a
-                                            [by and_intro pair-flipped right-fixes-a]
+                                            isTransposition(transposition(a, b)) and isTransposition(transposition(b, v)) and compose(transposition(a, b), transposition(b, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, v), a) = a
+                                            [using tautology left-is-a-transposition right-is-a-transposition pair-flipped right-fixes-a]
                                           @inner-exists |
-                                            exists q: Fn; compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists q: Fn; isTransposition(transposition(a, b)) and isTransposition(q) and compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(b, v)) witnessed]
                                           @outer-exists |
-                                            exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(a, b)) inner-exists]
                                           @conclusion-shift |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_right outer-exists]
                                         }
                                     }
@@ -1565,7 +1611,7 @@ proof
                                     v = a or v != a
                                     [using tautology]
                                   @conclusion-u-is-b |
-                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                     case v-is-a-or-not {
                                       @when-v-is-a |
                                         assume v = a {
@@ -1582,7 +1628,7 @@ proof
                                             compose(transposition(u, v), transposition(a, b)) = identityFn
                                             [by rewrite v-is-a pair-at-u]
                                           @conclusion-cancel |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_left pair-cancels]
                                         }
                                       @when-v-is-not-a |
@@ -1605,17 +1651,23 @@ proof
                                           @right-fixes-a |
                                             apply(transposition(b, v), a) = a
                                             [using specialize transpositionElsewhere(b, v, a) ab av]
+                                          @left-is-a-transposition |
+                                            isTransposition(transposition(a, v))
+                                            [using specialize swapIsATransposition(a, v) av]
+                                          @right-is-a-transposition |
+                                            isTransposition(transposition(b, v))
+                                            [using specialize swapIsATransposition(b, v) b-not-v]
                                           @witnessed |
-                                            compose(transposition(a, v), transposition(b, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, v), a) = a
-                                            [by and_intro pair-flipped right-fixes-a]
+                                            isTransposition(transposition(a, v)) and isTransposition(transposition(b, v)) and compose(transposition(a, v), transposition(b, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, v), a) = a
+                                            [using tautology left-is-a-transposition right-is-a-transposition pair-flipped right-fixes-a]
                                           @inner-exists |
-                                            exists q: Fn; compose(transposition(a, v), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists q: Fn; isTransposition(transposition(a, v)) and isTransposition(q) and compose(transposition(a, v), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(b, v)) witnessed]
                                           @outer-exists |
-                                            exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(a, v)) inner-exists]
                                           @conclusion-shift |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_right outer-exists]
                                         }
                                     }
@@ -1641,7 +1693,7 @@ proof
                                     v = a or v = b or (v != a and v != b)
                                     [using tautology]
                                   @conclusion-u-neither |
-                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                    compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                     case v-cases {
                                       @when-v-is-a |
                                         assume v = a {
@@ -1666,17 +1718,23 @@ proof
                                           @right-fixes-a |
                                             apply(transposition(b, u), a) = a
                                             [using specialize transpositionElsewhere(b, u, a) ab au]
+                                          @left-is-a-transposition |
+                                            isTransposition(transposition(a, b))
+                                            [using specialize swapIsATransposition(a, b) ab]
+                                          @right-is-a-transposition |
+                                            isTransposition(transposition(b, u))
+                                            [using specialize swapIsATransposition(b, u) bu]
                                           @witnessed |
-                                            compose(transposition(a, b), transposition(b, u)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, u), a) = a
-                                            [by and_intro pair-flipped right-fixes-a]
+                                            isTransposition(transposition(a, b)) and isTransposition(transposition(b, u)) and compose(transposition(a, b), transposition(b, u)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, u), a) = a
+                                            [using tautology left-is-a-transposition right-is-a-transposition pair-flipped right-fixes-a]
                                           @inner-exists |
-                                            exists q: Fn; compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists q: Fn; isTransposition(transposition(a, b)) and isTransposition(q) and compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(b, u)) witnessed]
                                           @outer-exists |
-                                            exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(a, b)) inner-exists]
                                           @conclusion-shift |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_right outer-exists]
                                         }
                                       @when-v-is-b |
@@ -1702,17 +1760,23 @@ proof
                                           @right-fixes-a |
                                             apply(transposition(b, u), a) = a
                                             [using specialize transpositionElsewhere(b, u, a) ab au]
+                                          @left-is-a-transposition |
+                                            isTransposition(transposition(a, u))
+                                            [using specialize swapIsATransposition(a, u) au]
+                                          @right-is-a-transposition |
+                                            isTransposition(transposition(b, u))
+                                            [using specialize swapIsATransposition(b, u) bu]
                                           @witnessed |
-                                            compose(transposition(a, u), transposition(b, u)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, u), a) = a
-                                            [by and_intro pair-flipped right-fixes-a]
+                                            isTransposition(transposition(a, u)) and isTransposition(transposition(b, u)) and compose(transposition(a, u), transposition(b, u)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(b, u), a) = a
+                                            [using tautology left-is-a-transposition right-is-a-transposition pair-flipped right-fixes-a]
                                           @inner-exists |
-                                            exists q: Fn; compose(transposition(a, u), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists q: Fn; isTransposition(transposition(a, u)) and isTransposition(q) and compose(transposition(a, u), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(b, u)) witnessed]
                                           @outer-exists |
-                                            exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(a, u)) inner-exists]
                                           @conclusion-shift |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_right outer-exists]
                                         }
                                       @when-v-is-neither |
@@ -1741,17 +1805,23 @@ proof
                                           @right-fixes-a |
                                             apply(transposition(u, v), a) = a
                                             [using specialize transpositionElsewhere(u, v, a) au av]
+                                          @left-is-a-transposition |
+                                            isTransposition(transposition(a, b))
+                                            [using specialize swapIsATransposition(a, b) ab]
+                                          @right-is-a-transposition |
+                                            isTransposition(transposition(u, v))
+                                            [using specialize swapIsATransposition(u, v) uv]
                                           @witnessed |
-                                            compose(transposition(a, b), transposition(u, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(u, v), a) = a
-                                            [by and_intro pair-flipped right-fixes-a]
+                                            isTransposition(transposition(a, b)) and isTransposition(transposition(u, v)) and compose(transposition(a, b), transposition(u, v)) = compose(transposition(u, v), transposition(a, b)) and apply(transposition(u, v), a) = a
+                                            [using tautology left-is-a-transposition right-is-a-transposition pair-flipped right-fixes-a]
                                           @inner-exists |
-                                            exists q: Fn; compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists q: Fn; isTransposition(transposition(a, b)) and isTransposition(q) and compose(transposition(a, b), q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(u, v)) witnessed]
                                           @outer-exists |
-                                            exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
+                                            exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a
                                             [by exists_intro(transposition(a, b)) inner-exists]
                                           @conclusion-shift |
-                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
+                                            compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a)
                                             [by or_intro_right outer-exists]
                                         }
                                     }
@@ -1759,27 +1829,27 @@ proof
                             }
                         }
                       @uv-implies |
-                        u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+                        u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
                         [by implies_intro given-uv]
                     }
                   @ab-implies |
-                    a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+                    a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
                     [by implies_intro given-ab]
                 }
               @discharge-v |
-                forall v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+                forall v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
                 [by forall_intro generalize-v]
             }
           @discharge-u |
-            forall u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+            forall u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
             [by forall_intro generalize-u]
         }
       @discharge-b |
-        forall b, u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+        forall b, u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
         [by forall_intro generalize-b]
     }
   @conclusion |
-    forall a, b, u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
+    forall a, b, u, v: Element; a != b -> u != v -> (compose(transposition(u, v), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(u, v), transposition(a, b)) and apply(q, a) = a))
     [by forall_intro generalize-a]
 qed
 
