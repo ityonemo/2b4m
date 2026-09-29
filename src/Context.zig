@@ -58,6 +58,25 @@ gpa: std.mem.Allocator,
 /// The Io handle (from Zig 0.16 "juicy main" `init.io`), threaded through the entry
 /// points. Writers use it to take the InternPool write-mutex / KV RwLocks. Reads are
 /// lock-free and never need it. Single-threaded today, so locks are uncontended.
+///
+/// LOCK ORDER: there is none to keep, and that is deliberate. Audited 2026-09-29: no code
+/// path holds two of `files_lock`/`ast_lock`/`side_lock` at once — every critical section is
+/// one short read or write with no self-calls, the sole exception being
+/// `copyModelDefineTargets`, which calls the `…Locked` variant precisely so it cannot
+/// re-enter. All three are confined to this file. Keep it that way: if a critical section
+/// ever needs to call out, split the call out of the section rather than nesting locks.
+///
+/// They stay SEPARATE (not merged, and NOT rolled into InternPool) because they guard
+/// different phases with different disciplines. The pool's `write_lock` guards WRITES only —
+/// the pool is append-only, so `get` is lock-free — whereas these guard hash maps that
+/// REHASH on growth, so their readers must lock too. Merging would drag the engine's hottest
+/// read path under a lock. Within a phase, consolidation is right and already done:
+/// `side_lock` covers eight low-traffic tables because one lock-order edge beats eight.
+///
+/// THE RECURRING BUG is not lock count but reach-past: these maps are public fields, so a
+/// caller can `.get()` them directly and skip the accessor. Three such reads were fixed on
+/// 2026-09-29 (`inheritAxioms`, `inheritHoles`, `modelDefineTarget`, `expand_linted`) after
+/// one of them segfaulted intermittently. Read DURING proving only via the accessors below.
 io: std.Io,
 sink: *diagnostics.Sink,
 /// Guards the per-file tables' growth and the parse claim (see `files`/`demandParse`). A
@@ -307,7 +326,17 @@ pub fn registerDecl(self: *Context, file: FileId, decl: *const ast.Decl) std.mem
 /// The define a source symbol maps onto under `model` (or a model up its parent chain — a
 /// composed model's parent is its outer model, whose entries apply to every symbol the inner
 /// leaves alone). Null = no define mapping.
+/// Takes `side_lock`: `copyModelDefineTargets` writes this map DURING proving (a ModelTask
+/// composing two models), and a rehash under an unguarded read walks freed metadata.
 pub fn modelDefineTarget(self: *const Context, model: InternPool.Index, src: InternPool.Index) ?DefineKey {
+    const lock = @constCast(&self.side_lock);
+    lock.lock();
+    defer lock.unlock();
+    return self.modelDefineTargetLocked(model, src);
+}
+
+/// The lookup proper — callers already holding `side_lock` use this.
+fn modelDefineTargetLocked(self: *const Context, model: InternPool.Index, src: InternPool.Index) ?DefineKey {
     var cur = model;
     while (cur != InternPool.Index.none and cur != .universe) {
         if (self.model_define_targets.get(.{ .model = cur, .src = src })) |d| return d;
@@ -323,13 +352,18 @@ pub fn modelDefineTarget(self: *const Context, model: InternPool.Index, src: Int
 /// the inner maps ONTO (`inner: s → t`, `outer: t → D`) applies to `s`. Outer mappings of
 /// symbols the inner leaves alone are found through the parent chain (composed.parent = outer).
 pub fn copyModelDefineTargets(self: *Context, composed: InternPool.Index, outer: InternPool.Index, inner: InternPool.Index) std.mem.Allocator.Error!void {
+    // ONE lock across the whole read-modify-write: the iterator above and the puts below must
+    // not interleave with another task's lookup, and `modelDefineTargetLocked` is the
+    // already-holding variant so this does not self-deadlock.
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
     var it = self.model_define_targets.iterator();
     var pending: std.ArrayList(struct { key: ModelDefineKey, def: DefineKey }) = .empty;
     while (it.next()) |e| {
         if (e.key_ptr.model == inner) try pending.append(self.arena, .{ .key = .{ .model = composed, .src = e.key_ptr.src }, .def = e.value_ptr.* });
     }
     for (self.interner.keyOf(inner).model.overlay) |m| {
-        if (self.modelDefineTarget(outer, m.tgt)) |d| try pending.append(self.arena, .{ .key = .{ .model = composed, .src = m.src }, .def = d });
+        if (self.modelDefineTargetLocked(outer, m.tgt)) |d| try pending.append(self.arena, .{ .key = .{ .model = composed, .src = m.src }, .def = d });
     }
     for (pending.items) |p| try self.model_define_targets.put(self.arena, p.key, p.def);
 }
@@ -436,6 +470,23 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
 /// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
 /// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+/// Was this define-forwarding site already linted? Guarded: the expansion pass reads and
+/// writes this map DURING proving, so an unguarded `contains` can race a concurrent `put`
+/// and probe rehashed metadata.
+pub fn expandAlreadyLinted(self: *const Context, key: DefineKey) bool {
+    const lock = @constCast(&self.side_lock);
+    lock.lock();
+    defer lock.unlock();
+    return self.expand_linted.contains(key);
+}
+
+/// Record that this site has been linted. Guarded, as above.
+pub fn recordExpandLinted(self: *Context, key: DefineKey) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    try self.expand_linted.put(self.arena, key, {});
+}
+
 /// Read `fact`'s axiom set UNDER THE LOCK — for readers that run DURING proving, where a
 /// concurrent publish can rehash the map out from under an unguarded `get`. (The reporting
 /// reads in root.zig run after quiescence and stay unguarded by design.)
