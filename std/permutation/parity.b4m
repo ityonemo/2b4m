@@ -1100,18 +1100,11 @@ proof
 qed
 
 // -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
-// Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. A sequence
-// with two entries replaced exists, and its product up to any length is unchanged when the
-// replacement is an equal composite — the postulate is the SEQUENCE surgery, and the product
-// equality is then a consequence of productUpTo's fold.
-axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
-  invertible(p) -> invertible(q) ->
-  exists u: Seq;
-  at(u, k) = p
-  and at(u, succ(k)) = q
-  and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
-  and (forall i: Nat; at(u, nadd(succ(succ(k)), i)) = at(s, nadd(succ(succ(k)), i)))
-
+// Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. The
+// sequence surgery itself (a `seqReplaceTwo` existence postulate in the style of this layer's
+// other sequence axioms) is deferred until the induction that consumes it is built — the
+// library gate rightly rejects an unused axiom. What is proved here is the PAYOFF: given any
+// two sequences related that way, the products agree.
 // Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
 // unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
 theorem replacingAPairKeepsTheProduct: forall s: Seq; forall u: Seq; forall k: Nat;
@@ -1210,14 +1203,8 @@ proof
 qed
 
 // -- DELETING a cancelling pair --------------------------------------------------------------
-// The other exit from the inner loop: when the pair at (k, k+1) is the same transposition
-// twice it composes to the identity, so deleting both entries drops the length by two and
-// leaves the product alone. The sequence surgery is again a postulate of this layer.
-axiom seqDeleteTwo: forall s: Seq; forall k: Nat;
-  exists u: Seq;
-  (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
-  and (forall i: Nat; at(u, nadd(k, i)) = at(s, nadd(succ(succ(k)), i)))
-
+// The other exit from the inner loop. As above, the `seqDeleteTwo` surgery postulate waits for
+// its consumer; the product fact is what matters and needs no surgery to state.
 // Deleting a pair that composes to the identity keeps every product from k+2 onward: the
 // prefix is shared, and productUpTo(u, k) = productUpTo(s, k) = productUpTo(s, k+2).
 theorem deletingACancellingPairKeepsTheProduct: forall s: Seq; forall k: Nat;
@@ -1270,3 +1257,38 @@ proof
     forall s: Seq; forall k: Nat; compose(at(s, k), at(s, succ(k))) = identityFn -> productUpTo(s, succ(succ(k))) = productUpTo(s, k)
     [by forall_intro generalize-s]
 qed
+
+// -- WHAT REMAINS -----------------------------------------------------------------------------
+// Everything above is the algebraic and structural input to Judson's lemma. The remaining
+// piece is ONE induction plus a fixed-point argument, specified here so it can be picked up
+// without re-deriving the design.
+//
+// `moves(t, x)` — the predicate the loop tracks — is `apply(t, x) != x`.
+//
+// STEP 1: CLASSIFY an adjacent pair whose RIGHT factor moves `a`. For a ≠ b and u ≠ v,
+//   (u v)(a b) either composes to the identity (when (u v) = (a b)) or equals a pair whose
+//   right factor FIXES `a`:
+//     (u v) = (b c), c ∉ {a,b}  → (a c)(b c)   [shiftTheSharedLetter]
+//     (u v) = (a c), c ∉ {a,b}  → (a b)(b c)   [rotateTheSharedLetter]
+//     (u v) = (c d) disjoint    → (a b)(c d)   [disjointTranspositionsCommute]
+//   The bookkeeping is the six-way split on how {u,v} meets {a,b} (u=a, u=b, v=a, v=b, both,
+//   neither) plus assembling each branch's distinctness facts. Every algebraic fact it needs
+//   is already proved above; this is case analysis, not new mathematics.
+//
+// STEP 2: the INNER induction. With r fixed, on j descending: if there is a product of r
+//   transpositions equal to the identity in which `a` is moved by no entry above index j,
+//   then either some product of r − 2 transpositions equals the identity (a cancellation was
+//   reached), or the same holds for j − 1 (apply STEP 1 at (j−1, j), rewrite by
+//   seqReplaceTwo + replacingAPairKeepsTheProduct). Ordinary downward ℕ induction; the outer
+//   measure r never moves.
+//
+// STEP 3: the FIXED-POINT argument. At j = 0 only entry 0 can move `a`, so the product moves
+//   `a` — but the product is the identity, which fixes it. Contradiction, so STEP 2 always
+//   exits by cancellation.
+//
+// STEP 4: the OUTER induction — strongInduction on r. r = 0 is even. r = 1 is impossible (a
+//   transposition is not the identity: it moves its two letters). For r ≥ 2, STEP 2+3 give a
+//   product of r − 2, even by the hypothesis, so r is even.
+//
+// Then `aata/5.1-permutation-groups.md` replaces `axiom identityIsEvenLength` with a citation
+// and the chapter's last assumption of its own making is gone.
