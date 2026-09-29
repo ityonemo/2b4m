@@ -2601,3 +2601,358 @@ proof
     forall s: Seq; forall k: Nat; forall d: Nat; forall p, q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
     [by forall_intro generalize-s]
 qed
+
+// -- a transposition is not the identity ------------------------------------------------------
+// Needed to kill the r = 1 case of the outer induction: (u v) sends u to v, and u != v.
+theorem transpositionIsNotIdentity: forall t: Fn; isTransposition(t) -> t != identityFn
+proof
+  @generalize-t |
+    fix t: Fn {
+      @given-transposition |
+        assume isTransposition(t) {
+          @is-a-transposition |
+            isTransposition(t)
+            [by hypothesis given-transposition]
+          @letters-exist |
+            exists u: Element; exists v: Element; u != v and t = transposition(u, v)
+            [using tautology is-a-transposition]
+          @with-first-letter |
+            unpack u: Element from letters-exist {
+              @second-exists |
+                exists v: Element; u != v and t = transposition(u, v)
+                [by hypothesis with-first-letter]
+              @with-second-letter |
+                unpack v: Element from second-exists {
+                  @letter-facts |
+                    u != v and t = transposition(u, v)
+                    [by hypothesis with-second-letter]
+                  @distinct |
+                    u != v
+                    [by and_elim_left letter-facts]
+                  @t-is-the-swap |
+                    t = transposition(u, v)
+                    [by and_elim_right letter-facts]
+                  @swap-at-u |
+                    apply(transposition(u, v), u) = v
+                    [using specialize transpositionAtFirst(u, v)]
+                  @given-t-is-identity |
+                    assume t = identityFn {
+                      @t-is-identity |
+                        t = identityFn
+                        [by hypothesis given-t-is-identity]
+                      @swap-is-identity |
+                        transposition(u, v) = identityFn
+                        [using chain swap-flipped t-is-identity]
+                      @swap-flipped |
+                        transposition(u, v) = t
+                        [by symmetry t-is-the-swap]
+                      @identity-at-u |
+                        apply(identityFn, u) = u
+                        [using specialize identityApply(u)]
+                      @swap-at-u-is-u |
+                        apply(transposition(u, v), u) = u
+                        [by rewrite swap-is-identity identity-at-u]
+                      @v-is-u |
+                        v = u
+                        [using chain swap-at-u-flipped swap-at-u-is-u]
+                      @swap-at-u-flipped |
+                        v = apply(transposition(u, v), u)
+                        [by symmetry swap-at-u]
+                      @u-is-v |
+                        u = v
+                        [by symmetry v-is-u]
+                      @conclusion-contradiction |
+                        t != identityFn
+                        [using tautology u-is-v distinct]
+                    }
+                  @identity-implies |
+                    t = identityFn -> t != identityFn
+                    [by implies_intro given-t-is-identity]
+                  @t-is-identity-or-not |
+                    t = identityFn or t != identityFn
+                    [using tautology]
+                  @conclusion-not-identity-inner |
+                    t != identityFn
+                    [using tautology identity-implies t-is-identity-or-not]
+                }
+              @conclusion-not-identity-mid |
+                t != identityFn
+                [by exists_elim with-second-letter]
+            }
+          @conclusion-not-identity |
+            t != identityFn
+            [by exists_elim with-first-letter]
+        }
+      @transposition-implies |
+        isTransposition(t) -> t != identityFn
+        [by implies_intro given-transposition]
+    }
+  @conclusion |
+    forall t: Fn; isTransposition(t) -> t != identityFn
+    [by forall_intro generalize-t]
+qed
+
+// k < i means i is the very next value or strictly beyond it — succ(k) <= i split.
+theorem successorSplit: forall k: Nat; forall i: Nat; nat_less_than(k, i) -> (i = succ(k) or nat_less_than(succ(k), i))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @given-above |
+            assume nat_less_than(k, i) {
+              @above |
+                nat_less_than(k, i)
+                [by hypothesis given-above]
+              // k < i gives succ(k) < succ(i), and lessThanSuccSplit on that gives
+              // succ(k) < i or succ(k) = i.
+              @succ-below-succ |
+                nat_less_than(succ(k), succ(i))
+                [using specialize peano_order.succPreservesOrder(k, i) above]
+              @split |
+                nat_less_than(succ(k), i) or succ(k) = i
+                [using specialize natLessThanSuccSplit(succ(k), i) succ-below-succ]
+              @conclusion-split |
+                i = succ(k) or nat_less_than(succ(k), i)
+                case split {
+                  @when-strictly-below |
+                    assume nat_less_than(succ(k), i) {
+                      @strictly-below |
+                        nat_less_than(succ(k), i)
+                        [by hypothesis when-strictly-below]
+                      @conclusion-strict |
+                        i = succ(k) or nat_less_than(succ(k), i)
+                        [by or_intro_right strictly-below]
+                    }
+                  @when-equal |
+                    assume succ(k) = i {
+                      @succ-is-i |
+                        succ(k) = i
+                        [by hypothesis when-equal]
+                      @i-is-succ |
+                        i = succ(k)
+                        [by symmetry succ-is-i]
+                      @conclusion-eq |
+                        i = succ(k) or nat_less_than(succ(k), i)
+                        [by or_intro_left i-is-succ]
+                    }
+                }
+            }
+          @above-implies |
+            nat_less_than(k, i) -> (i = succ(k) or nat_less_than(succ(k), i))
+            [by implies_intro given-above]
+        }
+      @discharge-i |
+        forall i: Nat; nat_less_than(k, i) -> (i = succ(k) or nat_less_than(succ(k), i))
+        [by forall_intro generalize-i]
+    }
+  @conclusion |
+    forall k: Nat; forall i: Nat; nat_less_than(k, i) -> (i = succ(k) or nat_less_than(succ(k), i))
+    [by forall_intro generalize-k]
+qed
+
+// An index sits below a pair, at its first slot, at its second, or above it.
+theorem positionRelativeToAPair: forall i: Nat; forall k: Nat;
+  nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @below-or-not |
+            nat_less_than(i, k) or i = k or nat_less_than(k, i)
+            [using specialize peano_order.trichotomy(i, k)]
+          @conclusion-position |
+            nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+            case below-or-not {
+              @when-below |
+                assume nat_less_than(i, k) {
+                  @below |
+                    nat_less_than(i, k)
+                    [by hypothesis when-below]
+                  @conclusion-below |
+                    nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+                    [using tautology below]
+                }
+              @when-equal |
+                assume i = k {
+                  @equal |
+                    i = k
+                    [by hypothesis when-equal]
+                  @conclusion-equal |
+                    nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+                    [using tautology equal]
+                }
+              @when-above |
+                assume nat_less_than(k, i) {
+                  @above |
+                    nat_less_than(k, i)
+                    [by hypothesis when-above]
+                  // k < i splits as succ(k) = i or succ(k) < i.
+                  @succ-k-at-most-i |
+                    i = succ(k) or nat_less_than(succ(k), i)
+                    [using specialize successorSplit(k, i) above]
+                  @conclusion-above |
+                    nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+                    [using tautology succ-k-at-most-i]
+                }
+            }
+        }
+      @discharge-k |
+        forall k: Nat; nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall i: Nat; forall k: Nat; nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+    [by forall_intro generalize-i]
+qed
+
+// -- a rewritten sequence is still all transpositions -----------------------------------------
+// Entries below k and above k+1 are copied from a sequence that was all transpositions; the two
+// replaced entries are transpositions by hypothesis. So every index below the length qualifies.
+theorem rewrittenSequenceIsAllTranspositions: forall s: Seq; forall u: Seq; forall k: Nat; forall n: Nat;
+  allTranspositions(s, n) ->
+  isTransposition(at(u, k)) ->
+  isTransposition(at(u, succ(k))) ->
+  (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) ->
+  (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) ->
+  allTranspositions(u, n)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-u |
+        fix u: Seq {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-all |
+                    assume allTranspositions(s, n) {
+                      @given-at-k |
+                        assume isTransposition(at(u, k)) {
+                          @given-at-succ-k |
+                            assume isTransposition(at(u, succ(k))) {
+                              @given-below |
+                                assume forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i) {
+                                  @given-above |
+                                    assume forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i) {
+                                      @s-all |
+                                        allTranspositions(s, n)
+                                        [by hypothesis given-all]
+                                      @u-at-k |
+                                        isTransposition(at(u, k))
+                                        [by hypothesis given-at-k]
+                                      @u-at-succ-k |
+                                        isTransposition(at(u, succ(k)))
+                                        [by hypothesis given-at-succ-k]
+                                      @u-below |
+                                        forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)
+                                        [by hypothesis given-below]
+                                      @u-above |
+                                        forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)
+                                        [by hypothesis given-above]
+                                      @generalize-i |
+                                        fix i: Nat {
+                                          @given-i-below-n |
+                                            assume nat_less_than(i, n) {
+                                              @i-below-n |
+                                                nat_less_than(i, n)
+                                                [by hypothesis given-i-below-n]
+                                              @s-at-i |
+                                                isTransposition(at(s, i))
+                                                [using specialize s-all(i) i-below-n]
+                                              // i is below k, equal to k, equal to k+1, or above k+1.
+                                              @i-position |
+                                                nat_less_than(i, k) or i = k or i = succ(k) or nat_less_than(succ(k), i)
+                                                [using specialize positionRelativeToAPair(i, k)]
+                                              @conclusion-i-is-a-transposition |
+                                                isTransposition(at(u, i))
+                                                case i-position {
+                                                  @when-below |
+                                                    assume nat_less_than(i, k) {
+                                                      @below |
+                                                        nat_less_than(i, k)
+                                                        [by hypothesis when-below]
+                                                      @copied |
+                                                        at(u, i) = at(s, i)
+                                                        [using specialize u-below(i) below]
+                                                      @conclusion-below |
+                                                        isTransposition(at(u, i))
+                                                        [by rewrite copied s-at-i]
+                                                    }
+                                                  @when-at-k |
+                                                    assume i = k {
+                                                      @at-k |
+                                                        i = k
+                                                        [by hypothesis when-at-k]
+                                                      @conclusion-at-k |
+                                                        isTransposition(at(u, i))
+                                                        [by rewrite at-k u-at-k]
+                                                    }
+                                                  @when-at-succ-k |
+                                                    assume i = succ(k) {
+                                                      @at-succ-k |
+                                                        i = succ(k)
+                                                        [by hypothesis when-at-succ-k]
+                                                      @conclusion-at-succ-k |
+                                                        isTransposition(at(u, i))
+                                                        [by rewrite at-succ-k u-at-succ-k]
+                                                    }
+                                                  @when-above |
+                                                    assume nat_less_than(succ(k), i) {
+                                                      @above |
+                                                        nat_less_than(succ(k), i)
+                                                        [by hypothesis when-above]
+                                                      @copied-above |
+                                                        at(u, i) = at(s, i)
+                                                        [using specialize u-above(i) above]
+                                                      @conclusion-above |
+                                                        isTransposition(at(u, i))
+                                                        [by rewrite copied-above s-at-i]
+                                                    }
+                                                }
+                                            }
+                                          @i-below-implies |
+                                            nat_less_than(i, n) -> isTransposition(at(u, i))
+                                            [by implies_intro given-i-below-n]
+                                        }
+                                      @conclusion-u-all |
+                                        allTranspositions(u, n)
+                                        [by forall_intro generalize-i]
+                                    }
+                                  @above-implies |
+                                    (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                                    [by implies_intro given-above]
+                                }
+                              @below-implies |
+                                (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                                [by implies_intro given-below]
+                            }
+                          @at-succ-k-implies |
+                            isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                            [by implies_intro given-at-succ-k]
+                        }
+                      @at-k-implies |
+                        isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                        [by implies_intro given-at-k]
+                    }
+                  @all-implies |
+                    allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                    [by implies_intro given-all]
+                }
+              @discharge-n |
+                forall n: Nat; allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+                [by forall_intro generalize-n]
+            }
+          @discharge-k |
+            forall k: Nat; forall n: Nat; allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+            [by forall_intro generalize-k]
+        }
+      @discharge-u |
+        forall u: Seq; forall k: Nat; forall n: Nat; allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall s: Seq; forall u: Seq; forall k: Nat; forall n: Nat; allTranspositions(s, n) -> isTransposition(at(u, k)) -> isTransposition(at(u, succ(k))) -> (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) -> allTranspositions(u, n)
+    [by forall_intro generalize-s]
+qed
