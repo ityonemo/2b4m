@@ -54,6 +54,52 @@ axiom declared there that no theorem there rests on — which is why `std/` carr
 than leaving a caller to be the first to exercise one. If you add an axiom to
 `std/`, add the example that uses it.
 
+## STRATEGY: build DOWN from the goal, or UP from the primitives?
+
+Both work. Picking wrong costs rework, so decide deliberately. The rule of thumb:
+
+> **Bottom-up when the statement is GIVEN. Top-down when the statement is YOURS to invent.**
+
+A textbook hands you its lemmas verbatim — transcribe those bottom-up, their shape is not
+in question. The *plumbing between them* (what your loop body consumes, what your
+induction hypothesis carries, what an internal helper must report) is yours to design,
+and that is exactly where guessing an interface costs a rewrite.
+
+**TOP-DOWN, with `hole` (see `### KEYWORD: hole` in GUIDE.md):**
+
+1. State the goal as a `theorem` and every missing piece as a `hole`.
+2. Write the goal's proof. `check --draft` — the checker names each unresolved
+   reference, so it becomes your worklist. Stub each as another `hole`.
+3. Discharge holes leaf-first, turning each into a `theorem`.
+4. Plain `check` (no `--draft`) is the finish line: default mode REJECTS holes and prints
+   each one with the theorems resting on it.
+
+**What this buys you (measured on Judson's parity lemma, 2026-09-29):** the consumer
+*settles* the interface instead of you guessing it. Two bottom-up attempts at a loop-body
+statement were subtly wrong; written against the caller it was right immediately, and
+turned out to need none of the letter/position/invariant parameters I had been threading.
+Writing the ENDPOINT also exposed a missing invariant half that bottom-up had hidden — the
+loop needed "entry j MOVES the letter", not just "entries above j fix it", because the
+first alone is not contradictory at position 0.
+
+**What it does NOT buy you:** the hard proof stays exactly as hard. Top-down makes you
+right about interfaces sooner; it does not shrink the mountain.
+
+**Costs, all real:**
+- **A hole in `std/` poisons the library gate.** One hole anywhere under `std/` forces the
+  whole `check std --library` sweep into `--draft`, blinding it to every other file. Keep
+  hole-bearing scaffolds OUTSIDE the library (this repo uses `drafts/`), and move them in
+  once filled. Bottom-up never pays this.
+- **An UNCITED hole is invisible, not flagged.** Holes are disclosed by what *depends* on
+  them, so a stub you never wire up is dead weight rather than a tracked to-do. Don't use
+  holes as a task list; use them as load-bearing stubs.
+- **You cannot stub mid-proof.** `hole` is a top-level declaration, never a step
+  justification (`[by hole]` is a parse error). To sketch a proof with a gap, the gap must
+  be its own NAMED hole with a fully written statement — which is most of the design work.
+
+**Practical hybrid, and what I would do again:** transcribe the source's own lemmas
+bottom-up; the moment you are inventing a signature, stop and write its consumer first.
+
 ## Proof skeleton
 
 ```2b4m
