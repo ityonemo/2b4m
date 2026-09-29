@@ -72,8 +72,10 @@ ast_lock: InternPool.Lock = .{},
 /// `hole_taint`, `model_discharged`, `model_define_targets`, `holes_reached`, `expand_linted`
 /// — plus the `declarations` counter and the `fact_trace` buffer. One lock for all of them:
 /// they are low-traffic, written only as a task publishes, and never held together, so one
-/// lock-order edge beats eight. Most READS happen in reporting, after quiescence, and are
-/// unguarded by design; the accessors below cover the writes that race.
+/// lock-order edge beats eight. Reporting READS (root.zig) run after quiescence and are
+/// unguarded by design; reads DURING proving must go through `axiomTaintOf`/`holeTaintOf`,
+/// which take the lock — an unguarded `get` there segfaults when a concurrent publish
+/// rehashes the map (seen 2026-09-29 in `inheritAxioms`, intermittent under -j).
 side_lock: InternPool.Lock = .{},
 interner: *InternPool,
 /// The fact resolution/coordination table over `interner` (see FactKV). Filled by
@@ -434,6 +436,24 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
 /// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
 /// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+/// Read `fact`'s axiom set UNDER THE LOCK — for readers that run DURING proving, where a
+/// concurrent publish can rehash the map out from under an unguarded `get`. (The reporting
+/// reads in root.zig run after quiescence and stay unguarded by design.)
+pub fn axiomTaintOf(self: *const Context, fact: InternPool.Index) ?[]const InternPool.Index {
+    const lock = @constCast(&self.side_lock);
+    lock.lock();
+    defer lock.unlock();
+    return self.axiom_taint.get(fact);
+}
+
+/// Same, for the hole taint.
+pub fn holeTaintOf(self: *const Context, fact: InternPool.Index) ?[]const InternPool.StrId {
+    const lock = @constCast(&self.side_lock);
+    lock.lock();
+    defer lock.unlock();
+    return self.hole_taint.get(fact);
+}
+
 /// Record that `fact` rests on `axioms` (the `--axioms` report's edge). Publish-time.
 pub fn recordAxiomTaint(self: *Context, fact: InternPool.Index, axioms: []const InternPool.Index) std.mem.Allocator.Error!void {
     self.side_lock.lock();

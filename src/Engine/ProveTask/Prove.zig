@@ -1639,7 +1639,7 @@ fn resolveFactIn(self: *Prove, tok: lexer.Token, ns: InternPool.Index) Error!Int
 /// rests on one — makes the current proof rest on it. NEVER affects the proof verdict; a hole is
 /// an axiom everywhere the KERNEL is concerned. See [[hole-mechanism]].
 fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
-    const names = self.ctx.hole_taint.get(ix) orelse return;
+    const names = self.ctx.holeTaintOf(ix) orelse return;
     outer: for (names) |h| {
         for (self.holes_used.items) |seen| if (seen == h) continue :outer; // already tracked
         self.holes_used.append(self.ctx.arena, h) catch return; // OOM: best-effort taint
@@ -1650,7 +1650,7 @@ fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
 /// part of this proof's. An AXIOM is its own seed — a theorem is not (it carries whatever its
 /// proof rested on). Deduped; never affects the proof verdict.
 fn inheritAxioms(self: *Prove, ix: InternPool.Index) void {
-    if (self.ctx.axiom_taint.get(ix)) |axs| {
+    if (self.ctx.axiomTaintOf(ix)) |axs| {
         outer: for (axs) |a| {
             for (self.axioms_used.items) |seen| if (seen == a) continue :outer;
             self.axioms_used.append(self.ctx.arena, a) catch return; // OOM: best-effort
