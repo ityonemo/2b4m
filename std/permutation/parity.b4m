@@ -1109,11 +1109,17 @@ qed
 
 // -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
 // Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. The
-// sequence surgery itself is an existence postulate (`seqReplaceTwo`, in the style of this
-// layer's other sequence axioms) and is written out in the WHAT REMAINS note at the end of the
-// file — it is held back until STEP 2 consumes it, because `--library` rightly fails on an
-// unused axiom. What is proved here is the PAYOFF, which needs no surgery to state: given any
-// two sequences so related, the products agree.
+// sequence surgery is an existence postulate in the style of this layer's other sequence
+// axioms; the PAYOFF below is that the product is unchanged when the new pair composes to the
+// old one. Entries outside the replaced positions are untouched, which is what lets the inner
+// induction carry "every entry above j fixes `a`" across a rewrite.
+axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
+  invertible(p) -> invertible(q) ->
+  exists u: Seq;
+  at(u, k) = p
+  and at(u, succ(k)) = q
+  and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
+  and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i))
 // Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
 // unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
 theorem replacingAPairKeepsTheProduct: forall s: Seq; forall u: Seq; forall k: Nat;
@@ -2090,5 +2096,438 @@ proof
     }
   @conclusion |
     forall s: Seq; forall a: Element; forall n: Nat; productUpTo(s, n) = identityFn -> (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, n) -> apply(at(s, i), a) = a) -> nat_less_than(NZERO, n) -> apply(at(s, NZERO), a) = a
+    [by forall_intro generalize-s]
+qed
+
+// -- carrying a product equality past the replaced pair ---------------------------------------
+// Two bridges the inner induction needs. First: sequences agreeing below k have equal products
+// up to k (ordinary induction on k).
+theorem agreeingPrefixesHaveEqualProducts: forall s: Seq; forall u: Seq; forall k: Nat;
+  (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) ->
+  productUpTo(u, k) = productUpTo(s, k)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-u |
+        fix u: Seq {
+          @base-case |
+            (forall i: Nat; nat_less_than(i, NZERO) -> at(u, i) = at(s, i)) -> productUpTo(u, NZERO) = productUpTo(s, NZERO)
+            [using tautology empty-products-agree]
+          @empty-products-agree |
+            productUpTo(u, NZERO) = productUpTo(s, NZERO)
+            [using chain u-empty s-empty-flipped]
+          @u-empty |
+            productUpTo(u, NZERO) = identityFn
+            [using specialize productUpToZero(u)]
+          @s-empty-flipped |
+            identityFn = productUpTo(s, NZERO)
+            [by symmetry s-empty]
+          @s-empty |
+            productUpTo(s, NZERO) = identityFn
+            [using specialize productUpToZero(s)]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k) {
+                  @inductive-hypothesis |
+                    (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)
+                    [by hypothesis given-inductive-hypothesis]
+                  @given-agree-below-succ |
+                    assume forall i: Nat; nat_less_than(i, succ(k)) -> at(u, i) = at(s, i) {
+                      @agree-below-succ |
+                        forall i: Nat; nat_less_than(i, succ(k)) -> at(u, i) = at(s, i)
+                        [by hypothesis given-agree-below-succ]
+                      @agree-below-k |
+                        forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)
+                        [by forall_intro weaken]
+                      @weaken |
+                        fix i: Nat {
+                          @given-below-k |
+                            assume nat_less_than(i, k) {
+                              @below-k |
+                                nat_less_than(i, k)
+                                [by hypothesis given-below-k]
+                              @below-succ-k |
+                                nat_less_than(i, succ(k))
+                                [using specialize peano_order.lessThanSuccRight(i, k) below-k]
+                              @conclusion-agree-at-i |
+                                at(u, i) = at(s, i)
+                                [using specialize agree-below-succ(i) below-succ-k]
+                            }
+                          @below-k-implies |
+                            nat_less_than(i, k) -> at(u, i) = at(s, i)
+                            [by implies_intro given-below-k]
+                        }
+                      @prefixes-agree |
+                        productUpTo(u, k) = productUpTo(s, k)
+                        [using tautology inductive-hypothesis agree-below-k]
+                      @k-below-succ-k |
+                        nat_less_than(k, succ(k))
+                        [using specialize natLessThanSelf(k)]
+                      @entries-agree-at-k |
+                        at(u, k) = at(s, k)
+                        [using specialize agree-below-succ(k) k-below-succ-k]
+                      @u-unfolds |
+                        productUpTo(u, succ(k)) = compose(productUpTo(u, k), at(u, k))
+                        [using specialize productUpToSucc(u, k)]
+                      @s-unfolds |
+                        productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                        [using specialize productUpToSucc(s, k)]
+                      @u-with-s-prefix |
+                        productUpTo(u, succ(k)) = compose(productUpTo(s, k), at(u, k))
+                        [by rewrite prefixes-agree u-unfolds]
+                      @u-with-s-entry |
+                        productUpTo(u, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                        [by rewrite entries-agree-at-k u-with-s-prefix]
+                      @s-flipped |
+                        compose(productUpTo(s, k), at(s, k)) = productUpTo(s, succ(k))
+                        [by symmetry s-unfolds]
+                      @conclusion-products-agree |
+                        productUpTo(u, succ(k)) = productUpTo(s, succ(k))
+                        [using chain u-with-s-entry s-flipped]
+                    }
+                  @agree-implies |
+                    (forall i: Nat; nat_less_than(i, succ(k)) -> at(u, i) = at(s, i)) -> productUpTo(u, succ(k)) = productUpTo(s, succ(k))
+                    [by implies_intro given-agree-below-succ]
+                }
+              @induction-step-at-k |
+                ((forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)) -> ((forall i: Nat; nat_less_than(i, succ(k)) -> at(u, i) = at(s, i)) -> productUpTo(u, succ(k)) = productUpTo(s, succ(k)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; ((forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)) -> ((forall i: Nat; nat_less_than(i, succ(k)) -> at(u, i) = at(s, i)) -> productUpTo(u, succ(k)) = productUpTo(s, succ(k)))
+            [by forall_intro induction-step]
+          @conclusion-for-all-k |
+            forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)
+            [using instantiation natInduction((fun k: Nat => (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k))) base-case induction-step-for-all-k]
+        }
+      @discharge-u |
+        forall u: Seq; forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall s: Seq; forall u: Seq; forall k: Nat; (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) -> productUpTo(u, k) = productUpTo(s, k)
+    [by forall_intro generalize-s]
+qed
+
+// Second bridge: equal products at length b, with all entries from b upward identical, keeps
+// them equal at every length b + d (ordinary induction on the overshoot d).
+theorem equalProductsExtendUpward: forall s: Seq; forall u: Seq; forall b: Nat;
+  productUpTo(u, b) = productUpTo(s, b) ->
+  (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) ->
+  forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-u |
+        fix u: Seq {
+          @generalize-b |
+            fix b: Nat {
+              @given-equal-at-b |
+                assume productUpTo(u, b) = productUpTo(s, b) {
+                  @given-tails-agree |
+                    assume forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i)) {
+                      @equal-at-b |
+                        productUpTo(u, b) = productUpTo(s, b)
+                        [by hypothesis given-equal-at-b]
+                      @tails-agree |
+                        forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))
+                        [by hypothesis given-tails-agree]
+                      @base-case |
+                        productUpTo(u, nadd(b, NZERO)) = productUpTo(s, nadd(b, NZERO))
+                        [by rewrite b-plus-zero equal-at-b]
+                      @b-plus-zero |
+                        nadd(b, NZERO) = b
+                        [using specialize peano.addZeroRight(b)]
+                      @induction-step |
+                        fix d: Nat {
+                          @given-inductive-hypothesis |
+                            assume productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d)) {
+                              @inductive-hypothesis |
+                                productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+                                [by hypothesis given-inductive-hypothesis]
+                              @b-plus-succ |
+                                nadd(b, succ(d)) = succ(nadd(b, d))
+                                [using specialize peano.addSuccRight(b, d)]
+                              @u-unfolds |
+                                productUpTo(u, succ(nadd(b, d))) = compose(productUpTo(u, nadd(b, d)), at(u, nadd(b, d)))
+                                [using specialize productUpToSucc(u, nadd(b, d))]
+                              @s-unfolds |
+                                productUpTo(s, succ(nadd(b, d))) = compose(productUpTo(s, nadd(b, d)), at(s, nadd(b, d)))
+                                [using specialize productUpToSucc(s, nadd(b, d))]
+                              @entries-agree |
+                                at(u, nadd(b, d)) = at(s, nadd(b, d))
+                                [using specialize tails-agree(d)]
+                              @u-with-s-prefix |
+                                productUpTo(u, succ(nadd(b, d))) = compose(productUpTo(s, nadd(b, d)), at(u, nadd(b, d)))
+                                [by rewrite inductive-hypothesis u-unfolds]
+                              @u-with-s-entry |
+                                productUpTo(u, succ(nadd(b, d))) = compose(productUpTo(s, nadd(b, d)), at(s, nadd(b, d)))
+                                [by rewrite entries-agree u-with-s-prefix]
+                              @s-flipped |
+                                compose(productUpTo(s, nadd(b, d)), at(s, nadd(b, d))) = productUpTo(s, succ(nadd(b, d)))
+                                [by symmetry s-unfolds]
+                              @equal-at-succ |
+                                productUpTo(u, succ(nadd(b, d))) = productUpTo(s, succ(nadd(b, d)))
+                                [using chain u-with-s-entry s-flipped]
+                              @conclusion-next |
+                                productUpTo(u, nadd(b, succ(d))) = productUpTo(s, nadd(b, succ(d)))
+                                [by rewrite b-plus-succ equal-at-succ]
+                            }
+                          @induction-step-at-d |
+                            productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d)) -> productUpTo(u, nadd(b, succ(d))) = productUpTo(s, nadd(b, succ(d)))
+                            [by implies_intro given-inductive-hypothesis]
+                        }
+                      @induction-step-for-all-d |
+                        forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d)) -> productUpTo(u, nadd(b, succ(d))) = productUpTo(s, nadd(b, succ(d)))
+                        [by forall_intro induction-step]
+                      @conclusion-for-all-d |
+                        forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+                        [using instantiation natInduction((fun d: Nat => productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d)))) base-case induction-step-for-all-d]
+                    }
+                  @tails-implies |
+                    (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) -> forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+                    [by implies_intro given-tails-agree]
+                }
+              @equal-implies |
+                productUpTo(u, b) = productUpTo(s, b) -> (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) -> forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+                [by implies_intro given-equal-at-b]
+            }
+          @discharge-b |
+            forall b: Nat; productUpTo(u, b) = productUpTo(s, b) -> (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) -> forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+            [by forall_intro generalize-b]
+        }
+      @discharge-u |
+        forall u: Seq; forall b: Nat; productUpTo(u, b) = productUpTo(s, b) -> (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) -> forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall s: Seq; forall u: Seq; forall b: Nat; productUpTo(u, b) = productUpTo(s, b) -> (forall i: Nat; at(u, nadd(b, i)) = at(s, nadd(b, i))) -> forall d: Nat; productUpTo(u, nadd(b, d)) = productUpTo(s, nadd(b, d))
+    [by forall_intro generalize-s]
+qed
+
+// a < b implies a < b + i: adding on the right only increases (ordinary induction on i).
+theorem weakLeftBound: forall a: Nat; forall b: Nat; nat_less_than(a, b) -> forall i: Nat; nat_less_than(a, nadd(b, i))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-below |
+            assume nat_less_than(a, b) {
+              @below |
+                nat_less_than(a, b)
+                [by hypothesis given-below]
+              @b-plus-zero |
+                nadd(b, NZERO) = b
+                [using specialize peano.addZeroRight(b)]
+              @base-case |
+                nat_less_than(a, nadd(b, NZERO))
+                [by rewrite b-plus-zero below]
+              @induction-step |
+                fix i: Nat {
+                  @given-inductive-hypothesis |
+                    assume nat_less_than(a, nadd(b, i)) {
+                      @inductive-hypothesis |
+                        nat_less_than(a, nadd(b, i))
+                        [by hypothesis given-inductive-hypothesis]
+                      @b-plus-succ |
+                        nadd(b, succ(i)) = succ(nadd(b, i))
+                        [using specialize peano.addSuccRight(b, i)]
+                      @below-succ |
+                        nat_less_than(a, succ(nadd(b, i)))
+                        [using specialize peano_order.lessThanSuccRight(a, nadd(b, i)) inductive-hypothesis]
+                      @conclusion-next |
+                        nat_less_than(a, nadd(b, succ(i)))
+                        [by rewrite b-plus-succ below-succ]
+                    }
+                  @induction-step-at-i |
+                    nat_less_than(a, nadd(b, i)) -> nat_less_than(a, nadd(b, succ(i)))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-i |
+                forall i: Nat; nat_less_than(a, nadd(b, i)) -> nat_less_than(a, nadd(b, succ(i)))
+                [by forall_intro induction-step]
+              @conclusion-for-all-i |
+                forall i: Nat; nat_less_than(a, nadd(b, i))
+                [using instantiation natInduction((fun i: Nat => nat_less_than(a, nadd(b, i)))) base-case induction-step-for-all-i]
+            }
+          @below-implies |
+            nat_less_than(a, b) -> forall i: Nat; nat_less_than(a, nadd(b, i))
+            [by implies_intro given-below]
+        }
+      @discharge-b |
+        forall b: Nat; nat_less_than(a, b) -> forall i: Nat; nat_less_than(a, nadd(b, i))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Nat; forall b: Nat; nat_less_than(a, b) -> forall i: Nat; nat_less_than(a, nadd(b, i))
+    [by forall_intro generalize-a]
+qed
+
+// succ(k) < (k+2) + i — the arithmetic that says the untouched tail really is above the pair.
+theorem succKIsBelowTheTail: forall k: Nat; forall i: Nat; nat_less_than(succ(k), nadd(succ(succ(k)), i))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @succ-k-below-succ-succ-k |
+            nat_less_than(succ(k), succ(succ(k)))
+            [using specialize natLessThanSelf(succ(k))]
+          @bound-at-k |
+            forall i2: Nat; nat_less_than(succ(k), nadd(succ(succ(k)), i2))
+            [using specialize weakLeftBound(succ(k), succ(succ(k))) succ-k-below-succ-succ-k]
+          @conclusion-below-tail |
+            nat_less_than(succ(k), nadd(succ(succ(k)), i))
+            [using specialize bound-at-k(i)]
+        }
+      @discharge-i |
+        forall i: Nat; nat_less_than(succ(k), nadd(succ(succ(k)), i))
+        [by forall_intro generalize-i]
+    }
+  @conclusion |
+    forall k: Nat; forall i: Nat; nat_less_than(succ(k), nadd(succ(succ(k)), i))
+    [by forall_intro generalize-k]
+qed
+
+// -- THE REWRITE, assembled -------------------------------------------------------------------
+// Given a product of length r = (k+2) + d and a pair (p, q) composing to the pair at (k, k+1),
+// there is a sequence with that pair in place, the SAME product at length r, and every entry
+// outside {k, k+1} untouched. Assembles seqReplaceTwo with the two bridges above.
+theorem rewritingAPairKeepsTheWholeProduct: forall s: Seq; forall k: Nat; forall d: Nat; forall p: Fn; forall q: Fn;
+  invertible(p) -> invertible(q) ->
+  compose(p, q) = compose(at(s, k), at(s, succ(k))) ->
+  (exists u: Seq;
+  at(u, k) = p
+  and at(u, succ(k)) = q
+  and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i))
+  and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i))
+  and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-d |
+            fix d: Nat {
+              @generalize-p |
+                fix p: Fn {
+                  @generalize-q |
+                    fix q: Fn {
+                      @given-p |
+                        assume invertible(p) {
+                          @given-q |
+                            assume invertible(q) {
+                              @given-pair |
+                                assume compose(p, q) = compose(at(s, k), at(s, succ(k))) {
+                                  @p-invertible |
+                                    invertible(p)
+                                    [by hypothesis given-p]
+                                  @q-invertible |
+                                    invertible(q)
+                                    [by hypothesis given-q]
+                                  @pair-composes |
+                                    compose(p, q) = compose(at(s, k), at(s, succ(k)))
+                                    [by hypothesis given-pair]
+                                  @surgery-exists |
+                                    exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i))
+                                    [using specialize seqReplaceTwo(s, k, p, q) p-invertible q-invertible]
+                                  @with-rewritten-u |
+                                    unpack u: Seq from surgery-exists {
+                                      @u-facts |
+                                        at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i))
+                                        [by hypothesis with-rewritten-u]
+                                      @u-at-k |
+                                        at(u, k) = p
+                                        [using tautology u-facts]
+                                      @u-at-succ-k |
+                                        at(u, succ(k)) = q
+                                        [using tautology u-facts]
+                                      @u-below |
+                                        forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)
+                                        [using tautology u-facts]
+                                      @u-above |
+                                        forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)
+                                        [using tautology u-facts]
+                                      // the pair in u composes to the pair in s
+                                      @u-pair-is-p-q |
+                                        compose(at(u, k), at(u, succ(k))) = compose(p, at(u, succ(k)))
+                                        [by rewrite u-at-k u-pair-reflexive]
+                                      @u-pair-reflexive |
+                                        compose(at(u, k), at(u, succ(k))) = compose(at(u, k), at(u, succ(k)))
+                                        [by reflexivity]
+                                      @u-pair-fully |
+                                        compose(at(u, k), at(u, succ(k))) = compose(p, q)
+                                        [by rewrite u-at-succ-k u-pair-is-p-q]
+                                      @u-pair-matches |
+                                        compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k)))
+                                        [using chain u-pair-fully pair-composes]
+                                      @prefixes-equal |
+                                        productUpTo(u, k) = productUpTo(s, k)
+                                        [using specialize agreeingPrefixesHaveEqualProducts(s, u, k) u-below]
+                                      @equal-at-k-plus-two |
+                                        productUpTo(u, succ(succ(k))) = productUpTo(s, succ(succ(k)))
+                                        [using specialize replacingAPairKeepsTheProduct(s, u, k) u-below u-pair-matches prefixes-equal]
+                                      // entries from k+2 upward are untouched, so the equality extends
+                                      @tails-agree |
+                                        forall i: Nat; at(u, nadd(succ(succ(k)), i)) = at(s, nadd(succ(succ(k)), i))
+                                        [by forall_intro tail-entry]
+                                      @tail-entry |
+                                        fix i: Nat {
+                                          @succ-k-below |
+                                            nat_less_than(succ(k), nadd(succ(succ(k)), i))
+                                            [using specialize succKIsBelowTheTail(k, i)]
+                                          @conclusion-tail-agrees |
+                                            at(u, nadd(succ(succ(k)), i)) = at(s, nadd(succ(succ(k)), i))
+                                            [using specialize u-above(nadd(succ(succ(k)), i)) succ-k-below]
+                                        }
+                                      @products-agree-everywhere |
+                                        forall d2: Nat; productUpTo(u, nadd(succ(succ(k)), d2)) = productUpTo(s, nadd(succ(succ(k)), d2))
+                                        [using specialize equalProductsExtendUpward(s, u, succ(succ(k))) equal-at-k-plus-two tails-agree]
+                                      @products-agree-at-d |
+                                        productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d))
+                                        [using specialize products-agree-everywhere(d)]
+                                      @all-facts |
+                                        at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d))
+                                        [using tautology u-facts products-agree-at-d]
+                                      @conclusion-witnessed |
+                                        exists u2: Seq; at(u2, k) = p and at(u2, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u2, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u2, i) = at(s, i)) and productUpTo(u2, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d))
+                                        [by exists_intro(u) all-facts]
+                                    }
+                                  @conclusion-exists |
+                                    exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d))
+                                    [by exists_elim with-rewritten-u]
+                                }
+                              @pair-implies |
+                                compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+                                [by implies_intro given-pair]
+                            }
+                          @q-implies |
+                            invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+                            [by implies_intro given-q]
+                        }
+                      @p-implies |
+                        invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+                        [by implies_intro given-p]
+                    }
+                  @discharge-q |
+                    forall q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+                    [by forall_intro generalize-q]
+                }
+              @discharge-p |
+                forall p, q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+                [by forall_intro generalize-p]
+            }
+          @discharge-d |
+            forall d: Nat; forall p, q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+            [by forall_intro generalize-d]
+        }
+      @discharge-k |
+        forall k: Nat; forall d: Nat; forall p, q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Seq; forall k: Nat; forall d: Nat; forall p, q: Fn; invertible(p) -> invertible(q) -> compose(p, q) = compose(at(s, k), at(s, succ(k))) -> (exists u: Seq; at(u, k) = p and at(u, succ(k)) = q and (forall i: Nat; nat_less_than(i, k) -> at(u, i) = at(s, i)) and (forall i: Nat; nat_less_than(succ(k), i) -> at(u, i) = at(s, i)) and productUpTo(u, nadd(succ(succ(k)), d)) = productUpTo(s, nadd(succ(succ(k)), d)))
     [by forall_intro generalize-s]
 qed
