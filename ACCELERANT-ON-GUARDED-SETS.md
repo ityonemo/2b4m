@@ -10,6 +10,16 @@ as such.
 Related: `MODEL-DESIGN.md` (the guarded-model machinery), `ACCELERATION.md`,
 memory notes `accelerants-not-model-aware`, `required-on-model-primitive`.
 
+**Prior sighting.** `proximal-todo.md`'s "GUARDED-MODEL SIMPLIFY BUG" (2026-08-09)
+records the SAME SYMPTOM from the other direction — a guarded model whose source proof
+has a `[by simplify helper]` step, where "the simplify synthetic gets relativized to
+`guard(a) -> …` while the step claims the unguarded form." Its root-cause analysis is
+PRE-REFACTOR (it names `src/accelerant/model.zig`, which no longer exists) so the three
+coupled sites it warns about cannot be checked as written, but the warning itself —
+that guard-strip is coupled across the classifier, the materialization gate, and the
+top-level α-check, and relaxing one alone flips the `model_accel_*` suite — is worth
+reading before touching anything.
+
 ## The trigger
 
 AATA §3.2 Exercise 14 — ℝ\* × ℤ is a group under the componentwise operation.
