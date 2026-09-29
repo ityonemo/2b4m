@@ -1530,6 +1530,30 @@ atoms. Valid goals replay as certificates (case splits via an inline
 excluded middle); non-consequences report a countermodel
 (`countermodel: p := true, q := false`). Atom limit: 16.
 
+**"Opaque atom" is the whole story, and it is the one thing that surprises people.**
+`tautology` knows the connectives and NOTHING about what sits under them. Two atoms
+that a reader sees as related are, to it, unrelated — so it will refuse goals that
+look obviously true:
+
+- **An equation and a disequation are two atoms, not a contradiction.** From
+  `power(g, m) = g` and `g != E`, it will NOT conclude `power(g, m) != E`. It reports
+  `countermodel: power(g, m) = g := true, g = E := false, power(g, m) = E := true` —
+  consistent, because nothing tells it that the first two atoms constrain the third.
+  Derive the equality chain explicitly instead: assume the negation, `chain` to
+  `g = E`, `implies_intro`, and THEN hand the implication plus `g != E` to `tautology`.
+- **A quantified statement is one atom.** `forall x: T; p(x)` does not yield `p(a)`.
+  Reasoning INSIDE a quantifier wants `fix` + `specialize` (or `forall_elim`), and only
+  the resulting quantifier-free facts are `tautology`'s business.
+- **`f(a) = b` says nothing about `f`.** Congruence, injectivity and function
+  application are all invisible to it; those are `rewrite`, `symmetry`, and the
+  relevant lemma.
+
+The countermodel is the tell: if it names atoms you *believe* are linked, the link is
+the step you still owe. What `tautology` IS for: collapsing a modus-ponens ladder,
+combining `and`/`or`/`->`/`iff` hypotheses, and closing a goal from a derived
+implication plus its refuting fact — the apply-a-lemma idiom, once the
+non-propositional work is already done as its own steps.
+
 ### TACTIC: arithmetic
 
 Linear arithmetic over Nat.
