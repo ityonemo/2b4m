@@ -74,9 +74,17 @@ gpa: std.mem.Allocator,
 /// `side_lock` covers eight low-traffic tables because one lock-order edge beats eight.
 ///
 /// THE RECURRING BUG is not lock count but reach-past: these maps are public fields, so a
-/// caller can `.get()` them directly and skip the accessor. Three such reads were fixed on
+/// caller can `.get()` them directly and skip the accessor. Four such reads were fixed on
 /// 2026-09-29 (`inheritAxioms`, `inheritHoles`, `modelDefineTarget`, `expand_linted`) after
 /// one of them segfaulted intermittently. Read DURING proving only via the accessors below.
+///
+/// EVIDENCE, stated honestly: the `inheritAxioms` crash was seen ONCE, in one suite run, with
+/// a stack trace inside `hash_map.getIndex` probing metadata. It did NOT reproduce — 40 runs
+/// of the crashing file and 12 whole-`std` sweeps on the pre-fix binary were all clean, as
+/// were `--chaos` runs. So these fixes are justified BY INSPECTION (a rehash under an
+/// unguarded read is unsound regardless), not by a before/after reproduction. Corroboration:
+/// the same unguarded-side-table shape was found and fixed in the diagnostics Sink on
+/// 2026-09-26, so this is a known failure mode here, not a theory invented to fit one crash.
 io: std.Io,
 sink: *diagnostics.Sink,
 /// Guards the per-file tables' growth and the parse claim (see `files`/`demandParse`). A
