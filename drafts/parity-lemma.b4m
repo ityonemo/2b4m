@@ -626,6 +626,68 @@ qed
 // hole anyone depends on — so it was removed by hand. Worth knowing: holes are disclosed by what
 // DEPENDS on them, which means a stub you never wire up is invisible rather than flagged.
 
+// A length above succ(j) decomposes as (j+2)+e — the form the surgery states its product
+// equality in. Straight from lessThanElim's gap.
+theorem lengthDecomposesAboveThePair: forall j: Nat; forall r: Nat;
+  nat_less_than(succ(j), r) -> exists e: Nat; r = nadd(succ(succ(j)), e)
+proof
+  @generalize-j |
+    fix j: Nat {
+      @generalize-r |
+        fix r: Nat {
+          @given-above |
+            assume nat_less_than(succ(j), r) {
+              @above |
+                nat_less_than(succ(j), r)
+                [by hypothesis given-above]
+              @gap-exists |
+                exists g: Nat; nadd(succ(j), succ(g)) = r
+                [using specialize peano_order.lessThanElim(succ(j), r) above]
+              @with-gap |
+                unpack g: Nat from gap-exists {
+                  @gap |
+                    nadd(succ(j), succ(g)) = r
+                    [by hypothesis with-gap]
+                  // (j+1) + (g+1) = (j+2) + g
+                  @shift-the-successor |
+                    nadd(succ(j), succ(g)) = succ(nadd(succ(j), g))
+                    [using specialize peano.addSuccRight(succ(j), g)]
+                  @peel-the-left |
+                    nadd(succ(succ(j)), g) = succ(nadd(succ(j), g))
+                    [using specialize peano.addSuccLeft(succ(j), g)]
+                  @same-value |
+                    nadd(succ(j), succ(g)) = nadd(succ(succ(j)), g)
+                    [using chain shift-the-successor peel-the-left-flipped]
+                  @peel-the-left-flipped |
+                    succ(nadd(succ(j), g)) = nadd(succ(succ(j)), g)
+                    [by symmetry peel-the-left]
+                  @r-is-the-sum |
+                    r = nadd(succ(succ(j)), g)
+                    [using chain gap-flipped same-value]
+                  @gap-flipped |
+                    r = nadd(succ(j), succ(g))
+                    [by symmetry gap]
+                  @conclusion-witnessed |
+                    exists e: Nat; r = nadd(succ(succ(j)), e)
+                    [by exists_intro(g) r-is-the-sum]
+                }
+              @conclusion-decomposes |
+                exists e: Nat; r = nadd(succ(succ(j)), e)
+                [by exists_elim with-gap]
+            }
+          @above-implies |
+            nat_less_than(succ(j), r) -> exists e: Nat; r = nadd(succ(succ(j)), e)
+            [by implies_intro given-above]
+        }
+      @discharge-r |
+        forall r: Nat; nat_less_than(succ(j), r) -> exists e: Nat; r = nadd(succ(succ(j)), e)
+        [by forall_intro generalize-r]
+    }
+  @conclusion |
+    forall j: Nat; forall r: Nat; nat_less_than(succ(j), r) -> exists e: Nat; r = nadd(succ(succ(j)), e)
+    [by forall_intro generalize-j]
+qed
+
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
 hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
