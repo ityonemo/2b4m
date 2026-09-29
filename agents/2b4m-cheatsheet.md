@@ -137,7 +137,7 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
 - `polynomial(theory)` — nonlinear `add`/`mul` identity by canonical expansion. In a **ring theory** (`neg`/`sub` in scope) it also expands `sub`/`neg`, cancels inverses (`t+neg(t)→0`), and folds numeral coefficients by expansion (`2q+2q=4q`, `(2q+1)²=4q²+4q+1`); pure-ℕ (`peano`) unaffected.
 - `specialize HEAD(args) hyps…` — apply a `forall`-quantified fact in one step (∀-elim at args + modus_ponens each hyp; emits the kernel chain). `HEAD` may be a declared THEOREM/AXIOM name **or a LOCAL STEP LABEL** (a `forall`-shaped assumed/derived step) — no need to hand-roll `forall_elim`+`modus_ponens` for a local universal.
 - `ext` — extensionality reduction (sets/functions) → propositional residue.
-- `tautology refs…` — propositional consequence (decides iff goals; consumes iff/`and`/`or`/`->` hyps). Atom cap 16.
+- `tautology refs…` — propositional consequence (decides iff goals; consumes iff/`and`/`or`/`->` hyps). Atom cap 16. **Every non-propositional subformula is an OPAQUE ATOM** — see the gotcha below.
 - `arithmetic refs…` — linear arithmetic over Nat (Presburger). `arithmetic(module)` / `fallback(thm)` variants. `fallback(thm)` cites a proven theorem for a decide-but-can't-certify goal; the goal may be `thm` VERBATIM or a SPECIALIZED INSTANCE (the matcher infers the ∀-witnesses and discharges `thm`'s `->` antecedents from the step's refs, emitting a kernel-checked forall_elim+mp chain).
 - Discipline: in `std/*.b4m` use accelerants freely (shortest kernel-checked proof). In `aata/*.md` do NOT accelerate a step Judson spells out — transcribe it; accelerants only for algebra the book elides. (See `.claude/rules/aata-guide.md`.)
 
@@ -191,6 +191,12 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
 - **Gates don't pin counts**: `tests/test_*.zig` uses `ctx.okSilent(&.{"check", FILE})` (asserts "checks OK, exit 0") — NOT a `"OK: N declarations, …"` golden. So an edit that changes decl/theorem counts needs NO gate update; just make sure the file still checks. (A few `--fast`/accelerated gates keep a full banner golden with counts — leave those.) Run `2b4m fmt <file>` before `fmt --check` gates.
 - `[by hole]` is INVALID — `hole` is a top-level declaration, not a justification. Every obligation must really be proved (or the theorem itself is a `hole`).
 - **When `hole` is OK**: for RESEARCH / EXPLORATION (spiking a new construction, sketching a skeleton before filling details) `hole` is a legitimate "assume for now, come back" placeholder. For WELL-KNOWN proofs — the AATA transliterations, std lemmas, anything where the proof is known and the job is to transcribe it — do NOT use `hole`: a hole there is unfinished work dressed up as done. Finish the proof.
+- **`tautology` sees ATOMS, not their content.** An equation and a disequation are two
+  unrelated atoms: `power(g,m) = g` + `g != E` does NOT give `power(g,m) != E` (it prints a
+  countermodel setting all three independently). A `forall` is one atom, so it yields no
+  instance. Fix: do the non-propositional step yourself (assume the negation, `chain` to
+  the contradiction, `implies_intro`), then let `tautology` close it. If the countermodel
+  names atoms you believe are linked, that link is the step you still owe.
 - `or_elim` is BINARY. 3-way → `case`.
 - Cite a theorem/axiom as a `[by cite X]` STEP before a later `forall_elim` refs that step.
 - No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `iff_intro`/`iff_elim_forward`/`iff_elim_backward`.
