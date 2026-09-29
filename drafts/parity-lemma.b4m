@@ -462,7 +462,6 @@ proof
     [using instantiation strongInduction((fun r: Nat => someProductOfLengthIsIdentity(r) -> ndivides(NTWO, r))) strong-step-for-all]
 qed
 
-
 // -- the loop invariant, and the descending loop as its own hole -------------------------------
 // Writing the ENDPOINT first exposed what two bottom-up attempts had missed: the invariant must
 // be TWO-SIDED. "Every entry above j fixes `a`" alone is not contradictory at j = 0 — STEP 3
@@ -471,15 +470,154 @@ qed
 // the product moves it, and the product is the identity.
 define loopInvariant(a, j, r) = exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
 
-// The invariant holds at the TOP index m+1: the sequence itself witnesses it, since there is
-// nothing strictly between m+1 and the length... except the tail of d entries. So this is NOT
-// free — the tail must first be cleared of `a`, which is itself a descent. Stated as a hole and
-// discharged by the loop machinery below.
-hole invariantHoldsAtTheTop: forall a: Element; forall s: Seq; forall m: Nat; forall d: Nat;
-  allTranspositions(s, nadd(succ(succ(m)), d)) ->
-  productUpTo(s, nadd(succ(succ(m)), d)) = identityFn ->
-  apply(at(s, succ(m)), a) != a ->
-  loopInvariant(a, succ(m), nadd(succ(succ(m)), d))
+// The invariant holds at the TOP INDEX, for free — and getting this right needed a correction.
+// I first stated it at index m+1 of a length-((m+2)+d) product, which is WRONG: the d entries
+// above m+1 are not known to fix `a`, so the invariant's "above" clause is unmet. The fix is to
+// take the letter from the LAST entry. Over a length `succ(q)` the top index is q, and "every
+// entry strictly above q and below succ(q)" is VACUOUS — there are no such indices. So the
+// sequence itself witnesses the invariant, with no tail to clear.
+theorem invariantHoldsAtTheTop: forall a: Element; forall s: Seq; forall q: Nat;
+  allTranspositions(s, succ(q)) ->
+  productUpTo(s, succ(q)) = identityFn ->
+  apply(at(s, q), a) != a ->
+  loopInvariant(a, q, succ(q))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-s |
+        fix s: Seq {
+          @generalize-q |
+            fix q: Nat {
+              @given-all |
+                assume allTranspositions(s, succ(q)) {
+                  @given-identity |
+                    assume productUpTo(s, succ(q)) = identityFn {
+                      @given-moves |
+                        assume apply(at(s, q), a) != a {
+                          @all-transpositions |
+                            allTranspositions(s, succ(q))
+                            [by hypothesis given-all]
+                          @is-identity |
+                            productUpTo(s, succ(q)) = identityFn
+                            [by hypothesis given-identity]
+                          @top-moves-a |
+                            apply(at(s, q), a) != a
+                            [by hypothesis given-moves]
+                          // nothing is strictly above q and strictly below succ(q).
+                          @nothing-above |
+                            forall i: Nat; nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a
+                            [by forall_intro vacuous]
+                          @vacuous |
+                            fix i: Nat {
+                              @given-above-q |
+                                assume nat_less_than(q, i) {
+                                  @given-below-succ-q |
+                                    assume nat_less_than(i, succ(q)) {
+                                      @above-q |
+                                        nat_less_than(q, i)
+                                        [by hypothesis given-above-q]
+                                      @below-succ-q |
+                                        nat_less_than(i, succ(q))
+                                        [by hypothesis given-below-succ-q]
+                                      @at-most-q |
+                                        nat_less_than(i, q) or i = q
+                                        [using specialize peano_order.lessThanSuccSplit(i, q) below-succ-q]
+                                      @q-below-q |
+                                        nat_less_than(q, q)
+                                        [using tautology at-most-q above-q q-transitive q-self]
+                                      @q-transitive |
+                                        nat_less_than(q, i) -> nat_less_than(i, q) -> nat_less_than(q, q)
+                                        [using specialize transitivityAsImplication(q, i, q)]
+                                      @q-self |
+                                        i = q -> nat_less_than(q, q)
+                                        [using specialize rewriteAboveIntoSelf(q, i) above-q]
+                                      @not-q-below-q |
+                                        not nat_less_than(q, q)
+                                        [using specialize peano_order.lessThanIrreflexive(q)]
+                                      @conclusion-vacuously |
+                                        apply(at(s, i), a) = a
+                                        [using tautology q-below-q not-q-below-q]
+                                    }
+                                  @below-implies |
+                                    nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a
+                                    [by implies_intro given-below-succ-q]
+                                }
+                              @above-implies |
+                                nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a
+                                [by implies_intro given-above-q]
+                            }
+                          @all-facts |
+                            allTranspositions(s, succ(q)) and productUpTo(s, succ(q)) = identityFn and apply(at(s, q), a) != a and (forall i: Nat; nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a)
+                            [using tautology all-transpositions is-identity top-moves-a nothing-above]
+                          @conclusion-invariant |
+                            loopInvariant(a, q, succ(q))
+                            [by exists_intro(s) all-facts]
+                        }
+                      @moves-implies |
+                        apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+                        [by implies_intro given-moves]
+                    }
+                  @identity-implies |
+                    productUpTo(s, succ(q)) = identityFn -> apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+                    [by implies_intro given-identity]
+                }
+              @all-implies |
+                allTranspositions(s, succ(q)) -> productUpTo(s, succ(q)) = identityFn -> apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+                [by implies_intro given-all]
+            }
+          @discharge-q |
+            forall q: Nat; allTranspositions(s, succ(q)) -> productUpTo(s, succ(q)) = identityFn -> apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+            [by forall_intro generalize-q]
+        }
+      @discharge-s |
+        forall s: Seq; forall q: Nat; allTranspositions(s, succ(q)) -> productUpTo(s, succ(q)) = identityFn -> apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall a: Element; forall s: Seq; forall q: Nat; allTranspositions(s, succ(q)) -> productUpTo(s, succ(q)) = identityFn -> apply(at(s, q), a) != a -> loopInvariant(a, q, succ(q))
+    [by forall_intro generalize-a]
+qed
+
+theorem transitivityAsImplication = peano_order.lessThanTransitive
+
+// q < i and i = q give q < q — a rewrite, packaged as the implication `tautology` needs
+// (it cannot see that an equation relates two of its atoms).
+theorem rewriteAboveIntoSelf: forall q: Nat; forall i: Nat; nat_less_than(q, i) -> (i = q -> nat_less_than(q, q))
+proof
+  @generalize-q |
+    fix q: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @given-above |
+            assume nat_less_than(q, i) {
+              @above |
+                nat_less_than(q, i)
+                [by hypothesis given-above]
+              @given-equal |
+                assume i = q {
+                  @equal |
+                    i = q
+                    [by hypothesis given-equal]
+                  @conclusion-self |
+                    nat_less_than(q, q)
+                    [by rewrite equal above]
+                }
+              @equal-implies |
+                i = q -> nat_less_than(q, q)
+                [by implies_intro given-equal]
+            }
+          @above-implies |
+            nat_less_than(q, i) -> (i = q -> nat_less_than(q, q))
+            [by implies_intro given-above]
+        }
+      @discharge-i |
+        forall i: Nat; nat_less_than(q, i) -> (i = q -> nat_less_than(q, q))
+        [by forall_intro generalize-i]
+    }
+  @conclusion |
+    forall q: Nat; forall i: Nat; nat_less_than(q, i) -> (i = q -> nat_less_than(q, q))
+    [by forall_intro generalize-q]
+qed
 
 // NOTE on a hole that turned out to be unnecessary. I first stated a separate `loopDescends`
 // for the loop BODY (invariant at succ(j) gives either the drop or the invariant at j). Nothing
@@ -522,31 +660,43 @@ proof
                   @s-identity |
                     productUpTo(s, nadd(succ(succ(m)), d)) = identityFn
                     [by and_elim_right s-facts]
-                  // entry m+1 is a transposition; take `a` to be its first letter, which it moves.
-                  @succ-m-below |
-                    nat_less_than(succ(m), nadd(succ(succ(m)), d))
-                    [using specialize succKIsBelowTheTail(m, d)]
-                  @entry-is-a-transposition |
-                    isTransposition(at(s, succ(m)))
-                    [using specialize s-all(succ(m)) succ-m-below]
+                  // The length is a SUCCESSOR: (m+2)+d = succ(succ(m)+d). Write q for its
+                  // predecessor — the LAST index — and take `a` from that last entry, so the
+                  // invariant's "every entry above q" clause is vacuous (see
+                  // invariantHoldsAtTheTop; taking the letter from entry m+1 instead was the
+                  // error this restatement fixes).
+                  @length-is-a-successor |
+                    nadd(succ(succ(m)), d) = succ(nadd(succ(m), d))
+                    [using specialize peano.addSuccLeft(succ(m), d)]
+                  @s-all-at-successor |
+                    allTranspositions(s, succ(nadd(succ(m), d)))
+                    [by rewrite length-is-a-successor s-all]
+                  @s-identity-at-successor |
+                    productUpTo(s, succ(nadd(succ(m), d))) = identityFn
+                    [by rewrite length-is-a-successor s-identity]
+                  @top-below-length |
+                    nat_less_than(nadd(succ(m), d), succ(nadd(succ(m), d)))
+                    [using specialize natLessThanSelf(nadd(succ(m), d))]
+                  @top-entry-is-a-transposition |
+                    isTransposition(at(s, nadd(succ(m), d)))
+                    [using specialize s-all-at-successor(nadd(succ(m), d)) top-below-length]
                   @moved-letter-exists |
-                    exists a: Element; apply(at(s, succ(m)), a) != a
-                    [using specialize aTranspositionMovesSomething(at(s, succ(m))) entry-is-a-transposition]
+                    exists a: Element; apply(at(s, nadd(succ(m), d)), a) != a
+                    [using specialize aTranspositionMovesSomething(at(s, nadd(succ(m), d))) top-entry-is-a-transposition]
                   @with-moved-letter |
                     unpack a: Element from moved-letter-exists {
-                      @entry-moves-a |
-                        apply(at(s, succ(m)), a) != a
+                      @top-moves-a |
+                        apply(at(s, nadd(succ(m), d)), a) != a
                         [by hypothesis with-moved-letter]
-                      // nothing lies strictly above m+1 and below the length except the tail,
-                      // which the invariant at j = m+1 must cover — so start the loop by
-                      // clearing the tail first. That is the LOOP'S job, not ours: state the
-                      // invariant at the TOP index and let loopTerminates run it down.
                       @invariant-at-top |
-                        loopInvariant(a, succ(m), nadd(succ(succ(m)), d))
-                        [using specialize invariantHoldsAtTheTop(a, s, m, d) s-all s-identity entry-moves-a]
+                        loopInvariant(a, nadd(succ(m), d), succ(nadd(succ(m), d)))
+                        [using specialize invariantHoldsAtTheTop(a, s, nadd(succ(m), d)) s-all-at-successor s-identity-at-successor top-moves-a]
+                      @invariant-at-the-original-length |
+                        loopInvariant(a, nadd(succ(m), d), nadd(succ(succ(m)), d))
+                        [by rewrite length-is-a-successor invariant-at-top]
                       @conclusion-drops |
                         someProductOfLengthIsIdentity(nadd(m, d))
-                        [using specialize loopTerminates(a, succ(m), m, d) invariant-at-top]
+                        [using specialize loopTerminates(a, nadd(succ(m), d), m, d) invariant-at-the-original-length]
                     }
                   @conclusion-with-letter |
                     someProductOfLengthIsIdentity(nadd(m, d))
