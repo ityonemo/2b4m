@@ -1,0 +1,303 @@
+// std/permutation/parity.b4m — JUDSON'S PARITY LEMMA, proved: if the identity is a product
+// of r transpositions then r is even (AATA §5.1, permute-lemma-identity-even-trans).
+//
+// Judson's argument is a NESTED PAIR OF ORDINARY INDUCTIONS, not an induction over a
+// lexicographic order (a misreading this file's predecessor note recorded for a year):
+//
+//   OUTER: strong induction on r. Every success case reduces the problem to r − 2.
+//   INNER: with r FIXED, push the last occurrence of a chosen letter `a` leftward. Each
+//          step either cancels a pair (exit to the outer hypothesis at r − 2) or moves
+//          `a`'s last occurrence one position left. The position is bounded below by 0, so
+//          the inner loop is ordinary downward ℕ induction and the outer measure never
+//          moves while it runs.
+//
+// The rewriting is driven by Judson's four identities on the last two factors, which are
+// equalities of CONCRETE maps and are proved here pointwise:
+//
+//   (ab)(ab) = 1        (bc)(ab) = (ac)(bc)        (cd)(ab) = (ab)(cd)        (ac)(ab) = (ab)(bc)
+//
+// This file proves the four identities. The inner/outer inductions and the "a cannot end up
+// only in the first factor" argument build on them.
+
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import permutation <<< "std/permutation.b4m"
+import element <<< "std/element.b4m"
+
+sort Element = element.Element
+sort Fn = function.Fn
+const identityFn = function.identityFn
+func compose = function.compose
+func apply = function.apply
+pred invertible = function.invertible
+axiom funcExtensionality = function.funcExtensionality
+axiom composeApply = function.composeApply
+axiom identityApply = function.identityApply
+
+func transposition = permutation.transposition
+theorem transpositionAtFirst = permutation.transpositionAtFirst
+theorem transpositionAtSecond = permutation.transpositionAtSecond
+theorem transpositionElsewhere = permutation.transpositionElsewhere
+
+// -- the value of a composite of two transpositions at a point -----------------------------
+// Every identity below is proved by the same shape: compute both sides at a fixed point by
+// `composeApply` plus the three action lemmas, then close by funcExtensionality. This helper
+// removes the repetition — it is the "both sides agree at x" premise of extensionality.
+theorem composedTranspositionsAgree: forall p, q, r, s: Fn; (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+proof
+  @generalize-p |
+    fix p: Fn {
+      @generalize-q |
+        fix q: Fn {
+          @generalize-r |
+            fix r: Fn {
+              @generalize-s |
+                fix s: Fn {
+                  @given-pointwise |
+                    assume forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x) {
+                      @pointwise |
+                        forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)
+                        [by hypothesis given-pointwise]
+                      @conclusion-equal |
+                        compose(p, q) = compose(r, s)
+                        [using specialize funcExtensionality(compose(p, q), compose(r, s)) pointwise]
+                    }
+                  @pointwise-implies |
+                    (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+                    [by implies_intro given-pointwise]
+                }
+              @discharge-s |
+                forall s: Fn; (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+                [by forall_intro generalize-s]
+            }
+          @discharge-r |
+            forall r, s: Fn; (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+            [by forall_intro generalize-r]
+        }
+      @discharge-q |
+        forall q, r, s: Fn; (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, r, s: Fn; (forall x: Element; apply(compose(p, q), x) = apply(compose(r, s), x)) -> compose(p, q) = compose(r, s)
+    [by forall_intro generalize-p]
+qed
+
+// Judson's identity (1) is already proved in std: (ab)(ab) = 1.
+theorem transpositionsCancel = permutation.transpositionIsAnInvolution
+
+// -- the value of a transposition at a point, as a three-way case ---------------------------
+// The single fact every identity below needs: (u v) sends u to v, v to u, and fixes anything
+// else. Packaged as one theorem so each identity's case analysis is a chain of citations
+// rather than a re-derivation.
+theorem transpositionValue: forall u, v, x: Element; (x = u -> apply(transposition(u, v), x) = v) and (x = v -> apply(transposition(u, v), x) = u) and ((x != u and x != v) -> apply(transposition(u, v), x) = x)
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @generalize-x |
+            fix x: Element {
+              @at-first |
+                apply(transposition(u, v), u) = v
+                [using specialize transpositionAtFirst(u, v)]
+              @at-second |
+                apply(transposition(u, v), v) = u
+                [using specialize transpositionAtSecond(u, v)]
+              @given-is-u |
+                assume x = u {
+                  @x-is-u |
+                    x = u
+                    [by hypothesis given-is-u]
+                  @conclusion-at-u |
+                    apply(transposition(u, v), x) = v
+                    [by rewrite x-is-u at-first]
+                }
+              @is-u-implies |
+                x = u -> apply(transposition(u, v), x) = v
+                [by implies_intro given-is-u]
+              @given-is-v |
+                assume x = v {
+                  @x-is-v |
+                    x = v
+                    [by hypothesis given-is-v]
+                  @conclusion-at-v |
+                    apply(transposition(u, v), x) = u
+                    [by rewrite x-is-v at-second]
+                }
+              @is-v-implies |
+                x = v -> apply(transposition(u, v), x) = u
+                [by implies_intro given-is-v]
+              @given-is-neither |
+                assume x != u and x != v {
+                  @neither |
+                    x != u and x != v
+                    [by hypothesis given-is-neither]
+                  @not-u |
+                    x != u
+                    [by and_elim_left neither]
+                  @not-v |
+                    x != v
+                    [by and_elim_right neither]
+                  @conclusion-elsewhere |
+                    apply(transposition(u, v), x) = x
+                    [using specialize transpositionElsewhere(u, v, x) not-u not-v]
+                }
+              @is-neither-implies |
+                (x != u and x != v) -> apply(transposition(u, v), x) = x
+                [by implies_intro given-is-neither]
+              @conclusion-three-cases |
+                (x = u -> apply(transposition(u, v), x) = v) and (x = v -> apply(transposition(u, v), x) = u) and ((x != u and x != v) -> apply(transposition(u, v), x) = x)
+                [using tautology is-u-implies is-v-implies is-neither-implies]
+            }
+          @discharge-x |
+            forall x: Element; (x = u -> apply(transposition(u, v), x) = v) and (x = v -> apply(transposition(u, v), x) = u) and ((x != u and x != v) -> apply(transposition(u, v), x) = x)
+            [by forall_intro generalize-x]
+        }
+      @discharge-v |
+        forall v, x: Element; (x = u -> apply(transposition(u, v), x) = v) and (x = v -> apply(transposition(u, v), x) = u) and ((x != u and x != v) -> apply(transposition(u, v), x) = x)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u, v, x: Element; (x = u -> apply(transposition(u, v), x) = v) and (x = v -> apply(transposition(u, v), x) = u) and ((x != u and x != v) -> apply(transposition(u, v), x) = x)
+    [by forall_intro generalize-u]
+qed
+
+// -- the value of a composite at a point, as a single rewrite -------------------------------
+// `composeApply` plus `transpositionValue` twice is the whole computation of ((u v)(p q))(x).
+// Stating it as ONE equation per case keeps each of Judson's identities a comparison of two
+// cited values instead of a fresh case analysis over four letters.
+theorem compositeAtFirstOfInner: forall p, q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+proof
+  @generalize-p |
+    fix p: Element {
+      @generalize-q |
+        fix q: Element {
+          @generalize-u |
+            fix u: Element {
+              @generalize-v |
+                fix v: Element {
+                  @composite-applies |
+                    apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), apply(transposition(p, q), p))
+                    [using specialize composeApply(transposition(u, v), transposition(p, q), p)]
+                  @inner-at-p |
+                    apply(transposition(p, q), p) = q
+                    [using specialize transpositionAtFirst(p, q)]
+                  @conclusion-value |
+                    apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+                    [by rewrite inner-at-p composite-applies]
+                }
+              @discharge-v |
+                forall v: Element; apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+                [by forall_intro generalize-v]
+            }
+          @discharge-u |
+            forall u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+            [by forall_intro generalize-u]
+        }
+      @discharge-q |
+        forall q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), p) = apply(transposition(u, v), q)
+    [by forall_intro generalize-p]
+qed
+
+theorem compositeAtSecondOfInner: forall p, q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+proof
+  @generalize-p |
+    fix p: Element {
+      @generalize-q |
+        fix q: Element {
+          @generalize-u |
+            fix u: Element {
+              @generalize-v |
+                fix v: Element {
+                  @composite-applies |
+                    apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), apply(transposition(p, q), q))
+                    [using specialize composeApply(transposition(u, v), transposition(p, q), q)]
+                  @inner-at-q |
+                    apply(transposition(p, q), q) = p
+                    [using specialize transpositionAtSecond(p, q)]
+                  @conclusion-value |
+                    apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+                    [by rewrite inner-at-q composite-applies]
+                }
+              @discharge-v |
+                forall v: Element; apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+                [by forall_intro generalize-v]
+            }
+          @discharge-u |
+            forall u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+            [by forall_intro generalize-u]
+        }
+      @discharge-q |
+        forall q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, u, v: Element; apply(compose(transposition(u, v), transposition(p, q)), q) = apply(transposition(u, v), p)
+    [by forall_intro generalize-p]
+qed
+
+theorem compositeElsewhereOfInner: forall p, q, u, v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+proof
+  @generalize-p |
+    fix p: Element {
+      @generalize-q |
+        fix q: Element {
+          @generalize-u |
+            fix u: Element {
+              @generalize-v |
+                fix v: Element {
+                  @generalize-x |
+                    fix x: Element {
+                      @given-not-p |
+                        assume x != p {
+                          @given-not-q |
+                            assume x != q {
+                              @not-p |
+                                x != p
+                                [by hypothesis given-not-p]
+                              @not-q |
+                                x != q
+                                [by hypothesis given-not-q]
+                              @composite-applies |
+                                apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), apply(transposition(p, q), x))
+                                [using specialize composeApply(transposition(u, v), transposition(p, q), x)]
+                              @inner-fixes-x |
+                                apply(transposition(p, q), x) = x
+                                [using specialize transpositionElsewhere(p, q, x) not-p not-q]
+                              @conclusion-value |
+                                apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+                                [by rewrite inner-fixes-x composite-applies]
+                            }
+                          @not-q-implies |
+                            x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+                            [by implies_intro given-not-q]
+                        }
+                      @not-p-implies |
+                        x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+                        [by implies_intro given-not-p]
+                    }
+                  @discharge-x |
+                    forall x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+                    [by forall_intro generalize-x]
+                }
+              @discharge-v |
+                forall v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+                [by forall_intro generalize-v]
+            }
+          @discharge-u |
+            forall u, v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+            [by forall_intro generalize-u]
+        }
+      @discharge-q |
+        forall q, u, v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, u, v, x: Element; x != p -> x != q -> apply(compose(transposition(u, v), transposition(p, q)), x) = apply(transposition(u, v), x)
+    [by forall_intro generalize-p]
+qed
