@@ -6,28 +6,25 @@ been ADDRESSED are removed rather than annotated — what remains is what is sti
 missing. Plain markdown without a `.md` extension so the literate checker never
 parses the fenced examples here.
 
-(Ablated 2026-09-24: seven resolved entries. For the record of what they were and
-how they were fixed, see the commits — `1845ce1` import naming, `8fd59d8` the
-model-transfer diagnostic, `fc1bf60`/`c2c8479` the proof tree, `6662d29` the
-parity theory, `36d087a` finite cardinality, `8b40243` definition blocks.)
+Every claim below was RE-PROBED against the checker on 2026-09-28; the record of what
+used to be here is in the commits named just below.
 
-(Ablated 2026-09-27: the FINITENESS entry — "the one real blocker" — is resolved
-end to end, and its running log is gone. The record is in the commits: `3ae5cd4`/
-`6fc6d43` size uniqueness + the counting function, `46c8935` finite-set
-combinatorics, `1e655af` cycle notation, `c5d2dae` orbits, `b9c78ce` the period,
-`a413284` the cycle of an orbit, `1bdf6df` the disjoint-cycle decomposition,
+(Ablated 2026-09-24: seven resolved entries — `1845ce1` import naming, `8fd59d8` the
+model-transfer diagnostic, `fc1bf60`/`c2c8479` the proof tree, `6662d29` the parity
+theory, `36d087a` finite cardinality, `8b40243` definition blocks.)
+
+(Ablated 2026-09-27: the FINITENESS entry, "the one real blocker", resolved end to
+end — `3ae5cd4`/`6fc6d43` size uniqueness + the counting function, `46c8935`
+finite-set combinatorics, `1e655af` cycle notation, `c5d2dae` orbits, `b9c78ce` the
+period, `a413284` the cycle of an orbit, `1bdf6df` the disjoint-cycle decomposition,
 `b0102cb` §5.1's cycle structure cited from std, `3457d11` |S_n| = n!, `b545763`
 |A_n| = n!/2, `f5f7eca` |D_n| = 2n, `2612aa7`/`0e55135` model transfer across three
 theories + the passive-namespace model-cite bug, `6ef3b05` the transposition
-soundness fix (u ≠ v — the assumed parity lemma had made the chapter's axioms
-inconsistent; LESSON kept below), `0969362` orders in D_n. Same day, the three
-CHECKER bugs logged here were fixed: definition-clause variables take their sort
-from USE and a declared lower-case name on a clause's RHS is the global (the
-elaborator settles clause variables; params a clause does not mention are no longer
-quantified), and a schema instantiated by QUALIFIED name from another file demands
-its parameter sorts in its own namespace — fixtures
-`tests/cases/definition_clause_variables.b4m`, `…_uninferable_bad.b4m`,
-`tests/cases/schema_qualified_instantiation.b4m`.)
+soundness fix, `0969362` orders in D_n. Same day the three CHECKER bugs logged here
+were fixed — `a6423de`: definition-clause variables take their sort from USE, a
+declared lower-case name on a clause's RHS is the global, a clause quantifies only the
+params it mentions, and a schema instantiated by QUALIFIED name from another file
+demands its parameter sorts in its own namespace.)
 
 ---
 
@@ -35,13 +32,13 @@ its parameter sorts in its own namespace — fixtures
 
 ### Cube motions and the even/odd vertex split (§5.2)
 
-The whole cube-motions section needs a concrete cube: 8 vertices, its 12 edges as
-adjacency, and 24 motions as a listing. The n-gon machinery of
-`std/permutation/dihedral.b4m` (adjacency-preserving permutations, exhaustion by
-walking the vertices, listing = powers ++ reflected powers) would apply, but "six
-faces on top × four rotations" is a geometric count with no n to induct on —
-everything would be finite case work. The even/odd vertex split of §5.2 is prose
-for the same reason. Both remain `// this section cannot currently be encoded`.
+The cube-motions section needs a concrete cube: 8 vertices, its 12 edges as adjacency,
+and 24 motions as a listing. The n-gon machinery of `std/permutation/dihedral.b4m`
+(adjacency-preserving permutations, exhaustion by walking the vertices, listing =
+powers ++ reflected powers) would apply, but "six faces on top × four rotations" is a
+geometric count with no n to induct on — everything would be finite case work. The
+even/odd vertex split is prose for the same reason. Still marked in place
+(`aata/5.2-dihedral-groups.md:245`, "counting + a concrete S_4").
 
 ### Well-founded / lexicographic induction
 
@@ -49,17 +46,15 @@ Judson's parity LEMMA ("the identity is a product of an even number of
 transpositions") is a terminating-rewrite argument on a lexicographic measure —
 product length, then the position of a symbol's last occurrence — and 2b4m has
 ℕ-induction only. Its four rewrite identities are statements about transpositions
-named by the points they move; the first, (ab)(ab) = 1, is now proved
+named by the points they move; the first, (ab)(ab) = 1, is proved
 (`std/permutation.b4m` `transpositionIsAnInvolution`), and the other three are
 pointwise case analyses of the same kind, so what blocks the lemma is the
 well-founded induction alone.
 
-The lemma is therefore ASSUMED in `aata/5.1-permutation-groups.md`, exactly as
-Judson states it, and disclosed by `--axioms` — the ONLY assumption the section
-makes since 2026-09-26, when the parity theory was rewired from an abstract group
-with an assumed "transpositions are self-inverse" axiom onto
-`std/permutation/sequence.b4m`, where that fact is a theorem. Everything
-downstream of the lemma is proved.
+The lemma is therefore ASSUMED as `axiom identityIsEvenLength`
+(`aata/5.1-permutation-groups.md:471`) exactly as Judson states it. It is the only
+assumption of the section's own making: `--axioms` lists it beside the std postulates
+the section rests on, and nothing else from that file. Everything downstream is proved.
 
 ---
 
@@ -67,49 +62,40 @@ downstream of the lemma is proved.
 
 ### A theorem SCHEMA is checked only at a concrete instantiation
 
-"'X' is a schema; it is checked at its instantiations" — a file of schemas alone
-verifies NOTHING, so `std/permutation/listing.b4m` ends with a concrete instance
-(`splittingOffTheIdentity`) to exercise the whole chain. Not a bug by the current
-design, but a file-level trap worth a diagnostic (a schema no instance ever
-exercises is as unverified as a hole). Contradicts the older memory note that
-strict check verifies a schema at declaration.
+A file whose only content is a schema reports "0 theorems proven" and exits 0 — the
+body is checked at its instantiations, so a schema that no instance ever exercises is
+as unverified as a hole while looking green. `std/permutation/listing.b4m` therefore
+ends with a concrete instance (`splittingOffTheIdentity`) to drive the whole chain.
+Not a bug by the current design, but worth a diagnostic. (Contradicts the older memory
+note saying strict check verifies a schema at declaration.)
 
 ---
 
-## From §5.2 (dihedral groups, 2026-09-24)
+## Notes worth keeping
 
-Nothing NEW is missing — the presentation half went through cleanly, and the
-count is done (above). Two notes worth keeping:
-
-- **`rewrite` needs a TARGET STEP, not a bare formula.** Repeatedly I wrote
-  `[by rewrite <equation> <something-that-was-not-a-step>]` and got "unknown
-  reference". The fix each time was to introduce the target as its own step —
-  often a trivial `[by reflexivity]` — and rewrite INTO that. Worth knowing
-  before writing an equational chain.
-- **`opAssoc` is stated `op(op(a,b),c) = op(a,op(b,c))`** — left-nested on the
-  LEFT. Half my uses wanted the mirror and needed an explicit `[by symmetry …]`.
-  Not a gap, just a direction to check before citing.
-
-## Process notes worth keeping
-
-- `2b4m check tests/cases` (the whole fixture directory as one sweep) is a runaway
-  — pathological fixtures, 6.8 GB RSS, >8 min. Use test_sweeps' curated dirs.
-- Outside the repo, `zig` on PATH is asdf 0.15.2; scratch probes need
-  `/home/ityonemo/.asdf/installs/zig/0.16.0/zig`.
-- `tautology` is PROPOSITIONAL only — it treats a quantified statement as an
-  opaque atom. A goal needing reasoning INSIDE a quantifier wants an explicit
-  `fix` + `specialize`, not a tactic. Cost me two wrong turns in the parity work;
-  the countermodel it prints is what makes this obvious.
-- An ASSUMED axiom is never exercised by a proof — check it against the
-  degenerate instances of every define it quantifies over (the trivial
-  transposition (a a) = id made Judson's assumed parity lemma yield 2 | 1, and
-  everything downstream was vacuously "proved" until `6ef3b05`). `--axioms` shows
-  what is assumed; nothing shows what is inconsistent.
-- A literate chapter CAN be imported by another file (`import chapter <<<
-  "5.1-permutation-groups.md"`, relative to the importing file), but importing it
-  by an ABSOLUTE path made its `sort Fn = function.Fn` a DIFFERENT origin from a
-  relative `std/function.b4m` import ("expected sort 'Fn', got 'Fn'") — path
-  canonicalization decides identity, so import everything the same way.
-- A test-harness failure message ECHOES the expected output. Twice I read those
-  echoed lines as program output and went hunting for a nondeterminism bug that
-  did not exist. Read what the gate ASSERTS before believing a diff.
+- **`opAssoc` is stated `op(op(a,b),c) = op(a,op(b,c))`** — left-nested on the LEFT
+  (`std/group.b4m:20`). Half my uses wanted the mirror and needed an explicit
+  `[by symmetry …]`. Not a gap, just a direction to check before citing.
+- **An ASSUMED axiom is never exercised by a proof** — check it against the degenerate
+  instances of every define it quantifies over. The trivial transposition (a a) = id
+  made Judson's assumed parity lemma yield 2 | 1, and everything downstream was
+  vacuously "proved" until `6ef3b05`. `--axioms` shows what is assumed; nothing shows
+  what is inconsistent.
+- **`tautology` is PROPOSITIONAL only** — a quantified statement is an opaque atom, and
+  so is an equation. A goal needing reasoning INSIDE a quantifier wants `fix` +
+  `specialize`; a contradiction between an equation and a disequation wants the
+  equality derived explicitly first. Cost me two wrong turns in the parity work; the
+  countermodel it prints is what makes this obvious.
+- **A literate chapter CAN be imported by another file** — `import chapter <<<
+  "5.1-permutation-groups.md"`, resolved relative to the importing file; its defines
+  and theorems are then `chapter.isEvenPerm(t)`, `[using import(chapter) evenIsNotOdd]`.
+  Two files do this today (`aata/5.1-permutation-groups-exercises.md`,
+  `aata/3.2-groups-exercises.md`). Importing one by an ABSOLUTE path made its
+  `sort Fn = function.Fn` a DIFFERENT origin from a relative `std/function.b4m` import
+  ("expected sort 'Fn', got 'Fn'") — path canonicalization decides identity, so import
+  everything the same way.
+- **`2b4m check tests/cases`** (the whole fixture directory as one sweep) is a runaway:
+  pathological fixtures, 6.8 GB RSS, >8 min. Use test_sweeps' curated directories.
+- **A test-harness failure message ECHOES the expected output.** Twice I read those
+  echoed lines as program output and went hunting for a nondeterminism bug that did not
+  exist. Read what the gate ASSERTS before believing a diff.
