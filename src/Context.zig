@@ -73,14 +73,6 @@ gpa: std.mem.Allocator,
 /// read path under a lock. Within a phase, consolidation is right and already done:
 /// `side_lock` covers eight low-traffic tables because one lock-order edge beats eight.
 ///
-/// ENFORCEMENT — Zig has no field privacy, so "accessor-only" cannot be a type-level rule.
-/// It is a SOURCE-CONVENTION GATE instead: `tests/test_source_conventions.zig` walks `src/`
-/// and fails on any `self.`/`ctx.`/`context.` access to a guarded table outside this file and
-/// root.zig, naming the file, line and table. That is weaker than privacy (a determined caller
-/// can still alias the struct) but it catches the mistake that actually happens — someone
-/// reaching for `.get()` because it is right there. Add a table to that gate's list when you
-/// add one here.
-///
 /// THE RECURRING BUG is not lock count but reach-past: these maps are public fields, so a
 /// caller can `.get()` them directly and skip the accessor. Five such accesses were fixed on
 /// 2026-09-29 (`inheritAxioms`, `inheritHoles`, `modelDefineTarget`, `expand_linted`) after
