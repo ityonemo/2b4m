@@ -73,8 +73,16 @@ gpa: std.mem.Allocator,
 /// read path under a lock. Within a phase, consolidation is right and already done:
 /// `side_lock` covers eight low-traffic tables because one lock-order edge beats eight.
 ///
+/// ENFORCEMENT — Zig has no field privacy, so "accessor-only" cannot be a type-level rule.
+/// It is a SOURCE-CONVENTION GATE instead: `tests/test_source_conventions.zig` walks `src/`
+/// and fails on any `self.`/`ctx.`/`context.` access to a guarded table outside this file and
+/// root.zig, naming the file, line and table. That is weaker than privacy (a determined caller
+/// can still alias the struct) but it catches the mistake that actually happens — someone
+/// reaching for `.get()` because it is right there. Add a table to that gate's list when you
+/// add one here.
+///
 /// THE RECURRING BUG is not lock count but reach-past: these maps are public fields, so a
-/// caller can `.get()` them directly and skip the accessor. Four such reads were fixed on
+/// caller can `.get()` them directly and skip the accessor. Five such accesses were fixed on
 /// 2026-09-29 (`inheritAxioms`, `inheritHoles`, `modelDefineTarget`, `expand_linted`) after
 /// one of them segfaulted intermittently. Read DURING proving only via the accessors below.
 ///
@@ -478,6 +486,17 @@ pub const Root = struct { path: []const u8, theorem: ?[]const u8 = null };
 /// `sink.add` takes its file explicitly (see diagnostics.zig — it must never be ambient
 /// state), and the demand tasks hold pool `.file` Indexes, so this is the bridge. 0 when
 /// the file is undiscovered: an offset with nowhere to anchor, which `render` clamps.
+/// One model-define mapping: the source symbol and the define it maps onto.
+pub const ModelDefineTarget = struct { src: InternPool.Index, def: DefineKey };
+
+/// Record a model's define targets. Guarded: a ModelTask publishes these DURING proving,
+/// while other tasks are calling `modelDefineTarget`.
+pub fn recordModelDefineTargets(self: *Context, model: InternPool.Index, targets: []const ModelDefineTarget) std.mem.Allocator.Error!void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    for (targets) |t| try self.model_define_targets.put(self.arena, .{ .model = model, .src = t.src }, t.def);
+}
+
 /// Was this define-forwarding site already linted? Guarded: the expansion pass reads and
 /// writes this map DURING proving, so an unguarded `contains` can race a concurrent `put`
 /// and probe rehashed metadata.
