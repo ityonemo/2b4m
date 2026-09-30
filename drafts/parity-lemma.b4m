@@ -54,6 +54,7 @@ define someProductOfLengthIsIdentity(n) = permutation_parity.someProductOfLength
 theorem transpositionIsNotIdentity = permutation_parity.transpositionIsNotIdentity
 theorem succKIsBelowTheTail = permutation_parity.succKIsBelowTheTail
 theorem aTranspositionMovesSomething = permutation_parity.aTranspositionMovesSomething
+theorem zeroOrPositive = permutation_parity.zeroOrPositive
 
 // -- TOP-DOWN: the inner loop as a HOLE, so the outer induction fixes its statement -----------
 // Stated as what the OUTER induction needs, not as what the pieces happen to provide: from a
@@ -906,7 +907,198 @@ proof
     [by forall_intro generalize-i]
 qed
 
-hole splitBelowASum: forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+// An index below j+e is either below j, or is j+g for some g below e. Trichotomy splits at j;
+// on the upper side `lessOrEqualIsGapExistential` names the gap, and cancelling j off the
+// original bound puts the gap below e.
+theorem splitBelowASum: forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-e |
+            fix e: Nat {
+              @given-below-sum |
+                assume nat_less_than(i, nadd(j, e)) {
+                  @below-sum |
+                    nat_less_than(i, nadd(j, e))
+                    [by hypothesis given-below-sum]
+                  @split-at-j |
+                    nat_less_than(i, j) or i = j or nat_less_than(j, i)
+                    [using specialize peano_order.trichotomy(i, j)]
+                  @conclusion-split |
+                    nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e))
+                    case split-at-j {
+                      @when-below-j |
+                        assume nat_less_than(i, j) {
+                          @below-j |
+                            nat_less_than(i, j)
+                            [by hypothesis when-below-j]
+                          @conclusion-below |
+                            nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e))
+                            [by or_intro_left below-j]
+                        }
+                      @when-equal |
+                        assume i = j {
+                          @equal |
+                            i = j
+                            [by hypothesis when-equal]
+                          // i = j = j + 0, and 0 < e because i < j+e forces e positive.
+                          @j-plus-zero |
+                            nadd(j, NZERO) = j
+                            [using specialize peano.addZeroRight(j)]
+                          @j-is-j-plus-zero |
+                            j = nadd(j, NZERO)
+                            [by symmetry j-plus-zero]
+                          @i-is-j-plus-zero |
+                            i = nadd(j, NZERO)
+                            [using chain equal j-is-j-plus-zero]
+                          @zero-below-e |
+                            nat_less_than(NZERO, e)
+                            [using specialize overshootIsPositive(i, j, e) below-sum equal]
+                          @witnessed |
+                            i = nadd(j, NZERO) and nat_less_than(NZERO, e)
+                            [by and_intro i-is-j-plus-zero zero-below-e]
+                          @gap-exists |
+                            exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)
+                            [by exists_intro(NZERO) witnessed]
+                          @conclusion-equal |
+                            nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e))
+                            [by or_intro_right gap-exists]
+                        }
+                      @when-above-j |
+                        assume nat_less_than(j, i) {
+                          @above-j |
+                            nat_less_than(j, i)
+                            [by hypothesis when-above-j]
+                          @gap-to-i-exists |
+                            exists g: Nat; nadd(j, succ(g)) = i
+                            [using specialize peano_order.lessThanElim(j, i) above-j]
+                          @with-gap |
+                            unpack g: Nat from gap-to-i-exists {
+                              @gap |
+                                nadd(j, succ(g)) = i
+                                [by hypothesis with-gap]
+                              @i-is-shifted |
+                                i = nadd(j, succ(g))
+                                [by symmetry gap]
+                              // j + succ(g) < j + e cancels to succ(g) < e.
+                              @shifted-below-sum |
+                                nat_less_than(nadd(j, succ(g)), nadd(j, e))
+                                [by rewrite i-is-shifted below-sum]
+                              @overshoot-below-e |
+                                nat_less_than(succ(g), e)
+                                [using specialize peano_order.lessThanAddCancelLeft(j, succ(g), e) shifted-below-sum]
+                              @witnessed |
+                                i = nadd(j, succ(g)) and nat_less_than(succ(g), e)
+                                [by and_intro i-is-shifted overshoot-below-e]
+                              @gap-witnessed |
+                                exists g2: Nat; i = nadd(j, g2) and nat_less_than(g2, e)
+                                [by exists_intro(succ(g)) witnessed]
+                              @conclusion-above-inner |
+                                nat_less_than(i, j) or (exists g2: Nat; i = nadd(j, g2) and nat_less_than(g2, e))
+                                [by or_intro_right gap-witnessed]
+                            }
+                          @conclusion-above |
+                            nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e))
+                            [by exists_elim with-gap]
+                        }
+                    }
+                }
+              @below-sum-implies |
+                nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+                [by implies_intro given-below-sum]
+            }
+          @discharge-e |
+            forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+            [by forall_intro generalize-e]
+        }
+      @discharge-j |
+        forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+    [by forall_intro generalize-i]
+qed
+
+// i = j and i < j+e force 0 < e: were e ZERO, j+e would be j and j < j.
+theorem overshootIsPositive: forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> i = j -> nat_less_than(NZERO, e)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-e |
+            fix e: Nat {
+              @given-below |
+                assume nat_less_than(i, nadd(j, e)) {
+                  @given-equal |
+                    assume i = j {
+                      @below |
+                        nat_less_than(i, nadd(j, e))
+                        [by hypothesis given-below]
+                      @equal |
+                        i = j
+                        [by hypothesis given-equal]
+                      @j-below-sum |
+                        nat_less_than(j, nadd(j, e))
+                        [by rewrite equal below]
+                      @e-shape |
+                        e = NZERO or nat_less_than(NZERO, e)
+                        [using specialize zeroOrPositive(e)]
+                      @conclusion-positive |
+                        nat_less_than(NZERO, e)
+                        case e-shape {
+                          @when-zero |
+                            assume e = NZERO {
+                              @e-is-zero |
+                                e = NZERO
+                                [by hypothesis when-zero]
+                              @j-plus-zero |
+                                nadd(j, NZERO) = j
+                                [using specialize peano.addZeroRight(j)]
+                              @j-below-j-plus-zero |
+                                nat_less_than(j, nadd(j, NZERO))
+                                [by rewrite e-is-zero j-below-sum]
+                              @j-below-itself |
+                                nat_less_than(j, j)
+                                [by rewrite j-plus-zero j-below-j-plus-zero]
+                              @not-below-itself |
+                                not nat_less_than(j, j)
+                                [using specialize peano_order.lessThanIrreflexive(j)]
+                              @conclusion-absurd |
+                                nat_less_than(NZERO, e)
+                                [using tautology j-below-itself not-below-itself]
+                            }
+                          @when-positive |
+                            assume nat_less_than(NZERO, e) {
+                              @conclusion-directly |
+                                nat_less_than(NZERO, e)
+                                [by hypothesis when-positive]
+                            }
+                        }
+                    }
+                  @equal-implies |
+                    i = j -> nat_less_than(NZERO, e)
+                    [by implies_intro given-equal]
+                }
+              @below-implies |
+                nat_less_than(i, nadd(j, e)) -> i = j -> nat_less_than(NZERO, e)
+                [by implies_intro given-below]
+            }
+          @discharge-e |
+            forall e: Nat; nat_less_than(i, nadd(j, e)) -> i = j -> nat_less_than(NZERO, e)
+            [by forall_intro generalize-e]
+        }
+      @discharge-j |
+        forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> i = j -> nat_less_than(NZERO, e)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> i = j -> nat_less_than(NZERO, e)
+    [by forall_intro generalize-i]
+qed
 
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
