@@ -3242,3 +3242,53 @@ proof
     forall t: Fn; isTransposition(t) -> exists z: Element; apply(t, z) != z
     [by forall_intro generalize-t]
 qed
+
+// A transposition is a permutation — the invertibility the surgery postulate demands.
+theorem transpositionsAreInvertible: forall t: Fn; isTransposition(t) -> invertible(t)
+proof
+  @generalize-t |
+    fix t: Fn {
+      @given-transposition |
+        assume isTransposition(t) {
+          @is-a-transposition |
+            isTransposition(t)
+            [by hypothesis given-transposition]
+          @letters-exist |
+            exists x: Element; exists y: Element; x != y and t = transposition(x, y)
+            [using tautology is-a-transposition]
+          @with-first |
+            unpack x: Element from letters-exist {
+              @second-exists |
+                exists y: Element; x != y and t = transposition(x, y)
+                [by hypothesis with-first]
+              @with-second |
+                unpack y: Element from second-exists {
+                  @facts |
+                    x != y and t = transposition(x, y)
+                    [by hypothesis with-second]
+                  @t-is-the-swap |
+                    t = transposition(x, y)
+                    [by and_elim_right facts]
+                  @swap-is-a-permutation |
+                    invertible(transposition(x, y))
+                    [using specialize transpositionIsAPermutation(x, y)]
+                  @conclusion-invertible-inner |
+                    invertible(t)
+                    [by rewrite t-is-the-swap swap-is-a-permutation]
+                }
+              @conclusion-invertible-second |
+                invertible(t)
+                [by exists_elim with-second]
+            }
+          @conclusion-invertible |
+            invertible(t)
+            [by exists_elim with-first]
+        }
+      @transposition-implies |
+        isTransposition(t) -> invertible(t)
+        [by implies_intro given-transposition]
+    }
+  @conclusion |
+    forall t: Fn; isTransposition(t) -> invertible(t)
+    [by forall_intro generalize-t]
+qed
