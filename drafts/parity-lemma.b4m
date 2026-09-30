@@ -55,6 +55,8 @@ theorem transpositionIsNotIdentity = permutation_parity.transpositionIsNotIdenti
 theorem succKIsBelowTheTail = permutation_parity.succKIsBelowTheTail
 theorem aTranspositionMovesSomething = permutation_parity.aTranspositionMovesSomething
 theorem zeroOrPositive = permutation_parity.zeroOrPositive
+theorem transpositionsAreInvertible = permutation_parity.transpositionsAreInvertible
+pred invertible = function.invertible
 
 // -- TOP-DOWN: the inner loop as a HOLE, so the outer induction fixes its statement -----------
 // Stated as what the OUTER induction needs, not as what the pieces happen to provide: from a
@@ -1349,6 +1351,263 @@ proof
     }
   @conclusion |
     forall w: Seq; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+    [by forall_intro generalize-w]
+qed
+
+
+// -- the SHIFT branch, on its own -------------------------------------------------------------
+// The pair at (j, j+1) equals (p, q) with q FIXING `a` and p MOVING it. Rewrite it in place:
+// the product is unchanged (still the identity), entries outside {j, j+1} are untouched (so
+// everything above j+1 still fixes `a`), position j+1 now holds q which fixes `a`, and
+// position j holds p which moves it. That is exactly the invariant at j.
+theorem shiftBranchKeepsTheInvariant: forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+proof
+  @generalize-w |
+    fix w: Seq {
+      @generalize-a |
+        fix a: Element {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @generalize-e |
+                        fix e: Nat {
+                          @generalize-p |
+                            fix p: Fn {
+                              @generalize-q |
+                                fix q: Fn {
+                                    @given-all |
+                                      assume allTranspositions(w, nadd(succ(succ(m)), d)) {
+                                        @given-identity |
+                                          assume productUpTo(w, nadd(succ(succ(m)), d)) = identityFn {
+                                            @given-above |
+                                              assume forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a {
+                                                @given-length |
+                                                  assume nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) {
+                                                    @given-p-trans |
+                                                      assume isTransposition(p) {
+                                                        @given-q-trans |
+                                                          assume isTransposition(q) {
+                                                            @given-pair |
+                                                              assume compose(p, q) = compose(at(w, j), at(w, succ(j))) {
+                                                                @given-q-fixes |
+                                                                  assume apply(q, a) = a {
+                                                                    @given-p-moves |
+                                                                      assume apply(p, a) != a {
+                                                                          @all |
+                                                                            allTranspositions(w, nadd(succ(succ(m)), d))
+                                                                            [by hypothesis given-all]
+                                                                          @identity |
+                                                                            productUpTo(w, nadd(succ(succ(m)), d)) = identityFn
+                                                                            [by hypothesis given-identity]
+                                                                          @above |
+                                                                            forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a
+                                                                            [by hypothesis given-above]
+                                                                          @length |
+                                                                            nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e)
+                                                                            [by hypothesis given-length]
+                                                                          @p-trans |
+                                                                            isTransposition(p)
+                                                                            [by hypothesis given-p-trans]
+                                                                          @q-trans |
+                                                                            isTransposition(q)
+                                                                            [by hypothesis given-q-trans]
+                                                                          @pair |
+                                                                            compose(p, q) = compose(at(w, j), at(w, succ(j)))
+                                                                            [by hypothesis given-pair]
+                                                                          @q-fixes |
+                                                                            apply(q, a) = a
+                                                                            [by hypothesis given-q-fixes]
+                                                                          @p-moves |
+                                                                            apply(p, a) != a
+                                                                            [by hypothesis given-p-moves]
+                                                                          @p-invertible |
+                                                                            invertible(p)
+                                                                            [using specialize transpositionsAreInvertible(p) p-trans]
+                                                                          @q-invertible |
+                                                                            invertible(q)
+                                                                            [using specialize transpositionsAreInvertible(q) q-trans]
+                                                                          @rewritten-exists |
+                                                                            exists u: Seq; at(u, j) = p and at(u, succ(j)) = q and (forall i: Nat; nat_less_than(i, j) -> at(u, i) = at(w, i)) and (forall i: Nat; nat_less_than(succ(j), i) -> at(u, i) = at(w, i)) and productUpTo(u, nadd(succ(succ(j)), e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                                                            [using specialize permutation_parity.rewritingAPairKeepsTheWholeProduct(w, j, e, p, q) p-invertible q-invertible pair]
+                                                                          @with-rewritten |
+                                                                            unpack u: Seq from rewritten-exists {
+                                                                              @u-facts |
+                                                                                at(u, j) = p and at(u, succ(j)) = q and (forall i: Nat; nat_less_than(i, j) -> at(u, i) = at(w, i)) and (forall i: Nat; nat_less_than(succ(j), i) -> at(u, i) = at(w, i)) and productUpTo(u, nadd(succ(succ(j)), e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                                                                [by hypothesis with-rewritten]
+                                                                              @u-at-j |
+                                                                                at(u, j) = p
+                                                                                [using tautology u-facts]
+                                                                              @u-at-succ-j |
+                                                                                at(u, succ(j)) = q
+                                                                                [using tautology u-facts]
+                                                                              @u-below |
+                                                                                forall i: Nat; nat_less_than(i, j) -> at(u, i) = at(w, i)
+                                                                                [using tautology u-facts]
+                                                                              @u-above |
+                                                                                forall i: Nat; nat_less_than(succ(j), i) -> at(u, i) = at(w, i)
+                                                                                [using tautology u-facts]
+                                                                              @u-product |
+                                                                                productUpTo(u, nadd(succ(succ(j)), e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                                                                [using tautology u-facts]
+                                                                              @u-at-j-is-a-transposition |
+                                                                                isTransposition(at(u, j))
+                                                                                [by rewrite u-at-j p-trans]
+                                                                              @u-at-succ-j-is-a-transposition |
+                                                                                isTransposition(at(u, succ(j)))
+                                                                                [by rewrite u-at-succ-j q-trans]
+                                                                              @u-all |
+                                                                                allTranspositions(u, nadd(succ(succ(m)), d))
+                                                                                [using specialize permutation_parity.rewrittenSequenceIsAllTranspositions(w, u, j, nadd(succ(succ(m)), d)) all u-at-j-is-a-transposition u-at-succ-j-is-a-transposition u-below u-above]
+                                                                              @w-product-at-form |
+                                                                                productUpTo(w, nadd(succ(succ(j)), e)) = identityFn
+                                                                                [by rewrite length identity]
+                                                                              @u-product-at-form |
+                                                                                productUpTo(u, nadd(succ(succ(j)), e)) = identityFn
+                                                                                [using chain u-product w-product-at-form]
+                                                                              @u-product-at-the-length |
+                                                                                productUpTo(u, nadd(succ(succ(m)), d)) = identityFn
+                                                                                [by rewrite length u-product-at-form]
+                                                                              @u-at-j-moves-a |
+                                                                                apply(at(u, j), a) != a
+                                                                                [by rewrite u-at-j p-moves]
+                                                                              @u-above-fixes |
+                                                                                forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a
+                                                                                [by forall_intro above-j-fixes]
+                                                                              @above-j-fixes |
+                                                                                fix i: Nat {
+                                                                                  @given-above-j |
+                                                                                    assume nat_less_than(j, i) {
+                                                                                      @given-below-length |
+                                                                                        assume nat_less_than(i, nadd(succ(succ(m)), d)) {
+                                                                                          @above-j |
+                                                                                            nat_less_than(j, i)
+                                                                                            [by hypothesis given-above-j]
+                                                                                          @below-length |
+                                                                                            nat_less_than(i, nadd(succ(succ(m)), d))
+                                                                                            [by hypothesis given-below-length]
+                                                                                          @position |
+                                                                                            i = succ(j) or nat_less_than(succ(j), i)
+                                                                                            [using specialize permutation_parity.successorSplit(j, i) above-j]
+                                                                                          @conclusion-fixes |
+                                                                                            apply(at(u, i), a) = a
+                                                                                            case position {
+                                                                                              @when-at-succ-j |
+                                                                                                assume i = succ(j) {
+                                                                                                  @at-succ-j |
+                                                                                                    i = succ(j)
+                                                                                                    [by hypothesis when-at-succ-j]
+                                                                                                  @entry-is-q |
+                                                                                                    at(u, i) = q
+                                                                                                    [by rewrite at-succ-j u-at-succ-j]
+                                                                                                  @conclusion-q-fixes |
+                                                                                                    apply(at(u, i), a) = a
+                                                                                                    [by rewrite entry-is-q q-fixes]
+                                                                                                }
+                                                                                              @when-strictly-above |
+                                                                                                assume nat_less_than(succ(j), i) {
+                                                                                                  @strictly-above |
+                                                                                                    nat_less_than(succ(j), i)
+                                                                                                    [by hypothesis when-strictly-above]
+                                                                                                  @copied |
+                                                                                                    at(u, i) = at(w, i)
+                                                                                                    [using specialize u-above(i) strictly-above]
+                                                                                                  @w-fixes |
+                                                                                                    apply(at(w, i), a) = a
+                                                                                                    [using specialize above(i) strictly-above below-length]
+                                                                                                  @conclusion-copied-fixes |
+                                                                                                    apply(at(u, i), a) = a
+                                                                                                    [by rewrite copied w-fixes]
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                      @below-implies |
+                                                                                        nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a
+                                                                                        [by implies_intro given-below-length]
+                                                                                    }
+                                                                                  @above-implies |
+                                                                                    nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a
+                                                                                    [by implies_intro given-above-j]
+                                                                                }
+                                                                              @all-four |
+                                                                                allTranspositions(u, nadd(succ(succ(m)), d)) and productUpTo(u, nadd(succ(succ(m)), d)) = identityFn and apply(at(u, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a)
+                                                                                [using tautology u-all u-product-at-the-length u-at-j-moves-a u-above-fixes]
+                                                                              @conclusion-invariant-inner |
+                                                                                (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                                [by exists_intro(u) all-four]
+                                                                            }
+                                                                          @conclusion-invariant |
+                                                                            (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                            [by exists_elim with-rewritten]
+                                                                      }
+                                                                    @p-moves-implies |
+                                                                      apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                      [by implies_intro given-p-moves]
+                                                                  }
+                                                                @q-fixes-implies |
+                                                                  apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                  [by implies_intro given-q-fixes]
+                                                              }
+                                                            @pair-implies |
+                                                              compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                              [by implies_intro given-pair]
+                                                          }
+                                                        @q-trans-implies |
+                                                          isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                          [by implies_intro given-q-trans]
+                                                      }
+                                                    @p-trans-implies |
+                                                      isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                      [by implies_intro given-p-trans]
+                                                  }
+                                                @length-implies |
+                                                  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                  [by implies_intro given-length]
+                                              }
+                                            @above-implies |
+                                              (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                              [by implies_intro given-above]
+                                          }
+                                        @identity-implies |
+                                          productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                          [by implies_intro given-identity]
+                                      }
+                                    @all-implies |
+                                      allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                      [by implies_intro given-all]
+                                }
+                              @discharge-q |
+                                forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                [by forall_intro generalize-q]
+                            }
+                          @discharge-p |
+                            forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                            [by forall_intro generalize-p]
+                        }
+                      @discharge-e |
+                        forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                        [by forall_intro generalize-e]
+                    }
+                  @discharge-d |
+                    forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                    [by forall_intro generalize-d]
+                }
+              @discharge-m |
+                forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                [by forall_intro generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+            [by forall_intro generalize-j]
+        }
+      @discharge-a |
+        forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
     [by forall_intro generalize-w]
 qed
 
