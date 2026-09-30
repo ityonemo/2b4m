@@ -688,6 +688,226 @@ proof
     [by forall_intro generalize-j]
 qed
 
+// -- DELETING the cancelling pair ------------------------------------------------------------
+// The cancel branch needs a sequence of length r − 2. Deleting positions (j, j+1) gives one,
+// and — following this layer's idiom, where a sequence postulate carries its own product law
+// (compare `seqConcat`, `seqReverse` in std/permutation/sequence.b4m) — the postulate states
+// the product directly rather than leaving a fold argument to the caller. Sound because the
+// deleted pair composes to the identity, so it contributes nothing to the fold.
+axiom seqDeleteCancellingPair: forall s: Seq; forall j: Nat; forall e: Nat;
+  compose(at(s, j), at(s, succ(j))) = identityFn ->
+  exists v: Seq;
+  (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i))
+  and (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i)))
+  and productUpTo(v, nadd(j, e)) = productUpTo(s, nadd(succ(succ(j)), e))
+
+// Its entries are all transpositions when `s`'s are: every entry is copied from `s`, either
+// from below j or from two positions further up.
+theorem deletedSequenceIsAllTranspositions: forall s: Seq; forall v: Seq; forall j: Nat; forall n: Nat; forall e: Nat;
+  allTranspositions(s, nadd(succ(succ(j)), e)) ->
+  (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) ->
+  (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) ->
+  n = nadd(j, e) ->
+  allTranspositions(v, n)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-v |
+        fix v: Seq {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-e |
+                    fix e: Nat {
+                      @given-all |
+                        assume allTranspositions(s, nadd(succ(succ(j)), e)) {
+                          @given-below |
+                            assume forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i) {
+                              @given-tail |
+                                assume forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i)) {
+                                  @given-length |
+                                    assume n = nadd(j, e) {
+                                      @s-all |
+                                        allTranspositions(s, nadd(succ(succ(j)), e))
+                                        [by hypothesis given-all]
+                                      @v-below |
+                                        forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)
+                                        [by hypothesis given-below]
+                                      @v-tail |
+                                        forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))
+                                        [by hypothesis given-tail]
+                                      @length |
+                                        n = nadd(j, e)
+                                        [by hypothesis given-length]
+                                      @generalize-i |
+                                        fix i: Nat {
+                                          @given-below-n |
+                                            assume nat_less_than(i, n) {
+                                              @i-below-n |
+                                                nat_less_than(i, n)
+                                                [by hypothesis given-below-n]
+                                              @i-below-sum |
+                                                nat_less_than(i, nadd(j, e))
+                                                [by rewrite length i-below-n]
+                                              @i-position |
+                                                nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e))
+                                                [using specialize splitBelowASum(i, j, e) i-below-sum]
+                                              @conclusion-i-is-a-transposition |
+                                                isTransposition(at(v, i))
+                                                case i-position {
+                                                  @when-below |
+                                                    assume nat_less_than(i, j) {
+                                                      @below |
+                                                        nat_less_than(i, j)
+                                                        [by hypothesis when-below]
+                                                      @copied |
+                                                        at(v, i) = at(s, i)
+                                                        [using specialize v-below(i) below]
+                                                      @i-below-the-length |
+                                                        nat_less_than(i, nadd(succ(succ(j)), e))
+                                                        [using specialize belowJIsBelowTheLength(i, j, e) below]
+                                                      @s-at-i |
+                                                        isTransposition(at(s, i))
+                                                        [using specialize s-all(i) i-below-the-length]
+                                                      @conclusion-below |
+                                                        isTransposition(at(v, i))
+                                                        [by rewrite copied s-at-i]
+                                                    }
+                                                  @when-in-the-tail |
+                                                    assume exists g: Nat; i = nadd(j, g) and nat_less_than(g, e) {
+                                                      @tail-index-exists |
+                                                        exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)
+                                                        [by hypothesis when-in-the-tail]
+                                                      @with-tail-index |
+                                                        unpack g: Nat from tail-index-exists {
+                                                          @g-facts |
+                                                            i = nadd(j, g) and nat_less_than(g, e)
+                                                            [by hypothesis with-tail-index]
+                                                          @i-is-shifted |
+                                                            i = nadd(j, g)
+                                                            [by and_elim_left g-facts]
+                                                          @g-below-e |
+                                                            nat_less_than(g, e)
+                                                            [by and_elim_right g-facts]
+                                                          @copied-from-the-tail |
+                                                            at(v, nadd(j, g)) = at(s, nadd(succ(succ(j)), g))
+                                                            [using specialize v-tail(g)]
+                                                          @source-below-the-length |
+                                                            nat_less_than(nadd(succ(succ(j)), g), nadd(succ(succ(j)), e))
+                                                            [using specialize additionPreservesOrderOnTheRight(g, e, succ(succ(j))) g-below-e]
+                                                          @s-at-the-source |
+                                                            isTransposition(at(s, nadd(succ(succ(j)), g)))
+                                                            [using specialize s-all(nadd(succ(succ(j)), g)) source-below-the-length]
+                                                          @v-at-shifted |
+                                                            isTransposition(at(v, nadd(j, g)))
+                                                            [by rewrite copied-from-the-tail s-at-the-source]
+                                                          @conclusion-in-the-tail-inner |
+                                                            isTransposition(at(v, i))
+                                                            [by rewrite i-is-shifted v-at-shifted]
+                                                        }
+                                                      @conclusion-in-the-tail |
+                                                        isTransposition(at(v, i))
+                                                        [by exists_elim with-tail-index]
+                                                    }
+                                                }
+                                            }
+                                          @below-n-implies |
+                                            nat_less_than(i, n) -> isTransposition(at(v, i))
+                                            [by implies_intro given-below-n]
+                                        }
+                                      @conclusion-v-all |
+                                        allTranspositions(v, n)
+                                        [by forall_intro generalize-i]
+                                    }
+                                  @length-implies |
+                                    n = nadd(j, e) -> allTranspositions(v, n)
+                                    [by implies_intro given-length]
+                                }
+                              @tail-implies |
+                                (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+                                [by implies_intro given-tail]
+                            }
+                          @below-implies |
+                            (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+                            [by implies_intro given-below]
+                        }
+                      @all-implies |
+                        allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+                        [by implies_intro given-all]
+                    }
+                  @discharge-e |
+                    forall e: Nat; allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+                    [by forall_intro generalize-e]
+                }
+              @discharge-n |
+                forall n: Nat; forall e: Nat; allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+                [by forall_intro generalize-n]
+            }
+          @discharge-j |
+            forall j: Nat; forall n: Nat; forall e: Nat; allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+            [by forall_intro generalize-j]
+        }
+      @discharge-v |
+        forall v: Seq; forall j: Nat; forall n: Nat; forall e: Nat; allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall s: Seq; forall v: Seq; forall j: Nat; forall n: Nat; forall e: Nat; allTranspositions(s, nadd(succ(succ(j)), e)) -> (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(s, i)) -> (forall i: Nat; at(v, nadd(j, i)) = at(s, nadd(succ(succ(j)), i))) -> n = nadd(j, e) -> allTranspositions(v, n)
+    [by forall_intro generalize-s]
+qed
+
+theorem additionPreservesOrderOnTheRight = peano_order.additionPreservesOrder
+
+// i < j gives i < (j+2)+e: j <= j+2 <= (j+2)+e.
+theorem belowJIsBelowTheLength: forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, j) -> nat_less_than(i, nadd(succ(succ(j)), e))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-e |
+            fix e: Nat {
+              @given-below |
+                assume nat_less_than(i, j) {
+                  @below |
+                    nat_less_than(i, j)
+                    [by hypothesis given-below]
+                  @j-below-succ |
+                    nat_less_than(j, succ(j))
+                    [using specialize natLessThanSelf(j)]
+                  @j-below-two-more |
+                    nat_less_than(j, succ(succ(j)))
+                    [using specialize peano_order.lessThanSuccRight(j, succ(j)) j-below-succ]
+                  @i-below-two-more |
+                    nat_less_than(i, succ(succ(j)))
+                    [using specialize peano_order.lessThanTransitive(i, j, succ(succ(j))) below j-below-two-more]
+                  @bound-at-every-overshoot |
+                    forall e2: Nat; nat_less_than(i, nadd(succ(succ(j)), e2))
+                    [using specialize permutation_parity.weakLeftBound(i, succ(succ(j))) i-below-two-more]
+                  @conclusion-below-the-length |
+                    nat_less_than(i, nadd(succ(succ(j)), e))
+                    [using specialize bound-at-every-overshoot(e)]
+                }
+              @below-implies |
+                nat_less_than(i, j) -> nat_less_than(i, nadd(succ(succ(j)), e))
+                [by implies_intro given-below]
+            }
+          @discharge-e |
+            forall e: Nat; nat_less_than(i, j) -> nat_less_than(i, nadd(succ(succ(j)), e))
+            [by forall_intro generalize-e]
+        }
+      @discharge-j |
+        forall j: Nat; forall e: Nat; nat_less_than(i, j) -> nat_less_than(i, nadd(succ(succ(j)), e))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, j) -> nat_less_than(i, nadd(succ(succ(j)), e))
+    [by forall_intro generalize-i]
+qed
+
+hole splitBelowASum: forall i: Nat; forall j: Nat; forall e: Nat; nat_less_than(i, nadd(j, e)) -> (nat_less_than(i, j) or (exists g: Nat; i = nadd(j, g) and nat_less_than(g, e)))
+
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
 hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
