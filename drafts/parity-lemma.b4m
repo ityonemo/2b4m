@@ -471,7 +471,12 @@ qed
 // then says entry 0 fixes `a`, which is merely true. The contradiction needs the other half,
 // that entry j MOVES `a`: at j = 0 the letter is moved by entry 0 and by nothing above it, so
 // the product moves it, and the product is the identity.
-define loopInvariant(a, j, r) = exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
+// FIFTH CONJUNCT `nat_less_than(j, r)`, added 2026-09-30: without it the invariant does not
+// place j inside the sequence, so the body cannot conclude that entries j and j+1 are
+// transpositions (allTranspositions only speaks about indices below the length). It is not
+// derivable from the other four — `at(w, j)` is defined at every index, so "entry j moves `a`"
+// says nothing about j being in range. It comes free wherever the invariant is established.
+define loopInvariant(a, j, r) = exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a) and nat_less_than(j, r)
 
 // The invariant holds at the TOP INDEX, for free — and getting this right needed a correction.
 // I first stated it at index m+1 of a length-((m+2)+d) product, which is WRONG: the d entries
@@ -549,9 +554,12 @@ proof
                                 nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a
                                 [by implies_intro given-above-q]
                             }
+                          @q-below-succ-q |
+                            nat_less_than(q, succ(q))
+                            [using specialize natLessThanSelf(q)]
                           @all-facts |
-                            allTranspositions(s, succ(q)) and productUpTo(s, succ(q)) = identityFn and apply(at(s, q), a) != a and (forall i: Nat; nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a)
-                            [using tautology all-transpositions is-identity top-moves-a nothing-above]
+                            allTranspositions(s, succ(q)) and productUpTo(s, succ(q)) = identityFn and apply(at(s, q), a) != a and (forall i: Nat; nat_less_than(q, i) -> nat_less_than(i, succ(q)) -> apply(at(s, i), a) = a) and nat_less_than(q, succ(q))
+                            [using tautology all-transpositions is-identity top-moves-a nothing-above q-below-succ-q]
                           @conclusion-invariant |
                             loopInvariant(a, q, succ(q))
                             [by exists_intro(s) all-facts]
@@ -1360,7 +1368,7 @@ qed
 // the product is unchanged (still the identity), entries outside {j, j+1} are untouched (so
 // everything above j+1 still fixes `a`), position j+1 now holds q which fixes `a`, and
 // position j holds p which moves it. That is exactly the invariant at j.
-theorem shiftBranchKeepsTheInvariant: forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+theorem shiftBranchKeepsTheInvariant: forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
 proof
   @generalize-w |
     fix w: Seq {
@@ -1531,91 +1539,399 @@ proof
                                                                                     nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a
                                                                                     [by implies_intro given-above-j]
                                                                                 }
-                                                                              @all-four |
-                                                                                allTranspositions(u, nadd(succ(succ(m)), d)) and productUpTo(u, nadd(succ(succ(m)), d)) = identityFn and apply(at(u, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a)
-                                                                                [using tautology u-all u-product-at-the-length u-at-j-moves-a u-above-fixes]
+                                                                              @j-below-succ-j |
+              nat_less_than(j, succ(j))
+              [using specialize natLessThanSelf(j)]
+            @succ-j-below-the-length |
+              nat_less_than(succ(j), nadd(succ(succ(m)), d))
+              [by rewrite length succ-j-below-at-form]
+            @succ-j-below-at-form |
+              nat_less_than(succ(j), nadd(succ(succ(j)), e))
+              [using specialize permutation_parity.succKIsBelowTheTail(j, e)]
+            @j-below-the-length |
+              nat_less_than(j, nadd(succ(succ(m)), d))
+              [using specialize peano_order.lessThanTransitive(j, succ(j), nadd(succ(succ(m)), d)) j-below-succ-j succ-j-below-the-length]
+            @all-four |
+                                                                                allTranspositions(u, nadd(succ(succ(m)), d)) and productUpTo(u, nadd(succ(succ(m)), d)) = identityFn and apply(at(u, j), a) != a and (forall i: Nat; nat_less_than(j, i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(u, i), a) = a) and nat_less_than(j, nadd(succ(succ(m)), d))
+                                                                                [using tautology u-all u-product-at-the-length u-at-j-moves-a u-above-fixes j-below-the-length]
                                                                               @conclusion-invariant-inner |
-                                                                                (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                                loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                                                 [by exists_intro(u) all-four]
                                                                             }
                                                                           @conclusion-invariant |
-                                                                            (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                            loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                                             [by exists_elim with-rewritten]
                                                                       }
                                                                     @p-moves-implies |
-                                                                      apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                      apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                                       [by implies_intro given-p-moves]
                                                                   }
                                                                 @q-fixes-implies |
-                                                                  apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                                  apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                                   [by implies_intro given-q-fixes]
                                                               }
                                                             @pair-implies |
-                                                              compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                              compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                               [by implies_intro given-pair]
                                                           }
                                                         @q-trans-implies |
-                                                          isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                          isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                           [by implies_intro given-q-trans]
                                                       }
                                                     @p-trans-implies |
-                                                      isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                      isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                       [by implies_intro given-p-trans]
                                                   }
                                                 @length-implies |
-                                                  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                                  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                                   [by implies_intro given-length]
                                               }
                                             @above-implies |
-                                              (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                              (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                               [by implies_intro given-above]
                                           }
                                         @identity-implies |
-                                          productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                          productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                           [by implies_intro given-identity]
                                       }
                                     @all-implies |
-                                      allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                      allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                       [by implies_intro given-all]
                                 }
                               @discharge-q |
-                                forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                                forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                                 [by forall_intro generalize-q]
                             }
                           @discharge-p |
-                            forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                            forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                             [by forall_intro generalize-p]
                         }
                       @discharge-e |
-                        forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                        forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                         [by forall_intro generalize-e]
                     }
                   @discharge-d |
-                    forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                    forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                     [by forall_intro generalize-d]
                 }
               @discharge-m |
-                forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+                forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
                 [by forall_intro generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+            forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
             [by forall_intro generalize-j]
         }
       @discharge-a |
-        forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+        forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
         [by forall_intro generalize-a]
     }
   @conclusion |
-    forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> (exists w2: Seq; allTranspositions(w2, nadd(succ(succ(m)), d)) and productUpTo(w2, nadd(succ(succ(m)), d)) = identityFn and apply(at(w2, j), a) != a and (forall i2: Nat; nat_less_than(j, i2) -> nat_less_than(i2, nadd(succ(succ(m)), d)) -> apply(at(w2, i2), a) = a))
+    forall w: Seq; forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; forall p: Fn; forall q: Fn; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> isTransposition(p) -> isTransposition(q) -> compose(p, q) = compose(at(w, j), at(w, succ(j))) -> apply(q, a) = a -> apply(p, a) != a -> loopInvariant(a, j, nadd(succ(succ(m)), d))
     [by forall_intro generalize-w]
+qed
+
+// (m+2)+d = (j+2)+e cancels the two successors: m+d = j+e. Both sides are
+// succ(succ(·)) of the shorter sums (twoMoreCommutes), so succInjective twice finishes it.
+theorem shortLengthMatches: forall m: Nat; forall d: Nat; forall j: Nat; forall e: Nat;
+  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-d |
+        fix d: Nat {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-e |
+                fix e: Nat {
+                  @given-equal |
+                    assume nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) {
+                      @equal |
+                        nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e)
+                        [by hypothesis given-equal]
+                      @left-form |
+                        nadd(succ(succ(m)), d) = succ(succ(nadd(m, d)))
+                        [using specialize twoMoreCommutes(m, d)]
+                      @right-form |
+                        nadd(succ(succ(j)), e) = succ(succ(nadd(j, e)))
+                        [using specialize twoMoreCommutes(j, e)]
+                      @left-is-right-form |
+                        succ(succ(nadd(m, d))) = nadd(succ(succ(j)), e)
+                        [using chain left-form-flipped equal]
+                      @left-form-flipped |
+                        succ(succ(nadd(m, d))) = nadd(succ(succ(m)), d)
+                        [by symmetry left-form]
+                      @successors-equal |
+                        succ(succ(nadd(m, d))) = succ(succ(nadd(j, e)))
+                        [using chain left-is-right-form right-form]
+                      @once-cancelled |
+                        succ(nadd(m, d)) = succ(nadd(j, e))
+                        [using specialize peano.succInjective(succ(nadd(m, d)), succ(nadd(j, e))) successors-equal]
+                      @conclusion-cancelled |
+                        nadd(m, d) = nadd(j, e)
+                        [using specialize peano.succInjective(nadd(m, d), nadd(j, e)) once-cancelled]
+                    }
+                  @equal-implies |
+                    nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+                    [by implies_intro given-equal]
+                }
+              @discharge-e |
+                forall e: Nat; nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+                [by forall_intro generalize-e]
+            }
+          @discharge-j |
+            forall j: Nat; forall e: Nat; nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+            [by forall_intro generalize-j]
+        }
+      @discharge-d |
+        forall d: Nat; forall j: Nat; forall e: Nat; nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall m: Nat; forall d: Nat; forall j: Nat; forall e: Nat; nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e)
+    [by forall_intro generalize-m]
 qed
 
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
-hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
+// loopBody's conclusion stated with the `loopInvariant` DEFINE rather than expanded, which is
+// the form loopTerminates cites (the expanded form binds its witness under a generated name).
+theorem loopBodyAsInvariant: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
   loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) ->
   (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+proof
+  @conclusion |
+    forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+    [by cite loopBody]
+qed
+
+// -- THE LOOP BODY, assembled -----------------------------------------------------------------
+// One turn of Judson's loop. Unpack the invariant at j+1, name the letters of the two entries,
+// normalize entry j+1 so the letter comes first, classify the pair, and dispatch to whichever
+// branch the classification returns. Both branches are proved above.
+theorem loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-d |
+                fix d: Nat {
+                    @given-invariant |
+                      assume loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) {
+                        @invariant |
+                          loopInvariant(a, succ(j), nadd(succ(succ(m)), d))
+                          [by hypothesis given-invariant]
+                        @witness-exists |
+                          exists w: Seq; allTranspositions(w, nadd(succ(succ(m)), d)) and productUpTo(w, nadd(succ(succ(m)), d)) = identityFn and apply(at(w, succ(j)), a) != a and (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) and nat_less_than(succ(j), nadd(succ(succ(m)), d))
+                          [using tautology invariant]
+                        @with-witness |
+                          unpack w: Seq from witness-exists {
+                            @w-facts |
+                              allTranspositions(w, nadd(succ(succ(m)), d)) and productUpTo(w, nadd(succ(succ(m)), d)) = identityFn and apply(at(w, succ(j)), a) != a and (forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a) and nat_less_than(succ(j), nadd(succ(succ(m)), d))
+                              [by hypothesis with-witness]
+                            @w-all |
+                              allTranspositions(w, nadd(succ(succ(m)), d))
+                              [using tautology w-facts]
+                            @w-identity |
+                              productUpTo(w, nadd(succ(succ(m)), d)) = identityFn
+                              [using tautology w-facts]
+                            @top-moves-a |
+                              apply(at(w, succ(j)), a) != a
+                              [using tautology w-facts]
+                            @above-fixed |
+                              forall i: Nat; nat_less_than(succ(j), i) -> nat_less_than(i, nadd(succ(succ(m)), d)) -> apply(at(w, i), a) = a
+                              [using tautology w-facts]
+                            @succ-j-below |
+                              nat_less_than(succ(j), nadd(succ(succ(m)), d))
+                              [using tautology w-facts]
+                            @j-below-succ-j |
+                              nat_less_than(j, succ(j))
+                              [using specialize natLessThanSelf(j)]
+                            @j-below |
+                              nat_less_than(j, nadd(succ(succ(m)), d))
+                              [using specialize peano_order.lessThanTransitive(j, succ(j), nadd(succ(succ(m)), d)) j-below-succ-j succ-j-below]
+                            @entry-j-trans |
+                              isTransposition(at(w, j))
+                              [using specialize w-all(j) j-below]
+                            @entry-top-trans |
+                              isTransposition(at(w, succ(j)))
+                              [using specialize w-all(succ(j)) succ-j-below]
+                            @length-decomposes |
+                              exists e: Nat; nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e)
+                              [using specialize lengthDecomposesAboveThePair(j, nadd(succ(succ(m)), d)) succ-j-below]
+                            @top-normalized |
+                              exists b: Element; a != b and at(w, succ(j)) = transposition(a, b)
+                              [using specialize movingTranspositionWithTheLetterFirst(at(w, succ(j)), a) entry-top-trans top-moves-a]
+                            @j-letters |
+                              exists x: Element; exists y: Element; x != y and at(w, j) = transposition(x, y)
+                              [using tautology entry-j-trans]
+                            @with-e |
+                              unpack e: Nat from length-decomposes {
+                                @length-form |
+                                  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e)
+                                  [by hypothesis with-e]
+                                @short-form |
+                                  nadd(m, d) = nadd(j, e)
+                                  [using specialize shortLengthMatches(m, d, j, e) length-form]
+                                @with-b |
+                                  unpack b: Element from top-normalized {
+                                    @b-facts |
+                                      a != b and at(w, succ(j)) = transposition(a, b)
+                                      [by hypothesis with-b]
+                                    @ab |
+                                      a != b
+                                      [by and_elim_left b-facts]
+                                    @top-is-ab |
+                                      at(w, succ(j)) = transposition(a, b)
+                                      [by and_elim_right b-facts]
+                                    @with-x |
+                                      unpack x: Element from j-letters {
+                                        @y-exists |
+                                          exists y: Element; x != y and at(w, j) = transposition(x, y)
+                                          [by hypothesis with-x]
+                                        @with-y |
+                                          unpack y: Element from y-exists {
+                                            @xy-facts |
+                                              x != y and at(w, j) = transposition(x, y)
+                                              [by hypothesis with-y]
+                                            @xy |
+                                              x != y
+                                              [by and_elim_left xy-facts]
+                                            @j-is-xy |
+                                              at(w, j) = transposition(x, y)
+                                              [by and_elim_right xy-facts]
+                                            @classified |
+                                              (compose(transposition(x, y), transposition(a, b)) = identityFn or (exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(x, y), transposition(a, b)) and apply(q, a) = a and apply(p, a) != a))
+                                              [using specialize permutation_parity.adjacentPairCancelsOrShiftsOff(a, b, x, y) ab xy]
+                                            @pair-is-the-entries |
+                                              compose(at(w, j), at(w, succ(j))) = compose(transposition(x, y), transposition(a, b))
+                                              [using chain pair-with-j pair-with-top]
+                                            @pair-with-j |
+                                              compose(at(w, j), at(w, succ(j))) = compose(transposition(x, y), at(w, succ(j)))
+                                              [by rewrite j-is-xy pair-reflexive]
+                                            @pair-reflexive |
+                                              compose(at(w, j), at(w, succ(j))) = compose(at(w, j), at(w, succ(j)))
+                                              [by reflexivity]
+                                            @pair-with-top |
+                                              compose(transposition(x, y), at(w, succ(j))) = compose(transposition(x, y), transposition(a, b))
+                                              [by rewrite top-is-ab pair-with-top-reflexive]
+                                            @pair-with-top-reflexive |
+                                              compose(transposition(x, y), at(w, succ(j))) = compose(transposition(x, y), at(w, succ(j)))
+                                              [by reflexivity]
+                                            @conclusion-dispatch |
+                                              (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                              case classified {
+                                                @when-cancels |
+                                                  assume compose(transposition(x, y), transposition(a, b)) = identityFn {
+                                                    @cancels-at-letters |
+                                                      compose(transposition(x, y), transposition(a, b)) = identityFn
+                                                      [by hypothesis when-cancels]
+                                                    @cancels |
+                                                      compose(at(w, j), at(w, succ(j))) = identityFn
+                                                      [using chain pair-is-the-entries cancels-at-letters]
+                                                    @shorter |
+                                                      someProductOfLengthIsIdentity(nadd(m, d))
+                                                      [using specialize cancelBranchDropsTwo(w, j, m, d, e) w-all w-identity length-form short-form cancels]
+                                                    @conclusion-cancel |
+                                                      (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                                      [by or_intro_left shorter]
+                                                  }
+                                                @when-shifts |
+                                                  assume exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(x, y), transposition(a, b)) and apply(q, a) = a and apply(p, a) != a {
+                                                    @shift-exists |
+                                                      exists p: Fn; exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(x, y), transposition(a, b)) and apply(q, a) = a and apply(p, a) != a
+                                                      [by hypothesis when-shifts]
+                                                    @with-p |
+                                                      unpack p: Fn from shift-exists {
+                                                        @q-exists |
+                                                          exists q: Fn; isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(x, y), transposition(a, b)) and apply(q, a) = a and apply(p, a) != a
+                                                          [by hypothesis with-p]
+                                                        @with-q |
+                                                          unpack q: Fn from q-exists {
+                                                            @pq-facts |
+                                                              isTransposition(p) and isTransposition(q) and compose(p, q) = compose(transposition(x, y), transposition(a, b)) and apply(q, a) = a and apply(p, a) != a
+                                                              [by hypothesis with-q]
+                                                            @p-trans |
+                                                              isTransposition(p)
+                                                              [using tautology pq-facts]
+                                                            @q-trans |
+                                                              isTransposition(q)
+                                                              [using tautology pq-facts]
+                                                            @pq-composes-at-letters |
+                                                              compose(p, q) = compose(transposition(x, y), transposition(a, b))
+                                                              [using tautology pq-facts]
+                                                            @q-fixes |
+                                                              apply(q, a) = a
+                                                              [using tautology pq-facts]
+                                                            @p-moves |
+                                                              apply(p, a) != a
+                                                              [using tautology pq-facts]
+                                                            @entries-flipped |
+                                                              compose(transposition(x, y), transposition(a, b)) = compose(at(w, j), at(w, succ(j)))
+                                                              [by symmetry pair-is-the-entries]
+                                                            @pq-composes |
+                                                              compose(p, q) = compose(at(w, j), at(w, succ(j)))
+                                                              [using chain pq-composes-at-letters entries-flipped]
+                                                            @invariant-at-j |
+                                                              loopInvariant(a, j, nadd(succ(succ(m)), d))
+                                                              [using specialize shiftBranchKeepsTheInvariant(w, a, j, m, d, e, p, q) w-all w-identity above-fixed length-form p-trans q-trans pq-composes q-fixes p-moves]
+                                                            @conclusion-shift-inner |
+                                                              (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                                              [by or_intro_right invariant-at-j]
+                                                          }
+                                                        @conclusion-shift-q |
+                                                          (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                                          [by exists_elim with-q]
+                                                      }
+                                                    @conclusion-shift |
+                                                      (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                                      [by exists_elim with-p]
+                                                  }
+                                            }
+                                          }
+                                        @conclusion-y |
+                                          (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                          [by exists_elim with-y]
+                                      }
+                                    @conclusion-x |
+                                      (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                      [by exists_elim with-x]
+                                  }
+                                @conclusion-b |
+                                  (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                                  [by exists_elim with-b]
+                              }
+                            @conclusion-e |
+                              (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                              [by exists_elim with-e]
+                          }
+                        @conclusion-witness |
+                          (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                          [by exists_elim with-witness]
+                      }
+                    @invariant-implies |
+                      loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                      [by implies_intro given-invariant]
+                }
+              @discharge-d |
+                forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+                [by forall_intro generalize-d]
+            }
+          @discharge-m |
+            forall m: Nat; forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+            [by forall_intro generalize-m]
+        }
+      @discharge-j |
+        forall j: Nat; forall m: Nat; forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat; loopInvariant(a, succ(j), nadd(succ(succ(m)), d)) -> (someProductOfLengthIsIdentity(nadd(m, d)) or loopInvariant(a, j, nadd(succ(succ(m)), d)))
+    [by forall_intro generalize-a]
+qed
 
 // At position ZERO the invariant is IMPOSSIBLE: entry 0 moves `a` and everything above it
 // fixes `a`, so the product moves `a` — but the product is the identity. STEP 3, packaged.
@@ -1637,12 +1953,12 @@ proof
                     loopInvariant(a, NZERO, r)
                     [by hypothesis given-invariant]
                   @witness-exists |
-                    exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
+                    exists w: Seq; allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a) and nat_less_than(NZERO, r)
                     [using tautology invariant]
                   @with-witness |
                     unpack w: Seq from witness-exists {
                       @w-facts |
-                        allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a)
+                        allTranspositions(w, r) and productUpTo(w, r) = identityFn and apply(at(w, NZERO), a) != a and (forall i: Nat; nat_less_than(NZERO, i) -> nat_less_than(i, r) -> apply(at(w, i), a) = a) and nat_less_than(NZERO, r)
                         [by hypothesis with-witness]
                       @is-identity |
                         productUpTo(w, r) = identityFn
@@ -1752,7 +2068,7 @@ proof
                                         [by rewrite j-is-succ-p invariant]
                                       @body |
                                         someProductOfLengthIsIdentity(nadd(base, d)) or loopInvariant(a, p, nadd(succ(succ(base)), d))
-                                        [using specialize loopBody(a, p, base, d) invariant-at-succ-p]
+                                        [using specialize loopBodyAsInvariant(a, p, base, d) invariant-at-succ-p]
                                       @p-below-j |
                                         nat_less_than(p, j)
                                         [by rewrite j-is-succ-p p-below-succ-p]
