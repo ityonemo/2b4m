@@ -1100,6 +1100,128 @@ proof
     [by forall_intro generalize-i]
 qed
 
+// A transposition that MOVES `a` can be written with `a` FIRST — which is the form the
+// classification demands of its right factor. `a` is one of the two letters
+// (movedBySwapIsOneOfItsLetters); if it is the second, transpositionIsSymmetric swaps them.
+theorem movingTranspositionWithTheLetterFirst: forall t: Fn; forall a: Element;
+  isTransposition(t) -> apply(t, a) != a ->
+  (exists b: Element; a != b and t = transposition(a, b))
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-a |
+        fix a: Element {
+          @given-transposition |
+            assume isTransposition(t) {
+              @given-moves |
+                assume apply(t, a) != a {
+                  @is-a-transposition |
+                    isTransposition(t)
+                    [by hypothesis given-transposition]
+                  @moves-a |
+                    apply(t, a) != a
+                    [by hypothesis given-moves]
+                  @letters-exist |
+                    exists x: Element; exists y: Element; x != y and t = transposition(x, y)
+                    [using tautology is-a-transposition]
+                  @with-first |
+                    unpack x: Element from letters-exist {
+                      @second-exists |
+                        exists y: Element; x != y and t = transposition(x, y)
+                        [by hypothesis with-first]
+                      @with-second |
+                        unpack y: Element from second-exists {
+                          @facts |
+                            x != y and t = transposition(x, y)
+                            [by hypothesis with-second]
+                          @xy |
+                            x != y
+                            [by and_elim_left facts]
+                          @t-is-the-swap |
+                            t = transposition(x, y)
+                            [by and_elim_right facts]
+                          @swap-moves-a |
+                            apply(transposition(x, y), a) != a
+                            [by rewrite t-is-the-swap moves-a]
+                          @a-is-a-letter |
+                            a = x or a = y
+                            [using specialize permutation_parity.movedBySwapIsOneOfItsLetters(x, y, a) swap-moves-a]
+                          @conclusion-normalized |
+                            exists b: Element; a != b and t = transposition(a, b)
+                            case a-is-a-letter {
+                              @when-a-is-x |
+                                assume a = x {
+                                  @a-is-x |
+                                    a = x
+                                    [by hypothesis when-a-is-x]
+                                  @distinct-at-a |
+                                    a != y
+                                    [by rewrite a-is-x xy]
+                                  @swap-at-a |
+                                    t = transposition(a, y)
+                                    [by rewrite a-is-x t-is-the-swap]
+                                  @witnessed |
+                                    a != y and t = transposition(a, y)
+                                    [by and_intro distinct-at-a swap-at-a]
+                                  @conclusion-a-first |
+                                    exists b: Element; a != b and t = transposition(a, b)
+                                    [by exists_intro(y) witnessed]
+                                }
+                              @when-a-is-y |
+                                assume a = y {
+                                  @a-is-y |
+                                    a = y
+                                    [by hypothesis when-a-is-y]
+                                  // t = (x y) = (y x) = (a x), and x != a.
+                                  @reversed |
+                                    transposition(x, y) = transposition(y, x)
+                                    [using specialize permutation_parity.transpositionIsSymmetric(x, y)]
+                                  @t-reversed |
+                                    t = transposition(y, x)
+                                    [using chain t-is-the-swap reversed]
+                                  @t-at-a |
+                                    t = transposition(a, x)
+                                    [by rewrite a-is-y t-reversed]
+                                  @y-not-x |
+                                    y != x
+                                    [using specialize permutation_parity.distinctSymmetric(x, y) xy]
+                                  @distinct-at-a |
+                                    a != x
+                                    [by rewrite a-is-y y-not-x]
+                                  @witnessed |
+                                    a != x and t = transposition(a, x)
+                                    [by and_intro distinct-at-a t-at-a]
+                                  @conclusion-a-first |
+                                    exists b: Element; a != b and t = transposition(a, b)
+                                    [by exists_intro(x) witnessed]
+                                }
+                            }
+                        }
+                      @conclusion-second |
+                        exists b: Element; a != b and t = transposition(a, b)
+                        [by exists_elim with-second]
+                    }
+                  @conclusion-normalized-outer |
+                    exists b: Element; a != b and t = transposition(a, b)
+                    [by exists_elim with-first]
+                }
+              @moves-implies |
+                apply(t, a) != a -> (exists b: Element; a != b and t = transposition(a, b))
+                [by implies_intro given-moves]
+            }
+          @transposition-implies |
+            isTransposition(t) -> apply(t, a) != a -> (exists b: Element; a != b and t = transposition(a, b))
+            [by implies_intro given-transposition]
+        }
+      @discharge-a |
+        forall a: Element; isTransposition(t) -> apply(t, a) != a -> (exists b: Element; a != b and t = transposition(a, b))
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall t: Fn; forall a: Element; isTransposition(t) -> apply(t, a) != a -> (exists b: Element; a != b and t = transposition(a, b))
+    [by forall_intro generalize-t]
+qed
+
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
 hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
