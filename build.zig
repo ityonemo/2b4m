@@ -39,6 +39,20 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    // SOURCE-CONVENTION gates: invariants the language cannot express, checked by reading the
+    // source (Zig has no field privacy, so "touch this map only through its accessor" is
+    // enforceable only by a test). Runs from the repo root so its walk finds `src/`.
+    const convention_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_source_conventions.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_convention_tests = b.addRunArtifact(convention_tests);
+    run_convention_tests.setCwd(b.path("."));
+    test_step.dependOn(&run_convention_tests.step);
+
     // Integration test gates (spawn `2b4m`, assert stdout/stderr/exit) live in
     // tests/ grouped by subject; build.zig stays build configuration.
     const tests = @import("tests/test_all.zig");

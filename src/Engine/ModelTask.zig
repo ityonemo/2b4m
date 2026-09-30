@@ -105,7 +105,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     var dischargers: std.ArrayList(InternPool.Key.Mapping) = .empty; // (target-symbol, establishing-fact)
     // `src: D` with D a DEFINE (a macro, no Index): not an overlay entry — recorded on the
     // Context at publish so the expansion pass substitutes D's body for `src` in a transfer.
-    var define_targets: std.ArrayList(struct { src: InternPool.Index, def: Context.DefineKey }) = .empty;
+    var define_targets: std.ArrayList(Context.ModelDefineTarget) = .empty;
     var blocker: ?Engine.TaskIndex = null;
     for (m.identifiers) |im| {
         const mapping = identMapping(im);
@@ -181,7 +181,7 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     // everything resolved — build the model (deduped via get, under the write lock) and
     // publish its Index into IdentKV under M's name; then record its define targets.
     const model_ix = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = try overlay.toOwnedSlice(self.arena), .dischargers = try dischargers.toOwnedSlice(self.arena), .home = task.file } });
-    for (define_targets.items) |dt| try self.model_define_targets.put(self.arena, .{ .model = model_ix, .src = dt.src }, dt.def);
+    try self.recordModelDefineTargets(model_ix, define_targets.items);
 }
 
 /// Is a `:` mapping's TARGET token a define (in the model's file, or an imported file)? A
