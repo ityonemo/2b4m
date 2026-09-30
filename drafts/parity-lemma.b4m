@@ -1222,6 +1222,136 @@ proof
     [by forall_intro generalize-t]
 qed
 
+// -- the CANCEL branch, on its own ------------------------------------------------------------
+// The pair at (j, j+1) composes to the identity: delete it. The shortened sequence has length
+// (m+d), is all transpositions, and its product is the original's — the identity.
+theorem cancelBranchDropsTwo: forall w: Seq; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat;
+  allTranspositions(w, nadd(succ(succ(m)), d)) ->
+  productUpTo(w, nadd(succ(succ(m)), d)) = identityFn ->
+  nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) ->
+  nadd(m, d) = nadd(j, e) ->
+  compose(at(w, j), at(w, succ(j))) = identityFn ->
+  someProductOfLengthIsIdentity(nadd(m, d))
+proof
+  @generalize-w |
+    fix w: Seq {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-d |
+                fix d: Nat {
+                  @generalize-e |
+                    fix e: Nat {
+                      @given-all |
+                        assume allTranspositions(w, nadd(succ(succ(m)), d)) {
+                          @given-identity |
+                            assume productUpTo(w, nadd(succ(succ(m)), d)) = identityFn {
+                              @given-length |
+                                assume nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) {
+                                  @given-short |
+                                    assume nadd(m, d) = nadd(j, e) {
+                                      @given-cancels |
+                                        assume compose(at(w, j), at(w, succ(j))) = identityFn {
+                                          @w-all |
+                                            allTranspositions(w, nadd(succ(succ(m)), d))
+                                            [by hypothesis given-all]
+                                          @w-identity |
+                                            productUpTo(w, nadd(succ(succ(m)), d)) = identityFn
+                                            [by hypothesis given-identity]
+                                          @length-form |
+                                            nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e)
+                                            [by hypothesis given-length]
+                                          @short-form |
+                                            nadd(m, d) = nadd(j, e)
+                                            [by hypothesis given-short]
+                                          @cancels |
+                                            compose(at(w, j), at(w, succ(j))) = identityFn
+                                            [by hypothesis given-cancels]
+                                          @w-all-at-form |
+                                            allTranspositions(w, nadd(succ(succ(j)), e))
+                                            [by rewrite length-form w-all]
+                                          @w-identity-at-form |
+                                            productUpTo(w, nadd(succ(succ(j)), e)) = identityFn
+                                            [by rewrite length-form w-identity]
+                                          @deleted-exists |
+                                            exists v: Seq; (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(w, i)) and (forall i: Nat; at(v, nadd(j, i)) = at(w, nadd(succ(succ(j)), i))) and productUpTo(v, nadd(j, e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                            [using specialize seqDeleteCancellingPair(w, j, e) cancels]
+                                          @with-deleted |
+                                            unpack v: Seq from deleted-exists {
+                                              @v-facts |
+                                                (forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(w, i)) and (forall i: Nat; at(v, nadd(j, i)) = at(w, nadd(succ(succ(j)), i))) and productUpTo(v, nadd(j, e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                                [by hypothesis with-deleted]
+                                              @v-below |
+                                                forall i: Nat; nat_less_than(i, j) -> at(v, i) = at(w, i)
+                                                [using tautology v-facts]
+                                              @v-tail |
+                                                forall i: Nat; at(v, nadd(j, i)) = at(w, nadd(succ(succ(j)), i))
+                                                [using tautology v-facts]
+                                              @v-product |
+                                                productUpTo(v, nadd(j, e)) = productUpTo(w, nadd(succ(succ(j)), e))
+                                                [using tautology v-facts]
+                                              @v-product-is-identity |
+                                                productUpTo(v, nadd(j, e)) = identityFn
+                                                [using chain v-product w-identity-at-form]
+                                              @v-product-at-short |
+                                                productUpTo(v, nadd(m, d)) = identityFn
+                                                [by rewrite short-form v-product-is-identity]
+                                              @v-all |
+                                                allTranspositions(v, nadd(m, d))
+                                                [using specialize deletedSequenceIsAllTranspositions(w, v, j, nadd(m, d), e) w-all-at-form v-below v-tail short-form]
+                                              @witnessed |
+                                                allTranspositions(v, nadd(m, d)) and productUpTo(v, nadd(m, d)) = identityFn
+                                                [by and_intro v-all v-product-at-short]
+                                              @conclusion-shorter-inner |
+                                                someProductOfLengthIsIdentity(nadd(m, d))
+                                                [by exists_intro(v) witnessed]
+                                            }
+                                          @conclusion-shorter |
+                                            someProductOfLengthIsIdentity(nadd(m, d))
+                                            [by exists_elim with-deleted]
+                                        }
+                                      @cancels-implies |
+                                        compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                                        [by implies_intro given-cancels]
+                                    }
+                                  @short-implies |
+                                    nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                                    [by implies_intro given-short]
+                                }
+                              @length-implies |
+                                nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                                [by implies_intro given-length]
+                            }
+                          @identity-implies |
+                            productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                            [by implies_intro given-identity]
+                        }
+                      @all-implies |
+                        allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                        [by implies_intro given-all]
+                    }
+                  @discharge-e |
+                    forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                    [by forall_intro generalize-e]
+                }
+              @discharge-d |
+                forall d: Nat; forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+                [by forall_intro generalize-d]
+            }
+          @discharge-m |
+            forall m: Nat; forall d: Nat; forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+            [by forall_intro generalize-m]
+        }
+      @discharge-j |
+        forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall w: Seq; forall j: Nat; forall m: Nat; forall d: Nat; forall e: Nat; allTranspositions(w, nadd(succ(succ(m)), d)) -> productUpTo(w, nadd(succ(succ(m)), d)) = identityFn -> nadd(succ(succ(m)), d) = nadd(succ(succ(j)), e) -> nadd(m, d) = nadd(j, e) -> compose(at(w, j), at(w, succ(j))) = identityFn -> someProductOfLengthIsIdentity(nadd(m, d))
+    [by forall_intro generalize-w]
+qed
+
 // The loop BODY: from the invariant at succ(j), either the length has dropped or the
 // invariant holds at j. This is where the classification meets the surgery.
 hole loopBody: forall a: Element; forall j: Nat; forall m: Nat; forall d: Nat;
