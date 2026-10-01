@@ -10,24 +10,38 @@
 // DISJOINT, and they coincide exactly when g⁻¹k lies in H. Theorem 6.2 — the cosets partition
 // the group — is then that plus "every g lies in its own coset".
 
-import subgroup <<< "std/subgroup.b4m"
+// Based on std/group.b4m (NOT std/subgroup.b4m, which declares its OWN abstract parent group
+// as a deliberate dependency inversion — its `Grp` is a different sort from this layer's). The
+// subgroup is a membership predicate declared locally with the three closure conditions, the
+// same convention std/group/generated.b4m uses.
+import group <<< "std/group.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import peano <<< "std/peano.b4m"
 
-sort Grp = subgroup.Grp
-const E = subgroup.E
-func op = subgroup.op
-func inverse = subgroup.inverse
-pred inSubgroup = subgroup.inSubgroup
-axiom grpAssoc = subgroup.grpAssoc
-axiom grpIdentityLeft = subgroup.grpIdentityLeft
-axiom grpInverseLeft = subgroup.grpInverseLeft
-axiom subgroupHasIdentity = subgroup.subgroupHasIdentity
-axiom subgroupClosedOp = subgroup.subgroupClosedOp
-axiom subgroupClosedInverse = subgroup.subgroupClosedInverse
-theorem grpInverseRight = subgroup.grpInverseRight
-theorem grpIdentityRight = subgroup.grpIdentityRight
-theorem invProduct = subgroup.invProduct
-theorem invInvolution = subgroup.invInvolution
-theorem cancelLeft = subgroup.cancelLeft
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+axiom grpAssoc = group.opAssoc
+axiom grpIdentityLeft = group.opIdentityLeft
+axiom grpInverseLeft = group.opInverseLeft
+theorem grpInverseRight = group.opInverseRight
+theorem grpIdentityRight = group.opIdentityRight
+theorem invProduct = group.invProduct
+theorem invInvolution = group.invInvolution
+theorem cancelLeft = group.cancelLeft
+
+// THE SUBGROUP, as a membership predicate over the ambient group's sort, with the three
+// subgroup-criterion conditions as its axioms.
+pred inSubgroup(g: Grp)
+axiom subgroupHasIdentity: inSubgroup(E)
+axiom subgroupClosedOp: forall a, b: Grp; inSubgroup(a) -> inSubgroup(b) -> inSubgroup(op(a, b))
+axiom subgroupClosedInverse: forall a: Grp; inSubgroup(a) -> inSubgroup(inverse(a))
+
+sort Nat = peano.Nat
+pred nat_less_than = peano.less_than
+sort Seq = group_sequence.Seq
+func at = group_sequence.at
 
 // x lies in the LEFT COSET gH when x = g·h for some h in H.
 define inCoset(g, x) = exists h: Grp; inSubgroup(h) and x = op(g, h)
@@ -604,5 +618,230 @@ proof
     }
   @conclusion |
     forall g: Grp; forall h: Grp; forall k: Grp; op(g, h) = op(g, k) -> h = k
+    [by forall_intro generalize-g]
+qed
+
+// -- EVERY COSET IS THE SIZE OF THE SUBGROUP ---------------------------------------------------
+// Judson's Proposition 6.4, as the counting statement Lagrange consumes. A listing of H with p
+// entries, no repeats, covering H, TRANSLATES to a listing of gH with the SAME p entries, no
+// repeats, covering gH. The translate is `translatedSequenceExists`, so the length is equal by
+// construction; injectivity transfers by left cancellation and the covering by the two halves
+// of Proposition 6.4.
+define listsTheSubgroup(v, p) = (forall i: Nat; nat_less_than(i, p) -> inSubgroup(at(v, i))) and (forall i: Nat; forall j: Nat; nat_less_than(i, p) -> nat_less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inSubgroup(h) -> exists i: Nat; nat_less_than(i, p) and at(v, i) = h)
+
+define listsTheCoset(g, v, p) = (forall i: Nat; nat_less_than(i, p) -> inCoset(g, at(v, i))) and (forall i: Nat; forall j: Nat; nat_less_than(i, p) -> nat_less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; inCoset(g, x) -> exists i: Nat; nat_less_than(i, p) and at(v, i) = x)
+
+theorem everyCosetIsListedByTheSubgroupsLength: forall g: Grp; forall v: Seq; forall p: Nat;
+  listsTheSubgroup(v, p) -> exists u: Seq; listsTheCoset(g, u, p)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-v |
+        fix v: Seq {
+          @generalize-p |
+            fix p: Nat {
+              @given-lists |
+                assume listsTheSubgroup(v, p) {
+                  @lists |
+                    listsTheSubgroup(v, p)
+                    [by hypothesis given-lists]
+                  @entries-in |
+                    forall i: Nat; nat_less_than(i, p) -> inSubgroup(at(v, i))
+                    [using tautology lists]
+                  @injective |
+                    forall i: Nat; forall j: Nat; nat_less_than(i, p) -> nat_less_than(j, p) -> at(v, i) = at(v, j) -> i = j
+                    [using tautology lists]
+                  @covers |
+                    forall h: Grp; inSubgroup(h) -> exists i: Nat; nat_less_than(i, p) and at(v, i) = h
+                    [using tautology lists]
+                  @translate-exists |
+                    exists u: Seq; forall j: Nat; nat_less_than(j, p) -> at(u, j) = op(g, at(v, j))
+                    [using specialize group_sequence.translatedSequenceExists(g, v, p)]
+                  @with-translate |
+                    unpack u: Seq from translate-exists {
+                      @translate |
+                        forall j: Nat; nat_less_than(j, p) -> at(u, j) = op(g, at(v, j))
+                        [by hypothesis with-translate]
+                      // every entry of u lies in gH
+                      @entries-in-coset |
+                        forall i: Nat; nat_less_than(i, p) -> inCoset(g, at(u, i))
+                        [by forall_intro entry-in-coset]
+                      @entry-in-coset |
+                        fix i: Nat {
+                          @given-below |
+                            assume nat_less_than(i, p) {
+                              @below |
+                                nat_less_than(i, p)
+                                [by hypothesis given-below]
+                              @entry-is-translated |
+                                at(u, i) = op(g, at(v, i))
+                                [using specialize translate(i) below]
+                              @subgroup-entry |
+                                inSubgroup(at(v, i))
+                                [using specialize entries-in(i) below]
+                              @translated-in-coset |
+                                inCoset(g, op(g, at(v, i)))
+                                [using specialize translationLandsInTheCoset(g, at(v, i)) subgroup-entry]
+                              @conclusion-entry-in |
+                                inCoset(g, at(u, i))
+                                [by rewrite entry-is-translated translated-in-coset]
+                            }
+                          @below-implies |
+                            nat_less_than(i, p) -> inCoset(g, at(u, i))
+                            [by implies_intro given-below]
+                        }
+                      // u is injective: g·v_i = g·v_j cancels to v_i = v_j
+                      @translate-injective |
+                        forall i: Nat; forall j: Nat; nat_less_than(i, p) -> nat_less_than(j, p) -> at(u, i) = at(u, j) -> i = j
+                        [by forall_intro injective-outer]
+                      @injective-outer |
+                        fix i: Nat {
+                          @injective-inner |
+                            fix j: Nat {
+                              @given-i-below |
+                                assume nat_less_than(i, p) {
+                                  @given-j-below |
+                                    assume nat_less_than(j, p) {
+                                      @given-entries-equal |
+                                        assume at(u, i) = at(u, j) {
+                                          @i-below |
+                                            nat_less_than(i, p)
+                                            [by hypothesis given-i-below]
+                                          @j-below |
+                                            nat_less_than(j, p)
+                                            [by hypothesis given-j-below]
+                                          @entries-equal |
+                                            at(u, i) = at(u, j)
+                                            [by hypothesis given-entries-equal]
+                                          @u-at-i |
+                                            at(u, i) = op(g, at(v, i))
+                                            [using specialize translate(i) i-below]
+                                          @u-at-j |
+                                            at(u, j) = op(g, at(v, j))
+                                            [using specialize translate(j) j-below]
+                                          @translates-equal |
+                                            op(g, at(v, i)) = op(g, at(v, j))
+                                            [using chain u-at-i-flipped entries-equal u-at-j]
+                                          @u-at-i-flipped |
+                                            op(g, at(v, i)) = at(u, i)
+                                            [by symmetry u-at-i]
+                                          @originals-equal |
+                                            at(v, i) = at(v, j)
+                                            [using specialize translationIsInjective(g, at(v, i), at(v, j)) translates-equal]
+                                          @conclusion-indices-equal |
+                                            i = j
+                                            [using specialize injective(i, j) i-below j-below originals-equal]
+                                        }
+                                      @equal-implies |
+                                        at(u, i) = at(u, j) -> i = j
+                                        [by implies_intro given-entries-equal]
+                                    }
+                                  @j-below-implies |
+                                    nat_less_than(j, p) -> at(u, i) = at(u, j) -> i = j
+                                    [by implies_intro given-j-below]
+                                }
+                              @i-below-implies |
+                                nat_less_than(i, p) -> nat_less_than(j, p) -> at(u, i) = at(u, j) -> i = j
+                                [by implies_intro given-i-below]
+                            }
+                          @discharge-inner |
+                            forall j: Nat; nat_less_than(i, p) -> nat_less_than(j, p) -> at(u, i) = at(u, j) -> i = j
+                            [by forall_intro injective-inner]
+                        }
+                      // u covers gH: x in gH is g·h, h is v_i, so x is u_i
+                      @covers-the-coset |
+                        forall x: Grp; inCoset(g, x) -> exists i: Nat; nat_less_than(i, p) and at(u, i) = x
+                        [by forall_intro covers-x]
+                      @covers-x |
+                        fix x: Grp {
+                          @given-in-coset |
+                            assume inCoset(g, x) {
+                              @in-coset |
+                                inCoset(g, x)
+                                [by hypothesis given-in-coset]
+                              @h-exists |
+                                exists h: Grp; inSubgroup(h) and x = op(g, h)
+                                [using specialize everyCosetMemberIsATranslation(g, x) in-coset]
+                              @with-h |
+                                unpack h: Grp from h-exists {
+                                  @h-facts |
+                                    inSubgroup(h) and x = op(g, h)
+                                    [by hypothesis with-h]
+                                  @h-in |
+                                    inSubgroup(h)
+                                    [by and_elim_left h-facts]
+                                  @x-is-translated |
+                                    x = op(g, h)
+                                    [by and_elim_right h-facts]
+                                  @index-exists |
+                                    exists i: Nat; nat_less_than(i, p) and at(v, i) = h
+                                    [using specialize covers(h) h-in]
+                                  @with-index |
+                                    unpack i: Nat from index-exists {
+                                      @index-facts |
+                                        nat_less_than(i, p) and at(v, i) = h
+                                        [by hypothesis with-index]
+                                      @i-below |
+                                        nat_less_than(i, p)
+                                        [by and_elim_left index-facts]
+                                      @v-at-i-is-h |
+                                        at(v, i) = h
+                                        [by and_elim_right index-facts]
+                                      @u-at-i |
+                                        at(u, i) = op(g, at(v, i))
+                                        [using specialize translate(i) i-below]
+                                      @u-at-i-is-g-h |
+                                        at(u, i) = op(g, h)
+                                        [by rewrite v-at-i-is-h u-at-i]
+                                      @x-is-u-at-i |
+                                        op(g, h) = x
+                                        [by symmetry x-is-translated]
+                                      @u-at-i-is-x |
+                                        at(u, i) = x
+                                        [using chain u-at-i-is-g-h x-is-u-at-i]
+                                      @witnessed |
+                                        nat_less_than(i, p) and at(u, i) = x
+                                        [by and_intro i-below u-at-i-is-x]
+                                      @conclusion-index-inner |
+                                        exists i2: Nat; nat_less_than(i2, p) and at(u, i2) = x
+                                        [by exists_intro(i) witnessed]
+                                    }
+                                  @conclusion-index-mid |
+                                    exists i: Nat; nat_less_than(i, p) and at(u, i) = x
+                                    [by exists_elim with-index]
+                                }
+                              @conclusion-covers-x |
+                                exists i: Nat; nat_less_than(i, p) and at(u, i) = x
+                                [by exists_elim with-h]
+                            }
+                          @in-coset-implies |
+                            inCoset(g, x) -> exists i: Nat; nat_less_than(i, p) and at(u, i) = x
+                            [by implies_intro given-in-coset]
+                        }
+                      @all-three |
+                        listsTheCoset(g, u, p)
+                        [using tautology entries-in-coset translate-injective covers-the-coset]
+                      @conclusion-coset-listed-inner |
+                        exists u2: Seq; listsTheCoset(g, u2, p)
+                        [by exists_intro(u) all-three]
+                    }
+                  @conclusion-coset-listed |
+                    exists u: Seq; listsTheCoset(g, u, p)
+                    [by exists_elim with-translate]
+                }
+              @lists-implies |
+                listsTheSubgroup(v, p) -> exists u: Seq; listsTheCoset(g, u, p)
+                [by implies_intro given-lists]
+            }
+          @discharge-p |
+            forall p: Nat; listsTheSubgroup(v, p) -> exists u: Seq; listsTheCoset(g, u, p)
+            [by forall_intro generalize-p]
+        }
+      @discharge-v |
+        forall v: Seq; forall p: Nat; listsTheSubgroup(v, p) -> exists u: Seq; listsTheCoset(g, u, p)
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall g: Grp; forall v: Seq; forall p: Nat; listsTheSubgroup(v, p) -> exists u: Seq; listsTheCoset(g, u, p)
     [by forall_intro generalize-g]
 qed
