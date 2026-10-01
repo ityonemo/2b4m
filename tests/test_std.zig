@@ -167,6 +167,13 @@ pub fn addTests(
     // intersection, and the five group axioms proven on the subgroup (what a group-
     // model @-projects). Authored to plug into std/group.b4m via a model stack.
     ctx.okSilent(&.{ "check", "std/subgroup.b4m" });
+    // COSETS (std/group/coset.b4m): the left coset gH as a two-place MEMBERSHIP predicate (the
+    // device std/group/generated.b4m uses for a variable generator), so the chapter stays
+    // first-order with no sets of group elements. Judson §6.1: the membership criterion
+    // (x ∈ gH iff g⁻¹x ∈ H), Lemma 6.1 (gH = kH iff g⁻¹k ∈ H), Theorem 6.2 (the cosets are
+    // equal-or-disjoint and cover the group), and Proposition 6.4's translation bijection
+    // h ↦ gh — the engine of Lagrange, since it makes every coset the size of the subgroup.
+    ctx.okSilent(&.{ "check", "std/group/coset.b4m" });
 
     // cyclic subgroups (std/cyclic.b4m, Judson §4.1): ⟨a⟩ = {a^k} as a membership
     // predicate over a fixed generator const, proved a subgroup (identity/closure) and

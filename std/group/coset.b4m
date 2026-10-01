@@ -1,0 +1,608 @@
+// std/group/coset.b4m — COSETS of a subgroup, and the equivalence that makes them partition
+// the group (AATA §6.1, Lemma 6.1 and Theorem 6.2).
+//
+// A left coset gH is the set of products gh for h in the subgroup. Rather than a set sort, the
+// coset is a two-place MEMBERSHIP predicate `inCoset(g, x)` — "x lies in gH" — the same device
+// std/group/generated.b4m uses for the cyclic subgroup of a VARIABLE generator. That keeps the
+// whole chapter first-order over the group's own sort, with no sets of group elements.
+//
+// The load-bearing fact is Judson's Lemma 6.1: gH and kH are EITHER EQUAL (as predicates) OR
+// DISJOINT, and they coincide exactly when g⁻¹k lies in H. Theorem 6.2 — the cosets partition
+// the group — is then that plus "every g lies in its own coset".
+
+import subgroup <<< "std/subgroup.b4m"
+
+sort Grp = subgroup.Grp
+const E = subgroup.E
+func op = subgroup.op
+func inverse = subgroup.inverse
+pred inSubgroup = subgroup.inSubgroup
+axiom grpAssoc = subgroup.grpAssoc
+axiom grpIdentityLeft = subgroup.grpIdentityLeft
+axiom grpInverseLeft = subgroup.grpInverseLeft
+axiom subgroupHasIdentity = subgroup.subgroupHasIdentity
+axiom subgroupClosedOp = subgroup.subgroupClosedOp
+axiom subgroupClosedInverse = subgroup.subgroupClosedInverse
+theorem grpInverseRight = subgroup.grpInverseRight
+theorem grpIdentityRight = subgroup.grpIdentityRight
+theorem invProduct = subgroup.invProduct
+theorem invInvolution = subgroup.invInvolution
+theorem cancelLeft = subgroup.cancelLeft
+
+// x lies in the LEFT COSET gH when x = g·h for some h in H.
+define inCoset(g, x) = exists h: Grp; inSubgroup(h) and x = op(g, h)
+
+// -- every element lies in its own coset ------------------------------------------------------
+// g = g·e and e is in H, so g ∈ gH. This is what makes the cosets COVER the group.
+theorem elementIsInItsOwnCoset: forall g: Grp; inCoset(g, g)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @identity-is-in |
+        inSubgroup(E)
+        [by cite subgroupHasIdentity]
+      @g-times-identity |
+        op(g, E) = g
+        [using specialize grpIdentityRight(g)]
+      @g-is-g-times-identity |
+        g = op(g, E)
+        [by symmetry g-times-identity]
+      @witnessed |
+        inSubgroup(E) and g = op(g, E)
+        [by and_intro identity-is-in g-is-g-times-identity]
+      @conclusion-in-its-coset |
+        inCoset(g, g)
+        [by exists_intro(E) witnessed]
+    }
+  @conclusion |
+    forall g: Grp; inCoset(g, g)
+    [by forall_intro generalize-g]
+qed
+
+// -- membership, as a divisibility-style criterion ---------------------------------------------
+// x ∈ gH  iff  g⁻¹x ∈ H. The workhorse: it turns every coset question into a subgroup question.
+theorem inCosetIffQuotientIsInTheSubgroup: forall g: Grp; forall x: Grp;
+  inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-x |
+        fix x: Grp {
+          @given-in-coset |
+            assume inCoset(g, x) {
+              @in-coset |
+                inCoset(g, x)
+                [by hypothesis given-in-coset]
+              @witness-exists |
+                exists h: Grp; inSubgroup(h) and x = op(g, h)
+                [using tautology in-coset]
+              @with-witness |
+                unpack h: Grp from witness-exists {
+                  @h-facts |
+                    inSubgroup(h) and x = op(g, h)
+                    [by hypothesis with-witness]
+                  @h-in |
+                    inSubgroup(h)
+                    [by and_elim_left h-facts]
+                  @x-is-g-h |
+                    x = op(g, h)
+                    [by and_elim_right h-facts]
+                  // g⁻¹x = g⁻¹(gh) = (g⁻¹g)h = eh = h
+                  @quotient-at-x |
+                    op(inverse(g), x) = op(inverse(g), op(g, h))
+                    [by rewrite x-is-g-h quotient-reflexive]
+                  @quotient-reflexive |
+                    op(inverse(g), x) = op(inverse(g), x)
+                    [by reflexivity]
+                  @regrouped |
+                    op(inverse(g), op(g, h)) = op(op(inverse(g), g), h)
+                    [using assoc(grpAssoc)]
+                  @inverse-cancels |
+                    op(inverse(g), g) = E
+                    [using specialize grpInverseLeft(g)]
+                  @with-identity |
+                    op(op(inverse(g), g), h) = op(E, h)
+                    [by rewrite inverse-cancels regrouped-reflexive]
+                  @regrouped-reflexive |
+                    op(op(inverse(g), g), h) = op(op(inverse(g), g), h)
+                    [by reflexivity]
+                  @identity-times-h |
+                    op(E, h) = h
+                    [using specialize grpIdentityLeft(h)]
+                  @quotient-is-h |
+                    op(inverse(g), x) = h
+                    [using chain quotient-at-x regrouped with-identity identity-times-h]
+                  @conclusion-quotient-in |
+                    inSubgroup(op(inverse(g), x))
+                    [by rewrite quotient-is-h h-in]
+                }
+              @conclusion-forward |
+                inSubgroup(op(inverse(g), x))
+                [by exists_elim with-witness]
+            }
+          @forward |
+            inCoset(g, x) -> inSubgroup(op(inverse(g), x))
+            [by implies_intro given-in-coset]
+          @given-quotient-in |
+            assume inSubgroup(op(inverse(g), x)) {
+              @quotient-in |
+                inSubgroup(op(inverse(g), x))
+                [by hypothesis given-quotient-in]
+              // x = g(g⁻¹x), and g⁻¹x is in H
+              @regrouped-back |
+                op(g, op(inverse(g), x)) = op(op(g, inverse(g)), x)
+                [using assoc(grpAssoc)]
+              @inverse-cancels-right |
+                op(g, inverse(g)) = E
+                [using specialize grpInverseRight(g)]
+              @with-identity-back |
+                op(op(g, inverse(g)), x) = op(E, x)
+                [by rewrite inverse-cancels-right regrouped-back-reflexive]
+              @regrouped-back-reflexive |
+                op(op(g, inverse(g)), x) = op(op(g, inverse(g)), x)
+                [by reflexivity]
+              @identity-times-x |
+                op(E, x) = x
+                [using specialize grpIdentityLeft(x)]
+              @product-is-x |
+                op(g, op(inverse(g), x)) = x
+                [using chain regrouped-back with-identity-back identity-times-x]
+              @x-is-the-product |
+                x = op(g, op(inverse(g), x))
+                [by symmetry product-is-x]
+              @witnessed-back |
+                inSubgroup(op(inverse(g), x)) and x = op(g, op(inverse(g), x))
+                [by and_intro quotient-in x-is-the-product]
+              @conclusion-backward |
+                inCoset(g, x)
+                [by exists_intro(op(inverse(g), x)) witnessed-back]
+            }
+          @backward |
+            inSubgroup(op(inverse(g), x)) -> inCoset(g, x)
+            [by implies_intro given-quotient-in]
+          @conclusion-iff |
+            inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+            [by iff_intro forward backward]
+        }
+      @discharge-x |
+        forall x: Grp; inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall g: Grp; forall x: Grp; inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+    [by forall_intro generalize-g]
+qed
+
+// a⁻¹x = (a⁻¹b)(b⁻¹x) — the quotient through an intermediate element. Pure associativity with
+// one cancellation, and it is what makes the two coset memberships interderivable.
+theorem quotientSplits: forall a: Grp; forall b: Grp; forall x: Grp;
+  op(inverse(a), x) = op(op(inverse(a), b), op(inverse(b), x))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-x |
+            fix x: Grp {
+              @regrouped |
+                op(op(inverse(a), b), op(inverse(b), x)) = op(inverse(a), op(op(b, inverse(b)), x))
+                [using assoc(grpAssoc)]
+              @b-cancels |
+                op(b, inverse(b)) = E
+                [using specialize grpInverseRight(b)]
+              @with-identity |
+                op(inverse(a), op(op(b, inverse(b)), x)) = op(inverse(a), op(E, x))
+                [by rewrite b-cancels with-identity-reflexive]
+              @with-identity-reflexive |
+                op(inverse(a), op(op(b, inverse(b)), x)) = op(inverse(a), op(op(b, inverse(b)), x))
+                [by reflexivity]
+              @identity-times-x |
+                op(E, x) = x
+                [using specialize grpIdentityLeft(x)]
+              @collapsed |
+                op(inverse(a), op(E, x)) = op(inverse(a), x)
+                [by rewrite identity-times-x collapsed-reflexive]
+              @collapsed-reflexive |
+                op(inverse(a), op(E, x)) = op(inverse(a), op(E, x))
+                [by reflexivity]
+              @split-is-the-quotient |
+                op(op(inverse(a), b), op(inverse(b), x)) = op(inverse(a), x)
+                [using chain regrouped with-identity collapsed]
+              @conclusion-splits |
+                op(inverse(a), x) = op(op(inverse(a), b), op(inverse(b), x))
+                [by symmetry split-is-the-quotient]
+            }
+          @discharge-x |
+            forall x: Grp; op(inverse(a), x) = op(op(inverse(a), b), op(inverse(b), x))
+            [by forall_intro generalize-x]
+        }
+      @discharge-b |
+        forall b: Grp; forall x: Grp; op(inverse(a), x) = op(op(inverse(a), b), op(inverse(b), x))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Grp; forall b: Grp; forall x: Grp; op(inverse(a), x) = op(op(inverse(a), b), op(inverse(b), x))
+    [by forall_intro generalize-a]
+qed
+
+// -- JUDSON'S LEMMA 6.1: when two cosets coincide ----------------------------------------------
+// gH = kH (as predicates) exactly when g⁻¹k ∈ H. Proved as the two implications over the
+// membership criterion above: if g⁻¹k ∈ H then each coset's members are the other's, and
+// conversely k ∈ kH = gH gives g⁻¹k ∈ H directly.
+theorem cosetsCoincideIffQuotientIsInTheSubgroup: forall g: Grp; forall k: Grp;
+  (forall x: Grp; inCoset(g, x) iff inCoset(k, x)) iff inSubgroup(op(inverse(g), k))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-k |
+        fix k: Grp {
+          @given-same |
+            assume forall x: Grp; inCoset(g, x) iff inCoset(k, x) {
+              @same |
+                forall x: Grp; inCoset(g, x) iff inCoset(k, x)
+                [by hypothesis given-same]
+              @k-in-its-own |
+                inCoset(k, k)
+                [using specialize elementIsInItsOwnCoset(k)]
+              @same-at-k |
+                inCoset(g, k) iff inCoset(k, k)
+                [using specialize same(k)]
+              @k-in-g-coset |
+                inCoset(g, k)
+                [using tautology same-at-k k-in-its-own]
+              @criterion-at-k |
+                inCoset(g, k) iff inSubgroup(op(inverse(g), k))
+                [using specialize inCosetIffQuotientIsInTheSubgroup(g, k)]
+              @conclusion-forward |
+                inSubgroup(op(inverse(g), k))
+                [using tautology criterion-at-k k-in-g-coset]
+            }
+          @forward |
+            (forall x: Grp; inCoset(g, x) iff inCoset(k, x)) -> inSubgroup(op(inverse(g), k))
+            [by implies_intro given-same]
+          @given-quotient |
+            assume inSubgroup(op(inverse(g), k)) {
+              @quotient-in |
+                inSubgroup(op(inverse(g), k))
+                [by hypothesis given-quotient]
+              // the reverse quotient k⁻¹g = (g⁻¹k)⁻¹ is in H too.
+              @reverse-is-the-inverse |
+                op(inverse(k), g) = inverse(op(inverse(g), k))
+                [using chain reverse-via-invProduct inverse-of-inverse-inside]
+              @reverse-via-invProduct |
+                op(inverse(k), g) = op(inverse(k), inverse(inverse(g)))
+                [by rewrite inverse-of-g-twice reverse-reflexive]
+              @reverse-reflexive |
+                op(inverse(k), g) = op(inverse(k), g)
+                [by reflexivity]
+              @inverse-of-g-twice |
+                inverse(inverse(g)) = g
+                [using specialize invInvolution(g)]
+              @inverse-of-inside |
+                inverse(op(inverse(g), k)) = op(inverse(k), inverse(inverse(g)))
+                [using specialize invProduct(inverse(g), k)]
+              @inverse-of-inverse-inside |
+                op(inverse(k), inverse(inverse(g))) = inverse(op(inverse(g), k))
+                [by symmetry inverse-of-inside]
+              @reverse-quotient-in |
+                inSubgroup(op(inverse(k), g))
+                [by rewrite reverse-is-the-inverse reverse-as-inverse-in]
+              @reverse-as-inverse-in |
+                inSubgroup(inverse(op(inverse(g), k)))
+                [using specialize subgroupClosedInverse(op(inverse(g), k)) quotient-in]
+              @generalize-x |
+                fix x: Grp {
+                  @criterion-g |
+                    inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+                    [using specialize inCosetIffQuotientIsInTheSubgroup(g, x)]
+                  @criterion-k |
+                    inCoset(k, x) iff inSubgroup(op(inverse(k), x))
+                    [using specialize inCosetIffQuotientIsInTheSubgroup(k, x)]
+                  // k⁻¹x = (k⁻¹g)(g⁻¹x) and g⁻¹x = (g⁻¹k)(k⁻¹x) — each quotient is the other
+                  // times a subgroup element, so each membership follows from the other.
+                  @k-quotient-splits |
+                    op(inverse(k), x) = op(op(inverse(k), g), op(inverse(g), x))
+                    [using specialize quotientSplits(k, g, x)]
+                  @g-quotient-splits |
+                    op(inverse(g), x) = op(op(inverse(g), k), op(inverse(k), x))
+                    [using specialize quotientSplits(g, k, x)]
+                  @given-in-g |
+                    assume inSubgroup(op(inverse(g), x)) {
+                      @in-g |
+                        inSubgroup(op(inverse(g), x))
+                        [by hypothesis given-in-g]
+                      @product-in |
+                        inSubgroup(op(op(inverse(k), g), op(inverse(g), x)))
+                        [using specialize subgroupClosedOp(op(inverse(k), g), op(inverse(g), x)) reverse-quotient-in in-g]
+                      @conclusion-in-k |
+                        inSubgroup(op(inverse(k), x))
+                        [by rewrite k-quotient-splits product-in]
+                    }
+                  @g-implies-k |
+                    inSubgroup(op(inverse(g), x)) -> inSubgroup(op(inverse(k), x))
+                    [by implies_intro given-in-g]
+                  @given-in-k |
+                    assume inSubgroup(op(inverse(k), x)) {
+                      @in-k |
+                        inSubgroup(op(inverse(k), x))
+                        [by hypothesis given-in-k]
+                      @product-in-back |
+                        inSubgroup(op(op(inverse(g), k), op(inverse(k), x)))
+                        [using specialize subgroupClosedOp(op(inverse(g), k), op(inverse(k), x)) quotient-in in-k]
+                      @conclusion-in-g |
+                        inSubgroup(op(inverse(g), x))
+                        [by rewrite g-quotient-splits product-in-back]
+                    }
+                  @k-implies-g |
+                    inSubgroup(op(inverse(k), x)) -> inSubgroup(op(inverse(g), x))
+                    [by implies_intro given-in-k]
+                  @conclusion-same-at-x |
+                    inCoset(g, x) iff inCoset(k, x)
+                    [using tautology criterion-g criterion-k g-implies-k k-implies-g]
+                }
+              @conclusion-backward |
+                forall x: Grp; inCoset(g, x) iff inCoset(k, x)
+                [by forall_intro generalize-x]
+            }
+          @backward |
+            inSubgroup(op(inverse(g), k)) -> (forall x: Grp; inCoset(g, x) iff inCoset(k, x))
+            [by implies_intro given-quotient]
+          @conclusion-iff |
+            (forall x: Grp; inCoset(g, x) iff inCoset(k, x)) iff inSubgroup(op(inverse(g), k))
+            [by iff_intro forward backward]
+        }
+      @discharge-k |
+        forall k: Grp; (forall x: Grp; inCoset(g, x) iff inCoset(k, x)) iff inSubgroup(op(inverse(g), k))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall g: Grp; forall k: Grp; (forall x: Grp; inCoset(g, x) iff inCoset(k, x)) iff inSubgroup(op(inverse(g), k))
+    [by forall_intro generalize-g]
+qed
+
+// (a⁻¹x)(b⁻¹x)⁻¹ = a⁻¹b — the two quotients through a shared element combine to the quotient
+// between the two coset representatives. Associativity plus two cancellations.
+theorem quotientsCombine: forall a: Grp; forall b: Grp; forall x: Grp;
+  op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(inverse(a), b)
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @generalize-x |
+            fix x: Grp {
+              // (b⁻¹x)⁻¹ = x⁻¹b
+              @inner-inverse |
+                inverse(op(inverse(b), x)) = op(inverse(x), inverse(inverse(b)))
+                [using specialize invProduct(inverse(b), x)]
+              @b-twice |
+                inverse(inverse(b)) = b
+                [using specialize invInvolution(b)]
+              @inner-is-x-inverse-b |
+                inverse(op(inverse(b), x)) = op(inverse(x), b)
+                [by rewrite b-twice inner-inverse]
+              @with-inner |
+                op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(op(inverse(a), x), op(inverse(x), b))
+                [by rewrite inner-is-x-inverse-b with-inner-reflexive]
+              @with-inner-reflexive |
+                op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(op(inverse(a), x), inverse(op(inverse(b), x)))
+                [by reflexivity]
+              @regrouped |
+                op(op(inverse(a), x), op(inverse(x), b)) = op(inverse(a), op(op(x, inverse(x)), b))
+                [using assoc(grpAssoc)]
+              @x-cancels |
+                op(x, inverse(x)) = E
+                [using specialize grpInverseRight(x)]
+              @with-identity |
+                op(inverse(a), op(op(x, inverse(x)), b)) = op(inverse(a), op(E, b))
+                [by rewrite x-cancels with-identity-reflexive]
+              @with-identity-reflexive |
+                op(inverse(a), op(op(x, inverse(x)), b)) = op(inverse(a), op(op(x, inverse(x)), b))
+                [by reflexivity]
+              @identity-times-b |
+                op(E, b) = b
+                [using specialize grpIdentityLeft(b)]
+              @collapsed |
+                op(inverse(a), op(E, b)) = op(inverse(a), b)
+                [by rewrite identity-times-b collapsed-reflexive]
+              @collapsed-reflexive |
+                op(inverse(a), op(E, b)) = op(inverse(a), op(E, b))
+                [by reflexivity]
+              @conclusion-combines |
+                op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(inverse(a), b)
+                [using chain with-inner regrouped with-identity collapsed]
+            }
+          @discharge-x |
+            forall x: Grp; op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(inverse(a), b)
+            [by forall_intro generalize-x]
+        }
+      @discharge-b |
+        forall b: Grp; forall x: Grp; op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(inverse(a), b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Grp; forall b: Grp; forall x: Grp; op(op(inverse(a), x), inverse(op(inverse(b), x))) = op(inverse(a), b)
+    [by forall_intro generalize-a]
+qed
+
+// -- JUDSON'S THEOREM 6.2: the cosets PARTITION the group --------------------------------------
+// Two halves. COVER: every g lies in gH (above). DISJOINT-OR-EQUAL: if any x lies in both gH and
+// kH then the two cosets have exactly the same members. Together: each element lies in exactly
+// one coset.
+theorem cosetsAreEqualOrDisjoint: forall g: Grp; forall k: Grp; forall x: Grp;
+  inCoset(g, x) -> inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-k |
+        fix k: Grp {
+          @generalize-x |
+            fix x: Grp {
+              @given-in-g |
+                assume inCoset(g, x) {
+                  @given-in-k |
+                    assume inCoset(k, x) {
+                      @in-g |
+                        inCoset(g, x)
+                        [by hypothesis given-in-g]
+                      @in-k |
+                        inCoset(k, x)
+                        [by hypothesis given-in-k]
+                      // g⁻¹x and k⁻¹x are both in H, so g⁻¹k = (g⁻¹x)(k⁻¹x)⁻¹ is too.
+                      @criterion-g |
+                        inCoset(g, x) iff inSubgroup(op(inverse(g), x))
+                        [using specialize inCosetIffQuotientIsInTheSubgroup(g, x)]
+                      @criterion-k |
+                        inCoset(k, x) iff inSubgroup(op(inverse(k), x))
+                        [using specialize inCosetIffQuotientIsInTheSubgroup(k, x)]
+                      @g-quotient-in |
+                        inSubgroup(op(inverse(g), x))
+                        [using tautology criterion-g in-g]
+                      @k-quotient-in |
+                        inSubgroup(op(inverse(k), x))
+                        [using tautology criterion-k in-k]
+                      @k-quotient-inverse-in |
+                        inSubgroup(inverse(op(inverse(k), x)))
+                        [using specialize subgroupClosedInverse(op(inverse(k), x)) k-quotient-in]
+                      @product-in |
+                        inSubgroup(op(op(inverse(g), x), inverse(op(inverse(k), x))))
+                        [using specialize subgroupClosedOp(op(inverse(g), x), inverse(op(inverse(k), x))) g-quotient-in k-quotient-inverse-in]
+                      @product-is-the-quotient |
+                        op(op(inverse(g), x), inverse(op(inverse(k), x))) = op(inverse(g), k)
+                        [using specialize quotientsCombine(g, k, x)]
+                      @quotient-in |
+                        inSubgroup(op(inverse(g), k))
+                        [by rewrite product-is-the-quotient product-in]
+                      @coincide |
+                        (forall y: Grp; inCoset(g, y) iff inCoset(k, y)) iff inSubgroup(op(inverse(g), k))
+                        [using specialize cosetsCoincideIffQuotientIsInTheSubgroup(g, k)]
+                      @conclusion-same |
+                        forall y: Grp; inCoset(g, y) iff inCoset(k, y)
+                        [using tautology coincide quotient-in]
+                    }
+                  @in-k-implies |
+                    inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+                    [by implies_intro given-in-k]
+                }
+              @in-g-implies |
+                inCoset(g, x) -> inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+                [by implies_intro given-in-g]
+            }
+          @discharge-x |
+            forall x: Grp; inCoset(g, x) -> inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+            [by forall_intro generalize-x]
+        }
+      @discharge-k |
+        forall k: Grp; forall x: Grp; inCoset(g, x) -> inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall g: Grp; forall k: Grp; forall x: Grp; inCoset(g, x) -> inCoset(k, x) -> (forall y: Grp; inCoset(g, y) iff inCoset(k, y))
+    [by forall_intro generalize-g]
+qed
+
+// -- JUDSON'S PROPOSITION 6.4: H and gH are the same size --------------------------------------
+// The map h ↦ gh carries H onto gH, injectively (left cancellation). Stated as the two halves a
+// counting argument needs: it lands in the coset and hits everything there, and it is injective.
+// This is the engine of Lagrange — every coset has as many elements as the subgroup.
+theorem translationLandsInTheCoset: forall g: Grp; forall h: Grp; inSubgroup(h) -> inCoset(g, op(g, h))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-h |
+        fix h: Grp {
+          @given-in |
+            assume inSubgroup(h) {
+              @h-in |
+                inSubgroup(h)
+                [by hypothesis given-in]
+              @reflexive |
+                op(g, h) = op(g, h)
+                [by reflexivity]
+              @witnessed |
+                inSubgroup(h) and op(g, h) = op(g, h)
+                [by and_intro h-in reflexive]
+              @conclusion-in-coset |
+                inCoset(g, op(g, h))
+                [by exists_intro(h) witnessed]
+            }
+          @in-implies |
+            inSubgroup(h) -> inCoset(g, op(g, h))
+            [by implies_intro given-in]
+        }
+      @discharge-h |
+        forall h: Grp; inSubgroup(h) -> inCoset(g, op(g, h))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g: Grp; forall h: Grp; inSubgroup(h) -> inCoset(g, op(g, h))
+    [by forall_intro generalize-g]
+qed
+
+// Surjective onto the coset: every member of gH is g·h for a subgroup element h — which is the
+// coset's definition, so this is the unpacking, stated so a counting argument can use it.
+theorem everyCosetMemberIsATranslation: forall g: Grp; forall x: Grp;
+  inCoset(g, x) -> (exists h: Grp; inSubgroup(h) and x = op(g, h))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-x |
+        fix x: Grp {
+          @given-in-coset |
+            assume inCoset(g, x) {
+              @in-coset |
+                inCoset(g, x)
+                [by hypothesis given-in-coset]
+              @conclusion-unpacked |
+                exists h: Grp; inSubgroup(h) and x = op(g, h)
+                [using tautology in-coset]
+            }
+          @in-coset-implies |
+            inCoset(g, x) -> (exists h: Grp; inSubgroup(h) and x = op(g, h))
+            [by implies_intro given-in-coset]
+        }
+      @discharge-x |
+        forall x: Grp; inCoset(g, x) -> (exists h: Grp; inSubgroup(h) and x = op(g, h))
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall g: Grp; forall x: Grp; inCoset(g, x) -> (exists h: Grp; inSubgroup(h) and x = op(g, h))
+    [by forall_intro generalize-g]
+qed
+
+// Injective: g·h = g·h' forces h = h'. Left cancellation, nothing more — and it is the half that
+// makes |gH| = |H| rather than merely |gH| <= |H|.
+theorem translationIsInjective: forall g: Grp; forall h: Grp; forall k: Grp;
+  op(g, h) = op(g, k) -> h = k
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-h |
+        fix h: Grp {
+          @generalize-k |
+            fix k: Grp {
+              @given-equal |
+                assume op(g, h) = op(g, k) {
+                  @equal |
+                    op(g, h) = op(g, k)
+                    [by hypothesis given-equal]
+                  @conclusion-cancelled |
+                    h = k
+                    [using specialize cancelLeft(g, h, k) equal]
+                }
+              @equal-implies |
+                op(g, h) = op(g, k) -> h = k
+                [by implies_intro given-equal]
+            }
+          @discharge-k |
+            forall k: Grp; op(g, h) = op(g, k) -> h = k
+            [by forall_intro generalize-k]
+        }
+      @discharge-h |
+        forall h: Grp; forall k: Grp; op(g, h) = op(g, k) -> h = k
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g: Grp; forall h: Grp; forall k: Grp; op(g, h) = op(g, k) -> h = k
+    [by forall_intro generalize-g]
+qed
