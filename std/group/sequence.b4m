@@ -15,6 +15,7 @@
 import group <<< "std/group.b4m"
 import sequence <<< "std/sequence.b4m"
 import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
 
 sort Grp = group.Grp
 const E = group.E
@@ -193,4 +194,186 @@ proof
   @conclusion |
     forall s: Seq; forall n: Nat; inverse(productUpTo(s, n)) = revProductUpTo(s, n)
     [by forall_intro generalize-s]
+qed
+
+// -- the TRANSLATED sequence -------------------------------------------------------------------
+// For a group element t and a sequence w, there is a sequence whose first m entries are
+// t·w_0, …, t·w_{m-1}. Induction on m: extend by concatenating a singleton holding t·w_m.
+// (The permutation layer's `mappedSequenceExists` is the same statement for composition; this
+// is the group's, and it is what makes "every coset is the size of the subgroup" hold BY
+// CONSTRUCTION rather than by a bijection argument.)
+theorem translatedSequenceExists: forall t: Grp; forall w: Seq; forall m: Nat;
+  exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = op(t, at(w, j))
+proof
+  @generalize-t |
+    fix t: Grp {
+      @generalize-w |
+        fix w: Seq {
+          // base: vacuous below ZERO — any sequence will do, and a singleton exists.
+          @some-sequence-exists |
+            exists s: Seq; at(s, ZERO) = t and productUpTo(s, succ(ZERO)) = t
+            [using specialize seqSingleton(t)]
+          @base-case |
+            exists v: Seq; forall j: Nat; less_than(j, ZERO) -> at(v, j) = op(t, at(w, j))
+            [by exists_elim with-some-sequence]
+          @with-some-sequence |
+            unpack s0: Seq from some-sequence-exists {
+              @vacuous |
+                forall j: Nat; less_than(j, ZERO) -> at(s0, j) = op(t, at(w, j))
+                [by forall_intro nothing-below-zero]
+              @nothing-below-zero |
+                fix j: Nat {
+                  @given-below-zero |
+                    assume less_than(j, ZERO) {
+                      @below-zero |
+                        less_than(j, ZERO)
+                        [by hypothesis given-below-zero]
+                      @not-below-zero |
+                        not less_than(j, ZERO)
+                        [using specialize peano_order.notLessThanZero(j)]
+                      @conclusion-vacuous |
+                        at(s0, j) = op(t, at(w, j))
+                        [using tautology below-zero not-below-zero]
+                    }
+                  @below-zero-implies |
+                    less_than(j, ZERO) -> at(s0, j) = op(t, at(w, j))
+                    [by implies_intro given-below-zero]
+                }
+              @conclusion-base-inner |
+                exists v: Seq; forall j: Nat; less_than(j, ZERO) -> at(v, j) = op(t, at(w, j))
+                [by exists_intro(s0) vacuous]
+            }
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = op(t, at(w, j)) {
+                  @inductive-hypothesis |
+                    exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = op(t, at(w, j))
+                    [by hypothesis given-inductive-hypothesis]
+                  @with-prefix |
+                    unpack v: Seq from inductive-hypothesis {
+                      @prefix-matches |
+                        forall j: Nat; less_than(j, k) -> at(v, j) = op(t, at(w, j))
+                        [by hypothesis with-prefix]
+                      // the singleton holding t·w_k, concatenated after the first k entries.
+                      @singleton-exists |
+                        exists s: Seq; at(s, ZERO) = op(t, at(w, k)) and productUpTo(s, succ(ZERO)) = op(t, at(w, k))
+                        [using specialize seqSingleton(op(t, at(w, k)))]
+                      @with-singleton |
+                        unpack s: Seq from singleton-exists {
+                          @singleton-facts |
+                            at(s, ZERO) = op(t, at(w, k)) and productUpTo(s, succ(ZERO)) = op(t, at(w, k))
+                            [by hypothesis with-singleton]
+                          @singleton-head |
+                            at(s, ZERO) = op(t, at(w, k))
+                            [by and_elim_left singleton-facts]
+                          @joined-exists |
+                            exists u: Seq; (forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)) and productUpTo(u, add(k, succ(ZERO))) = op(productUpTo(v, k), productUpTo(s, succ(ZERO)))
+                            [using specialize seqConcat(v, s, k, succ(ZERO))]
+                          @with-joined |
+                            unpack u: Seq from joined-exists {
+                              @joined-facts |
+                                (forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)) and productUpTo(u, add(k, succ(ZERO))) = op(productUpTo(v, k), productUpTo(s, succ(ZERO)))
+                                [by hypothesis with-joined]
+                              @joined-below |
+                                forall i: Nat; less_than(i, k) -> at(u, i) = at(v, i)
+                                [using tautology joined-facts]
+                              @joined-at-k |
+                                forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(s, i)
+                                [using tautology joined-facts]
+                              @zero-below-one |
+                                less_than(ZERO, succ(ZERO))
+                                [using specialize peano_order.lessThanSelf(ZERO)]
+                              @joined-head-at-k |
+                                at(u, add(k, ZERO)) = at(s, ZERO)
+                                [using specialize joined-at-k(ZERO) zero-below-one]
+                              @k-plus-zero |
+                                add(k, ZERO) = k
+                                [using specialize peano.addZeroRight(k)]
+                              @joined-at-index-k |
+                                at(u, k) = at(s, ZERO)
+                                [by rewrite k-plus-zero joined-head-at-k]
+                              @joined-value-at-k |
+                                at(u, k) = op(t, at(w, k))
+                                [using chain joined-at-index-k singleton-head]
+                              @matches-below-succ |
+                                forall j: Nat; less_than(j, succ(k)) -> at(u, j) = op(t, at(w, j))
+                                [by forall_intro entry-matches]
+                              @entry-matches |
+                                fix j: Nat {
+                                  @given-below-succ |
+                                    assume less_than(j, succ(k)) {
+                                      @below-succ |
+                                        less_than(j, succ(k))
+                                        [by hypothesis given-below-succ]
+                                      @split |
+                                        less_than(j, k) or j = k
+                                        [using specialize peano_order.lessThanSuccSplit(j, k) below-succ]
+                                      @conclusion-matches |
+                                        at(u, j) = op(t, at(w, j))
+                                        case split {
+                                          @when-below |
+                                            assume less_than(j, k) {
+                                              @below |
+                                                less_than(j, k)
+                                                [by hypothesis when-below]
+                                              @copied |
+                                                at(u, j) = at(v, j)
+                                                [using specialize joined-below(j) below]
+                                              @prefix-at-j |
+                                                at(v, j) = op(t, at(w, j))
+                                                [using specialize prefix-matches(j) below]
+                                              @conclusion-below |
+                                                at(u, j) = op(t, at(w, j))
+                                                [using chain copied prefix-at-j]
+                                            }
+                                          @when-at-k |
+                                            assume j = k {
+                                              @at-k |
+                                                j = k
+                                                [by hypothesis when-at-k]
+                                              @conclusion-at-k |
+                                                at(u, j) = op(t, at(w, j))
+                                                [by rewrite at-k joined-value-at-k]
+                                            }
+                                        }
+                                    }
+                                  @below-succ-implies |
+                                    less_than(j, succ(k)) -> at(u, j) = op(t, at(w, j))
+                                    [by implies_intro given-below-succ]
+                                }
+                              @conclusion-joined |
+                                exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = op(t, at(w, j))
+                                [by exists_intro(u) matches-below-succ]
+                            }
+                          @conclusion-with-singleton |
+                            exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = op(t, at(w, j))
+                            [by exists_elim with-joined]
+                        }
+                      @conclusion-with-prefix |
+                        exists v2: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v2, j) = op(t, at(w, j))
+                        [by exists_elim with-singleton]
+                    }
+                  @conclusion-step |
+                    exists v: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v, j) = op(t, at(w, j))
+                    [by exists_elim with-prefix]
+                }
+              @induction-step-at-k |
+                (exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = op(t, at(w, j))) -> (exists v: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v, j) = op(t, at(w, j)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; (exists v: Seq; forall j: Nat; less_than(j, k) -> at(v, j) = op(t, at(w, j))) -> (exists v: Seq; forall j: Nat; less_than(j, succ(k)) -> at(v, j) = op(t, at(w, j)))
+            [by forall_intro induction-step]
+          @conclusion-for-all-m |
+            forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = op(t, at(w, j))
+            [using instantiation induction((fun m: Nat => exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = op(t, at(w, j)))) base-case induction-step-for-all-k]
+        }
+      @discharge-w |
+        forall w: Seq; forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = op(t, at(w, j))
+        [by forall_intro generalize-w]
+    }
+  @conclusion |
+    forall t: Grp; forall w: Seq; forall m: Nat; exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = op(t, at(w, j))
+    [by forall_intro generalize-t]
 qed
