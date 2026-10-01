@@ -1,0 +1,1878 @@
+// std/group/lagrange.b4m — LAGRANGE'S THEOREM (AATA §6.2).
+//
+// |G| = [G:H]·|H|. In this library's counting idiom there are no cardinality functions, only
+// LISTINGS: a sequence whose entries below a length are pairwise distinct and exhaust what they
+// list. So Lagrange reads: if the subgroup H is listed by p entries and the cosets are
+// represented by k elements, then the whole group is listed by k·p entries.
+//
+// The construction is the BLOCK DECOMPOSITION. Each representative's coset is a translate of H
+// (Proposition 6.4, `coset.everyCosetIsListedByTheSubgroupsLength`), so every block is p long;
+// the blocks are pairwise disjoint (Theorem 6.2, `coset.cosetsAreEqualOrDisjoint`), so the
+// concatenation is injective across every seam; and they cover G because every element lies in
+// some representative's coset. Concatenating k of them by induction gives the k·p listing.
+//
+// The same shape as `|S_n| = n!` in std/permutation/count.b4m, but simpler in one respect: there
+// every block had its own length and the total was a product of varying factors, here every
+// block is the SAME p and the total is k·p. Hence `mulSuccLeft` is the only length arithmetic:
+// mul(succ(c), p) = add(mul(c, p), p) puts the new block at base mul(c, p) with length p —
+// exactly `seqConcat`'s shape.
+//
+// Built TOP-DOWN with holes (the statements between the textbook lemmas are this file's own to
+// invent; see agents/2b4m-cheatsheet.md's STRATEGY section).
+
+import coset <<< "std/group/coset.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import permutation_count <<< "std/permutation/count.b4m"
+
+sort Grp = coset.Grp
+func op = coset.op
+pred inSubgroup = coset.inSubgroup
+theorem elementIsInItsOwnCoset = coset.elementIsInItsOwnCoset
+theorem cosetsAreEqualOrDisjoint = coset.cosetsAreEqualOrDisjoint
+theorem everyCosetIsListedByTheSubgroupsLength = coset.everyCosetIsListedByTheSubgroupsLength
+define inCoset(g, x) = coset.inCoset(g, x)
+define listsTheSubgroup(v, p) = coset.listsTheSubgroup(v, p)
+define listsTheCoset(g, v, p) = coset.listsTheCoset(g, v, p)
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+func mul = peano.mul
+pred less_than = peano.less_than
+axiom induction = peano.induction
+axiom mulZeroLeft = peano.mulZeroLeft
+axiom mulSuccLeft = peano.mulSuccLeft
+theorem notLessThanZero = peano_order.notLessThanZero
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanTransitive = peano_order.lessThanTransitive
+theorem additionPreservesOrder = peano_order.additionPreservesOrder
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+theorem indexSplits = permutation_count.indexSplits
+theorem belowTheBaseIsBelowTheSum = permutation_count.belowTheBaseIsBelowTheSum
+
+sort Seq = group_sequence.Seq
+func at = group_sequence.at
+axiom seqConcat = group_sequence.seqConcat
+
+// A listing of the whole group: n distinct entries covering every element.
+define listsTheGroup(v, n) = (forall i: Nat; less_than(i, n) -> at(v, i) = at(v, i)) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(v, i) = x)
+
+// A listing of COSET REPRESENTATIVES: k entries whose cosets are pairwise distinct and
+// together cover the group.
+define listsCosetReps(r, k) = (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> inCoset(at(r, i), at(r, j)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and inCoset(at(r, i), x))
+
+// `u`'s first c·p entries are the first c blocks: entry c'·p + t is the t-th member of the
+// c'-th representative's coset, listed by that coset's own translated listing.
+// THE ACCUMULATOR. `u` lists the first c blocks: each of its mul(c,p) entries lies in one of
+// the first c representatives' cosets, the entries are pairwise distinct, and every element of
+// any of those c cosets appears. Stated as a define so the induction can carry it.
+define listsTheBlocksBelow(u, r, c, p) = (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) and (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) and (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x)
+
+// The EMPTY accumulator: below ZERO there is nothing to list, so any sequence does.
+theorem noBlocksAreListedVacuously: forall r: Seq; forall p: Nat;
+  exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-p |
+        fix p: Nat {
+          // mul(ZERO, p) = ZERO, and nothing is below ZERO, so all three clauses are vacuous.
+          @zero-blocks-is-zero-long |
+            mul(ZERO, p) = ZERO
+            [using specialize mulZeroLeft(p)]
+          @nothing-below-zero |
+            forall i: Nat; not less_than(i, ZERO)
+            [by cite notLessThanZero]
+          // any sequence will do; `r` itself is one.
+          @entries-in-some-block |
+            forall i: Nat; less_than(i, mul(ZERO, p)) -> exists b: Nat; less_than(b, ZERO) and inCoset(at(r, b), at(r, i))
+            [by forall_intro entry-in-some-block]
+          @entry-in-some-block |
+            fix i: Nat {
+              @given-below |
+                assume less_than(i, mul(ZERO, p)) {
+                  @below |
+                    less_than(i, mul(ZERO, p))
+                    [by hypothesis given-below]
+                  @below-zero |
+                    less_than(i, ZERO)
+                    [by rewrite zero-blocks-is-zero-long below]
+                  @not-below-zero |
+                    not less_than(i, ZERO)
+                    [by forall_elim(i) nothing-below-zero]
+                  @conclusion-vacuous-entry |
+                    exists b: Nat; less_than(b, ZERO) and inCoset(at(r, b), at(r, i))
+                    [by absurd below-zero not-below-zero]
+                }
+              @below-implies |
+                less_than(i, mul(ZERO, p)) -> exists b: Nat; less_than(b, ZERO) and inCoset(at(r, b), at(r, i))
+                [by implies_intro given-below]
+            }
+          @injective-vacuously |
+            forall i: Nat; forall j: Nat; less_than(i, mul(ZERO, p)) -> less_than(j, mul(ZERO, p)) -> at(r, i) = at(r, j) -> i = j
+            [by forall_intro injective-outer]
+          @injective-outer |
+            fix i: Nat {
+              @injective-inner |
+                fix j: Nat {
+                  @given-i-below |
+                    assume less_than(i, mul(ZERO, p)) {
+                      @i-below |
+                        less_than(i, mul(ZERO, p))
+                        [by hypothesis given-i-below]
+                      @i-below-zero |
+                        less_than(i, ZERO)
+                        [by rewrite zero-blocks-is-zero-long i-below]
+                      @i-not-below-zero |
+                        not less_than(i, ZERO)
+                        [by forall_elim(i) nothing-below-zero]
+                      @conclusion-vacuous-injective |
+                        less_than(j, mul(ZERO, p)) -> at(r, i) = at(r, j) -> i = j
+                        [by absurd i-below-zero i-not-below-zero]
+                    }
+                  @i-below-implies |
+                    less_than(i, mul(ZERO, p)) -> less_than(j, mul(ZERO, p)) -> at(r, i) = at(r, j) -> i = j
+                    [by implies_intro given-i-below]
+                }
+              @discharge-inner |
+                forall j: Nat; less_than(i, mul(ZERO, p)) -> less_than(j, mul(ZERO, p)) -> at(r, i) = at(r, j) -> i = j
+                [by forall_intro injective-inner]
+            }
+          @covers-vacuously |
+            forall b: Nat; forall x: Grp; less_than(b, ZERO) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(ZERO, p)) and at(r, i) = x
+            [by forall_intro covers-outer]
+          @covers-outer |
+            fix b: Nat {
+              @covers-inner |
+                fix x: Grp {
+                  @given-b-below |
+                    assume less_than(b, ZERO) {
+                      @b-below-zero |
+                        less_than(b, ZERO)
+                        [by hypothesis given-b-below]
+                      @b-not-below-zero |
+                        not less_than(b, ZERO)
+                        [by forall_elim(b) nothing-below-zero]
+                      @conclusion-vacuous-cover |
+                        inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(ZERO, p)) and at(r, i) = x
+                        [by absurd b-below-zero b-not-below-zero]
+                    }
+                  @b-below-implies |
+                    less_than(b, ZERO) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(ZERO, p)) and at(r, i) = x
+                    [by implies_intro given-b-below]
+                }
+              @discharge-covers-inner |
+                forall x: Grp; less_than(b, ZERO) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(ZERO, p)) and at(r, i) = x
+                [by forall_intro covers-inner]
+            }
+          @all-three |
+            listsTheBlocksBelow(r, r, ZERO, p)
+            [using tautology entries-in-some-block injective-vacuously covers-vacuously]
+          @conclusion-empty-accumulator |
+            exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+            [by exists_intro(r) all-three]
+        }
+      @discharge-p |
+        forall p: Nat; exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall r: Seq; forall p: Nat; exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+    [by forall_intro generalize-r]
+qed
+
+// THE SEAM. Distinct representatives have disjoint cosets: if one element lies in both
+// at(r,b)'s coset and at(r,c)'s, then b = c. This is Judson's Theorem 6.2 plus the
+// representatives' pairwise-distinctness clause, and it is what makes the concatenated
+// blocks injective ACROSS the join.
+theorem sharedElementForcesTheSameRepresentative: forall r: Seq; forall k: Nat; forall b: Nat; forall c: Nat; forall x: Grp;
+  listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) ->
+  inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-b |
+            fix b: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-x |
+                    fix x: Grp {
+                      @given-reps |
+                        assume listsCosetReps(r, k) {
+                          @given-b-below |
+                            assume less_than(b, k) {
+                              @given-c-below |
+                                assume less_than(c, k) {
+                                  @given-x-in-b |
+                                    assume inCoset(at(r, b), x) {
+                                      @given-x-in-c |
+                                        assume inCoset(at(r, c), x) {
+                                          @reps |
+                                            listsCosetReps(r, k)
+                                            [by hypothesis given-reps]
+                                          @b-below |
+                                            less_than(b, k)
+                                            [by hypothesis given-b-below]
+                                          @c-below |
+                                            less_than(c, k)
+                                            [by hypothesis given-c-below]
+                                          @x-in-b |
+                                            inCoset(at(r, b), x)
+                                            [by hypothesis given-x-in-b]
+                                          @x-in-c |
+                                            inCoset(at(r, c), x)
+                                            [by hypothesis given-x-in-c]
+                                          @reps-distinct |
+                                            forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> inCoset(at(r, i), at(r, j)) -> i = j
+                                            [using tautology reps]
+                                          // sharing x makes the two cosets the same predicate.
+                                          @cosets-coincide |
+                                            forall y: Grp; inCoset(at(r, b), y) iff inCoset(at(r, c), y)
+                                            [using specialize cosetsAreEqualOrDisjoint(at(r, b), at(r, c), x) x-in-b x-in-c]
+                                          @c-in-its-own |
+                                            inCoset(at(r, c), at(r, c))
+                                            [using specialize elementIsInItsOwnCoset(at(r, c))]
+                                          @coincide-at-c |
+                                            inCoset(at(r, b), at(r, c)) iff inCoset(at(r, c), at(r, c))
+                                            [using specialize cosets-coincide(at(r, c))]
+                                          @c-in-b-coset |
+                                            inCoset(at(r, b), at(r, c))
+                                            [using tautology coincide-at-c c-in-its-own]
+                                          @conclusion-same-representative |
+                                            b = c
+                                            [using specialize reps-distinct(b, c) b-below c-below c-in-b-coset]
+                                        }
+                                      @x-in-c-implies |
+                                        inCoset(at(r, c), x) -> b = c
+                                        [by implies_intro given-x-in-c]
+                                    }
+                                  @x-in-b-implies |
+                                    inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                                    [by implies_intro given-x-in-b]
+                                }
+                              @c-below-implies |
+                                less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                                [by implies_intro given-c-below]
+                            }
+                          @b-below-implies |
+                            less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                            [by implies_intro given-b-below]
+                        }
+                      @reps-implies |
+                        listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                        [by implies_intro given-reps]
+                    }
+                  @discharge-x |
+                    forall x: Grp; listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                    [by forall_intro generalize-x]
+                }
+              @discharge-c |
+                forall c: Nat; forall x: Grp; listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+                [by forall_intro generalize-c]
+            }
+          @discharge-b |
+            forall b: Nat; forall c: Nat; forall x: Grp; listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+            [by forall_intro generalize-b]
+        }
+      @discharge-k |
+        forall k: Nat; forall b: Nat; forall c: Nat; forall x: Grp; listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) -> inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall b: Nat; forall c: Nat; forall x: Grp;
+      listsCosetReps(r, k) -> less_than(b, k) -> less_than(c, k) ->
+      inCoset(at(r, b), x) -> inCoset(at(r, c), x) -> b = c
+    [by forall_intro generalize-r]
+qed
+
+// INDEX RANGES in the extended listing. A low index is still in range; a high index
+// add(base, t) with t < p is in range. Both are read off the new length.
+theorem aLowIndexIsStillInRange: forall c: Nat; forall p: Nat; forall i: Nat;
+  mul(succ(c), p) = add(mul(c, p), p) -> less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-p |
+        fix p: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-length |
+                assume mul(succ(c), p) = add(mul(c, p), p) {
+                  @given-i-low |
+                    assume less_than(i, mul(c, p)) {
+                      @length |
+                        mul(succ(c), p) = add(mul(c, p), p)
+                        [by hypothesis given-length]
+                      @i-low |
+                        less_than(i, mul(c, p))
+                        [by hypothesis given-i-low]
+                      @i-below-sum |
+                        less_than(i, add(mul(c, p), p))
+                        [using specialize belowTheBaseIsBelowTheSum(mul(c, p), p, i) i-low]
+                      @conclusion-in-range |
+                        less_than(i, mul(succ(c), p))
+                        [by rewrite length i-below-sum]
+                    }
+                  @i-low-implies |
+                    less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+                    [by implies_intro given-i-low]
+                }
+              @length-implies |
+                mul(succ(c), p) = add(mul(c, p), p) -> less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+                [by implies_intro given-length]
+            }
+          @discharge-i |
+            forall i: Nat; mul(succ(c), p) = add(mul(c, p), p) -> less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+            [by forall_intro generalize-i]
+        }
+      @discharge-p |
+        forall p: Nat; forall i: Nat; mul(succ(c), p) = add(mul(c, p), p) -> less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall c: Nat; forall p: Nat; forall i: Nat;
+      mul(succ(c), p) = add(mul(c, p), p) -> less_than(i, mul(c, p)) -> less_than(i, mul(succ(c), p))
+    [by forall_intro generalize-c]
+qed
+
+theorem aHighIndexIsStillInRange: forall c: Nat; forall p: Nat; forall t: Nat;
+  mul(succ(c), p) = add(mul(c, p), p) -> less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-p |
+        fix p: Nat {
+          @generalize-t |
+            fix t: Nat {
+              @given-length |
+                assume mul(succ(c), p) = add(mul(c, p), p) {
+                  @given-t-below |
+                    assume less_than(t, p) {
+                      @length |
+                        mul(succ(c), p) = add(mul(c, p), p)
+                        [by hypothesis given-length]
+                      @t-below |
+                        less_than(t, p)
+                        [by hypothesis given-t-below]
+                      @shifted-below-sum |
+                        less_than(add(mul(c, p), t), add(mul(c, p), p))
+                        [using specialize additionPreservesOrder(t, p, mul(c, p)) t-below]
+                      @conclusion-in-range |
+                        less_than(add(mul(c, p), t), mul(succ(c), p))
+                        [by rewrite length shifted-below-sum]
+                    }
+                  @t-below-implies |
+                    less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+                    [by implies_intro given-t-below]
+                }
+              @length-implies |
+                mul(succ(c), p) = add(mul(c, p), p) -> less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+                [by implies_intro given-length]
+            }
+          @discharge-t |
+            forall t: Nat; mul(succ(c), p) = add(mul(c, p), p) -> less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+            [by forall_intro generalize-t]
+        }
+      @discharge-p |
+        forall p: Nat; forall t: Nat; mul(succ(c), p) = add(mul(c, p), p) -> less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall c: Nat; forall p: Nat; forall t: Nat;
+      mul(succ(c), p) = add(mul(c, p), p) -> less_than(t, p) -> less_than(add(mul(c, p), t), mul(succ(c), p))
+    [by forall_intro generalize-c]
+qed
+
+// THE THREE CLAUSES OF THE EXTENDED LISTING. Each takes the concatenation's two entrywise
+// agreements plus the clauses it needs from the two pieces, and re-establishes one clause of
+// `listsTheBlocksBelow` at succ(c). Split out as separate lemmas because each argues on a
+// different split of the index range and they share nothing but the agreements.
+
+// (1) Every entry below mul(succ(c),p) lies in one of the first c+1 cosets: an index below
+// mul(c,p) inherits a block from `u`; one at or above it is add(mul(c,p),t) and lies in
+// at(r,c)'s coset, block c.
+theorem everyExtendedEntryIsInSomeBlock: forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq;
+  mul(succ(c), p) = add(mul(c, p), p) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->
+  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->
+  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->
+  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-c |
+        fix c: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @generalize-w |
+                    fix w: Seq {
+                      @generalize-u2 |
+                        fix u2: Seq {
+                          @given-length |
+                            assume mul(succ(c), p) = add(mul(c, p), p) {
+                              @given-lower |
+                                assume forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i) {
+                                  @given-upper |
+                                    assume forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i) {
+                                      @given-old-entries |
+                                        assume forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i)) {
+                                          @given-new-entries |
+                                            assume forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i)) {
+                                              @length |
+                                                mul(succ(c), p) = add(mul(c, p), p)
+                                                [by hypothesis given-length]
+                                              @lower |
+                                                forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)
+                                                [by hypothesis given-lower]
+                                              @upper |
+                                                forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)
+                                                [by hypothesis given-upper]
+                                              @old-entries |
+                                                forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                [by hypothesis given-old-entries]
+                                              @new-entries |
+                                                forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))
+                                                [by hypothesis given-new-entries]
+                                              @conclusion-entries |
+                                                forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                [by forall_intro entry-at-i]
+                                              @entry-at-i |
+                                                fix i: Nat {
+                                                  @given-i-in-range |
+                                                    assume less_than(i, mul(succ(c), p)) {
+                                                      @i-in-range |
+                                                        less_than(i, mul(succ(c), p))
+                                                        [by hypothesis given-i-in-range]
+                                                      @i-below-sum |
+                                                        less_than(i, add(mul(c, p), p))
+                                                        [by rewrite length i-in-range]
+                                                      @i-splits |
+                                                        less_than(i, mul(c, p)) or (exists t: Nat; less_than(t, p) and i = add(mul(c, p), t))
+                                                        [using specialize indexSplits(mul(c, p), p, i) i-below-sum]
+                                                      @conclusion-entry-in-block |
+                                                        exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                        case i-splits {
+                                                          // a low index: `u`'s own block, and b < c < c+1.
+                                                          @when-i-is-low |
+                                                            assume less_than(i, mul(c, p)) {
+                                                              @i-low |
+                                                                less_than(i, mul(c, p))
+                                                                [by hypothesis when-i-is-low]
+                                                              @agrees-at-i |
+                                                                at(u2, i) = at(u, i)
+                                                                [using specialize lower(i) i-low]
+                                                              @old-block-exists |
+                                                                exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                                [using specialize old-entries(i) i-low]
+                                                              @with-old-block |
+                                                                unpack b: Nat from old-block-exists {
+                                                                  @old-block-facts |
+                                                                    less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                                    [by hypothesis with-old-block]
+                                                                  @b-below-c |
+                                                                    less_than(b, c)
+                                                                    [by and_elim_left old-block-facts]
+                                                                  @entry-in-old-block |
+                                                                    inCoset(at(r, b), at(u, i))
+                                                                    [by and_elim_right old-block-facts]
+                                                                  @b-below-succ-c |
+                                                                    less_than(b, succ(c))
+                                                                    [using specialize lessThanSuccRight(b, c) b-below-c]
+                                                                  @u2-entry-in-old-block |
+                                                                    inCoset(at(r, b), at(u2, i))
+                                                                    [by rewrite agrees-at-i entry-in-old-block]
+                                                                  @witnessed |
+                                                                    less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                                    [by and_intro b-below-succ-c u2-entry-in-old-block]
+                                                                  @conclusion-old-block |
+                                                                    exists b2: Nat; less_than(b2, succ(c)) and inCoset(at(r, b2), at(u2, i))
+                                                                    [by exists_intro(b) witnessed]
+                                                                }
+                                                              @conclusion-when-low |
+                                                                exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                                [by exists_elim with-old-block]
+                                                            }
+                                                          // a high index add(base, t): block c, whose coset holds every w-entry.
+                                                          @when-i-is-high |
+                                                            assume exists t: Nat; less_than(t, p) and i = add(mul(c, p), t) {
+                                                              @high-index-exists |
+                                                                exists t: Nat; less_than(t, p) and i = add(mul(c, p), t)
+                                                                [by hypothesis when-i-is-high]
+                                                              @with-offset |
+                                                                unpack t: Nat from high-index-exists {
+                                                                  @offset-facts |
+                                                                    less_than(t, p) and i = add(mul(c, p), t)
+                                                                    [by hypothesis with-offset]
+                                                                  @t-below |
+                                                                    less_than(t, p)
+                                                                    [by and_elim_left offset-facts]
+                                                                  @i-is-shifted |
+                                                                    i = add(mul(c, p), t)
+                                                                    [by and_elim_right offset-facts]
+                                                                  @agrees-at-shifted |
+                                                                    at(u2, add(mul(c, p), t)) = at(w, t)
+                                                                    [using specialize upper(t) t-below]
+                                                                  @w-entry-in-new-block |
+                                                                    inCoset(at(r, c), at(w, t))
+                                                                    [using specialize new-entries(t) t-below]
+                                                                  @u2-at-shifted-in-new-block |
+                                                                    inCoset(at(r, c), at(u2, add(mul(c, p), t)))
+                                                                    [by rewrite agrees-at-shifted w-entry-in-new-block]
+                                                                  @u2-at-i-in-new-block |
+                                                                    inCoset(at(r, c), at(u2, i))
+                                                                    [by rewrite i-is-shifted u2-at-shifted-in-new-block]
+                                                                  @c-below-succ-c |
+                                                                    less_than(c, succ(c))
+                                                                    [using specialize lessThanSelf(c)]
+                                                                  @witnessed |
+                                                                    less_than(c, succ(c)) and inCoset(at(r, c), at(u2, i))
+                                                                    [by and_intro c-below-succ-c u2-at-i-in-new-block]
+                                                                  @conclusion-new-block |
+                                                                    exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                                    [by exists_intro(c) witnessed]
+                                                                }
+                                                              @conclusion-when-high |
+                                                                exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                                [by exists_elim with-offset]
+                                                            }
+                                                        }
+                                                    }
+                                                  @i-in-range-implies |
+                                                    less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                                    [by implies_intro given-i-in-range]
+                                                }
+                                            }
+                                          @new-entries-implies |
+                                            (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                            [by implies_intro given-new-entries]
+                                        }
+                                      @old-entries-implies |
+                                        (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                        [by implies_intro given-old-entries]
+                                    }
+                                  @upper-implies |
+                                    (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                    [by implies_intro given-upper]
+                                }
+                              @lower-implies |
+                                (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                [by implies_intro given-lower]
+                            }
+                          @length-implies |
+                            mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                            [by implies_intro given-length]
+                        }
+                      @discharge-u2 |
+                        forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                        [by forall_intro generalize-u2]
+                    }
+                  @discharge-w |
+                    forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                    [by forall_intro generalize-w]
+                }
+              @discharge-u |
+                forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+            [by forall_intro generalize-p]
+        }
+      @discharge-c |
+        forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+    [by forall_intro generalize-r]
+qed
+
+// THE CROSS CASE. A low entry and a high entry are never equal: the shared element would lie
+// in block b < c's coset AND in block c's, so b = c by the seam lemma — contradicting b < c.
+theorem noLowEntryEqualsAHighEntry: forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat;
+  listsCosetReps(r, k) ->
+  less_than(c, k) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->
+  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->
+  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->
+  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-c |
+        fix c: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @generalize-w |
+                    fix w: Seq {
+                      @generalize-u2 |
+                        fix u2: Seq {
+                          @generalize-k |
+                            fix k: Nat {
+                          @given-reps |
+                            assume listsCosetReps(r, k) {
+                            @given-c-below |
+                              assume less_than(c, k) {
+                              @given-lower |
+                                assume forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i) {
+                                  @given-upper |
+                                    assume forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i) {
+                                      @given-old-entries |
+                                        assume forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i)) {
+                                          @given-new-entries |
+                                            assume forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i)) {
+                                              @reps |
+                                                listsCosetReps(r, k)
+                                                [by hypothesis given-reps]
+                                              @c-below |
+                                                less_than(c, k)
+                                                [by hypothesis given-c-below]
+                                              @lower |
+                                                forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)
+                                                [by hypothesis given-lower]
+                                              @upper |
+                                                forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)
+                                                [by hypothesis given-upper]
+                                              @old-entries |
+                                                forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                [by hypothesis given-old-entries]
+                                              @new-entries |
+                                                forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))
+                                                [by hypothesis given-new-entries]
+                                              @conclusion-never-equal |
+                                                forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                [by forall_intro never-equal-at-i]
+                                              @never-equal-at-i |
+                                                fix i: Nat {
+                                                  @never-equal-at-t |
+                                                    fix t: Nat {
+                                                      @given-i-low |
+                                                        assume less_than(i, mul(c, p)) {
+                                                          @given-t-below |
+                                                            assume less_than(t, p) {
+                                                              @i-low |
+                                                                less_than(i, mul(c, p))
+                                                                [by hypothesis given-i-low]
+                                                              @t-below |
+                                                                less_than(t, p)
+                                                                [by hypothesis given-t-below]
+                                                              @given-they-are-equal |
+                                                                assume at(u2, i) = at(u2, add(mul(c, p), t)) {
+                                                                  @they-are-equal |
+                                                                    at(u2, i) = at(u2, add(mul(c, p), t))
+                                                                    [by hypothesis given-they-are-equal]
+                                                                  // the low entry's block b < c
+                                                                  @old-block-exists |
+                                                                    exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                                    [using specialize old-entries(i) i-low]
+                                                                  @agrees-at-i |
+                                                                    at(u2, i) = at(u, i)
+                                                                    [using specialize lower(i) i-low]
+                                                                  @with-old-block |
+                                                                    unpack b: Nat from old-block-exists {
+                                                                      @old-block-facts |
+                                                                        less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                                        [by hypothesis with-old-block]
+                                                                      @b-below-c |
+                                                                        less_than(b, c)
+                                                                        [by and_elim_left old-block-facts]
+                                                                      @entry-in-old-block |
+                                                                        inCoset(at(r, b), at(u, i))
+                                                                        [by and_elim_right old-block-facts]
+                                                                      @u2-entry-in-old-block |
+                                                                        inCoset(at(r, b), at(u2, i))
+                                                                        [by rewrite agrees-at-i entry-in-old-block]
+                                                                      // the same element, as a high entry, is in block c's coset
+                                                                      @agrees-at-shifted |
+                                                                        at(u2, add(mul(c, p), t)) = at(w, t)
+                                                                        [using specialize upper(t) t-below]
+                                                                      @w-entry-in-new-block |
+                                                                        inCoset(at(r, c), at(w, t))
+                                                                        [using specialize new-entries(t) t-below]
+                                                                      @u2-at-shifted-in-new-block |
+                                                                        inCoset(at(r, c), at(u2, add(mul(c, p), t)))
+                                                                        [by rewrite agrees-at-shifted w-entry-in-new-block]
+                                                                      @u2-at-i-in-new-block |
+                                                                        inCoset(at(r, c), at(u2, i))
+                                                                        [by rewrite they-are-equal u2-at-shifted-in-new-block]
+                                                                      // both blocks hold it, so b = c — but b < c.
+                                                                      @b-below-k |
+                                                                        less_than(b, k)
+                                                                        [using specialize lessThanTransitive(b, c, k) b-below-c c-below]
+                                                                      @b-is-c |
+                                                                        b = c
+                                                                        [using specialize sharedElementForcesTheSameRepresentative(r, k, b, c, at(u2, i)) reps b-below-k c-below u2-entry-in-old-block u2-at-i-in-new-block]
+                                                                      @c-below-c |
+                                                                        less_than(c, c)
+                                                                        [by rewrite b-is-c b-below-c]
+                                                                      @c-not-below-c |
+                                                                        not less_than(c, c)
+                                                                        [using specialize lessThanIrreflexive(c)]
+                                                                      @conclusion-contradiction |
+                                                                        at(u2, i) != at(u2, add(mul(c, p), t))
+                                                                        [by absurd c-below-c c-not-below-c]
+                                                                    }
+                                                                  @conclusion-equal-is-absurd |
+                                                                    at(u2, i) != at(u2, add(mul(c, p), t))
+                                                                    [by exists_elim with-old-block]
+                                                                }
+                                                              @equal-implies-not-equal |
+                                                                at(u2, i) = at(u2, add(mul(c, p), t)) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                                [by implies_intro given-they-are-equal]
+                                                              @conclusion-never-equal-here |
+                                                                at(u2, i) != at(u2, add(mul(c, p), t))
+                                                                [using tautology equal-implies-not-equal]
+                                                            }
+                                                          @t-below-implies |
+                                                            less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                            [by implies_intro given-t-below]
+                                                        }
+                                                      @i-low-implies |
+                                                        less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                        [by implies_intro given-i-low]
+                                                    }
+                                                  @discharge-t |
+                                                    forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                    [by forall_intro never-equal-at-t]
+                                                }
+                                            }
+                                          @new-entries-implies |
+                                            (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                            [by implies_intro given-new-entries]
+                                        }
+                                      @old-entries-implies |
+                                        (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                        [by implies_intro given-old-entries]
+                                    }
+                                  @upper-implies |
+                                    (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                    [by implies_intro given-upper]
+                                }
+                              @lower-implies |
+                                (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                [by implies_intro given-lower]
+                            }
+                            @c-below-implies |
+                              less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                              [by implies_intro given-c-below]
+                              }
+                          @reps-implies |
+                            listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                            [by implies_intro given-reps]
+                            }
+                          @discharge-k |
+                            forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                            [by forall_intro generalize-k]
+                        }
+                      @discharge-u2 |
+                        forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                        [by forall_intro generalize-u2]
+                    }
+                  @discharge-w |
+                    forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                    [by forall_intro generalize-w]
+                }
+              @discharge-u |
+                forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+            [by forall_intro generalize-p]
+        }
+      @discharge-c |
+        forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+    [by forall_intro generalize-r]
+qed
+
+// (2) Injectivity, in three cases. Both indices low: `u`'s injectivity. Both high: `w`'s,
+// after cancelling the base. One of each: the shared entry would lie in two different
+// representatives' cosets, which `sharedElementForcesTheSameRepresentative` forbids.
+theorem theExtendedListingIsInjective: forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat;
+  listsCosetReps(r, k) ->
+  less_than(c, k) ->
+  mul(succ(c), p) = add(mul(c, p), p) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->
+  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->
+  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->
+  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->
+  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->
+  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-c |
+        fix c: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @generalize-w |
+                    fix w: Seq {
+                      @generalize-u2 |
+                        fix u2: Seq {
+                          @generalize-k |
+                            fix k: Nat {
+                      @given-reps |
+                        assume listsCosetReps(r, k) {
+                        @given-c-below |
+                          assume less_than(c, k) {
+                        @given-length |
+                          assume mul(succ(c), p) = add(mul(c, p), p) {
+                          @given-lower |
+                            assume forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i) {
+                            @given-upper |
+                              assume forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i) {
+                              @given-old-entries |
+                                assume forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i)) {
+                                @given-old-injective |
+                                  assume forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j {
+                                  @given-new-entries |
+                                    assume forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i)) {
+                                    @given-new-injective |
+                                      assume forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j {
+                                                      @reps |
+                                                        listsCosetReps(r, k)
+                                                        [by hypothesis given-reps]
+                                                      @c-below |
+                                                        less_than(c, k)
+                                                        [by hypothesis given-c-below]
+                                                      @length |
+                                                        mul(succ(c), p) = add(mul(c, p), p)
+                                                        [by hypothesis given-length]
+                                                      @lower |
+                                                        forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)
+                                                        [by hypothesis given-lower]
+                                                      @upper |
+                                                        forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)
+                                                        [by hypothesis given-upper]
+                                                      @old-entries |
+                                                        forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                                        [by hypothesis given-old-entries]
+                                                      @old-injective |
+                                                        forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j
+                                                        [by hypothesis given-old-injective]
+                                                      @new-entries |
+                                                        forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))
+                                                        [by hypothesis given-new-entries]
+                                                      @new-injective |
+                                                        forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j
+                                                        [by hypothesis given-new-injective]
+                                                      // the cross case, once, for both orientations.
+                                                      @no-cross |
+                                                        forall i: Nat; forall t: Nat; less_than(i, mul(c, p)) -> less_than(t, p) -> at(u2, i) != at(u2, add(mul(c, p), t))
+                                                        [using specialize noLowEntryEqualsAHighEntry(r, c, p, u, w, u2, k) reps c-below lower upper old-entries new-entries]
+                                                      @conclusion-injective |
+                                                        forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                                        [by forall_intro injective-at-i]
+                                                      @injective-at-i |
+                                                        fix i: Nat {
+                                                          @injective-at-j |
+                                                            fix j: Nat {
+                                                              @given-i-in-range |
+                                                                assume less_than(i, mul(succ(c), p)) {
+                                                                  @given-j-in-range |
+                                                                    assume less_than(j, mul(succ(c), p)) {
+                                                                      @given-entries-equal |
+                                                                        assume at(u2, i) = at(u2, j) {
+                                                                          @i-in-range |
+                                                                            less_than(i, mul(succ(c), p))
+                                                                            [by hypothesis given-i-in-range]
+                                                                          @j-in-range |
+                                                                            less_than(j, mul(succ(c), p))
+                                                                            [by hypothesis given-j-in-range]
+                                                                          @entries-equal |
+                                                                            at(u2, i) = at(u2, j)
+                                                                            [by hypothesis given-entries-equal]
+                                                                          @i-below-sum |
+                                                                            less_than(i, add(mul(c, p), p))
+                                                                            [by rewrite length i-in-range]
+                                                                          @j-below-sum |
+                                                                            less_than(j, add(mul(c, p), p))
+                                                                            [by rewrite length j-in-range]
+                                                                          @i-splits |
+                                                                            less_than(i, mul(c, p)) or (exists t: Nat; less_than(t, p) and i = add(mul(c, p), t))
+                                                                            [using specialize indexSplits(mul(c, p), p, i) i-below-sum]
+                                                                          @j-splits |
+                                                                            less_than(j, mul(c, p)) or (exists t: Nat; less_than(t, p) and j = add(mul(c, p), t))
+                                                                            [using specialize indexSplits(mul(c, p), p, j) j-below-sum]
+                                                                          @conclusion-indices-equal |
+                                                                            i = j
+                                                                            case i-splits {
+                                                                              @when-i-is-low |
+                                                                                assume less_than(i, mul(c, p)) {
+                                                                                  @i-low |
+                                                                                    less_than(i, mul(c, p))
+                                                                                    [by hypothesis when-i-is-low]
+                                                                                  @conclusion-i-low |
+                                                                                    i = j
+                                                                                    case j-splits {
+                                                                                      // both low: u's injectivity
+                                                                                      @when-both-low |
+                                                                                        assume less_than(j, mul(c, p)) {
+                                                                                          @j-low |
+                                                                                            less_than(j, mul(c, p))
+                                                                                            [by hypothesis when-both-low]
+                                                                                          @u2-at-i |
+                                                                                            at(u2, i) = at(u, i)
+                                                                                            [using specialize lower(i) i-low]
+                                                                                          @u2-at-j |
+                                                                                            at(u2, j) = at(u, j)
+                                                                                            [using specialize lower(j) j-low]
+                                                                                          @u2-at-i-flipped |
+                                                                                            at(u, i) = at(u2, i)
+                                                                                            [by symmetry u2-at-i]
+                                                                                          @old-entries-equal |
+                                                                                            at(u, i) = at(u, j)
+                                                                                            [using chain u2-at-i-flipped entries-equal u2-at-j]
+                                                                                          @conclusion-both-low |
+                                                                                            i = j
+                                                                                            [using specialize old-injective(i, j) i-low j-low old-entries-equal]
+                                                                                        }
+                                                                                      // i low, j high: the cross case forbids it
+                                                                                      @when-j-is-high |
+                                                                                        assume exists t: Nat; less_than(t, p) and j = add(mul(c, p), t) {
+                                                                                          @j-high-exists |
+                                                                                            exists t: Nat; less_than(t, p) and j = add(mul(c, p), t)
+                                                                                            [by hypothesis when-j-is-high]
+                                                                                          @with-j-offset |
+                                                                                            unpack t: Nat from j-high-exists {
+                                                                                              @j-offset-facts |
+                                                                                                less_than(t, p) and j = add(mul(c, p), t)
+                                                                                                [by hypothesis with-j-offset]
+                                                                                              @t-below |
+                                                                                                less_than(t, p)
+                                                                                                [by and_elim_left j-offset-facts]
+                                                                                              @j-is-shifted |
+                                                                                                j = add(mul(c, p), t)
+                                                                                                [by and_elim_right j-offset-facts]
+                                                                                              @shifted-entries-equal |
+                                                                                                at(u2, i) = at(u2, add(mul(c, p), t))
+                                                                                                [by rewrite j-is-shifted entries-equal]
+                                                                                              @never-equal |
+                                                                                                at(u2, i) != at(u2, add(mul(c, p), t))
+                                                                                                [using specialize no-cross(i, t) i-low t-below]
+                                                                                              @conclusion-cross-absurd |
+                                                                                                i = j
+                                                                                                [by absurd shifted-entries-equal never-equal]
+                                                                                            }
+                                                                                          @conclusion-j-high |
+                                                                                            i = j
+                                                                                            [by exists_elim with-j-offset]
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                              @when-i-is-high |
+                                                                                assume exists t: Nat; less_than(t, p) and i = add(mul(c, p), t) {
+                                                                                  @i-high-exists |
+                                                                                    exists t: Nat; less_than(t, p) and i = add(mul(c, p), t)
+                                                                                    [by hypothesis when-i-is-high]
+                                                                                  @with-i-offset |
+                                                                                    unpack s: Nat from i-high-exists {
+                                                                                      @i-offset-facts |
+                                                                                        less_than(s, p) and i = add(mul(c, p), s)
+                                                                                        [by hypothesis with-i-offset]
+                                                                                      @s-below |
+                                                                                        less_than(s, p)
+                                                                                        [by and_elim_left i-offset-facts]
+                                                                                      @i-is-shifted |
+                                                                                        i = add(mul(c, p), s)
+                                                                                        [by and_elim_right i-offset-facts]
+                                                                                      @conclusion-i-high |
+                                                                                        i = j
+                                                                                        case j-splits {
+                                                                                          // i high, j low: the cross case, with the roles swapped
+                                                                                          @when-j-is-low |
+                                                                                            assume less_than(j, mul(c, p)) {
+                                                                                              @j-low |
+                                                                                                less_than(j, mul(c, p))
+                                                                                                [by hypothesis when-j-is-low]
+                                                                                              @entries-equal-flipped |
+                                                                                                at(u2, j) = at(u2, i)
+                                                                                                [by symmetry entries-equal]
+                                                                                              @shifted-entries-equal |
+                                                                                                at(u2, j) = at(u2, add(mul(c, p), s))
+                                                                                                [by rewrite i-is-shifted entries-equal-flipped]
+                                                                                              @never-equal |
+                                                                                                at(u2, j) != at(u2, add(mul(c, p), s))
+                                                                                                [using specialize no-cross(j, s) j-low s-below]
+                                                                                              @conclusion-swapped-cross-absurd |
+                                                                                                i = j
+                                                                                                [by absurd shifted-entries-equal never-equal]
+                                                                                            }
+                                                                                          // both high: w's injectivity on the offsets, then cancel the base
+                                                                                          @when-both-high |
+                                                                                            assume exists t: Nat; less_than(t, p) and j = add(mul(c, p), t) {
+                                                                                              @j-high-exists |
+                                                                                                exists t: Nat; less_than(t, p) and j = add(mul(c, p), t)
+                                                                                                [by hypothesis when-both-high]
+                                                                                              @with-j-offset |
+                                                                                                unpack t: Nat from j-high-exists {
+                                                                                                  @j-offset-facts |
+                                                                                                    less_than(t, p) and j = add(mul(c, p), t)
+                                                                                                    [by hypothesis with-j-offset]
+                                                                                                  @t-below |
+                                                                                                    less_than(t, p)
+                                                                                                    [by and_elim_left j-offset-facts]
+                                                                                                  @j-is-shifted |
+                                                                                                    j = add(mul(c, p), t)
+                                                                                                    [by and_elim_right j-offset-facts]
+                                                                                                  @u2-at-s |
+                                                                                                    at(u2, add(mul(c, p), s)) = at(w, s)
+                                                                                                    [using specialize upper(s) s-below]
+                                                                                                  @u2-at-t |
+                                                                                                    at(u2, add(mul(c, p), t)) = at(w, t)
+                                                                                                    [using specialize upper(t) t-below]
+                                                                                                  @shifted-i-equals-shifted-j |
+                                                                                                    at(u2, add(mul(c, p), s)) = at(u2, add(mul(c, p), t))
+                                                                                                    [using chain i-is-shifted-flipped entries-equal j-is-shifted]
+                                                                                                  @i-is-shifted-flipped |
+                                                                                                    at(u2, add(mul(c, p), s)) = at(u2, i)
+                                                                                                    [by rewrite i-is-shifted at-i-is-itself]
+                                                                                                  @at-i-is-itself |
+                                                                                                    at(u2, i) = at(u2, i)
+                                                                                                    [by reflexivity]
+                                                                                                  @u2-at-s-flipped |
+                                                                                                    at(w, s) = at(u2, add(mul(c, p), s))
+                                                                                                    [by symmetry u2-at-s]
+                                                                                                  @offsets-have-equal-entries |
+                                                                                                    at(w, s) = at(w, t)
+                                                                                                    [using chain u2-at-s-flipped shifted-i-equals-shifted-j u2-at-t]
+                                                                                                  @offsets-equal |
+                                                                                                    s = t
+                                                                                                    [using specialize new-injective(s, t) s-below t-below offsets-have-equal-entries]
+                                                                                                  @i-is-shifted-by-t |
+                                                                                                    i = add(mul(c, p), t)
+                                                                                                    [by rewrite offsets-equal i-is-shifted]
+                                                                                                  @j-is-shifted-flipped |
+                                                                                                    add(mul(c, p), t) = j
+                                                                                                    [by symmetry j-is-shifted]
+                                                                                                  @conclusion-both-high |
+                                                                                                    i = j
+                                                                                                    [using chain i-is-shifted-by-t j-is-shifted-flipped]
+                                                                                                }
+                                                                                              @conclusion-both-high-outer |
+                                                                                                i = j
+                                                                                                [by exists_elim with-j-offset]
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                  @conclusion-i-high-outer |
+                                                                                    i = j
+                                                                                    [by exists_elim with-i-offset]
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                      @entries-equal-implies |
+                                                                        at(u2, i) = at(u2, j) -> i = j
+                                                                        [by implies_intro given-entries-equal]
+                                                                    }
+                                                                  @j-in-range-implies |
+                                                                    less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                                                    [by implies_intro given-j-in-range]
+                                                                }
+                                                              @i-in-range-implies |
+                                                                less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                                                [by implies_intro given-i-in-range]
+                                                            }
+                                                          @discharge-j |
+                                                            forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                                            [by forall_intro injective-at-j]
+                                                        }
+                                      }
+                                    @new-injective-implies |
+                                      (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                      [by implies_intro given-new-injective]
+                                    }
+                                  @new-entries-implies |
+                                    (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                    [by implies_intro given-new-entries]
+                                  }
+                                @old-injective-implies |
+                                  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                  [by implies_intro given-old-injective]
+                                }
+                              @old-entries-implies |
+                                (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                [by implies_intro given-old-entries]
+                              }
+                            @upper-implies |
+                              (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                              [by implies_intro given-upper]
+                            }
+                          @lower-implies |
+                            (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                            [by implies_intro given-lower]
+                          }
+                        @length-implies |
+                          mul(succ(c), p) = add(mul(c, p), p) -> (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                          [by implies_intro given-length]
+                        }
+                        @c-below-implies |
+                          less_than(c, k) -> mul(succ(c), p) = add(mul(c, p), p) -> (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                          [by implies_intro given-c-below]
+                          }
+                      @reps-implies |
+                        listsCosetReps(r, k) -> less_than(c, k) -> mul(succ(c), p) = add(mul(c, p), p) -> (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) -> (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) -> (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) -> (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) -> forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                        [by implies_intro given-reps]
+                            }
+                          @discharge-k |
+                            forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                            [by forall_intro generalize-k]
+                        }
+                      @discharge-u2 |
+                        forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                        [by forall_intro generalize-u2]
+                    }
+                  @discharge-w |
+                    forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                    [by forall_intro generalize-w]
+                }
+              @discharge-u |
+                forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+            [by forall_intro generalize-p]
+        }
+      @discharge-c |
+        forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) ->  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j) ->  (forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))) ->  (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j) ->  forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+    [by forall_intro generalize-r]
+qed
+
+// (3) Covering: a block b < c is covered by `u`'s own covering clause (and its index is still
+// in range); block c is covered by `w`'s, shifted up by the base.
+theorem theExtendedListingCoversEveryBlock: forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq;
+  mul(succ(c), p) = add(mul(c, p), p) ->
+  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->
+  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->
+  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->
+  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->
+  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-c |
+        fix c: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @generalize-w |
+                    fix w: Seq {
+                      @generalize-u2 |
+                        fix u2: Seq {
+                          @given-length |
+                            assume mul(succ(c), p) = add(mul(c, p), p) {
+                              @given-lower |
+                                assume forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i) {
+                                  @given-upper |
+                                    assume forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i) {
+                                      @given-old-covers |
+                                        assume forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x {
+                                          @given-new-covers |
+                                            assume forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x {
+                                              @length |
+                                                mul(succ(c), p) = add(mul(c, p), p)
+                                                [by hypothesis given-length]
+                                              @lower |
+                                                forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)
+                                                [by hypothesis given-lower]
+                                              @upper |
+                                                forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)
+                                                [by hypothesis given-upper]
+                                              @old-covers |
+                                                forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x
+                                                [by hypothesis given-old-covers]
+                                              @new-covers |
+                                                forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x
+                                                [by hypothesis given-new-covers]
+                                              @conclusion-covers |
+                                                forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                [by forall_intro covers-b]
+                                              @covers-b |
+                                                fix b: Nat {
+                                                  @covers-x |
+                                                    fix x: Grp {
+                                                      @given-b-below |
+                                                        assume less_than(b, succ(c)) {
+                                                          @given-x-in-b |
+                                                            assume inCoset(at(r, b), x) {
+                                                              @b-below |
+                                                                less_than(b, succ(c))
+                                                                [by hypothesis given-b-below]
+                                                              @x-in-b |
+                                                                inCoset(at(r, b), x)
+                                                                [by hypothesis given-x-in-b]
+                                                              @b-splits |
+                                                                less_than(b, c) or b = c
+                                                                [using specialize lessThanSuccSplit(b, c) b-below]
+                                                              // b < c: `u` already covers it, and a low index stays in range.
+                                                              @conclusion-index-exists |
+                                                                exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                                case b-splits {
+                                                                  @when-b-is-an-old-block |
+                                                                    assume less_than(b, c) {
+                                                                      @b-old |
+                                                                        less_than(b, c)
+                                                                        [by hypothesis when-b-is-an-old-block]
+                                                                      @old-index-exists |
+                                                                        exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x
+                                                                        [using specialize old-covers(b, x) b-old x-in-b]
+                                                                      @with-old-index |
+                                                                        unpack i: Nat from old-index-exists {
+                                                                          @old-index-facts |
+                                                                            less_than(i, mul(c, p)) and at(u, i) = x
+                                                                            [by hypothesis with-old-index]
+                                                                          @i-low |
+                                                                            less_than(i, mul(c, p))
+                                                                            [by and_elim_left old-index-facts]
+                                                                          @u-at-i-is-x |
+                                                                            at(u, i) = x
+                                                                            [by and_elim_right old-index-facts]
+                                                                          @agrees-at-i |
+                                                                            at(u2, i) = at(u, i)
+                                                                            [using specialize lower(i) i-low]
+                                                                          @u2-at-i-is-x |
+                                                                            at(u2, i) = x
+                                                                            [using chain agrees-at-i u-at-i-is-x]
+                                                                          @i-in-range |
+                                                                            less_than(i, mul(succ(c), p))
+                                                                            [using specialize aLowIndexIsStillInRange(c, p, i) length i-low]
+                                                                          @witnessed |
+                                                                            less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                                            [by and_intro i-in-range u2-at-i-is-x]
+                                                                          @conclusion-old-index |
+                                                                            exists i2: Nat; less_than(i2, mul(succ(c), p)) and at(u2, i2) = x
+                                                                            [by exists_intro(i) witnessed]
+                                                                        }
+                                                                      @conclusion-when-old |
+                                                                        exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                                        [by exists_elim with-old-index]
+                                                                    }
+                                                                  // b = c: `w` covers it, shifted up by the base.
+                                                                  @when-b-is-the-new-block |
+                                                                    assume b = c {
+                                                                      @b-is-c |
+                                                                        b = c
+                                                                        [by hypothesis when-b-is-the-new-block]
+                                                                      @x-in-c |
+                                                                        inCoset(at(r, c), x)
+                                                                        [by rewrite b-is-c x-in-b]
+                                                                      @new-index-exists |
+                                                                        exists t: Nat; less_than(t, p) and at(w, t) = x
+                                                                        [using specialize new-covers(x) x-in-c]
+                                                                      @with-new-index |
+                                                                        unpack t: Nat from new-index-exists {
+                                                                          @new-index-facts |
+                                                                            less_than(t, p) and at(w, t) = x
+                                                                            [by hypothesis with-new-index]
+                                                                          @t-below |
+                                                                            less_than(t, p)
+                                                                            [by and_elim_left new-index-facts]
+                                                                          @w-at-t-is-x |
+                                                                            at(w, t) = x
+                                                                            [by and_elim_right new-index-facts]
+                                                                          @agrees-at-t |
+                                                                            at(u2, add(mul(c, p), t)) = at(w, t)
+                                                                            [using specialize upper(t) t-below]
+                                                                          @u2-at-shifted-is-x |
+                                                                            at(u2, add(mul(c, p), t)) = x
+                                                                            [using chain agrees-at-t w-at-t-is-x]
+                                                                          @shifted-in-range |
+                                                                            less_than(add(mul(c, p), t), mul(succ(c), p))
+                                                                            [using specialize aHighIndexIsStillInRange(c, p, t) length t-below]
+                                                                          @witnessed |
+                                                                            less_than(add(mul(c, p), t), mul(succ(c), p)) and at(u2, add(mul(c, p), t)) = x
+                                                                            [by and_intro shifted-in-range u2-at-shifted-is-x]
+                                                                          @conclusion-new-index |
+                                                                            exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                                            [by exists_intro(add(mul(c, p), t)) witnessed]
+                                                                        }
+                                                                      @conclusion-when-new |
+                                                                        exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                                        [by exists_elim with-new-index]
+                                                                    }
+                                                                }
+                                                            }
+                                                          @x-in-b-implies |
+                                                            inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                            [by implies_intro given-x-in-b]
+                                                        }
+                                                      @b-below-implies |
+                                                        less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                        [by implies_intro given-b-below]
+                                                    }
+                                                  @discharge-x |
+                                                    forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                                    [by forall_intro covers-x]
+                                                }
+                                            }
+                                          @new-covers-implies |
+                                            (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) -> forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                            [by implies_intro given-new-covers]
+                                        }
+                                      @old-covers-implies |
+                                        (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) -> (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) -> forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                        [by implies_intro given-old-covers]
+                                    }
+                                  @upper-implies |
+                                    (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) -> (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) -> forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                    [by implies_intro given-upper]
+                                }
+                              @lower-implies |
+                                (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) -> (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) -> (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) -> (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) -> forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                [by implies_intro given-lower]
+                            }
+                          @length-implies |
+  mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                            [by implies_intro given-length]
+                        }
+                      @discharge-u2 |
+                        forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                        [by forall_intro generalize-u2]
+                    }
+                  @discharge-w |
+                    forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                    [by forall_intro generalize-w]
+                }
+              @discharge-u |
+                forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+            [by forall_intro generalize-p]
+        }
+      @discharge-c |
+        forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall u2: Seq; mul(succ(c), p) = add(mul(c, p), p) ->  (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)) ->  (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)) ->  (forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x) ->  (forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x) ->  forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+    [by forall_intro generalize-r]
+qed
+
+// ONE MORE BLOCK. Given c blocks listed and the (c+1)-st representative's coset listed by its
+// own p entries, concatenating gives c+1 blocks listed. This is the induction step and the
+// load-bearing lemma: injectivity across the seam is `cosetsAreEqualOrDisjoint`.
+theorem blocksExtendByOne: forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall k: Nat;
+  listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) ->
+  exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-c |
+        fix c: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @generalize-w |
+                    fix w: Seq {
+                      @generalize-k |
+                        fix k: Nat {
+                      @given-reps |
+                        assume listsCosetReps(r, k) {
+                        @given-c-below |
+                          assume less_than(c, k) {
+                          @given-blocks |
+                            assume listsTheBlocksBelow(u, r, c, p) {
+                              @given-coset-listed |
+                                assume listsTheCoset(at(r, c), w, p) {
+                                  @reps |
+                                    listsCosetReps(r, k)
+                                    [by hypothesis given-reps]
+                                  @c-below |
+                                    less_than(c, k)
+                                    [by hypothesis given-c-below]
+                                  @blocks |
+                                    listsTheBlocksBelow(u, r, c, p)
+                                    [by hypothesis given-blocks]
+                                  @coset-listed |
+                                    listsTheCoset(at(r, c), w, p)
+                                    [by hypothesis given-coset-listed]
+                                  @old-entries-in-blocks |
+                                    forall i: Nat; less_than(i, mul(c, p)) -> exists b: Nat; less_than(b, c) and inCoset(at(r, b), at(u, i))
+                                    [using tautology blocks]
+                                  @old-injective |
+                                    forall i: Nat; forall j: Nat; less_than(i, mul(c, p)) -> less_than(j, mul(c, p)) -> at(u, i) = at(u, j) -> i = j
+                                    [using tautology blocks]
+                                  @old-covers |
+                                    forall b: Nat; forall x: Grp; less_than(b, c) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(c, p)) and at(u, i) = x
+                                    [using tautology blocks]
+                                  @new-entries-in-coset |
+                                    forall i: Nat; less_than(i, p) -> inCoset(at(r, c), at(w, i))
+                                    [using tautology coset-listed]
+                                  @new-injective |
+                                    forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(w, i) = at(w, j) -> i = j
+                                    [using tautology coset-listed]
+                                  @new-covers |
+                                    forall x: Grp; inCoset(at(r, c), x) -> exists i: Nat; less_than(i, p) and at(w, i) = x
+                                    [using tautology coset-listed]
+                                  // the new length: mul(succ(c), p) = add(mul(c, p), p), so the new
+                                  // block sits at base mul(c, p) with length p — exactly seqConcat's shape.
+                                  @new-length |
+                                    mul(succ(c), p) = add(mul(c, p), p)
+                                    [using specialize mulSuccLeft(c, p)]
+                                  @concat-exists |
+                                    exists u2: Seq;
+                                      (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i))
+                                      and (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i))
+                                      and group_sequence.productUpTo(u2, add(mul(c, p), p)) = op(group_sequence.productUpTo(u, mul(c, p)), group_sequence.productUpTo(w, p))
+                                    [using specialize seqConcat(u, w, mul(c, p), p)]
+                                  @with-concat |
+                                    unpack u2: Seq from concat-exists {
+                                      @concat-facts |
+                                        (forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i))
+                                        and (forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i))
+                                        and group_sequence.productUpTo(u2, add(mul(c, p), p)) = op(group_sequence.productUpTo(u, mul(c, p)), group_sequence.productUpTo(w, p))
+                                        [by hypothesis with-concat]
+                                      @lower-half |
+                                        forall i: Nat; less_than(i, mul(c, p)) -> at(u2, i) = at(u, i)
+                                        [using tautology concat-facts]
+                                      @upper-half |
+                                        forall i: Nat; less_than(i, p) -> at(u2, add(mul(c, p), i)) = at(w, i)
+                                        [using tautology concat-facts]
+                                      @extended-entries |
+                                        forall i: Nat; less_than(i, mul(succ(c), p)) -> exists b: Nat; less_than(b, succ(c)) and inCoset(at(r, b), at(u2, i))
+                                        [using specialize everyExtendedEntryIsInSomeBlock(r, c, p, u, w, u2) new-length lower-half upper-half old-entries-in-blocks new-entries-in-coset]
+                                      @extended-injective |
+                                        forall i: Nat; forall j: Nat; less_than(i, mul(succ(c), p)) -> less_than(j, mul(succ(c), p)) -> at(u2, i) = at(u2, j) -> i = j
+                                        [using specialize theExtendedListingIsInjective(r, c, p, u, w, u2, k) reps c-below new-length lower-half upper-half old-entries-in-blocks old-injective new-entries-in-coset new-injective]
+                                      @extended-covers |
+                                        forall b: Nat; forall x: Grp; less_than(b, succ(c)) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(succ(c), p)) and at(u2, i) = x
+                                        [using specialize theExtendedListingCoversEveryBlock(r, c, p, u, w, u2) new-length lower-half upper-half old-covers new-covers]
+                                      @extended |
+                                        listsTheBlocksBelow(u2, r, succ(c), p)
+                                        [using tautology extended-entries extended-injective extended-covers]
+                                      @conclusion-extended-inner |
+                                        exists u3: Seq; listsTheBlocksBelow(u3, r, succ(c), p)
+                                        [by exists_intro(u2) extended]
+                                    }
+                                  @conclusion-extended |
+                                    exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                                    [by exists_elim with-concat]
+                                }
+                              @coset-listed-implies |
+                                listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                                [by implies_intro given-coset-listed]
+                            }
+                          @blocks-implies |
+                            listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                            [by implies_intro given-blocks]
+                        }
+                        @c-below-implies |
+                          less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                          [by implies_intro given-c-below]
+                          }
+                      @reps-implies |
+                        listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                        [by implies_intro given-reps]
+                        }
+                      @discharge-k |
+                        forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                        [by forall_intro generalize-k]
+                    }
+                  @discharge-w |
+                    forall w: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                    [by forall_intro generalize-w]
+                }
+              @discharge-u |
+                forall u: Seq; forall w: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; forall w: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+            [by forall_intro generalize-p]
+        }
+      @discharge-c |
+        forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall k: Nat; listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) -> exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+        [by forall_intro generalize-c]
+    }
+  @conclusion |
+    forall r: Seq; forall c: Nat; forall p: Nat; forall u: Seq; forall w: Seq; forall k: Nat;
+      listsCosetReps(r, k) -> less_than(c, k) -> listsTheBlocksBelow(u, r, c, p) -> listsTheCoset(at(r, c), w, p) ->
+      exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+    [by forall_intro generalize-r]
+qed
+
+// The INDUCTION: every prefix of the representative list has its blocks listed.
+// A PREFIX BOUND unpacks: succ(c) at-most k gives c strictly below k, because c < succ(c).
+theorem aSuccessorBoundGivesAStrictBound: forall c: Nat; forall k: Nat;
+  (less_than(succ(c), k) or succ(c) = k) -> less_than(c, k)
+proof
+  @generalize-c |
+    fix c: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @given-succ-at-most-k |
+            assume less_than(succ(c), k) or succ(c) = k {
+              @succ-at-most-k |
+                less_than(succ(c), k) or succ(c) = k
+                [by hypothesis given-succ-at-most-k]
+              @c-below-succ-c |
+                less_than(c, succ(c))
+                [using specialize lessThanSelf(c)]
+              @conclusion-strict |
+                less_than(c, k)
+                case succ-at-most-k {
+                  @when-succ-is-below-k |
+                    assume less_than(succ(c), k) {
+                      @succ-below-k |
+                        less_than(succ(c), k)
+                        [by hypothesis when-succ-is-below-k]
+                      @conclusion-transitive |
+                        less_than(c, k)
+                        [using specialize lessThanTransitive(c, succ(c), k) c-below-succ-c succ-below-k]
+                    }
+                  @when-succ-is-k |
+                    assume succ(c) = k {
+                      @succ-is-k |
+                        succ(c) = k
+                        [by hypothesis when-succ-is-k]
+                      @conclusion-rewritten |
+                        less_than(c, k)
+                        [by rewrite succ-is-k c-below-succ-c]
+                    }
+                }
+            }
+          @succ-at-most-k-implies |
+            (less_than(succ(c), k) or succ(c) = k) -> less_than(c, k)
+            [by implies_intro given-succ-at-most-k]
+        }
+      @discharge-k |
+        forall k: Nat; (less_than(succ(c), k) or succ(c) = k) -> less_than(c, k)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall c: Nat; forall k: Nat; (less_than(succ(c), k) or succ(c) = k) -> less_than(c, k)
+    [by forall_intro generalize-c]
+qed
+
+// The INDUCTION: every prefix of the representative list has its blocks listed. Induction on c
+// with the prefix bound carried as an antecedent, so the step can hand `blocksExtendByOne` the
+// `c < k` it needs. At each step the (c+1)-st representative's coset is listed by the subgroup's
+// own length — Proposition 6.4 — and the two listings concatenate.
+theorem everyPrefixOfBlocksIsListed: forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat;
+  listsCosetReps(r, k) -> listsTheSubgroup(v, p) ->
+  forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-v |
+            fix v: Seq {
+              @generalize-p |
+                fix p: Nat {
+                  @given-reps |
+                    assume listsCosetReps(r, k) {
+                      @given-subgroup-listed |
+                        assume listsTheSubgroup(v, p) {
+                          @reps |
+                            listsCosetReps(r, k)
+                            [by hypothesis given-reps]
+                          @subgroup-listed |
+                            listsTheSubgroup(v, p)
+                            [by hypothesis given-subgroup-listed]
+                          // base: below ZERO there is nothing to list.
+                          @base-case-proof |
+                            exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+                            [using specialize noBlocksAreListedVacuously(r, p)]
+                          @base-case |
+                            (less_than(ZERO, k) or ZERO = k) -> exists u: Seq; listsTheBlocksBelow(u, r, ZERO, p)
+                            [using tautology base-case-proof]
+                          // step: one more block, via Proposition 6.4 then the concatenation.
+                          @induction-step |
+                            fix c: Nat {
+                              @given-inductive-hypothesis |
+                                assume (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p) {
+                                  @inductive-hypothesis |
+                                    (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                                    [by hypothesis given-inductive-hypothesis]
+                                  @given-succ-at-most-k |
+                                    assume less_than(succ(c), k) or succ(c) = k {
+                                      @succ-at-most-k |
+                                        less_than(succ(c), k) or succ(c) = k
+                                        [by hypothesis given-succ-at-most-k]
+                                      @c-below-k |
+                                        less_than(c, k)
+                                        [using specialize aSuccessorBoundGivesAStrictBound(c, k) succ-at-most-k]
+                                      @c-at-most-k |
+                                        less_than(c, k) or c = k
+                                        [by or_intro_left c-below-k]
+                                      @blocks-below-c-exist |
+                                        exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                                        [by modus_ponens inductive-hypothesis c-at-most-k]
+                                      // Proposition 6.4: the c-th representative's coset is p long.
+                                      @coset-listed-exists |
+                                        exists u: Seq; listsTheCoset(at(r, c), u, p)
+                                        [using specialize everyCosetIsListedByTheSubgroupsLength(at(r, c), v, p) subgroup-listed]
+                                      @with-blocks-below-c |
+                                        unpack u: Seq from blocks-below-c-exist {
+                                          @blocks-below-c |
+                                            listsTheBlocksBelow(u, r, c, p)
+                                            [by hypothesis with-blocks-below-c]
+                                          @with-coset-listing |
+                                            unpack w: Seq from coset-listed-exists {
+                                              @coset-listed |
+                                                listsTheCoset(at(r, c), w, p)
+                                                [by hypothesis with-coset-listing]
+                                              @conclusion-extended |
+                                                exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                                                [using specialize blocksExtendByOne(r, c, p, u, w, k) reps c-below-k blocks-below-c coset-listed]
+                                            }
+                                          @conclusion-extended-middle |
+                                            exists u2: Seq; listsTheBlocksBelow(u2, r, succ(c), p)
+                                            [by exists_elim with-coset-listing]
+                                        }
+                                      @conclusion-extended-outer |
+                                        exists u: Seq; listsTheBlocksBelow(u, r, succ(c), p)
+                                        [by exists_elim with-blocks-below-c]
+                                    }
+                                  @succ-at-most-k-implies |
+                                    (less_than(succ(c), k) or succ(c) = k) -> exists u: Seq; listsTheBlocksBelow(u, r, succ(c), p)
+                                    [by implies_intro given-succ-at-most-k]
+                                }
+                              @induction-step-at-c |
+                                ((less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)) -> (less_than(succ(c), k) or succ(c) = k) -> exists u: Seq; listsTheBlocksBelow(u, r, succ(c), p)
+                                [by implies_intro given-inductive-hypothesis]
+                            }
+                          @induction-step-for-all-c |
+                            forall c: Nat; ((less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)) -> (less_than(succ(c), k) or succ(c) = k) -> exists u: Seq; listsTheBlocksBelow(u, r, succ(c), p)
+                            [by forall_intro induction-step]
+                          @conclusion-every-prefix |
+                            forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                            [using instantiation induction((fun c: Nat => (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p))) base-case induction-step-for-all-c]
+                        }
+                      @subgroup-listed-implies |
+                        listsTheSubgroup(v, p) -> forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                        [by implies_intro given-subgroup-listed]
+                    }
+                  @reps-implies |
+                    listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                    [by implies_intro given-reps]
+                }
+              @discharge-p |
+                forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+                [by forall_intro generalize-p]
+            }
+          @discharge-v |
+            forall v: Seq; forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+            [by forall_intro generalize-v]
+        }
+      @discharge-k |
+        forall k: Nat; forall v: Seq; forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat;
+      listsCosetReps(r, k) -> listsTheSubgroup(v, p) ->
+      forall c: Nat; (less_than(c, k) or c = k) -> exists u: Seq; listsTheBlocksBelow(u, r, c, p)
+    [by forall_intro generalize-r]
+qed
+
+// At c = k the blocks cover the WHOLE group, because every element lies in some
+// representative's coset — which is exactly `listsCosetReps`'s covering clause.
+theorem allTheBlocksAreTheGroup: forall r: Seq; forall k: Nat; forall p: Nat; forall u: Seq;
+  listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-u |
+                fix u: Seq {
+                  @given-reps |
+                    assume listsCosetReps(r, k) {
+                      @given-blocks |
+                        assume listsTheBlocksBelow(u, r, k, p) {
+                          @reps |
+                            listsCosetReps(r, k)
+                            [by hypothesis given-reps]
+                          @blocks |
+                            listsTheBlocksBelow(u, r, k, p)
+                            [by hypothesis given-blocks]
+                          @reps-cover |
+                            forall x: Grp; exists i: Nat; less_than(i, k) and inCoset(at(r, i), x)
+                            [using tautology reps]
+                          @blocks-injective |
+                            forall i: Nat; forall j: Nat; less_than(i, mul(k, p)) -> less_than(j, mul(k, p)) -> at(u, i) = at(u, j) -> i = j
+                            [using tautology blocks]
+                          @blocks-cover-each-coset |
+                            forall b: Nat; forall x: Grp; less_than(b, k) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
+                            [using tautology blocks]
+                          // the trivial first clause of listsTheGroup
+                          @entries-are-themselves |
+                            forall i: Nat; less_than(i, mul(k, p)) -> at(u, i) = at(u, i)
+                            [by forall_intro entry-is-itself]
+                          @entry-is-itself |
+                            fix i: Nat {
+                              @given-below |
+                                assume less_than(i, mul(k, p)) {
+                                  @conclusion-entry-is-itself |
+                                    at(u, i) = at(u, i)
+                                    [by reflexivity]
+                                }
+                              @below-implies |
+                                less_than(i, mul(k, p)) -> at(u, i) = at(u, i)
+                                [by implies_intro given-below]
+                            }
+                          // every element of G: find its representative, then its index.
+                          @covers-the-group |
+                            forall x: Grp; exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
+                            [by forall_intro covers-x]
+                          @covers-x |
+                            fix x: Grp {
+                              @rep-exists |
+                                exists i: Nat; less_than(i, k) and inCoset(at(r, i), x)
+                                [using specialize reps-cover(x)]
+                              @with-rep |
+                                unpack b: Nat from rep-exists {
+                                  @rep-facts |
+                                    less_than(b, k) and inCoset(at(r, b), x)
+                                    [by hypothesis with-rep]
+                                  @rep-below |
+                                    less_than(b, k)
+                                    [by and_elim_left rep-facts]
+                                  @x-in-rep-coset |
+                                    inCoset(at(r, b), x)
+                                    [by and_elim_right rep-facts]
+                                  @conclusion-index-exists |
+                                    exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
+                                    [using specialize blocks-cover-each-coset(b, x) rep-below x-in-rep-coset]
+                                }
+                              @conclusion-covers-x |
+                                exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
+                                [by exists_elim with-rep]
+                            }
+                          @conclusion-group-listed |
+                            listsTheGroup(u, mul(k, p))
+                            [using tautology entries-are-themselves blocks-injective covers-the-group]
+                        }
+                      @blocks-implies |
+                        listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+                        [by implies_intro given-blocks]
+                    }
+                  @reps-implies |
+                    listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+                    [by implies_intro given-reps]
+                }
+              @discharge-u |
+                forall u: Seq; listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+                [by forall_intro generalize-u]
+            }
+          @discharge-p |
+            forall p: Nat; forall u: Seq; listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+            [by forall_intro generalize-p]
+        }
+      @discharge-k |
+        forall k: Nat; forall p: Nat; forall u: Seq; listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall p: Nat; forall u: Seq;
+      listsCosetReps(r, k) -> listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
+    [by forall_intro generalize-r]
+qed
+
+// LAGRANGE. Run the prefix induction out to c = k, then read the whole group off the k blocks.
+theorem lagrange: forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat;
+  listsCosetReps(r, k) -> listsTheSubgroup(v, p) ->
+  exists u: Seq; listsTheGroup(u, mul(k, p))
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-v |
+            fix v: Seq {
+              @generalize-p |
+                fix p: Nat {
+                  @given-reps |
+                    assume listsCosetReps(r, k) {
+                      @given-subgroup-listed |
+                        assume listsTheSubgroup(v, p) {
+                          @reps |
+                            listsCosetReps(r, k)
+                            [by hypothesis given-reps]
+                          @subgroup-listed |
+                            listsTheSubgroup(v, p)
+                            [by hypothesis given-subgroup-listed]
+                          @k-reaches-itself |
+                            less_than(k, k) or k = k
+                            [by or_intro_right k-is-k]
+                          @k-is-k |
+                            k = k
+                            [by reflexivity]
+                          @all-blocks-exist |
+                            exists u: Seq; listsTheBlocksBelow(u, r, k, p)
+                            [using specialize everyPrefixOfBlocksIsListed(r, k, v, p, k) reps subgroup-listed k-reaches-itself]
+                          @with-all-blocks |
+                            unpack u: Seq from all-blocks-exist {
+                              @blocks |
+                                listsTheBlocksBelow(u, r, k, p)
+                                [by hypothesis with-all-blocks]
+                              @group-listed |
+                                listsTheGroup(u, mul(k, p))
+                                [using specialize allTheBlocksAreTheGroup(r, k, p, u) reps blocks]
+                              @conclusion-group-listed-inner |
+                                exists u2: Seq; listsTheGroup(u2, mul(k, p))
+                                [by exists_intro(u) group-listed]
+                            }
+                          @conclusion-group-listed |
+                            exists u: Seq; listsTheGroup(u, mul(k, p))
+                            [by exists_elim with-all-blocks]
+                        }
+                      @subgroup-listed-implies |
+                        listsTheSubgroup(v, p) -> exists u: Seq; listsTheGroup(u, mul(k, p))
+                        [by implies_intro given-subgroup-listed]
+                    }
+                  @reps-implies |
+                    listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> exists u: Seq; listsTheGroup(u, mul(k, p))
+                    [by implies_intro given-reps]
+                }
+              @discharge-p |
+                forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> exists u: Seq; listsTheGroup(u, mul(k, p))
+                [by forall_intro generalize-p]
+            }
+          @discharge-v |
+            forall v: Seq; forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> exists u: Seq; listsTheGroup(u, mul(k, p))
+            [by forall_intro generalize-v]
+        }
+      @discharge-k |
+        forall k: Nat; forall v: Seq; forall p: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> exists u: Seq; listsTheGroup(u, mul(k, p))
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat;
+      listsCosetReps(r, k) -> listsTheSubgroup(v, p) ->
+      exists u: Seq; listsTheGroup(u, mul(k, p))
+    [by forall_intro generalize-r]
+qed

@@ -10,11 +10,23 @@
 // DISJOINT, and they coincide exactly when g⁻¹k lies in H. Theorem 6.2 — the cosets partition
 // the group — is then that plus "every g lies in its own coset".
 
-// Based on std/group.b4m (NOT std/subgroup.b4m, which declares its OWN abstract parent group
-// as a deliberate dependency inversion — its `Grp` is a different sort from this layer's). The
-// subgroup is a membership predicate declared locally with the three closure conditions, the
-// same convention std/group/generated.b4m uses.
+// THE BASE. The ambient group is `std/group.b4m`'s, because the LISTING layer
+// (`std/group/sequence.b4m`, which the counting half below needs) postulates its `Seq`/`at`
+// over THAT sort — and its sequence-existence postulates are axioms, so they cannot be
+// discharged by a model pointing the other way. Sequences therefore fix the base.
+//
+// The subgroup is a concrete membership predicate over that group, with Judson's three
+// criteria as this theory's own assumptions — a VARIABLE subgroup has no construction to
+// prove them from, so they are what "let H be a subgroup of G" means here.
+//
+// `std/subgroup.b4m` — the repo's standalone subgroup theory — is then reached by a MODEL,
+// not by aliases: it declares its own `Grp` and its own `inSubgroup`, and aliasing cannot
+// identify two independently declared sorts. The model interprets its vocabulary with ours
+// and discharges its criteria from ours, so its whole corpus (`subgroupClosedDivide`, the
+// group laws relativized to the subgroup, the one-step and intersection families) transfers
+// onto `inSubgroup` here, citable as `[using model(TheSubgroup) subgroup.X]`.
 import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
 import peano <<< "std/peano.b4m"
 
@@ -31,12 +43,38 @@ theorem invProduct = group.invProduct
 theorem invInvolution = group.invInvolution
 theorem cancelLeft = group.cancelLeft
 
-// THE SUBGROUP, as a membership predicate over the ambient group's sort, with the three
-// subgroup-criterion conditions as its axioms.
+// THE SUBGROUP: a membership predicate over the ambient group, with the subgroup criteria.
 pred inSubgroup(g: Grp)
+sort Sub = Grp where inSubgroup
 axiom subgroupHasIdentity: inSubgroup(E)
 axiom subgroupClosedOp: forall a, b: Grp; inSubgroup(a) -> inSubgroup(b) -> inSubgroup(op(a, b))
 axiom subgroupClosedInverse: forall a: Grp; inSubgroup(a) -> inSubgroup(inverse(a))
+
+// `inSubgroup` IS a subgroup in the sense of std/subgroup.b4m — the whole standalone theory
+// interpreted here, its criteria discharged by ours and its abstract parent group by the real
+// one. This is what makes its corpus available instead of re-proved.
+model TheSubgroup {
+  subgroup.Grp: Grp
+  subgroup.Sub: Sub
+  subgroup.op: op
+  subgroup.inverse: inverse
+  subgroup.E: E
+  subgroup.inSubgroup: inSubgroup
+  subgroup.subgroupHasIdentity <- subgroupHasIdentity
+  subgroup.subgroupClosedOp <- subgroupClosedOp
+  subgroup.subgroupClosedInverse <- subgroupClosedInverse
+  subgroup.grpAssoc <- grpAssoc
+  subgroup.grpIdentityLeft <- grpIdentityLeft
+  subgroup.grpInverseLeft <- grpInverseLeft
+}
+
+// g·h⁻¹ stays in the subgroup — Judson's division criterion, transferred rather than reproved.
+theorem subgroupClosedDivide: forall g, h: Sub; inSubgroup(op(g, inverse(h)))
+proof
+  @conclusion |
+    forall g, h: Sub; inSubgroup(op(g, inverse(h)))
+    [using model(TheSubgroup) subgroup.subgroupClosedDivide]
+qed
 
 sort Nat = peano.Nat
 pred nat_less_than = peano.less_than

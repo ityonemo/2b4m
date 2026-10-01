@@ -174,6 +174,12 @@ pub fn addTests(
     // equal-or-disjoint and cover the group), and Proposition 6.4's translation bijection
     // h ↦ gh — the engine of Lagrange, since it makes every coset the size of the subgroup.
     ctx.okSilent(&.{ "check", "std/group/coset.b4m" });
+    // LAGRANGE (std/group/lagrange.b4m, Judson §6.2): |G| = [G:H]·|H| as LISTINGS — k coset
+    // representatives and a p-long listing of H give a (k·p)-long listing of G. The block
+    // decomposition: each block is a translate of H's listing (Prop 6.4), the blocks are
+    // pairwise disjoint (Thm 6.2) so the concatenation is injective across every seam, and
+    // they cover G. Induction on the representative count, one `seqConcat` per step.
+    ctx.okSilent(&.{ "check", "std/group/lagrange.b4m" });
 
     // cyclic subgroups (std/cyclic.b4m, Judson §4.1): ⟨a⟩ = {a^k} as a membership
     // predicate over a fixed generator const, proved a subgroup (identity/closure) and
