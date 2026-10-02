@@ -41,6 +41,9 @@ theorem identityIsAPermutation = permutation.identityIsAPermutation
 theorem composeIsAPermutation = permutation.composeIsAPermutation
 theorem composeIdentityRight = function_invertible.composeIdentityRight
 axiom funcExtensionality = function.funcExtensionality
+func inverseFn = function.inverse
+axiom inverseLeft = function.inverseLeft
+axiom inverseRight = function.inverseRight
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
@@ -888,4 +891,286 @@ proof
   @conclusion |
     forall s: Points; cycle(s, succ(succ(ZERO))) = transposition(at(s, ZERO), at(s, succ(ZERO)))
     [by forall_intro generalize-s]
+qed
+
+// A point whose σ-preimage differs from w differs from σw: if x were σw then σ⁻¹x would be
+// σ⁻¹σw = w. Stated contrapositively because that is how the conjugation argument uses it, and
+// it is where σ's one-to-one-ness is doing the work.
+theorem aPreimageAwayFromAPointIsAwayFromItsImage: forall sigma: Fn; invertible(sigma) ->
+  forall x: Element; forall w: Element; apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @given-invertible |
+        assume invertible(sigma) {
+          @sigma-invertible |
+            invertible(sigma)
+            [by hypothesis given-invertible]
+          @inverse-on-the-left |
+            compose(inverseFn(sigma), sigma) = identityFn
+            [using specialize inverseLeft(sigma) sigma-invertible]
+          @conclusion-away |
+            forall x: Element; forall w: Element; apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+            [by forall_intro generalize-x]
+          @generalize-x |
+            fix x: Element {
+              @generalize-w |
+                fix w: Element {
+                  @given-preimage-differs |
+                    assume apply(inverseFn(sigma), x) != w {
+                      @preimage-differs |
+                        apply(inverseFn(sigma), x) != w
+                        [by hypothesis given-preimage-differs]
+                      @given-x-is-the-image |
+                        assume x = apply(sigma, w) {
+                          @x-is-the-image |
+                            x = apply(sigma, w)
+                            [by hypothesis given-x-is-the-image]
+                          // σ⁻¹(σw) = w
+                          @inverse-after-sigma |
+                            apply(compose(inverseFn(sigma), sigma), w) = apply(inverseFn(sigma), apply(sigma, w))
+                            [using specialize composeApply(inverseFn(sigma), sigma, w)]
+                          @identity-at-w |
+                            apply(identityFn, w) = w
+                            [using specialize function.identityApply(w)]
+                          @identity-applied |
+                            apply(compose(inverseFn(sigma), sigma), w) = w
+                            [by rewrite inverse-on-the-left identity-at-w]
+                          @identity-applied-flipped |
+                            w = apply(compose(inverseFn(sigma), sigma), w)
+                            [by symmetry identity-applied]
+                          @w-is-the-preimage-of-its-image |
+                            w = apply(inverseFn(sigma), apply(sigma, w))
+                            [using chain identity-applied-flipped inverse-after-sigma]
+                          @preimage-is-w |
+                            apply(inverseFn(sigma), x) = w
+                            [by rewrite x-is-the-image w-is-the-preimage-of-its-image-flipped]
+                          @w-is-the-preimage-of-its-image-flipped |
+                            apply(inverseFn(sigma), apply(sigma, w)) = w
+                            [by symmetry w-is-the-preimage-of-its-image]
+                          @conclusion-contradiction |
+                            x != apply(sigma, w)
+                            [by absurd preimage-is-w preimage-differs]
+                        }
+                      @image-implies |
+                        x = apply(sigma, w) -> x != apply(sigma, w)
+                        [by implies_intro given-x-is-the-image]
+                      @conclusion-differs |
+                        x != apply(sigma, w)
+                        [using tautology image-implies]
+                    }
+                  @preimage-differs-implies |
+                    apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+                    [by implies_intro given-preimage-differs]
+                }
+              @discharge-w |
+                forall w: Element; apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+                [by forall_intro generalize-w]
+            }
+        }
+      @invertible-implies |
+        invertible(sigma) -> forall x: Element; forall w: Element; apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall sigma: Fn; invertible(sigma) -> forall x: Element; forall w: Element; apply(inverseFn(sigma), x) != w -> x != apply(sigma, w)
+    [by forall_intro generalize-sigma]
+qed
+
+// -- CONJUGATION CARRIES A TRANSPOSITION TO THE TRANSPOSITION OF THE IMAGES --------------------
+// σ(u v)σ⁻¹ = (σu σv). Extensionality plus three cases on where a point x lands: x = σu, x = σv,
+// or neither — and in the last case σ⁻¹x is neither u nor v, which is where σ's INJECTIVITY is
+// needed (x ≠ σu gives σ⁻¹x ≠ u only because σ is one-to-one).
+//
+// This is the engine of Judson's §6.2 cycle-length theorem: a cycle is a product of
+// transpositions (`cycleSucc`), so conjugating a cycle conjugates each factor, and the result is
+// the cycle on the image points.
+theorem conjugateOfATransposition: forall sigma: Fn; invertible(sigma) -> forall u: Element; forall v: Element;
+  compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @given-invertible |
+        assume invertible(sigma) {
+          @sigma-invertible |
+            invertible(sigma)
+            [by hypothesis given-invertible]
+          @inverse-on-the-right |
+            compose(sigma, inverseFn(sigma)) = identityFn
+            [using specialize inverseRight(sigma) sigma-invertible]
+          @conclusion-conjugation |
+            forall u: Element; forall v: Element; compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+            [by forall_intro generalize-u]
+          @generalize-u |
+            fix u: Element {
+              @generalize-v |
+                fix v: Element {
+                  // pointwise agreement, then extensionality
+                  @agree-pointwise |
+                    forall x: Element; apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                    [by forall_intro agree-at-x]
+                  @agree-at-x |
+                    fix x: Element {
+                      // unfold the two composes: the left side is σ((u v)(σ⁻¹x))
+                      @outer-compose |
+                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(compose(sigma, transposition(u, v)), apply(inverseFn(sigma), x))
+                        [using specialize composeApply(compose(sigma, transposition(u, v)), inverseFn(sigma), x)]
+                      @inner-compose |
+                        apply(compose(sigma, transposition(u, v)), apply(inverseFn(sigma), x)) = apply(sigma, apply(transposition(u, v), apply(inverseFn(sigma), x)))
+                        [using specialize composeApply(sigma, transposition(u, v), apply(inverseFn(sigma), x))]
+                      @left-side |
+                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(sigma, apply(transposition(u, v), apply(inverseFn(sigma), x)))
+                        [using chain outer-compose inner-compose]
+                      // σ(σ⁻¹x) = x, which is what each case needs to land back on x
+                      @sigma-after-inverse |
+                        apply(compose(sigma, inverseFn(sigma)), x) = apply(sigma, apply(inverseFn(sigma), x))
+                        [using specialize composeApply(sigma, inverseFn(sigma), x)]
+                      @identity-at-x |
+                        apply(identityFn, x) = x
+                        [using specialize function.identityApply(x)]
+                      @identity-applied |
+                        apply(compose(sigma, inverseFn(sigma)), x) = x
+                        [by rewrite inverse-on-the-right identity-at-x]
+                      @identity-applied-flipped |
+                        x = apply(compose(sigma, inverseFn(sigma)), x)
+                        [by symmetry identity-applied]
+                      @sigma-undoes-inverse |
+                        x = apply(sigma, apply(inverseFn(sigma), x))
+                        [using chain identity-applied-flipped sigma-after-inverse]
+                      @sigma-undoes-inverse-flipped |
+                        apply(sigma, apply(inverseFn(sigma), x)) = x
+                        [by symmetry sigma-undoes-inverse]
+                      // three cases on σ⁻¹x
+                      @where-is-the-preimage |
+                        apply(inverseFn(sigma), x) = u or apply(inverseFn(sigma), x) != u
+                        [using tautology]
+                      @conclusion-agree-at-x |
+                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                        case where-is-the-preimage {
+                          // σ⁻¹x = u: left side is σv, and x = σu so the right side is σv too
+                          @when-preimage-is-u |
+                            assume apply(inverseFn(sigma), x) = u {
+                              @preimage-is-u |
+                                apply(inverseFn(sigma), x) = u
+                                [by hypothesis when-preimage-is-u]
+                              @swap-at-u |
+                                apply(transposition(u, v), u) = v
+                                [using specialize transpositionAtFirst(u, v)]
+                              @swap-at-preimage |
+                                apply(transposition(u, v), apply(inverseFn(sigma), x)) = v
+                                [by rewrite preimage-is-u swap-at-u]
+                              @left-is-sigma-v |
+                                apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(sigma, v)
+                                [by rewrite swap-at-preimage left-side]
+                              @x-is-sigma-u |
+                                x = apply(sigma, u)
+                                [by rewrite preimage-is-u sigma-undoes-inverse]
+                              @right-at-sigma-u |
+                                apply(transposition(apply(sigma, u), apply(sigma, v)), apply(sigma, u)) = apply(sigma, v)
+                                [using specialize transpositionAtFirst(apply(sigma, u), apply(sigma, v))]
+                              @right-is-sigma-v |
+                                apply(transposition(apply(sigma, u), apply(sigma, v)), x) = apply(sigma, v)
+                                [by rewrite x-is-sigma-u right-at-sigma-u]
+                              @right-is-sigma-v-flipped |
+                                apply(sigma, v) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                [by symmetry right-is-sigma-v]
+                              @conclusion-case-u |
+                                apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                [using chain left-is-sigma-v right-is-sigma-v-flipped]
+                            }
+                          @when-preimage-is-not-u |
+                            assume apply(inverseFn(sigma), x) != u {
+                              @preimage-is-not-u |
+                                apply(inverseFn(sigma), x) != u
+                                [by hypothesis when-preimage-is-not-u]
+                              @where-else |
+                                apply(inverseFn(sigma), x) = v or apply(inverseFn(sigma), x) != v
+                                [using tautology]
+                              @conclusion-not-u |
+                                apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                case where-else {
+                                  // σ⁻¹x = v: left side is σu, and x = σv so the right side is σu
+                                  @when-preimage-is-v |
+                                    assume apply(inverseFn(sigma), x) = v {
+                                      @preimage-is-v |
+                                        apply(inverseFn(sigma), x) = v
+                                        [by hypothesis when-preimage-is-v]
+                                      @swap-at-v |
+                                        apply(transposition(u, v), v) = u
+                                        [using specialize transpositionAtSecond(u, v)]
+                                      @swap-at-preimage |
+                                        apply(transposition(u, v), apply(inverseFn(sigma), x)) = u
+                                        [by rewrite preimage-is-v swap-at-v]
+                                      @left-is-sigma-u |
+                                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(sigma, u)
+                                        [by rewrite swap-at-preimage left-side]
+                                      @x-is-sigma-v |
+                                        x = apply(sigma, v)
+                                        [by rewrite preimage-is-v sigma-undoes-inverse]
+                                      @right-at-sigma-v |
+                                        apply(transposition(apply(sigma, u), apply(sigma, v)), apply(sigma, v)) = apply(sigma, u)
+                                        [using specialize transpositionAtSecond(apply(sigma, u), apply(sigma, v))]
+                                      @right-is-sigma-u |
+                                        apply(transposition(apply(sigma, u), apply(sigma, v)), x) = apply(sigma, u)
+                                        [by rewrite x-is-sigma-v right-at-sigma-v]
+                                      @right-is-sigma-u-flipped |
+                                        apply(sigma, u) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                        [by symmetry right-is-sigma-u]
+                                      @conclusion-case-v |
+                                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                        [using chain left-is-sigma-u right-is-sigma-u-flipped]
+                                    }
+                                  // σ⁻¹x is neither: both sides fix x. The right side needs
+                                  // x ≠ σu and x ≠ σv, which is where INJECTIVITY enters.
+                                  @when-preimage-is-neither |
+                                    assume apply(inverseFn(sigma), x) != v {
+                                      @preimage-is-not-v |
+                                        apply(inverseFn(sigma), x) != v
+                                        [by hypothesis when-preimage-is-neither]
+                                      @swap-fixes-preimage |
+                                        apply(transposition(u, v), apply(inverseFn(sigma), x)) = apply(inverseFn(sigma), x)
+                                        [using specialize transpositionElsewhere(u, v, apply(inverseFn(sigma), x)) preimage-is-not-u preimage-is-not-v]
+                                      @left-is-x |
+                                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = x
+                                        [using chain left-side-rewritten sigma-undoes-inverse-flipped]
+                                      @left-side-rewritten |
+                                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(sigma, apply(inverseFn(sigma), x))
+                                        [by rewrite swap-fixes-preimage left-side]
+                                      // x ≠ σu: else σ⁻¹x = σ⁻¹σu = u
+                                      @x-differs-from-sigma-u |
+                                        x != apply(sigma, u)
+                                        [using specialize aPreimageAwayFromAPointIsAwayFromItsImage(sigma, x, u) sigma-invertible preimage-is-not-u]
+                                      @x-differs-from-sigma-v |
+                                        x != apply(sigma, v)
+                                        [using specialize aPreimageAwayFromAPointIsAwayFromItsImage(sigma, x, v) sigma-invertible preimage-is-not-v]
+                                      @right-fixes-x |
+                                        apply(transposition(apply(sigma, u), apply(sigma, v)), x) = x
+                                        [using specialize transpositionElsewhere(apply(sigma, u), apply(sigma, v), x) x-differs-from-sigma-u x-differs-from-sigma-v]
+                                      @right-fixes-x-flipped |
+                                        x = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                        [by symmetry right-fixes-x]
+                                      @conclusion-case-neither |
+                                        apply(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), x) = apply(transposition(apply(sigma, u), apply(sigma, v)), x)
+                                        [using chain left-is-x right-fixes-x-flipped]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                  @conclusion-extensional |
+                    compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+                    [using specialize funcExtensionality(compose(compose(sigma, transposition(u, v)), inverseFn(sigma)), transposition(apply(sigma, u), apply(sigma, v))) agree-pointwise]
+                }
+              @discharge-v |
+                forall v: Element; compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+                [by forall_intro generalize-v]
+            }
+        }
+      @invertible-implies |
+        invertible(sigma) -> forall u: Element; forall v: Element; compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall sigma: Fn; invertible(sigma) -> forall u: Element; forall v: Element; compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+    [by forall_intro generalize-sigma]
 qed
