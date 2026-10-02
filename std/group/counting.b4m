@@ -11,6 +11,7 @@ import group <<< "std/group.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
 import group_power <<< "std/group/power.b4m"
 import group_order <<< "std/group/order.b4m"
+import generated <<< "std/group/generated.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import integer <<< "std/integer.b4m"
@@ -1641,5 +1642,253 @@ proof
     }
   @conclusion |
     forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+    [by forall_intro generalize-g]
+qed
+
+// -- (4) THE CYCLIC SUBGROUP ⟨g⟩ IS LISTED BY ITS ORDER ---------------------------------------
+// Judson's Corollary 6.7 route: g of order n gives a sequence of n entries that are pairwise
+// distinct, all lie in ⟨g⟩, and cover ⟨g⟩. The three pieces are (1) `powersAreListed` for the
+// sequence, (2) `smallerIndexGivesADifferentPower` for injectivity, and (3)
+// `everyPowerIsOneOfTheFirstN` for covering. Injectivity needs TRICHOTOMY: the lemma gives
+// i < j ⟹ g^i ≠ g^j, and a listing needs the symmetric form.
+theorem theCyclicSubgroupIsListedByItsOrder: forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) ->
+  exists v: Seq;
+    (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i)))
+    and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j)
+    and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Nat {
+          @given-order |
+            assume hasOrder(g, toInt(n)) {
+              @order |
+                hasOrder(g, toInt(n))
+                [by hypothesis given-order]
+              @powers-listed |
+                exists v: Seq; forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+                [using specialize powersAreListed(g, n)]
+              @distinct-below |
+                forall i: Nat; forall j: Nat; less_than(i, j) -> less_than(j, n) -> power(g, toInt(i)) != power(g, toInt(j))
+                [using specialize smallerIndexGivesADifferentPower(g, n) order]
+              @every-power-reduces |
+                forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                [using specialize everyPowerIsOneOfTheFirstN(g, n) order]
+              @with-powers |
+                unpack v: Seq from powers-listed {
+                  @entries |
+                    forall i: Nat; less_than(i, n) -> at(v, i) = power(g, toInt(i))
+                    [by hypothesis with-powers]
+                  // every entry is a power of g, hence in ⟨g⟩
+                  @entries-in-cyclic |
+                    forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))
+                    [by forall_intro entry-in-cyclic]
+                  @entry-in-cyclic |
+                    fix i: Nat {
+                      @given-i-below |
+                        assume less_than(i, n) {
+                          @i-below |
+                            less_than(i, n)
+                            [by hypothesis given-i-below]
+                          @entry-is-a-power |
+                            at(v, i) = power(g, toInt(i))
+                            [using specialize entries(i) i-below]
+                          @conclusion-entry-in-cyclic |
+                            generated.inGenerated(g, at(v, i))
+                            [by exists_intro(toInt(i)) entry-is-a-power]
+                        }
+                      @i-below-implies |
+                        less_than(i, n) -> generated.inGenerated(g, at(v, i))
+                        [by implies_intro given-i-below]
+                    }
+                  // injectivity: trichotomy on i, j, with the strict lemma on each side
+                  @injective |
+                    forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j
+                    [by forall_intro injective-at-i]
+                  @injective-at-i |
+                    fix i: Nat {
+                      @injective-at-j |
+                        fix j: Nat {
+                          @given-i-in-range |
+                            assume less_than(i, n) {
+                              @given-j-in-range |
+                                assume less_than(j, n) {
+                                  @given-entries-equal |
+                                    assume at(v, i) = at(v, j) {
+                                      @i-in-range |
+                                        less_than(i, n)
+                                        [by hypothesis given-i-in-range]
+                                      @j-in-range |
+                                        less_than(j, n)
+                                        [by hypothesis given-j-in-range]
+                                      @entries-equal |
+                                        at(v, i) = at(v, j)
+                                        [by hypothesis given-entries-equal]
+                                      @v-at-i |
+                                        at(v, i) = power(g, toInt(i))
+                                        [using specialize entries(i) i-in-range]
+                                      @v-at-j |
+                                        at(v, j) = power(g, toInt(j))
+                                        [using specialize entries(j) j-in-range]
+                                      @v-at-i-flipped |
+                                        power(g, toInt(i)) = at(v, i)
+                                        [by symmetry v-at-i]
+                                      @powers-equal |
+                                        power(g, toInt(i)) = power(g, toInt(j))
+                                        [using chain v-at-i-flipped entries-equal v-at-j]
+                                      @compare |
+                                        less_than(i, j) or i = j or less_than(j, i)
+                                        [using specialize trichotomy(i, j)]
+                                      @conclusion-indices-equal |
+                                        i = j
+                                        case compare {
+                                          // (i < j or i = j) — split again
+                                          @when-below-or-equal |
+                                            assume less_than(i, j) or i = j {
+                                              @below-or-equal |
+                                                less_than(i, j) or i = j
+                                                [by hypothesis when-below-or-equal]
+                                              @conclusion-first-two-cases |
+                                                i = j
+                                                case below-or-equal {
+                                                  @when-i-below-j |
+                                                    assume less_than(i, j) {
+                                                      @i-below-j |
+                                                        less_than(i, j)
+                                                        [by hypothesis when-i-below-j]
+                                                      @powers-differ |
+                                                        power(g, toInt(i)) != power(g, toInt(j))
+                                                        [using specialize distinct-below(i, j) i-below-j j-in-range]
+                                                      @conclusion-low-absurd |
+                                                        i = j
+                                                        [by absurd powers-equal powers-differ]
+                                                    }
+                                                  @when-equal |
+                                                    assume i = j {
+                                                      @conclusion-already-equal |
+                                                        i = j
+                                                        [by hypothesis when-equal]
+                                                    }
+                                                }
+                                            }
+                                          @when-j-below-i |
+                                            assume less_than(j, i) {
+                                              @j-below-i |
+                                                less_than(j, i)
+                                                [by hypothesis when-j-below-i]
+                                              @powers-differ-other-way |
+                                                power(g, toInt(j)) != power(g, toInt(i))
+                                                [using specialize distinct-below(j, i) j-below-i i-in-range]
+                                              @powers-equal-flipped |
+                                                power(g, toInt(j)) = power(g, toInt(i))
+                                                [by symmetry powers-equal]
+                                              @conclusion-high-absurd |
+                                                i = j
+                                                [by absurd powers-equal-flipped powers-differ-other-way]
+                                            }
+                                        }
+                                    }
+                                  @entries-equal-implies |
+                                    at(v, i) = at(v, j) -> i = j
+                                    [by implies_intro given-entries-equal]
+                                }
+                              @j-in-range-implies |
+                                less_than(j, n) -> at(v, i) = at(v, j) -> i = j
+                                [by implies_intro given-j-in-range]
+                            }
+                          @i-in-range-implies |
+                            less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j
+                            [by implies_intro given-i-in-range]
+                        }
+                      @discharge-j |
+                        forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j
+                        [by forall_intro injective-at-j]
+                    }
+                  // covering: an element of ⟨g⟩ is g^k, which reduces to some g^i with i < n
+                  @covers |
+                    forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x
+                    [by forall_intro covers-x]
+                  @covers-x |
+                    fix x: Grp {
+                      @given-x-in-cyclic |
+                        assume generated.inGenerated(g, x) {
+                          @x-in-cyclic |
+                            generated.inGenerated(g, x)
+                            [by hypothesis given-x-in-cyclic]
+                          @x-is-a-power |
+                            exists k: Int; x = power(g, k)
+                            [using tautology x-in-cyclic]
+                          @with-exponent |
+                            unpack k: Int from x-is-a-power {
+                              @x-is-power-k |
+                                x = power(g, k)
+                                [by hypothesis with-exponent]
+                              @reduces |
+                                exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                                [using specialize every-power-reduces(k)]
+                              @with-reduced-index |
+                                unpack i: Nat from reduces {
+                                  @reduced-facts |
+                                    less_than(i, n) and power(g, k) = power(g, toInt(i))
+                                    [by hypothesis with-reduced-index]
+                                  @i-below |
+                                    less_than(i, n)
+                                    [by and_elim_left reduced-facts]
+                                  @power-reduced |
+                                    power(g, k) = power(g, toInt(i))
+                                    [by and_elim_right reduced-facts]
+                                  @v-at-i |
+                                    at(v, i) = power(g, toInt(i))
+                                    [using specialize entries(i) i-below]
+                                  @x-is-reduced-power |
+                                    x = power(g, toInt(i))
+                                    [using chain x-is-power-k power-reduced]
+                                  @reduced-power-is-x |
+                                    power(g, toInt(i)) = x
+                                    [by symmetry x-is-reduced-power]
+                                  @v-at-i-is-x |
+                                    at(v, i) = x
+                                    [using chain v-at-i reduced-power-is-x]
+                                  @witnessed |
+                                    less_than(i, n) and at(v, i) = x
+                                    [by and_intro i-below v-at-i-is-x]
+                                  @conclusion-index-found |
+                                    exists i2: Nat; less_than(i2, n) and at(v, i2) = x
+                                    [by exists_intro(i) witnessed]
+                                }
+                              @conclusion-with-index |
+                                exists i: Nat; less_than(i, n) and at(v, i) = x
+                                [by exists_elim with-reduced-index]
+                            }
+                          @conclusion-covers-x |
+                            exists i: Nat; less_than(i, n) and at(v, i) = x
+                            [by exists_elim with-exponent]
+                        }
+                      @x-in-cyclic-implies |
+                        generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x
+                        [by implies_intro given-x-in-cyclic]
+                    }
+                  @all-three |
+                    (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+                    [using tautology entries-in-cyclic injective covers]
+                  @conclusion-listed-inner |
+                    exists v2: Seq; (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v2, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v2, i) = at(v2, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v2, i) = x)
+                    [by exists_intro(v) all-three]
+                }
+              @conclusion-listed |
+                exists v: Seq; (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+                [by exists_elim with-powers]
+            }
+          @order-implies |
+            hasOrder(g, toInt(n)) -> exists v: Seq; (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+            [by implies_intro given-order]
+        }
+      @discharge-n |
+        forall n: Nat; hasOrder(g, toInt(n)) -> exists v: Seq; (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> exists v: Seq; (forall i: Nat; less_than(i, n) -> generated.inGenerated(g, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; generated.inGenerated(g, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
     [by forall_intro generalize-g]
 qed

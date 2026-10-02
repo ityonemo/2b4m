@@ -1,0 +1,394 @@
+// std/group/order-divides.b4m — AN ELEMENT'S ORDER DIVIDES THE GROUP'S SIZE (AATA §6.2,
+// Corollary 6.7), and what follows from it.
+//
+// Judson's argument in one line: ⟨g⟩ is a subgroup, |⟨g⟩| = |g|, so Lagrange gives |g| | |G|.
+// In the listing idiom that is three steps:
+//
+//   1. ⟨g⟩ IS LISTED BY ITS ORDER — `counting.theCyclicSubgroupIsListedByItsOrder`: for g of
+//      order n there is a sequence of n pairwise-distinct entries covering ⟨g⟩ (the powers
+//      g⁰…g^(n−1), distinct by minimality of the order and exhaustive by reducing the exponent
+//      modulo n).
+//   2. ⟨g⟩ IS A SUBGROUP in the sense `std/group/coset.b4m` means — the three criteria, which
+//      `std/group/generated.b4m` proves. A `model` carries the whole coset/Lagrange corpus onto
+//      it: `coset.inSubgroup` is a MODEL SOURCE, not a restriction to one fixed subgroup.
+//   3. LAGRANGE, transferred, then `lagrange.theSubgroupsLengthDividesTheGroups`.
+//
+// The generator is a CONSTANT here (`gen`) rather than a variable, because step 2's model must
+// map `coset.inSubgroup` onto a ONE-place predicate and `inGenerated` is two-place. That makes
+// this file itself a model source in exactly the sense its own step 2 relies on: a caller with
+// a concrete generator models `gen` onto it. `tests/cases/model_lagrange_at_a_subgroup.b4m`
+// shows the shape; see CHAPTER6-PAINPOINTS on why such a section needs a demonstrating fixture.
+
+import group <<< "std/group.b4m"
+import coset <<< "std/group/coset.b4m"
+import lagrange <<< "std/group/lagrange.b4m"
+import generated <<< "std/group/generated.b4m"
+import counting <<< "std/group/counting.b4m"
+import group_order <<< "std/group/order.b4m"
+import group_power <<< "std/group/power.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import peano <<< "std/peano.b4m"
+import peano_divides <<< "std/peano/divides.b4m"
+import integer <<< "std/integer.b4m"
+import int_embedding <<< "std/integer/embedding.b4m"
+
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+sort Nat = peano.Nat
+sort Int = integer.Int
+func mul = peano.mul
+func power = group_power.power
+func toInt = int_embedding.toInt
+pred less_than = peano.less_than
+pred divides = peano_divides.divides
+sort Seq = group_sequence.Seq
+func at = group_sequence.at
+define hasOrder(g, n) = group_order.hasOrder(g, n)
+define inGenerated(g, x) = generated.inGenerated(g, x)
+
+// THE GENERATOR, as a constant: ⟨gen⟩ is the cyclic subgroup whose size Lagrange will divide.
+const gen: Grp
+
+// ⟨gen⟩ as the ONE-place predicate a subgroup model needs.
+pred inCyclic(g: Grp):
+  inCyclic(g) iff inGenerated(gen, g)
+
+// -- ⟨gen⟩ satisfies the three subgroup criteria ----------------------------------------------
+// Each is `generated.b4m`'s corresponding theorem, moved across the `inCyclic` biconditional.
+
+theorem cyclicHasIdentity: inCyclic(E)
+proof
+  @generated-has-identity |
+    inGenerated(gen, E)
+    [using specialize generated.generatedHasIdentity(gen)]
+  @cyclic-definition-for-definition |
+    forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+    [by definition inCyclic]
+  @definition |
+    inCyclic(E) iff inGenerated(gen, E)
+    [using specialize cyclic-definition-for-definition(E)]
+  @conclusion |
+    inCyclic(E)
+    [using tautology definition generated-has-identity]
+qed
+
+theorem cyclicClosedOp: forall a, b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a-in |
+            assume inCyclic(a) {
+              @given-b-in |
+                assume inCyclic(b) {
+                  @a-in |
+                    inCyclic(a)
+                    [by hypothesis given-a-in]
+                  @b-in |
+                    inCyclic(b)
+                    [by hypothesis given-b-in]
+                  @cyclic-definition-for-definition-at-a |
+                    forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+                    [by definition inCyclic]
+                  @definition-at-a |
+                    inCyclic(a) iff inGenerated(gen, a)
+                    [using specialize cyclic-definition-for-definition-at-a(a)]
+                  @cyclic-definition-for-definition-at-b |
+                    forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+                    [by definition inCyclic]
+                  @definition-at-b |
+                    inCyclic(b) iff inGenerated(gen, b)
+                    [using specialize cyclic-definition-for-definition-at-b(b)]
+                  @cyclic-definition-for-definition-at-product |
+                    forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+                    [by definition inCyclic]
+                  @definition-at-product |
+                    inCyclic(op(a, b)) iff inGenerated(gen, op(a, b))
+                    [using specialize cyclic-definition-for-definition-at-product(op(a, b))]
+                  @a-generated |
+                    inGenerated(gen, a)
+                    [using tautology definition-at-a a-in]
+                  @b-generated |
+                    inGenerated(gen, b)
+                    [using tautology definition-at-b b-in]
+                  @product-generated |
+                    inGenerated(gen, op(a, b))
+                    [using specialize generated.generatedClosedOp(gen, a, b) a-generated b-generated]
+                  @conclusion-product-in |
+                    inCyclic(op(a, b))
+                    [using tautology definition-at-product product-generated]
+                }
+              @b-in-implies |
+                inCyclic(b) -> inCyclic(op(a, b))
+                [by implies_intro given-b-in]
+            }
+          @a-in-implies |
+            inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+            [by implies_intro given-a-in]
+        }
+      @discharge-b |
+        forall b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+    [by forall_intro generalize-a]
+qed
+
+theorem cyclicClosedInverse: forall a: Grp; inCyclic(a) -> inCyclic(inverse(a))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @given-a-in |
+        assume inCyclic(a) {
+          @a-in |
+            inCyclic(a)
+            [by hypothesis given-a-in]
+          @cyclic-definition-for-definition-at-a |
+            forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+            [by definition inCyclic]
+          @definition-at-a |
+            inCyclic(a) iff inGenerated(gen, a)
+            [using specialize cyclic-definition-for-definition-at-a(a)]
+          @cyclic-definition-for-definition-at-inverse |
+            forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+            [by definition inCyclic]
+          @definition-at-inverse |
+            inCyclic(inverse(a)) iff inGenerated(gen, inverse(a))
+            [using specialize cyclic-definition-for-definition-at-inverse(inverse(a))]
+          @a-generated |
+            inGenerated(gen, a)
+            [using tautology definition-at-a a-in]
+          @inverse-generated |
+            inGenerated(gen, inverse(a))
+            [using specialize generated.generatedClosedInverse(gen, a) a-generated]
+          @conclusion-inverse-in |
+            inCyclic(inverse(a))
+            [using tautology definition-at-inverse inverse-generated]
+        }
+      @a-in-implies |
+        inCyclic(a) -> inCyclic(inverse(a))
+        [by implies_intro given-a-in]
+    }
+  @conclusion |
+    forall a: Grp; inCyclic(a) -> inCyclic(inverse(a))
+    [by forall_intro generalize-a]
+qed
+
+// ⟨gen⟩ IS the subgroup the coset/Lagrange chapter is about.
+model CyclicSubgroup {
+  coset.inSubgroup: inCyclic
+  coset.subgroupHasIdentity <- cyclicHasIdentity
+  coset.subgroupClosedOp <- cyclicClosedOp
+  coset.subgroupClosedInverse <- cyclicClosedInverse
+}
+
+// -- ⟨gen⟩ IS LISTED BY ITS ORDER, in the shape Lagrange consumes ------------------------------
+// `counting.theCyclicSubgroupIsListedByItsOrder` states it over `inGenerated(gen, ·)`; the
+// transferred Lagrange wants it over `inCyclic`. The biconditional moves each clause across.
+theorem theCyclicSubgroupIsListed: forall n: Nat; hasOrder(gen, toInt(n)) ->
+  exists v: Seq;
+    (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i)))
+    and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j)
+    and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @given-order |
+        assume hasOrder(gen, toInt(n)) {
+          @order |
+            hasOrder(gen, toInt(n))
+            [by hypothesis given-order]
+          @listed-over-generated |
+            exists v: Seq; (forall i: Nat; less_than(i, n) -> inGenerated(gen, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; inGenerated(gen, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+            [using specialize counting.theCyclicSubgroupIsListedByItsOrder(gen, n) order]
+          @with-listing |
+            unpack v: Seq from listed-over-generated {
+              @listing-facts |
+                (forall i: Nat; less_than(i, n) -> inGenerated(gen, at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; inGenerated(gen, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x)
+                [by hypothesis with-listing]
+              @entries-generated |
+                forall i: Nat; less_than(i, n) -> inGenerated(gen, at(v, i))
+                [using tautology listing-facts]
+              @injective |
+                forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j
+                [using tautology listing-facts]
+              @covers-generated |
+                forall x: Grp; inGenerated(gen, x) -> exists i: Nat; less_than(i, n) and at(v, i) = x
+                [using tautology listing-facts]
+              // move the entry clause across the biconditional
+              @entries-in-cyclic |
+                forall i: Nat; less_than(i, n) -> inCyclic(at(v, i))
+                [by forall_intro entry-in-cyclic]
+              @entry-in-cyclic |
+                fix i: Nat {
+                  @given-i-below |
+                    assume less_than(i, n) {
+                      @i-below |
+                        less_than(i, n)
+                        [by hypothesis given-i-below]
+                      @entry-generated |
+                        inGenerated(gen, at(v, i))
+                        [using specialize entries-generated(i) i-below]
+                      @cyclic-definition-for-definition-at-entry |
+                        forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+                        [by definition inCyclic]
+                      @definition-at-entry |
+                        inCyclic(at(v, i)) iff inGenerated(gen, at(v, i))
+                        [using specialize cyclic-definition-for-definition-at-entry(at(v, i))]
+                      @conclusion-entry-in-cyclic |
+                        inCyclic(at(v, i))
+                        [using tautology definition-at-entry entry-generated]
+                    }
+                  @i-below-implies |
+                    less_than(i, n) -> inCyclic(at(v, i))
+                    [by implies_intro given-i-below]
+                }
+              // and the covering clause
+              @covers-cyclic |
+                forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h
+                [by forall_intro covers-h]
+              @covers-h |
+                fix h: Grp {
+                  @given-h-in |
+                    assume inCyclic(h) {
+                      @h-in |
+                        inCyclic(h)
+                        [by hypothesis given-h-in]
+                      @cyclic-definition-for-definition-at-h |
+                        forall g: Grp; inCyclic(g) iff inGenerated(gen, g)
+                        [by definition inCyclic]
+                      @definition-at-h |
+                        inCyclic(h) iff inGenerated(gen, h)
+                        [using specialize cyclic-definition-for-definition-at-h(h)]
+                      @h-generated |
+                        inGenerated(gen, h)
+                        [using tautology definition-at-h h-in]
+                      @conclusion-index-found |
+                        exists i: Nat; less_than(i, n) and at(v, i) = h
+                        [using specialize covers-generated(h) h-generated]
+                    }
+                  @h-in-implies |
+                    inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h
+                    [by implies_intro given-h-in]
+                }
+              @all-three |
+                (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+                [using tautology entries-in-cyclic injective covers-cyclic]
+              @conclusion-listed-inner |
+                exists v2: Seq; (forall i: Nat; less_than(i, n) -> inCyclic(at(v2, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v2, i) = at(v2, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v2, i) = h)
+                [by exists_intro(v) all-three]
+            }
+          @conclusion-listed |
+            exists v: Seq; (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+            [by exists_elim with-listing]
+        }
+      @order-implies |
+        hasOrder(gen, toInt(n)) -> exists v: Seq; (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+        [by implies_intro given-order]
+    }
+  @conclusion |
+    forall n: Nat; hasOrder(gen, toInt(n)) -> exists v: Seq; (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+    [by forall_intro generalize-n]
+qed
+
+// -- JUDSON'S COROLLARY 6.7: THE ORDER OF AN ELEMENT DIVIDES THE GROUP'S SIZE -------------------
+// Lagrange's divisibility corollary, transferred through `CyclicSubgroup` and then applied with
+// ⟨gen⟩'s listing. The statement is written in the MAPPED vocabulary (`inCyclic`, and the coset
+// and listing defines expanded against it) because a `define` is not model-mapped by the
+// mapping of the predicate inside it — see CHAPTER6-PAINPOINTS.
+theorem theOrderDividesTheGroupsLength: forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+  hasOrder(gen, toInt(d)) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+  divides(d, n)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-gl |
+            fix gl: Seq {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @given-order |
+                        assume hasOrder(gen, toInt(d)) {
+                          @given-reps |
+                            assume (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))) {
+                              @given-group-listed |
+                                assume (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x) {
+                                  @order |
+                                    hasOrder(gen, toInt(d))
+                                    [by hypothesis given-order]
+                                  @reps |
+                                    (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))
+                                    [by hypothesis given-reps]
+                                  @group-listed |
+                                    (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)
+                                    [by hypothesis given-group-listed]
+                                  // ⟨gen⟩ has a d-long listing
+                                  @cyclic-listed |
+                                    exists v: Seq; (forall i: Nat; less_than(i, d) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, d) and at(v, i) = h)
+                                    [using specialize theCyclicSubgroupIsListed(d) order]
+                                  // Lagrange's divisibility corollary, at the cyclic subgroup
+                                  @divisibility-transferred |
+                                    forall r2: Seq; forall k2: Nat; forall v2: Seq; forall p2: Nat; forall g2: Seq; forall n2: Nat;
+                                      ((forall i: Nat; forall j: Nat; less_than(i, k2) -> less_than(j, k2) -> (exists h: Grp; inCyclic(h) and at(r2, j) = op(at(r2, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k2) and (exists h: Grp; inCyclic(h) and x = op(at(r2, i), h)))) ->
+                                      ((forall i: Nat; less_than(i, p2) -> inCyclic(at(v2, i))) and (forall i: Nat; forall j: Nat; less_than(i, p2) -> less_than(j, p2) -> at(v2, i) = at(v2, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, p2) and at(v2, i) = h)) ->
+                                      ((forall i: Nat; forall j: Nat; less_than(i, n2) -> less_than(j, n2) -> at(g2, i) = at(g2, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n2) and at(g2, i) = x)) ->
+                                      divides(p2, n2)
+                                    [using model(CyclicSubgroup) lagrange.theSubgroupsLengthDividesTheGroups]
+                                  @with-cyclic-listing |
+                                    unpack v: Seq from cyclic-listed {
+                                      @cyclic-listing |
+                                        (forall i: Nat; less_than(i, d) -> inCyclic(at(v, i))) and (forall i: Nat; forall j: Nat; less_than(i, d) -> less_than(j, d) -> at(v, i) = at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, d) and at(v, i) = h)
+                                        [by hypothesis with-cyclic-listing]
+                                      @conclusion-divides-inner |
+                                        divides(d, n)
+                                        [using specialize divisibility-transferred(r, k, v, d, gl, n) reps cyclic-listing group-listed]
+                                    }
+                                  @conclusion-divides |
+                                    divides(d, n)
+                                    [by exists_elim with-cyclic-listing]
+                                }
+                              @group-listed-implies |
+                                ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+                                [by implies_intro given-group-listed]
+                            }
+                          @reps-implies |
+                            ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+                            [by implies_intro given-reps]
+                        }
+                      @order-implies |
+                        hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+                        [by implies_intro given-order]
+                    }
+                  @discharge-d |
+                    forall d: Nat; hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+                    [by forall_intro generalize-d]
+                }
+              @discharge-n |
+                forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+                [by forall_intro generalize-n]
+            }
+          @discharge-gl |
+            forall gl: Seq; forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+            [by forall_intro generalize-gl]
+        }
+      @discharge-k |
+        forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> divides(d, n)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+      hasOrder(gen, toInt(d)) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+      divides(d, n)
+    [by forall_intro generalize-r]
+qed
