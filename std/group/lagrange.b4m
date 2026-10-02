@@ -22,6 +22,8 @@
 
 import coset <<< "std/group/coset.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
+import counting <<< "std/group/counting.b4m"
+import peano_divides <<< "std/peano/divides.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import permutation_count <<< "std/permutation/count.b4m"
@@ -60,7 +62,7 @@ func at = group_sequence.at
 axiom seqConcat = group_sequence.seqConcat
 
 // A listing of the whole group: n distinct entries covering every element.
-define listsTheGroup(v, n) = (forall i: Nat; less_than(i, n) -> at(v, i) = at(v, i)) and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(v, i) = x)
+define listsTheGroup(v, n) = (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(v, i) = x)
 
 // A listing of COSET REPRESENTATIVES: k entries whose cosets are pairwise distinct and
 // together cover the group.
@@ -1728,22 +1730,6 @@ proof
                           @blocks-cover-each-coset |
                             forall b: Nat; forall x: Grp; less_than(b, k) -> inCoset(at(r, b), x) -> exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
                             [using tautology blocks]
-                          // the trivial first clause of listsTheGroup
-                          @entries-are-themselves |
-                            forall i: Nat; less_than(i, mul(k, p)) -> at(u, i) = at(u, i)
-                            [by forall_intro entry-is-itself]
-                          @entry-is-itself |
-                            fix i: Nat {
-                              @given-below |
-                                assume less_than(i, mul(k, p)) {
-                                  @conclusion-entry-is-itself |
-                                    at(u, i) = at(u, i)
-                                    [by reflexivity]
-                                }
-                              @below-implies |
-                                less_than(i, mul(k, p)) -> at(u, i) = at(u, i)
-                                [by implies_intro given-below]
-                            }
                           // every element of G: find its representative, then its index.
                           @covers-the-group |
                             forall x: Grp; exists i: Nat; less_than(i, mul(k, p)) and at(u, i) = x
@@ -1774,7 +1760,7 @@ proof
                             }
                           @conclusion-group-listed |
                             listsTheGroup(u, mul(k, p))
-                            [using tautology entries-are-themselves blocks-injective covers-the-group]
+                            [using tautology blocks-injective covers-the-group]
                         }
                       @blocks-implies |
                         listsTheBlocksBelow(u, r, k, p) -> listsTheGroup(u, mul(k, p))
@@ -1874,5 +1860,253 @@ proof
     forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat;
       listsCosetReps(r, k) -> listsTheSubgroup(v, p) ->
       exists u: Seq; listsTheGroup(u, mul(k, p))
+    [by forall_intro generalize-r]
+qed
+
+// -- JUDSON'S COROLLARY 6.6: |H| DIVIDES |G| ---------------------------------------------------
+// The counting theorem is an equation between LISTING LENGTHS; the divisibility statement needs
+// two further steps. First, a group's listing length is UNIQUE — two full listings are each
+// drawn from the other (each covers everything), so `counting.listingsOfTheSameClassHaveEqualLength`
+// equates them. Then n = k·p = p·k exhibits the witness `divides` asks for.
+//
+// This is where Judson's `|G|/|H| = [G:H]` becomes available in the listing idiom: given ANY
+// listing of G at all, its length is k·p, hence divisible by p.
+
+// Two listings of the whole group are drawn from each other, because each covers every element.
+theorem anyTwoGroupListingsHaveTheSameLength: forall m: Nat; forall v: Seq; forall n: Nat; forall w: Seq;
+  listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-v |
+        fix v: Seq {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-w |
+                fix w: Seq {
+                  @given-v-lists |
+                    assume listsTheGroup(v, m) {
+                      @given-w-lists |
+                        assume listsTheGroup(w, n) {
+                          @v-lists |
+                            listsTheGroup(v, m)
+                            [by hypothesis given-v-lists]
+                          @w-lists |
+                            listsTheGroup(w, n)
+                            [by hypothesis given-w-lists]
+                          @v-injective |
+                            forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> at(v, i) = at(v, j) -> i = j
+                            [using tautology v-lists]
+                          @w-injective |
+                            forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(w, i) = at(w, j) -> i = j
+                            [using tautology w-lists]
+                          @v-covers |
+                            forall x: Grp; exists i: Nat; less_than(i, m) and at(v, i) = x
+                            [using tautology v-lists]
+                          @w-covers |
+                            forall x: Grp; exists i: Nat; less_than(i, n) and at(w, i) = x
+                            [using tautology w-lists]
+                          // v is drawn from w: every entry of v is an element, so w covers it.
+                          @v-drawn-from-w |
+                            forall j: Nat; less_than(j, m) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+                            [by forall_intro v-entry-is-in-w]
+                          @v-entry-is-in-w |
+                            fix j: Nat {
+                              @given-j-below-m |
+                                assume less_than(j, m) {
+                                  @entry-is-covered |
+                                    exists i: Nat; less_than(i, n) and at(w, i) = at(v, j)
+                                    [using specialize w-covers(at(v, j))]
+                                  @with-covering-index |
+                                    unpack i: Nat from entry-is-covered {
+                                      @covering-facts |
+                                        less_than(i, n) and at(w, i) = at(v, j)
+                                        [by hypothesis with-covering-index]
+                                      @index-below |
+                                        less_than(i, n)
+                                        [by and_elim_left covering-facts]
+                                      @entries-agree |
+                                        at(w, i) = at(v, j)
+                                        [by and_elim_right covering-facts]
+                                      @entries-agree-flipped |
+                                        at(v, j) = at(w, i)
+                                        [by symmetry entries-agree]
+                                      @witnessed |
+                                        less_than(i, n) and at(v, j) = at(w, i)
+                                        [by and_intro index-below entries-agree-flipped]
+                                      @conclusion-v-entry-found |
+                                        exists i2: Nat; less_than(i2, n) and at(v, j) = at(w, i2)
+                                        [by exists_intro(i) witnessed]
+                                    }
+                                  @conclusion-v-entry-located |
+                                    exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+                                    [by exists_elim with-covering-index]
+                                }
+                              @j-below-implies |
+                                less_than(j, m) -> exists i: Nat; less_than(i, n) and at(v, j) = at(w, i)
+                                [by implies_intro given-j-below-m]
+                            }
+                          @w-drawn-from-v |
+                            forall j: Nat; less_than(j, n) -> exists i: Nat; less_than(i, m) and at(w, j) = at(v, i)
+                            [by forall_intro w-entry-is-in-v]
+                          @w-entry-is-in-v |
+                            fix j: Nat {
+                              @given-j-below-n |
+                                assume less_than(j, n) {
+                                  @entry-is-covered |
+                                    exists i: Nat; less_than(i, m) and at(v, i) = at(w, j)
+                                    [using specialize v-covers(at(w, j))]
+                                  @with-covering-index |
+                                    unpack i: Nat from entry-is-covered {
+                                      @covering-facts |
+                                        less_than(i, m) and at(v, i) = at(w, j)
+                                        [by hypothesis with-covering-index]
+                                      @index-below |
+                                        less_than(i, m)
+                                        [by and_elim_left covering-facts]
+                                      @entries-agree |
+                                        at(v, i) = at(w, j)
+                                        [by and_elim_right covering-facts]
+                                      @entries-agree-flipped |
+                                        at(w, j) = at(v, i)
+                                        [by symmetry entries-agree]
+                                      @witnessed |
+                                        less_than(i, m) and at(w, j) = at(v, i)
+                                        [by and_intro index-below entries-agree-flipped]
+                                      @conclusion-w-entry-found |
+                                        exists i2: Nat; less_than(i2, m) and at(w, j) = at(v, i2)
+                                        [by exists_intro(i) witnessed]
+                                    }
+                                  @conclusion-w-entry-located |
+                                    exists i: Nat; less_than(i, m) and at(w, j) = at(v, i)
+                                    [by exists_elim with-covering-index]
+                                }
+                              @j-below-implies |
+                                less_than(j, n) -> exists i: Nat; less_than(i, m) and at(w, j) = at(v, i)
+                                [by implies_intro given-j-below-n]
+                            }
+                          @conclusion-lengths-equal |
+                            m = n
+                            [using specialize counting.listingsOfTheSameClassHaveEqualLength(m, v, n, w) v-injective w-injective v-drawn-from-w w-drawn-from-v]
+                        }
+                      @w-lists-implies |
+                        listsTheGroup(w, n) -> m = n
+                        [by implies_intro given-w-lists]
+                    }
+                  @v-lists-implies |
+                    listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+                    [by implies_intro given-v-lists]
+                }
+              @discharge-w |
+                forall w: Seq; listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+                [by forall_intro generalize-w]
+            }
+          @discharge-n |
+            forall n: Nat; forall w: Seq; listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+            [by forall_intro generalize-n]
+        }
+      @discharge-v |
+        forall v: Seq; forall n: Nat; forall w: Seq; listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall m: Nat; forall v: Seq; forall n: Nat; forall w: Seq;
+      listsTheGroup(v, m) -> listsTheGroup(w, n) -> m = n
+    [by forall_intro generalize-m]
+qed
+
+// |H| DIVIDES |G| — Judson's Corollary 6.6, the statement everything downstream uses.
+// Given any listing of G at all, Lagrange's own listing has length k·p, the two lengths agree
+// by uniqueness, and n = p·k is the witness `divides` wants.
+theorem theSubgroupsLengthDividesTheGroups: forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat; forall g: Seq; forall n: Nat;
+  listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-v |
+            fix v: Seq {
+              @generalize-p |
+                fix p: Nat {
+                  @generalize-g |
+                    fix g: Seq {
+                      @generalize-n |
+                        fix n: Nat {
+                          @given-reps |
+                            assume listsCosetReps(r, k) {
+                              @given-subgroup-listed |
+                                assume listsTheSubgroup(v, p) {
+                                  @given-group-listed |
+                                    assume listsTheGroup(g, n) {
+                                      @reps |
+                                        listsCosetReps(r, k)
+                                        [by hypothesis given-reps]
+                                      @subgroup-listed |
+                                        listsTheSubgroup(v, p)
+                                        [by hypothesis given-subgroup-listed]
+                                      @group-listed |
+                                        listsTheGroup(g, n)
+                                        [by hypothesis given-group-listed]
+                                      @lagrange-listing-exists |
+                                        exists u: Seq; listsTheGroup(u, mul(k, p))
+                                        [using specialize lagrange(r, k, v, p) reps subgroup-listed]
+                                      @with-lagrange-listing |
+                                        unpack u: Seq from lagrange-listing-exists {
+                                          @lagrange-listing |
+                                            listsTheGroup(u, mul(k, p))
+                                            [by hypothesis with-lagrange-listing]
+                                          @lengths-agree |
+                                            n = mul(k, p)
+                                            [using specialize anyTwoGroupListingsHaveTheSameLength(n, g, mul(k, p), u) group-listed lagrange-listing]
+                                          @product-commutes |
+                                            mul(k, p) = mul(p, k)
+                                            [using specialize peano.mulIsCommutative(k, p)]
+                                          @length-is-p-times-k |
+                                            n = mul(p, k)
+                                            [using chain lengths-agree product-commutes]
+                                          @conclusion-divides |
+                                            peano_divides.divides(p, n)
+                                            [by exists_intro(k) length-is-p-times-k]
+                                        }
+                                      @conclusion-subgroup-length-divides |
+                                        peano_divides.divides(p, n)
+                                        [by exists_elim with-lagrange-listing]
+                                    }
+                                  @group-listed-implies |
+                                    listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                                    [by implies_intro given-group-listed]
+                                }
+                              @subgroup-listed-implies |
+                                listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                                [by implies_intro given-subgroup-listed]
+                            }
+                          @reps-implies |
+                            listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                            [by implies_intro given-reps]
+                        }
+                      @discharge-n |
+                        forall n: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                        [by forall_intro generalize-n]
+                    }
+                  @discharge-g |
+                    forall g: Seq; forall n: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                    [by forall_intro generalize-g]
+                }
+              @discharge-p |
+                forall p: Nat; forall g: Seq; forall n: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+                [by forall_intro generalize-p]
+            }
+          @discharge-v |
+            forall v: Seq; forall p: Nat; forall g: Seq; forall n: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+            [by forall_intro generalize-v]
+        }
+      @discharge-k |
+        forall k: Nat; forall v: Seq; forall p: Nat; forall g: Seq; forall n: Nat; listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall v: Seq; forall p: Nat; forall g: Seq; forall n: Nat;
+      listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
     [by forall_intro generalize-r]
 qed
