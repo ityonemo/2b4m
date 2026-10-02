@@ -16,6 +16,9 @@ sort Int = integer.Int
 const IZERO = integer.ZERO
 func isucc = integer.succ
 func iadd = integer.add
+func imul = integer.mul
+theorem intMulZeroRight = integer.mulZeroRight
+theorem intMulSuccRight = integer.mulSuccRight
 pred int_less_than = int_order.less_than
 pred nonneg = integer.nonneg
 axiom nonnegZero = integer.nonnegZero
@@ -34,6 +37,9 @@ sort Nat = peano.Nat
 const NZERO = peano.ZERO
 func succ = peano.succ
 func nadd = peano.add
+func nmul = peano.mul
+theorem mulZeroRight = peano.mulZeroRight
+theorem mulSuccRight = peano.mulSuccRight
 pred less_than = peano.less_than
 axiom induction = peano.induction
 theorem addZeroRight = peano.addZeroRight
@@ -390,4 +396,135 @@ proof
   @conclusion |
     forall a: Int; nonneg(a) -> exists m: Nat; toInt(m) = a
     [using instantiation nonnegInduction((fun a: Int => exists m: Nat; toInt(m) = a)) base-case induction-step-for-all-k]
+qed
+
+// -- the embedding is MULTIPLICATIVE ----------------------------------------------------------
+// toInt(a·b) = toInt(a)·toInt(b), by induction on b: the base is both sides zero, and the step
+// is mulSuccRight on each side plus toIntAdd (so this is where the additive homomorphism is
+// reused). Needed to carry a ℕ divisibility fact into ℤ, where primality lives — a group
+// order is a ℕ (a listing length) but `is_prime` is stated over ℤ.
+theorem toIntMul: forall a: Nat; forall b: Nat; toInt(nmul(a, b)) = imul(toInt(a), toInt(b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      // base: a·0 = 0 and toInt(a)·0 = 0
+      @a-times-zero |
+        nmul(a, NZERO) = NZERO
+        [using specialize mulZeroRight(a)]
+      @zero-image |
+        toInt(NZERO) = IZERO
+        [by cite toIntZero]
+      @image-of-a-times-zero |
+        toInt(nmul(a, NZERO)) = IZERO
+        [by rewrite a-times-zero zero-image]
+      @int-a-times-zero |
+        imul(toInt(a), IZERO) = IZERO
+        [using specialize intMulZeroRight(toInt(a))]
+      @int-a-times-zero-flipped |
+        IZERO = imul(toInt(a), IZERO)
+        [by symmetry int-a-times-zero]
+      @base-with-zero |
+        toInt(nmul(a, NZERO)) = imul(toInt(a), IZERO)
+        [using chain image-of-a-times-zero int-a-times-zero-flipped]
+      @base-case |
+        toInt(nmul(a, NZERO)) = imul(toInt(a), toInt(NZERO))
+        [by rewrite zero-image base-with-zero]
+      // step: a·(k+1) = a·k + a, and toInt(a)·(toInt(k)+1) = toInt(a)·toInt(k) + toInt(a)
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume toInt(nmul(a, k)) = imul(toInt(a), toInt(k)) {
+              @inductive-hypothesis |
+                toInt(nmul(a, k)) = imul(toInt(a), toInt(k))
+                [by hypothesis given-inductive-hypothesis]
+              @nat-mul-succ |
+                nmul(a, succ(k)) = nadd(nmul(a, k), a)
+                [using specialize mulSuccRight(a, k)]
+              @image-of-sum |
+                toInt(nadd(nmul(a, k), a)) = iadd(toInt(nmul(a, k)), toInt(a))
+                [using specialize toIntAdd(nmul(a, k), a)]
+              @image-of-mul-succ |
+                toInt(nmul(a, succ(k))) = iadd(toInt(nmul(a, k)), toInt(a))
+                [by rewrite nat-mul-succ image-of-sum]
+              @image-with-hypothesis |
+                toInt(nmul(a, succ(k))) = iadd(imul(toInt(a), toInt(k)), toInt(a))
+                [by rewrite inductive-hypothesis image-of-mul-succ]
+              @int-mul-succ |
+                imul(toInt(a), isucc(toInt(k))) = iadd(imul(toInt(a), toInt(k)), toInt(a))
+                [using specialize intMulSuccRight(toInt(a), toInt(k))]
+              @int-mul-succ-flipped |
+                iadd(imul(toInt(a), toInt(k)), toInt(a)) = imul(toInt(a), isucc(toInt(k)))
+                [by symmetry int-mul-succ]
+              @image-is-int-mul-succ |
+                toInt(nmul(a, succ(k))) = imul(toInt(a), isucc(toInt(k)))
+                [using chain image-with-hypothesis int-mul-succ-flipped]
+              @succ-image |
+                toInt(succ(k)) = isucc(toInt(k))
+                [using specialize toIntSucc(k)]
+              @conclusion-step |
+                toInt(nmul(a, succ(k))) = imul(toInt(a), toInt(succ(k)))
+                [by rewrite succ-image image-is-int-mul-succ]
+            }
+          @induction-step-at-k |
+            toInt(nmul(a, k)) = imul(toInt(a), toInt(k)) -> toInt(nmul(a, succ(k))) = imul(toInt(a), toInt(succ(k)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; toInt(nmul(a, k)) = imul(toInt(a), toInt(k)) -> toInt(nmul(a, succ(k))) = imul(toInt(a), toInt(succ(k)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-b |
+        forall b: Nat; toInt(nmul(a, b)) = imul(toInt(a), toInt(b))
+        [using instantiation induction((fun b: Nat => toInt(nmul(a, b)) = imul(toInt(a), toInt(b)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall a: Nat; forall b: Nat; toInt(nmul(a, b)) = imul(toInt(a), toInt(b))
+    [by forall_intro generalize-a]
+qed
+
+// -- DIVISIBILITY TRANSPORTS ACROSS THE EMBEDDING ----------------------------------------------
+// d | n in ℕ gives toInt(d) | toInt(n) in ℤ: the ℕ witness k maps to toInt(k), and `toIntMul`
+// turns n = d·k into toInt(n) = toInt(d)·toInt(k). This is the bridge a group-theoretic
+// divisibility fact needs to meet `std/primes.b4m`, whose `is_prime` is stated over ℤ.
+theorem dividesTransports: forall d: Nat; forall n: Nat;
+  (exists k: Nat; n = nmul(d, k)) -> exists k: Int; toInt(n) = imul(toInt(d), k)
+proof
+  @generalize-d |
+    fix d: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @given-divides |
+            assume exists k: Nat; n = nmul(d, k) {
+              @nat-witness-exists |
+                exists k: Nat; n = nmul(d, k)
+                [by hypothesis given-divides]
+              @with-nat-witness |
+                unpack k: Nat from nat-witness-exists {
+                  @n-is-product |
+                    n = nmul(d, k)
+                    [by hypothesis with-nat-witness]
+                  @image-of-product |
+                    toInt(nmul(d, k)) = imul(toInt(d), toInt(k))
+                    [using specialize toIntMul(d, k)]
+                  @image-of-n |
+                    toInt(n) = imul(toInt(d), toInt(k))
+                    [by rewrite n-is-product image-of-product]
+                  @conclusion-int-witness |
+                    exists k2: Int; toInt(n) = imul(toInt(d), k2)
+                    [by exists_intro(toInt(k)) image-of-n]
+                }
+              @conclusion-transported |
+                exists k: Int; toInt(n) = imul(toInt(d), k)
+                [by exists_elim with-nat-witness]
+            }
+          @divides-implies |
+            (exists k: Nat; n = nmul(d, k)) -> exists k: Int; toInt(n) = imul(toInt(d), k)
+            [by implies_intro given-divides]
+        }
+      @discharge-n |
+        forall n: Nat; (exists k: Nat; n = nmul(d, k)) -> exists k: Int; toInt(n) = imul(toInt(d), k)
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall d: Nat; forall n: Nat; (exists k: Nat; n = nmul(d, k)) -> exists k: Int; toInt(n) = imul(toInt(d), k)
+    [by forall_intro generalize-d]
 qed
