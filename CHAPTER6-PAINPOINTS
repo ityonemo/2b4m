@@ -95,6 +95,59 @@ the duplication I should have removed. Aliasing collapsed it to one entry each.
 `--axioms` means two declarations, never one fact counted twice. The ledger is right;
 check the design.
 
+### A FIXED-CONSTANT development is reachable ONLY through a model nobody wrote
+
+`std/group/order.b4m` has a large section built on fixed constants:
+
+```2b4m
+const A: Grp
+const N: Int
+axiom orderPositive: less_than(ZERO, N)
+axiom orderKills: power(A, N) = E
+axiom orderMinimal: forall m: Int; less_than(ZERO, m) -> less_than(m, N) -> power(A, m) != E
+```
+
+Everything proved there — `killedExponentIsMultiple`, `powerEqIdentityIffOrderDivides`,
+`powerCofactorKills` — is a theorem about THOSE CONSTANTS, and **nothing in std, aata or
+tests cites any of them** (checked by grep on each name). So the section reads as
+unreachable, and that is how I first recorded it here.
+
+**That was wrong, and the correction is the useful part.** A model DOES reach it. Mapping
+`order.A` and `order.N` onto a local element and its order, and discharging the three order
+axioms from a `hasOrder` hypothesis, transfers the whole corpus — verified end to end in
+`tests/cases/model_element_order.b4m`, where `everyPowerReducesBelowTheOrder` lands at a
+variable element and `--axioms` confirms it rests on the local order hypothesis plus the
+group/power/integer axioms, nothing else. The section is not sealed; it is simply
+**undiscovered**, with no fixture showing the entry point.
+
+The cost of the gap was real anyway: I added `everyPowerReducesBelowTheOrder` to that
+section, then — believing it unreachable — proved the SAME argument again over a variable
+`g` as `counting.everyPowerIsOneOfTheFirstN`. Two copies of one division-algorithm
+argument. And the duplication predates this chapter:
+`counting.smallerIndexGivesADifferentPower` also re-derives from the `hasOrder` definition
+rather than transferring.
+
+**Lesson, and it generalizes past this file:** a fixed-constant + axioms section is a
+MODEL SOURCE, and it is indistinguishable from dead code unless something demonstrates the
+model. `std/` already has the convention that a library demonstrates its own axioms
+(`<namespace>/examples.b4m`, enforced by `--library`); the same argument applies to a
+model-source section, and `--library` does NOT catch it, because it flags unused AXIOMS,
+not an unused development. A fixed-constant section wants its example.
+
+### std has no INDEX, so a differently-named twin is invisible
+
+I wrote 90 lines of a `powerSequenceExists` for Corollary 6.7 before discovering
+`counting.powersAreListed` is exactly that theorem, already proved. Grep on the name
+I had chosen found nothing, because the existing one is named differently; what would
+have found it is a search by STATEMENT SHAPE ("exists v: Seq; … at(v, i) = power(…)"),
+which nothing supports.
+
+1086 theorems across 91 files is past the size where a reader can hold the inventory.
+A per-theory "what this file proves" index (one line per takeaway result) would catch
+this; the std-file-layout convention already asks each parent to forward its
+sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
+plausibly do the other half (search declarations by statement shape).
+
 ### `2b4m fmt` CRASHES on an unbalanced proof brace
 
 ```

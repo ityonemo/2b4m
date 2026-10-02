@@ -51,6 +51,7 @@ sort Int = integer.Int
 const IZERO = integer.ZERO
 func isucc = integer.succ
 func iadd = integer.add
+func imul = integer.mul
 pred int_less_than = int_order.less_than
 pred nonneg = integer.nonneg
 define int_at_most(a, b) = int_order.less_or_equal(a, b)
@@ -1501,4 +1502,144 @@ proof
   @conclusion |
     forall m: Nat; forall v: Seq; forall n: Nat; forall w: Seq; listsWithoutRepetition(v, m) -> listsWithoutRepetition(w, n) -> drawnFrom(v, m, w, n) -> drawnFrom(w, n, v, m) -> m = n
     [by forall_intro generalize-m]
+qed
+
+// -- (3) every power of g is one of g⁰ … g^(n−1) ---------------------------------------------
+// The division algorithm on the EXPONENT: k = n·q + r with 0 ≤ r < n, so
+// g^k = (g^n)^q · g^r = e^q · g^r = g^r. With `powersAreListed` (the sequence) and
+// `smallerIndexGivesADifferentPower` (injectivity) this makes the n powers a LISTING of the
+// cyclic subgroup ⟨g⟩ — the route to Judson's Corollary 6.7.
+//
+// Proved over a VARIABLE g rather than reusing the fixed-constant A/N section further up this
+// file's import `std/group/order.b4m`: that section has no export mechanism (no model, no
+// schema), so nothing can consume its results at a variable element. See CHAPTER6-PAINPOINTS.
+theorem everyPowerIsOneOfTheFirstN: forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) ->
+  forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Nat {
+          @given-order |
+            assume hasOrder(g, toInt(n)) {
+              @order-facts |
+                int_less_than(IZERO, toInt(n)) and power(g, toInt(n)) = E and (forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, toInt(n)) -> power(g, m) != E)
+                [by hypothesis given-order]
+              @order-positive |
+                int_less_than(IZERO, toInt(n))
+                [using tautology order-facts]
+              @order-kills |
+                power(g, toInt(n)) = E
+                [using tautology order-facts]
+              @conclusion-every-power |
+                forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                [by forall_intro reduce-at-k]
+              @reduce-at-k |
+                fix k: Int {
+                  @k-decomposes |
+                    exists q: Int; exists r: Int; k = iadd(imul(toInt(n), q), r) and nonneg(r) and int_less_than(r, toInt(n))
+                    [using specialize int_divides.divisionAlgorithmExists(k, toInt(n)) order-positive]
+                  @with-quotient |
+                    unpack q: Int from k-decomposes {
+                      @remainder-exists |
+                        exists r: Int; k = iadd(imul(toInt(n), q), r) and nonneg(r) and int_less_than(r, toInt(n))
+                        [by hypothesis with-quotient]
+                      @with-remainder |
+                        unpack r: Int from remainder-exists {
+                          @remainder-facts |
+                            k = iadd(imul(toInt(n), q), r) and nonneg(r) and int_less_than(r, toInt(n))
+                            [by hypothesis with-remainder]
+                          @k-is-decomposed |
+                            k = iadd(imul(toInt(n), q), r)
+                            [using tautology remainder-facts]
+                          @remainder-nonneg |
+                            nonneg(r)
+                            [using tautology remainder-facts]
+                          @remainder-below-order |
+                            int_less_than(r, toInt(n))
+                            [using tautology remainder-facts]
+                          // g^(nq) = (g^n)^q = e^q = e
+                          @power-splits |
+                            op(power(g, imul(toInt(n), q)), power(g, r)) = power(g, iadd(imul(toInt(n), q), r))
+                            [using specialize group_power.powerAdd(g, imul(toInt(n), q), r)]
+                          @nq-power-is-iterated |
+                            power(power(g, toInt(n)), q) = power(g, imul(toInt(n), q))
+                            [using specialize group_power.powerMul(g, toInt(n), q)]
+                          @identity-power-is-identity |
+                            power(E, q) = E
+                            [using specialize group_power.powerOfIdentity(q)]
+                          @iterated-is-identity |
+                            power(power(g, toInt(n)), q) = E
+                            [by rewrite order-kills identity-power-is-identity]
+                          @nq-power-is-iterated-flipped |
+                            power(g, imul(toInt(n), q)) = power(power(g, toInt(n)), q)
+                            [by symmetry nq-power-is-iterated]
+                          @nq-power-is-identity |
+                            power(g, imul(toInt(n), q)) = E
+                            [using chain nq-power-is-iterated-flipped iterated-is-identity]
+                          // so g^k = g^(nq+r) = e·g^r = g^r
+                          @identity-times-remainder |
+                            op(E, power(g, r)) = power(g, r)
+                            [using specialize group.opIdentityLeft(power(g, r))]
+                          @split-with-identity |
+                            op(E, power(g, r)) = power(g, iadd(imul(toInt(n), q), r))
+                            [by rewrite nq-power-is-identity power-splits]
+                          @split-with-identity-flipped |
+                            power(g, iadd(imul(toInt(n), q), r)) = op(E, power(g, r))
+                            [by symmetry split-with-identity]
+                          @decomposed-power-is-remainder |
+                            power(g, iadd(imul(toInt(n), q), r)) = power(g, r)
+                            [using chain split-with-identity-flipped identity-times-remainder]
+                          @k-power-is-remainder-power |
+                            power(g, k) = power(g, r)
+                            [by rewrite k-is-decomposed decomposed-power-is-remainder]
+                          // the remainder is a Nat below n
+                          @remainder-is-an-image |
+                            exists m: Nat; toInt(m) = r
+                            [using specialize int_embedding.everyNonnegIsAnImage(r) remainder-nonneg]
+                          @with-remainder-index |
+                            unpack m: Nat from remainder-is-an-image {
+                              @remainder-is-image |
+                                toInt(m) = r
+                                [by hypothesis with-remainder-index]
+                              @image-below-order |
+                                int_less_than(toInt(m), toInt(n))
+                                [by rewrite remainder-is-image remainder-below-order]
+                              @index-below-n |
+                                less_than(m, n)
+                                [using specialize int_embedding.toIntReflectsOrder(m, n) image-below-order]
+                              @power-at-index |
+                                power(g, k) = power(g, toInt(m))
+                                [by rewrite remainder-is-image k-power-is-remainder-power]
+                              @witnessed |
+                                less_than(m, n) and power(g, k) = power(g, toInt(m))
+                                [by and_intro index-below-n power-at-index]
+                              @conclusion-index-found |
+                                exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                                [by exists_intro(m) witnessed]
+                            }
+                          @conclusion-with-index |
+                            exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                            [by exists_elim with-remainder-index]
+                        }
+                      @conclusion-with-remainder |
+                        exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                        [by exists_elim with-remainder]
+                    }
+                  @conclusion-with-quotient |
+                    exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+                    [by exists_elim with-quotient]
+                }
+            }
+          @order-implies |
+            hasOrder(g, toInt(n)) -> forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+            [by implies_intro given-order]
+        }
+      @discharge-n |
+        forall n: Nat; hasOrder(g, toInt(n)) -> forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+        [by forall_intro generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Nat; hasOrder(g, toInt(n)) -> forall k: Int; exists i: Nat; less_than(i, n) and power(g, k) = power(g, toInt(i))
+    [by forall_intro generalize-g]
 qed

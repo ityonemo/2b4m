@@ -216,6 +216,12 @@ pub fn addTests(
     // Exercises the DIRECT-MAPPED-axiom transfer (group.opAssoc, an axiom, discharged
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
     ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.b4m" });
+    // A FIXED-CONSTANT DEVELOPMENT REACHED AT A VARIABLE ELEMENT. std/group/order.b4m proves a
+    // corpus about a fixed element A of fixed order N (three order axioms); the model maps A/N
+    // onto a local element and its order and discharges those axioms from a `hasOrder`
+    // hypothesis, so the corpus transfers. This fixture IS the entry point — without it the
+    // section looks like dead code (nothing in std cites it) and gets re-proved by hand.
+    ctx.okSilent(&.{ "check", "tests/cases/model_element_order.b4m" });
     // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
     // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
     // aliases — the same entities by origin), and transferring top.unitFourth remaps the
