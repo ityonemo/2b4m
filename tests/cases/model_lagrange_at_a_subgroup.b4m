@@ -1,0 +1,164 @@
+// LAGRANGE AT AN ARBITRARY SUBGROUP, via a model.
+//
+// `std/group/coset.b4m` and `std/group/lagrange.b4m` are stated over ONE subgroup predicate,
+// `inSubgroup`, with Judson's three criteria as axioms. That reads like a restriction to a
+// single fixed subgroup, and it is not: the predicate is a MODEL SOURCE. Map `coset.inSubgroup`
+// onto any predicate you can prove the three criteria for, and the whole chapter transfers —
+// the coset algebra AND the Lagrange counting theorem.
+//
+// Demonstrated here on the CYCLIC subgroup <gen>: `inCyclic(x) iff inGenerated(gen, x)`, whose
+// three criteria come from `std/group/generated.b4m`, then `model CyclicSubgroup` and two
+// one-line transfers — `elementIsInItsOwnCoset` and `lagrange` itself.
+//
+// Without this fixture the next reader concludes the chapter applies to one subgroup only and
+// re-states it (see CHAPTER6-PAINPOINTS). Note the transferred statements must be written in
+// the MAPPED vocabulary: citing `coset.inCoset(g, g)` fails, because the define expands with
+// the unmapped `inSubgroup` — the transfer derives the `inCyclic` form, so claim that.
+import group <<< "std/group.b4m"
+import coset <<< "std/group/coset.b4m"
+import generated <<< "std/group/generated.b4m"
+import lagrange <<< "std/group/lagrange.b4m"
+import group_sequence <<< "std/group/sequence.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+
+const gen: Grp
+
+// <gen> as a one-place predicate over Grp.
+pred inCyclic(x: Grp)
+axiom inCyclicDef: forall x: Grp; inCyclic(x) iff generated.inGenerated(gen, x)
+
+theorem cyclicHasIdentity: inCyclic(E)
+proof
+  @generated-has-identity |
+    generated.inGenerated(gen, E)
+    [using specialize generated.generatedHasIdentity(gen)]
+  @definition |
+    inCyclic(E) iff generated.inGenerated(gen, E)
+    [using specialize inCyclicDef(E)]
+  @conclusion |
+    inCyclic(E)
+    [using tautology definition generated-has-identity]
+qed
+
+theorem cyclicClosedOp: forall a, b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @generalize-b |
+        fix b: Grp {
+          @given-a |
+            assume inCyclic(a) {
+              @given-b |
+                assume inCyclic(b) {
+                  @a-in |
+                    inCyclic(a)
+                    [by hypothesis given-a]
+                  @b-in |
+                    inCyclic(b)
+                    [by hypothesis given-b]
+                  @def-a |
+                    inCyclic(a) iff generated.inGenerated(gen, a)
+                    [using specialize inCyclicDef(a)]
+                  @def-b |
+                    inCyclic(b) iff generated.inGenerated(gen, b)
+                    [using specialize inCyclicDef(b)]
+                  @def-ab |
+                    inCyclic(op(a, b)) iff generated.inGenerated(gen, op(a, b))
+                    [using specialize inCyclicDef(op(a, b))]
+                  @a-generated |
+                    generated.inGenerated(gen, a)
+                    [using tautology def-a a-in]
+                  @b-generated |
+                    generated.inGenerated(gen, b)
+                    [using tautology def-b b-in]
+                  @product-generated |
+                    generated.inGenerated(gen, op(a, b))
+                    [using specialize generated.generatedClosedOp(gen, a, b) a-generated b-generated]
+                  @conclusion-closed |
+                    inCyclic(op(a, b))
+                    [using tautology def-ab product-generated]
+                }
+              @b-implies |
+                inCyclic(b) -> inCyclic(op(a, b))
+                [by implies_intro given-b]
+            }
+          @a-implies |
+            inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+            [by implies_intro given-a]
+        }
+      @discharge-b |
+        forall b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Grp; inCyclic(a) -> inCyclic(b) -> inCyclic(op(a, b))
+    [by forall_intro generalize-a]
+qed
+
+theorem cyclicClosedInverse: forall a: Grp; inCyclic(a) -> inCyclic(inverse(a))
+proof
+  @generalize-a |
+    fix a: Grp {
+      @given-a |
+        assume inCyclic(a) {
+          @a-in |
+            inCyclic(a)
+            [by hypothesis given-a]
+          @def-a |
+            inCyclic(a) iff generated.inGenerated(gen, a)
+            [using specialize inCyclicDef(a)]
+          @def-inv |
+            inCyclic(inverse(a)) iff generated.inGenerated(gen, inverse(a))
+            [using specialize inCyclicDef(inverse(a))]
+          @a-generated |
+            generated.inGenerated(gen, a)
+            [using tautology def-a a-in]
+          @inverse-generated |
+            generated.inGenerated(gen, inverse(a))
+            [using specialize generated.generatedClosedInverse(gen, a) a-generated]
+          @conclusion-closed |
+            inCyclic(inverse(a))
+            [using tautology def-inv inverse-generated]
+        }
+      @a-implies |
+        inCyclic(a) -> inCyclic(inverse(a))
+        [by implies_intro given-a]
+    }
+  @conclusion |
+    forall a: Grp; inCyclic(a) -> inCyclic(inverse(a))
+    [by forall_intro generalize-a]
+qed
+
+// THE TEST: model coset's subgroup onto <gen>, so Lagrange applies to the cyclic subgroup.
+model CyclicSubgroup {
+  coset.inSubgroup: inCyclic
+  coset.subgroupHasIdentity <- cyclicHasIdentity
+  coset.subgroupClosedOp <- cyclicClosedOp
+  coset.subgroupClosedInverse <- cyclicClosedInverse
+}
+
+theorem cosetAlgebraTransfers: forall g: Grp; exists h: Grp; inCyclic(h) and g = op(g, h)
+proof
+  @conclusion |
+    forall g: Grp; exists h: Grp; inCyclic(h) and g = op(g, h)
+    [using model(CyclicSubgroup) coset.elementIsInItsOwnCoset]
+qed
+
+// and the LAGRANGE counting result itself, at the cyclic subgroup.
+theorem lagrangeAtTheCyclicSubgroup: forall r: group_sequence.Seq; forall k: peano.Nat; forall v: group_sequence.Seq; forall p: peano.Nat;
+  ((forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, k) -> peano.less_than(j, k) -> (exists h: Grp; inCyclic(h) and group_sequence.at(r, j) = op(group_sequence.at(r, i), h)) -> i = j) and (forall x: Grp; exists i: peano.Nat; peano.less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(group_sequence.at(r, i), h)))) ->
+  ((forall i: peano.Nat; peano.less_than(i, p) -> inCyclic(group_sequence.at(v, i))) and (forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, p) -> peano.less_than(j, p) -> group_sequence.at(v, i) = group_sequence.at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: peano.Nat; peano.less_than(i, p) and group_sequence.at(v, i) = h)) ->
+  exists u: group_sequence.Seq; (forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, peano.mul(k, p)) -> peano.less_than(j, peano.mul(k, p)) -> group_sequence.at(u, i) = group_sequence.at(u, j) -> i = j) and (forall x: Grp; exists i: peano.Nat; peano.less_than(i, peano.mul(k, p)) and group_sequence.at(u, i) = x)
+proof
+  @conclusion |
+    forall r: group_sequence.Seq; forall k: peano.Nat; forall v: group_sequence.Seq; forall p: peano.Nat;
+      ((forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, k) -> peano.less_than(j, k) -> (exists h: Grp; inCyclic(h) and group_sequence.at(r, j) = op(group_sequence.at(r, i), h)) -> i = j) and (forall x: Grp; exists i: peano.Nat; peano.less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(group_sequence.at(r, i), h)))) ->
+      ((forall i: peano.Nat; peano.less_than(i, p) -> inCyclic(group_sequence.at(v, i))) and (forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, p) -> peano.less_than(j, p) -> group_sequence.at(v, i) = group_sequence.at(v, j) -> i = j) and (forall h: Grp; inCyclic(h) -> exists i: peano.Nat; peano.less_than(i, p) and group_sequence.at(v, i) = h)) ->
+      exists u: group_sequence.Seq; (forall i: peano.Nat; forall j: peano.Nat; peano.less_than(i, peano.mul(k, p)) -> peano.less_than(j, peano.mul(k, p)) -> group_sequence.at(u, i) = group_sequence.at(u, j) -> i = j) and (forall x: Grp; exists i: peano.Nat; peano.less_than(i, peano.mul(k, p)) and group_sequence.at(u, i) = x)
+    [using model(CyclicSubgroup) lagrange.lagrange]
+qed

@@ -222,6 +222,12 @@ pub fn addTests(
     // hypothesis, so the corpus transfers. This fixture IS the entry point — without it the
     // section looks like dead code (nothing in std cites it) and gets re-proved by hand.
     ctx.okSilent(&.{ "check", "tests/cases/model_element_order.b4m" });
+    // LAGRANGE AT AN ARBITRARY SUBGROUP. std/group/coset.b4m and std/group/lagrange.b4m are
+    // written over ONE predicate `inSubgroup` with the three criteria as axioms — which is a
+    // MODEL SOURCE, not a restriction to one subgroup. Mapping it onto the CYCLIC subgroup
+    // (criteria from std/group/generated.b4m) transfers the coset algebra AND the counting
+    // theorem in one line each. The fixture is the entry point the chapter lacked.
+    ctx.okSilent(&.{ "check", "tests/cases/model_lagrange_at_a_subgroup.b4m" });
     // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
     // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
     // aliases — the same entities by origin), and transferring top.unitFourth remaps the
