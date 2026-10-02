@@ -1,0 +1,166 @@
+# Chapter 6 (Cosets and Lagrange's Theorem) — pain points & missing machinery
+
+A log kept WHILE transliterating Chapter 6, recording what the 2b4m language or
+standard library lacked at the moment it blocked a proof. Entries that are ADDRESSED
+get removed rather than annotated — what remains is what is still missing. Plain
+markdown without a `.md` extension so the literate checker never parses the fenced
+examples here.
+
+Same discipline as `CHAPTER5-PAINPOINTS`: a claim here is a claim about the CHECKER AS
+IT IS, re-probed, not a recollection. Where I guessed and was wrong, the wrong guess
+stays recorded with the correction — those were the expensive ones.
+
+---
+
+## STILL MISSING
+
+### No CARDINALITY, so |G| = [G:H]·|H| is a statement about LISTINGS
+
+Judson's Lagrange is an equation between numbers: `|G|/|H| = [G:H]`. 2b4m has no
+cardinality function on a sort, so the whole chapter is phrased with LISTINGS — a
+sequence whose entries below a length are pairwise distinct and exhaust what they
+list (the idiom from `std/permutation/count.b4m`). `std/group/lagrange.b4m` therefore
+proves:
+
+> k coset representatives + a p-long listing of H  ⟹  a (k·p)-long listing of G.
+
+That is the mathematical content, and it is what the corollaries actually consume. But
+it is NOT Judson's sentence, and three things are awkward as a result:
+
+- **"the number of distinct left cosets"** has no term. `[G:H]` enters as a HYPOTHESIS
+  (you are handed k representatives) rather than being DEFINED from the group and the
+  subgroup. Nothing stops a caller supplying a k that is wrong; the theorem is still
+  true, it just says less than Judson's.
+- **Divisibility needs a bridge.** `|H| divides |G|` is not a restatement of the
+  listing theorem — it needs "G is listed by n" + "G is listed by k·p" ⟹ n = k·p
+  (listing-length uniqueness) and then `p | n` from the product. The uniqueness half
+  is the load-bearing piece and is not currently stated for group listings.
+- **Corollary chains multiply.** `[G:K] = [G:H][H:K]` is division arithmetic in
+  Judson; as listings it is a three-way block decomposition, i.e. a second instance of
+  the whole Lagrange construction rather than two divisions.
+
+Not a defect — the listing idiom is a deliberate choice and it carries the content.
+But it means each §6.2 corollary is its own piece of work, not a one-liner off the
+theorem, and the chapter should say so rather than imply the corollaries are free.
+
+### A listing's length is not known to be unique (for groups)
+
+Needed by every divisibility corollary. For PERMUTATIONS this exists —
+`std/permutation/count.b4m` has the pigeonhole machinery and
+`listingsInBijectionHaveEqualLengths` (~472 lines) — but it hardcodes `compose` and
+the permutation sort. Generalizing it needs either sort polymorphism (absent) or a
+re-proof over the group sort. See the next entry: this is the same wall.
+
+### `Seq` is re-postulated per carrier — five copies and counting
+
+`std/sequence.b4m` has the abstract fold, but each concrete sequence theory must
+RESTATE the sequence-EXISTENCE postulates over its own carrier, because a model
+transfers THEOREMS and must DISCHARGE axioms — and `seqSingleton`/`seqConcat`/… are
+axioms. So `std/group/sequence.b4m`, `std/integer/sequence.b4m`,
+`std/permutation/sequence.b4m`, `std/integer/mod-n-listing.b4m` and
+`std/set/subsets.b4m` each carry their own copy, each with a comment explaining why.
+
+This is what FIXED THE BASE SORT for Chapter 6. `std/group/sequence.b4m` postulates
+`Seq`/`at` over `std/group.b4m`'s `Grp`, so anything that counts group elements must
+live over THAT sort — the listing layer chose the carrier, and `std/group/coset.b4m`
+had to follow it (not the other way round). Recorded in memory as
+`abstract-collections-direction`: the fix is a container theory parameterized by its
+carrier, so a sequence over any sort is one model away instead of five re-postulated
+axiom sets. Until then, every new counting theory pays the copy.
+
+### Two same-named sorts from different origins print identically
+
+`expected sort 'Grp', got 'Grp'` — the diagnostic names NEITHER origin. Hit while
+importing `std/subgroup.b4m` (which then declared its own `Grp`) as a base for
+cosets. It cost a full detour: I read the message as an obstacle to route around,
+concluded the FILE was wrong, and wrote a commit message blaming it, when the message
+was really saying "these are two different sorts that happen to share a name".
+
+Less likely to fire in std now that `subgroup` aliases (`1b8b87a`), but the
+diagnostic is unchanged and will catch the next person. Printing the origin file for
+each side is a cheap fix.
+
+### `--axioms` lists an axiom per ORIGIN, and that reads like a bug
+
+When `std/group/coset.b4m` declared its own copies of the three subgroup criteria and
+reached `std/subgroup.b4m` through a model, `--axioms` listed each criterion TWICE —
+once per site. I wrote this off as "the ledger double-reporting a model transfer,"
+compared it against `tests/cases/model_subgroup_transfer.b4m` (which shows the same
+shape, for the same reason), and moved on.
+
+It was not double-reporting. It was correctly reporting TWO ORIGINS — which is exactly
+the duplication I should have removed. Aliasing collapsed it to one entry each.
+
+**Lesson for the next reader of this file:** a repeated axiom NAME at two sites in
+`--axioms` means two declarations, never one fact counted twice. The ledger is right;
+check the design.
+
+### `2b4m fmt` CRASHES on an unbalanced proof brace
+
+```
+thread N panic: integer overflow
+src/fmt.zig:191:43 in render     if (in_proof) extra_depth -= 1;
+```
+
+`extra_depth` is unsigned and decremented past zero. One too many `}` in a proof
+core-dumps the formatter instead of diagnosing, which violates the repo's
+hard-errors-not-warnings rule and tells the author nothing about WHERE. `check`
+diagnoses the same file fine, so the workaround is to run `check` first; the useful
+locator in the meantime is a one-liner printing running brace depth at each `qed`
+(a nonzero value names the offending theorem).
+
+### `case` is a step's JUSTIFICATION, not a step of its own
+
+Minor, but it cost two cycles. `case <disj> { … }` goes in the justification slot of
+the step that states the case-split's CONCLUSION:
+
+```2b4m
+@conclusion-indices-equal |
+  i = j
+  case i-splits {
+    @when-i-is-low | assume … { … }
+    @when-i-is-high | assume … { … }
+  }
+```
+
+Writing it as a bare `@by-case | case i-splits { … }` step is a parse error
+("expected an expression, got 'case'"). The cheatsheet shows the form inline but not
+that the conclusion formula must be on the step carrying it.
+
+### The index-arithmetic lemmas live in the wrong file
+
+`indexSplits`, `belowTheBaseIsBelowTheSum` and `indexPastTheBase` are pure
+Peano-order facts — "an index below base+m is either below base or is base+j for some
+j<m" — with NO permutation content, but they are declared in
+`std/permutation/count.b4m`. Three unrelated files now alias them out of there:
+`std/permutation/dihedral.b4m`, `std/integer/mod-n-generators.b4m`, and now
+`std/group/lagrange.b4m`. Any file doing a block decomposition needs them, and none
+of those should import the permutation counting theory to get them. They belong in
+`std/peano/order.b4m` (or a `std/peano/block-index.b4m`). Mechanical move.
+
+---
+
+## WHAT WORKED, worth keeping
+
+### Top-down with `hole` paid for itself on the block decomposition
+
+Writing the `lagrange` ENDPOINT first, against four `hole` stubs, settled every
+intermediate signature before any of them was proved — and the holes it did NOT cite
+told me which lemmas fed the induction rather than the theorem. The one interface I
+got wrong (four lemmas taking `listsCosetReps(r, succ(c))` when the induction only
+ever holds it at a fixed `k`) surfaced as a shape mismatch at first assembly, not
+after writing proofs against it.
+
+Confirms the rule in `agents/2b4m-cheatsheet.md`: bottom-up when the statement is
+GIVEN (Judson's lemmas), top-down when the statement is YOURS to invent (the plumbing
+between them). A hole still needs its FULL statement written, which is most of the
+design work — that is the point, not a cost.
+
+### A `hole` cannot be stubbed mid-proof, and that forced a better factoring
+
+Wanting to stub the middle of `blocksExtendByOne` (I cited a `blocksExtendByOneCore`
+that would have needed the whole local context threaded into it), I had to instead
+split the three `listsTheBlocksBelow` clauses into three top-level lemmas, each
+taking the concatenation's two entrywise agreements plus only the clauses it uses.
+That is the better factoring — each clause argues on a different index split and they
+share nothing else — and the restriction is what produced it.
