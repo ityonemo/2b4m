@@ -248,6 +248,100 @@ proof
     [by forall_intro generalize-k]
 qed
 
+// -- REDUCING AN EXPONENT MODULO THE ORDER -----------------------------------------------------
+// A^k = A^r where k = N·q + r and 0 ≤ r < N: the division algorithm on the exponent, then
+// A^(Nq+r) = (A^N)^q · A^r = e^q · A^r = A^r. This is what makes the powers A⁰…A^(N−1) COVER
+// the cyclic subgroup ⟨A⟩ — every power of A is one of them — and so what makes ⟨A⟩ a listing
+// of length N (Judson's Corollary 6.7 route).
+theorem everyPowerReducesBelowTheOrder: forall k: Int;
+  exists r: Int; is_nonneg(r) and less_than(r, N) and power(A, k) = power(A, r)
+proof
+  @generalize-k |
+    fix k: Int {
+      @n-positive |
+        less_than(ZERO, N)
+        [by cite orderPositive]
+      @k-decomposes |
+        exists q: Int; exists r: Int; k = add(mul(N, q), r) and is_nonneg(r) and less_than(r, N)
+        [using specialize int_divides.divisionAlgorithmExists(k, N) n-positive]
+      @with-quotient |
+        unpack q: Int from k-decomposes {
+          @remainder-exists |
+            exists r: Int; k = add(mul(N, q), r) and is_nonneg(r) and less_than(r, N)
+            [by hypothesis with-quotient]
+          @with-remainder |
+            unpack r: Int from remainder-exists {
+              @remainder-facts |
+                k = add(mul(N, q), r) and is_nonneg(r) and less_than(r, N)
+                [by hypothesis with-remainder]
+              @k-is-decomposed |
+                k = add(mul(N, q), r)
+                [using tautology remainder-facts]
+              @remainder-nonneg |
+                is_nonneg(r)
+                [using tautology remainder-facts]
+              @remainder-below-order |
+                less_than(r, N)
+                [using tautology remainder-facts]
+              // A^(Nq) = (A^N)^q = e^q = e
+              @power-splits |
+                op(power(A, mul(N, q)), power(A, r)) = power(A, add(mul(N, q), r))
+                [using specialize group_power.powerAdd(A, mul(N, q), r)]
+              @nq-power-is-iterated |
+                power(power(A, N), q) = power(A, mul(N, q))
+                [using specialize group_power.powerMul(A, N, q)]
+              @order-kills-a |
+                power(A, N) = E
+                [by cite orderKills]
+              @identity-power-is-identity |
+                power(E, q) = E
+                [using specialize group_power.powerOfIdentity(q)]
+              @iterated-is-identity |
+                power(power(A, N), q) = E
+                [by rewrite order-kills-a identity-power-is-identity]
+              @nq-power-is-identity |
+                power(A, mul(N, q)) = E
+                [using chain nq-power-is-iterated-flipped iterated-is-identity]
+              @nq-power-is-iterated-flipped |
+                power(A, mul(N, q)) = power(power(A, N), q)
+                [by symmetry nq-power-is-iterated]
+              // so A^k = A^(Nq+r) = A^(Nq)·A^r = e·A^r = A^r
+              @identity-times-remainder |
+                op(E, power(A, r)) = power(A, r)
+                [using specialize opIdentityLeft(power(A, r))]
+              @split-with-identity |
+                op(E, power(A, r)) = power(A, add(mul(N, q), r))
+                [by rewrite nq-power-is-identity power-splits]
+              @decomposed-power-is-remainder |
+                power(A, add(mul(N, q), r)) = power(A, r)
+                [using chain split-with-identity-flipped identity-times-remainder]
+              @split-with-identity-flipped |
+                power(A, add(mul(N, q), r)) = op(E, power(A, r))
+                [by symmetry split-with-identity]
+              @k-power-is-remainder-power |
+                power(A, k) = power(A, r)
+                [by rewrite k-is-decomposed decomposed-power-is-remainder]
+              @witnessed |
+                is_nonneg(r) and less_than(r, N) and power(A, k) = power(A, r)
+                [using tautology remainder-nonneg remainder-below-order k-power-is-remainder-power]
+              @conclusion-reduced |
+                exists r2: Int; is_nonneg(r2) and less_than(r2, N) and power(A, k) = power(A, r2)
+                [by exists_intro(r) witnessed]
+            }
+          @conclusion-with-remainder |
+            exists r: Int; is_nonneg(r) and less_than(r, N) and power(A, k) = power(A, r)
+            [by exists_elim with-remainder]
+        }
+      @conclusion-with-quotient |
+        exists r: Int; is_nonneg(r) and less_than(r, N) and power(A, k) = power(A, r)
+        [by exists_elim with-quotient]
+    }
+  @conclusion |
+    forall k: Int; exists r: Int; is_nonneg(r) and less_than(r, N) and power(A, k) = power(A, r)
+    [by forall_intro generalize-k]
+qed
+
+
 // -- order of a power: ord(A^k) = N / gcd(k, N) (cyclic-theorem-cyclic-orders) ------
 // std form (not tied to Judson's `n/d` notation): write d = gcd(k, N), and let the
 // cofactors K = k/d, M = N/d be given by k = d·K, N = d·M. Then M is the order of A^k:

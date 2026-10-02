@@ -1,0 +1,86 @@
+// THE FIXED-CONSTANT ORDER SECTION, REACHED AT A VARIABLE ELEMENT.
+//
+// `std/group/order.b4m` proves a corpus about a fixed element `A` of fixed order `N`
+// (orderPositive / orderKills / orderMinimal as axioms). Those theorems are about THOSE
+// CONSTANTS — nothing in std cites them, and the section reads as dead code. It is not: a
+// model maps A and N onto a local element and its order, discharges the three axioms from a
+// `hasOrder` hypothesis, and the whole corpus transfers.
+//
+// This fixture is the entry point the section lacked. Without it the next reader concludes
+// (as I did) that the development is unreachable and re-proves its results over a variable
+// element — see CHAPTER6-PAINPOINTS.
+//
+// GOTCHA worth keeping: a one-letter const (`d`) collided with a binder deep inside
+// `std/integer/order.b4m` ("'d' shadows a declaration"). Shadowing is checked across
+// everything in scope transitively, so a model source's locals want distinctive names.
+import group <<< "std/group.b4m"
+import group_order <<< "std/group/order.b4m"
+import group_power <<< "std/group/power.b4m"
+import integer <<< "std/integer.b4m"
+
+sort Grp = group.Grp
+sort Int = integer.Int
+const E = group.E
+func power = group_power.power
+func op = group.op
+pred int_less_than = integer.less_than
+const IZERO = integer.ZERO
+
+// a CONCRETE element with a concrete order, as consts — the test is whether a model
+// can discharge the three order axioms from a hasOrder hypothesis.
+const gen: Grp
+const ORD: Int
+axiom gHasOrderD: group_order.hasOrder(gen, ORD)
+
+theorem orderFacts: int_less_than(IZERO, ORD) and power(gen, ORD) = E
+proof
+  @facts |
+    int_less_than(IZERO, ORD) and power(gen, ORD) = E and (forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, ORD) -> power(gen, m) != E)
+    [by cite gHasOrderD]
+  @conclusion |
+    int_less_than(IZERO, ORD) and power(gen, ORD) = E
+    [using tautology facts]
+qed
+
+theorem positive: int_less_than(IZERO, ORD)
+proof
+  @facts |
+    int_less_than(IZERO, ORD) and power(gen, ORD) = E
+    [by cite orderFacts]
+  @conclusion | int_less_than(IZERO, ORD) [by and_elim_left facts]
+qed
+
+theorem kills: power(gen, ORD) = E
+proof
+  @facts |
+    int_less_than(IZERO, ORD) and power(gen, ORD) = E
+    [by cite orderFacts]
+  @conclusion | power(gen, ORD) = E [by and_elim_right facts]
+qed
+
+theorem minimal: forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, ORD) -> power(gen, m) != E
+proof
+  @facts |
+    int_less_than(IZERO, ORD) and power(gen, ORD) = E and (forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, ORD) -> power(gen, m) != E)
+    [by cite gHasOrderD]
+  @conclusion |
+    forall m: Int; int_less_than(IZERO, m) -> int_less_than(m, ORD) -> power(gen, m) != E
+    [using tautology facts]
+qed
+
+model ElementOfOrder {
+  group_order.A: gen
+  group_order.N: ORD
+  group_order.orderPositive <- positive
+  group_order.orderKills <- kills
+  group_order.orderMinimal <- minimal
+}
+
+// THE TEST: does the sealed section's corpus transfer?
+theorem reductionTransfers: forall k: Int;
+  exists r: Int; integer.nonneg(r) and int_less_than(r, ORD) and power(gen, k) = power(gen, r)
+proof
+  @conclusion |
+    forall k: Int; exists r: Int; integer.nonneg(r) and int_less_than(r, ORD) and power(gen, k) = power(gen, r)
+    [using model(ElementOfOrder) group_order.everyPowerReducesBelowTheOrder]
+qed
