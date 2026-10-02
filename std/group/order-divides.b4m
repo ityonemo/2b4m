@@ -30,7 +30,9 @@ import group_sequence <<< "std/group/sequence.b4m"
 import peano <<< "std/peano.b4m"
 import peano_divides <<< "std/peano/divides.b4m"
 import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
 import int_embedding <<< "std/integer/embedding.b4m"
+import primes <<< "std/primes.b4m"
 
 sort Grp = group.Grp
 const E = group.E
@@ -43,6 +45,7 @@ func power = group_power.power
 func toInt = int_embedding.toInt
 pred less_than = peano.less_than
 pred divides = peano_divides.divides
+pred int_less_than = int_order.less_than
 sort Seq = group_sequence.Seq
 func at = group_sequence.at
 define hasOrder(g, n) = group_order.hasOrder(g, n)
@@ -390,5 +393,162 @@ proof
       ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
       ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
       divides(d, n)
+    [by forall_intro generalize-r]
+qed
+
+// -- JUDSON'S COROLLARY 6.8: A GROUP OF PRIME ORDER IS CYCLIC -----------------------------------
+// Judson's argument: for g ≠ e, the order of g divides |G| = p by Corollary 6.7, and |⟨g⟩| > 1,
+// so the order is p — hence g generates. Here: `theOrderDividesTheGroupsLength` gives d | n in ℕ,
+// `int_embedding.dividesTransports` carries that into ℤ where `is_prime` lives, primality forces
+// toInt(d) = ONE or toInt(d) = toInt(n), and `orderOneIsTheIdentity` rules out the first because
+// g ≠ e. Then `counting.fullOrderGenerates` turns "order = |G|" into "generates".
+theorem primeOrderGroupIsGeneratedByAnyNonIdentity: forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+  gen != E ->
+  primes.is_prime(toInt(n)) ->
+  hasOrder(gen, toInt(d)) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+  forall y: Grp; exists e2: Int; y = power(gen, e2)
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-gl |
+            fix gl: Seq {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @given-nonidentity |
+                        assume gen != E {
+                          @given-prime |
+                            assume primes.is_prime(toInt(n)) {
+                              @given-order |
+                                assume hasOrder(gen, toInt(d)) {
+                                  @given-reps |
+                                    assume (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))) {
+                                      @given-group-listed |
+                                        assume (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x) {
+                                          @nonidentity |
+                                            gen != E
+                                            [by hypothesis given-nonidentity]
+                                          @prime |
+                                            primes.is_prime(toInt(n))
+                                            [by hypothesis given-prime]
+                                          @order |
+                                            hasOrder(gen, toInt(d))
+                                            [by hypothesis given-order]
+                                          @reps |
+                                            (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))
+                                            [by hypothesis given-reps]
+                                          @group-listed |
+                                            (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)
+                                            [by hypothesis given-group-listed]
+                                          // Corollary 6.7: d | n in ℕ
+                                          @order-divides |
+                                            divides(d, n)
+                                            [using specialize theOrderDividesTheGroupsLength(r, k, gl, n, d) order reps group-listed]
+                                          // transport into ℤ, where primality lives
+                                          @divides-in-the-integers |
+                                            exists q: Int; toInt(n) = integer.mul(toInt(d), q)
+                                            [using specialize int_embedding.dividesTransports(d, n) order-divides]
+                                          // primality: a positive divisor of a prime is 1 or the prime
+                                          @prime-divisors |
+                                            forall dd: Int; int_less_than(integer.ZERO, dd) -> (exists q: Int; toInt(n) = integer.mul(dd, q)) -> (dd = integer.ONE or dd = toInt(n))
+                                            [using tautology prime]
+                                          @order-positive |
+                                            int_less_than(integer.ZERO, toInt(d))
+                                            [using tautology order]
+                                          @order-is-one-or-everything |
+                                            toInt(d) = integer.ONE or toInt(d) = toInt(n)
+                                            [using specialize prime-divisors(toInt(d)) order-positive divides-in-the-integers]
+                                          // order 1 would make gen the identity, which it is not
+                                          @one-is-succ-zero |
+                                            integer.ONE = integer.succ(integer.ZERO)
+                                            [by cite integer.oneIsSuccZero]
+                                          @conclusion-generates |
+                                            forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                            case order-is-one-or-everything {
+                                              @when-order-is-one |
+                                                assume toInt(d) = integer.ONE {
+                                                  @order-is-one |
+                                                    toInt(d) = integer.ONE
+                                                    [by hypothesis when-order-is-one]
+                                                  @order-is-succ-zero |
+                                                    toInt(d) = integer.succ(integer.ZERO)
+                                                    [using chain order-is-one one-is-succ-zero]
+                                                  @has-order-succ-zero |
+                                                    hasOrder(gen, integer.succ(integer.ZERO))
+                                                    [by rewrite order-is-succ-zero order]
+                                                  @gen-is-identity |
+                                                    gen = E
+                                                    [using specialize group_order.orderOneIsTheIdentity(gen) has-order-succ-zero]
+                                                  @conclusion-order-one-absurd |
+                                                    forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                                    [by absurd gen-is-identity nonidentity]
+                                                }
+                                              @when-order-is-the-size |
+                                                assume toInt(d) = toInt(n) {
+                                                  @order-is-the-size |
+                                                    toInt(d) = toInt(n)
+                                                    [by hypothesis when-order-is-the-size]
+                                                  @has-full-order |
+                                                    hasOrder(gen, toInt(n))
+                                                    [by rewrite order-is-the-size order]
+                                                  @group-injective |
+                                                    forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j
+                                                    [using tautology group-listed]
+                                                  @group-covers |
+                                                    forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x
+                                                    [using tautology group-listed]
+                                                  @conclusion-full-order-generates |
+                                                    forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                                    [using specialize counting.fullOrderGenerates(n, gl, gen) group-injective group-covers has-full-order]
+                                                }
+                                            }
+                                        }
+                                      @group-listed-implies |
+                                        ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                        [by implies_intro given-group-listed]
+                                    }
+                                  @reps-implies |
+                                    ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                    [by implies_intro given-reps]
+                                }
+                              @order-implies |
+                                hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                                [by implies_intro given-order]
+                            }
+                          @prime-implies |
+                            primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                            [by implies_intro given-prime]
+                        }
+                      @nonidentity-implies |
+                        gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                        [by implies_intro given-nonidentity]
+                    }
+                  @discharge-d |
+                    forall d: Nat; gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                    [by forall_intro generalize-d]
+                }
+              @discharge-n |
+                forall n: Nat; forall d: Nat; gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+                [by forall_intro generalize-n]
+            }
+          @discharge-gl |
+            forall gl: Seq; forall n: Nat; forall d: Nat; gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+            [by forall_intro generalize-gl]
+        }
+      @discharge-k |
+        forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat; gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) -> ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) -> ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) -> forall y: Grp; exists e2: Int; y = power(gen, e2)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+      gen != E -> primes.is_prime(toInt(n)) -> hasOrder(gen, toInt(d)) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+      forall y: Grp; exists e2: Int; y = power(gen, e2)
     [by forall_intro generalize-r]
 qed
