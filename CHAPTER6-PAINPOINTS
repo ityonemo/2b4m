@@ -149,6 +149,49 @@ this; the std-file-layout convention already asks each parent to forward its
 sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
 plausibly do the other half (search declarations by statement shape).
 
+### A LISTING LENGTH is a ℕ but PRIMALITY is a ℤ notion, and no bridge existed
+
+Judson's Corollary 6.8 needs "the order divides |G|, and |G| is prime, so the order is
+1 or |G|". The order and the group's size are both ℕ — they are LISTING LENGTHS — while
+`std/primes.b4m` states `is_prime` over ℤ, and `std/peano/divides.b4m` has no primality
+notion at all. Neither direction existed:
+
+- no `toIntMul` (the embedding had `toIntAdd` but not its multiplicative twin), and
+- no transport of `divides` across `toInt`.
+
+Both landed (`70a99d2`) and are reusable well beyond this corollary, but they were a
+prerequisite nobody had hit, which is itself the signal: ℕ and ℤ have parallel
+`divides`/`gcd`/order theories and the embedding carries very little between them. The
+next cross-sort arithmetic fact will hit the same wall. (Judson has no such seam — he
+works in ℤ throughout and |G| is just a number.)
+
+### `or` is LEFT-associative, so a 3-way `case` is two nested splits
+
+`a or b or c` parses as `(a or b) or c`, so `case` on a trichotomy cannot take three
+arms — the first arm must assume `a or b` and split again. The diagnostic is good
+("or_elim: subproof must assume 'less_than(i, j) or i = j'") and names exactly the arm
+it wanted, which is the tell. Worth knowing before writing the arms, since restructuring
+afterwards is a re-indent of everything.
+
+### A definition-block clause is UNIVERSALLY QUANTIFIED
+
+`pred inCyclic(g: Grp): inCyclic(g) iff inGenerated(gen, g)` makes
+`[by definition inCyclic]` yield `forall g; inCyclic(g) iff …`, not the instance at the
+term you want. Every use needs its own `specialize` — eight sites in
+`std/group/order-divides.b4m`. Reasonable once known (it IS an axiom about all `g`), but
+the obvious reading of "cite the definition" is the instance.
+
+### A theorem's TERM arguments and HYPOTHESES are separate lists, and the error is oblique
+
+`counting.fullOrderGenerates` interleaves them in its statement
+(`forall n, w; <two hypotheses> -> forall g; hasOrder(g, …) -> …`), so `g` is a term
+argument that comes AFTER two hypotheses. Writing
+`specialize fullOrderGenerates(n, gl) hyp1 hyp2 gen hyp3` — hypotheses and the term in
+citation order — fails with "'gen' names an identifier, not an axiom/theorem". The right
+form puts every term in the parens regardless of where its binder sits:
+`fullOrderGenerates(n, gl, gen) hyp1 hyp2 hyp3`. The message is accurate but describes
+the symptom, not the rule.
+
 ### `2b4m fmt` CRASHES on an unbalanced proof brace
 
 ```

@@ -2110,3 +2110,83 @@ proof
       listsCosetReps(r, k) -> listsTheSubgroup(v, p) -> listsTheGroup(g, n) -> peano_divides.divides(p, n)
     [by forall_intro generalize-r]
 qed
+
+// -- JUDSON'S COROLLARY 6.9: THE INDEX IS MULTIPLICATIVE IN A CHAIN K < H < G -------------------
+// Judson writes it as division: [G:K] = |G|/|K| = (|G|/|H|)·(|H|/|K|) = [G:H][H:K]. In the
+// listing idiom the group-theoretic content is entirely in `lagrange` — applied TWICE, once to
+// K < H and once to H < G — and what Corollary 6.9 adds on top is only the arithmetic that
+// Judson's cancellation of |H| stands in for: from |G| = a·|H| and |H| = b·|K|, conclude
+// |G| = (a·b)·|K|, so the combined index is the product of the two.
+//
+// Stated as exactly that and NOTHING MORE. An earlier version carried a `listsTheGroup(gl, n)`
+// premise to make it look like a theorem about groups; the premise was never used in the proof,
+// which is the tell that the content is arithmetic. Dressing it up would have misrepresented
+// where the work is — the two Lagrange applications are the caller's, and each needs its own
+// subgroup predicate (a model of this file's, as
+// `tests/cases/model_lagrange_at_a_subgroup.b4m` shows).
+theorem indicesMultiplyAlongAChain: forall n: Nat; forall a: Nat; forall p: Nat; forall b: Nat; forall q: Nat;
+  n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @generalize-p |
+            fix p: Nat {
+              @generalize-b |
+                fix b: Nat {
+                  @generalize-q |
+                    fix q: Nat {
+                      @given-outer-index |
+                        assume n = mul(a, p) {
+                          @given-inner-index |
+                            assume p = mul(b, q) {
+                              @outer-index |
+                                n = mul(a, p)
+                                [by hypothesis given-outer-index]
+                              @inner-index |
+                                p = mul(b, q)
+                                [by hypothesis given-inner-index]
+                              // n = a·p = a·(b·q) = (a·b)·q
+                              @substituted |
+                                n = mul(a, mul(b, q))
+                                [by rewrite inner-index outer-index]
+                              @reassociate |
+                                mul(mul(a, b), q) = mul(a, mul(b, q))
+                                [using specialize peano.mulIsAssociative(a, b, q)]
+                              @reassociate-flipped |
+                                mul(a, mul(b, q)) = mul(mul(a, b), q)
+                                [by symmetry reassociate]
+                              @conclusion-combined-index |
+                                n = mul(mul(a, b), q)
+                                [using chain substituted reassociate-flipped]
+                            }
+                          @inner-index-implies |
+                            p = mul(b, q) -> n = mul(mul(a, b), q)
+                            [by implies_intro given-inner-index]
+                        }
+                      @outer-index-implies |
+                        n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+                        [by implies_intro given-outer-index]
+                    }
+                  @discharge-q |
+                    forall q: Nat; n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+                    [by forall_intro generalize-q]
+                }
+              @discharge-b |
+                forall b: Nat; forall q: Nat; n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+                [by forall_intro generalize-b]
+            }
+          @discharge-p |
+            forall p: Nat; forall b: Nat; forall q: Nat; n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+            [by forall_intro generalize-p]
+        }
+      @discharge-a |
+        forall a: Nat; forall p: Nat; forall b: Nat; forall q: Nat; n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall n: Nat; forall a: Nat; forall p: Nat; forall b: Nat; forall q: Nat;
+      n = mul(a, p) -> p = mul(b, q) -> n = mul(mul(a, b), q)
+    [by forall_intro generalize-n]
+qed
