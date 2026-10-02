@@ -149,38 +149,35 @@ this; the std-file-layout convention already asks each parent to forward its
 sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
 plausibly do the other half (search declarations by statement shape).
 
-### §6.2's cycle-length theorem is blocked on a MISSING `Points` POSTULATE
+### RESOLVED — `Points` was missing a CONCAT postulate (the thinnest-carrier case)
 
-"Two cycles in S_n have the same length iff they are conjugate" is the last §6.2 result.
-Its engine is proved — `cycle.conjugateOfATransposition` (σ(u v)σ⁻¹ = (σu σv), by
-extensionality and three cases on the preimage, with
-`aPreimageAwayFromAPointIsAwayFromItsImage` carrying the injectivity) — and a cycle is
-a product of transpositions by `cycleSucc`, so the induction is routine.
+Left here because the diagnosis is the reusable part. §6.2's cycle-length theorem needs
+the IMAGE POINT-LIST — a `Points` whose i-th entry is σ(sᵢ) — and that could not be
+built. `Points` had only TWO building postulates (`pointsSingleton`, `pointsPrepend`)
+where `std/group/sequence.b4m`'s `Seq` has five.
 
-What blocks it is the IMAGE POINT-LIST: to say "the cycle on σ(s)" you need a `Points`
-whose i-th entry is σ(sᵢ), and that list cannot be built. `Points` has only TWO building
-postulates, `pointsSingleton` and `pointsPrepend`, where `std/group/sequence.b4m`'s `Seq`
-has five (singleton, prepend, concat, reverse, remove). With no concat/append there is no
-way to extend a PREFIX, so the usual shape (fix the list, grow the image at the top — what
-`group_sequence.translatedSequenceExists` does) is unavailable.
+Both natural proof shapes were unavailable, and the second is the non-obvious one:
 
-The alternative shape — generalize the list INSIDE the induction and prepend σ(s₀) in
-front of an image list for the TAIL — needs s's tail as a list, and that is not derivable
-either: `pointsPrepend` only ever adds at the FRONT, shifting entries UP, so from an
-arbitrary s there is no way to get a list whose i-th entry is s_{i+1}. (Verified: the tail
-statement is well-formed but only as a `hole`.)
+- Fix the list and grow the image at the top (what `translatedSequenceExists` does):
+  needs an append. Not available.
+- Generalize the list INSIDE the induction and prepend σ(s₀) before an image list for the
+  TAIL: needs a list's tail, and `pointsPrepend` only adds at the FRONT (shifting entries
+  UP), so from an arbitrary s there is no way to reach a list whose i-th entry is s_{i+1}.
+  Verified by stating it — well-formed, but only as a `hole`.
 
-**So this needs a new `Points` postulate** — a concat, an append, or a tail — stated in
-the same shape as `seqConcat`. That is a new AXIOM in std, affecting the three files that
-alias the `Points` postulates (`cycle.b4m`, `orbit-cycle.b4m`, `dihedral.b4m`), so it is a
-deliberate choice rather than a mechanical step, and it is NOT taken here. The two
-conjugation lemmas are landed and the theorem is one short induction away once the
-postulate exists.
+**Fixed by adding `pointsConcat`** (user decision, 2026-10-02), in the same shape as
+`seqConcat` minus the product clause since `Points` carries no fold. The theorem then
+followed: `imagePointsExist` by the ordinary prefix-growing induction, and
+`conjugateOfACycle` by induction on the length with `conjugationIsMultiplicative`
+splitting σ(T∘C)σ⁻¹ into (σTσ⁻¹)(σCσ⁻¹).
 
-This is the sharpest instance of the re-postulated-sequence tax above: not just a fourth
-copy of the same existence proof, but a carrier whose postulate set is too THIN to support
-the construction at all. A carrier-parameterized container theory would have given
-`Points` all five for free.
+**The lesson that outlives the fix:** a carrier's postulate set silently determines which
+INDUCTION SHAPES are available to it, and the failure does not look like a missing axiom —
+it looks like two unrelated proof attempts not working. A carrier-parameterized container
+theory (memory: `abstract-collections-direction`) would have given `Points` all five
+postulates for free; until then, when a construction over a fresh sequence sort will not
+go, compare its postulate list against `std/group/sequence.b4m`'s before assuming the
+proof is wrong.
 
 ### §6.3 (Fermat/Euler) is blocked on a SCHEMA-THROUGH-MODEL boundary, not on φ
 

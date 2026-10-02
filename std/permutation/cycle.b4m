@@ -40,6 +40,8 @@ theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
 theorem identityIsAPermutation = permutation.identityIsAPermutation
 theorem composeIsAPermutation = permutation.composeIsAPermutation
 theorem composeIdentityRight = function_invertible.composeIdentityRight
+theorem composeIdentityLeft = function_invertible.composeIdentityLeft
+theorem composeAssoc = function_invertible.composeAssoc
 axiom funcExtensionality = function.funcExtensionality
 func inverseFn = function.inverse
 axiom inverseLeft = function.inverseLeft
@@ -62,9 +64,9 @@ theorem notLessThanZero = peano_order.notLessThanZero
 
 // -- lists of points ----------------------------------------------------------------------
 
-// A finite list of points, read by index, with the two list-BUILDING postulates of
-// std/sequence.b4m stated for points: a one-element list, and prepending a point. (A
-// fresh sort inherits no postulates; these are what lets a list be built from an orbit.)
+// A finite list of points, read by index, with the list-BUILDING postulates of
+// std/sequence.b4m stated for points. (A fresh sort inherits no postulates; these are what
+// lets a list be built from an orbit.)
 sort Points
 func at(s: Points, i: Nat) => Element
 
@@ -74,6 +76,20 @@ axiom pointsSingleton: forall x: Element; exists s: Points; at(s, ZERO) = x
 // the prepend x :: s: head x, tail s shifted up by one
 axiom pointsPrepend: forall x: Element; forall s: Points;
   exists u: Points; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+
+// CONCATENATION: the first j entries of s followed by the first k of t. The group twin is
+// `std/group/sequence.b4m`'s `seqConcat`, which additionally states how the PRODUCT over the
+// join splits; `Points` carries no fold, so the two entry clauses are the whole content.
+//
+// Why this is needed and prepend is not enough: prepend only ever adds at the FRONT, so a list
+// cannot be grown from its beginning and a list's TAIL is not reachable from an arbitrary list.
+// Any construction that walks UP an index range — "the list whose i-th entry is f(sᵢ)", which
+// is what conjugating a cycle needs — is unavailable without an append. See
+// CHAPTER6-PAINPOINTS.
+axiom pointsConcat: forall s: Points; forall t: Points; forall j: Nat; forall k: Nat;
+  exists u: Points;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
 
 // the first n entries are pairwise different
 define distinct(s, n) =
@@ -1172,5 +1188,483 @@ proof
     }
   @conclusion |
     forall sigma: Fn; invertible(sigma) -> forall u: Element; forall v: Element; compose(compose(sigma, transposition(u, v)), inverseFn(sigma)) = transposition(apply(sigma, u), apply(sigma, v))
+    [by forall_intro generalize-sigma]
+qed
+
+// -- THE IMAGE POINT-LIST ----------------------------------------------------------------------
+// For a map σ and a point list s there is a list whose first m entries are σ(s₀), …, σ(s_{m−1}).
+// Induction on m: extend by concatenating the singleton holding σ(s_m) after the first m entries
+// (`pointsConcat` at j = m, k = 1). The same shape as
+// `std/group/sequence.b4m`'s `translatedSequenceExists`, and it is what `pointsConcat` was added
+// for — with prepend alone a prefix cannot be grown.
+theorem imagePointsExist: forall sigma: Fn; forall s: Points; forall m: Nat;
+  exists t: Points; forall i: Nat; less_than(i, m) -> at(t, i) = apply(sigma, at(s, i))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-s |
+        fix s: Points {
+          // base: nothing is below ZERO, so any list serves — and one exists.
+          @some-list-exists |
+            exists t: Points; at(t, ZERO) = apply(sigma, at(s, ZERO))
+            [using specialize pointsSingleton(apply(sigma, at(s, ZERO)))]
+          @base-case |
+            exists t: Points; forall i: Nat; less_than(i, ZERO) -> at(t, i) = apply(sigma, at(s, i))
+            [by exists_elim with-some-list]
+          @with-some-list |
+            unpack t0: Points from some-list-exists {
+              @vacuous |
+                forall i: Nat; less_than(i, ZERO) -> at(t0, i) = apply(sigma, at(s, i))
+                [by forall_intro nothing-below-zero]
+              @nothing-below-zero |
+                fix i: Nat {
+                  @given-below-zero |
+                    assume less_than(i, ZERO) {
+                      @below-zero |
+                        less_than(i, ZERO)
+                        [by hypothesis given-below-zero]
+                      @not-below-zero |
+                        not less_than(i, ZERO)
+                        [using specialize notLessThanZero(i)]
+                      @conclusion-vacuous |
+                        at(t0, i) = apply(sigma, at(s, i))
+                        [using tautology below-zero not-below-zero]
+                    }
+                  @below-zero-implies |
+                    less_than(i, ZERO) -> at(t0, i) = apply(sigma, at(s, i))
+                    [by implies_intro given-below-zero]
+                }
+              @conclusion-base-inner |
+                exists t: Points; forall i: Nat; less_than(i, ZERO) -> at(t, i) = apply(sigma, at(s, i))
+                [by exists_intro(t0) vacuous]
+            }
+          // step: the singleton holding σ(s_k), concatenated after the first k entries.
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume exists t: Points; forall i: Nat; less_than(i, k) -> at(t, i) = apply(sigma, at(s, i)) {
+                  @inductive-hypothesis |
+                    exists t: Points; forall i: Nat; less_than(i, k) -> at(t, i) = apply(sigma, at(s, i))
+                    [by hypothesis given-inductive-hypothesis]
+                  @with-prefix |
+                    unpack t: Points from inductive-hypothesis {
+                      @prefix-matches |
+                        forall i: Nat; less_than(i, k) -> at(t, i) = apply(sigma, at(s, i))
+                        [by hypothesis with-prefix]
+                      @singleton-exists |
+                        exists w: Points; at(w, ZERO) = apply(sigma, at(s, k))
+                        [using specialize pointsSingleton(apply(sigma, at(s, k)))]
+                      @with-singleton |
+                        unpack w: Points from singleton-exists {
+                          @singleton-head |
+                            at(w, ZERO) = apply(sigma, at(s, k))
+                            [by hypothesis with-singleton]
+                          @joined-exists |
+                            exists u: Points; (forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i))
+                            [using specialize pointsConcat(t, w, k, succ(ZERO))]
+                          @with-joined |
+                            unpack u: Points from joined-exists {
+                              @joined-facts |
+                                (forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i))
+                                [by hypothesis with-joined]
+                              @joined-below |
+                                forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)
+                                [by and_elim_left joined-facts]
+                              @joined-above |
+                                forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i)
+                                [by and_elim_right joined-facts]
+                              // the new entry sits at index k = k + 0
+                              @zero-below-one |
+                                less_than(ZERO, succ(ZERO))
+                                [using specialize zeroBelowSucc(ZERO)]
+                              @joined-at-k-plus-zero |
+                                at(u, add(k, ZERO)) = at(w, ZERO)
+                                [using specialize joined-above(ZERO) zero-below-one]
+                              @k-plus-zero |
+                                add(k, ZERO) = k
+                                [using specialize peano.addZeroRight(k)]
+                              @joined-at-k |
+                                at(u, k) = at(w, ZERO)
+                                [by rewrite k-plus-zero joined-at-k-plus-zero]
+                              @joined-at-k-is-the-image |
+                                at(u, k) = apply(sigma, at(s, k))
+                                [using chain joined-at-k singleton-head]
+                              // every index below succ(k) is either below k or is k
+                              @matches-below-succ-k |
+                                forall i: Nat; less_than(i, succ(k)) -> at(u, i) = apply(sigma, at(s, i))
+                                [by forall_intro matches-at-i]
+                              @matches-at-i |
+                                fix i: Nat {
+                                  @given-i-below-succ-k |
+                                    assume less_than(i, succ(k)) {
+                                      @i-below-succ-k |
+                                        less_than(i, succ(k))
+                                        [by hypothesis given-i-below-succ-k]
+                                      @i-splits |
+                                        less_than(i, k) or i = k
+                                        [using specialize lessThanSuccSplit(i, k) i-below-succ-k]
+                                      @conclusion-matches-at-i |
+                                        at(u, i) = apply(sigma, at(s, i))
+                                        case i-splits {
+                                          @when-i-is-in-the-prefix |
+                                            assume less_than(i, k) {
+                                              @i-below-k |
+                                                less_than(i, k)
+                                                [by hypothesis when-i-is-in-the-prefix]
+                                              @joined-agrees-with-prefix |
+                                                at(u, i) = at(t, i)
+                                                [using specialize joined-below(i) i-below-k]
+                                              @prefix-at-i |
+                                                at(t, i) = apply(sigma, at(s, i))
+                                                [using specialize prefix-matches(i) i-below-k]
+                                              @conclusion-prefix-case |
+                                                at(u, i) = apply(sigma, at(s, i))
+                                                [using chain joined-agrees-with-prefix prefix-at-i]
+                                            }
+                                          @when-i-is-the-new-entry |
+                                            assume i = k {
+                                              @i-is-k |
+                                                i = k
+                                                [by hypothesis when-i-is-the-new-entry]
+                                              @conclusion-new-entry-case |
+                                                at(u, i) = apply(sigma, at(s, i))
+                                                [by rewrite i-is-k joined-at-k-is-the-image]
+                                            }
+                                        }
+                                    }
+                                  @i-below-succ-k-implies |
+                                    less_than(i, succ(k)) -> at(u, i) = apply(sigma, at(s, i))
+                                    [by implies_intro given-i-below-succ-k]
+                                }
+                              @conclusion-extended-inner |
+                                exists t2: Points; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = apply(sigma, at(s, i))
+                                [by exists_intro(u) matches-below-succ-k]
+                            }
+                          @conclusion-with-joined |
+                            exists t2: Points; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = apply(sigma, at(s, i))
+                            [by exists_elim with-joined]
+                        }
+                      @conclusion-with-singleton |
+                        exists t2: Points; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = apply(sigma, at(s, i))
+                        [by exists_elim with-singleton]
+                    }
+                  @conclusion-step |
+                    exists t: Points; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))
+                    [by exists_elim with-prefix]
+                }
+              @induction-step-at-k |
+                (exists t: Points; forall i: Nat; less_than(i, k) -> at(t, i) = apply(sigma, at(s, i))) -> (exists t: Points; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; (exists t: Points; forall i: Nat; less_than(i, k) -> at(t, i) = apply(sigma, at(s, i))) -> (exists t: Points; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i)))
+            [by forall_intro induction-step]
+          @conclusion-for-all-m |
+            forall m: Nat; exists t: Points; forall i: Nat; less_than(i, m) -> at(t, i) = apply(sigma, at(s, i))
+            [using instantiation induction((fun m: Nat => exists t: Points; forall i: Nat; less_than(i, m) -> at(t, i) = apply(sigma, at(s, i)))) base-case induction-step-for-all-k]
+        }
+      @discharge-s |
+        forall s: Points; forall m: Nat; exists t: Points; forall i: Nat; less_than(i, m) -> at(t, i) = apply(sigma, at(s, i))
+        [by forall_intro generalize-s]
+    }
+  @conclusion |
+    forall sigma: Fn; forall s: Points; forall m: Nat; exists t: Points; forall i: Nat; less_than(i, m) -> at(t, i) = apply(sigma, at(s, i))
+    [by forall_intro generalize-sigma]
+qed
+
+// Conjugation is MULTIPLICATIVE: σ(f∘g)σ⁻¹ = (σfσ⁻¹)(σgσ⁻¹). Pure composition algebra —
+// insert σ⁻¹σ between the factors and reassociate. This is what lets an induction on a product
+// conjugate one factor at a time.
+theorem conjugationIsMultiplicative: forall sigma: Fn; invertible(sigma) -> forall f: Fn; forall g: Fn;
+  compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @given-invertible |
+        assume invertible(sigma) {
+          @sigma-invertible |
+            invertible(sigma)
+            [by hypothesis given-invertible]
+          @inverse-on-the-left |
+            compose(inverseFn(sigma), sigma) = identityFn
+            [using specialize inverseLeft(sigma) sigma-invertible]
+          @conclusion-multiplicative |
+            forall f: Fn; forall g: Fn; compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+            [by forall_intro generalize-f]
+          @generalize-f |
+            fix f: Fn {
+              @generalize-g |
+                fix g: Fn {
+                  // work on the RIGHT side: cancel the inner σ⁻¹σ down to σ(f∘g)σ⁻¹.
+                  // (σfσ⁻¹)(σgσ⁻¹) = (σf)(σ⁻¹(σ(gσ⁻¹))) by reassociating twice
+                  @right-outer |
+                    compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma))) = compose(compose(sigma, f), compose(inverseFn(sigma), compose(compose(sigma, g), inverseFn(sigma))))
+                    [using specialize composeAssoc(compose(sigma, f), inverseFn(sigma), compose(compose(sigma, g), inverseFn(sigma)))]
+                  @regroup-the-tail |
+                    compose(compose(sigma, g), inverseFn(sigma)) = compose(sigma, compose(g, inverseFn(sigma)))
+                    [using specialize composeAssoc(sigma, g, inverseFn(sigma))]
+                  @right-with-tail-regrouped |
+                    compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma))) = compose(compose(sigma, f), compose(inverseFn(sigma), compose(sigma, compose(g, inverseFn(sigma)))))
+                    [by rewrite regroup-the-tail right-outer]
+                  // σ⁻¹(σ·X) = (σ⁻¹σ)X = X
+                  @cancel-regroup |
+                    compose(compose(inverseFn(sigma), sigma), compose(g, inverseFn(sigma))) = compose(inverseFn(sigma), compose(sigma, compose(g, inverseFn(sigma))))
+                    [using specialize composeAssoc(inverseFn(sigma), sigma, compose(g, inverseFn(sigma)))]
+                  @cancel-to-identity |
+                    compose(identityFn, compose(g, inverseFn(sigma))) = compose(inverseFn(sigma), compose(sigma, compose(g, inverseFn(sigma))))
+                    [by rewrite inverse-on-the-left cancel-regroup]
+                  @identity-drops |
+                    compose(identityFn, compose(g, inverseFn(sigma))) = compose(g, inverseFn(sigma))
+                    [using specialize composeIdentityLeft(compose(g, inverseFn(sigma)))]
+                  @identity-drops-flipped |
+                    compose(g, inverseFn(sigma)) = compose(identityFn, compose(g, inverseFn(sigma)))
+                    [by symmetry identity-drops]
+                  @cancelled |
+                    compose(g, inverseFn(sigma)) = compose(inverseFn(sigma), compose(sigma, compose(g, inverseFn(sigma))))
+                    [using chain identity-drops-flipped cancel-to-identity]
+                  @cancelled-flipped |
+                    compose(inverseFn(sigma), compose(sigma, compose(g, inverseFn(sigma)))) = compose(g, inverseFn(sigma))
+                    [by symmetry cancelled]
+                  @right-cancelled |
+                    compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma))) = compose(compose(sigma, f), compose(g, inverseFn(sigma)))
+                    [by rewrite cancelled-flipped right-with-tail-regrouped]
+                  // and the LEFT side reassociates to the same thing
+                  @left-regroup |
+                    compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(sigma, compose(compose(f, g), inverseFn(sigma)))
+                    [using specialize composeAssoc(sigma, compose(f, g), inverseFn(sigma))]
+                  @inner-regroup |
+                    compose(compose(f, g), inverseFn(sigma)) = compose(f, compose(g, inverseFn(sigma)))
+                    [using specialize composeAssoc(f, g, inverseFn(sigma))]
+                  @left-fully-regrouped |
+                    compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(sigma, compose(f, compose(g, inverseFn(sigma))))
+                    [by rewrite inner-regroup left-regroup]
+                  @right-regroup |
+                    compose(compose(sigma, f), compose(g, inverseFn(sigma))) = compose(sigma, compose(f, compose(g, inverseFn(sigma))))
+                    [using specialize composeAssoc(sigma, f, compose(g, inverseFn(sigma)))]
+                  @right-regroup-flipped |
+                    compose(sigma, compose(f, compose(g, inverseFn(sigma)))) = compose(compose(sigma, f), compose(g, inverseFn(sigma)))
+                    [by symmetry right-regroup]
+                  @left-equals-the-middle |
+                    compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(sigma, f), compose(g, inverseFn(sigma)))
+                    [using chain left-fully-regrouped right-regroup-flipped]
+                  @right-cancelled-flipped |
+                    compose(compose(sigma, f), compose(g, inverseFn(sigma))) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+                    [by symmetry right-cancelled]
+                  @conclusion-split |
+                    compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+                    [using chain left-equals-the-middle right-cancelled-flipped]
+                }
+              @discharge-g |
+                forall g: Fn; compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+                [by forall_intro generalize-g]
+            }
+        }
+      @invertible-implies |
+        invertible(sigma) -> forall f: Fn; forall g: Fn; compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall sigma: Fn; invertible(sigma) -> forall f: Fn; forall g: Fn; compose(compose(sigma, compose(f, g)), inverseFn(sigma)) = compose(compose(compose(sigma, f), inverseFn(sigma)), compose(compose(sigma, g), inverseFn(sigma)))
+    [by forall_intro generalize-sigma]
+qed
+
+// -- CONJUGATING A CYCLE GIVES THE CYCLE ON THE IMAGE POINTS -----------------------------------
+// σ·cycle(s, k)·σ⁻¹ = cycle(t, k) whenever t's first k entries are the σ-images of s's.
+// Judson's §6.2: conjugate cycles are exactly the cycles of the same length, because
+// conjugation relabels the points and nothing else.
+//
+// Induction on k. At ZERO both sides are the identity (σ·id·σ⁻¹ = σσ⁻¹ = id). At succ(k),
+// `cycleSucc` splits each side into a transposition times the shorter cycle, and inserting
+// σ⁻¹σ between the two factors turns one conjugate into the product of two:
+//
+//     σ(T·C)σ⁻¹ = (σTσ⁻¹)(σCσ⁻¹)
+//
+// the first factor by `conjugateOfATransposition` and the second by the hypothesis. The entry
+// clause of the image list is what makes the transposition's endpoints line up — t's ZERO-th
+// and k-th entries are σ(s₀) and σ(s_k), which is exactly what `cycleSucc` names.
+theorem conjugateOfACycle: forall sigma: Fn; invertible(sigma) -> forall k: Nat; forall s: Points; forall t: Points;
+  (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) ->
+  compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @given-invertible |
+        assume invertible(sigma) {
+          @sigma-invertible |
+            invertible(sigma)
+            [by hypothesis given-invertible]
+          @inverse-on-the-right |
+            compose(sigma, inverseFn(sigma)) = identityFn
+            [using specialize inverseRight(sigma) sigma-invertible]
+          // base: both sides are the identity.
+          @base-case |
+            forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(ZERO)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, ZERO)), inverseFn(sigma)) = cycle(t, ZERO)
+            [by forall_intro base-at-s]
+          @base-at-s |
+            fix s: Points {
+              @base-at-t |
+                fix t: Points {
+                  @given-base-entries |
+                    assume forall i: Nat; less_than(i, succ(ZERO)) -> at(t, i) = apply(sigma, at(s, i)) {
+                      @source-cycle-is-identity |
+                        cycle(s, ZERO) = identityFn
+                        [using specialize cycleZero(s)]
+                      @image-cycle-is-identity |
+                        cycle(t, ZERO) = identityFn
+                        [using specialize cycleZero(t)]
+                      @sigma-after-identity |
+                        compose(sigma, identityFn) = sigma
+                        [using specialize composeIdentityRight(sigma)]
+                      @conjugate-of-identity |
+                        compose(compose(sigma, identityFn), inverseFn(sigma)) = compose(sigma, inverseFn(sigma))
+                        [by rewrite sigma-after-identity conjugate-is-itself]
+                      @conjugate-is-itself |
+                        compose(sigma, inverseFn(sigma)) = compose(sigma, inverseFn(sigma))
+                        [by reflexivity]
+                      @conjugate-of-identity-is-identity |
+                        compose(compose(sigma, identityFn), inverseFn(sigma)) = identityFn
+                        [using chain conjugate-of-identity inverse-on-the-right]
+                      @identity-is-the-image-cycle |
+                        identityFn = cycle(t, ZERO)
+                        [by symmetry image-cycle-is-identity]
+                      @conjugate-with-identity-is-image |
+                        compose(compose(sigma, identityFn), inverseFn(sigma)) = cycle(t, ZERO)
+                        [using chain conjugate-of-identity-is-identity identity-is-the-image-cycle]
+                      @conclusion-base-entries |
+                        compose(compose(sigma, cycle(s, ZERO)), inverseFn(sigma)) = cycle(t, ZERO)
+                        [by rewrite source-cycle-is-identity conjugate-with-identity-is-image]
+                    }
+                  @base-entries-implies |
+                    (forall i: Nat; less_than(i, succ(ZERO)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, ZERO)), inverseFn(sigma)) = cycle(t, ZERO)
+                    [by implies_intro given-base-entries]
+                }
+              @discharge-base-t |
+                forall t: Points; (forall i: Nat; less_than(i, succ(ZERO)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, ZERO)), inverseFn(sigma)) = cycle(t, ZERO)
+                [by forall_intro base-at-t]
+            }
+          // step
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k) {
+                  @inductive-hypothesis |
+                    forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+                    [by hypothesis given-inductive-hypothesis]
+                  @conclusion-step |
+                    forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k))
+                    [by forall_intro step-at-s]
+                  @step-at-s |
+                    fix s: Points {
+                      @step-at-t |
+                        fix t: Points {
+                          @given-entries |
+                            assume forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i)) {
+                              @entries |
+                                forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))
+                                [by hypothesis given-entries]
+                              // the shorter prefix still matches, so the hypothesis applies
+                              @shorter-entries |
+                                forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))
+                                [by forall_intro shorter-entry-at-i]
+                              @shorter-entry-at-i |
+                                fix i: Nat {
+                                  @given-i-below-succ-k |
+                                    assume less_than(i, succ(k)) {
+                                      @i-below-succ-k |
+                                        less_than(i, succ(k))
+                                        [by hypothesis given-i-below-succ-k]
+                                      @i-below-succ-succ-k |
+                                        less_than(i, succ(succ(k)))
+                                        [using specialize lessThanSuccRight(i, succ(k)) i-below-succ-k]
+                                      @conclusion-shorter-entry |
+                                        at(t, i) = apply(sigma, at(s, i))
+                                        [using specialize entries(i) i-below-succ-succ-k]
+                                    }
+                                  @i-below-implies |
+                                    less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))
+                                    [by implies_intro given-i-below-succ-k]
+                                }
+                              @shorter-conjugate |
+                                compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+                                [using specialize inductive-hypothesis(s, t) shorter-entries]
+                              // the two cycleSucc unfoldings
+                              @source-unfolds |
+                                cycle(s, succ(k)) = compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))
+                                [using specialize cycleSucc(s, k)]
+                              @image-unfolds |
+                                cycle(t, succ(k)) = compose(transposition(at(t, ZERO), at(t, k)), cycle(t, k))
+                                [using specialize cycleSucc(t, k)]
+                              // t's ZERO-th and k-th entries are the σ-images of s's
+                              @zero-below |
+                                less_than(ZERO, succ(succ(k)))
+                                [using specialize zeroBelowSucc(succ(k))]
+                              @k-below |
+                                less_than(k, succ(succ(k)))
+                                [using specialize lessThanSuccRight(k, succ(k)) k-below-succ-k]
+                              @k-below-succ-k |
+                                less_than(k, succ(k))
+                                [using specialize lessThanSelf(k)]
+                              @t-at-zero |
+                                at(t, ZERO) = apply(sigma, at(s, ZERO))
+                                [using specialize entries(ZERO) zero-below]
+                              @t-at-k |
+                                at(t, k) = apply(sigma, at(s, k))
+                                [using specialize entries(k) k-below]
+                              // the conjugate of the leading transposition
+                              @conjugate-transposition |
+                                compose(compose(sigma, transposition(at(s, ZERO), at(s, k))), inverseFn(sigma)) = transposition(apply(sigma, at(s, ZERO)), apply(sigma, at(s, k)))
+                                [using specialize conjugateOfATransposition(sigma, at(s, ZERO), at(s, k)) sigma-invertible]
+                              @conjugate-transposition-at-t-zero |
+                                compose(compose(sigma, transposition(at(s, ZERO), at(s, k))), inverseFn(sigma)) = transposition(at(t, ZERO), apply(sigma, at(s, k)))
+                                [by rewrite t-at-zero conjugate-transposition]
+                              @conjugate-transposition-at-t |
+                                compose(compose(sigma, transposition(at(s, ZERO), at(s, k))), inverseFn(sigma)) = transposition(at(t, ZERO), at(t, k))
+                                [by rewrite t-at-k conjugate-transposition-at-t-zero]
+                              // split the conjugate of the product into the product of conjugates
+                              @conjugate-splits |
+                                compose(compose(sigma, compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))), inverseFn(sigma)) = compose(compose(compose(sigma, transposition(at(s, ZERO), at(s, k))), inverseFn(sigma)), compose(compose(sigma, cycle(s, k)), inverseFn(sigma)))
+                                [using specialize conjugationIsMultiplicative(sigma, transposition(at(s, ZERO), at(s, k)), cycle(s, k)) sigma-invertible]
+                              @split-with-transposition |
+                                compose(compose(sigma, compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))), inverseFn(sigma)) = compose(transposition(at(t, ZERO), at(t, k)), compose(compose(sigma, cycle(s, k)), inverseFn(sigma)))
+                                [by rewrite conjugate-transposition-at-t conjugate-splits]
+                              @split-fully |
+                                compose(compose(sigma, compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))), inverseFn(sigma)) = compose(transposition(at(t, ZERO), at(t, k)), cycle(t, k))
+                                [by rewrite shorter-conjugate split-with-transposition]
+                              @image-unfolds-flipped |
+                                compose(transposition(at(t, ZERO), at(t, k)), cycle(t, k)) = cycle(t, succ(k))
+                                [by symmetry image-unfolds]
+                              @unfolded-conjugate-is-the-image |
+                                compose(compose(sigma, compose(transposition(at(s, ZERO), at(s, k)), cycle(s, k))), inverseFn(sigma)) = cycle(t, succ(k))
+                                [using chain split-fully image-unfolds-flipped]
+                              @conclusion-step-entries |
+                                compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k))
+                                [by rewrite source-unfolds unfolded-conjugate-is-the-image]
+                            }
+                          @entries-implies |
+                            (forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k))
+                            [by implies_intro given-entries]
+                        }
+                      @discharge-step-t |
+                        forall t: Points; (forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k))
+                        [by forall_intro step-at-t]
+                    }
+                }
+              @induction-step-at-k |
+                (forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)) -> (forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k)))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; (forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)) -> (forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(succ(k))) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, succ(k))), inverseFn(sigma)) = cycle(t, succ(k)))
+            [by forall_intro induction-step]
+          @conclusion-for-all-k |
+            forall k: Nat; forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+            [using instantiation induction((fun k: Nat => forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k))) base-case induction-step-for-all-k]
+        }
+      @invertible-implies |
+        invertible(sigma) -> forall k: Nat; forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall sigma: Fn; invertible(sigma) -> forall k: Nat; forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
     [by forall_intro generalize-sigma]
 qed
