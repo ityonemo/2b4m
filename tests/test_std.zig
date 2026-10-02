@@ -180,6 +180,11 @@ pub fn addTests(
     // pairwise disjoint (Thm 6.2) so the concatenation is injective across every seam, and
     // they cover G. Induction on the representative count, one `seqConcat` per step.
     ctx.okSilent(&.{ "check", "std/group/lagrange.b4m" });
+    // AN ELEMENT'S ORDER DIVIDES |G| (std/group/order-divides.b4m, Judson's Corollary 6.7).
+    // ⟨gen⟩ is listed by its order (the powers g⁰…g^(n−1) — distinct by minimality, exhaustive
+    // by reducing the exponent mod n), it satisfies the three subgroup criteria, so a model
+    // carries the whole coset/Lagrange corpus onto it and the divisibility corollary applies.
+    ctx.okSilent(&.{ "check", "std/group/order-divides.b4m" });
 
     // cyclic subgroups (std/cyclic.b4m, Judson §4.1): ⟨a⟩ = {a^k} as a membership
     // predicate over a fixed generator const, proved a subgroup (identity/closure) and
