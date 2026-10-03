@@ -75,18 +75,48 @@ Note this is the same wall §6.3 hit from the other side (CHAPTER6-PAINPOINTS), 
 work of 2026-10-02 — which made `model(M) sch(args)` parse, let a proven schema discharge, and
 let a model be cited cross-file — does not move it. Those fixed four real gaps; none is this one.
 
-## What would move it
+## What would move it — ATTEMPTED 2026-10-03, two of three layers done
 
-The missing primitive is a model-aware schema INSTANTIATION: `instantiation` that takes the
-model as context, so the map argument is read in the carrier's space (`Grp`) while the schema's
-parameter sort (`Item`) remaps through the model. Mechanically close to what
-`demandSchemaTransfer` already does with explicit args — it binds against the DISCHARGING
-schema; this would bind against the SOURCE schema under the model's remap, with no discharge
-required because nothing is being substituted for.
+The user identified this as the same shape as the 2026-10-02 fixes: a case rejected by an
+early-out when the machinery sat downstream. That reading was right, and three layers turned
+out to be involved. Two are now landed; the third is a different kind of problem.
 
-Soundness shape looks the same as today's: the instance is proved per use and the claim is
-matched against it, which is what already gates (verified 2026-10-02 — a weak discharge yields
-only the weak fact).
+**Layer 1 — route the no-discharge case (DONE).** `demandTransfer` errored with "the model does
+not discharge" before ever reaching the instantiation path. With EXPLICIT args that is not an
+error: nothing is being substituted FOR the source, so no discharge is wanted. Now routes to
+`demandSchemaTransferUnder(c, universe_ix, effective_model)`.
+
+**Layer 2 — remap the parameter sorts under the CITE's model (DONE).** `bindSchemaArgs` set
+`se.model = self.model`, the citing proof's AMBIENT model — the universe in the common case,
+not the model named at the cite. So the container's `Item` never became the carrier's `Grp`.
+Added `bindSchemaArgsUnder` / `demandSchemaTransferUnder` with an optional override, defaulting
+to today's behavior at every existing call site. The statement now remaps correctly, and the
+instance task proves the body under the cite's model rather than the ambient one.
+
+**Layer 3 — the REMAINING wall, and it is not an early-out.** Two distinct problems, both
+visible once layers 1-2 are in:
+
+- **The lambda cannot capture.** `(fun g: Grp => op(t, g))` with `t` from an enclosing `fix`
+  gives "unknown identifier 't'". `demandSchemaTransfer` runs in the READ PASS, before
+  step-local scope exists — which is exactly why the existing path uses the citing schema's own
+  parameters (available without scope) rather than arbitrary expressions. `demandInstance`, the
+  plain-`instantiation` path, receives the caller's live `Elab` as an argument; the transfer
+  path has none to receive.
+- **A proof BODY is not remappable the way a statement is.** With a capture-free lambda the
+  error moves inside the schema's proof: `indexed.b4m:104: expected sort 'Grp', got 'Item'`,
+  at a step citing `indexedSingleton` — an axiom the model discharges. The statement remaps but
+  the body is left half-translated. Note the existing (working) fixtures instantiate a LOCAL
+  schema, whose sorts are already the carrier's, so nothing in their bodies needs remapping.
+  Transferring a schema means re-proving a source BODY under an interpretation, which is a
+  different operation from α-matching a remapped statement.
+
+So the honest state: layers 1-2 are correct and harmless (full suite + `--library` green, all
+pre-existing schema fixtures pass), and they move the diagnostic from "the model does not
+discharge" to the two real obstacles. But they do NOT deliver the generic-lemma reuse, and I am
+not going to claim a third time that it is nearly there. What remains is (a) threading a
+scope-bearing `Elab` into a read-pass demand, and (b) deciding what it means to prove a source
+schema's body under a model — which may be the same question as "why does a plain theorem
+transfer but a schema not", answered properly.
 
 ## Where this leaves things
 
