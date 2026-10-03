@@ -2074,15 +2074,35 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
         self.ctx.sink.add(self.diagFile(), c.rule.start, "`[by model(M) …]` cites exactly one transferred theorem", .{}) catch return error.OutOfMemory;
         return .failed;
     }
-    // resolve M (a `.model` Index) in the CITING file's namespace. A model name is a
-    // plain local identifier — a qualified one never resolved before and still doesn't
-    // (the base-name lookup below would be wrong for it, so keep it a miss).
+    // resolve M (a `.model` Index). A BARE name resolves in the citing file's namespace; a
+    // QUALIFIED one (`I.M`) resolves the qualifier to an import and then M in THAT file's
+    // namespace — the same two-step every qualified reference takes. A model interprets an
+    // abstract theory with concrete symbols, and that interpretation is as reusable as any
+    // theorem it proves, so a consumer may name its importer's model rather than re-declaring
+    // the same mapping.
     const mtok = c.schema.?;
+    var model_ns = self.ns;
     if (mtok.qualifier != InternPool.Index.none) {
-        self.ctx.sink.add(self.diagFile(), mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
-        return .failed;
+        const qst = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = mtok.qualifier }) orelse
+            return .{ .blocked = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = self.file, .name = mtok.qualifier, .loc = mtok.start, .loc_file = self.file })) };
+        switch (qst) {
+            .in_flight => |owner| return .{ .blocked = owner },
+            .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
+                .import => |imp| model_ns = imp.namespace,
+                else => {
+                    self.ctx.sink.add(self.diagFile(), mtok.start, "'{s}' does not name an import, so '{s}' cannot be a model in it", .{ self.ctx.interner.stringBytes(mtok.qualifier), self.text(mtok) }) catch return error.OutOfMemory;
+                    return .failed;
+                },
+            },
+        }
     }
-    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(mtok) }) orelse {
+    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = model_ns, .name = tokName(mtok) }) orelse {
+        // not yet resolved in the owning file: demand it there (a cross-file model needs its
+        // declaring file walked), then re-enter.
+        if (model_ns != self.ns) {
+            const owner_file = self.ctx.interner.keyOf(model_ns).namespace.file;
+            return .{ .blocked = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{ .file = owner_file, .name = tokName(mtok), .loc = mtok.start, .loc_file = self.file })) };
+        }
         self.ctx.sink.add(self.diagFile(), mtok.start, "unknown model '{s}'", .{self.text(mtok)}) catch return error.OutOfMemory;
         return .failed;
     };
@@ -8630,7 +8650,13 @@ fn admitModel(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
     if (c.schema == null) return self.fail(c.rule.start, "model citation requires a model name: `[using model(M) src.thm]`", .{});
     if (c.refs.len != 1) return self.fail(c.rule.start, "`[using model(M) …]` cites exactly one transferred theorem", .{});
     const mtok = c.schema.?;
-    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(mtok) }) orelse
+    // a QUALIFIED model name (`I.M`) resolves in I's namespace — same as the strict path.
+    const model_ns = if (mtok.qualifier == InternPool.Index.none) self.ns else blk: {
+        const qf = (try self.qualifierFile(mtok)) orelse
+            return self.fail(mtok.start, "unknown namespace '{s}'", .{self.ctx.interner.stringBytes(mtok.qualifier)});
+        break :blk self.ctx.interner.namespace(.universe, qf) catch return error.OutOfMemory;
+    };
+    const mstate = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = model_ns, .name = tokName(mtok) }) orelse
         return self.fail(mtok.start, "unknown model '{s}'", .{self.text(mtok)});
     const model_ix = switch (mstate) {
         .done => |ix| ix,
