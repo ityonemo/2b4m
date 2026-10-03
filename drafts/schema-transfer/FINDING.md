@@ -1,3 +1,31 @@
+RESOLVED 2026-10-03 — see tests/cases/model_schema_transfer.b4m for the regression guard and
+README.md for what remains (the accelerant path). The original analysis is kept below because
+the reasoning was partly WRONG and the correction is the useful part.
+
+WHAT I GOT WRONG. I identified the two-space args bug correctly, then retracted it after reading
+ProveTask.zig:667 ("the same map when they are the same slice — no model transfer") and
+concluding that identical slices were correct for an ordinary citing proof. That comment's
+parenthetical is the trap: it assumes the two spaces coincide only when there is NO transfer,
+but a no-discharge cite IS a transfer (the instance runs under the cite's model) while passing
+identical slices. So the retraction was wrong and the original diagnosis was right.
+
+WHAT ALSO WASN'T THE FIX. Binding the twin by re-reading the arg in source space
+(`bindSchemaArgs(..., source_space=true)`, which is what demandInstance does) does not work
+here: it calls `sourceExpr`, and `source_ast` is populated only for a proof that is itself a
+transfer. The author writes the lambda ONCE in target terms, so there is no source twin to read.
+The working fix reuses the BOUND body and restates only the recorded sorts on the source side.
+
+HOW IT WAS FOUND. Reading the code produced two wrong answers; instrumenting produced the right
+one in one step. Printing the quantifier binder's sort alongside `self.model` and
+`self.source_space` at Elab.zig:277 showed, immediately:
+
+    [dbg] quant binder sort=Thing model=@enumFromInt(69) source_space=false
+    [dbg] quant binder sort=Elem  model=.universe        source_space=true
+
+— the source-space pass elaborating the body with no model, against a target-space lambda.
+
+================================ ORIGINAL ANALYSIS ================================
+
 WHY A PLAIN THEOREM TRANSFERS THROUGH A MODEL BUT A SCHEMA DID NOT
 (repro: src.b4m + consumer.b4m — two theorems differing ONLY in a predicate parameter;
  probe.b4m + probe2.b4m — the same with no constants, isolating binder sorts)

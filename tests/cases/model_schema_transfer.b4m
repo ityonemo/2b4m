@@ -1,0 +1,57 @@
+// A SCHEMA TRANSFERRED THROUGH A MODEL — the regression guard for the two-space args bug.
+//
+// Two theorems over ONE model, differing ONLY in whether the cited theorem takes a predicate
+// parameter. CASE A (plain) always worked. CASE B (the schema, at a predicate of the consumer's
+// own) did not, and the question "a plain theorem transfers, so why not a schema?" is what this
+// pair was built to answer.
+//
+// THE BUG (fixed): a schema instance runs passes in BOTH spaces — its statement in TARGET terms,
+// a source-space pass over its body. The source pass elaborates the schema's own binders
+// UN-remapped (`Elem`, not `Thing`), so the arguments it substitutes must record SOURCE sorts
+// too. The no-discharge transfer path bound the args once and used that one map for both, so a
+// generator param's `arg_sorts` said `Thing` while the body's binder said `Elem`, and
+// `applyGeneratorParam` rejected the application INSIDE THE SOURCE FILE
+// ("expected sort 'Thing', got 'Elem'") — a confusing place for a consumer's mistake to land.
+//
+// Note what the twin canNOT be: a re-read of the arg from a source-space AST (`sourceExpr`).
+// The author writes the lambda ONCE, in target terms, and `source_ast` is populated only for a
+// proof that is itself a transfer — so the twin reuses the bound body and restates only the
+// recorded SORTS on the source side.
+//
+// What a citer gets is the source schema's own proof re-checked under the interpretation:
+// `--axioms` on the equivalent probe reports NO axioms, and a wrong claim is rejected against
+// the transferred statement.
+//
+// STILL OPEN (separate fixture needed): an ACCELERANT inside a transferred schema body — e.g.
+// `[using specialize all(y)]` — runs its own source-space pass and fails the same way. See
+// CONTAINER-THEORY.md.
+import src <<< "model_schema_transfer_source.b4m"
+sort Thing
+const ROOT: Thing
+pred flagged(x: Thing)
+axiom rootIsFlagged: flagged(ROOT)
+
+model ThingElem {
+  src.Elem: Thing
+  src.SEED: ROOT
+  src.marks: flagged
+  src.seedIsMarked <- rootIsFlagged
+}
+
+// CASE A — PLAIN theorem through the model. Expected: works today.
+theorem somethingFlagged: exists x: Thing; flagged(x)
+proof
+  @conclusion |
+    exists x: Thing; flagged(x)
+    [using model(ThingElem) src.somethingIsMarked]
+qed
+
+// CASE B — the SCHEMA through the same model, at a predicate of the consumer's own. Same
+// source file, same model, same axiom discharge. The ONLY difference from case A is that the
+// cited theorem takes a predicate parameter.
+theorem somethingFlaggedViaSchema: flagged(ROOT) -> exists x: Thing; flagged(x)
+proof
+  @conclusion |
+    flagged(ROOT) -> exists x: Thing; flagged(x)
+    [using model(ThingElem) src.somethingHolds((fun y: Thing => flagged(y)))]
+qed
