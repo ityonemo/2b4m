@@ -69,6 +69,44 @@ source-theory statement and breaks as soon as a consumer symbol rides in through
 argument. The fix is for the producer to know which space each symbol belongs to, which is a
 real piece of design, not a patch.
 
+## The mangled-name route: tried, and what it costs
+
+The user's proposal — "can't accelerants run in model space and synthesize/call mangled theorem
+names?" — is the right instinct, and most of the machinery is already there:
+
+- synthetics are **already mangled per model**: `name{m<model-index>}` (`Prove.zig:2608`);
+- the builder already has an **exact-symbol** encoding — `Accelerant.Builder.symTok(sym, exact)`
+  sets `qualifier = .universe`, which `Elab.resolveSymbolTok` reads as "this Index is final,
+  skip `applyModel`";
+- `Delaborate.runExact` exists for precisely this, emitting exact symbols throughout.
+
+**`runExact` is never called.** The builder's `termExpr` uses plain `Delaborate.run`, so every
+delaborated symbol is subject to the ambient model on re-elaboration — which is exactly why the
+producer must run with the model off.
+
+Wired it up as an experiment: a `Builder.exact_syms` flag feeding `runExact`, a
+`Prove.produce_in_model_space` flag threaded into all 11 producer Builders, and `demandUsing`
+selecting model-space production instead of source-space. **The target case passed** — the
+failure moved off the accelerant and onto the `specialize` head's own argument, then that
+resolved too once `producerPremiseFormula` returned the target formula (it already branches on
+`self.model`, so it needed no change).
+
+**What it broke:** `std/group/listing.b4m:803` under the ℤ_n transfer —
+`expected sort 'Zn', got 'Grp'`. An ORDINARY transfer, which must build in source space.
+
+So the hard part is not the mechanism, it is the PREDICATE: *when* must a producer build in model
+space? Two conditions were tried and both are too coarse:
+
+- "this proof is a schema instance under a model" — fires for every ordinary transfer.
+- "...and its source twin differs from its target args" — still fires for `group/listing`, so
+  twin-identity does not separate the cases.
+
+The real distinction is per-SYMBOL, not per-pass: a goal is unbuildable in source space exactly
+when it mentions a symbol with no source form. That is decidable (walk the goal, ask whether
+each symbol resolves in the source namespace) but it is a different shape of question from the
+single boolean the code asks today — which is what "accelerants must be namespace aware" means
+concretely.
+
 Related: this is a sibling of the known "accelerants not model-aware" boundary already recorded
 for guarded transfers (memory `accelerants-not-model-aware`, and the omitted
 `group.invProduct` in `tests/cases/model_subgroup_transfer.b4m`, which cites the `assoc`
