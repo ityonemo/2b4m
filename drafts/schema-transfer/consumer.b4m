@@ -1,0 +1,30 @@
+import src <<< "source-theory.b4m"
+sort Thing
+const ROOT: Thing
+pred flagged(x: Thing)
+axiom rootIsFlagged: flagged(ROOT)
+
+model ThingElem {
+  src.Elem: Thing
+  src.SEED: ROOT
+  src.marks: flagged
+  src.seedIsMarked <- rootIsFlagged
+}
+
+// CASE A — PLAIN theorem through the model. Expected: works today.
+theorem somethingFlagged: exists x: Thing; flagged(x)
+proof
+  @conclusion |
+    exists x: Thing; flagged(x)
+    [using model(ThingElem) src.somethingIsMarked]
+qed
+
+// CASE B — the SCHEMA through the same model, at a predicate of the consumer's own. Same
+// source file, same model, same axiom discharge. The ONLY difference from case A is that the
+// cited theorem takes a predicate parameter.
+theorem somethingFlaggedViaSchema: flagged(ROOT) -> exists x: Thing; flagged(x)
+proof
+  @conclusion |
+    flagged(ROOT) -> exists x: Thing; flagged(x)
+    [using model(ThingElem) src.somethingHolds((fun y: Thing => flagged(y)))]
+qed
