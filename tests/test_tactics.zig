@@ -236,6 +236,12 @@ pub fn addTests(
     // statement instantiated — the claim is matched against the instance, so a weaker discharge
     // yields only the weaker fact, and --axioms names the discharge, never the source schema.
     ctx.okSilent(&.{ "check", "tests/cases/model_schema_at_a_chosen_predicate.b4m" });
+    // A MODEL CITED FROM ANOTHER FILE. A qualified model name (`I.M`) resolves the qualifier to
+    // an import and looks M up in THAT file's namespace. The owner file deliberately proves
+    // NOTHING off its model, so the user's theorem exists only because the model itself crossed
+    // the boundary — not because a named theorem was aliased (the pattern that had masked the
+    // limitation: std/ring.b4m proves off `AdditiveGroup`, and consumers alias those theorems).
+    ctx.okSilent(&.{ "check", "tests/cases/model_cited_across_files_user.b4m" });
     // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
     // instantiate at. Diagnosed with both fixes named.
     ctx.fail(
