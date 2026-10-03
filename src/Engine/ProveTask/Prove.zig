@@ -2253,8 +2253,18 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
 fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.Index) Allocator.Error!InstanceOutcome {
     const rtok = c.refs[0];
     const sk = self.ctx.interner.keyOf(schema_ix).schema;
-    const args_in = self.schema_args orelse {
-        self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' transfers as a schema; cite it from a schema whose parameters stand in for its own, and instantiate that schema", .{self.text(rtok)}) catch return error.OutOfMemory;
+    // A schema cite comes in TWO shapes, and the arguments say which:
+    //
+    //   `[using model(M) src.sch(myPred)]` — EXPLICIT args. The cite names what to instantiate
+    //      the discharging schema at, so it works anywhere a step does (the common case: a
+    //      consumer wanting a generic source lemma at a predicate of its own).
+    //   `[using model(M) src.sch]`         — NO args. Only meaningful inside a SCHEMA BODY,
+    //      where the citing schema's own parameters stand in for the source's; `self.schema_args`
+    //      carries them. Outside one there is nothing to instantiate at, which is an authoring
+    //      error, so it is diagnosed rather than silently doing nothing.
+    const explicit_args = c.args.len != 0;
+    const args_in = if (explicit_args) null else self.schema_args orelse {
+        self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) {s}(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its", .{ self.text(rtok), self.text(rtok) }) catch return error.OutOfMemory;
         return .failed;
     };
     const citing_params = self.schema_params;
@@ -2271,16 +2281,37 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
         self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' discharges the schema '{s}' but is not a schema", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok) }) catch return error.OutOfMemory;
         return .failed;
     };
-    if (params.len != citing_params.len) {
+    if (!explicit_args and params.len != citing_params.len) {
         self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' (discharging '{s}') takes {d} parameter(s); this schema takes {d}", .{ self.ctx.interner.stringBytes(sk.name), self.text(rtok), params.len, citing_params.len }) catch return error.OutOfMemory;
         return .failed;
     }
     const pnames = try self.ctx.arena.alloc(StrId, params.len);
     for (params, pnames) |p, *out| out.* = tokName(p.name);
-    // re-key this instance's arguments by the discharging schema's parameter names.
-    const args = try self.rekeyArgs(citing_params, pnames, args_in, rtok) orelse return .failed;
-    const src_in = self.schema_args_source orelse args_in;
-    const args_source: *Schema.SchemaArgs = if (src_in == args_in) args else (try self.rekeyArgs(citing_params, pnames, src_in, rtok) orelse return .failed);
+    // EXPLICIT args: bind them against the DISCHARGING schema directly, exactly as
+    // `instantiation` does — so `model(M) src.sch(pred)` and `instantiation local(pred)` take
+    // the same path from here, and the arity/sort diagnostics are the shared ones.
+    // AMBIENT args: re-key the citing schema's arguments by the discharging schema's param names.
+    const args, const args_source = if (explicit_args) blk: {
+        const rs = ResolvedSchema{
+            .file = sk.file,
+            .ns = self.ctx.interner.namespace(.universe, sk.file) catch return error.OutOfMemory,
+            .name = sk.name,
+            .fact = ast.factOf(decl).?,
+            .source = self.ctx.files.get(@intFromEnum(tfid)).source,
+        };
+        var w = Walk.init(self.ctx.arena, self.ctx.interner, self.source, self.ctx.sink);
+        var e = self.elab(&w);
+        const bound = self.bindSchemaArgs(&e, rs, c, false) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Recover => return .failed, // diagnosed by bindSchemaArgs
+        };
+        break :blk .{ bound, bound };
+    } else blk: {
+        const rekeyed = try self.rekeyArgs(citing_params, pnames, args_in.?, rtok) orelse return .failed;
+        const src_in = self.schema_args_source orelse args_in.?;
+        const src: *Schema.SchemaArgs = if (src_in == args_in.?) rekeyed else (try self.rekeyArgs(citing_params, pnames, src_in, rtok) orelse return .failed);
+        break :blk .{ rekeyed, src };
+    };
 
     const hash = Schema.instanceHash(self.pool, sk.name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(sk.name), hash }) catch return error.OutOfMemory;

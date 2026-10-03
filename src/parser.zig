@@ -802,6 +802,22 @@ pub const Parser = struct {
                 var refs: std.ArrayList(Token) = .empty;
                 while (self.tok.tag == .identifier or self.tok.tag == .kebab_identifier) {
                     try refs.append(self.arena, self.advance());
+                    // `model(M) src.schema(pred)` / `import(I) sch(pred)`: a model- or
+                    // import-cited SCHEMA takes its instantiation arguments right after the
+                    // cited name. The rule's own `(M)` already went to `schema`, so these land
+                    // in `args` — the same slot `instantiation NAME(args)` uses, so the engine
+                    // sees one shape either way.
+                    if (self.tok.tag == .l_paren and args.len == 0 and isTheoryRule(self.text(rule))) {
+                        _ = self.advance();
+                        var list: std.ArrayList(*const ast.Expr) = .empty;
+                        while (true) {
+                            try list.append(self.arena, try self.parseExpr());
+                            if (self.tok.tag != .comma) break;
+                            _ = self.advance();
+                        }
+                        _ = try self.expect(.r_paren);
+                        args = try list.toOwnedSlice(self.arena);
+                    }
                 }
                 _ = try self.expect(.r_bracket);
                 return .{ .label = label, .body = .{ .claim = .{

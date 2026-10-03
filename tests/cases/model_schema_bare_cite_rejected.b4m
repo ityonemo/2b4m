@@ -1,0 +1,31 @@
+// A BARE model-cite of a SCHEMA, outside any schema body, must be REJECTED.
+//
+// `[using model(M) src.sch]` with no arguments is only meaningful inside a schema body, where
+// the citing schema's own parameters stand in for the source's. Outside one there is nothing to
+// instantiate at — so it is an authoring error, and the diagnostic names BOTH ways to fix it
+// (name the arguments at the cite, or cite from inside a schema body).
+//
+// Before 2026-10-02 this silently did nothing useful; the arguments form did not parse at all.
+sort Thing
+const SPECIAL: Thing
+
+axiom specialIsWitnessed(prop: Thing -> Prop): prop(SPECIAL) -> exists x: Thing; prop(x)
+
+sort Widget
+const CHOSEN: Widget
+pred isBlue(w: Widget)
+
+axiom widgetIsWitnessed(prop: Widget -> Prop): prop(CHOSEN) -> exists w: Widget; prop(w)
+
+model WidgetThing {
+  specialIsWitnessed <- widgetIsWitnessed
+  Thing: Widget
+  SPECIAL: CHOSEN
+}
+
+theorem missingTheArguments: isBlue(CHOSEN) -> exists w: Widget; isBlue(w)
+proof
+  @conclusion |
+    isBlue(CHOSEN) -> exists w: Widget; isBlue(w)
+    [using model(WidgetThing) specialIsWitnessed]
+qed
