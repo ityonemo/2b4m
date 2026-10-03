@@ -1732,6 +1732,15 @@ fn resolveSchemaRef(self: *Prove, tok: lexer.Token) Error!ResolvedSchema {
 /// `source_space`: bind the args in SOURCE space (the param sorts resolve un-remapped and `e`
 /// is a source-space Elab) — the twins a source-space pass inside the instance substitutes.
 fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim, source_space: bool) Error!*Schema.SchemaArgs {
+    return self.bindSchemaArgsUnder(e, rs, c, source_space, null);
+}
+
+/// As `bindSchemaArgs`, but resolving the schema's parameter SORTS under an explicit model
+/// rather than the citing proof's ambient one. Needed when a cite names a model that the
+/// current proof is not itself running under: `[using model(M) src.sch(arg)]` with no discharge
+/// instantiates the SOURCE schema, so `src.sch`'s parameter sorts must remap through M (the
+/// container's `Item` becoming the carrier's `Grp`) while the arg is read in the citer's space.
+fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim, source_space: bool, model_override: ?InternPool.Index) Error!*Schema.SchemaArgs {
     const params = rs.fact.params.?;
     if (c.args.len != params.len) {
         return self.fail(c.schema.?.start, "schema '{s}' expects {d} argument(s), got {d}", .{
@@ -1743,7 +1752,7 @@ fn bindSchemaArgs(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.Claim,
     // matching the caller's already-remapped lambda args.
     var empty_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
     var se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &empty_walk, rs.ns, &self.fresh_counter);
-    se.model = if (source_space) .universe else self.model;
+    se.model = if (source_space) .universe else (model_override orelse self.model);
 
     const args = try self.ctx.arena.create(Schema.SchemaArgs);
     args.* = .empty;
@@ -2175,6 +2184,19 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
                 } else ix;
                 const mapped = self.ctx.interner.applyModel(effective_model, universe_ix);
                 if (mapped == universe_ix) {
+                    // NO DISCHARGE. With EXPLICIT args that is not an error: instantiate the
+                    // SOURCE schema directly, under the model's interpretation. The args are
+                    // read in the CITER's space while the schema's parameter sorts remap
+                    // through the model (`bindSchemaArgs` with source_space=false already does
+                    // exactly that), so a container lemma over `Item` instantiates at a `Grp`
+                    // map. Nothing is substituted FOR the source, so no discharge is wanted —
+                    // the instance is the source's own proof re-checked under the model, which
+                    // is what an ordinary transfer does for a plain theorem.
+                    //
+                    // Without args there is nothing to instantiate at, so a discharge (or an
+                    // enclosing schema body, handled in demandSchemaTransfer) is the only
+                    // meaning available — keep the diagnostic.
+                    if (c.args.len != 0) return try self.demandSchemaTransferUnder(c, universe_ix, effective_model);
                     self.ctx.sink.add(self.diagFile(), rtok.start, "'{s}' is a schema obligation the model does not discharge (`{s} <- <local schema>`)", .{ self.text(rtok), self.text(rtok) }) catch return error.OutOfMemory;
                     return .failed;
                 }
@@ -2271,6 +2293,13 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
 /// parameter list. Demands that instance exactly like `demandInstance` (read pass racks +
 /// suspends; process finds it proven).
 fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.Index) Allocator.Error!InstanceOutcome {
+    return self.demandSchemaTransferUnder(c, schema_ix, null);
+}
+
+/// As `demandSchemaTransfer`, with `cite_model` the model named at the cite when the schema is
+/// the SOURCE (no discharge) rather than a discharge — its parameter sorts then remap through
+/// that model instead of the proof's ambient one.
+fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.Index, cite_model: ?InternPool.Index) Allocator.Error!InstanceOutcome {
     const rtok = c.refs[0];
     const sk = self.ctx.interner.keyOf(schema_ix).schema;
     // A schema cite comes in TWO shapes, and the arguments say which:
@@ -2321,7 +2350,7 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
         };
         var w = Walk.init(self.ctx.arena, self.ctx.interner, self.source, self.ctx.sink);
         var e = self.elab(&w);
-        const bound = self.bindSchemaArgs(&e, rs, c, false) catch |err| switch (err) {
+        const bound = self.bindSchemaArgsUnder(&e, rs, c, false, cite_model) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed, // diagnosed by bindSchemaArgs
         };
@@ -2355,7 +2384,9 @@ fn demandSchemaTransfer(self: *Prove, c: ast.Step.Claim, schema_ix: InternPool.I
         .name = inst_name,
         .loc = rtok.start,
         .loc_file = self.file,
-        .model = self.model,
+        // the schema BODY is proved under the cite's model when the schema is the SOURCE (so
+        // its own sorts/symbols remap to the carrier's); under the ambient model otherwise.
+        .model = cite_model orelse self.model,
         .parent = self.self_key, // proof tree: a transferred schema's instance
         .instance = .{ .schema_name = sk.name, .params = pnames, .args = durable, .args_source = durable_source },
     }));
