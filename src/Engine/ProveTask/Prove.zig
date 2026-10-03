@@ -2354,7 +2354,54 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed, // diagnosed by bindSchemaArgs
         };
-        break :blk .{ bound, bound };
+        // SOURCE-SPACE TWIN. The instance runs passes in BOTH spaces: the statement in target
+        // terms, a source-space pass over the body. The source pass elaborates the schema's own
+        // binders UN-remapped (`Elem`, not `Thing`), so the args it substitutes must record
+        // SOURCE sorts too — otherwise a generator param's `arg_sorts` say `Thing` while the
+        // body's binder says `Elem`, and `applyGeneratorParam` rejects the application inside
+        // the SOURCE file ("expected sort 'Thing', got 'Elem'").
+        //
+        // Re-bind with `source_space = true`, which resolves the schema's param sorts without
+        // the model. NOTE this is NOT gated on `sourceSpaceAccelerants()` (= "is the CITING
+        // PROOF under a model"): here the model is named at the CITE, so that question is the
+        // wrong one and answers false.
+        const src_bound: *Schema.SchemaArgs = if (cite_model != null) blk2: {
+            // The author wrote the lambda ONCE, in target terms — there is no source-space AST
+            // twin to re-read (`source_ast` is populated only for a proof that is itself a
+            // transfer). So reuse the BOUND body and restate only the recorded SORTS on the
+            // source side: the body term is identical either way (its binders are fresh fvars,
+            // and the arg carries no captures to re-resolve), while `arg_sorts`/`result_sort`
+            // are what the source-space pass compares against the schema's un-remapped binders.
+            // a schema-scoped Elab with NO model: resolves the schema's own param sorts at
+            // their source values (`Elem`, not `Thing`).
+            var src_walk = Walk.init(self.ctx.arena, self.ctx.interner, rs.source, self.ctx.sink);
+            var src_se = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, rs.source, &src_walk, rs.ns, &self.fresh_counter);
+            src_se.model = .universe;
+            const twin = try self.ctx.arena.create(Schema.SchemaArgs);
+            twin.* = .empty;
+            for (params, pnames) |p2, pname| {
+                const a = bound.get(pname) orelse continue;
+                switch (a) {
+                    .value => try twin.put(self.ctx.arena, pname, a),
+                    .lambda => |l| {
+                        const src_args = try self.ctx.arena.alloc(SortId, p2.arg_sorts.len);
+                        for (p2.arg_sorts, src_args) |st, *out| {
+                            const rsrt = src_se.resolveSortTok(st) catch return .failed;
+                            out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
+                        }
+                        const rrr = src_se.resolveSortTok(p2.result) catch return .failed;
+                        try twin.put(self.ctx.arena, pname, .{ .lambda = .{
+                            .body = l.body,
+                            .params = l.params,
+                            .arg_sorts = src_args,
+                            .result_sort = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr))))),
+                        } });
+                    },
+                }
+            }
+            break :blk2 twin;
+        } else bound;
+        break :blk .{ bound, src_bound };
     } else blk: {
         const rekeyed = try self.rekeyArgs(citing_params, pnames, args_in.?, rtok) orelse return .failed;
         const src_in = self.schema_args_source orelse args_in.?;
@@ -2365,7 +2412,10 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
     const hash = Schema.instanceHash(self.pool, sk.name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(sk.name), hash }) catch return error.OutOfMemory;
     const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
-    const inst_ns = self.ctx.interner.namespace(self.model, sk.file) catch return error.OutOfMemory;
+    // The instance is proved under `cite_model orelse self.model` (see the rack below), so its
+    // IDENTITY namespace must be the same — publishing in one namespace while proving in
+    // another makes the fact unfindable and re-racks it forever.
+    const inst_ns = self.ctx.interner.namespace(cite_model orelse self.model, sk.file) catch return error.OutOfMemory;
     const key = FactKV.Key{ .namespace = inst_ns, .name = inst_name };
     if (self.ctx.facts.lookup(self.ctx.io, key)) |state| switch (state) {
         .proven => |ix| return .{ .proven = ix },

@@ -242,6 +242,14 @@ pub fn addTests(
     // the boundary — not because a named theorem was aliased (the pattern that had masked the
     // limitation: std/ring.b4m proves off `AdditiveGroup`, and consumers alias those theorems).
     ctx.okSilent(&.{ "check", "tests/cases/model_cited_across_files_user.b4m" });
+    // A SCHEMA TRANSFERRED THROUGH A MODEL, at a predicate of the citer's own. Two theorems over
+    // one model differing ONLY in whether the cited theorem takes a predicate parameter: the
+    // plain one always transferred, the schema did not. A schema instance runs passes in BOTH
+    // spaces (statement in target terms, a source-space pass over its body), so its args must be
+    // bound TWICE — once per space. Binding once and reusing that map made a generator param's
+    // `arg_sorts` say `Thing` while the body's binder said `Elem`, and the rejection landed
+    // inside the SOURCE file.
+    ctx.okSilent(&.{ "check", "tests/cases/model_schema_transfer.b4m" });
     // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
     // instantiate at. Diagnosed with both fixes named.
     ctx.fail(
