@@ -29,6 +29,46 @@ accelerant does not. Since nearly every real schema in std uses accelerants
 (`std/group/listing.b4m`'s five, `std/permutation/listing.b4m`'s four), this is the gap that
 still blocks the duplicated-proof consolidation — see `CONTAINER-THEORY.md`.
 
+## Why it is not a small fix — the source-space design has no room for a consumer symbol
+
+Chased 2026-10-03. The failing check is `Elab.elaborateCall`'s argument sort test, and the
+instrumented callee is the giveaway:
+
+```
+[dbg] elaborateCall callee='flagged' model=.universe source_space=true expected=Thing got=Elem
+```
+
+`flagged` is the CONSUMER's predicate, substituted in as the schema argument, being applied in
+a SOURCE-SPACE pass. The pass elaborates the schema's own binder `y` at `Elem` (source), but
+`flagged` is a target-space symbol expecting `Thing`. The two cannot agree.
+
+**Why the accelerant runs source-space at all** (`Prove.demandUsing`, the comment at
+"ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL"): a synthetic schema is
+registered against the SCHEMA's file, so a synthetic built from a target-relativized goal would
+delaborate target names into the source file's namespace, where they do not resolve. Producing
+in source space avoids that, and the instance then adopts the model. Sound — for an ordinary
+transfer, where every symbol in the goal HAS a source form.
+
+**Why that premise fails here.** A consumer-supplied schema argument is target-only by
+construction. `flagged` is declared in the citing file and has no source-side twin, so there is
+nothing for a source-space pass to build from. Two attempts confirmed this is structural, not
+an oversight:
+
+- Suppressing source-space production when the args are target-only: the guard never fires,
+  because the source twin IS a distinct map (the sorts differ even though the body does not).
+- Extending the MODEL-HOME FALLBACK (`Elab.lookupIdent`, which already resolves target-only
+  symbols like guard predicates in the model's home file) into source-space passes via a
+  separate `home_model` field: `flagged` then resolves fine, and the error does not move —
+  because it was never a name-resolution failure. The mismatch is that the pass mixes
+  source-space BINDERS with a target-space SYMBOL.
+
+**So the accelerant must become namespace-aware** (user, 2026-10-03) rather than model-off. The
+present design handles the namespace question by sidestepping it — turn the model off, build in
+one space, let the instance adopt the model afterwards. That works when the goal is wholly a
+source-theory statement and breaks as soon as a consumer symbol rides in through a schema
+argument. The fix is for the producer to know which space each symbol belongs to, which is a
+real piece of design, not a patch.
+
 Related: this is a sibling of the known "accelerants not model-aware" boundary already recorded
 for guarded transfers (memory `accelerants-not-model-aware`, and the omitted
 `group.invProduct` in `tests/cases/model_subgroup_transfer.b4m`, which cites the `assoc`
