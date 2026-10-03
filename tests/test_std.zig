@@ -179,6 +179,15 @@ pub fn addTests(
     // decomposition: each block is a translate of H's listing (Prop 6.4), the blocks are
     // pairwise disjoint (Thm 6.2) so the concatenation is injective across every seam, and
     // they cover G. Induction on the representative count, one `seqConcat` per step.
+    // THE ABSTRACT INDEXED CONTAINER (std/indexed.b4m): the list-BUILDING pattern every finite
+    // list sort in std was re-declaring, named once — singleton/prepend/concat/reverse/remove
+    // over an abstract `Indexed`/`Item`, with NO fold, which is what lets a carrier whose items
+    // have no monoid structure (Points) model it. examples.b4m exercises every axiom AND
+    // instantiates `mappedListExists`, which is where that schema's proof is actually checked
+    // (`check std/indexed.b4m` alone reports zero theorems — a schema body is only verified at
+    // an instantiation).
+    ctx.okSilent(&.{ "check", "std/indexed.b4m" });
+    ctx.okSilent(&.{ "check", "std/indexed/examples.b4m" });
     ctx.okSilent(&.{ "check", "std/group/lagrange.b4m" });
     // AN ELEMENT'S ORDER DIVIDES |G| (std/group/order-divides.b4m, Judson's Corollary 6.7).
     // ⟨gen⟩ is listed by its order (the powers g⁰…g^(n−1) — distinct by minimality, exhaustive

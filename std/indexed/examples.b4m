@@ -1,0 +1,75 @@
+// std/indexed/examples.b4m — exercises std/indexed.b4m's axioms and INSTANTIATES its schema.
+//
+// Two jobs. First, `--library` fails on an axiom no theorem there rests on, so a library
+// demonstrates its own assumptions. Second — and this is the load-bearing one — a SCHEMA's
+// body is only verified at an instantiation: `check std/indexed.b4m` alone reports zero
+// theorems and would pass even if `mappedListExists` were bogus. This file is where its proof
+// is actually checked.
+import indexed <<< "std/indexed.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Indexed = indexed.Indexed
+sort Item = indexed.Item
+func at = indexed.at
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+define at_most(a, b) = indexed.at_most(a, b)
+
+// A concrete map to instantiate the schema at: the identity on items. Trivial on purpose —
+// the point is to force the schema's PROOF to be checked, not to prove anything about items.
+theorem theIdentityMappedListExists: forall s: Indexed; forall m: Nat;
+  exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i)
+proof
+  @conclusion |
+    forall s: Indexed; forall m: Nat; exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i)
+    [using instantiation indexed.mappedListExists((fun x: Item => x))]
+qed
+
+// -- the axioms, each exercised ----------------------------------------------------------------
+
+theorem aSingletonExists: forall x: Item; exists s: Indexed; at(s, ZERO) = x
+proof
+  @conclusion |
+    forall x: Item; exists s: Indexed; at(s, ZERO) = x
+    [by cite indexed.indexedSingleton]
+qed
+
+theorem aPrependExists: forall x: Item; forall s: Indexed;
+  exists u: Indexed; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+proof
+  @conclusion |
+    forall x: Item; forall s: Indexed; exists u: Indexed; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+    [by cite indexed.indexedPrepend]
+qed
+
+theorem aConcatenationExists: forall s: Indexed; forall t: Indexed; forall j: Nat; forall k: Nat;
+  exists u: Indexed;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+proof
+  @conclusion |
+    forall s: Indexed; forall t: Indexed; forall j: Nat; forall k: Nat; exists u: Indexed; (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i)) and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+    [by cite indexed.indexedConcat]
+qed
+
+theorem aReversalExists: forall s: Indexed; forall n: Nat;
+  exists r: Indexed; forall i: Nat; less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i)))
+proof
+  @conclusion |
+    forall s: Indexed; forall n: Nat; exists r: Indexed; forall i: Nat; less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i)))
+    [by cite indexed.indexedReverse]
+qed
+
+theorem aRemovalExists: forall s: Indexed; forall k: Nat; forall m: Nat;
+  less_than(m, succ(k)) ->
+  exists t: Indexed;
+  (forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i))
+  and (forall i: Nat; at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
+proof
+  @conclusion |
+    forall s: Indexed; forall k: Nat; forall m: Nat; less_than(m, succ(k)) -> exists t: Indexed; (forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i)) and (forall i: Nat; at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
+    [by cite indexed.indexedRemove]
+qed
