@@ -1,0 +1,90 @@
+// A SOURCE SCHEMA INSTANTIATED AT THE CITER'S OWN PREDICATE, through a model.
+//
+// The shape: a source theory proves a theorem-SCHEMA over a free predicate; a consumer models
+// that theory onto its own sort and wants the schema at a predicate OF ITS OWN. (The real case
+// is std/group/listing.b4m's `splittingAListing(prop)` wanted at ℤ_n's `isUnit`, which is what
+// Judson §6.3's |U(n)| = φ(n) needs.)
+//
+// Two things make it work, both added 2026-10-02:
+//   1. `[using model(M) src.sch(args)]` PARSES — a model-cited schema takes its instantiation
+//      arguments right after the cited name, the same slot `instantiation NAME(args)` uses.
+//      Without the args it is only meaningful inside a schema body (where the citing schema's
+//      own parameters stand in), and outside one it is now diagnosed rather than silent.
+//   2. A PROVEN source schema may be discharged with `<-`. A plain theorem needs no mapping
+//      (it materializes through the mapped axioms) but a theorem SCHEMA does: an instantiation
+//      is per-instance proof, so there is nothing to materialize from and the carrier must
+//      supply its own schema for the citer to instantiate.
+//
+// What you get is the DISCHARGING schema's statement, instantiated — not the source's. That is
+// the trust boundary: a weaker discharge yields only the weaker fact (the claim is matched
+// against the instance), and `--axioms` names the discharge, never the source's schema.
+sort Thing
+const SPECIAL: Thing
+
+theorem specialIsWitnessed(prop: Thing -> Prop): prop(SPECIAL) -> exists x: Thing; prop(x)
+proof
+  @given-holds |
+    assume prop(SPECIAL) {
+      @holds |
+        prop(SPECIAL)
+        [by hypothesis given-holds]
+      @conclusion-witnessed |
+        exists x: Thing; prop(x)
+        [by exists_intro(SPECIAL) holds]
+    }
+  @conclusion |
+    prop(SPECIAL) -> exists x: Thing; prop(x)
+    [by implies_intro given-holds]
+qed
+
+// ── the consumer: its own sort, its own predicate ─────────────────────────────
+sort Widget
+const CHOSEN: Widget
+pred isBlue(w: Widget)
+axiom chosenIsBlue: isBlue(CHOSEN)
+
+// the local stand-in the model discharges with (the remap of the source's body)
+theorem widgetIsWitnessed(prop: Widget -> Prop): prop(CHOSEN) -> exists w: Widget; prop(w)
+proof
+  @given-holds |
+    assume prop(CHOSEN) {
+      @holds |
+        prop(CHOSEN)
+        [by hypothesis given-holds]
+      @conclusion-witnessed |
+        exists w: Widget; prop(w)
+        [by exists_intro(CHOSEN) holds]
+    }
+  @conclusion |
+    prop(CHOSEN) -> exists w: Widget; prop(w)
+    [by implies_intro given-holds]
+qed
+
+model WidgetThing {
+  specialIsWitnessed <- widgetIsWitnessed
+  Thing: Widget
+  SPECIAL: CHOSEN
+}
+
+// THE PAYOFF: the source schema at `isBlue`, cited from an ORDINARY theorem (no enclosing
+// schema body), in one line.
+theorem someBlueWidgetExists: isBlue(CHOSEN) -> exists w: Widget; isBlue(w)
+proof
+  @conclusion |
+    isBlue(CHOSEN) -> exists w: Widget; isBlue(w)
+    [using model(WidgetThing) specialIsWitnessed((fun w: Widget => isBlue(w)))]
+qed
+
+// and the ordinary use still works: the axiom discharges the hypothesis
+theorem thereIsABlueWidget: exists w: Widget; isBlue(w)
+proof
+  @blue-at-chosen |
+    isBlue(CHOSEN)
+    [by cite chosenIsBlue]
+  @witnessed |
+    isBlue(CHOSEN) -> exists w: Widget; isBlue(w)
+    [by cite someBlueWidgetExists]
+  @conclusion |
+    exists w: Widget; isBlue(w)
+    [by modus_ponens witnessed blue-at-chosen]
+qed

@@ -228,6 +228,20 @@ pub fn addTests(
     // (criteria from std/group/generated.b4m) transfers the coset algebra AND the counting
     // theorem in one line each. The fixture is the entry point the chapter lacked.
     ctx.okSilent(&.{ "check", "tests/cases/model_lagrange_at_a_subgroup.b4m" });
+    // A SOURCE SCHEMA AT THE CITER'S OWN PREDICATE. `[using model(M) src.sch(args)]` now parses
+    // (a model-cited schema takes its instantiation args after the cited name, the same slot
+    // `instantiation NAME(args)` uses), and a PROVEN source schema may be discharged with `<-`
+    // (a plain theorem materializes through the mapped axioms; a theorem SCHEMA cannot, since an
+    // instantiation is per-instance proof). What the citer gets is the DISCHARGING schema's
+    // statement instantiated — the claim is matched against the instance, so a weaker discharge
+    // yields only the weaker fact, and --axioms names the discharge, never the source schema.
+    ctx.okSilent(&.{ "check", "tests/cases/model_schema_at_a_chosen_predicate.b4m" });
+    // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
+    // instantiate at. Diagnosed with both fixes named.
+    ctx.fail(
+        &.{ "check", "tests/cases/model_schema_bare_cite_rejected.b4m" },
+        "tests/cases/model_schema_bare_cite_rejected.b4m:30:31: error: 'specialIsWitnessed' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) specialIsWitnessed(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its\n",
+    );
     // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
     // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
     // aliases — the same entities by origin), and transferring top.unitFourth remaps the

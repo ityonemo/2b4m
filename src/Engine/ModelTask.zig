@@ -145,7 +145,20 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
             switch (sd.decl.*) {
                 .sort, .constant, .func, .pred => return diagAt(self, task, mapping.source.start, "'{s}' is a sort or symbol, not an axiom — map it with `:` (`{s}: <target>`), not `<-`", .{ t, t }),
                 .define => return diagAt(self, task, mapping.source.start, "'{s}' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead", .{t}),
-                .theorem => return diagAt(self, task, mapping.source.start, "model maps only axioms; '{s}' is a theorem — it materializes through the mapped axioms, so drop this mapping", .{t}),
+                // A plain THEOREM needs no mapping — it materializes through the mapped axioms.
+                // A theorem SCHEMA does not: an instantiation is per-instance proof, so there is
+                // nothing for the transfer to materialize from, and the carrier must supply its
+                // own schema for the citer to instantiate. So a schema is discharged with `<-`
+                // whether the source is an axiom or proven; only a NON-schema theorem is refused.
+                .theorem => if (ast.factOf(sd.decl)) |tfct| {
+                    if (tfct.params == null)
+                        return diagAt(self, task, mapping.source.start, "model maps only axioms; '{s}' is a theorem — it materializes through the mapped axioms, so drop this mapping", .{t});
+                    if (try mappingDecl(self, h, task.file, mapping.target, &blocker)) |td| {
+                        const tf = ast.factOf(td.decl);
+                        if (tf == null or tf.?.params == null)
+                            return diagAt(self, task, mapping.target.start, "'{s}' discharges a schema, so it must itself be a schema (with a matching predicate parameter)", .{try tokText(self, mapping.target)});
+                    } else if (blocker) |b| return h.suspendOn(b);
+                },
                 // a SCHEMA obligation is discharged by a schema (a matching predicate parameter).
                 .axiom => if (mapping.projection == null) if (ast.factOf(sd.decl)) |sf| if (sf.params != null) {
                     if (try mappingDecl(self, h, task.file, mapping.target, &blocker)) |td| {
