@@ -179,43 +179,55 @@ postulates for free; until then, when a construction over a fresh sequence sort 
 go, compare its postulate list against `std/group/sequence.b4m`'s before assuming the
 proof is wrong.
 
-### §6.3 (Fermat/Euler): the schema gap is FIXED; what remains is that a model is FILE-LOCAL
+### §6.3 (Fermat/Euler): the stand-in schema CANNOT be a one-line transfer — it is circular
 
-Two rounds of diagnosis here, both recorded because the first was wrong.
+Three rounds here. Recording all of them because two were wrong and the errors are the
+instructive part.
 
-**Round 1 (wrong).** I wrote that §6.3 is blocked because "a schema cannot be instantiated
-at a predicate of your choosing through a model". A repro showed the parse error was real
-but the generalization was not.
+**Round 1 (wrong).** "A schema cannot be instantiated at a predicate of your choosing
+through a model." A repro showed the parse error was real but the generalization was not.
 
-**Round 2 — FIXED in the engine** (`f8eef96`, user-directed). Two gaps, now closed:
-- `[using model(M) src.sch(myPred)]` parses. A model-cited schema takes its instantiation
-  arguments after the cited name, the same slot `instantiation NAME(args)` uses.
-- A PROVEN source schema may be discharged with `<-`. Previously only an AXIOM schema could
-  be; a proven one was refused as "a theorem — it materializes through the mapped axioms",
-  which is true of a plain theorem and false of a schema (an instantiation is per-instance
-  proof, so there is nothing to materialize from).
-- And the bare form outside a schema body is now an error, naming both fixes.
+**Round 2 — engine gaps CLOSED** (`f8eef96`, `dcb7a3d`, both user-directed):
+- `[using model(M) src.sch(myPred)]` parses, and binds against the discharging schema.
+- A PROVEN source schema may be discharged with `<-` (previously only an axiom schema could).
+- A bare schema cite outside a schema body is now a diagnosed error.
+- `[using model(I.M) …]` resolves a model across a file boundary.
 
-Trust boundary verified: a citer gets the DISCHARGING schema's statement instantiated, not
-the source's. A weak-but-proven discharge standing in for a strong source yields only the
-weak fact (the claim is matched against the instance), and `--axioms` names the discharge.
+All four verified, with the trust boundary probed: a citer gets the DISCHARGING schema's
+statement instantiated, so a weak discharge yields only the weak fact.
 
-**WHAT STILL BLOCKS §6.3: a `model` is FILE-LOCAL.** `[using model(mod_n_listing.ZnListing)
-group_listing.splittingAListing(isUnit)]` fails with "unknown model
-'mod_n_listing.ZnListing'" — a model declares no name a *consumer* can reach, by design
-(memory: `import-vs-model-axes`). Verified: no model is cited across a file boundary
-anywhere in the tree.
+**Round 3 — the remaining obstacle is LOGICAL, not mechanical.** I claimed the per-carrier
+stand-in would now be "a statement to write, not a proof to redo": declare
+`znSplittingAListing` over ℤ_n with its body the one-line
+`[using model(ZnListing) group_listing.splittingAListing]`, and discharge the source with it.
 
-So reaching `splittingAListing` at ℤ_n's `isUnit` means doing it INSIDE
-`std/integer/mod-n-listing.b4m`, which already has `ZnListing` — and that file must then
-declare its own local stand-in schema for the model to discharge. That is still a stand-in
-per carrier, but with the engine fix it is a STATEMENT to write, not a PROOF to redo: the
-local schema's body can be the one-line model cite, and `permutation/listing.b4m`'s
-full re-proof of `splittingAListing` (line 1462) is no longer the only route.
+That is CIRCULAR and the checker says so — "cyclic schema instantiation". The stand-in is
+what DISCHARGES the source schema for this carrier; its own proof therefore cannot be "cite
+the source via that discharge". Minimal repro confirms it in 25 lines, independent of ℤ_n.
+The checker is right; this is not an engine limitation to route around.
 
-Remaining for §6.3, in order: (1) the local stand-in + the split at `isUnit` inside
-mod-n-listing, giving U(n)'s listing and hence φ(n); (2) Corollary 6.7 applied in U(n) for
-Euler; (3) φ(p) = p−1 for the Fermat specialization. None started.
+Two workarounds exist and both are worse than they look:
+- **A second model** with identical maps, declared after the schema, discharging it. Checks
+  clean — and is exactly the duplicate-model somersault the user ruled out elsewhere in this
+  file. Adding one here to save a proof is the wrong trade.
+- **`[using import(group_listing) splittingAListing]`** in the stand-in's body. The file then
+  checks GREEN STANDALONE but fails the moment anything instantiates it ("'splittingAListing'
+  is a schema; use `instantiation`, not a fact citation"). **Note the hazard: `check <file>`
+  passed on a schema whose body is bogus** — a schema body is only really verified at an
+  instantiation, so a green single-file check is not evidence a schema is sound.
+
+**So the honest cost stands where it started:** a generic listing schema must be PROVED over
+each carrier, as `std/permutation/listing.b4m` does (its own `splittingAListing`, line 1462,
+with no model at all). For ℤ_n that means porting `splittingAPrefix`,
+`extendingASublisting` and `skippingAnEntry` too. Substantial, mechanical, not started.
+
+The engine work was still worth it — it fixed four real gaps — but it does not shorten this
+particular path. What WOULD is the carrier-parameterized container theory
+(memory: `abstract-collections-direction`), which is the same answer the re-postulated `Seq`
+and the thin `Points` postulate set both pointed at.
+
+Remaining for §6.3: (1) `splittingAListing` over ℤ_n, giving U(n)'s listing and hence φ(n);
+(2) Corollary 6.7 applied in U(n) for Euler; (3) φ(p) = p−1 for Fermat. None started.
 
 ### A LISTING LENGTH is a ℕ but PRIMALITY is a ℤ notion, and no bridge existed
 
