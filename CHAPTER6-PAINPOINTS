@@ -179,47 +179,43 @@ postulates for free; until then, when a construction over a fresh sequence sort 
 go, compare its postulate list against `std/group/sequence.b4m`'s before assuming the
 proof is wrong.
 
-### §6.3 (Fermat/Euler): a transferred SCHEMA must be RE-PROVED, not transferred
+### §6.3 (Fermat/Euler): the schema gap is FIXED; what remains is that a model is FILE-LOCAL
 
-CORRECTED 2026-10-02 after building a repro. The earlier entry here said "a schema cannot
-be instantiated at a predicate of your choosing through a model." That is wrong — it can.
+Two rounds of diagnosis here, both recorded because the first was wrong.
 
-Euler's theorem is `a^φ(n) ≡ 1 (mod n)`, which Judson gets from |U(n)| = φ(n) plus
-Corollary 6.7 applied in U(n). φ is NOT the missing piece: φ(n) just IS the length of a
-listing of U(n), once that listing exists. U(n) exists (`std/integer/mod-n.b4m`'s
-`isUnit`), ℤ_n is listed (`mod-n-listing.znIsListedByItsRepresentatives`), and splitting a
-listing by an arbitrary predicate is already general —
-`std/group/listing.b4m`'s `splittingAListing(prop: Grp -> Prop)`.
+**Round 1 (wrong).** I wrote that §6.3 is blocked because "a schema cannot be instantiated
+at a predicate of your choosing through a model". A repro showed the parse error was real
+but the generalization was not.
 
-**What the repro establishes** (four files, ~30 lines each; kept outside the tree):
+**Round 2 — FIXED in the engine** (`f8eef96`, user-directed). Two gaps, now closed:
+- `[using model(M) src.sch(myPred)]` parses. A model-cited schema takes its instantiation
+  arguments after the cited name, the same slot `instantiation NAME(args)` uses.
+- A PROVEN source schema may be discharged with `<-`. Previously only an AXIOM schema could
+  be; a proven one was refused as "a theorem — it materializes through the mapped axioms",
+  which is true of a plain theorem and false of a schema (an instantiation is per-instance
+  proof, so there is nothing to materialize from).
+- And the bare form outside a schema body is now an error, naming both fixes.
 
-1. `[using model(M) src.schema(myPred)]` is a PARSE ERROR ("expected ']', got '('"). A
-   model cite takes no argument list. This is the only hard syntax wall.
-2. `[using model(M) src.schema]` bare gives a good diagnostic naming the fix: "is a schema
-   obligation the model does not discharge (`src.schema <- <local schema>`)".
-3. **Following that diagnostic WORKS.** Declare a local schema of the same shape, prove it
-   locally, discharge the source's with `<-`, then `instantiation` the LOCAL one at your
-   predicate. Checks clean.
-4. The actual boundary is a catch-22 one level in. Can the local schema's body cite the
-   source through the model, so the source's PROOF is reused rather than redone? No:
-   - with the `<-` mapping present — "model maps only axioms; 'src.schema' is a theorem —
-     it materializes through the mapped axioms, so drop this mapping";
-   - with it dropped — back to "is a schema obligation the model does not discharge".
-   The mapping is required to cite it and forbidden because it is proven.
+Trust boundary verified: a citer gets the DISCHARGING schema's statement instantiated, not
+the source's. A weak-but-proven discharge standing in for a strong source yields only the
+weak fact (the claim is matched against the instance), and `--axioms` names the discharge.
 
-**So the real cost** is that the local stand-in must be re-proved over the new carrier. For
-`splittingAListing`, whose proof rests on `splittingAPrefix`, `extendingASublisting` and
-`skippingAnEntry`, that is substantial — and `std/permutation/listing.b4m` has ALREADY paid
-it (its own `splittingAListing`, line 1462). So the duplication is in the tree, the cost is
-real, but the route is KNOWN AND MECHANICAL rather than blocked.
+**WHAT STILL BLOCKS §6.3: a `model` is FILE-LOCAL.** `[using model(mod_n_listing.ZnListing)
+group_listing.splittingAListing(isUnit)]` fails with "unknown model
+'mod_n_listing.ZnListing'" — a model declares no name a *consumer* can reach, by design
+(memory: `import-vs-model-axes`). Verified: no model is cited across a file boundary
+anywhere in the tree.
 
-**The open design question**, stated precisely: should `<-` accept a PROVEN source schema,
-transferring the proof rather than only the shape? A plain theorem needs no mapping at all
-— it materializes through the mapped axioms. A schema apparently does not get that
-treatment, and that asymmetry is what makes every carrier re-prove.
+So reaching `splittingAListing` at ℤ_n's `isUnit` means doing it INSIDE
+`std/integer/mod-n-listing.b4m`, which already has `ZnListing` — and that file must then
+declare its own local stand-in schema for the model to discharge. That is still a stand-in
+per carrier, but with the engine fix it is a STATEMENT to write, not a PROOF to redo: the
+local schema's body can be the one-line model cite, and `permutation/listing.b4m`'s
+full re-proof of `splittingAListing` (line 1462) is no longer the only route.
 
-Judson's §6.3 also needs φ's number-theoretic side (φ(p) = p−1 for the Fermat
-specialization), independent of this and not started.
+Remaining for §6.3, in order: (1) the local stand-in + the split at `isUnit` inside
+mod-n-listing, giving U(n)'s listing and hence φ(n); (2) Corollary 6.7 applied in U(n) for
+Euler; (3) φ(p) = p−1 for the Fermat specialization. None started.
 
 ### A LISTING LENGTH is a ℕ but PRIMALITY is a ℤ notion, and no bridge existed
 
