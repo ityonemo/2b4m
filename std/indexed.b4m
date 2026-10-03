@@ -1,0 +1,264 @@
+// std/indexed.b4m — THE ABSTRACT INDEXED CONTAINER: a finite list read by index, and the
+// facts that say such lists can be BUILT.
+//
+// This is the pattern every finite-list sort in std was re-declaring by hand. A carrier
+// supplies its own sort and its own `at`, and MODELS this theory to get the building
+// postulates; it no longer restates them. (Seven carriers restated some subset of them
+// before this file existed — `Seq` over groups, over permutations, over ℤ, `ZnSeq`,
+// `SetSeq`, `Points` — each with a comment explaining why it could not inherit.)
+//
+// WHY THIS IS SEPARATE FROM THE FOLD. `std/sequence.b4m` bundles the container with a
+// fold (`IDENTITY`/`combine`/`foldUpTo`), and three of its four existence postulates carry
+// a fold clause. That bundling is what stopped `Points` (a list of set ELEMENTS, which have
+// no monoid structure) from modeling it: there is nothing to fold. So the container is here,
+// the fold stays in `std/sequence.b4m`, and a carrier takes whichever it needs. Two of the
+// current carriers (`std/permutation/cycle.b4m`'s `Points`, `std/set/subsets.b4m`'s
+// `SetSeq`) use NO fold clause at all and want exactly this file.
+//
+// WHAT A CARRIER STILL OWNS. These are AXIOMS, so a model must DISCHARGE them, not inherit
+// them — a model transfers theorems and discharges assumptions. That is the honest shape: a
+// concrete list sort is asserting that its own lists can be built, and `--axioms` names that
+// assertion at the carrier. What the carrier gains is that the SHAPE is stated once here, so
+// a generic lemma proved over `Indexed` transfers to every model of it, and a carrier cannot
+// silently ship a THINNER postulate set than its constructions need (the `Points` trap:
+// having only singleton+prepend made two different induction shapes unavailable, and the
+// failure looked like a wrong proof rather than a missing axiom).
+
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+define at_most(a, b) = peano_order.less_or_equal(a, b)
+
+// -- the container ----------------------------------------------------------------------------
+// `Indexed` is observe-only on its own: `at` reads an entry, but nothing produces a list. The
+// postulates below are what produce them.
+sort Indexed
+sort Item
+func at(s: Indexed, i: Nat) => Item
+
+// -- the building postulates ------------------------------------------------------------------
+// Each states that a list with the given entry-graph EXISTS, and claims NOTHING about entries
+// outside the stated range. These are obviously true of the intended model (finite lists) and
+// are axioms because the sort carries no first-class builder.
+
+// SINGLETON [x]: one entry, x.
+axiom indexedSingleton: forall x: Item;
+  exists s: Indexed; at(s, ZERO) = x
+
+// PREPEND x :: s: head x, the rest of s shifted up by one.
+axiom indexedPrepend: forall x: Item; forall s: Indexed;
+  exists u: Indexed;
+  at(u, ZERO) = x
+  and (forall i: Nat; at(u, succ(i)) = at(s, i))
+
+// CONCATENATION: the first j entries of s, then the first k of t.
+//
+// This is the one whose absence is least obvious and most damaging. Without it a list cannot
+// be grown from its FRONT — only prepended to — so any construction that walks UP an index
+// range ("the list whose i-th entry is f(sᵢ)") is unavailable, and so is a list's TAIL. That
+// is exactly the hole `Points` had.
+axiom indexedConcat: forall s: Indexed; forall t: Indexed; forall j: Nat; forall k: Nat;
+  exists u: Indexed;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+
+// REVERSAL: the first n entries of s, in reverse order.
+axiom indexedReverse: forall s: Indexed; forall n: Nat;
+  exists r: Indexed;
+  forall i: Nat; less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i)))
+
+// REMOVAL: s with the entry at index m deleted — unchanged below m, shifted down at and above.
+axiom indexedRemove: forall s: Indexed; forall k: Nat; forall m: Nat;
+  less_than(m, succ(k)) ->
+  exists t: Indexed;
+  (forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i))
+  and (forall i: Nat; at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
+
+// -- what the container PROVES ----------------------------------------------------------------
+// The payoff of naming the pattern: generic facts proved ONCE here. Before this file, the
+// mapped-list existence below was written out longhand FOUR times
+// (`group_sequence.translatedSequenceExists`, `counting.powersAreListed`,
+// `permutation_sequence.mappedSequenceExists`, and an attempt for `Points` that revealed the
+// missing concat postulate).
+//
+// It is a SCHEMA over the map, because the first-order kernel cannot quantify over a function
+// `Item -> Item` — and that is exactly what makes it reusable: a carrier instantiates it at
+// whatever index-indexed family it needs (translation by a group element, powers of a
+// generator, images under a permutation).
+
+// THE MAPPED LIST: for any map f and list s there is a list whose first m entries are
+// f(s₀), …, f(s_{m−1}). Induction on m, extending by concatenating a singleton — which is why
+// `indexedConcat` is load-bearing: with prepend alone a prefix cannot be grown.
+theorem mappedListExists(f: Item -> Item): forall s: Indexed; forall m: Nat;
+  exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = f(at(s, i))
+proof
+  @generalize-s |
+    fix s: Indexed {
+      // base: nothing is below ZERO, so any list serves — and a singleton exists.
+      @some-list-exists |
+        exists t: Indexed; at(t, ZERO) = f(at(s, ZERO))
+        [using specialize indexedSingleton(f(at(s, ZERO)))]
+      @base-case |
+        exists t: Indexed; forall i: Nat; less_than(i, ZERO) -> at(t, i) = f(at(s, i))
+        [by exists_elim with-some-list]
+      @with-some-list |
+        unpack t0: Indexed from some-list-exists {
+          @vacuous |
+            forall i: Nat; less_than(i, ZERO) -> at(t0, i) = f(at(s, i))
+            [by forall_intro nothing-below-zero]
+          @nothing-below-zero |
+            fix i: Nat {
+              @given-below-zero |
+                assume less_than(i, ZERO) {
+                  @below-zero |
+                    less_than(i, ZERO)
+                    [by hypothesis given-below-zero]
+                  @not-below-zero |
+                    not less_than(i, ZERO)
+                    [using specialize peano_order.notLessThanZero(i)]
+                  @conclusion-vacuous |
+                    at(t0, i) = f(at(s, i))
+                    [using tautology below-zero not-below-zero]
+                }
+              @below-zero-implies |
+                less_than(i, ZERO) -> at(t0, i) = f(at(s, i))
+                [by implies_intro given-below-zero]
+            }
+          @conclusion-base-inner |
+            exists t: Indexed; forall i: Nat; less_than(i, ZERO) -> at(t, i) = f(at(s, i))
+            [by exists_intro(t0) vacuous]
+        }
+      // step: concatenate the singleton holding f(s_k) after the first k entries.
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume exists t: Indexed; forall i: Nat; less_than(i, k) -> at(t, i) = f(at(s, i)) {
+              @inductive-hypothesis |
+                exists t: Indexed; forall i: Nat; less_than(i, k) -> at(t, i) = f(at(s, i))
+                [by hypothesis given-inductive-hypothesis]
+              @with-prefix |
+                unpack t: Indexed from inductive-hypothesis {
+                  @prefix-matches |
+                    forall i: Nat; less_than(i, k) -> at(t, i) = f(at(s, i))
+                    [by hypothesis with-prefix]
+                  @singleton-exists |
+                    exists w: Indexed; at(w, ZERO) = f(at(s, k))
+                    [using specialize indexedSingleton(f(at(s, k)))]
+                  @with-singleton |
+                    unpack w: Indexed from singleton-exists {
+                      @singleton-head |
+                        at(w, ZERO) = f(at(s, k))
+                        [by hypothesis with-singleton]
+                      @joined-exists |
+                        exists u: Indexed; (forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i))
+                        [using specialize indexedConcat(t, w, k, succ(ZERO))]
+                      @with-joined |
+                        unpack u: Indexed from joined-exists {
+                          @joined-facts |
+                            (forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)) and (forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i))
+                            [by hypothesis with-joined]
+                          @joined-below |
+                            forall i: Nat; less_than(i, k) -> at(u, i) = at(t, i)
+                            [by and_elim_left joined-facts]
+                          @joined-above |
+                            forall i: Nat; less_than(i, succ(ZERO)) -> at(u, add(k, i)) = at(w, i)
+                            [by and_elim_right joined-facts]
+                          // the new entry sits at index k = k + 0
+                          @zero-below-one |
+                            less_than(ZERO, succ(ZERO))
+                            [using specialize peano_order.lessThanSelf(ZERO)]
+                          @joined-at-k-plus-zero |
+                            at(u, add(k, ZERO)) = at(w, ZERO)
+                            [using specialize joined-above(ZERO) zero-below-one]
+                          @k-plus-zero |
+                            add(k, ZERO) = k
+                            [using specialize peano.addZeroRight(k)]
+                          @joined-at-k |
+                            at(u, k) = at(w, ZERO)
+                            [by rewrite k-plus-zero joined-at-k-plus-zero]
+                          @joined-at-k-is-the-image |
+                            at(u, k) = f(at(s, k))
+                            [using chain joined-at-k singleton-head]
+                          // every index below succ(k) is below k or is k
+                          @matches-below-succ-k |
+                            forall i: Nat; less_than(i, succ(k)) -> at(u, i) = f(at(s, i))
+                            [by forall_intro matches-at-i]
+                          @matches-at-i |
+                            fix i: Nat {
+                              @given-i-below-succ-k |
+                                assume less_than(i, succ(k)) {
+                                  @i-below-succ-k |
+                                    less_than(i, succ(k))
+                                    [by hypothesis given-i-below-succ-k]
+                                  @i-splits |
+                                    less_than(i, k) or i = k
+                                    [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                                  @conclusion-matches-at-i |
+                                    at(u, i) = f(at(s, i))
+                                    case i-splits {
+                                      @when-i-is-in-the-prefix |
+                                        assume less_than(i, k) {
+                                          @i-below-k |
+                                            less_than(i, k)
+                                            [by hypothesis when-i-is-in-the-prefix]
+                                          @joined-agrees-with-prefix |
+                                            at(u, i) = at(t, i)
+                                            [using specialize joined-below(i) i-below-k]
+                                          @prefix-at-i |
+                                            at(t, i) = f(at(s, i))
+                                            [using specialize prefix-matches(i) i-below-k]
+                                          @conclusion-prefix-case |
+                                            at(u, i) = f(at(s, i))
+                                            [using chain joined-agrees-with-prefix prefix-at-i]
+                                        }
+                                      @when-i-is-the-new-entry |
+                                        assume i = k {
+                                          @i-is-k |
+                                            i = k
+                                            [by hypothesis when-i-is-the-new-entry]
+                                          @conclusion-new-entry-case |
+                                            at(u, i) = f(at(s, i))
+                                            [by rewrite i-is-k joined-at-k-is-the-image]
+                                        }
+                                    }
+                                }
+                              @i-below-succ-k-implies |
+                                less_than(i, succ(k)) -> at(u, i) = f(at(s, i))
+                                [by implies_intro given-i-below-succ-k]
+                            }
+                          @conclusion-extended-inner |
+                            exists t2: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = f(at(s, i))
+                            [by exists_intro(u) matches-below-succ-k]
+                        }
+                      @conclusion-with-joined |
+                        exists t2: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = f(at(s, i))
+                        [by exists_elim with-joined]
+                    }
+                  @conclusion-with-singleton |
+                    exists t2: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t2, i) = f(at(s, i))
+                    [by exists_elim with-singleton]
+                }
+              @conclusion-step |
+                exists t: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = f(at(s, i))
+                [by exists_elim with-prefix]
+            }
+          @induction-step-at-k |
+            (exists t: Indexed; forall i: Nat; less_than(i, k) -> at(t, i) = f(at(s, i))) -> (exists t: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = f(at(s, i)))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat; (exists t: Indexed; forall i: Nat; less_than(i, k) -> at(t, i) = f(at(s, i))) -> (exists t: Indexed; forall i: Nat; less_than(i, succ(k)) -> at(t, i) = f(at(s, i)))
+        [by forall_intro induction-step]
+      @conclusion-for-all-m |
+        forall m: Nat; exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = f(at(s, i))
+        [using instantiation peano.induction((fun m: Nat => exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = f(at(s, i)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Indexed; forall m: Nat; exists t: Indexed; forall i: Nat; less_than(i, m) -> at(t, i) = f(at(s, i))
+    [by forall_intro generalize-s]
+qed
