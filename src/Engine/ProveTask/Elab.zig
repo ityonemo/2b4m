@@ -781,6 +781,14 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
 /// by the guard pred (minted fresh, no IdentKV name).
 pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     const base = try self.resolveSortTok(b.sort);
+    // A BINDER ranges over a domain of individuals, and `Prop` is not one — propositions are
+    // what you assert ABOUT individuals, never values to quantify over. (That restriction IS
+    // first-orderness: a binder's sort must be a term sort, so `forall p: Prop; …` and
+    // `forall p: Elem -> Prop; …` are both out of reach, which is why SCHEMAS exist.) `Prop` is
+    // legal only as a schema parameter's result, where it names a predicate's shape.
+    if (base == prop_sort) {
+        return self.fail(b.sort.start, "a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)", .{});
+    }
     const g = b.guard orelse return base;
     const gname = try self.localName(g);
     const gpred = self.resolveSymbolTok(g) orelse self.lookupIdent(self.ns, gname) orelse {
