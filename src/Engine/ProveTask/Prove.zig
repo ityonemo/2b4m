@@ -256,7 +256,9 @@ fn termSort(self: *const Prove, t: TermId) SortId {
     return switch (self.pool.get(t)) {
         .fvar => |v| v.sort,
         .app => |a| @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(a.sym))))),
-        else => @enumFromInt(@intFromEnum(InternPool.Index.prop)),
+        // not a term node — a proposition. Returns the marker, which matches no real sort, so
+        // every consumer's `!= v.sort` test rejects it (none of them wants a proposition here).
+        else => Elab.prop_sort,
     };
 }
 
@@ -1764,7 +1766,8 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
             // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
             const want = try se.resolveSortTok(p.result);
             const typed = try e.elaborateExpr(arg_expr);
-            const want_carrier = self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
+            // a value param declared `Prop` has no carrier either (see the generator case below).
+            const want_carrier: InternPool.Index = if (want == Elab.prop_sort) @enumFromInt(@intFromEnum(want)) else self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
             const got_carrier = if (typed.sort == Elab.prop_sort) @intFromEnum(typed.sort) else @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort))));
             if (@intFromEnum(want_carrier) != got_carrier) {
                 return self.fail(Elab.exprLoc(arg_expr), "expected sort '{s}', got '{s}'", .{
@@ -1785,7 +1788,10 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
                 out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rs_sort)))));
             }
             const rr = try se.resolveSortTok(p.result);
-            const result_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rr)))));
+            // A `=> Prop` generator param yields a PROPOSITION, which has no sort and therefore
+            // no carrier to lower to — `carrierOf` would index the absent marker. The common
+            // case (`prop: Nat -> Prop`) takes this branch.
+            const result_sort: SortId = if (rr == Elab.prop_sort) rr else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rr)))));
             const lam = try self.bindLambdaArg(e, arg_expr, arg_sorts, result_sort);
             try args.put(self.ctx.arena, pname, lam);
         }
@@ -2387,14 +2393,16 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
                         const src_args = try self.ctx.arena.alloc(SortId, p2.arg_sorts.len);
                         for (p2.arg_sorts, src_args) |st, *out| {
                             const rsrt = src_se.resolveSortTok(st) catch return .failed;
-                            out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
+                            out.* = if (rsrt == Elab.prop_sort) rsrt else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
                         }
                         const rrr = src_se.resolveSortTok(p2.result) catch return .failed;
+                        // `=> Prop` has no sort and so no carrier (see bindSchemaArgsUnder).
+                        const rrr_carrier: SortId = if (rrr == Elab.prop_sort) rrr else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr)))));
                         try twin.put(self.ctx.arena, pname, .{ .lambda = .{
                             .body = l.body,
                             .params = l.params,
                             .arg_sorts = src_args,
-                            .result_sort = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr))))),
+                            .result_sort = rrr_carrier,
                         } });
                     },
                 }
