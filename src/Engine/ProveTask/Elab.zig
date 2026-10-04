@@ -104,9 +104,13 @@ pub const Known = struct {
     }
 };
 
-/// The pool's reserved Prop sort, as a scratchpad SortId. Numerically `Index.prop`; the
-/// flip renumbers `term.SortId.prop` onto it.
-pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.prop));
+/// THE PROPOSITION MARKER. `Prop` is NOT a sort — a sort is a domain of individuals, something
+/// a binder ranges over and a `func` returns, and propositions are none of those (the kernel
+/// already agrees: `kernel.sortOfTerm` rejects a proposition by NODE KIND and never consults a
+/// Prop sort). But the elaborator computes and compares sorts bottom-up, and a proposition has
+/// to flow through that same channel, so it travels as a reserved SortId value that matches no
+/// real sort. `Index.none` is the pool's absent marker, which is exactly what this is.
+pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.none));
 
 arena: Allocator,
 io: std.Io,
@@ -753,14 +757,20 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
         else => .app,
     };
     const id = try self.scratch.addApp(kind, @enumFromInt(@intFromEnum(sym)), args);
-    const result: SortId = @enumFromInt(@intFromEnum(self.interner.symResult(sym)));
+    // A PREDICATE application is a proposition, not a term: it has no result sort to read (its
+    // sig's result slot is `Index.none`), and the `.pred` tag computed above is what says so.
+    // Only a FUNC/CONST application has a sort worth asking for.
+    const result: SortId = if (kind == .pred) prop_sort else @enumFromInt(@intFromEnum(self.interner.symResult(sym)));
     // a REFINED result sort TEACHES the application its closure fact `inH(f(…))` — a universal
-    // truth about that term, so it is known proof-wide (the root block).
-    if (self.known) |known| {
-        const result_ix: InternPool.Index = @enumFromInt(@intFromEnum(result));
-        if (self.interner.isRefined(result_ix)) {
-            const quals = self.interner.qualifiersOf(self.arena, result_ix) catch return error.OutOfMemory;
-            for (quals) |qpred| try known.teach(self.arena, try self.qualifierApp(qpred, id), @enumFromInt(0), null);
+    // truth about that term, so it is known proof-wide (the root block). A proposition has no
+    // result sort, so nothing to teach.
+    if (kind != .pred) {
+        if (self.known) |known| {
+            const result_ix: InternPool.Index = @enumFromInt(@intFromEnum(result));
+            if (self.interner.isRefined(result_ix)) {
+                const quals = self.interner.qualifiersOf(self.arena, result_ix) catch return error.OutOfMemory;
+                for (quals) |qpred| try known.teach(self.arena, try self.qualifierApp(qpred, id), @enumFromInt(0), null);
+            }
         }
     }
     return .{ .id = id, .sort = result };
@@ -1178,7 +1188,7 @@ const World = struct {
             .loc = 0,
         } });
 
-        const le_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat2 } });
+        const le_sig = try interner.intern(.{ .sig = .{ .result = .none, .result_refined = .none, .args = &nat2 } });
         const le_name = try interner.internString("le");
         w.le_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = le_name }, .{ .pred = .{
             .sig = le_sig,
@@ -1198,7 +1208,7 @@ const World = struct {
 
         // the refinement fixtures: pred inH(Nat); sort H = Nat where inH; shift(h: H): Nat; mk(n: Nat): H.
         const nat1 = [_]InternPool.Index{w.nat};
-        const inh_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
+        const inh_sig = try interner.intern(.{ .sig = .{ .result = .none, .result_refined = .none, .args = &nat1 } });
         const inh_name = try interner.internString("inH");
         w.inh_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = inh_name }, .{ .pred = .{
             .sig = inh_sig,
