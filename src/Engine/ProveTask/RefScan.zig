@@ -322,6 +322,11 @@ fn addNameTok(self: *Scanner, tok: lexer.Token) Allocator.Error!void {
 /// must resolve), and the base carries the qualifier.
 fn addTok(self: *Scanner, tok: lexer.Token, domain: Ref.Domain) Allocator.Error!void {
     if (tok.tag == .symbol) return; // a resolved identity — nothing to fetch
+    // `Prop` is RESERVED, never declared, so there is nothing to fetch for it. Demanding it
+    // would wedge the task and report "reference not found", which says nothing about the real
+    // error — the elaborator has the actionable message (a binder cannot range over `Prop`;
+    // only a schema parameter's result may name it).
+    if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return;
     if (tok.qualifier != InternPool.Index.none) {
         try self.add(.{ .ns = null, .name = tok.qualifier, .domain = .ident, .loc = tok.start });
         try self.add(.{ .ns = tok.qualifier, .name = tok.name, .domain = domain, .loc = tok.start });
