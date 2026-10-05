@@ -472,7 +472,13 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
     // 3. schema parameter (only while elaborating a schema body/steps)
     if (self.schema_args) |sa| if (sa.get(name)) |arg| switch (arg) {
         .value => |v| return .{ .id = v.id, .sort = v.sort },
-        .lambda => return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
+        // A NULLARY pred param (`axiom a(q): …`, standing for a nullary `pred base`) binds as a
+        // zero-arity lambda: there is nothing to substitute, so its body IS the proposition and
+        // a bare use is correct — matching how a nullary pred is itself declared and used.
+        .lambda => |lam| if (lam.params.len == 0)
+            return .{ .id = lam.body, .sort = lam.result_sort }
+        else
+            return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
     };
     // 4. global
     return self.elaborateSymRef(tok, self.ns, name);
@@ -910,7 +916,7 @@ fn conjoinQuals(self: *Elab, quals: []const InternPool.Index, fvar: StrId, sort:
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
-    // `Prop` is the reserved builtin sort (schema generator-param results `P: T -> Prop`,
+    // `Prop` is the reserved builtin sort (schema generator-param results `P(T)`,
     // etc.) — never a userland-declared/fetched sort. Its name string is reserved, so the
     // check is an integer comparison.
     if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return prop_sort;

@@ -458,7 +458,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
 
 test "author line breaks within statements survive; continuation re-indents to +2" {
     try expectFmt(
-        \\axiom induction(prop: Nat -> Prop):
+        \\axiom induction(prop(Nat)):
         \\      prop(ZERO) -> forall n: Nat; prop(n)
         \\theorem t: forall n: Nat.
         \\ is_zero(n)
@@ -468,7 +468,7 @@ test "author line breaks within statements survive; continuation re-indents to +
         \\qed
         \\
     ,
-        \\axiom induction(prop: Nat -> Prop):
+        \\axiom induction(prop(Nat)):
         \\  prop(ZERO) -> forall n: Nat; prop(n)
         \\theorem t: forall n: Nat.
         \\  is_zero(n)

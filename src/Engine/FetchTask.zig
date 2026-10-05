@@ -943,7 +943,7 @@ test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via
     // FACT table (a ProveTask publishes its `.schema` locator). Reaching FetchTask is misuse.
     const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort T
-        \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
+        \\theorem everywhereGoal(prop(T)): forall x: T; goal(x)
         \\proof
         \\  @c | forall x: T; goal(x) [by cite ax]
         \\qed

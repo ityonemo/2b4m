@@ -653,7 +653,7 @@ test "a single-theorem check: a missing name is the racked task's diagnostic; an
     const axiom = try checkSourceTheorem(arena, single_theorem_source, "pq");
     try std.testing.expect(axiom.ok());
     try std.testing.expectEqual(@as(usize, 0), axiom.theorems_proven);
-    const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop: T -> Prop): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
+    const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop(T)): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
     try std.testing.expectEqual(@as(usize, 1), schema.sink.list.items.len);
     try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations — check a theorem that instantiates it", schema.sink.list.items[0].message);
 }
@@ -677,7 +677,7 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
         \\pred even(n: Nat)
         \\axiom zeroEven: even(ZERO)
         \\axiom spare: forall n: Nat; even(n)
-        \\axiom evenInduction(prop: Nat -> Prop): prop(ZERO) -> forall n: Nat; prop(n)
+        \\axiom evenInduction(prop(Nat)): prop(ZERO) -> forall n: Nat; prop(n)
         \\theorem zeroIsEven: even(ZERO)
         \\proof
         \\  @conclusion |

@@ -710,8 +710,10 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
         const Guarded = struct { name: InternPool.Index, image: InternPool.Index };
         var guarded: std.ArrayList(Guarded) = .empty;
         for (schema_fact.params.?) |p| {
-            if (p.arg_sorts.len != 0) continue; // a generator param has no element to guard
-            const image = se.resolveSortTok(p.result) catch |err| switch (err) {
+            if (p.argSorts().len != 0) continue; // a generator param has no element to guard
+            // only VALUE params reach here (generators `continue`d above), so the result token
+            // is always present — a pred/func param has already been skipped.
+            const image = se.resolveSortTok(p.resultSort().?) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => break, // diagnosed into the sink; the instance proof reports it
             };

@@ -227,7 +227,7 @@ pub fn addTests(
 
     // `--sig`: just the statement, wrap-collapsed to one line, alias-
     // followed. `induction` wraps across two lines in the source.
-    ctx.ok(&.{ "query", "theorem", "std/peano.b4m", "induction", "--sig" }, "axiom induction(prop: Nat -> Prop): prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)\n");
+    ctx.ok(&.{ "query", "theorem", "std/peano.b4m", "induction", "--sig" }, "axiom induction(prop(Nat)): prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)\n");
 
     // `query whereis <file> <ident>`: trace an alias across files to its
     // origin. Pinned to real std (brittle by design). `sub` is a func
