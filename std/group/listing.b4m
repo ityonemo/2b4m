@@ -14,6 +14,7 @@
 
 import group <<< "std/group.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
+import indexed <<< "std/indexed.b4m"
 import group_power <<< "std/group/power.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
@@ -87,174 +88,19 @@ axiom seqSingleton = group_sequence.seqSingleton
 axiom seqConcat = group_sequence.seqConcat
 
 // Skipping an entry that fails prop: the sub-listing below k is the sub-listing below k+1.
-theorem skippingAnEntry(prop(Grp)): forall w: Seq; forall k: Nat; (not prop(at(w, k))) ->
-  forall v: Seq; forall p: Nat;
-  ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i)))
-  and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j)
-  and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-  ->
-  ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i)))
-  and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j)
-  and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-proof
-  @generalize-w |
-    fix w: Seq {
-      @generalize-k |
-        fix k: Nat {
-          @given-entry-fails |
-            assume not prop(at(w, k)) {
-              @entry-fails |
-                not prop(at(w, k))
-                [by hypothesis given-entry-fails]
-              @generalize-v |
-                fix v: Seq {
-                  @generalize-p |
-                    fix p: Nat {
-                      @given-sublisting |
-                        assume (forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)) {
-                          @sublisting |
-                            (forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))
-                            [by hypothesis given-sublisting]
-                          @entries |
-                            forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))
-                            [using tautology sublisting]
-                          @injective |
-                            forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j
-                            [using tautology sublisting]
-                          @covers |
-                            forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                            [using tautology sublisting]
-
-                          // entries: the source index moves up a range
-                          @generalize-j-for-entries |
-                            fix j: Nat {
-                              @given-j-in-range |
-                                assume less_than(j, p) {
-                                  @j-in-range |
-                                    less_than(j, p)
-                                    [by hypothesis given-j-in-range]
-                                  @source-exists |
-                                    exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))
-                                    [using specialize entries(j) j-in-range]
-                                  @with-source-i |
-                                    unpack i: Nat from source-exists {
-                                      @source-facts |
-                                        less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))
-                                        [by hypothesis with-source-i]
-                                      @i-below-k |
-                                        less_than(i, k)
-                                        [using tautology source-facts]
-                                      @i-below-succ-k |
-                                        less_than(i, succ(k))
-                                        [using specialize lessThanSuccRight(i, k) i-below-k]
-                                      @source-facts-moved |
-                                        less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))
-                                        [using tautology source-facts i-below-succ-k]
-                                      @conclusion-witness-i |
-                                        exists i2: Nat; less_than(i2, succ(k)) and at(v, j) = at(w, i2) and prop(at(w, i2))
-                                        [by exists_intro(i) source-facts-moved]
-                                    }
-                                  @conclusion-source-moved |
-                                    exists i2: Nat; less_than(i2, succ(k)) and at(v, j) = at(w, i2) and prop(at(w, i2))
-                                    [by exists_elim with-source-i]
-                                }
-                              @conclusion-entry-clause |
-                                less_than(j, p) -> exists i2: Nat; less_than(i2, succ(k)) and at(v, j) = at(w, i2) and prop(at(w, i2))
-                                [by implies_intro given-j-in-range]
-                            }
-                          @entries-moved |
-                            forall j: Nat; less_than(j, p) -> exists i2: Nat; less_than(i2, succ(k)) and at(v, j) = at(w, i2) and prop(at(w, i2))
-                            [by forall_intro generalize-j-for-entries]
-
-                          // covering: the new index k fails prop, so nothing new to cover
-                          @generalize-i-for-covers |
-                            fix i: Nat {
-                              @given-i-below-succ-k |
-                                assume less_than(i, succ(k)) {
-                                  @given-i-satisfies |
-                                    assume prop(at(w, i)) {
-                                      @i-below-succ-k |
-                                        less_than(i, succ(k))
-                                        [by hypothesis given-i-below-succ-k]
-                                      @i-satisfies |
-                                        prop(at(w, i))
-                                        [by hypothesis given-i-satisfies]
-                                      @i-splits |
-                                        less_than(i, k) or i = k
-                                        [using specialize lessThanSuccSplit(i, k) i-below-succ-k]
-                                      @conclusion-covered |
-                                        exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                                        case i-splits {
-                                          @when-i-below-k |
-                                            assume less_than(i, k) {
-                                              @i-below-k |
-                                                less_than(i, k)
-                                                [by hypothesis when-i-below-k]
-                                              @conclusion-covered-below |
-                                                exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                                                [using specialize covers(i) i-below-k i-satisfies]
-                                            }
-                                          @when-i-is-k |
-                                            assume i = k {
-                                              @i-is-k |
-                                                i = k
-                                                [by hypothesis when-i-is-k]
-                                              @k-satisfies |
-                                                prop(at(w, k))
-                                                [by rewrite i-is-k i-satisfies]
-                                              @conclusion-covered-absurdly |
-                                                exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                                                [by absurd k-satisfies entry-fails]
-                                            }
-                                        }
-                                    }
-                                  @conclusion-given-satisfies |
-                                    prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                                    [by implies_intro given-i-satisfies]
-                                }
-                              @conclusion-covers-at-i |
-                                less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                                [by implies_intro given-i-below-succ-k]
-                            }
-                          @covers-moved |
-                            forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)
-                            [by forall_intro generalize-i-for-covers]
-                          @conclusion-sublisting-moved |
-                            (forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))
-                            [using tautology entries-moved injective covers-moved]
-                        }
-                      @conclusion-at-p |
-                        ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) -> ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-                        [by implies_intro given-sublisting]
-                    }
-                  @discharge-p |
-                    forall p: Nat; ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) -> ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-                    [by forall_intro generalize-p]
-                }
-              @discharge-v |
-                forall v: Seq; forall p: Nat; ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) -> ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-                [by forall_intro generalize-v]
-            }
-          @conclusion-at-k |
-            (not prop(at(w, k))) -> forall v: Seq; forall p: Nat; ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) -> ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-            [by implies_intro given-entry-fails]
-        }
-      @discharge-k |
-        forall k: Nat; (not prop(at(w, k))) -> forall v: Seq; forall p: Nat; ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i))) -> ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j) and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-        [by forall_intro generalize-k]
-    }
-  @conclusion |
-    forall w: Seq; forall k: Nat; (not prop(at(w, k))) ->
-      forall v: Seq; forall p: Nat;
-      ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, k) and at(v, j) = at(w, i) and prop(at(w, i)))
-      and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j)
-      and (forall i: Nat; less_than(i, k) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-      ->
-      ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, succ(k)) and at(v, j) = at(w, i) and prop(at(w, i)))
-      and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> at(v, i) = at(v, j) -> i = j)
-      and (forall i: Nat; less_than(i, succ(k)) -> prop(at(w, i)) -> exists j: Nat; less_than(j, p) and at(v, j) = at(w, i)))
-    [by forall_intro generalize-w]
-qed
+// `Seq` over `Grp` IS an indexed container: model std/indexed.b4m to inherit its generic
+// listing lemmas (index bookkeeping that mentions no group structure) instead of restating
+// them. The five building postulates are discharged by group/sequence.b4m's own.
+model GroupSeqIsIndexed {
+  indexed.Indexed: Seq
+  indexed.Item: Grp
+  indexed.at: at
+  indexed.indexedSingleton <- group_sequence.seqSingleton
+  indexed.indexedPrepend <- group_sequence.seqPrepend
+  indexed.indexedConcat <- group_sequence.seqConcat
+  indexed.indexedReverse <- group_sequence.seqReverse
+  indexed.indexedRemove <- group_sequence.seqRemove
+}
 
 // Appending an entry that satisfies prop: concatenate the sub-listing with the singleton
 // (at(w, k)); the new last entry is at(w, k), which differs from every earlier entry since w
@@ -926,10 +772,10 @@ proof
                             [using instantiation extendingASublisting((fun g: Grp => not prop(g)))]
                           @skipping-satisfying |
                             forall w0: Seq; forall k0: Nat; (not prop(at(w0, k0))) -> forall v0: Seq; forall p0: Nat; ((forall j: Nat; less_than(j, p0) -> exists i: Nat; less_than(i, k0) and at(v0, j) = at(w0, i) and prop(at(w0, i))) and (forall i: Nat; forall j: Nat; less_than(i, p0) -> less_than(j, p0) -> at(v0, i) = at(v0, j) -> i = j) and (forall i: Nat; less_than(i, k0) -> prop(at(w0, i)) -> exists j: Nat; less_than(j, p0) and at(v0, j) = at(w0, i))) -> ((forall j: Nat; less_than(j, p0) -> exists i: Nat; less_than(i, succ(k0)) and at(v0, j) = at(w0, i) and prop(at(w0, i))) and (forall i: Nat; forall j: Nat; less_than(i, p0) -> less_than(j, p0) -> at(v0, i) = at(v0, j) -> i = j) and (forall i: Nat; less_than(i, succ(k0)) -> prop(at(w0, i)) -> exists j: Nat; less_than(j, p0) and at(v0, j) = at(w0, i)))
-                            [using instantiation skippingAnEntry((fun g: Grp => prop(g)))]
+                            [using model(GroupSeqIsIndexed) indexed.skippingAnEntry((fun g: Grp => prop(g)))]
                           @skipping-failing |
                             forall w0: Seq; forall k0: Nat; (not (not prop(at(w0, k0)))) -> forall v0: Seq; forall p0: Nat; ((forall j: Nat; less_than(j, p0) -> exists i: Nat; less_than(i, k0) and at(v0, j) = at(w0, i) and (not prop(at(w0, i)))) and (forall i: Nat; forall j: Nat; less_than(i, p0) -> less_than(j, p0) -> at(v0, i) = at(v0, j) -> i = j) and (forall i: Nat; less_than(i, k0) -> (not prop(at(w0, i))) -> exists j: Nat; less_than(j, p0) and at(v0, j) = at(w0, i))) -> ((forall j: Nat; less_than(j, p0) -> exists i: Nat; less_than(i, succ(k0)) and at(v0, j) = at(w0, i) and (not prop(at(w0, i)))) and (forall i: Nat; forall j: Nat; less_than(i, p0) -> less_than(j, p0) -> at(v0, i) = at(v0, j) -> i = j) and (forall i: Nat; less_than(i, succ(k0)) -> (not prop(at(w0, i))) -> exists j: Nat; less_than(j, p0) and at(v0, j) = at(w0, i)))
-                            [using instantiation skippingAnEntry((fun g: Grp => not prop(g)))]
+                            [using model(GroupSeqIsIndexed) indexed.skippingAnEntry((fun g: Grp => not prop(g)))]
                           @entry-satisfies-or-not |
                             prop(at(w, k)) or (not prop(at(w, k)))
                             [using tautology]
@@ -1182,6 +1028,11 @@ proof
 qed
 
 // Two distinct indices below q force 1 < q.
+//
+// CANDIDATE FOR std/indexed.b4m: single-use today, but pure index arithmetic — its proof cites
+// only Peano order facts (lessThanSuccSplit, notLessThanZero, succPreservesOrder, zeroOrSucc)
+// and mentions no group structure at all. Moving it would make it available to every carrier
+// that models the container (six share the `at(s, i)` shape), not just this one.
 theorem twoDistinctIndicesBelow: forall q: Nat; forall a: Nat; forall b: Nat;
   less_than(a, q) -> less_than(b, q) -> a != b -> less_than(succ(ZERO), q)
 proof
@@ -1401,6 +1252,12 @@ qed
 
 // An injective listing whose entries all lie in a two-element set {g, h} has at most two
 // entries: three would repeat a value.
+//
+// CANDIDATE FOR std/indexed.b4m: single-use today, and carrier-agnostic in substance — the
+// argument is pigeonhole on indices, citing only Peano facts. It names `Grp` in its signature
+// (`g`, `h` are the two values) but uses NO group operation, so over `Indexed`/`Item` it would
+// read identically and serve every carrier. Moving it needs `succIsNotSuccSucc` /
+// `zeroIsNotSucc` / `zeroBelowSucc` to travel too — see the Peano note on those.
 theorem twoValuesAdmitAtMostTwoEntries: forall v: Seq; forall q: Nat; forall g: Grp; forall h: Grp;
   (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> at(v, i) = at(v, j) -> i = j) ->
   (forall i: Nat; less_than(i, q) -> (at(v, i) = g or at(v, i) = h)) ->
