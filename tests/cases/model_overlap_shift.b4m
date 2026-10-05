@@ -1,0 +1,99 @@
+// A MODEL THAT SHIFTS A THEORY UP ONE LEVEL ONTO ITSELF — source/target OVERLAP, sort flavour.
+//
+// `BoxIsBag` maps `Item: Bag` and `Bag: Box`: `Bag` is the TARGET of the first line and the
+// SOURCE of the second. One application of the model is right (`holds(Item, Bag)` becomes
+// `boxHolds(Bag, Box)`); a second application would carry an already-shifted `Bag` on to
+// `Box` and hand `boxHolds` a `Box` in its `Bag` slot — "expected sort 'Bag', got 'Box'".
+// An accelerant's synthetic is built from TARGET-space terms and then re-elaborated, which
+// is exactly where that second application used to happen. Stamped symbols are now final.
+//
+// `std/collection.b4m` (`set.Element: Set`, `set.Set: Collection`) is this shape.
+
+sort Item
+sort Bag
+pred holds(x: Item, b: Bag)
+func join(a: Bag, b: Bag) => Bag
+axiom joinHolds: forall a, b: Bag; forall x: Item; holds(x, join(a, b)) iff (holds(x, a) or holds(x, b))
+axiom bagExtensionality: forall a, b: Bag;
+  (forall x: Item; holds(x, a) -> holds(x, b)) -> (forall x: Item; holds(x, b) -> holds(x, a)) -> a = b
+
+// commutativity of join, proved with accelerants (specialize + tautology) — each builds a
+// synthetic whose terms mention BOTH `Item` and `Bag`.
+theorem joinCommutative: forall a, b: Bag; join(a, b) = join(b, a)
+proof
+  @generalize-a |
+    fix a: Bag {
+      @generalize-b |
+        fix b: Bag {
+          @a-join-b-holds |
+            forall x: Item; holds(x, join(a, b)) iff (holds(x, a) or holds(x, b))
+            [using specialize joinHolds(a, b)]
+          @b-join-a-holds |
+            forall x: Item; holds(x, join(b, a)) iff (holds(x, b) or holds(x, a))
+            [using specialize joinHolds(b, a)]
+          @generalize-x-forward |
+            fix x: Item {
+              @a-join-b-holds-at-x |
+                holds(x, join(a, b)) iff (holds(x, a) or holds(x, b))
+                [by forall_elim(x) a-join-b-holds]
+              @b-join-a-holds-at-x |
+                holds(x, join(b, a)) iff (holds(x, b) or holds(x, a))
+                [by forall_elim(x) b-join-a-holds]
+              @conclusion-forward-at-x |
+                holds(x, join(a, b)) -> holds(x, join(b, a))
+                [using tautology a-join-b-holds-at-x b-join-a-holds-at-x]
+            }
+          @forward |
+            forall x: Item; holds(x, join(a, b)) -> holds(x, join(b, a))
+            [by forall_intro generalize-x-forward]
+          @generalize-x-backward |
+            fix x: Item {
+              @a-join-b-holds-at-x-again |
+                holds(x, join(a, b)) iff (holds(x, a) or holds(x, b))
+                [by forall_elim(x) a-join-b-holds]
+              @b-join-a-holds-at-x-again |
+                holds(x, join(b, a)) iff (holds(x, b) or holds(x, a))
+                [by forall_elim(x) b-join-a-holds]
+              @conclusion-backward-at-x |
+                holds(x, join(b, a)) -> holds(x, join(a, b))
+                [using tautology a-join-b-holds-at-x-again b-join-a-holds-at-x-again]
+            }
+          @backward |
+            forall x: Item; holds(x, join(b, a)) -> holds(x, join(a, b))
+            [by forall_intro generalize-x-backward]
+          @conclusion-join-commutes-at-a-b |
+            join(a, b) = join(b, a)
+            [using specialize bagExtensionality(join(a, b), join(b, a)) forward backward]
+        }
+      @discharge-b |
+        forall b: Bag; join(a, b) = join(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Bag; join(a, b) = join(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// one level up: a Box holds Bags, exactly as a Bag holds Items.
+sort Box
+pred boxHolds(b: Bag, c: Box)
+func boxJoin(a: Box, b: Box) => Box
+axiom boxJoinHolds: forall a, b: Box; forall s: Bag; boxHolds(s, boxJoin(a, b)) iff (boxHolds(s, a) or boxHolds(s, b))
+axiom boxExtensionality: forall a, b: Box;
+  (forall s: Bag; boxHolds(s, a) -> boxHolds(s, b)) -> (forall s: Bag; boxHolds(s, b) -> boxHolds(s, a)) -> a = b
+
+model BoxIsBag {
+  Item: Bag
+  Bag: Box
+  holds: boxHolds
+  join: boxJoin
+  joinHolds <- boxJoinHolds
+  bagExtensionality <- boxExtensionality
+}
+
+theorem boxJoinCommutative: forall a, b: Box; boxJoin(a, b) = boxJoin(b, a)
+proof
+  @conclusion |
+    forall a, b: Box; boxJoin(a, b) = boxJoin(b, a)
+    [using model(BoxIsBag) joinCommutative]
+qed

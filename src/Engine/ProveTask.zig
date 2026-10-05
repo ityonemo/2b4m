@@ -95,9 +95,6 @@ pub const Instance = struct {
     /// OFF, so a source-space pass inside the instance (accelerant producers' inputs — see
     /// Prove.source_formulas) substitutes source terms for the params, never target ones.
     args_source: []const DurableArg,
-    /// SYNTHETIC (accelerant-generated) schema: its formulas are delaborated from already-
-    /// elaborated terms — re-elaboration must not re-inject refined-sort guards (13e).
-    synthetic: bool = false,
 };
 
 /// A schema argument as durable pool data (mirrors `Schema.SchemaArg` with TermOffs).
@@ -300,7 +297,6 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, st.prove.pool, self.sink, st.source, st.walk, st.prove.ns, &st.prove.fresh_counter);
     e.schema_args = st.prove.schema_args; // resolve schema params (null in ordinary proofs)
     e.model = st.prove.model; // remap source globals for a model transfer (identity else)
-    e.no_relativize = st.prove.pre_relativized; // synthetic instance: no guard re-injection
     // a guarded application in the STATEMENT owes its obligation just as one in a step does —
     // it is looked up in the statement's own knowledge (a binder / antecedent teaches: a
     // self-relativized `forall d; d != ZERO -> …` discharges; a bare `div(ONE, ZERO)` does not).
@@ -645,7 +641,6 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     // PROOF TREE: everything this proof demands records THIS fact as its parent.
     prove.self_key = .{ .namespace = ns, .name = task.name };
     prove.source_ast = inst_source_ast;
-    prove.pre_relativized = inst.synthetic; // delaborated formulas: no guard re-injection
 
     // rebuild the live SchemaArgs by copying each durable arg into the task's scratchpad.
     const args = try self.arena.create(Schema.SchemaArgs);
@@ -744,7 +739,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
                     const arg1 = try self.arena.alloc(*const ast.Expr, 1);
                     arg1[0] = try b.nameExpr(gp.name);
                     const call = try self.arena.create(ast.Expr);
-                    call.* = .{ .call = .{ .callee = b.symTok(q, true), .args = arg1 } };
+                    call.* = .{ .call = .{ .callee = b.symTok(q), .args = arg1 } };
                     try guards.append(self.arena, call);
                 },
             };

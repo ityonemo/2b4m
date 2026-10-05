@@ -376,6 +376,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc_commut.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_tautology.b4m" });
+    // SOURCE/TARGET OVERLAP: a model whose target is also one of its sources. A synthetic is
+    // built from TARGET-space terms, so its stamped symbols must be FINAL — re-interpreting
+    // them doubles the mapping (`Thing: Part` with `Part = Thing where inPart` re-refines a
+    // binder and doubles its guard; `Item: Bag`, `Bag: Box` carries a shifted `Bag` on to
+    // `Box`). Both failed before `Accelerant.Builder` stamped `.universe`.
+    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_refinement.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_shift.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_polynomial.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_arithmetic.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_extensionality.b4m" });
