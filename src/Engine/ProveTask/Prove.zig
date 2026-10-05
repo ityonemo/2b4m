@@ -1762,9 +1762,13 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
         // in source space an arg is read from the source AST (see `source_ast`).
         const arg_expr = if (source_space) self.sourceExpr(arg_raw) else arg_raw;
         const pname = tokName(p.name);
-        if (p.arg_sorts.len == 0) {
+        // Switch on the KIND, not the arity. These used to coincide ("no args" ⇒ "is a value"),
+        // but a nullary PRED `q()` has zero args and is still predicate-shaped — it binds a whole
+        // proposition, so it takes the generator path with an empty argument list, not the value
+        // path (which would ask for a result sort a pred does not have).
+        if (p.kind == .value) {
             // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
-            const want = try se.resolveSortTok(p.result);
+            const want = try se.resolveSortTok(p.resultSort().?); // a VALUE param: token present
             const typed = try e.elaborateExpr(arg_expr);
             // a value param declared `Prop` has no carrier either (see the generator case below).
             const want_carrier: InternPool.Index = if (want == Elab.prop_sort) @enumFromInt(@intFromEnum(want)) else self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
@@ -1782,12 +1786,12 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
         } else {
             // N-ary GENERATOR param: a lambda arg (or a bare symbol → eta-expand). Sorts are
             // stored at their CARRIERS (a refined resolution leaks guards-as-sorts otherwise).
-            const arg_sorts = try self.ctx.arena.alloc(SortId, p.arg_sorts.len);
-            for (p.arg_sorts, arg_sorts) |st, *out| {
+            const arg_sorts = try self.ctx.arena.alloc(SortId, p.argSorts().len);
+            for (p.argSorts(), arg_sorts) |st, *out| {
                 const rs_sort = try se.resolveSortTok(st);
                 out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rs_sort)))));
             }
-            const rr = try se.resolveSortTok(p.result);
+            const rr = if (p.resultSort()) |rt| try se.resolveSortTok(rt) else Elab.prop_sort;
             // A `=> Prop` generator param yields a PROPOSITION, which has no sort and therefore
             // no carrier to lower to — `carrierOf` would index the absent marker. The common
             // case (`prop: Nat -> Prop`) takes this branch.
@@ -1826,6 +1830,14 @@ fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: [
             return .{ .lambda = .{ .body = body.id, .params = fresh, .arg_sorts = arg_sorts, .result_sort = result_sort } };
         },
         .name => |tok| {
+            // NULLARY: there is nothing to eta-expand, and the name need not be a global — it is
+            // commonly the CALLER's own nullary-pred parameter being passed along (`s1(q)` inside
+            // `a(q)`). Elaborate it in the caller's scope, which resolves a schema param, a local
+            // binder, or a global alike.
+            if (arg_sorts.len == 0) {
+                const prop = try e.elaborateExpr(arg_expr);
+                return .{ .lambda = .{ .body = prop.id, .params = &.{}, .arg_sorts = &.{}, .result_sort = result_sort } };
+            }
             // eta-sugar: a bare symbol `p` of the signature → `fun x.. => p(x..)`.
             const fresh = try self.ctx.arena.alloc(StrId, arg_sorts.len);
             const fvars = try self.ctx.arena.alloc(TermId, arg_sorts.len);
@@ -1963,8 +1975,9 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
 fn demandSchemaParamSorts(self: *Prove, rs: ResolvedSchema) Allocator.Error!?Engine.TaskIndex {
     var refs: std.ArrayList(RefScan.Ref) = .empty;
     for (rs.fact.params.?) |p| {
-        for (p.arg_sorts) |t| try appendSortRef(self.ctx.arena, &refs, t);
-        try appendSortRef(self.ctx.arena, &refs, p.result);
+        for (p.argSorts()) |t| try appendSortRef(self.ctx.arena, &refs, t);
+        // a PRED param has no result token to demand (its result is `Prop`, which is reserved).
+        if (p.resultSort()) |rt| try appendSortRef(self.ctx.arena, &refs, rt);
     }
     if (refs.items.len == 0) return null;
     return resolveRefs(self.ctx, self.h, rs.file, rs.ns, self.model, self.self_key, refs.items);
@@ -2390,12 +2403,12 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
                 switch (a) {
                     .value => try twin.put(self.ctx.arena, pname, a),
                     .lambda => |l| {
-                        const src_args = try self.ctx.arena.alloc(SortId, p2.arg_sorts.len);
-                        for (p2.arg_sorts, src_args) |st, *out| {
+                        const src_args = try self.ctx.arena.alloc(SortId, p2.argSorts().len);
+                        for (p2.argSorts(), src_args) |st, *out| {
                             const rsrt = src_se.resolveSortTok(st) catch return .failed;
                             out.* = if (rsrt == Elab.prop_sort) rsrt else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
                         }
-                        const rrr = src_se.resolveSortTok(p2.result) catch return .failed;
+                        const rrr = if (p2.resultSort()) |rt| (src_se.resolveSortTok(rt) catch return .failed) else Elab.prop_sort;
                         // `=> Prop` has no sort and so no carrier (see bindSchemaArgsUnder).
                         const rrr_carrier: SortId = if (rrr == Elab.prop_sort) rrr else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr)))));
                         try twin.put(self.ctx.arena, pname, .{ .lambda = .{
@@ -2887,7 +2900,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const fname = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "f{d}", .{i + 1}));
         const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
         head_formula = try self.pool.substFvar(head_formula, fv.name, pf);
-        fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.sortTok(fv.sort) };
+        fparams[i] = .{ .name = b.tok(fname), .kind = .{ .value = b.sortTok(fv.sort) } };
         // the call-site arg names the fvar by its EXACT hygienic name (`n#6`, never lexable), and
         // the bind is keyed the same way: two eigenvariables that DISPLAY alike (the schema's
         // own `fix n` and a caller `n` captured through a lambda) stay distinct.
@@ -2905,7 +2918,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
             return self.fail(c.rule.start, "specialize: head is not universally quantified enough for {d} argument(s)", .{nargs});
         };
         tail = opened.body;
-        arg_params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.sortTok(opened.sort) };
+        arg_params[i] = .{ .name = b.tok(pnames[i]), .kind = .{ .value = b.sortTok(opened.sort) } };
     }
     // schema params = the free-eigenvar params FIRST, then the ∀-arg params.
     const params = try std.mem.concat(self.ctx.arena, ast.SchemaParam, &.{ fparams, arg_params });
@@ -3335,7 +3348,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |pname, sort, *pp| {
-        pp.* = .{ .name = b.tok(pname), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(pname), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     return .{
@@ -3991,7 +4004,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     // deterministic hash-name from the (pre-substitution) full proposition (re-entry stable).
@@ -4530,7 +4543,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     // deterministic hash-name from the full proposition (re-entry stable).
@@ -5247,7 +5260,7 @@ fn finishReorder(
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -5348,7 +5361,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -6154,7 +6167,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
     const body_expr = try b.termExpr(inner_prop);
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, inner_prop);
