@@ -69,16 +69,17 @@ pub const Builder = struct {
         return .{ .tag = .identifier, .start = self.loc, .end = self.loc, .name = name };
     }
 
-    /// A synthetic SYMBOL token (lexer.Token.Tag.symbol): the resolved identity `sym` itself.
-    /// `exact` = the parent/universe-space symbol, NOT subject to the ambient model (a refined
-    /// target sort's guard predicate); otherwise the model applies as to any resolved name.
-    pub fn symTok(self: *Builder, sym: InternPool.Index, exact: bool) Token {
-        return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym, .qualifier = if (exact) .universe else .none };
+    /// A synthetic SYMBOL token (lexer.Token.Tag.symbol): the resolved identity `sym` itself,
+    /// stamped FINAL (`.qualifier = .universe`). A synthetic is built from TERMS, which already
+    /// live in the space the proof runs in — the ambient model must not interpret them a second
+    /// time (see `Elab.resolveSymbolTok` for the two kinds of stamped symbol).
+    pub fn symTok(self: *Builder, sym: InternPool.Index) Token {
+        return .{ .tag = .symbol, .start = self.loc, .end = self.loc, .name = sym, .qualifier = .universe };
     }
 
     /// A sort token for a resolved sort: its identity (an anonymous refined sort has no name).
     pub fn sortTok(self: *Builder, sort: term.SortId) Token {
-        return self.symTok(@enumFromInt(@intFromEnum(sort)), false);
+        return self.symTok(@enumFromInt(@intFromEnum(sort)));
     }
 
     pub fn intern(self: *Builder, bytes: []const u8) Allocator.Error!StrId {
@@ -92,10 +93,11 @@ pub const Builder = struct {
         return e;
     }
 
-    /// Delaborate a kernel term into a fresh AST sub-tree (via `Delaborate`).
+    /// Delaborate a kernel term into a fresh AST sub-tree (via `Delaborate`), its symbols
+    /// stamped FINAL — a term's symbols are already interpreted (see `symTok`).
     pub fn termExpr(self: *Builder, id: TermId) Allocator.Error!*const ast.Expr {
         try self.seen.append(self.arena, id);
-        return Delaborate.run(self.arena, self.pool, self.interner, id, self.loc);
+        return Delaborate.runExact(self.arena, self.pool, self.interner, id, self.loc);
     }
 
     /// `lhs -> rhs`.

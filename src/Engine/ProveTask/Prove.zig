@@ -130,15 +130,13 @@ schema_params: []const StrId = &.{},
 /// via resolveFactRef) is filtered `applyModel(model, source)`, so source names remap to
 /// their targets. `.universe` = an ordinary (identity) proof.
 model: InternPool.Index = .universe,
+/// TRUE while an accelerant's synthetic is produced in the PAINTED (target) namespace.
+painted_production: bool = false,
 /// THE PROOF TREE: this proof's own `(namespace, name)`. Every ProveTask this proof demands
 /// inherits it as `parent`, so the chain records "X was proved because Y's proof needed it".
 /// Null only for a context with no owning fact (the statement-elaboration helper). See
 /// `Context.proof_parent`.
 self_key: ?FactKV.Key = null,
-/// SYNTHETIC (accelerant-generated) schema instance (13e): its formulas were DELABORATED
-/// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
-/// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
-pre_relativized: bool = false,
 /// VALUE-PARAM GUARD WRAPPERS around a model-transferred schema instance's proof (injected by
 /// the instance ProveTask): the outermost `guard_wrappers` block levels are `assume good(p)`
 /// blocks whose export claims (`good(p) -> …`) are TARGET-space steps with no source-space
@@ -189,7 +187,6 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
-    e.no_relativize = self.pre_relativized; // synthetic instance: skip guard re-injection
     // obligations are checked in the PROCESS pass only (a read-pass elaboration is redone there).
     if (self.current_block) |kb| {
         e.known = &self.known;
@@ -559,7 +556,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         const c = step.body.claim;
         if (c.rule.name == InternPool.RuleStr.instantiation.id()) {
             var e = self.elab(w);
-            switch (try self.demandInstance(&e, null, c, false)) {
+            switch (try self.demandInstance(&e, null, c)) {
                 .proven => return null, // ready — process can run lowerInstantiate
                 .blocked => |t| return t,
                 .failed => return null, // diagnosed; process will re-hit .failed and reject
@@ -1075,7 +1072,15 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
         const src_refined = try se.resolveBinderSort(b);
         break :blk @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(src_refined)))));
     } else sort;
-    w.pending_binder = .{ .sort = sort, .source_sort = source_sort, .fvar = fvar };
+    // record the REFINED sort too: `sort` is its carrier, and an accelerant that abstracts this
+    // binder into a schema param needs the refinement to re-emit its guard (see `paramGuards`).
+    const refined_ix: InternPool.Index = @enumFromInt(@intFromEnum(refined));
+    w.pending_binder = .{
+        .sort = sort,
+        .source_sort = source_sort,
+        .fvar = fvar,
+        .refined = if (self.ctx.interner.isRefined(refined_ix)) refined_ix else InternPool.Index.none,
+    };
     // build the guard over the fresh fvar (conjunction if multiple qualifiers), keeping each
     // qualifier's atom (what the binder TEACHES, see `teachBinder`).
     var guard: ?TermId = null;
@@ -1892,7 +1897,7 @@ fn reifyArgs(self: *Prove, pnames: []const StrId, args: *const Schema.SchemaArgs
 /// `se`: a SOURCE-space Elab for binding the args' source twins under a model transfer (the
 /// accelerant plumbing passes one with the producer's fvar binds in scope); null → one is
 /// derived from `e`'s walk. Unused outside a transfer.
-fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthetic: bool) Allocator.Error!InstanceOutcome {
+fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
     const rs = self.resolveSchemaRef(c.schema.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -1910,7 +1915,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
     // SOURCE-space twins of the args (see `source_formulas`): bound with the model off, so a
     // source-space pass inside the instance substitutes source terms for the params. The same
     // map outside a model transfer.
-    const args_source: *Schema.SchemaArgs = if (self.sourceSpaceAccelerants()) blk: {
+    const args_source: *Schema.SchemaArgs = if (self.sourceSpaceAccelerants() and !self.painted_production) blk: {
         var derived = self.sourceElab(e.walk);
         const sp: *Elab = se orelse &derived;
         break :blk self.bindSchemaArgs(sp, rs, c, true) catch |err| switch (err) {
@@ -1964,7 +1969,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
         .parent = self.self_key, // proof tree: this instance exists because THIS proof cited it
-        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
+        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source },
     }));
     return .{ .blocked = blocker };
 }
@@ -2067,7 +2072,7 @@ fn collectArgFvars(self: *Prove, arg: Schema.SchemaArg, out: *std.ArrayList(term
 /// premises and requires the final consequent == the citing claim.
 fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
-    const outcome = try self.demandInstance(e, null, c, false);
+    const outcome = try self.demandInstance(e, null, c);
     const fact = switch (outcome) {
         .proven => |ix| blk: {
             self.inheritHoles(ix);
@@ -2569,29 +2574,17 @@ fn elaborateGoal(e: *Elab, formula: *const ast.Expr) Error!TermId {
 /// exactly like `demandInstance`. RE-ENTRANT: racks + suspends the first pass; on resume the
 /// front gates (IdentKV for the schema, FactKV for the instance) skip the already-done work.
 fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
-    // ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL. Under a model
-    // transfer `goal` (from the ambient Elab) is relativized to the target; a synthetic built
-    // from it would delaborate TARGET names (`Int`) into a schema registered in the SOURCE file
-    // (`group.b4m`), where they don't resolve. So the producer sees the goal re-elaborated with
-    // the model OFF (from `c.formula` — the SAME term on every pass, so the hash-name is
-    // re-entry stable), its local premises from `source_formulas`, and its cited global facts
-    // RAW (`resolveFactRef` skips the transfer/overlay redirection while `self.model` is the
-    // universe). The synthetic is then a plain source-space theorem, and `demandInstance` racks
-    // its instance ProveTask WITH the ambient model, which relativizes it (through a COMPOSED
-    // model when nested) to exactly the space the claim lives in. The universe case is untouched.
-    const source_mode = self.sourceSpaceAccelerants();
-    const goal_source: TermId = if (source_mode) blk: {
-        var se = self.sourceElab(w);
-        break :blk elaborateGoal(&se, self.sourceExpr(c.formula)) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Recover => return .failed,
-        };
-    } else goal;
+    // ACCELERANTS PRODUCE IN THE AMBIENT NAMESPACE. The producer sees `goal` exactly as the
+    // claim's proof does — under a model transfer, already interpreted into the target space —
+    // and its synthetic is built from those terms, so its symbols are stamped FINAL (see
+    // `Accelerant.Builder.symTok`): the instance ProveTask runs under the same model and must
+    // not interpret them a second time. `painted_production` tells `demandInstance` that no
+    // source-space twin of the args exists (there is no source-space pass to feed).
+    const prev_painted = self.painted_production;
+    self.painted_production = true;
+    defer self.painted_production = prev_painted;
     const syn = blk: {
-        const ambient = self.model;
-        if (source_mode) self.model = .universe; // produce in source space (see above)
-        defer self.model = ambient;
-        const produced = self.produceAccelerant(w, e, goal_source, c) catch |err| switch (err) {
+        const produced = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed,
         };
@@ -2662,26 +2655,18 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // `se` is the SOURCE-space twin of `e` (binds at their recorded source sort): under a model
     // transfer the instance's arg twins are bound through it (demandInstance).
     const scope_mark = e.scopeMark();
-    var se = self.sourceElab(w);
-    const se_mark = se.scopeMark();
     for (syn.fvar_binds) |bind| {
         // an fvar lives at a CARRIER (bindProofVar lowers a refined binder's sort): the model's
         // image of the source sort may be a REFINED target (`Src: GoodTgt`) — bind at its carrier,
         // so the arg elaborates to the very fvar the walk bound (sort is part of its identity).
+        // PAINTED production: `bind.sort` was read off a TARGET-space term, so it is already the
+        // image — the model does not apply to it (see `Elab.resolveSymbolTok`).
         const sort_ix: InternPool.Index = @enumFromInt(@intFromEnum(bind.sort));
-        const image = self.ctx.interner.applyModel(self.model, sort_ix);
-        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(image)));
+        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(sort_ix)));
         e.pushBinder(bind.name, target_sort, bind.fvar) catch return error.OutOfMemory;
-        se.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
     }
     defer e.scopeTruncate(scope_mark);
-    defer se.scopeTruncate(se_mark);
-    // `synthetic` (→ the instance's no_relativize) skips refined-sort guard injection because a
-    // synthetic's text was DELABORATED from already-elaborated terms with the guards baked in.
-    // That holds in the universe. Under a model transfer the synthetic is SOURCE-space text: the
-    // model's target-side guards (`Src → Tgt where good`) were never in it, so the instance must
-    // inject them like a parsed schema — matching the guard a `fix` binder gets (bindProofVar).
-    return self.demandInstance(e, &se, inst_c, !source_mode);
+    return self.demandInstance(e, null, inst_c);
 }
 
 /// Rewrite a synthetic fact decl's NAME token identity (the `{m<N>}` model-mangle). Only the
@@ -4151,6 +4136,36 @@ fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites_in: []const 
     return body_steps;
 }
 
+/// Wrap `body_steps` (proving `inner`) in `assume good(p_i) { … }` + `implies_intro` per param
+/// guard, outermost = guards[0], so the synthetic's statement becomes
+/// `good(p_0) -> … -> inner`. Unlike `wrapSimplifyPremises` a guard has no local cite to
+/// restate — nothing inside the body needs to NAME it; it only has to be assumed so the
+/// relativized lemma's leaked guard is discharged from the assumption (source 2c). See
+/// `paramGuards` for why the synthetic owes these at all.
+fn wrapParamGuards(self: *Prove, b: *Accelerant.Builder, guards: []const TermId, inner: TermId, body_steps: []const ast.Step) Error![]const ast.Step {
+    if (guards.len == 0) return body_steps;
+    var steps = body_steps;
+    var prop = inner;
+    var i: usize = guards.len;
+    while (i > 0) {
+        i -= 1;
+        const blk_label = try self.freshNamed("assume-guard");
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(guards[i]), steps));
+        prop = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = guards[i], .rhs = prop } });
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try self.freshNamed("export-guard"),
+            try b.termExpr(prop),
+            .by,
+            try self.internStr("implies_intro"),
+            &.{},
+            try self.oneRef(b, blk_label),
+        ));
+        steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return steps;
+}
+
 /// Wrap the premise-wrapped `body_steps` (proving `inner_prop = prem0 -> … -> (s = t)`) in
 /// nested `fix` blocks for the ∀ eigenvariables (outermost = eigen[0]), concluding each level
 /// with `forall_intro`. With no eigenvariables the steps pass through unchanged (plain
@@ -4241,6 +4256,35 @@ const FvarAbstraction = struct {
 /// one INHERITED from a schema-instance monomorphization (a lambda capturing the instantiating
 /// proof's variable — no binder of its own here) resolves too — even when it DISPLAYS like a
 /// local one (the schema's own `fix n` vs a captured `n`: the bug this replaces).
+/// The GUARD ANTECEDENTS a painted synthetic owes for its abstracted params.
+///
+/// `abstractGoal` turns the goal's free caller-locals into schema params. Outside a guarded
+/// model that loses nothing. Under one, the caller-local was a `fix a: H` whose guard
+/// `good(a)` is available in the citing proof via `[by predicate]` — but the PARAM `p1` has
+/// no enclosing guarded `fix`, so a leaked `good(recip(p1))` from a relativized lemma has no
+/// way to be discharged inside the synthetic (`emitDischargeStep` source 2 cannot fire, and
+/// source 3's closure recursion dead-ends on `good(p1)`).
+///
+/// So each param abstracted from a REFINED-sort binder contributes `good(p_i)` as an
+/// antecedent of the synthetic's statement. `withGuardPremises` then discharges it at the
+/// CALL SITE — where the original binder's guard really is in scope — because it treats
+/// antecedents in excess of the supplied premise refs as guards to discharge.
+///
+/// Returns the guard atoms in param order, already phrased over the param fvars.
+fn paramGuards(self: *Prove, w: *const Walk, e: *Elab, abs: FvarAbstraction) Error![]const TermId {
+    var out: std.ArrayList(TermId) = .empty;
+    for (abs.origs, abs.names, abs.sorts) |orig, pname, psort| {
+        const ident = w.findIdentByFvar(orig) orelse continue;
+        if (ident.info.refined == InternPool.Index.none) continue;
+        const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, ident.info.refined) catch return error.OutOfMemory;
+        for (quals) |qual| {
+            const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = psort } });
+            try out.append(self.ctx.arena, try e.qualifierApp(qual, pf));
+        }
+    }
+    return out.items;
+}
+
 fn fvarBinds(self: *Prove, w: *const Walk, abs: FvarAbstraction) Error![]const Accelerant.Synthetic.FvarBind {
     _ = w;
     var binds: std.ArrayList(Accelerant.Synthetic.FvarBind) = .empty;
@@ -5254,8 +5298,16 @@ fn finishReorder(
     steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
-    // the schema body proposition = the ∀-generalized `inner_prop`.
-    const full_prop = try self.closeOverEigen(inner_prop, eigen);
+    // PARAM GUARDS (painted production under a guarded model): the params abstracted from
+    // refined-sort caller binders owe their guards as the OUTERMOST antecedents — outside the
+    // eigen `fix`es, since a param is not in any `fix`'s scope. Empty in the universe.
+    var e_guard = self.elab(w);
+    const guards = try self.paramGuards(w, &e_guard, abs);
+    const eigen_prop = try self.closeOverEigen(inner_prop, eigen);
+    steps = try self.wrapParamGuards(b, guards, eigen_prop, steps);
+
+    // the schema body proposition = the guard-prefixed ∀-generalized `inner_prop`.
+    const full_prop = try self.impliesChain(eigen_prop, guards);
     const body_expr = try b.termExpr(full_prop);
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);

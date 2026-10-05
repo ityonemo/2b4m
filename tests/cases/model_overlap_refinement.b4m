@@ -1,0 +1,96 @@
+// A MODEL ONTO A REFINEMENT OF ITS OWN SOURCE SORT — source/target OVERLAP, guard flavour.
+//
+// `PartIsThing` maps `Thing` onto `Part = Thing where inPart`: the sort on the LEFT of the
+// mapping is the very sort the RIGHT side refines. Under the transfer, `unitIsNeutral`'s
+// `specialize` step builds a synthetic from TARGET-space terms whose binder sort is the
+// carrier `Thing`; re-elaborating that synthetic must NOT send `Thing` through the model
+// again (→ `Part`, refined, inject `inPart` on top of the `inPart` the text already has).
+// Before stamped symbols were made final this produced
+//   step claims 'forall b1: Thing; inPart(b1) -> inPart(b1) -> op(b1, UNIT) = b1'
+// and was held off only by the `no_relativize` flag. Now the model simply never applies to
+// an already-resolved Index: the model interprets NAMES, once.
+//
+// The subgroup idiom (`group.Grp: H` where `H = Grp where inH`) is this shape.
+
+sort Thing
+const UNIT: Thing
+func op(a: Thing, b: Thing) => Thing
+axiom opUnitLeft: forall a: Thing; op(UNIT, a) = a
+axiom opComm: forall a, b: Thing; op(a, b) = op(b, a)
+
+// a THEOREM of the source theory: the transfer relativizes it, so the guard is in its text.
+theorem opUnitRight: forall a: Thing; op(a, UNIT) = a
+proof
+  @op-commutes |
+    forall a, b: Thing; op(a, b) = op(b, a)
+    [by cite opComm]
+  @unit-on-the-left |
+    forall a: Thing; op(UNIT, a) = a
+    [by cite opUnitLeft]
+  @generalize-a |
+    fix a: Thing {
+      @a-times-unit-commuted |
+        op(a, UNIT) = op(UNIT, a)
+        [by forall_elim(a, UNIT) op-commutes]
+      @unit-times-a-is-a |
+        op(UNIT, a) = a
+        [by forall_elim(a) unit-on-the-left]
+      @conclusion-a-times-unit |
+        op(a, UNIT) = a
+        [by rewrite a-times-unit-commuted unit-times-a-is-a]
+    }
+  @conclusion |
+    forall a: Thing; op(a, UNIT) = a
+    [by forall_intro generalize-a]
+qed
+
+// an accelerant citing that theorem: its synthetic round-trips through AST.
+theorem unitIsNeutral: forall x: Thing; (forall g: Thing; op(x, g) = g) -> x = UNIT
+proof
+  @generalize-x |
+    fix x: Thing {
+      @given-x-is-left-unit |
+        assume forall g: Thing; op(x, g) = g {
+          @x-is-left-unit |
+            forall g: Thing; op(x, g) = g
+            [by hypothesis given-x-is-left-unit]
+          @x-times-unit-is-unit |
+            op(x, UNIT) = UNIT
+            [by forall_elim(UNIT) x-is-left-unit]
+          @x-times-unit-is-x |
+            op(x, UNIT) = x
+            [using specialize opUnitRight(x)]
+          @x-is-unit |
+            x = UNIT
+            [by rewrite x-times-unit-is-x x-times-unit-is-unit]
+        }
+      @discharge-x |
+        (forall g: Thing; op(x, g) = g) -> x = UNIT
+        [by implies_intro given-x-is-left-unit]
+    }
+  @conclusion |
+    forall x: Thing; (forall g: Thing; op(x, g) = g) -> x = UNIT
+    [by forall_intro generalize-x]
+qed
+
+// the refinement of the theory's OWN sort, and the guarded model onto it.
+pred inPart(x: Thing)
+sort Part = Thing where inPart
+axiom punitIsInPart: inPart(UNIT)
+axiom partClosedUnderOp: forall a, b: Thing; inPart(a) -> inPart(b) -> inPart(op(a, b))
+
+model PartIsThing {
+  Thing: Part
+  UNIT: UNIT(punitIsInPart)
+  op: op -| partClosedUnderOp
+  opUnitLeft <- opUnitLeft
+  opComm <- opComm
+}
+
+theorem transferredUnitIsNeutral: forall x: Part;
+  (forall g: Part; op(x, g) = g) -> x = UNIT
+proof
+  @conclusion |
+    forall x: Part; (forall g: Part; op(x, g) = g) -> x = UNIT
+    [using model(PartIsThing) unitIsNeutral]
+qed

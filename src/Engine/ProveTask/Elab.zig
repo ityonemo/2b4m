@@ -146,11 +146,6 @@ model: InternPool.Index = .universe,
 /// source symbol's parameter (`Src`) would be checked against a target-sorted fvar (`Tgt`).
 /// Set by `Prove.sourceElab`; the accelerant producers' inputs are built this way.
 source_space: bool = false,
-/// NO_RELATIVIZE (13e): set when elaborating a SYNTHETIC (accelerant-generated) schema's
-/// formulas — they were DELABORATED from already-elaborated terms, so refined-sort guard
-/// injection at binders must be SKIPPED (it would double the guards). Parsed schemas keep
-/// injection (their AST is source text, not a round-trip).
-no_relativize: bool = false,
 /// The driving Prove's known-proposition table (see `Known`) and the block a use in this
 /// elaboration sits in. Null `known` = obligations not checked (a source-space pass, a throwaway
 /// sort-resolution Elab, the read pass — the process pass re-elaborates and checks).
@@ -279,10 +274,10 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
                     break :blk try self.inferBinderSort(q.body, bname, q.binders[0].name);
                 } else try self.resolveBinderSort(q.binders[0]);
                 const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
-                // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
-                // already-elaborated (already-relativized) terms — re-injecting guards here would
-                // DOUBLE them (`inH(x) -> inH(x) -> …`). The faithful round-trip skips injection.
-                const quals: []const InternPool.Index = if (self.no_relativize) &.{} else self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
+                // A refined binder sort injects its guard. A SYNTHETIC's binder never reaches here
+                // refined: its sort token is a stamped carrier Index, and a stamped symbol is final
+                // (`resolveSymbolTok`) — so the guards its text already carries are not doubled.
+                const quals: []const InternPool.Index = self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
                 const fresh = try self.arena.alloc(StrId, q.binders.len);
                 const mark = self.scope.items.len;
                 for (q.binders, fresh) |b, *fr| {
@@ -1053,6 +1048,19 @@ pub fn lookupIdentPub(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPoo
 /// symbol, no model). Null for an ordinary name token.
 pub fn resolveSymbolTok(self: *const Elab, tok: lexer.Token) ?InternPool.Index {
     if (tok.tag != .symbol) return null;
+    // A MODEL IS APPLIED ONCE PER `using model(M)` CITATION: the cited proof is interpreted as
+    // a whole (and cached under `(M, src_file).thm`). Its mapping table is origin → origin and
+    // never changes; what varies is which table a name resolution consults. Two kinds of
+    // stamped symbol, told apart by the qualifier:
+    //   `.universe` — FINAL. The Index came out of a TERM produced INSIDE that one application
+    //                 (an accelerant's synthetic, a guard term): it is already interpreted.
+    //                 Applying the model to it again is a second application, wrong whenever
+    //                 a model's sources and targets overlap (`set.Element: Set` + `set.Set:
+    //                 Collection`; `Thing: Part` with `Part = Thing where inPart`).
+    //   `.none`     — a NAME from the cited source text, resolved early. `Expand` stamps a
+    //                 define body's globals this way for hygiene (they resolve in the define's
+    //                 own file, not the use site); the application interprets them here, the
+    //                 same as a written name in `lookupIdent`.
     if (tok.qualifier == .universe) return tok.name;
     return self.interner.applyModel(self.model, tok.name);
 }
