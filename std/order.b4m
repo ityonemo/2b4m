@@ -1,0 +1,648 @@
+// std/order.b4m — the abstract theory of a STRICT ORDER and its non-strict companion.
+//
+// `less_than` is an opaque strict order; `less_or_equal(a, b)` is `less_than(a, b) or a = b`.
+// Every fact derivable from THAT MUCH ALONE is proved here once, and any sort with a
+// transitive strict order inherits it by `model`.
+//
+// WHY THE ORDER FAMILY COULD NOT BE SHARED BEFORE. ℕ and ℤ both prove these, but their
+// ORDER AXIOMS differ: ℕ's gap witness is unconstrained
+// (`lessThanElim: less_than(a,b) -> exists d; add(a,succ(d)) = b`) while ℤ's is
+// nonneg-constrained (`... exists d; nonneg(d) and add(a,succ(d)) = b`), because over ℤ an
+// unconstrained gap would make the order total in the wrong direction. So a proof written
+// against ℕ's axioms is NOT valid over ℤ, and modelling one on the other is unsound.
+//
+// The way through is to notice WHICH facts actually touch the gap axioms. The four below do
+// not: they follow from the definition of `less_or_equal` plus transitivity, nothing else.
+// So transitivity is an OBLIGATION here — each tower keeps its own proof of it, by whatever
+// route its own axioms allow (ℕ by induction on the gap, ℤ through the sign of a difference)
+// — and everything downstream of it is shared.
+//
+// Facts that DO reason from the gap (`lessThanIrreflexive`, `additionPreservesOrder`,
+// `lessOrEqualIsGapExistential`, `lessThanAddCancelLeft`, `trichotomy`, …) stay with their
+// towers: measured against each other their proofs differ in shape, precisely because ℤ must
+// carry the extra `nonneg(d)` conjunct through every step. They are not duplication.
+
+sort Ordered
+pred less_than(a: Ordered, b: Ordered)
+
+// Transparent, and identical in both towers: a ≤ b IS "a < b or a = b".
+define less_or_equal(a, b) = less_than(a, b) or a = b
+
+// THE OBLIGATIONS. A model discharges each with its own proof — by whatever route its own
+// axioms allow — and the theorems below are what it buys. All three are standard properties
+// of a strict total order, and every tower in std already proves them: ℕ by induction on the
+// gap, ℤ through the sign of a difference.
+axiom lessThanTransitive: forall a, b, c: Ordered;
+  less_than(a, b) -> less_than(b, c) -> less_than(a, c)
+axiom lessThanIrreflexive: forall a: Ordered; not less_than(a, a)
+axiom trichotomy: forall a, b: Ordered;
+  less_than(a, b) or a = b or less_than(b, a)
+
+// -- what the strict order gives the non-strict one -------------------------------------------
+
+theorem lessThanToLessOrEqual: forall a, b: Ordered; less_than(a, b) -> less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-a-below-b |
+            assume less_than(a, b) {
+              @a-below-b |
+                less_than(a, b)
+                [by hypothesis given-a-below-b]
+              @a-below-b-or-equal |
+                less_than(a, b) or a = b
+                [by or_intro_left a-below-b]
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [using tautology a-below-b-or-equal]
+            }
+          @below-b-implies-at-most-b |
+            less_than(a, b) -> less_or_equal(a, b)
+            [by implies_intro given-a-below-b]
+        }
+      @discharge-b |
+        forall b: Ordered; less_than(a, b) -> less_or_equal(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_than(a, b) -> less_or_equal(a, b)
+    [by forall_intro generalize-a]
+qed
+
+theorem lessOrEqualRefl: forall a: Ordered; less_or_equal(a, a)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @a-equals-a |
+        a = a
+        [by reflexivity]
+      @a-below-a-or-equal |
+        less_than(a, a) or a = a
+        [by or_intro_right a-equals-a]
+      @a-at-most-a |
+        less_or_equal(a, a)
+        [using tautology a-below-a-or-equal]
+    }
+  @conclusion |
+    forall a: Ordered; less_or_equal(a, a)
+    [by forall_intro generalize-a]
+qed
+
+theorem lessOrEqualSplit: forall a, b: Ordered; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @a-below-b-or-equal |
+                less_than(a, b) or a = b
+                [by hypothesis given-a-at-most-b]
+            }
+          @at-most-b-implies-below-or-equal |
+            less_or_equal(a, b) -> (less_than(a, b) or a = b)
+            [by implies_intro given-a-at-most-b]
+        }
+      @discharge-b |
+        forall b: Ordered; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_or_equal(a, b) -> (less_than(a, b) or a = b)
+    [by forall_intro generalize-a]
+qed
+
+theorem lessOrEqualTransitive: forall a, b, c: Ordered; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @generalize-c |
+            fix c: Ordered {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @given-b-at-most-c |
+                    assume less_or_equal(b, c) {
+                      @a-below-b-or-equal |
+                        less_than(a, b) or a = b
+                        [by hypothesis given-a-at-most-b]
+                      @b-below-c-or-equal |
+                        less_than(b, c) or b = c
+                        [by hypothesis given-b-at-most-c]
+                      // split le(a,b): a < b or a = b
+                      @a-at-most-c |
+                        less_or_equal(a, c)
+                        case a-below-b-or-equal {
+                          @when-a-below-b |
+                            assume less_than(a, b) {
+                              @a-below-b |
+                                less_than(a, b)
+                                [by hypothesis when-a-below-b]
+                              // split le(b,c): b < c or b = c
+                              @conclusion-a-at-most-c |
+                                less_or_equal(a, c)
+                                case b-below-c-or-equal {
+                                  @when-b-below-c |
+                                    assume less_than(b, c) {
+                                      @b-below-c |
+                                        less_than(b, c)
+                                        [by hypothesis when-b-below-c]
+                                      @a-below-c |
+                                        less_than(a, c)
+                                        [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                                      @conclusion-a-at-most-c |
+                                        less_or_equal(a, c)
+                                        [using specialize lessThanToLessOrEqual(a, c) a-below-c]
+                                    }
+                                  @when-b-equals-c |
+                                    assume b = c {
+                                      @b-equals-c |
+                                        b = c
+                                        [by hypothesis when-b-equals-c]
+                                      @a-below-c |
+                                        less_than(a, c)
+                                        [by rewrite b-equals-c a-below-b]
+                                      @conclusion-a-at-most-c |
+                                        less_or_equal(a, c)
+                                        [using specialize lessThanToLessOrEqual(a, c) a-below-c]
+                                    }
+                                }
+                            }
+                          @when-a-equals-b |
+                            assume a = b {
+                              @a-equals-b |
+                                a = b
+                                [by hypothesis when-a-equals-b]
+                              // le(b,c) with a = b gives le(a,c) by rewriting b -> a
+                              @b-at-most-c |
+                                less_or_equal(b, c)
+                                [by hypothesis given-b-at-most-c]
+                              @conclusion-a-at-most-c |
+                                less_or_equal(a, c)
+                                [by rewrite a-equals-b b-at-most-c]
+                            }
+                        }
+                    }
+                  @b-at-most-c-implies-a-at-most-c |
+                    less_or_equal(b, c) -> less_or_equal(a, c)
+                    [by implies_intro given-b-at-most-c]
+                }
+              @a-at-most-b-implies-transitively-at-most-c |
+                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+                [by implies_intro given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: Ordered; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Ordered; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ordered; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+    [by forall_intro generalize-a]
+qed
+theorem lessThanAsymmetric: forall a, b: Ordered; less_than(a, b) -> (not less_than(b, a))
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-a-less-b |
+            assume less_than(a, b) {
+              @a-less-b |
+                less_than(a, b)
+                [by hypothesis given-a-less-b]
+              @given-b-less-a |
+                assume less_than(b, a) {
+                  @b-less-a |
+                    less_than(b, a)
+                    [by hypothesis given-b-less-a]
+                  @a-less-a |
+                    less_than(a, a)
+                    [using specialize lessThanTransitive(a, b, a) a-less-b b-less-a]
+                  @a-not-less-a |
+                    not less_than(a, a)
+                    [using specialize lessThanIrreflexive(a)]
+                }
+              @not-b-less-a |
+                not less_than(b, a)
+                [by not_intro given-b-less-a a-less-a a-not-less-a]
+            }
+          @discharge |
+            less_than(a, b) -> (not less_than(b, a))
+            [by implies_intro given-a-less-b]
+        }
+      @discharge-b |
+        forall b: Ordered; less_than(a, b) -> (not less_than(b, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_than(a, b) -> (not less_than(b, a))
+    [by forall_intro generalize-a]
+qed
+
+// ≤ is TOTAL: trichotomy's three cases collapse to two once a = b is folded into either side.
+theorem lessOrEqualTotal: forall a, b: Ordered; less_or_equal(a, b) or less_or_equal(b, a)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @three-way |
+            less_than(a, b) or a = b or less_than(b, a)
+            [using specialize trichotomy(a, b)]
+          @conclusion-total-at-a-b |
+            less_or_equal(a, b) or less_or_equal(b, a)
+            case three-way {
+              @when-a-below-b |
+                assume less_than(a, b) {
+                  @a-below-b |
+                    less_than(a, b)
+                    [by hypothesis when-a-below-b]
+                  @conclusion-a-at-most-b |
+                    less_or_equal(a, b) or less_or_equal(b, a)
+                    [using tautology a-below-b]
+                }
+              @when-equal |
+                assume a = b {
+                  @a-is-b |
+                    a = b
+                    [by hypothesis when-equal]
+                  @b-is-a |
+                    b = a
+                    [by symmetry a-is-b]
+                  @conclusion-equal-case |
+                    less_or_equal(a, b) or less_or_equal(b, a)
+                    [using tautology a-is-b b-is-a]
+                }
+              @when-b-below-a |
+                assume less_than(b, a) {
+                  @b-below-a |
+                    less_than(b, a)
+                    [by hypothesis when-b-below-a]
+                  @conclusion-b-at-most-a |
+                    less_or_equal(a, b) or less_or_equal(b, a)
+                    [using tautology b-below-a]
+                }
+            }
+        }
+      @discharge-b |
+        forall b: Ordered; less_or_equal(a, b) or less_or_equal(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_or_equal(a, b) or less_or_equal(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// NOT below means at-or-above: the contrapositive reading of trichotomy, and the form most
+// proofs actually want when they have a failed comparison in hand.
+theorem notLessThanImpliesLessOrEqual: forall a, b: Ordered;
+  (not less_than(a, b)) -> less_or_equal(b, a)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-not-below |
+            assume not less_than(a, b) {
+              @not-below |
+                not less_than(a, b)
+                [by hypothesis given-not-below]
+              @three-way |
+                less_than(a, b) or a = b or less_than(b, a)
+                [using specialize trichotomy(a, b)]
+              @conclusion-at-or-above |
+                less_or_equal(b, a)
+                case three-way {
+                  @when-a-below-b |
+                    assume less_than(a, b) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis when-a-below-b]
+                      @conclusion-contradiction |
+                        less_or_equal(b, a)
+                        [using tautology a-below-b not-below]
+                    }
+                  @when-equal |
+                    assume a = b {
+                      @a-is-b |
+                        a = b
+                        [by hypothesis when-equal]
+                      @b-is-a |
+                        b = a
+                        [by symmetry a-is-b]
+                      @conclusion-equal-case |
+                        less_or_equal(b, a)
+                        [using tautology b-is-a]
+                    }
+                  @when-b-below-a |
+                    assume less_than(b, a) {
+                      @b-below-a |
+                        less_than(b, a)
+                        [by hypothesis when-b-below-a]
+                      @conclusion-b-at-most-a |
+                        less_or_equal(b, a)
+                        [using tautology b-below-a]
+                    }
+                }
+            }
+          @discharge |
+            (not less_than(a, b)) -> less_or_equal(b, a)
+            [by implies_intro given-not-below]
+        }
+      @discharge-b |
+        forall b: Ordered; (not less_than(a, b)) -> less_or_equal(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; (not less_than(a, b)) -> less_or_equal(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// THE HUB: a ≤ b is exactly the failure of b < a. Every "I have a failed comparison, what do
+// I know" step in the corpus is one direction of this, so it is stated once as a biconditional
+// and the four implications below are its corollaries.
+theorem lessOrEqualIsNotGreater: forall a, b: Ordered;
+  less_or_equal(a, b) iff (not less_than(b, a))
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @three-way |
+            less_than(a, b) or a = b or less_than(b, a)
+            [using specialize trichotomy(a, b)]
+          @b-not-below-b |
+            not less_than(b, b)
+            [using specialize lessThanIrreflexive(b)]
+          @forward |
+            less_or_equal(a, b) -> (not less_than(b, a))
+            [by implies_intro given-at-most]
+          @given-at-most |
+            assume less_or_equal(a, b) {
+              @at-most |
+                less_or_equal(a, b)
+                [by hypothesis given-at-most]
+              @conclusion-not-greater |
+                not less_than(b, a)
+                case three-way {
+                  @when-a-below-b |
+                    assume less_than(a, b) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis when-a-below-b]
+                      @asymmetric-at-a-b |
+                        less_than(a, b) -> (not less_than(b, a))
+                        [using specialize lessThanAsymmetric(a, b)]
+                      @conclusion-by-asymmetry |
+                        not less_than(b, a)
+                        [using tautology a-below-b asymmetric-at-a-b]
+                    }
+                  @when-equal |
+                    assume a = b {
+                      @a-is-b |
+                        a = b
+                        [by hypothesis when-equal]
+                      @conclusion-by-irreflexivity |
+                        not less_than(b, a)
+                        [by rewrite a-is-b b-not-below-b]
+                    }
+                  @when-b-below-a |
+                    assume less_than(b, a) {
+                      @b-below-a |
+                        less_than(b, a)
+                        [by hypothesis when-b-below-a]
+                      @asymmetric-at-b-a |
+                        less_than(b, a) -> (not less_than(a, b))
+                        [using specialize lessThanAsymmetric(b, a)]
+                      @a-not-below-b |
+                        not less_than(a, b)
+                        [using tautology b-below-a asymmetric-at-b-a]
+                      // at-most's left disjunct is out, so a = b; then b < a IS a < a.
+                      @a-is-b |
+                        a = b
+                        [using tautology at-most a-not-below-b]
+                      @a-below-a |
+                        less_than(a, a)
+                        [by rewrite a-is-b b-below-a]
+                      @a-not-below-a |
+                        not less_than(a, a)
+                        [using specialize lessThanIrreflexive(a)]
+                      @conclusion-contradicts-at-most |
+                        not less_than(b, a)
+                        [using tautology a-below-a a-not-below-a]
+                    }
+                }
+            }
+          @backward |
+            (not less_than(b, a)) -> less_or_equal(a, b)
+            [by implies_intro given-not-greater]
+          @given-not-greater |
+            assume not less_than(b, a) {
+              @not-greater |
+                not less_than(b, a)
+                [by hypothesis given-not-greater]
+              @conclusion-at-most |
+                less_or_equal(a, b)
+                case three-way {
+                  @when-a-below-b |
+                    assume less_than(a, b) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis when-a-below-b]
+                      @conclusion-left-disjunct |
+                        less_or_equal(a, b)
+                        [using tautology a-below-b]
+                    }
+                  @when-equal |
+                    assume a = b {
+                      @a-is-b |
+                        a = b
+                        [by hypothesis when-equal]
+                      @conclusion-right-disjunct |
+                        less_or_equal(a, b)
+                        [using tautology a-is-b]
+                    }
+                  @when-b-below-a |
+                    assume less_than(b, a) {
+                      @b-below-a |
+                        less_than(b, a)
+                        [by hypothesis when-b-below-a]
+                      @conclusion-impossible |
+                        less_or_equal(a, b)
+                        [using tautology b-below-a not-greater]
+                    }
+                }
+            }
+          @conclusion-iff-at-a-b |
+            less_or_equal(a, b) iff (not less_than(b, a))
+            [by iff_intro forward backward]
+        }
+      @discharge-b |
+        forall b: Ordered; less_or_equal(a, b) iff (not less_than(b, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_or_equal(a, b) iff (not less_than(b, a))
+    [by forall_intro generalize-a]
+qed
+
+// -- the four corollaries of the hub ----------------------------------------------------------
+
+// ¬(a ≤ b) → b < a: the other direction of a failed comparison.
+theorem notLessOrEqualImpliesLessThan: forall a, b: Ordered;
+  (not less_or_equal(a, b)) -> less_than(b, a)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @at-most-iff-not-greater |
+            less_or_equal(a, b) iff (not less_than(b, a))
+            [using specialize lessOrEqualIsNotGreater(a, b)]
+          @given-not-at-most |
+            assume not less_or_equal(a, b) {
+              @not-at-most |
+                not less_or_equal(a, b)
+                [by hypothesis given-not-at-most]
+              @conclusion-greater |
+                less_than(b, a)
+                [using tautology not-at-most at-most-iff-not-greater]
+            }
+          @discharge |
+            (not less_or_equal(a, b)) -> less_than(b, a)
+            [by implies_intro given-not-at-most]
+        }
+      @discharge-b |
+        forall b: Ordered; (not less_or_equal(a, b)) -> less_than(b, a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; (not less_or_equal(a, b)) -> less_than(b, a)
+    [by forall_intro generalize-a]
+qed
+
+// ≤ is ANTISYMMETRIC: two-way ≤ forces equality. Both towers prove this with their own gap
+// reasoning; over a strict total order it needs only the hub and irreflexivity.
+theorem lessOrEqualAntisymmetric: forall a, b: Ordered;
+  less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [by hypothesis given-a-at-most-b]
+              @given-b-at-most-a |
+                assume less_or_equal(b, a) {
+                  @b-at-most-a |
+                    less_or_equal(b, a)
+                    [by hypothesis given-b-at-most-a]
+                  @b-at-most-a-iff |
+                    less_or_equal(b, a) iff (not less_than(a, b))
+                    [using specialize lessOrEqualIsNotGreater(b, a)]
+                  @a-not-below-b |
+                    not less_than(a, b)
+                    [using tautology b-at-most-a b-at-most-a-iff]
+                  @conclusion-equal |
+                    a = b
+                    [using tautology a-at-most-b a-not-below-b]
+                }
+              @b-at-most-a-implies-equal |
+                less_or_equal(b, a) -> a = b
+                [by implies_intro given-b-at-most-a]
+            }
+          @discharge |
+            less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+            [by implies_intro given-a-at-most-b]
+        }
+      @discharge-b |
+        forall b: Ordered; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// DISTINCT elements are COMPARABLE: trichotomy with the equal case excluded.
+theorem unequalAreComparable: forall a, b: Ordered;
+  a != b -> (less_than(a, b) or less_than(b, a))
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @three-way |
+            less_than(a, b) or a = b or less_than(b, a)
+            [using specialize trichotomy(a, b)]
+          @given-distinct |
+            assume a != b {
+              @distinct |
+                a != b
+                [by hypothesis given-distinct]
+              @conclusion-comparable |
+                less_than(a, b) or less_than(b, a)
+                [using tautology distinct three-way]
+            }
+          @discharge |
+            a != b -> (less_than(a, b) or less_than(b, a))
+            [by implies_intro given-distinct]
+        }
+      @discharge-b |
+        forall b: Ordered; a != b -> (less_than(a, b) or less_than(b, a))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; a != b -> (less_than(a, b) or less_than(b, a))
+    [by forall_intro generalize-a]
+qed
+
+// STRICT from NON-STRICT: a ≤ b with a ≠ b is a < b.
+theorem lessOrEqualAndUnequalIsLessThan: forall a, b: Ordered;
+  less_or_equal(a, b) -> a != b -> less_than(a, b)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @given-at-most |
+            assume less_or_equal(a, b) {
+              @at-most |
+                less_or_equal(a, b)
+                [by hypothesis given-at-most]
+              @given-distinct |
+                assume a != b {
+                  @distinct |
+                    a != b
+                    [by hypothesis given-distinct]
+                  @conclusion-strict |
+                    less_than(a, b)
+                    [using tautology at-most distinct]
+                }
+              @distinct-implies-strict |
+                a != b -> less_than(a, b)
+                [by implies_intro given-distinct]
+            }
+          @discharge |
+            less_or_equal(a, b) -> a != b -> less_than(a, b)
+            [by implies_intro given-at-most]
+        }
+      @discharge-b |
+        forall b: Ordered; less_or_equal(a, b) -> a != b -> less_than(a, b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ordered; less_or_equal(a, b) -> a != b -> less_than(a, b)
+    [by forall_intro generalize-a]
+qed
