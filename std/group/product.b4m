@@ -165,3 +165,86 @@ proof
     forall p: Pair; opG(opG(fst(p), fst(p)), fst(p)) = EG -> opH(opH(snd(p), snd(p)), snd(p)) = EH -> prodOp(prodOp(p, p), p) = prodE
     [by forall_intro generalize-p]
 qed
+
+// -- §9.2: a PAIR is the identity exactly when BOTH components are -------------------------
+//
+// AATA Theorem 9.21 — "the order of (g₁, …, gₙ) is the lcm of the component orders" — rests
+// on this: (g, h)^k = (e, e) iff g^k = e AND h^k = e, so the exponents that kill the pair are
+// exactly the common multiples, and the least of them is the lcm. This states the `iff` for a
+// pair's value; the exponent version needs `power` over the product sort, which the concrete
+// consumer supplies (`cubeIsIdentityComponentwise` above is the k = 3 instance).
+theorem pairIsIdentityIffComponentsAre: forall p: Pair;
+  p = prodE iff (fst(p) = EG and snd(p) = EH)
+proof
+  @generalize-p |
+    fix p: Pair {
+      @identity-is-the-pair-of-identities |
+        prodE = pair(EG, EH)
+        [by cite prodEDef]
+      @p-is-its-projections |
+        pair(fst(p), snd(p)) = p
+        [using specialize pairExtensionality(p)]
+      // forward: p = prodE makes each projection the corresponding identity
+      @given-p-is-the-identity |
+        assume p = prodE {
+          @p-is-the-identity |
+            p = prodE
+            [by hypothesis given-p-is-the-identity]
+          @p-is-the-identity-pair |
+            p = pair(EG, EH)
+            [using chain p-is-the-identity identity-is-the-pair-of-identities]
+          @first-projection-of-the-identity-pair |
+            fst(pair(EG, EH)) = EG
+            [using specialize fstPair(EG, EH)]
+          @second-projection-of-the-identity-pair |
+            snd(pair(EG, EH)) = EH
+            [using specialize sndPair(EG, EH)]
+          @first-projection-is-eg |
+            fst(p) = EG
+            [by rewrite p-is-the-identity-pair first-projection-of-the-identity-pair]
+          @second-projection-is-eh |
+            snd(p) = EH
+            [by rewrite p-is-the-identity-pair second-projection-of-the-identity-pair]
+          @conclusion-both-components |
+            fst(p) = EG and snd(p) = EH
+            [by and_intro first-projection-is-eg second-projection-is-eh]
+        }
+      @forward |
+        p = prodE -> (fst(p) = EG and snd(p) = EH)
+        [by implies_intro given-p-is-the-identity]
+      // backward: both projections at the identities rebuild prodE by extensionality
+      @given-both-components |
+        assume fst(p) = EG and snd(p) = EH {
+          @both-components |
+            fst(p) = EG and snd(p) = EH
+            [by hypothesis given-both-components]
+          @first-is-eg |
+            fst(p) = EG
+            [by and_elim_left both-components]
+          @second-is-eh |
+            snd(p) = EH
+            [by and_elim_right both-components]
+          @rebuilt-with-eg |
+            pair(EG, snd(p)) = p
+            [by rewrite first-is-eg p-is-its-projections]
+          @rebuilt-with-both |
+            pair(EG, EH) = p
+            [by rewrite second-is-eh rebuilt-with-eg]
+          @identity-rebuilt |
+            prodE = p
+            [using chain identity-is-the-pair-of-identities rebuilt-with-both]
+          @conclusion-p-is-the-identity |
+            p = prodE
+            [by symmetry identity-rebuilt]
+        }
+      @backward |
+        (fst(p) = EG and snd(p) = EH) -> p = prodE
+        [by implies_intro given-both-components]
+      @conclusion-iff |
+        p = prodE iff (fst(p) = EG and snd(p) = EH)
+        [by iff_intro forward backward]
+    }
+  @conclusion |
+    forall p: Pair; p = prodE iff (fst(p) = EG and snd(p) = EH)
+    [by forall_intro generalize-p]
+qed
