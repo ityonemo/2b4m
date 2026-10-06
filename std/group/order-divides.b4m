@@ -720,3 +720,87 @@ proof
       power(gen, toInt(n)) = E
     [by forall_intro generalize-r]
 qed
+
+// -- §7.2's engine: RSA's round trip, as a statement about group exponents -----------------
+//
+// RSA decrypts because the two exponents compose to 1 modulo the group's size: with
+// D·E = k·m + 1 and power(x, m) = E, we get
+//   power(x, D·E) = power(x, k·m + 1) = op(power(power(x, m), k), x) = op(E, x) = x.
+// Judson's "y^D = (x^E)^D = x^{DE} = x^{km+1} = (x^{φ(n)})^k x = (1)^k x = x" IS this chain;
+// the modular arithmetic is only which group you say it in.
+theorem anExponentOneAboveAMultipleOfTheOrderIsTheIdentityMap: forall g: Grp; forall m: Int; forall k: Int;
+  power(g, m) = E -> power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-m |
+        fix m: Int {
+          @generalize-k |
+            fix k: Int {
+              @given-order-exponent |
+                assume power(g, m) = E {
+                  @power-at-m-is-identity |
+                    power(g, m) = E
+                    [by hypothesis given-order-exponent]
+                  // (g^m)^k = g^(m·k), and the base is E, so the whole block collapses
+                  @block-splits |
+                    power(power(g, m), k) = power(g, integer.mul(m, k))
+                    [using specialize group_power.powerMul(g, m, k)]
+                  @identity-to-the-k |
+                    power(E, k) = E
+                    [using specialize group_power.powerOfIdentity(k)]
+                  @block-at-identity |
+                    power(E, k) = power(g, integer.mul(m, k))
+                    [by rewrite power-at-m-is-identity block-splits]
+                  @block-is-identity |
+                    E = power(g, integer.mul(m, k))
+                    [by rewrite identity-to-the-k block-at-identity]
+                  // g^(m·k) · g^1 = g^(m·k + 1), and the left factor is E
+                  @exponents-add |
+                    op(power(g, integer.mul(m, k)), power(g, integer.succ(integer.ZERO)))
+                      = power(g, integer.add(integer.mul(m, k), integer.succ(integer.ZERO)))
+                    [using specialize group_power.powerAdd(g, integer.mul(m, k), integer.succ(integer.ZERO))]
+                  @power-one-is-g |
+                    power(g, integer.succ(integer.ZERO)) = g
+                    [using specialize group_power.powerOne(g)]
+                  @product-with-g |
+                    op(power(g, integer.mul(m, k)), g)
+                      = power(g, integer.add(integer.mul(m, k), integer.succ(integer.ZERO)))
+                    [by rewrite power-one-is-g exponents-add]
+                  @identity-times-g |
+                    op(E, g) = power(g, integer.add(integer.mul(m, k), integer.succ(integer.ZERO)))
+                    [by rewrite block-is-identity product-with-g]
+                  @identity-left |
+                    op(E, g) = g
+                    [using specialize group.opIdentityLeft(g)]
+                  @round-trip-at-m-times-k |
+                    g = power(g, integer.add(integer.mul(m, k), integer.succ(integer.ZERO)))
+                    [by rewrite identity-left identity-times-g]
+                  // the book writes the multiple as k·m; commute to match
+                  @commuted |
+                    integer.mul(k, m) = integer.mul(m, k)
+                    [using specialize integer.mulIsCommutative(k, m)]
+                  @round-trip |
+                    g = power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO)))
+                    [by rewrite commuted round-trip-at-m-times-k]
+                  @conclusion-round-trip |
+                    power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+                    [by symmetry round-trip]
+                }
+              @order-implies |
+                power(g, m) = E -> power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+                [by implies_intro given-order-exponent]
+            }
+          @discharge-k |
+            forall k: Int; power(g, m) = E -> power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+            [by forall_intro generalize-k]
+        }
+      @discharge-m |
+        forall m: Int; forall k: Int; power(g, m) = E -> power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+        [by forall_intro generalize-m]
+    }
+  @conclusion |
+    forall g: Grp; forall m: Int; forall k: Int;
+      power(g, m) = E -> power(g, integer.add(integer.mul(k, m), integer.succ(integer.ZERO))) = g
+    [by forall_intro generalize-g]
+qed

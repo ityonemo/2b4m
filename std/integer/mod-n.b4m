@@ -1301,3 +1301,102 @@ proof
     forall a, b, c: Units; mul(a, b) = mul(a, c) -> b = c
     [using model(UnitsGroup) group.cancelLeft]
 qed
+
+// -- §7.1: the AFFINE CIPHER is decodable exactly when its multiplier is a unit -------------
+//
+// Judson: "a decoding function exists when we can solve c = ap + b (mod 26) for p … possible
+// exactly when a has an inverse, equivalently gcd(a, 26) = 1", and then
+// f⁻¹(c) = a⁻¹c − a⁻¹b. Here that inverse is `unitInverse`, and `isUnit` is the gcd condition
+// (`isUnitCharacterization`). The content is that the stated f⁻¹ really does invert f: applying
+// it to `add(mul(a, p), b)` returns `p`, for every plaintext p.
+theorem anAffineCipherWithAUnitMultiplierDecodes: forall a: Zn; forall b: Zn; forall p: Zn;
+  isUnit(a) ->
+  add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+proof
+  @generalize-a |
+    fix a: Zn {
+      @generalize-b |
+        fix b: Zn {
+          @generalize-p |
+            fix p: Zn {
+              @given-unit |
+                assume isUnit(a) {
+                  @a-is-a-unit |
+                    isUnit(a)
+                    [by hypothesis given-unit]
+                  // a⁻¹ distributes over the ciphertext's two terms
+                  @distribute |
+                    mul(unitInverse(a), add(mul(a, p), b))
+                      = add(mul(unitInverse(a), mul(a, p)), mul(unitInverse(a), b))
+                    [using specialize mulDistribLeft(unitInverse(a), mul(a, p), b)]
+                  // a⁻¹·(a·p) = (a⁻¹·a)·p = 1·p = p
+                  @regroup |
+                    mul(mul(unitInverse(a), a), p) = mul(unitInverse(a), mul(a, p))
+                    [using specialize mulAssoc(unitInverse(a), a, p)]
+                  @inverse-collapses |
+                    mul(unitInverse(a), a) = ONE
+                    [using specialize unitInverseLeft(a) a-is-a-unit]
+                  @one-times-p |
+                    mul(ONE, p) = mul(unitInverse(a), mul(a, p))
+                    [by rewrite inverse-collapses regroup]
+                  @one-left |
+                    mul(ONE, p) = p
+                    [using specialize mulOneLeft(p)]
+                  @plaintext-recovered |
+                    p = mul(unitInverse(a), mul(a, p))
+                    [by rewrite one-left one-times-p]
+                  // so the decoded value is (p + a⁻¹b) − a⁻¹b
+                  @decoded-shape |
+                    mul(unitInverse(a), add(mul(a, p), b))
+                      = add(p, mul(unitInverse(a), b))
+                    [by rewrite plaintext-recovered distribute]
+                  @subtract-the-shift |
+                    add(add(p, mul(unitInverse(a), b)), neg(mul(unitInverse(a), b)))
+                      = add(p, add(mul(unitInverse(a), b), neg(mul(unitInverse(a), b))))
+                    [using specialize addAssoc(p, mul(unitInverse(a), b), neg(mul(unitInverse(a), b)))]
+                  // only the LEFT inverse law is stated over Zn; commute to the right form
+                  @inverse-left-at-the-shift |
+                    add(neg(mul(unitInverse(a), b)), mul(unitInverse(a), b)) = ZERO
+                    [using specialize addInverseLeft(mul(unitInverse(a), b))]
+                  @shift-commutes |
+                    add(mul(unitInverse(a), b), neg(mul(unitInverse(a), b)))
+                      = add(neg(mul(unitInverse(a), b)), mul(unitInverse(a), b))
+                    [using specialize addCommutes(mul(unitInverse(a), b), neg(mul(unitInverse(a), b)))]
+                  @shift-cancels |
+                    add(mul(unitInverse(a), b), neg(mul(unitInverse(a), b))) = ZERO
+                    [using chain shift-commutes inverse-left-at-the-shift]
+                  @shift-gone |
+                    add(add(p, mul(unitInverse(a), b)), neg(mul(unitInverse(a), b)))
+                      = add(p, ZERO)
+                    [by rewrite shift-cancels subtract-the-shift]
+                  @p-plus-zero |
+                    add(p, ZERO) = p
+                    [using specialize addIdentityRight(p)]
+                  @cancelled |
+                    add(add(p, mul(unitInverse(a), b)), neg(mul(unitInverse(a), b))) = p
+                    [using chain shift-gone p-plus-zero]
+                  @conclusion-decodes |
+                    add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+                    [by rewrite decoded-shape cancelled]
+                }
+              @unit-implies |
+                isUnit(a) ->
+                  add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+                [by implies_intro given-unit]
+            }
+          @discharge-p |
+            forall p: Zn; isUnit(a) ->
+              add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+            [by forall_intro generalize-p]
+        }
+      @discharge-b |
+        forall b: Zn; forall p: Zn; isUnit(a) ->
+          add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a: Zn; forall b: Zn; forall p: Zn;
+      isUnit(a) ->
+      add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p
+    [by forall_intro generalize-a]
+qed
