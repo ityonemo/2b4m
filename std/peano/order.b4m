@@ -1672,3 +1672,80 @@ proof
       -> exists least: Nat; prop(least) and (forall m: Nat; prop(m) -> less_or_equal(least, m))
     [by implies_intro given-inhabited]
 qed
+
+// -- small successor/order facts ---------------------------------------------
+// These are pure ℕ order arithmetic and were being re-proved inside consumers
+// (`std/group/listing.b4m`, `std/permutation/cycle.b4m`) because they had no home
+// here. They belong with the order theory; consumers alias them.
+
+theorem zeroBelowSucc: forall k: Nat; less_than(ZERO, succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @zero-plus-successor |
+        add(ZERO, succ(k)) = succ(k)
+        [using specialize addZeroLeft(succ(k))]
+      @conclusion-below |
+        less_than(ZERO, succ(k))
+        [using specialize lessThanIntro(ZERO, k, succ(k)) zero-plus-successor]
+    }
+  @conclusion |
+    forall k: Nat; less_than(ZERO, succ(k))
+    [by forall_intro generalize-k]
+qed
+
+theorem zeroIsNotSucc: forall k: Nat; not (ZERO = succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @suppose-equal |
+        assume ZERO = succ(k) {
+          @equal |
+            ZERO = succ(k)
+            [by hypothesis suppose-equal]
+          @flipped |
+            succ(k) = ZERO
+            [by symmetry equal]
+        }
+      @succ-not-zero |
+        succ(k) != ZERO
+        [using specialize succNotZero(k)]
+      @conclusion-not-equal |
+        not (ZERO = succ(k))
+        [by not_intro suppose-equal flipped succ-not-zero]
+    }
+  @conclusion |
+    forall k: Nat; not (ZERO = succ(k))
+    [by forall_intro generalize-k]
+qed
+
+theorem succIsNotSuccSucc: forall k: Nat; not (succ(k) = succ(succ(k)))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @suppose-equal |
+        assume succ(k) = succ(succ(k)) {
+          @equal |
+            succ(k) = succ(succ(k))
+            [by hypothesis suppose-equal]
+          @predecessors-equal |
+            k = succ(k)
+            [using specialize succInjective(k, succ(k)) equal]
+          @k-below-succ-k |
+            less_than(k, succ(k))
+            [using specialize lessThanSelf(k)]
+          @k-below-itself |
+            less_than(k, k)
+            [by rewrite predecessors-equal k-below-succ-k]
+        }
+      @k-not-below-itself |
+        not less_than(k, k)
+        [using specialize lessThanIrreflexive(k)]
+      @conclusion-not-equal |
+        not (succ(k) = succ(succ(k)))
+        [by not_intro suppose-equal k-below-itself k-not-below-itself]
+    }
+  @conclusion |
+    forall k: Nat; not (succ(k) = succ(succ(k)))
+    [by forall_intro generalize-k]
+qed
