@@ -15,8 +15,52 @@ const Token = @import("lexer.zig").Token;
 /// read off its first use. Always alone in its quantifier node.
 pub const Binder = struct { name: Token, sort: Token, guard: ?Token = null, inferred: bool = false };
 
-/// Schema parameter, e.g. `P: nat -> prop`. arg_sorts empty = plain value param.
-pub const SchemaParam = struct { name: Token, arg_sorts: []const Token, result: Token };
+/// A schema parameter. Three KINDS, distinguished by shape rather than by a keyword — the
+/// parser decides on one-token lookahead after the name (see `parseSchemaParams`):
+///
+///     x: Nat                      VALUE   — `:` follows the name
+///     prop(Nat)   prop()          PRED    — `(` follows, nothing after `)`
+///     f(Item) => Item             FUNC    — `(` follows, `=>` after `)`
+///
+/// A PRED carries no result sort because it cannot have one: a predicate always yields a
+/// proposition, structurally — `ast.Pred.local` has no result field (unlike `Func.local`), the
+/// parser's `pred` arm has no `fat_arrow`, and `FetchTask.assembleSig` stores `Index.none` for
+/// it. Writing `=> Prop` would state what the shape already implies.
+///
+/// The kind is CARRIED, not inferred. It used to be read off `arg_sorts.len == 0`, which made
+/// `(prop: Nat)` — a typo for `(prop(Nat))` — silently become a VALUE param whose error
+/// surfaced far away, inside the schema's own body at the first `prop(x)`.
+pub const SchemaParam = struct {
+    name: Token,
+    kind: Kind,
+
+    pub const Kind = union(enum) {
+        value: Token, // the sort
+        pred: []const Token, // argument sorts; result is Prop, implicitly
+        func: struct { args: []const Token, result: Token },
+    };
+
+    /// The parameter's argument sorts — empty for a value param. (A value param is the only
+    /// kind that is not applied, so "no arguments" and "is a value" coincide; code that only
+    /// needs the arity can use this and ignore the kind.)
+    pub fn argSorts(self: SchemaParam) []const Token {
+        return switch (self.kind) {
+            .value => &.{},
+            .pred => |a| a,
+            .func => |f| f.args,
+        };
+    }
+
+    /// The parameter's result sort token, or null for a PRED (whose result is `Prop` and has no
+    /// token — callers that sort-check a result must treat null as "the proposition marker").
+    pub fn resultSort(self: SchemaParam) ?Token {
+        return switch (self.kind) {
+            .value => |t| t,
+            .pred => null,
+            .func => |f| f.result,
+        };
+    }
+};
 
 pub const Expr = union(enum) {
     name: Token,
@@ -136,7 +180,7 @@ pub const Pred = union(enum) {
 };
 
 /// The stated proposition of an axiom/theorem/hole. `params` non-null ⇒ it is a SCHEMA (a
-/// parametric template — `axiom foo(prop: T -> Prop): …`); the parser sets it from the
+/// parametric template — `axiom foo(prop(T)): …`); the parser sets it from the
 /// optional `(params)`, so "a schema is an axiom with params" is a downstream reading, not a
 /// separate decl kind. A theorem wraps a `Fact` + its proof steps.
 pub const Fact = struct { name: Token, formula: *const Expr, params: ?[]const SchemaParam = null };

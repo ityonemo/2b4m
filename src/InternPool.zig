@@ -96,11 +96,6 @@ pub const Index = enum(u32) {
     /// it, and a stamped `Token.name` for the surface word `Prop` compares against it —
     /// the "no strcmp past parsing" invariant).
     prop_name = 1,
-    /// The builtin `Prop` sort, reserved at Index 2 (seeded by `init`: universe at 0, the
-    /// "Prop" name string at 1, the Prop SORT at 2). `term.SortId.prop` is the same value:
-    /// once `SortId` becomes a pool `Index` (demand-prover Step 5+6), `Prop` already sits at
-    /// its reserved slot and can't collide with the universe model at 0.
-    prop = 2,
     _,
 
     /// The ABSENT marker for optional `Index` slots packed into `extra` (e.g. a func's
@@ -110,13 +105,13 @@ pub const Index = enum(u32) {
     pub const none: Index = @enumFromInt(0xFFFF_FFFF);
 };
 
-/// The proof-rule vocabulary, RESERVED as StrIds at `init` (contiguously from Index 3, in
+/// The proof-rule vocabulary, RESERVED as StrIds at `init` (contiguously from Index 2, in
 /// declaration order — each field's NAME is the interned string, its VALUE its StrId). A
 /// stamped `Token.name` in rule position is dispatched by integer comparison via `of` —
 /// the "no strcmp past parsing" invariant. Accelerant/unknown rule words are simply not in
 /// this range (`of` returns null → diagnosed as unsupported at the use site).
 pub const RuleStr = enum(u32) {
-    axiom = 3,
+    axiom = 2,
     theorem,
     hypothesis,
     predicate,
@@ -544,14 +539,12 @@ pub fn init(arena: std.mem.Allocator) std.mem.Allocator.Error!InternPool {
     // IS 0, so we can name it as the parent before the entry physically exists.
     const universe = try self.intern(.{ .model = .{ .parent = .universe } });
     std.debug.assert(universe == .universe); // the universe model MUST be Index 0
-    // The "Prop" name string lands at Index 1, then the builtin Prop SORT at Index 2 (its
-    // name field references the string). `Index.prop` names the sort. Ordering matters:
-    // interning the name first fixes the sort at the next slot without a forward reference.
+    // The "Prop" name string lands at Index 1. It is reserved so the surface word `Prop` is
+    // recognized by INTEGER comparison (the "no strcmp past parsing" invariant) — `Prop` is NOT
+    // a sort, so no sort Item is minted for it and Index 2 is the first rule word.
     const prop_name = try self.internString("Prop");
     std.debug.assert(prop_name == .prop_name); // "Prop" string MUST land at Index.prop_name
-    const prop = try self.mintSort(.{ .name = prop_name, .loc = 0, .refinement = null });
-    std.debug.assert(prop == .prop); // Prop sort MUST land at Index.prop
-    // Reserve the rule-word strings contiguously from Index 3, each at its RuleStr value —
+    // Reserve the rule-word strings contiguously from Index 2, each at its RuleStr value —
     // the enum's field NAMES are the strings, so the vocabulary has one source of truth.
     inline for (@typeInfo(RuleStr).@"enum".fields) |f| {
         const sid = try self.internString(f.name);
@@ -1309,7 +1302,7 @@ test "strings intern by content and round-trip their bytes" {
     try std.testing.expectEqualStrings("zero", pool.stringBytes(zero));
     // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 31
     // rule-word strings (3..33); then two more strings ("add", "zero").
-    try std.testing.expectEqual(@as(usize, 36), pool.count());
+    try std.testing.expectEqual(@as(usize, 35), pool.count()); // 36 before Prop stopped being a sort
 }
 
 test "universe model is seeded at Index 0 as its own parent" {
@@ -1319,8 +1312,10 @@ test "universe model is seeded at Index 0 as its own parent" {
 
     // reserved seeds: universe model (0) + "Prop" string (1) + Prop sort (2) + the 31
     // rule-word strings (3..33)
-    try std.testing.expectEqual(@as(usize, 34), pool.count());
-    try std.testing.expect(pool.keyOf(.prop).sort.refinement == null); // Prop is a root sort
+    try std.testing.expectEqual(@as(usize, 33), pool.count()); // 34 before Prop stopped being a sort
+    // `Prop` is NOT a sort: only its NAME STRING is reserved (Index 1), so the surface word can
+    // be recognized by integer comparison. Index 2 is the first rule word, not a Prop sort item.
+    try std.testing.expectEqual(InternPool.RuleStr.axiom, InternPool.RuleStr.of(@enumFromInt(2)).?);
     try std.testing.expectEqual(InternPool.Index.universe, pool.keyOf(.universe).model.parent);
     try std.testing.expectEqual(@as(usize, 0), pool.keyOf(.universe).model.overlay.len);
     // re-asking for the universe payload dedups back to Index 0

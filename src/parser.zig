@@ -648,25 +648,52 @@ pub const Parser = struct {
         return params.toOwnedSlice(self.arena);
     }
 
-    /// `( prop: Nat -> Prop, x: Nat, ... )`
+    /// `( x: Nat, prop(Nat), spec(Element, Element), f(Item) => Item )`
+    ///
+    /// THREE KINDS, no keyword — the token after the parameter NAME decides, on one-token
+    /// lookahead (and `=>` after the `)` separates func from pred):
+    ///
+    ///     x: Nat                  VALUE   `:`
+    ///     prop(Nat)   prop()      PRED    `(` … `)`
+    ///     f(Item) => Item         FUNC    `(` … `)` `=>`
+    ///
+    /// A PRED writes no result because it cannot have one (see `ast.SchemaParam`). This frees
+    /// `->` to mean implication only — it used to mean BOTH, disambiguated purely by which
+    /// parser function was on the stack — makes arity explicit, makes a nullary pred
+    /// representable (`arg_sorts.len == 0` used to MEAN "value"), and kills the silent-kind
+    /// change: `(prop: Nat)` is now unambiguously a VALUE param, and the predicate one meant is
+    /// `prop(Nat)` — different shapes, not a missing arrow.
+    ///
+    /// `x: Nat` is deliberately `parseParams`' own binder spelling, and `prop(Nat)` /
+    /// `f(Item) => Item` read like the `pred` / `func` declarations they stand for.
     fn parseSchemaParams(self: *Parser) ParseError![]const ast.SchemaParam {
         _ = try self.expect(.l_paren);
         var params: std.ArrayList(ast.SchemaParam) = .empty;
-        while (true) {
+        while (self.tok.tag != .r_paren) {
             const name = try self.expect(.identifier);
-            _ = try self.expect(.colon);
-            var sorts: std.ArrayList(Token) = .empty;
-            try sorts.append(self.arena, try self.expect(.identifier));
-            while (self.tok.tag == .arrow) {
+            const kind: ast.SchemaParam.Kind = if (self.tok.tag == .colon) blk: {
                 _ = self.advance();
-                try sorts.append(self.arena, try self.expect(.identifier));
-            }
-            const result = sorts.pop().?;
-            try params.append(self.arena, .{
-                .name = name,
-                .arg_sorts = try sorts.toOwnedSlice(self.arena),
-                .result = result,
-            });
+                break :blk .{ .value = try self.expect(.identifier) };
+            } else if (self.tok.tag == .comma or self.tok.tag == .r_paren) blk: {
+                // A BARE name is a nullary PRED — a whole proposition. Parens are omitted, which
+                // is exactly how a nullary `pred base` is declared and how `base` is then used
+                // (bare, never `base()`), so the parameter standing for one reads the same way.
+                break :blk .{ .pred = &.{} };
+            } else blk: {
+                _ = try self.expect(.l_paren);
+                var sorts: std.ArrayList(Token) = .empty;
+                while (self.tok.tag != .r_paren) {
+                    try sorts.append(self.arena, try self.expect(.identifier));
+                    if (self.tok.tag != .comma) break;
+                    _ = self.advance();
+                }
+                _ = try self.expect(.r_paren);
+                const args = try sorts.toOwnedSlice(self.arena);
+                if (self.tok.tag != .fat_arrow) break :blk .{ .pred = args };
+                _ = self.advance();
+                break :blk .{ .func = .{ .args = args, .result = try self.expect(.identifier) } };
+            };
+            try params.append(self.arena, .{ .name = name, .kind = kind });
             if (self.tok.tag != .comma) break;
             _ = self.advance();
         }
@@ -1223,7 +1250,7 @@ test "declarations parse" {
         \\func div(a: Nat, b: Nat) => Nat requires b != ZERO
         \\pred even(n: Nat)
         \\axiom reflAx: forall x: Nat; x = x
-        \\axiom induction(prop: Nat -> Prop):
+        \\axiom induction(prop(Nat)):
         \\  prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1243,7 +1270,10 @@ test "declarations parse" {
 
     const ind = file.decls[5].axiom.local;
     try testing.expectEqual(1, ind.params.?.len);
-    try testing.expectEqual(1, ind.params.?[0].arg_sorts.len);
+    // a PRED param: one argument sort, and no result token (its result is Prop, implicitly).
+    try testing.expect(ind.params.?[0].kind == .pred);
+    try testing.expectEqual(1, ind.params.?[0].argSorts().len);
+    try testing.expectEqual(@as(?lexer.Token, null), ind.params.?[0].resultSort());
 }
 
 test "theorem with nested proof blocks and instantiate" {

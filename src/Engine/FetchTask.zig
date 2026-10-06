@@ -477,7 +477,9 @@ fn demandTok(self: *Context, h: *Engine.Handle, file: InternPool.Index, tok: lex
 const SigParts = struct { sig: InternPool.Index, param_names: []const InternPool.StrId };
 
 /// Assemble a callable's deduped Sig + param names from its binder params and optional
-/// result token (null = predicate, result Prop). Static rejections (predicated params)
+/// result token. A PREDICATE has no result token and no result SORT: `Prop` is not a sort, so
+/// the slot holds `Index.none` and the `.pred` tag is what says "this yields a proposition".
+/// Static rejections (predicated params)
 /// fire before any demand so a diagnostic can't repeat across resumes.
 fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source: []const u8, params: []const ast.Binder, result_tok: ?lexer.Token) ResolveError!SigParts {
     for (params) |b| {
@@ -495,7 +497,7 @@ fn assembleSig(self: *Context, h: *Engine.Handle, file: InternPool.Index, source
     const result: InternPool.Index = if (result_tok) |rt|
         try resolveSortDemand(self, h, file, source, rt)
     else
-        .prop;
+        .none; // a predicate has no result sort — see the doc comment
     const sig = self.interner.intern(.{ .sig = .{ .result = result, .result_refined = .none, .args = args } }) catch return error.OutOfMemory;
     return .{ .sig = sig, .param_names = names };
 }
@@ -820,7 +822,7 @@ test "fetch layer 2: a func's sorts are sub-demanded; sig + param names assemble
     { // pred le: result is the reserved Prop
         const le_ix = ctx.idents.lookup(io, .{ .namespace = ns, .name = le }).?.done;
         const sig = ctx.interner.keyOf(ctx.interner.keyOf(le_ix).pred.sig).sig;
-        try testing.expectEqual(InternPool.Index.prop, sig.result);
+        try testing.expectEqual(InternPool.Index.none, sig.result); // a pred has NO result sort
         try testing.expectEqual(@as(usize, 2), sig.args.len);
     }
     { // const ZERO: sort Nat
@@ -941,7 +943,7 @@ test "fetch: a schema (a params-carrying fact) is REJECTED — facts resolve via
     // FACT table (a ProveTask publishes its `.schema` locator). Reaching FetchTask is misuse.
     const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort T
-        \\theorem everywhereGoal(prop: T -> Prop): forall x: T; goal(x)
+        \\theorem everywhereGoal(prop(T)): forall x: T; goal(x)
         \\proof
         \\  @c | forall x: T; goal(x) [by cite ax]
         \\qed

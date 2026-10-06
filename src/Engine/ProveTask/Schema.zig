@@ -4,7 +4,7 @@
 //!
 //! A `SchemaArgs` maps each schema PARAM NAME to the argument bound at an instantiation:
 //!   - a VALUE param (`t: Nat`) → `.value` of the elaborated arg term + its sort.
-//!   - an N-ary GENERATOR param (`P: T -> Prop`) → `.lambda`: a body term with the lambda
+//!   - an N-ary GENERATOR param (`P(T)`) → `.lambda`: a body term with the lambda
 //!     binders KEPT FREE as hygienic fvars (`params[i]`); application beta-reduces via
 //!     `substFvar`. (The kernel has no lambda node — schema application is term-level
 //!     substitution, exactly as the old eager elaborator did it.)

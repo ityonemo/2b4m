@@ -1,11 +1,25 @@
 # ACCELERANT-ON-GUARDED-SETS.md — accelerants that meet a relativized axiom
 
-Status: **OPEN, pinned 2026-09-28.** A recorded observation with candidate
-diagnoses, NOT a plan. The root cause is **not yet established** — three readings fit
-the evidence and they call for different fixes. Nothing in the engine has
-been changed. The code has not been read; everything below the "What is established"
-section is inference from one failure and from the architecture notes, and is flagged
-as such.
+Status: **RESOLVED 2026-10-05.** Two distinct defects, both fixed on branch
+`prop-demotion`; the body below is the original observation, kept as history. None of
+its three candidate readings was the cause.
+
+1. **Abstracted params lose their guards.** An accelerant abstracts a goal's free
+   caller-locals into schema params; under a guarded model that drops the binder's
+   `good(a)` that the leaked guard's discharge needed. Fix: the synthetic carries each
+   abstracted param's guard as an antecedent (`Prove.paramGuards`), discharged at the
+   call site by the existing `withGuardPremises`.
+2. **The model was applied to terms, not just names.** Accelerants now produce in the
+   ambient (painted) namespace, so their synthetics are target-space TERMS; re-elaboration
+   then ran the model over their stamped symbols a SECOND time. Invisible while a model's
+   sources and targets are disjoint, wrong when they overlap (`set.Element: Set` +
+   `set.Set: Collection`; the subgroup idiom `group.Grp: H`, `H = Grp where inH`). Fix:
+   a synthetic's symbols are stamped FINAL (`Accelerant.Builder` → `Delaborate.runExact`),
+   and nothing re-maps an fvar's sort read off a term. A model is applied ONCE PER
+   `using model(M)` citation; a synthetic is produced inside that application.
+   This also removed `no_relativize`, which had papered over the guard half of the
+   same double application. Fixtures: `tests/cases/model_overlap_refinement.b4m`,
+   `tests/cases/model_overlap_shift.b4m`. Narrative: `drafts/painted-accelerants/README.md`.
 
 Related: `MODEL-DESIGN.md` (the guarded-model machinery), `ACCELERATION.md`,
 memory notes `accelerants-not-model-aware`, `required-on-model-primitive`.
