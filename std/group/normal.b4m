@@ -1,0 +1,422 @@
+// std/group/normal.b4m — NORMAL SUBGROUPS (AATA §10.1).
+//
+// A subgroup N of G is NORMAL when gN = Ng for every g — its left and right cosets coincide.
+// Judson's Theorem 10.3 gives three equivalent conditions, and the conjugation form
+// (gng⁻¹ ∈ N) is the one every later proof uses, so it is proved as an `iff` against the
+// coset form.
+//
+// A COSET IS NOT A SET here: 2b4m has no sort of subsets of a group, so `gN` is represented
+// by its membership predicate (`std/group/coset.b4m`'s `inCoset`). "gN = Ng" is therefore
+// extensional agreement of the left- and right-coset predicates, which is exactly how Judson
+// uses it.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import coset <<< "std/group/coset.b4m"
+
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+
+axiom grpAssoc = group.opAssoc
+axiom grpIdentityLeft = group.opIdentityLeft
+axiom grpInverseLeft = group.opInverseLeft
+theorem grpIdentityRight = group.opIdentityRight
+theorem grpInverseRight = group.opInverseRight
+theorem invInvolution = group.invInvolution
+theorem invProduct = group.invProduct
+
+pred inSubgroup = subgroup.inSubgroup
+axiom subgroupClosedOp = subgroup.subgroupClosedOp
+
+// x ∈ gN — the LEFT coset, from std/group/coset.b4m
+define inCoset(g, x) = coset.inCoset(g, x)
+
+// x ∈ Ng — the RIGHT coset. Its mirror image; coset.b4m develops only the left side,
+// because Lagrange needs one of the two and the proofs are symmetric.
+define inRightCoset(g, x) = (exists h: Grp; inSubgroup(h) and x = op(h, g))
+
+// -- the conjugation characterisation (Judson Thm 10.3, (1) ⟺ (2)) -------------------------
+
+// CONJUGATION LANDS IN N exactly when the left and right cosets of every representative
+// agree. This is the theorem; the two directions are Judson's (1)⇒(2) and (3)⇒(1), with his
+// (2)⇒(3) being the observation that g⁻¹ works wherever g does.
+theorem conjugationLandsInTheSubgroupIffCosetsCoincide:
+  (forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x))
+  iff
+  (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))))
+proof
+  // ── (1) ⇒ (2): if gN = Ng then gng⁻¹ ∈ N.
+  // "there exists n' in N such that gn = n'g; therefore gng⁻¹ = n' ∈ N"
+  @given-cosets-coincide |
+    assume forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x) {
+      @cosets-coincide |
+        forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x)
+        [by hypothesis given-cosets-coincide]
+      @conjugation-lands |
+        forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+        [by forall_intro conjugation-at-g]
+      @conjugation-at-g |
+        fix g: Grp {
+          @inner-n |
+            fix n: Grp {
+              @given-n-in-n |
+                assume inSubgroup(n) {
+                  @n-in-n |
+                    inSubgroup(n)
+                    [by hypothesis given-n-in-n]
+                  // gn ∈ gN, so gn ∈ Ng: gn = n'g for some n' ∈ N
+                  @product-is-in-the-left-coset |
+                    inCoset(g, op(g, n))
+                    [using specialize coset.translationLandsInTheCoset(g, n) n-in-n]
+                  @coincide-at-the-product |
+                    inCoset(g, op(g, n)) iff inRightCoset(g, op(g, n))
+                    [using specialize cosets-coincide(g, op(g, n))]
+                  @product-is-in-the-right-coset |
+                    inRightCoset(g, op(g, n))
+                    [using tautology product-is-in-the-left-coset coincide-at-the-product]
+                  @witness-exists |
+                    exists h: Grp; inSubgroup(h) and op(g, n) = op(h, g)
+                    [using tautology product-is-in-the-right-coset]
+                  @with-the-witness |
+                    unpack m: Grp from witness-exists {
+                      @witness-facts |
+                        inSubgroup(m) and op(g, n) = op(m, g)
+                        [by hypothesis with-the-witness]
+                      @m-in-n |
+                        inSubgroup(m)
+                        [by and_elim_left witness-facts]
+                      @product-splits |
+                        op(g, n) = op(m, g)
+                        [by and_elim_right witness-facts]
+                      // gng⁻¹ = (mg)g⁻¹ = m(gg⁻¹) = m
+                      @regroup |
+                        op(op(m, g), inverse(g)) = op(m, op(g, inverse(g)))
+                        [using specialize grpAssoc(m, g, inverse(g))]
+                      @g-cancels |
+                        op(g, inverse(g)) = E
+                        [using specialize grpInverseRight(g)]
+                      @regrouped-at-identity |
+                        op(op(m, g), inverse(g)) = op(m, E)
+                        [by rewrite g-cancels regroup]
+                      @m-times-identity |
+                        op(m, E) = m
+                        [using specialize grpIdentityRight(m)]
+                      @conjugate-of-the-witness |
+                        op(op(m, g), inverse(g)) = m
+                        [using chain regrouped-at-identity m-times-identity]
+                      @conjugate-rewritten |
+                        op(op(g, n), inverse(g)) = m
+                        [by rewrite product-splits conjugate-of-the-witness]
+                      @conclusion-inner |
+                        inSubgroup(op(op(g, n), inverse(g)))
+                        [by rewrite conjugate-rewritten m-in-n]
+                    }
+                  @conclusion-conjugate-in-n |
+                    inSubgroup(op(op(g, n), inverse(g)))
+                    [by exists_elim with-the-witness]
+                }
+              @n-implies |
+                inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+                [by implies_intro given-n-in-n]
+            }
+          @discharge-n |
+            forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+            [by forall_intro inner-n]
+        }
+    }
+  @forward |
+    (forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x))
+      -> (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))))
+    [by implies_intro given-cosets-coincide]
+  // ── (2) ⇒ (1): conjugation into N forces the cosets to agree, both directions.
+  @given-conjugation-lands |
+    assume forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))) {
+      @conjugation-lands-hyp |
+        forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+        [by hypothesis given-conjugation-lands]
+      @cosets-agree |
+        forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x)
+        [by forall_intro agree-at-g]
+      @agree-at-g |
+        fix g: Grp {
+          @inner-x |
+            fix x: Grp {
+              // LEFT ⇒ RIGHT: x = gn, and x = (gng⁻¹)g with gng⁻¹ ∈ N
+              @given-x-in-the-left-coset |
+                assume inCoset(g, x) {
+                  @x-in-the-left-coset |
+                    inCoset(g, x)
+                    [by hypothesis given-x-in-the-left-coset]
+                  @left-witness-exists |
+                    exists h: Grp; inSubgroup(h) and x = op(g, h)
+                    [using tautology x-in-the-left-coset]
+                  @with-left-witness |
+                    unpack n: Grp from left-witness-exists {
+                      @left-facts |
+                        inSubgroup(n) and x = op(g, n)
+                        [by hypothesis with-left-witness]
+                      @n-in-n |
+                        inSubgroup(n)
+                        [by and_elim_left left-facts]
+                      @x-is-g-times-n |
+                        x = op(g, n)
+                        [by and_elim_right left-facts]
+                      @conjugate-in-n |
+                        inSubgroup(op(op(g, n), inverse(g)))
+                        [using specialize conjugation-lands-hyp(g, n) n-in-n]
+                      // (gng⁻¹)g = gn, so x = (gng⁻¹)g exhibits x ∈ Ng
+                      @regroup-back |
+                        op(op(op(g, n), inverse(g)), g) = op(op(g, n), op(inverse(g), g))
+                        [using specialize grpAssoc(op(g, n), inverse(g), g)]
+                      @inverse-cancels |
+                        op(inverse(g), g) = E
+                        [using specialize grpInverseLeft(g)]
+                      @regrouped |
+                        op(op(op(g, n), inverse(g)), g) = op(op(g, n), E)
+                        [by rewrite inverse-cancels regroup-back]
+                      @times-identity |
+                        op(op(g, n), E) = op(g, n)
+                        [using specialize grpIdentityRight(op(g, n))]
+                      @conjugate-times-g |
+                        op(op(op(g, n), inverse(g)), g) = op(g, n)
+                        [using chain regrouped times-identity]
+                      @conjugate-times-g-is-x |
+                        op(op(op(g, n), inverse(g)), g) = x
+                        [by rewrite x-is-g-times-n conjugate-times-g]
+                      @x-is-the-conjugate-times-g |
+                        x = op(op(op(g, n), inverse(g)), g)
+                        [by symmetry conjugate-times-g-is-x]
+                      @pair |
+                        inSubgroup(op(op(g, n), inverse(g)))
+                          and x = op(op(op(g, n), inverse(g)), g)
+                        [by and_intro conjugate-in-n x-is-the-conjugate-times-g]
+                      @conclusion-right-member |
+                        exists h: Grp; inSubgroup(h) and x = op(h, g)
+                        [by exists_intro(op(op(g, n), inverse(g))) pair]
+                    }
+                  @right-membership |
+                    exists h: Grp; inSubgroup(h) and x = op(h, g)
+                    [by exists_elim with-left-witness]
+                  @conclusion-in-the-right-coset |
+                    inRightCoset(g, x)
+                    [using tautology right-membership]
+                }
+              @left-implies-right |
+                inCoset(g, x) -> inRightCoset(g, x)
+                [by implies_intro given-x-in-the-left-coset]
+              // RIGHT ⇒ LEFT: x = ng, and x = g(g⁻¹ng) with g⁻¹ng ∈ N (conjugate by g⁻¹)
+              @given-x-in-the-right-coset |
+                assume inRightCoset(g, x) {
+                  @x-in-the-right-coset |
+                    inRightCoset(g, x)
+                    [by hypothesis given-x-in-the-right-coset]
+                  @right-witness-exists |
+                    exists h: Grp; inSubgroup(h) and x = op(h, g)
+                    [using tautology x-in-the-right-coset]
+                  @with-right-witness |
+                    unpack n: Grp from right-witness-exists {
+                      @right-facts |
+                        inSubgroup(n) and x = op(n, g)
+                        [by hypothesis with-right-witness]
+                      @n-in-n-again |
+                        inSubgroup(n)
+                        [by and_elim_left right-facts]
+                      @x-is-n-times-g |
+                        x = op(n, g)
+                        [by and_elim_right right-facts]
+                      // conjugating by g⁻¹: g⁻¹n(g⁻¹)⁻¹ = g⁻¹ng ∈ N
+                      @conjugate-by-the-inverse |
+                        inSubgroup(op(op(inverse(g), n), inverse(inverse(g))))
+                        [using specialize conjugation-lands-hyp(inverse(g), n) n-in-n-again]
+                      @inverse-of-the-inverse |
+                        inverse(inverse(g)) = g
+                        [using specialize invInvolution(g)]
+                      @conjugate-is-in-n |
+                        inSubgroup(op(op(inverse(g), n), g))
+                        [by rewrite inverse-of-the-inverse conjugate-by-the-inverse]
+                      // g(g⁻¹ng) = ng, so x = g·(g⁻¹ng) exhibits x ∈ gN
+                      @regroup-left |
+                        op(op(g, inverse(g)), op(n, g)) = op(g, op(inverse(g), op(n, g)))
+                        [using specialize grpAssoc(g, inverse(g), op(n, g))]
+                      @g-inverse-cancels |
+                        op(g, inverse(g)) = E
+                        [using specialize grpInverseRight(g)]
+                      @identity-times-ng |
+                        op(E, op(n, g)) = op(n, g)
+                        [using specialize grpIdentityLeft(op(n, g))]
+                      @regrouped-left |
+                        op(E, op(n, g)) = op(g, op(inverse(g), op(n, g)))
+                        [by rewrite g-inverse-cancels regroup-left]
+                      @ng-is-g-times |
+                        op(n, g) = op(g, op(inverse(g), op(n, g)))
+                        [by rewrite identity-times-ng regrouped-left]
+                      // and g⁻¹(ng) = (g⁻¹n)g, so the inner factor is the conjugate above
+                      @inner-regroup |
+                        op(op(inverse(g), n), g) = op(inverse(g), op(n, g))
+                        [using specialize grpAssoc(inverse(g), n, g)]
+                      @ng-is-g-times-the-conjugate |
+                        op(n, g) = op(g, op(op(inverse(g), n), g))
+                        [by rewrite inner-regroup ng-is-g-times]
+                      @x-is-g-times-the-conjugate |
+                        x = op(g, op(op(inverse(g), n), g))
+                        [by rewrite x-is-n-times-g ng-is-g-times-the-conjugate]
+                      @pair-left |
+                        inSubgroup(op(op(inverse(g), n), g))
+                          and x = op(g, op(op(inverse(g), n), g))
+                        [by and_intro conjugate-is-in-n x-is-g-times-the-conjugate]
+                      @conclusion-left-member |
+                        exists h: Grp; inSubgroup(h) and x = op(g, h)
+                        [by exists_intro(op(op(inverse(g), n), g)) pair-left]
+                    }
+                  @left-membership |
+                    exists h: Grp; inSubgroup(h) and x = op(g, h)
+                    [by exists_elim with-right-witness]
+                  @conclusion-in-the-left-coset |
+                    inCoset(g, x)
+                    [using tautology left-membership]
+                }
+              @right-implies-left |
+                inRightCoset(g, x) -> inCoset(g, x)
+                [by implies_intro given-x-in-the-right-coset]
+              @conclusion-agree-at-x |
+                inCoset(g, x) iff inRightCoset(g, x)
+                [by iff_intro left-implies-right right-implies-left]
+            }
+          @discharge-x |
+            forall x: Grp; inCoset(g, x) iff inRightCoset(g, x)
+            [by forall_intro inner-x]
+        }
+    }
+  @backward |
+    (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))))
+      -> (forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x))
+    [by implies_intro given-conjugation-lands]
+  @conclusion |
+    (forall g: Grp; forall x: Grp; inCoset(g, x) iff inRightCoset(g, x))
+      iff
+      (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))))
+    [by iff_intro forward backward]
+qed
+
+// -- the FACTOR GROUP's operation is well-defined (Judson Thm 10.4) -------------------------
+//
+// "(aN)(bN) = abN. This operation must be shown to be well-defined; that is, group
+// multiplication must be independent of the choice of coset representative."
+//
+// With cosets as membership predicates, "aN = bN" is `inCoset(a, b)` (§6.1's
+// `cosetsCoincideIffQuotientIsInTheSubgroup`), so well-definedness reads: if a and b
+// represent the same coset and c and d do, then ac and bd represent the same coset. The
+// normality hypothesis is what makes the middle step work — Judson's `bn₁N = bNn₁ = bN`.
+theorem theFactorOperationIsWellDefined:
+  (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))) ->
+  forall a: Grp; forall b: Grp; forall c: Grp; forall d: Grp;
+  inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+  inSubgroup(op(inverse(op(a, c)), op(b, d)))
+proof
+  @given-normal |
+    assume forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g))) {
+      @normal |
+        forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+        [by hypothesis given-normal]
+      @well-defined |
+        forall a: Grp; forall b: Grp; forall c: Grp; forall d: Grp;
+          inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+          inSubgroup(op(inverse(op(a, c)), op(b, d)))
+        [by forall_intro at-a]
+      @at-a |
+        fix a: Grp {
+          @at-b |
+            fix b: Grp {
+              @at-c |
+                fix c: Grp {
+                  @at-d |
+                    fix d: Grp {
+                      @given-a-b |
+                        assume inSubgroup(op(inverse(a), b)) {
+                          @a-to-b |
+                            inSubgroup(op(inverse(a), b))
+                            [by hypothesis given-a-b]
+                          @given-c-d |
+                            assume inSubgroup(op(inverse(c), d)) {
+                              @c-to-d |
+                                inSubgroup(op(inverse(c), d))
+                                [by hypothesis given-c-d]
+                              // (ac)⁻¹(bd) = c⁻¹(a⁻¹b)d = c⁻¹ n d  where n = a⁻¹b ∈ N.
+                              // Normality turns c⁻¹nd into (c⁻¹n c)(c⁻¹d): the first factor
+                              // is a conjugate of n, the second is c⁻¹d ∈ N, and N is closed.
+                              @conjugate-of-n |
+                                inSubgroup(op(op(inverse(c), op(inverse(a), b)), inverse(inverse(c))))
+                                [using specialize normal(inverse(c), op(inverse(a), b)) a-to-b]
+                              @double-inverse |
+                                inverse(inverse(c)) = c
+                                [using specialize invInvolution(c)]
+                              @conjugate-tidied |
+                                inSubgroup(op(op(inverse(c), op(inverse(a), b)), c))
+                                [by rewrite double-inverse conjugate-of-n]
+                              @product-in-n |
+                                inSubgroup(op(op(op(inverse(c), op(inverse(a), b)), c), op(inverse(c), d)))
+                                [using specialize subgroupClosedOp(op(op(inverse(c), op(inverse(a), b)), c), op(inverse(c), d)) conjugate-tidied c-to-d]
+                              // that product IS (ac)⁻¹(bd); `simplify` closes the algebra,
+                              // which is four associativity steps and two cancellations
+                              // c(c⁻¹d) = d collapses the inner pair; then it is pure
+                              // associativity plus (ac)⁻¹ = c⁻¹a⁻¹.
+                              @c-regroup |
+                                op(op(c, inverse(c)), d) = op(c, op(inverse(c), d))
+                                [using specialize grpAssoc(c, inverse(c), d)]
+                              @c-times-its-inverse |
+                                op(c, inverse(c)) = E
+                                [using specialize grpInverseRight(c)]
+                              @identity-times-d |
+                                op(E, d) = op(c, op(inverse(c), d))
+                                [by rewrite c-times-its-inverse c-regroup]
+                              @d-alone |
+                                op(E, d) = d
+                                [using specialize grpIdentityLeft(d)]
+                              @c-cancels-into-d |
+                                op(c, op(inverse(c), d)) = d
+                                [using chain identity-times-d-flipped d-alone]
+                              @identity-times-d-flipped |
+                                op(c, op(inverse(c), d)) = op(E, d)
+                                [by symmetry identity-times-d]
+                              @the-product-is-the-quotient |
+                                op(op(op(inverse(c), op(inverse(a), b)), c), op(inverse(c), d))
+                                  = op(inverse(op(a, c)), op(b, d))
+                                [using simplify c-cancels-into-d grpAssoc invProduct]
+                              @conclusion-well-defined |
+                                inSubgroup(op(inverse(op(a, c)), op(b, d)))
+                                [by rewrite the-product-is-the-quotient product-in-n]
+                            }
+                          @c-d-implies |
+                            inSubgroup(op(inverse(c), d)) -> inSubgroup(op(inverse(op(a, c)), op(b, d)))
+                            [by implies_intro given-c-d]
+                        }
+                      @a-b-implies |
+                        inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+                          inSubgroup(op(inverse(op(a, c)), op(b, d)))
+                        [by implies_intro given-a-b]
+                    }
+                  @discharge-d |
+                    forall d: Grp; inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+                      inSubgroup(op(inverse(op(a, c)), op(b, d)))
+                    [by forall_intro at-d]
+                }
+              @discharge-c |
+                forall c: Grp; forall d: Grp; inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+                  inSubgroup(op(inverse(op(a, c)), op(b, d)))
+                [by forall_intro at-c]
+            }
+          @discharge-b |
+            forall b: Grp; forall c: Grp; forall d: Grp; inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+              inSubgroup(op(inverse(op(a, c)), op(b, d)))
+            [by forall_intro at-b]
+        }
+    }
+  @conclusion |
+    (forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))) ->
+      forall a: Grp; forall b: Grp; forall c: Grp; forall d: Grp;
+      inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
+      inSubgroup(op(inverse(op(a, c)), op(b, d)))
+    [by implies_intro given-normal]
+qed
