@@ -15,6 +15,7 @@ import int_order <<< "std/integer/order.b4m"
 import int_divides <<< "std/integer/divides.b4m"
 import int_embedding <<< "std/integer/embedding.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
+import indexed <<< "std/indexed.b4m"
 import group <<< "std/group.b4m"
 import group_power <<< "std/group/power.b4m"
 import group_sequence <<< "std/group/sequence.b4m"
@@ -897,4 +898,126 @@ proof
       and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> znAt(v2, i) = znAt(v2, j) -> i = j)
       and (forall g: Zn; (not generates(g)) -> exists j: Nat; less_than(j, q) and znAt(v2, j) = g)
     [using model(ZnListing) group_listing.generatorsAndNonGeneratorsAreListed]
+qed
+
+// -- §6.3: U(n)'s LISTING, via the abstract container ------------------------------------------
+//
+// Splitting ℤ_n's listing at `isUnit` lists U(n) without repetition — the length that IS φ(n),
+// and the input Fermat/Euler need. This could NOT go through `ZnListing` above:
+// `group_listing.splittingAListing`'s parameter is typed `prop(Grp)`, and a schema PARAMETER's
+// sort token cannot be remapped by a model ("unknown sort 'Grp'"). `std/indexed.b4m` states the
+// same schema over `prop(Item)`, where `Item` IS model-mapped, so it transfers from there.
+//
+// ZnSeq's postulates are STRONGER than the container's (they carry a `znProductUpTo` fold clause
+// it has none of) and a model obligation must match EXACTLY — hence the two weakenings below.
+// Only `indexedSingleton` and `indexedConcat` are needed; the splitting chain uses no others.
+
+theorem znSingletonWeak: forall x: Zn; exists s: ZnSeq; znAt(s, NZERO) = x
+proof
+  @generalize-x |
+    fix x: Zn {
+      @strong |
+        exists s: ZnSeq; znAt(s, NZERO) = x and znProductUpTo(s, succ(NZERO)) = x
+        [using specialize znSeqSingleton(x)]
+      @with-s |
+        unpack s: ZnSeq from strong {
+          @both |
+            znAt(s, NZERO) = x and znProductUpTo(s, succ(NZERO)) = x
+            [by hypothesis with-s]
+          @weak-at |
+            znAt(s, NZERO) = x
+            [by and_elim_left both]
+          @conclusion-exists |
+            exists s2: ZnSeq; znAt(s2, NZERO) = x
+            [by exists_intro(s) weak-at]
+        }
+      @conclusion-at-x |
+        exists s: ZnSeq; znAt(s, NZERO) = x
+        [by exists_elim with-s]
+    }
+  @conclusion |
+    forall x: Zn; exists s: ZnSeq; znAt(s, NZERO) = x
+    [by forall_intro generalize-x]
+qed
+
+theorem znConcatWeak: forall s: ZnSeq; forall t: ZnSeq; forall j: Nat; forall k: Nat;
+  exists u: ZnSeq;
+  (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+  and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+proof
+  @generalize-s |
+    fix s: ZnSeq {
+      @generalize-t |
+        fix t: ZnSeq {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-k |
+                fix k: Nat {
+                  @strong |
+                    exists u: ZnSeq;
+                      (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+                      and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+                      and znProductUpTo(u, nadd(j, k)) = add(znProductUpTo(s, j), znProductUpTo(t, k))
+                    [using specialize znSeqConcat(s, t, j, k)]
+                  @with-u |
+                    unpack u: ZnSeq from strong {
+                      @all-three |
+                        (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+                          and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+                          and znProductUpTo(u, nadd(j, k)) = add(znProductUpTo(s, j), znProductUpTo(t, k))
+                        [by hypothesis with-u]
+                      @weak-pair |
+                        (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+                          and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+                        [using tautology all-three]
+                      @conclusion-exists |
+                        exists u2: ZnSeq;
+                          (forall i: Nat; less_than(i, j) -> znAt(u2, i) = znAt(s, i))
+                          and (forall i: Nat; less_than(i, k) -> znAt(u2, nadd(j, i)) = znAt(t, i))
+                        [by exists_intro(u) weak-pair]
+                    }
+                  @conclusion-at-k |
+                    exists u: ZnSeq;
+                      (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+                      and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+                    [by exists_elim with-u]
+                }
+              @discharge-k |
+                forall k: Nat; exists u: ZnSeq;
+                  (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+                  and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+                [by forall_intro generalize-k]
+            }
+          @discharge-j |
+            forall j: Nat; forall k: Nat; exists u: ZnSeq;
+              (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+              and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+            [by forall_intro generalize-j]
+        }
+      @discharge-t |
+        forall t: ZnSeq; forall j: Nat; forall k: Nat; exists u: ZnSeq;
+          (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+          and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s: ZnSeq; forall t: ZnSeq; forall j: Nat; forall k: Nat; exists u: ZnSeq;
+      (forall i: Nat; less_than(i, j) -> znAt(u, i) = znAt(s, i))
+      and (forall i: Nat; less_than(i, k) -> znAt(u, nadd(j, i)) = znAt(t, i))
+    [by forall_intro generalize-s]
+qed
+
+model ZnIsIndexed {
+  indexed.Indexed: ZnSeq
+  indexed.Item: Zn
+  indexed.at: znAt
+  indexed.indexedSingleton <- znSingletonWeak
+  indexed.indexedConcat <- znConcatWeak
+}
+
+theorem znSplitsAtUnits: forall m: Nat; forall w: ZnSeq; (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) -> exists v: ZnSeq; exists p: Nat; exists v2: ZnSeq; exists q: Nat; nadd(p, q) = m and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, m) and znAt(v, j) = znAt(w, i) and mod_n.isUnit(znAt(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall i: Nat; less_than(i, m) -> mod_n.isUnit(znAt(w, i)) -> exists j: Nat; less_than(j, p) and znAt(v, j) = znAt(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, m) and znAt(v2, j) = znAt(w, i) and (not mod_n.isUnit(znAt(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall i: Nat; less_than(i, m) -> (not mod_n.isUnit(znAt(w, i))) -> exists j: Nat; less_than(j, q) and znAt(v2, j) = znAt(w, i)))
+proof
+  @conclusion |
+    forall m: Nat; forall w: ZnSeq; (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> znAt(w, i) = znAt(w, j) -> i = j) -> exists v: ZnSeq; exists p: Nat; exists v2: ZnSeq; exists q: Nat; nadd(p, q) = m and ((forall j: Nat; less_than(j, p) -> exists i: Nat; less_than(i, m) and znAt(v, j) = znAt(w, i) and mod_n.isUnit(znAt(w, i))) and (forall i: Nat; forall j: Nat; less_than(i, p) -> less_than(j, p) -> znAt(v, i) = znAt(v, j) -> i = j) and (forall i: Nat; less_than(i, m) -> mod_n.isUnit(znAt(w, i)) -> exists j: Nat; less_than(j, p) and znAt(v, j) = znAt(w, i))) and ((forall j: Nat; less_than(j, q) -> exists i: Nat; less_than(i, m) and znAt(v2, j) = znAt(w, i) and (not mod_n.isUnit(znAt(w, i)))) and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> znAt(v2, i) = znAt(v2, j) -> i = j) and (forall i: Nat; less_than(i, m) -> (not mod_n.isUnit(znAt(w, i))) -> exists j: Nat; less_than(j, q) and znAt(v2, j) = znAt(w, i)))
+    [using model(ZnIsIndexed) indexed.splittingAListing((fun z: Zn => mod_n.isUnit(z)))]
 qed
