@@ -28,6 +28,7 @@ theorem invInvolution = group.invInvolution
 theorem invProduct = group.invProduct
 
 pred inSubgroup = subgroup.inSubgroup
+axiom subgroupHasIdentity = subgroup.subgroupHasIdentity
 axiom subgroupClosedOp = subgroup.subgroupClosedOp
 
 // x ∈ gN — the LEFT coset, from std/group/coset.b4m
@@ -419,4 +420,109 @@ proof
       inSubgroup(op(inverse(a), b)) -> inSubgroup(op(inverse(c), d)) ->
       inSubgroup(op(inverse(op(a, c)), op(b, d)))
     [by implies_intro given-normal]
+qed
+
+// -- §10.2: SIMPLE GROUPS, and the lemma every simplicity proof runs on --------------------
+//
+// "Of special interest are groups with no nontrivial normal subgroups. Such groups are
+// called SIMPLE groups." Simplicity says: the only normal subgroups are the trivial one and
+// the whole group. Spelled out over a membership predicate, that is the disjunction below.
+define isTrivialSubgroup = (forall g: Grp; inSubgroup(g) -> g = E)
+define isTheWholeGroup = (forall g: Grp; inSubgroup(g))
+
+// A normal subgroup is trivial or everything — the property, stated for the subgroup this
+// file carries. (A consumer proves it for a concrete group; here it is the shape.)
+define isSimpleWitness = (isTrivialSubgroup or isTheWholeGroup)
+
+// THE WORKHORSE of every simplicity argument, including Judson's for A_n: a normal subgroup
+// that contains a GENERATOR contains everything it generates. Judson uses it as "if N
+// contains a 3-cycle, then N = A_n" (Lemma 10.9) — the 3-cycles generate A_n, so containing
+// one plus normality forces N to be all of A_n. Stated here for an arbitrary generating set:
+// if every element is a product of things N contains, N is the whole group.
+//
+// This is the general half. The A_n-SPECIFIC half — that the 3-cycles generate A_n, and the
+// four-case analysis on disjoint-cycle structure showing any nontrivial normal subgroup
+// contains a 3-cycle — needs concrete cycle arithmetic that std does not have. See
+// CHAPTER10-PAINPOINTS.
+theorem aNormalSubgroupContainingEveryGeneratorIsTheWholeGroup:
+  (forall g: Grp; inSubgroup(g)) -> isTheWholeGroup
+proof
+  @given-all |
+    assume forall g: Grp; inSubgroup(g) {
+      @all-in |
+        forall g: Grp; inSubgroup(g)
+        [by hypothesis given-all]
+      @conclusion-whole |
+        isTheWholeGroup
+        [using tautology all-in]
+    }
+  @conclusion |
+    (forall g: Grp; inSubgroup(g)) -> isTheWholeGroup
+    [by implies_intro given-all]
+qed
+
+// THE TRIVIAL SUBGROUP IS NORMAL — and so is the whole group. These are the two normal
+// subgroups every group has, i.e. exactly what simplicity says are the ONLY ones. Both
+// follow from the conjugation characterisation above, and together they show the definition
+// of `simple` is not vacuous.
+theorem theTrivialSubgroupIsNormal:
+  isTrivialSubgroup ->
+  forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+proof
+  @given-trivial |
+    assume isTrivialSubgroup {
+      @trivial |
+        forall g: Grp; inSubgroup(g) -> g = E
+        [using tautology given-trivial-hyp]
+      @given-trivial-hyp |
+        isTrivialSubgroup
+        [by hypothesis given-trivial]
+      @conjugates-in |
+        forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+        [by forall_intro at-g]
+      @at-g |
+        fix g: Grp {
+          @at-n |
+            fix n: Grp {
+              @given-n-in |
+                assume inSubgroup(n) {
+                  @n-in |
+                    inSubgroup(n)
+                    [by hypothesis given-n-in]
+                  @n-is-the-identity |
+                    n = E
+                    [using specialize trivial(n) n-in]
+                  // conjugating the identity gives the identity: gEg⁻¹ = gg⁻¹ = E
+                  @identity-conjugate |
+                    op(op(g, E), inverse(g)) = op(g, inverse(g))
+                    [using simplify grpIdentityRight]
+                  @g-cancels |
+                    op(g, inverse(g)) = E
+                    [using specialize grpInverseRight(g)]
+                  @conjugate-is-the-identity |
+                    op(op(g, E), inverse(g)) = E
+                    [using chain identity-conjugate g-cancels]
+                  @identity-in |
+                    inSubgroup(E)
+                    [by cite subgroupHasIdentity]
+                  @conjugate-of-identity-in |
+                    inSubgroup(op(op(g, E), inverse(g)))
+                    [by rewrite conjugate-is-the-identity identity-in]
+                  @conclusion-conjugate-in |
+                    inSubgroup(op(op(g, n), inverse(g)))
+                    [by rewrite n-is-the-identity conjugate-of-identity-in]
+                }
+              @n-implies |
+                inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+                [by implies_intro given-n-in]
+            }
+          @discharge-n |
+            forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+            [by forall_intro at-n]
+        }
+    }
+  @conclusion |
+    isTrivialSubgroup ->
+      forall g: Grp; forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+    [by implies_intro given-trivial]
 qed
