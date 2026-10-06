@@ -194,9 +194,9 @@ model CyclicSubgroup {
 // transferred Lagrange wants it over `inCyclic`. The biconditional moves each clause across.
 theorem theCyclicSubgroupIsListed: forall n: Nat; hasOrder(gen, toInt(n)) ->
   exists v: Seq;
-    (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i)))
-    and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j)
-    and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
+  (forall i: Nat; less_than(i, n) -> inCyclic(at(v, i)))
+  and (forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(v, i) = at(v, j) -> i = j)
+  and (forall h: Grp; inCyclic(h) -> exists i: Nat; less_than(i, n) and at(v, i) = h)
 proof
   @generalize-n |
     fix n: Nat {
@@ -550,5 +550,173 @@ proof
       ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
       ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
       forall y: Grp; exists e2: Int; y = power(gen, e2)
+    [by forall_intro generalize-r]
+qed
+
+// -- §6.3's engine: a multiple of the order is an exponent that returns the identity --------
+//
+// `hasOrder(g, toInt(d))` already CONTAINS `power(g, toInt(d)) = E` (see group_order's
+// definition), so this is `powerMul` plus the ℕ→ℤ bridge on the divisibility witness: from
+// n = d·k, power(g, toInt(n)) = power(power(g, toInt(d)), toInt(k)) = power(E, toInt(k)) = E.
+// This is the whole content of Euler's theorem; everything else is which group you say it in.
+theorem aMultipleOfTheOrderIsAnIdentityExponent: forall g: Grp; forall d: Nat; forall n: Nat;
+  hasOrder(g, toInt(d)) -> divides(d, n) -> power(g, toInt(n)) = E
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-d |
+        fix d: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-order |
+                assume hasOrder(g, toInt(d)) {
+                  @order-holds |
+                    hasOrder(g, toInt(d))
+                    [by hypothesis given-order]
+                  @power-at-order-is-identity |
+                    power(g, toInt(d)) = E
+                    [using tautology order-holds]
+                  @given-divides |
+                    assume divides(d, n) {
+                      @d-divides-n |
+                        divides(d, n)
+                        [by hypothesis given-divides]
+                      @witness-exists |
+                        exists k: Nat; n = mul(d, k)
+                        [using tautology d-divides-n]
+                      @with-quotient-k |
+                        unpack k: Nat from witness-exists {
+                          @n-is-d-times-k |
+                            n = mul(d, k)
+                            [by hypothesis with-quotient-k]
+                          @int-product |
+                            toInt(mul(d, k)) = integer.mul(toInt(d), toInt(k))
+                            [using specialize int_embedding.toIntMul(d, k)]
+                          @power-splits |
+                            power(power(g, toInt(d)), toInt(k)) = power(g, integer.mul(toInt(d), toInt(k)))
+                            [using specialize group_power.powerMul(g, toInt(d), toInt(k))]
+                          @identity-to-the-k |
+                            power(E, toInt(k)) = E
+                            [using specialize group_power.powerOfIdentity(toInt(k))]
+                          @split-at-identity |
+                            power(E, toInt(k)) = power(g, integer.mul(toInt(d), toInt(k)))
+                            [by rewrite power-at-order-is-identity power-splits]
+                          @product-is-identity |
+                            E = power(g, integer.mul(toInt(d), toInt(k)))
+                            [by rewrite identity-to-the-k split-at-identity]
+                          @at-the-int-product |
+                            E = power(g, toInt(mul(d, k)))
+                            [by rewrite int-product product-is-identity]
+                          @at-n |
+                            E = power(g, toInt(n))
+                            [by rewrite n-is-d-times-k at-the-int-product]
+                          @conclusion-identity |
+                            power(g, toInt(n)) = E
+                            [by symmetry at-n]
+                        }
+                      @conclusion-unpacked |
+                        power(g, toInt(n)) = E
+                        [by exists_elim with-quotient-k]
+                    }
+                  @divides-implies-identity |
+                    divides(d, n) -> power(g, toInt(n)) = E
+                    [by implies_intro given-divides]
+                }
+              @order-implies |
+                hasOrder(g, toInt(d)) -> divides(d, n) -> power(g, toInt(n)) = E
+                [by implies_intro given-order]
+            }
+          @discharge-n |
+            forall n: Nat; hasOrder(g, toInt(d)) -> divides(d, n) -> power(g, toInt(n)) = E
+            [by forall_intro generalize-n]
+        }
+      @discharge-d |
+        forall d: Nat; forall n: Nat; hasOrder(g, toInt(d)) -> divides(d, n) -> power(g, toInt(n)) = E
+        [by forall_intro generalize-d]
+    }
+  @conclusion |
+    forall g: Grp; forall d: Nat; forall n: Nat;
+      hasOrder(g, toInt(d)) -> divides(d, n) -> power(g, toInt(n)) = E
+    [by forall_intro generalize-g]
+qed
+
+// -- EULER'S THEOREM (Judson Thm 6.17), in its group-theoretic form ------------------------
+//
+// a^|G| = e for every a in a finite group: the order of a divides |G| (Corollary 6.6, above),
+// and a multiple of the order is an identity exponent (the lemma above). Euler's number-
+// theoretic statement a^φ(n) ≡ 1 (mod n) is THIS, said in U(n): |U(n)| = φ(n), so the
+// exponent IS φ(n) and the identity IS 1.
+theorem anElementToTheGroupsLengthIsTheIdentity: forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+  hasOrder(gen, toInt(d)) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+  ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+  power(gen, toInt(n)) = E
+proof
+  @generalize-r |
+    fix r: Seq {
+      @generalize-k |
+        fix k: Nat {
+          @generalize-gl |
+            fix gl: Seq {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @given-order |
+                        assume hasOrder(gen, toInt(d)) {
+                          @order-holds |
+                            hasOrder(gen, toInt(d))
+                            [by hypothesis given-order]
+                          @given-reps |
+                            assume ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) {
+                              @reps-list |
+                                ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))
+                                [by hypothesis given-reps]
+                              @given-group-listing |
+                                assume ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) {
+                                  @group-listed |
+                                    ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))
+                                    [by hypothesis given-group-listing]
+                                  @order-divides-the-length |
+                                    divides(d, n)
+                                    [using specialize theOrderDividesTheGroupsLength(r, k, gl, n, d) order-holds reps-list group-listed]
+                                  @conclusion-identity |
+                                    power(gen, toInt(n)) = E
+                                    [using specialize aMultipleOfTheOrderIsAnIdentityExponent(gen, d, n) order-holds order-divides-the-length]
+                                }
+                              @listing-implies |
+                                (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+                                [by implies_intro given-group-listing]
+                            }
+                          @reps-implies |
+                            (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+                            [by implies_intro given-reps]
+                        }
+                      @order-implies |
+                        hasOrder(gen, toInt(d)) -> (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+                        [by implies_intro given-order]
+                    }
+                  @discharge-d |
+                    forall d: Nat; hasOrder(gen, toInt(d)) -> (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+                    [by forall_intro generalize-d]
+                }
+              @discharge-n |
+                forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+                [by forall_intro generalize-n]
+            }
+          @discharge-gl |
+            forall gl: Seq; forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+            [by forall_intro generalize-gl]
+        }
+      @discharge-k |
+        forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat; hasOrder(gen, toInt(d)) -> (((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h))))) -> (((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x))) -> power(gen, toInt(n)) = E
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall r: Seq; forall k: Nat; forall gl: Seq; forall n: Nat; forall d: Nat;
+      hasOrder(gen, toInt(d)) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> (exists h: Grp; inCyclic(h) and at(r, j) = op(at(r, i), h)) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, k) and (exists h: Grp; inCyclic(h) and x = op(at(r, i), h)))) ->
+      ((forall i: Nat; forall j: Nat; less_than(i, n) -> less_than(j, n) -> at(gl, i) = at(gl, j) -> i = j) and (forall x: Grp; exists i: Nat; less_than(i, n) and at(gl, i) = x)) ->
+      power(gen, toInt(n)) = E
     [by forall_intro generalize-r]
 qed
