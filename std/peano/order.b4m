@@ -9,6 +9,7 @@
 // peano's `induction` axiom, adding no trust surface.
 
 import peano <<< "std/peano.b4m"
+import order <<< "std/order.b4m"
 
 // -- vocabulary (aliased from std/peano; single-use names are qualified
 //    inline at their call site) ---------------------------------------------
@@ -47,6 +48,17 @@ axiom lessThanElim: forall a, b: Nat; less_than(a, b) -> exists d: Nat; add(a, s
 // not separate theorems. `lessOrEqualIsGapExistential` (below) proves this body is
 // identical to the old gap-existential characterization `exists d; add(a, d) = b`.
 define less_or_equal(a, b) = less_than(a, b) or a = b
+
+// the strict order is transitive, so this sort models std/order.b4m — and inherits every
+// fact that follows from `less_or_equal`'s definition plus transitivity. `lessThanTransitive`
+// is the one obligation; its proof stays here, where this tower's own gap axioms are.
+model NatIsOrdered {
+  order.Ordered: Nat
+  order.less_than: less_than
+  order.lessThanTransitive <- lessThanTransitive
+  order.lessThanIrreflexive <- lessThanIrreflexive
+  order.trichotomy <- trichotomy
+}
 
 // -- forwarded theorems -----------------------------------------------------
 
@@ -990,7 +1002,7 @@ qed
 // Base Q(ZERO) is vacuous (nothing is below ZERO); the step Q(k) -> Q(succ k)
 // uses lessThanSuccSplit to reduce m < succ(k) to m < k (use Q(k)) or m = k
 // (use the strong step at k). Then prop(n) follows from Q(succ n) at m = n.
-theorem strongInduction(prop: Nat -> Prop):
+theorem strongInduction(prop(Nat)):
   (forall n: Nat; (forall m: Nat; less_than(m, n) -> prop(m)) -> prop(n))
   -> forall n: Nat; prop(n)
 proof
@@ -1351,53 +1363,17 @@ qed
 // reflexivity: le(a, a). The right disjunct a = a holds by reflexivity.
 theorem lessOrEqualRefl: forall a: Nat; less_or_equal(a, a)
 proof
-  @generalize-a |
-    fix a: Nat {
-      @a-equals-a |
-        a = a
-        [by reflexivity]
-      @a-below-a-or-equal |
-        less_than(a, a) or a = a
-        [by or_intro_right a-equals-a]
-      @a-at-most-a |
-        less_or_equal(a, a)
-        [using tautology a-below-a-or-equal]
-    }
   @conclusion |
     forall a: Nat; less_or_equal(a, a)
-    [by forall_intro generalize-a]
+    [using model(NatIsOrdered) order.lessOrEqualRefl]
 qed
 
 // less_than implies less_or_equal — the left disjunct directly.
 theorem lessThanToLessOrEqual: forall a, b: Nat; less_than(a, b) -> less_or_equal(a, b)
 proof
-  @generalize-a |
-    fix a: Nat {
-      @generalize-b |
-        fix b: Nat {
-          @given-a-below-b |
-            assume less_than(a, b) {
-              @a-below-b |
-                less_than(a, b)
-                [by hypothesis given-a-below-b]
-              @a-below-b-or-equal |
-                less_than(a, b) or a = b
-                [by or_intro_left a-below-b]
-              @a-at-most-b |
-                less_or_equal(a, b)
-                [using tautology a-below-b-or-equal]
-            }
-          @below-b-implies-at-most-b |
-            less_than(a, b) -> less_or_equal(a, b)
-            [by implies_intro given-a-below-b]
-        }
-      @discharge-b |
-        forall b: Nat; less_than(a, b) -> less_or_equal(a, b)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Nat; less_than(a, b) -> less_or_equal(a, b)
-    [by forall_intro generalize-a]
+    [using model(NatIsOrdered) order.lessThanToLessOrEqual]
 qed
 
 // transitivity: le(a,b) -> le(b,c) -> le(a,c). Split le(a,b) and le(b,c) each
@@ -1405,209 +1381,27 @@ qed
 // lessThanTransitive / rewriting, then re-wrap with lessThanToLessOrEqual.
 theorem lessOrEqualTransitive: forall a, b, c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
 proof
-  @generalize-a |
-    fix a: Nat {
-      @generalize-b |
-        fix b: Nat {
-          @generalize-c |
-            fix c: Nat {
-              @given-a-at-most-b |
-                assume less_or_equal(a, b) {
-                  @given-b-at-most-c |
-                    assume less_or_equal(b, c) {
-                      @a-below-b-or-equal |
-                        less_than(a, b) or a = b
-                        [by hypothesis given-a-at-most-b]
-                      @b-below-c-or-equal |
-                        less_than(b, c) or b = c
-                        [by hypothesis given-b-at-most-c]
-                      // split le(a,b): a < b or a = b
-                      @a-at-most-c |
-                        less_or_equal(a, c)
-                        case a-below-b-or-equal {
-                          @when-a-below-b |
-                            assume less_than(a, b) {
-                              @a-below-b |
-                                less_than(a, b)
-                                [by hypothesis when-a-below-b]
-                              // split le(b,c): b < c or b = c
-                              @conclusion-a-at-most-c |
-                                less_or_equal(a, c)
-                                case b-below-c-or-equal {
-                                  @when-b-below-c |
-                                    assume less_than(b, c) {
-                                      @b-below-c |
-                                        less_than(b, c)
-                                        [by hypothesis when-b-below-c]
-                                      @a-below-c |
-                                        less_than(a, c)
-                                        [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
-                                      @conclusion-a-at-most-c |
-                                        less_or_equal(a, c)
-                                        [using specialize lessThanToLessOrEqual(a, c) a-below-c]
-                                    }
-                                  @when-b-equals-c |
-                                    assume b = c {
-                                      @b-equals-c |
-                                        b = c
-                                        [by hypothesis when-b-equals-c]
-                                      @a-below-c |
-                                        less_than(a, c)
-                                        [by rewrite b-equals-c a-below-b]
-                                      @conclusion-a-at-most-c |
-                                        less_or_equal(a, c)
-                                        [using specialize lessThanToLessOrEqual(a, c) a-below-c]
-                                    }
-                                }
-                            }
-                          @when-a-equals-b |
-                            assume a = b {
-                              @a-equals-b |
-                                a = b
-                                [by hypothesis when-a-equals-b]
-                              // le(b,c) with a = b gives le(a,c) by rewriting b -> a
-                              @b-at-most-c |
-                                less_or_equal(b, c)
-                                [by hypothesis given-b-at-most-c]
-                              @conclusion-a-at-most-c |
-                                less_or_equal(a, c)
-                                [by rewrite a-equals-b b-at-most-c]
-                            }
-                        }
-                    }
-                  @b-at-most-c-implies-a-at-most-c |
-                    less_or_equal(b, c) -> less_or_equal(a, c)
-                    [by implies_intro given-b-at-most-c]
-                }
-              @a-at-most-b-implies-transitively-at-most-c |
-                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-                [by implies_intro given-a-at-most-b]
-            }
-          @discharge-c |
-            forall c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-            [by forall_intro generalize-c]
-        }
-      @discharge-b |
-        forall b, c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b, c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-    [by forall_intro generalize-a]
+    [using model(NatIsOrdered) order.lessOrEqualTransitive]
 qed
 
 // disjunctive form: le(a,b) -> (a < b or a = b). Now definitional — the body of
 // less_or_equal IS this disjunction.
 theorem lessOrEqualSplit: forall a, b: Nat; less_or_equal(a, b) -> (less_than(a, b) or a = b)
 proof
-  @generalize-a |
-    fix a: Nat {
-      @generalize-b |
-        fix b: Nat {
-          @given-a-at-most-b |
-            assume less_or_equal(a, b) {
-              @a-below-b-or-equal |
-                less_than(a, b) or a = b
-                [by hypothesis given-a-at-most-b]
-            }
-          @at-most-b-implies-below-or-equal |
-            less_or_equal(a, b) -> (less_than(a, b) or a = b)
-            [by implies_intro given-a-at-most-b]
-        }
-      @discharge-b |
-        forall b: Nat; less_or_equal(a, b) -> (less_than(a, b) or a = b)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Nat; less_or_equal(a, b) -> (less_than(a, b) or a = b)
-    [by forall_intro generalize-a]
+    [using model(NatIsOrdered) order.lessOrEqualSplit]
 qed
 
 // equal-or-less builds le the other way: a = b -> le(a,b) is refl+rewrite; a<b -> le is lessThanToLessOrEqual.
 // antisymmetry: le(a,b) -> le(b,a) -> a = b. Use split: a<b or a=b; if a<b and b<=a then a<a (contra via transitive+irrefl).
 theorem lessOrEqualAntisymmetric: forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
 proof
-  @generalize-a |
-    fix a: Nat {
-      @generalize-b |
-        fix b: Nat {
-          @given-a-at-most-b |
-            assume less_or_equal(a, b) {
-              @given-b-at-most-a |
-                assume less_or_equal(b, a) {
-                  @a-at-most-b |
-                    less_or_equal(a, b)
-                    [by hypothesis given-a-at-most-b]
-                  @b-at-most-a |
-                    less_or_equal(b, a)
-                    [by hypothesis given-b-at-most-a]
-                  // split le(a,b): a<b or a=b
-                  @a-below-b-or-equal |
-                    less_than(a, b) or a = b
-                    [using specialize lessOrEqualSplit(a, b) a-at-most-b]
-                  @when-a-below-b |
-                    assume less_than(a, b) {
-                      @a-below-b |
-                        less_than(a, b)
-                        [by hypothesis when-a-below-b]
-                      // le(b,a) and a<b: split le(b,a) -> b<a or b=a
-                      @b-below-a-or-equal |
-                        less_than(b, a) or b = a
-                        [using specialize lessOrEqualSplit(b, a) b-at-most-a]
-                      @when-b-below-a |
-                        assume less_than(b, a) {
-                          @b-below-a |
-                            less_than(b, a)
-                            [by hypothesis when-b-below-a]
-                          // a<b and b<a -> a<a via transitive, contradiction with irreflexive
-                          @a-below-a |
-                            less_than(a, a)
-                            [using specialize lessThanTransitive(a, b, a) a-below-b b-below-a]
-                          @not-a-below-a |
-                            not less_than(a, a)
-                            [using specialize lessThanIrreflexive(a)]
-                          @a-equals-b-vacuously |
-                            a = b
-                            [by absurd a-below-a not-a-below-a]
-                        }
-                      @when-b-equals-a |
-                        assume b = a {
-                          @b-equals-a |
-                            b = a
-                            [by hypothesis when-b-equals-a]
-                          @a-equals-b |
-                            a = b
-                            [by symmetry b-equals-a]
-                        }
-                      @a-equals-b |
-                        a = b
-                        [by or_elim b-below-a-or-equal when-b-below-a when-b-equals-a]
-                    }
-                  @when-a-equals-b |
-                    assume a = b {
-                      @a-equals-b |
-                        a = b
-                        [by hypothesis when-a-equals-b]
-                    }
-                  @a-equals-b |
-                    a = b
-                    [by or_elim a-below-b-or-equal when-a-below-b when-a-equals-b]
-                }
-              @b-at-most-a-implies-equal |
-                less_or_equal(b, a) -> a = b
-                [by implies_intro given-b-at-most-a]
-            }
-          @at-most-both-ways-implies-equal |
-            less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-            [by implies_intro given-a-at-most-b]
-        }
-      @discharge-b |
-        forall b: Nat; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-    [by forall_intro generalize-a]
+    [using model(NatIsOrdered) order.lessOrEqualAntisymmetric]
 qed
 
 // Left multiplicative cancellation: a nonzero common left factor cancels.
@@ -1735,7 +1529,7 @@ qed
 // n = m give n ≤ m, and m < n is impossible since the IH says prop(m) fails),
 // contradicting the standing "no least element" assumption. Strong induction then
 // makes prop empty, contradicting nonemptiness.
-theorem wellOrdering(prop: Nat -> Prop):
+theorem wellOrdering(prop(Nat)):
   (exists n: Nat; prop(n))
   -> exists least: Nat; prop(least) and (forall m: Nat; prop(m) -> less_or_equal(least, m))
 proof
@@ -1877,4 +1671,81 @@ proof
     (exists n: Nat; prop(n))
       -> exists least: Nat; prop(least) and (forall m: Nat; prop(m) -> less_or_equal(least, m))
     [by implies_intro given-inhabited]
+qed
+
+// -- small successor/order facts ---------------------------------------------
+// These are pure ℕ order arithmetic and were being re-proved inside consumers
+// (`std/group/listing.b4m`, `std/permutation/cycle.b4m`) because they had no home
+// here. They belong with the order theory; consumers alias them.
+
+theorem zeroBelowSucc: forall k: Nat; less_than(ZERO, succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @zero-plus-successor |
+        add(ZERO, succ(k)) = succ(k)
+        [using specialize addZeroLeft(succ(k))]
+      @conclusion-below |
+        less_than(ZERO, succ(k))
+        [using specialize lessThanIntro(ZERO, k, succ(k)) zero-plus-successor]
+    }
+  @conclusion |
+    forall k: Nat; less_than(ZERO, succ(k))
+    [by forall_intro generalize-k]
+qed
+
+theorem zeroIsNotSucc: forall k: Nat; not (ZERO = succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @suppose-equal |
+        assume ZERO = succ(k) {
+          @equal |
+            ZERO = succ(k)
+            [by hypothesis suppose-equal]
+          @flipped |
+            succ(k) = ZERO
+            [by symmetry equal]
+        }
+      @succ-not-zero |
+        succ(k) != ZERO
+        [using specialize succNotZero(k)]
+      @conclusion-not-equal |
+        not (ZERO = succ(k))
+        [by not_intro suppose-equal flipped succ-not-zero]
+    }
+  @conclusion |
+    forall k: Nat; not (ZERO = succ(k))
+    [by forall_intro generalize-k]
+qed
+
+theorem succIsNotSuccSucc: forall k: Nat; not (succ(k) = succ(succ(k)))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @suppose-equal |
+        assume succ(k) = succ(succ(k)) {
+          @equal |
+            succ(k) = succ(succ(k))
+            [by hypothesis suppose-equal]
+          @predecessors-equal |
+            k = succ(k)
+            [using specialize succInjective(k, succ(k)) equal]
+          @k-below-succ-k |
+            less_than(k, succ(k))
+            [using specialize lessThanSelf(k)]
+          @k-below-itself |
+            less_than(k, k)
+            [by rewrite predecessors-equal k-below-succ-k]
+        }
+      @k-not-below-itself |
+        not less_than(k, k)
+        [using specialize lessThanIrreflexive(k)]
+      @conclusion-not-equal |
+        not (succ(k) = succ(succ(k)))
+        [by not_intro suppose-equal k-below-itself k-not-below-itself]
+    }
+  @conclusion |
+    forall k: Nat; not (succ(k) = succ(succ(k)))
+    [by forall_intro generalize-k]
 qed

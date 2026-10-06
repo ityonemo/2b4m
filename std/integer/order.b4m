@@ -12,6 +12,7 @@
 // carry `std/integer-nonneg.b4m`'s `nonneg` predicate through the gap.
 
 import integer <<< "std/integer.b4m"
+import order <<< "std/order.b4m"
 import ring <<< "std/integer.b4m"
 import nonnegatives <<< "std/integer.b4m"
 
@@ -88,6 +89,17 @@ axiom lessThanElim: forall a, b: Int; less_than(a, b) -> exists d: Int; nonneg(d
 // `lessOrEqualIsGapExistential` (less_than) proves this body is identical to the old
 // nonnegative-gap-existential characterization `exists d; nonneg(d) and add(a, d) = b`.
 define less_or_equal(a, b) = less_than(a, b) or a = b
+
+// the strict order is transitive, so this sort models std/order.b4m — and inherits every
+// fact that follows from `less_or_equal`'s definition plus transitivity. `lessThanTransitive`
+// is the one obligation; its proof stays here, where this tower's own gap axioms are.
+model IntIsOrdered {
+  order.Ordered: Int
+  order.less_than: less_than
+  order.lessThanTransitive <- lessThanTransitive
+  order.lessThanIrreflexive <- lessThanIrreflexive
+  order.trichotomy <- trichotomy
+}
 
 // -- the order theory -------------------------------------------------------
 
@@ -549,53 +561,17 @@ qed
 // less_than implies less_or_equal — the left disjunct directly.
 theorem lessThanToLessOrEqual: forall a, b: Int; less_than(a, b) -> less_or_equal(a, b)
 proof
-  @generalize-a |
-    fix a: Int {
-      @generalize-b |
-        fix b: Int {
-          @given-a-less_than-b |
-            assume less_than(a, b) {
-              @a-less_than-b |
-                less_than(a, b)
-                [by hypothesis given-a-less_than-b]
-              @a-less_than-b-or-equal |
-                less_than(a, b) or a = b
-                [by or_intro_left a-less_than-b]
-              @a-at-most-b |
-                less_or_equal(a, b)
-                [using tautology a-less_than-b-or-equal]
-            }
-          @less_than-b-implies-at-most-b |
-            less_than(a, b) -> less_or_equal(a, b)
-            [by implies_intro given-a-less_than-b]
-        }
-      @discharge-b |
-        forall b: Int; less_than(a, b) -> less_or_equal(a, b)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Int; less_than(a, b) -> less_or_equal(a, b)
-    [by forall_intro generalize-a]
+    [using model(IntIsOrdered) order.lessThanToLessOrEqual]
 qed
 
 // Reflexivity of ≤: the right disjunct a = a holds by reflexivity.
 theorem lessOrEqualRefl: forall a: Int; less_or_equal(a, a)
 proof
-  @generalize-a |
-    fix a: Int {
-      @a-equals-a |
-        a = a
-        [by reflexivity]
-      @a-less_than-a-or-equal |
-        less_than(a, a) or a = a
-        [by or_intro_right a-equals-a]
-      @a-at-most-a |
-        less_or_equal(a, a)
-        [using tautology a-less_than-a-or-equal]
-    }
   @conclusion |
     forall a: Int; less_or_equal(a, a)
-    [by forall_intro generalize-a]
+    [using model(IntIsOrdered) order.lessOrEqualRefl]
 qed
 
 // Transitivity of ≤: split le(a,b) and le(b,c) each into strict-or-equal; the
@@ -603,119 +579,18 @@ qed
 // re-wrap with lessThanToLessOrEqual.
 theorem lessOrEqualTransitive: forall a, b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
 proof
-  @generalize-a |
-    fix a: Int {
-      @generalize-b |
-        fix b: Int {
-          @generalize-c |
-            fix c: Int {
-              @given-a-at-most-b |
-                assume less_or_equal(a, b) {
-                  @given-b-at-most-c |
-                    assume less_or_equal(b, c) {
-                      @a-less_than-b-or-equal |
-                        less_than(a, b) or a = b
-                        [by hypothesis given-a-at-most-b]
-                      @b-less_than-c-or-equal |
-                        less_than(b, c) or b = c
-                        [by hypothesis given-b-at-most-c]
-                      @a-at-most-c |
-                        less_or_equal(a, c)
-                        case a-less_than-b-or-equal {
-                          @when-a-less_than-b |
-                            assume less_than(a, b) {
-                              @a-less_than-b |
-                                less_than(a, b)
-                                [by hypothesis when-a-less_than-b]
-                              @conclusion-a-at-most-c |
-                                less_or_equal(a, c)
-                                case b-less_than-c-or-equal {
-                                  @when-b-less_than-c |
-                                    assume less_than(b, c) {
-                                      @b-less_than-c |
-                                        less_than(b, c)
-                                        [by hypothesis when-b-less_than-c]
-                                      @a-less_than-c |
-                                        less_than(a, c)
-                                        [using specialize lessThanTransitive(a, b, c) a-less_than-b b-less_than-c]
-                                      @conclusion-a-at-most-c |
-                                        less_or_equal(a, c)
-                                        [using specialize lessThanToLessOrEqual(a, c) a-less_than-c]
-                                    }
-                                  @when-b-equals-c |
-                                    assume b = c {
-                                      @b-equals-c |
-                                        b = c
-                                        [by hypothesis when-b-equals-c]
-                                      @a-less_than-c |
-                                        less_than(a, c)
-                                        [by rewrite b-equals-c a-less_than-b]
-                                      @conclusion-a-at-most-c |
-                                        less_or_equal(a, c)
-                                        [using specialize lessThanToLessOrEqual(a, c) a-less_than-c]
-                                    }
-                                }
-                            }
-                          @when-a-equals-b |
-                            assume a = b {
-                              @a-equals-b |
-                                a = b
-                                [by hypothesis when-a-equals-b]
-                              @b-at-most-c |
-                                less_or_equal(b, c)
-                                [by hypothesis given-b-at-most-c]
-                              @conclusion-a-at-most-c |
-                                less_or_equal(a, c)
-                                [by rewrite a-equals-b b-at-most-c]
-                            }
-                        }
-                    }
-                  @b-at-most-c-implies-a-at-most-c |
-                    less_or_equal(b, c) -> less_or_equal(a, c)
-                    [by implies_intro given-b-at-most-c]
-                }
-              @a-at-most-b-implies-transitively-at-most-c |
-                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-                [by implies_intro given-a-at-most-b]
-            }
-          @discharge-c |
-            forall c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-            [by forall_intro generalize-c]
-        }
-      @discharge-b |
-        forall b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b, c: Int; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-    [by forall_intro generalize-a]
+    [using model(IntIsOrdered) order.lessOrEqualTransitive]
 qed
 
 // Splitting ≤ into < or =: now definitional — the body of less_or_equal IS this
 // disjunction.
 theorem lessOrEqualSplit: forall a, b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
 proof
-  @generalize-a |
-    fix a: Int {
-      @generalize-b |
-        fix b: Int {
-          @given-a-at-most-b |
-            assume less_or_equal(a, b) {
-              @less_than-or-equal |
-                less_than(a, b) or a = b
-                [by hypothesis given-a-at-most-b]
-            }
-          @at-most-b-implies-less_than-or-equal |
-            less_or_equal(a, b) -> (less_than(a, b) or a = b)
-            [by implies_intro given-a-at-most-b]
-        }
-      @discharge-b |
-        forall b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Int; less_or_equal(a, b) -> (less_than(a, b) or a = b)
-    [by forall_intro generalize-a]
+    [using model(IntIsOrdered) order.lessOrEqualSplit]
 qed
 
 // The redefinition of less_or_equal (from an opaque nonneg-gap-existential pred to
@@ -901,87 +776,9 @@ qed
 // the equal branches are all that survive.
 theorem lessOrEqualAntisymmetric: forall a, b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
 proof
-  @generalize-a |
-    fix a: Int {
-      @generalize-b |
-        fix b: Int {
-          @given-a-at-most-b |
-            assume less_or_equal(a, b) {
-              @given-b-at-most-a |
-                assume less_or_equal(b, a) {
-                  @a-at-most-b |
-                    less_or_equal(a, b)
-                    [by hypothesis given-a-at-most-b]
-                  @b-at-most-a |
-                    less_or_equal(b, a)
-                    [by hypothesis given-b-at-most-a]
-                  @a-less_than-b-or-equal |
-                    less_than(a, b) or a = b
-                    [using specialize lessOrEqualSplit(a, b) a-at-most-b]
-                  @a-equals-b |
-                    a = b
-                    case a-less_than-b-or-equal {
-                      @when-a-less_than-b |
-                        assume less_than(a, b) {
-                          @a-less_than-b |
-                            less_than(a, b)
-                            [by hypothesis when-a-less_than-b]
-                          @b-less_than-a-or-equal |
-                            less_than(b, a) or b = a
-                            [using specialize lessOrEqualSplit(b, a) b-at-most-a]
-                          @conclusion-a-equals-b |
-                            a = b
-                            case b-less_than-a-or-equal {
-                              @when-b-less_than-a |
-                                assume less_than(b, a) {
-                                  @b-less_than-a |
-                                    less_than(b, a)
-                                    [by hypothesis when-b-less_than-a]
-                                  // a < b and b < a give a < a, impossible.
-                                  @a-less_than-a |
-                                    less_than(a, a)
-                                    [using specialize lessThanTransitive(a, b, a) a-less_than-b b-less_than-a]
-                                  @not-a-less_than-a |
-                                    not less_than(a, a)
-                                    [using specialize lessThanIrreflexive(a)]
-                                  @conclusion-a-equals-b |
-                                    a = b
-                                    [by absurd a-less_than-a not-a-less_than-a]
-                                }
-                              @when-b-equals-a |
-                                assume b = a {
-                                  @b-equals-a |
-                                    b = a
-                                    [by hypothesis when-b-equals-a]
-                                  @conclusion-a-equals-b |
-                                    a = b
-                                    [by symmetry b-equals-a]
-                                }
-                            }
-                        }
-                      @when-a-equals-b |
-                        assume a = b {
-                          @conclusion-a-equals-b |
-                            a = b
-                            [by hypothesis when-a-equals-b]
-                        }
-                    }
-                }
-              @b-at-most-a-implies-equal |
-                less_or_equal(b, a) -> a = b
-                [by implies_intro given-b-at-most-a]
-            }
-          @at-most-both-ways-implies-equal |
-            less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-            [by implies_intro given-a-at-most-b]
-        }
-      @discharge-b |
-        forall b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-        [by forall_intro generalize-b]
-    }
   @conclusion |
     forall a, b: Int; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
-    [by forall_intro generalize-a]
+    [using model(IntIsOrdered) order.lessOrEqualAntisymmetric]
 qed
 
 // Growing the upper bound preserves order: a < b gives a < succ b. The gap succ d

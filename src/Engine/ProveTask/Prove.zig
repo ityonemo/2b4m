@@ -130,15 +130,13 @@ schema_params: []const StrId = &.{},
 /// via resolveFactRef) is filtered `applyModel(model, source)`, so source names remap to
 /// their targets. `.universe` = an ordinary (identity) proof.
 model: InternPool.Index = .universe,
+/// TRUE while an accelerant's synthetic is produced in the PAINTED (target) namespace.
+painted_production: bool = false,
 /// THE PROOF TREE: this proof's own `(namespace, name)`. Every ProveTask this proof demands
 /// inherits it as `parent`, so the chain records "X was proved because Y's proof needed it".
 /// Null only for a context with no owning fact (the statement-elaboration helper). See
 /// `Context.proof_parent`.
 self_key: ?FactKV.Key = null,
-/// SYNTHETIC (accelerant-generated) schema instance (13e): its formulas were DELABORATED
-/// from already-elaborated terms, so re-elaboration must NOT re-inject refined-sort guards
-/// (Elab.no_relativize). False for ordinary proofs and PARSED schema instances.
-pre_relativized: bool = false,
 /// VALUE-PARAM GUARD WRAPPERS around a model-transferred schema instance's proof (injected by
 /// the instance ProveTask): the outermost `guard_wrappers` block levels are `assume good(p)`
 /// blocks whose export claims (`good(p) -> …`) are TARGET-space steps with no source-space
@@ -189,7 +187,6 @@ fn elab(self: *Prove, w: *const Walk) Elab {
     var e = Elab.init(self.ctx.arena, self.ctx.io, self.ctx, self.ctx.interner, &self.ctx.idents, self.pool, self.ctx.sink, self.source, w, self.ns, &self.fresh_counter);
     e.schema_args = self.schema_args; // null in an ordinary proof; set for a schema instance
     e.model = self.model; // .universe (identity) in an ordinary proof; M for a model transfer
-    e.no_relativize = self.pre_relativized; // synthetic instance: skip guard re-injection
     // obligations are checked in the PROCESS pass only (a read-pass elaboration is redone there).
     if (self.current_block) |kb| {
         e.known = &self.known;
@@ -256,7 +253,9 @@ fn termSort(self: *const Prove, t: TermId) SortId {
     return switch (self.pool.get(t)) {
         .fvar => |v| v.sort,
         .app => |a| @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(a.sym))))),
-        else => @enumFromInt(@intFromEnum(InternPool.Index.prop)),
+        // not a term node — a proposition. Returns the marker, which matches no real sort, so
+        // every consumer's `!= v.sort` test rejects it (none of them wants a proposition here).
+        else => Elab.prop_sort,
     };
 }
 
@@ -557,7 +556,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
         const c = step.body.claim;
         if (c.rule.name == InternPool.RuleStr.instantiation.id()) {
             var e = self.elab(w);
-            switch (try self.demandInstance(&e, null, c, false)) {
+            switch (try self.demandInstance(&e, null, c)) {
                 .proven => return null, // ready — process can run lowerInstantiate
                 .blocked => |t| return t,
                 .failed => return null, // diagnosed; process will re-hit .failed and reject
@@ -1073,7 +1072,15 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
         const src_refined = try se.resolveBinderSort(b);
         break :blk @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(src_refined)))));
     } else sort;
-    w.pending_binder = .{ .sort = sort, .source_sort = source_sort, .fvar = fvar };
+    // record the REFINED sort too: `sort` is its carrier, and an accelerant that abstracts this
+    // binder into a schema param needs the refinement to re-emit its guard (see `paramGuards`).
+    const refined_ix: InternPool.Index = @enumFromInt(@intFromEnum(refined));
+    w.pending_binder = .{
+        .sort = sort,
+        .source_sort = source_sort,
+        .fvar = fvar,
+        .refined = if (self.ctx.interner.isRefined(refined_ix)) refined_ix else InternPool.Index.none,
+    };
     // build the guard over the fresh fvar (conjunction if multiple qualifiers), keeping each
     // qualifier's atom (what the binder TEACHES, see `teachBinder`).
     var guard: ?TermId = null;
@@ -1760,11 +1767,16 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
         // in source space an arg is read from the source AST (see `source_ast`).
         const arg_expr = if (source_space) self.sourceExpr(arg_raw) else arg_raw;
         const pname = tokName(p.name);
-        if (p.arg_sorts.len == 0) {
+        // Switch on the KIND, not the arity. These used to coincide ("no args" ⇒ "is a value"),
+        // but a nullary PRED `q()` has zero args and is still predicate-shaped — it binds a whole
+        // proposition, so it takes the generator path with an empty argument list, not the value
+        // path (which would ask for a result sort a pred does not have).
+        if (p.kind == .value) {
             // VALUE param: elaborate the arg at the use site; sort-check vs the param sort.
-            const want = try se.resolveSortTok(p.result);
+            const want = try se.resolveSortTok(p.resultSort().?); // a VALUE param: token present
             const typed = try e.elaborateExpr(arg_expr);
-            const want_carrier = self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
+            // a value param declared `Prop` has no carrier either (see the generator case below).
+            const want_carrier: InternPool.Index = if (want == Elab.prop_sort) @enumFromInt(@intFromEnum(want)) else self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
             const got_carrier = if (typed.sort == Elab.prop_sort) @intFromEnum(typed.sort) else @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort))));
             if (@intFromEnum(want_carrier) != got_carrier) {
                 return self.fail(Elab.exprLoc(arg_expr), "expected sort '{s}', got '{s}'", .{
@@ -1779,13 +1791,16 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
         } else {
             // N-ary GENERATOR param: a lambda arg (or a bare symbol → eta-expand). Sorts are
             // stored at their CARRIERS (a refined resolution leaks guards-as-sorts otherwise).
-            const arg_sorts = try self.ctx.arena.alloc(SortId, p.arg_sorts.len);
-            for (p.arg_sorts, arg_sorts) |st, *out| {
+            const arg_sorts = try self.ctx.arena.alloc(SortId, p.argSorts().len);
+            for (p.argSorts(), arg_sorts) |st, *out| {
                 const rs_sort = try se.resolveSortTok(st);
                 out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rs_sort)))));
             }
-            const rr = try se.resolveSortTok(p.result);
-            const result_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rr)))));
+            const rr = if (p.resultSort()) |rt| try se.resolveSortTok(rt) else Elab.prop_sort;
+            // A `=> Prop` generator param yields a PROPOSITION, which has no sort and therefore
+            // no carrier to lower to — `carrierOf` would index the absent marker. The common
+            // case (`prop: Nat -> Prop`) takes this branch.
+            const result_sort: SortId = if (rr == Elab.prop_sort) rr else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rr)))));
             const lam = try self.bindLambdaArg(e, arg_expr, arg_sorts, result_sort);
             try args.put(self.ctx.arena, pname, lam);
         }
@@ -1820,6 +1835,14 @@ fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: [
             return .{ .lambda = .{ .body = body.id, .params = fresh, .arg_sorts = arg_sorts, .result_sort = result_sort } };
         },
         .name => |tok| {
+            // NULLARY: there is nothing to eta-expand, and the name need not be a global — it is
+            // commonly the CALLER's own nullary-pred parameter being passed along (`s1(q)` inside
+            // `a(q)`). Elaborate it in the caller's scope, which resolves a schema param, a local
+            // binder, or a global alike.
+            if (arg_sorts.len == 0) {
+                const prop = try e.elaborateExpr(arg_expr);
+                return .{ .lambda = .{ .body = prop.id, .params = &.{}, .arg_sorts = &.{}, .result_sort = result_sort } };
+            }
             // eta-sugar: a bare symbol `p` of the signature → `fun x.. => p(x..)`.
             const fresh = try self.ctx.arena.alloc(StrId, arg_sorts.len);
             const fvars = try self.ctx.arena.alloc(TermId, arg_sorts.len);
@@ -1874,7 +1897,7 @@ fn reifyArgs(self: *Prove, pnames: []const StrId, args: *const Schema.SchemaArgs
 /// `se`: a SOURCE-space Elab for binding the args' source twins under a model transfer (the
 /// accelerant plumbing passes one with the producer's fvar binds in scope); null → one is
 /// derived from `e`'s walk. Unused outside a transfer.
-fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthetic: bool) Allocator.Error!InstanceOutcome {
+fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
     const rs = self.resolveSchemaRef(c.schema.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -1892,7 +1915,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
     // SOURCE-space twins of the args (see `source_formulas`): bound with the model off, so a
     // source-space pass inside the instance substitutes source terms for the params. The same
     // map outside a model transfer.
-    const args_source: *Schema.SchemaArgs = if (self.sourceSpaceAccelerants()) blk: {
+    const args_source: *Schema.SchemaArgs = if (self.sourceSpaceAccelerants() and !self.painted_production) blk: {
         var derived = self.sourceElab(e.walk);
         const sp: *Elab = se orelse &derived;
         break :blk self.bindSchemaArgs(sp, rs, c, true) catch |err| switch (err) {
@@ -1946,7 +1969,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
         .loc_file = self.file,
         .model = self.model, // monomorphize the schema body UNDER the transfer's model
         .parent = self.self_key, // proof tree: this instance exists because THIS proof cited it
-        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source, .synthetic = synthetic },
+        .instance = .{ .schema_name = rs.name, .params = pnames, .args = durable, .args_source = durable_source },
     }));
     return .{ .blocked = blocker };
 }
@@ -1957,8 +1980,9 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim, synthet
 fn demandSchemaParamSorts(self: *Prove, rs: ResolvedSchema) Allocator.Error!?Engine.TaskIndex {
     var refs: std.ArrayList(RefScan.Ref) = .empty;
     for (rs.fact.params.?) |p| {
-        for (p.arg_sorts) |t| try appendSortRef(self.ctx.arena, &refs, t);
-        try appendSortRef(self.ctx.arena, &refs, p.result);
+        for (p.argSorts()) |t| try appendSortRef(self.ctx.arena, &refs, t);
+        // a PRED param has no result token to demand (its result is `Prop`, which is reserved).
+        if (p.resultSort()) |rt| try appendSortRef(self.ctx.arena, &refs, rt);
     }
     if (refs.items.len == 0) return null;
     return resolveRefs(self.ctx, self.h, rs.file, rs.ns, self.model, self.self_key, refs.items);
@@ -2048,7 +2072,7 @@ fn collectArgFvars(self: *Prove, arg: Schema.SchemaArg, out: *std.ArrayList(term
 /// premises and requires the final consequent == the citing claim.
 fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim) Error!kernel.Justification {
     if (c.schema == null) return self.fail(c.rule.start, "instantiate requires a schema name", .{});
-    const outcome = try self.demandInstance(e, null, c, false);
+    const outcome = try self.demandInstance(e, null, c);
     const fact = switch (outcome) {
         .proven => |ix| blk: {
             self.inheritHoles(ix);
@@ -2384,17 +2408,19 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
                 switch (a) {
                     .value => try twin.put(self.ctx.arena, pname, a),
                     .lambda => |l| {
-                        const src_args = try self.ctx.arena.alloc(SortId, p2.arg_sorts.len);
-                        for (p2.arg_sorts, src_args) |st, *out| {
+                        const src_args = try self.ctx.arena.alloc(SortId, p2.argSorts().len);
+                        for (p2.argSorts(), src_args) |st, *out| {
                             const rsrt = src_se.resolveSortTok(st) catch return .failed;
-                            out.* = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
+                            out.* = if (rsrt == Elab.prop_sort) rsrt else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rsrt)))));
                         }
-                        const rrr = src_se.resolveSortTok(p2.result) catch return .failed;
+                        const rrr = if (p2.resultSort()) |rt| (src_se.resolveSortTok(rt) catch return .failed) else Elab.prop_sort;
+                        // `=> Prop` has no sort and so no carrier (see bindSchemaArgsUnder).
+                        const rrr_carrier: SortId = if (rrr == Elab.prop_sort) rrr else @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr)))));
                         try twin.put(self.ctx.arena, pname, .{ .lambda = .{
                             .body = l.body,
                             .params = l.params,
                             .arg_sorts = src_args,
-                            .result_sort = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(rrr))))),
+                            .result_sort = rrr_carrier,
                         } });
                     },
                 }
@@ -2548,29 +2574,17 @@ fn elaborateGoal(e: *Elab, formula: *const ast.Expr) Error!TermId {
 /// exactly like `demandInstance`. RE-ENTRANT: racks + suspends the first pass; on resume the
 /// front gates (IdentKV for the schema, FactKV for the instance) skip the already-done work.
 fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Allocator.Error!InstanceOutcome {
-    // ACCELERANTS BUILD IN SOURCE SPACE AND THE INSTANCE ADOPTS THE MODEL. Under a model
-    // transfer `goal` (from the ambient Elab) is relativized to the target; a synthetic built
-    // from it would delaborate TARGET names (`Int`) into a schema registered in the SOURCE file
-    // (`group.b4m`), where they don't resolve. So the producer sees the goal re-elaborated with
-    // the model OFF (from `c.formula` — the SAME term on every pass, so the hash-name is
-    // re-entry stable), its local premises from `source_formulas`, and its cited global facts
-    // RAW (`resolveFactRef` skips the transfer/overlay redirection while `self.model` is the
-    // universe). The synthetic is then a plain source-space theorem, and `demandInstance` racks
-    // its instance ProveTask WITH the ambient model, which relativizes it (through a COMPOSED
-    // model when nested) to exactly the space the claim lives in. The universe case is untouched.
-    const source_mode = self.sourceSpaceAccelerants();
-    const goal_source: TermId = if (source_mode) blk: {
-        var se = self.sourceElab(w);
-        break :blk elaborateGoal(&se, self.sourceExpr(c.formula)) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Recover => return .failed,
-        };
-    } else goal;
+    // ACCELERANTS PRODUCE IN THE AMBIENT NAMESPACE. The producer sees `goal` exactly as the
+    // claim's proof does — under a model transfer, already interpreted into the target space —
+    // and its synthetic is built from those terms, so its symbols are stamped FINAL (see
+    // `Accelerant.Builder.symTok`): the instance ProveTask runs under the same model and must
+    // not interpret them a second time. `painted_production` tells `demandInstance` that no
+    // source-space twin of the args exists (there is no source-space pass to feed).
+    const prev_painted = self.painted_production;
+    self.painted_production = true;
+    defer self.painted_production = prev_painted;
     const syn = blk: {
-        const ambient = self.model;
-        if (source_mode) self.model = .universe; // produce in source space (see above)
-        defer self.model = ambient;
-        const produced = self.produceAccelerant(w, e, goal_source, c) catch |err| switch (err) {
+        const produced = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Recover => return .failed,
         };
@@ -2641,26 +2655,18 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // `se` is the SOURCE-space twin of `e` (binds at their recorded source sort): under a model
     // transfer the instance's arg twins are bound through it (demandInstance).
     const scope_mark = e.scopeMark();
-    var se = self.sourceElab(w);
-    const se_mark = se.scopeMark();
     for (syn.fvar_binds) |bind| {
         // an fvar lives at a CARRIER (bindProofVar lowers a refined binder's sort): the model's
         // image of the source sort may be a REFINED target (`Src: GoodTgt`) — bind at its carrier,
         // so the arg elaborates to the very fvar the walk bound (sort is part of its identity).
+        // PAINTED production: `bind.sort` was read off a TARGET-space term, so it is already the
+        // image — the model does not apply to it (see `Elab.resolveSymbolTok`).
         const sort_ix: InternPool.Index = @enumFromInt(@intFromEnum(bind.sort));
-        const image = self.ctx.interner.applyModel(self.model, sort_ix);
-        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(image)));
+        const target_sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(sort_ix)));
         e.pushBinder(bind.name, target_sort, bind.fvar) catch return error.OutOfMemory;
-        se.pushBinder(bind.name, bind.sort, bind.fvar) catch return error.OutOfMemory;
     }
     defer e.scopeTruncate(scope_mark);
-    defer se.scopeTruncate(se_mark);
-    // `synthetic` (→ the instance's no_relativize) skips refined-sort guard injection because a
-    // synthetic's text was DELABORATED from already-elaborated terms with the guards baked in.
-    // That holds in the universe. Under a model transfer the synthetic is SOURCE-space text: the
-    // model's target-side guards (`Src → Tgt where good`) were never in it, so the instance must
-    // inject them like a parsed schema — matching the guard a `fix` binder gets (bindProofVar).
-    return self.demandInstance(e, &se, inst_c, !source_mode);
+    return self.demandInstance(e, null, inst_c);
 }
 
 /// Rewrite a synthetic fact decl's NAME token identity (the `{m<N>}` model-mangle). Only the
@@ -2879,7 +2885,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
         const fname = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "f{d}", .{i + 1}));
         const pf = try self.pool.add(.{ .fvar = .{ .name = fname, .sort = fv.sort } });
         head_formula = try self.pool.substFvar(head_formula, fv.name, pf);
-        fparams[i] = .{ .name = b.tok(fname), .arg_sorts = &.{}, .result = b.sortTok(fv.sort) };
+        fparams[i] = .{ .name = b.tok(fname), .kind = .{ .value = b.sortTok(fv.sort) } };
         // the call-site arg names the fvar by its EXACT hygienic name (`n#6`, never lexable), and
         // the bind is keyed the same way: two eigenvariables that DISPLAY alike (the schema's
         // own `fix n` and a caller `n` captured through a lambda) stay distinct.
@@ -2897,7 +2903,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
             return self.fail(c.rule.start, "specialize: head is not universally quantified enough for {d} argument(s)", .{nargs});
         };
         tail = opened.body;
-        arg_params[i] = .{ .name = b.tok(pnames[i]), .arg_sorts = &.{}, .result = b.sortTok(opened.sort) };
+        arg_params[i] = .{ .name = b.tok(pnames[i]), .kind = .{ .value = b.sortTok(opened.sort) } };
     }
     // schema params = the free-eigenvar params FIRST, then the ∀-arg params.
     const params = try std.mem.concat(self.ctx.arena, ast.SchemaParam, &.{ fparams, arg_params });
@@ -3327,7 +3333,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |pname, sort, *pp| {
-        pp.* = .{ .name = b.tok(pname), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(pname), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     return .{
@@ -3983,7 +3989,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     // deterministic hash-name from the (pre-substitution) full proposition (re-entry stable).
@@ -4130,6 +4136,36 @@ fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites_in: []const 
     return body_steps;
 }
 
+/// Wrap `body_steps` (proving `inner`) in `assume good(p_i) { … }` + `implies_intro` per param
+/// guard, outermost = guards[0], so the synthetic's statement becomes
+/// `good(p_0) -> … -> inner`. Unlike `wrapSimplifyPremises` a guard has no local cite to
+/// restate — nothing inside the body needs to NAME it; it only has to be assumed so the
+/// relativized lemma's leaked guard is discharged from the assumption (source 2c). See
+/// `paramGuards` for why the synthetic owes these at all.
+fn wrapParamGuards(self: *Prove, b: *Accelerant.Builder, guards: []const TermId, inner: TermId, body_steps: []const ast.Step) Error![]const ast.Step {
+    if (guards.len == 0) return body_steps;
+    var steps = body_steps;
+    var prop = inner;
+    var i: usize = guards.len;
+    while (i > 0) {
+        i -= 1;
+        const blk_label = try self.freshNamed("assume-guard");
+        var lvl: std.ArrayList(ast.Step) = .empty;
+        try lvl.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(guards[i]), steps));
+        prop = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = guards[i], .rhs = prop } });
+        try lvl.append(self.ctx.arena, try b.claimStep(
+            if (i == 0) try b.intern("conclusion") else try self.freshNamed("export-guard"),
+            try b.termExpr(prop),
+            .by,
+            try self.internStr("implies_intro"),
+            &.{},
+            try self.oneRef(b, blk_label),
+        ));
+        steps = try lvl.toOwnedSlice(self.ctx.arena);
+    }
+    return steps;
+}
+
 /// Wrap the premise-wrapped `body_steps` (proving `inner_prop = prem0 -> … -> (s = t)`) in
 /// nested `fix` blocks for the ∀ eigenvariables (outermost = eigen[0]), concluding each level
 /// with `forall_intro`. With no eigenvariables the steps pass through unchanged (plain
@@ -4220,6 +4256,35 @@ const FvarAbstraction = struct {
 /// one INHERITED from a schema-instance monomorphization (a lambda capturing the instantiating
 /// proof's variable — no binder of its own here) resolves too — even when it DISPLAYS like a
 /// local one (the schema's own `fix n` vs a captured `n`: the bug this replaces).
+/// The GUARD ANTECEDENTS a painted synthetic owes for its abstracted params.
+///
+/// `abstractGoal` turns the goal's free caller-locals into schema params. Outside a guarded
+/// model that loses nothing. Under one, the caller-local was a `fix a: H` whose guard
+/// `good(a)` is available in the citing proof via `[by predicate]` — but the PARAM `p1` has
+/// no enclosing guarded `fix`, so a leaked `good(recip(p1))` from a relativized lemma has no
+/// way to be discharged inside the synthetic (`emitDischargeStep` source 2 cannot fire, and
+/// source 3's closure recursion dead-ends on `good(p1)`).
+///
+/// So each param abstracted from a REFINED-sort binder contributes `good(p_i)` as an
+/// antecedent of the synthetic's statement. `withGuardPremises` then discharges it at the
+/// CALL SITE — where the original binder's guard really is in scope — because it treats
+/// antecedents in excess of the supplied premise refs as guards to discharge.
+///
+/// Returns the guard atoms in param order, already phrased over the param fvars.
+fn paramGuards(self: *Prove, w: *const Walk, e: *Elab, abs: FvarAbstraction) Error![]const TermId {
+    var out: std.ArrayList(TermId) = .empty;
+    for (abs.origs, abs.names, abs.sorts) |orig, pname, psort| {
+        const ident = w.findIdentByFvar(orig) orelse continue;
+        if (ident.info.refined == InternPool.Index.none) continue;
+        const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, ident.info.refined) catch return error.OutOfMemory;
+        for (quals) |qual| {
+            const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = psort } });
+            try out.append(self.ctx.arena, try e.qualifierApp(qual, pf));
+        }
+    }
+    return out.items;
+}
+
 fn fvarBinds(self: *Prove, w: *const Walk, abs: FvarAbstraction) Error![]const Accelerant.Synthetic.FvarBind {
     _ = w;
     var binds: std.ArrayList(Accelerant.Synthetic.FvarBind) = .empty;
@@ -4522,7 +4587,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // params from the abstracted free fvars (value params of the fvars' sorts).
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     // deterministic hash-name from the full proposition (re-entry stable).
@@ -5233,13 +5298,21 @@ fn finishReorder(
     steps = try self.wrapSimplifyPremises(b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(b, eigen, inner_prop, steps);
 
-    // the schema body proposition = the ∀-generalized `inner_prop`.
-    const full_prop = try self.closeOverEigen(inner_prop, eigen);
+    // PARAM GUARDS (painted production under a guarded model): the params abstracted from
+    // refined-sort caller binders owe their guards as the OUTERMOST antecedents — outside the
+    // eigen `fix`es, since a param is not in any `fix`'s scope. Empty in the universe.
+    var e_guard = self.elab(w);
+    const guards = try self.paramGuards(w, &e_guard, abs);
+    const eigen_prop = try self.closeOverEigen(inner_prop, eigen);
+    steps = try self.wrapParamGuards(b, guards, eigen_prop, steps);
+
+    // the schema body proposition = the guard-prefixed ∀-generalized `inner_prop`.
+    const full_prop = try self.impliesChain(eigen_prop, guards);
     const body_expr = try b.termExpr(full_prop);
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -5340,7 +5413,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
 
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, full_prop);
@@ -6146,7 +6219,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
     const body_expr = try b.termExpr(inner_prop);
     const params = try self.ctx.arena.alloc(ast.SchemaParam, abs.names.len);
     for (abs.names, abs.sorts, params) |name, sort, *pp| {
-        pp.* = .{ .name = b.tok(name), .arg_sorts = &.{}, .result = b.sortTok(sort) };
+        pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
     const hash = Schema.termHash(self.pool, inner_prop);

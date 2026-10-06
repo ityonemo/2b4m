@@ -79,6 +79,11 @@ pub const BinderInfo = struct {
     source_sort: @import("../../term.zig").SortId = @enumFromInt(0),
     /// the hygienic disambiguated fvar identity (`x#N`) terms bind through
     fvar: StrId = .none,
+    /// the binder's REFINED sort (target space) when it was written at a refined sort, else
+    /// `.none`. `sort` above is its carrier, which loses the refinement — but an accelerant
+    /// that ABSTRACTS this binder into a schema param must re-emit its guard as an antecedent
+    /// (the param has no enclosing guarded `fix` to supply it). See `paramGuards`.
+    refined: @import("../../InternPool.zig").Index = @import("../../InternPool.zig").Index.none,
 };
 
 /// LocalIdentKV entry: a binder (fix eigenvariable / unpack witness) live in scope.
@@ -165,6 +170,17 @@ pub fn resolveStep(self: *const Walk, name: StrId) ?LocalTarget {
     while (i > 0) {
         i -= 1;
         if (self.closed_steps.items[i].name == name) return self.closed_steps.items[i].target;
+    }
+    return null;
+}
+
+/// Resolve a binder by its HYGIENIC FVAR identity (`x#N`) rather than its surface name —
+/// what an accelerant has after abstraction, which keeps fvars, not source spellings.
+pub fn findIdentByFvar(self: *const Walk, fvar: StrId) ?LocalIdent {
+    var i = self.local_idents.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.local_idents.items[i].info.fvar == fvar) return self.local_idents.items[i];
     }
     return null;
 }

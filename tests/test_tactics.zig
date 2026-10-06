@@ -250,6 +250,23 @@ pub fn addTests(
     // `arg_sorts` say `Thing` while the body's binder said `Elem`, and the rejection landed
     // inside the SOURCE file.
     ctx.okSilent(&.{ "check", "tests/cases/model_schema_transfer.b4m" });
+    // WHAT IS NOT A SORT. `Prop` was demoted from a sort (a sort is a domain of individuals;
+    // propositions are not), and `pred`/`func` declare CALLABLES, which have signatures rather
+    // than sorts. All three are rejected in binder position, each naming the actual rule —
+    // first-orderness is exactly "a binder's sort must be a term sort", which is why schemas
+    // exist. `Prop` stays legal as a schema parameter's RESULT.
+    ctx.fail(
+        &.{ "check", "tests/cases/sorts_reject_prop_binder.b4m" },
+        "tests/cases/sorts_reject_prop_binder.b4m:16:44: error: a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)\n",
+    );
+    ctx.fail(
+        &.{ "check", "tests/cases/sorts_reject_callable_as_sort.b4m" },
+        "tests/cases/sorts_reject_callable_as_sort.b4m:13:36: error: 'marks' is not a sort\n",
+    );
+    ctx.fail(
+        &.{ "check", "tests/cases/sorts_reject_func_as_sort.b4m" },
+        "tests/cases/sorts_reject_func_as_sort.b4m:9:36: error: 'f' is not a sort\n",
+    );
     // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
     // instantiate at. Diagnosed with both fixes named.
     ctx.fail(
@@ -359,6 +376,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc_commut.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_tautology.b4m" });
+    // SOURCE/TARGET OVERLAP: a model whose target is also one of its sources. A synthetic is
+    // built from TARGET-space terms, so its stamped symbols must be FINAL — re-interpreting
+    // them doubles the mapping (`Thing: Part` with `Part = Thing where inPart` re-refines a
+    // binder and doubles its guard; `Item: Bag`, `Bag: Box` carries a shifted `Bag` on to
+    // `Box`). Both failed before `Accelerant.Builder` stamped `.universe`.
+    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_refinement.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_shift.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_polynomial.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_arithmetic.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_extensionality.b4m" });

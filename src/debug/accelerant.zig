@@ -187,9 +187,21 @@ const Renderer = struct {
             try self.w.writeAll("(");
             for (ps, 0..) |prm, i| {
                 if (i > 0) try self.w.writeAll(", ");
-                try self.w.print("{s}: ", .{self.text(prm.name)});
-                for (prm.arg_sorts) |s| try self.w.print("{s} -> ", .{self.text(s)});
-                try self.w.writeAll(self.text(prm.result));
+                // reprint in the SURFACE syntax, so the dump is re-readable: `x: Nat`,
+                // `prop(Nat)`, `f(Item) => Item`.
+                try self.w.print("{s}", .{self.text(prm.name)});
+                switch (prm.kind) {
+                    .value => |t| try self.w.print(": {s}", .{self.text(t)}),
+                    .pred, .func => {
+                        try self.w.writeAll("(");
+                        for (prm.argSorts(), 0..) |a, j| {
+                            if (j > 0) try self.w.writeAll(", ");
+                            try self.w.print("{s}", .{self.text(a)});
+                        }
+                        try self.w.writeAll(")");
+                        if (prm.resultSort()) |rt| try self.w.print(" => {s}", .{self.text(rt)});
+                    },
+                }
             }
             try self.w.writeAll(")");
         };
@@ -583,7 +595,7 @@ const test_source =
     \\func add(a: Nat, b: Nat) => Nat
     \\pred even(n: Nat)
     \\axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
-    \\theorem shape(prop: Nat -> Prop, k: Nat): forall x, y: Nat; (even(x) and (not even(y))) -> add(x, y) != ZERO -> exists z: Nat; add(z, z) = x
+    \\theorem shape(prop(Nat), k: Nat): forall x, y: Nat; (even(x) and (not even(y))) -> add(x, y) != ZERO -> exists z: Nat; add(z, z) = x
     \\proof
     \\  @generalize |
     \\    fix x: Nat {
@@ -659,7 +671,7 @@ test "renderDecl: the reprint RE-PARSES to the same tree (render ∘ parse is id
     const twice = try renderDecl(arena, &interner, once, &again.decls[again.decls.len - 1]);
     try testing.expectEqualStrings(once, twice);
     // spot-check the shapes that need care.
-    try testing.expect(std.mem.indexOf(u8, once, "theorem shape(prop: Nat -> Prop, k: Nat): forall x, y: Nat; (even(x) and (not even(y))) -> add(x, y) != ZERO -> exists z: Nat; add(z, z) = x\n") != null);
+    try testing.expect(std.mem.indexOf(u8, once, "theorem shape(prop(Nat), k: Nat): forall x, y: Nat; (even(x) and (not even(y))) -> add(x, y) != ZERO -> exists z: Nat; add(z, z) = x\n") != null);
     try testing.expect(std.mem.indexOf(u8, once, "assume even(x) or (even(x) -> even(x)) {") != null);
     try testing.expect(std.mem.indexOf(u8, once, "case restated {") != null);
     try testing.expect(std.mem.indexOf(u8, once, "[using arithmetic(peano) fallback(addZeroLeft) restated]") != null);

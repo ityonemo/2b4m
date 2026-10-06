@@ -104,9 +104,13 @@ pub const Known = struct {
     }
 };
 
-/// The pool's reserved Prop sort, as a scratchpad SortId. Numerically `Index.prop`; the
-/// flip renumbers `term.SortId.prop` onto it.
-pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.prop));
+/// THE PROPOSITION MARKER. `Prop` is NOT a sort — a sort is a domain of individuals, something
+/// a binder ranges over and a `func` returns, and propositions are none of those (the kernel
+/// already agrees: `kernel.sortOfTerm` rejects a proposition by NODE KIND and never consults a
+/// Prop sort). But the elaborator computes and compares sorts bottom-up, and a proposition has
+/// to flow through that same channel, so it travels as a reserved SortId value that matches no
+/// real sort. `Index.none` is the pool's absent marker, which is exactly what this is.
+pub const prop_sort: SortId = @enumFromInt(@intFromEnum(InternPool.Index.none));
 
 arena: Allocator,
 io: std.Io,
@@ -142,11 +146,6 @@ model: InternPool.Index = .universe,
 /// source symbol's parameter (`Src`) would be checked against a target-sorted fvar (`Tgt`).
 /// Set by `Prove.sourceElab`; the accelerant producers' inputs are built this way.
 source_space: bool = false,
-/// NO_RELATIVIZE (13e): set when elaborating a SYNTHETIC (accelerant-generated) schema's
-/// formulas — they were DELABORATED from already-elaborated terms, so refined-sort guard
-/// injection at binders must be SKIPPED (it would double the guards). Parsed schemas keep
-/// injection (their AST is source text, not a round-trip).
-no_relativize: bool = false,
 /// The driving Prove's known-proposition table (see `Known`) and the block a use in this
 /// elaboration sits in. Null `known` = obligations not checked (a source-space pass, a throwaway
 /// sort-resolution Elab, the read pass — the process pass re-elaborates and checks).
@@ -275,10 +274,10 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
                     break :blk try self.inferBinderSort(q.body, bname, q.binders[0].name);
                 } else try self.resolveBinderSort(q.binders[0]);
                 const sort: SortId = @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
-                // NO_RELATIVIZE (13e): a SYNTHETIC schema's formulas are DELABORATED from
-                // already-elaborated (already-relativized) terms — re-injecting guards here would
-                // DOUBLE them (`inH(x) -> inH(x) -> …`). The faithful round-trip skips injection.
-                const quals: []const InternPool.Index = if (self.no_relativize) &.{} else self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
+                // A refined binder sort injects its guard. A SYNTHETIC's binder never reaches here
+                // refined: its sort token is a stamped carrier Index, and a stamped symbol is final
+                // (`resolveSymbolTok`) — so the guards its text already carries are not doubled.
+                const quals: []const InternPool.Index = self.interner.qualifiersOf(self.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
                 const fresh = try self.arena.alloc(StrId, q.binders.len);
                 const mark = self.scope.items.len;
                 for (q.binders, fresh) |b, *fr| {
@@ -468,7 +467,13 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
     // 3. schema parameter (only while elaborating a schema body/steps)
     if (self.schema_args) |sa| if (sa.get(name)) |arg| switch (arg) {
         .value => |v| return .{ .id = v.id, .sort = v.sort },
-        .lambda => return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
+        // A NULLARY pred param (`axiom a(q): …`, standing for a nullary `pred base`) binds as a
+        // zero-arity lambda: there is nothing to substitute, so its body IS the proposition and
+        // a bare use is correct — matching how a nullary pred is itself declared and used.
+        .lambda => |lam| if (lam.params.len == 0)
+            return .{ .id = lam.body, .sort = lam.result_sort }
+        else
+            return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
     };
     // 4. global
     return self.elaborateSymRef(tok, self.ns, name);
@@ -753,14 +758,20 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
         else => .app,
     };
     const id = try self.scratch.addApp(kind, @enumFromInt(@intFromEnum(sym)), args);
-    const result: SortId = @enumFromInt(@intFromEnum(self.interner.symResult(sym)));
+    // A PREDICATE application is a proposition, not a term: it has no result sort to read (its
+    // sig's result slot is `Index.none`), and the `.pred` tag computed above is what says so.
+    // Only a FUNC/CONST application has a sort worth asking for.
+    const result: SortId = if (kind == .pred) prop_sort else @enumFromInt(@intFromEnum(self.interner.symResult(sym)));
     // a REFINED result sort TEACHES the application its closure fact `inH(f(…))` — a universal
-    // truth about that term, so it is known proof-wide (the root block).
-    if (self.known) |known| {
-        const result_ix: InternPool.Index = @enumFromInt(@intFromEnum(result));
-        if (self.interner.isRefined(result_ix)) {
-            const quals = self.interner.qualifiersOf(self.arena, result_ix) catch return error.OutOfMemory;
-            for (quals) |qpred| try known.teach(self.arena, try self.qualifierApp(qpred, id), @enumFromInt(0), null);
+    // truth about that term, so it is known proof-wide (the root block). A proposition has no
+    // result sort, so nothing to teach.
+    if (kind != .pred) {
+        if (self.known) |known| {
+            const result_ix: InternPool.Index = @enumFromInt(@intFromEnum(result));
+            if (self.interner.isRefined(result_ix)) {
+                const quals = self.interner.qualifiersOf(self.arena, result_ix) catch return error.OutOfMemory;
+                for (quals) |qpred| try known.teach(self.arena, try self.qualifierApp(qpred, id), @enumFromInt(0), null);
+            }
         }
     }
     return .{ .id = id, .sort = result };
@@ -771,6 +782,14 @@ fn applyResolved(self: *Elab, sym: InternPool.Index, args: []const TermId) Error
 /// by the guard pred (minted fresh, no IdentKV name).
 pub fn resolveBinderSort(self: *Elab, b: ast.Binder) Error!SortId {
     const base = try self.resolveSortTok(b.sort);
+    // A BINDER ranges over a domain of individuals, and `Prop` is not one — propositions are
+    // what you assert ABOUT individuals, never values to quantify over. (That restriction IS
+    // first-orderness: a binder's sort must be a term sort, so `forall p: Prop; …` and
+    // `forall p: Elem -> Prop; …` are both out of reach, which is why SCHEMAS exist.) `Prop` is
+    // legal only as a schema parameter's result, where it names a predicate's shape.
+    if (base == prop_sort) {
+        return self.fail(b.sort.start, "a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)", .{});
+    }
     const g = b.guard orelse return base;
     const gname = try self.localName(g);
     const gpred = self.resolveSymbolTok(g) orelse self.lookupIdent(self.ns, gname) orelse {
@@ -892,7 +911,7 @@ fn conjoinQuals(self: *Elab, quals: []const InternPool.Index, fvar: StrId, sort:
 }
 
 pub fn resolveSortTok(self: *Elab, tok: lexer.Token) Error!SortId {
-    // `Prop` is the reserved builtin sort (schema generator-param results `P: T -> Prop`,
+    // `Prop` is the reserved builtin sort (schema generator-param results `P(T)`,
     // etc.) — never a userland-declared/fetched sort. Its name string is reserved, so the
     // check is an integer comparison.
     if (tok.qualifier == InternPool.Index.none and tok.name == InternPool.Index.prop_name) return prop_sort;
@@ -1029,6 +1048,19 @@ pub fn lookupIdentPub(self: *Elab, ns: InternPool.Index, name: StrId) ?InternPoo
 /// symbol, no model). Null for an ordinary name token.
 pub fn resolveSymbolTok(self: *const Elab, tok: lexer.Token) ?InternPool.Index {
     if (tok.tag != .symbol) return null;
+    // A MODEL IS APPLIED ONCE PER `using model(M)` CITATION: the cited proof is interpreted as
+    // a whole (and cached under `(M, src_file).thm`). Its mapping table is origin → origin and
+    // never changes; what varies is which table a name resolution consults. Two kinds of
+    // stamped symbol, told apart by the qualifier:
+    //   `.universe` — FINAL. The Index came out of a TERM produced INSIDE that one application
+    //                 (an accelerant's synthetic, a guard term): it is already interpreted.
+    //                 Applying the model to it again is a second application, wrong whenever
+    //                 a model's sources and targets overlap (`set.Element: Set` + `set.Set:
+    //                 Collection`; `Thing: Part` with `Part = Thing where inPart`).
+    //   `.none`     — a NAME from the cited source text, resolved early. `Expand` stamps a
+    //                 define body's globals this way for hygiene (they resolve in the define's
+    //                 own file, not the use site); the application interprets them here, the
+    //                 same as a written name in `lookupIdent`.
     if (tok.qualifier == .universe) return tok.name;
     return self.interner.applyModel(self.model, tok.name);
 }
@@ -1178,7 +1210,7 @@ const World = struct {
             .loc = 0,
         } });
 
-        const le_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat2 } });
+        const le_sig = try interner.intern(.{ .sig = .{ .result = .none, .result_refined = .none, .args = &nat2 } });
         const le_name = try interner.internString("le");
         w.le_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = le_name }, .{ .pred = .{
             .sig = le_sig,
@@ -1198,7 +1230,7 @@ const World = struct {
 
         // the refinement fixtures: pred inH(Nat); sort H = Nat where inH; shift(h: H): Nat; mk(n: Nat): H.
         const nat1 = [_]InternPool.Index{w.nat};
-        const inh_sig = try interner.intern(.{ .sig = .{ .result = .prop, .result_refined = .none, .args = &nat1 } });
+        const inh_sig = try interner.intern(.{ .sig = .{ .result = .none, .result_refined = .none, .args = &nat1 } });
         const inh_name = try interner.internString("inH");
         w.inh_p = try idents.publish(w.io, .{ .namespace = w.ns, .name = inh_name }, .{ .pred = .{
             .sig = inh_sig,

@@ -23,7 +23,10 @@
 //! emitted as `.symbol` tokens holding the InternPool Index itself (see lexer.Token.Tag.symbol)
 //! — re-elaboration resolves them without a name lookup, so a term mentioning symbols the
 //! re-elaboration file never declared (a schema instantiated at another file's args) or an
-//! anonymous refined sort (no IdentKV name) round-trips. The ambient model still applies.
+//! anonymous refined sort (no IdentKV name) round-trips. `run` stamps them `.none` (the
+//! ambient model interprets them on re-elaboration — a SOURCE-space term); `runExact` stamps
+//! them `.universe` (FINAL — a term already in the space the proof runs in). Accelerant
+//! synthetics are built from in-space terms and use `runExact`; see `Elab.resolveSymbolTok`.
 //!
 //! LIMITS (caller's responsibility): a FREE fvar delaborates to its `#`-trimmed name, which
 //! re-resolves only if that name is in the re-elaboration scope — so the caller must ensure
