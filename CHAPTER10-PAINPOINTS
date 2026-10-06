@@ -1,0 +1,97 @@
+# Chapter 10 (Normal Subgroups and Factor Groups) — pain points & missing machinery
+
+A log kept WHILE transliterating Chapter 10, recording what the 2b4m language or standard
+library lacked at the moment it blocked a proof. Entries that are ADDRESSED get removed
+rather than annotated. Plain markdown without a `.md` extension so the literate checker
+never parses it.
+
+Same discipline as CHAPTER5/6/7/9-PAINPOINTS: a claim here is a claim about the CHECKER AS
+IT IS, re-probed, not a recollection. And per Chapter 9's lesson — **a claim of "cannot be
+done" requires a FAILED PROBE, not a search of std.**
+
+---
+
+## §10.1 WENT THROUGH; §10.2 IS WHERE THE WORK IS
+
+§10.1's two results are proved in `std/group/normal.b4m`:
+`conjugationLandsInTheSubgroupIffCosetsCoincide` (Judson Thm 10.3, both directions) and
+`theFactorOperationIsWellDefined` (Thm 10.4's hinge). Neither needed anything new.
+
+§10.2 (the simplicity of A_n) is a different shape: a four-case analysis on disjoint-cycle
+structure, where each case verifies a specific conjugation identity by multiplying concrete
+cycles. The GENERAL parts are done; the A_n-specific parts are not. Details below.
+
+## STILL MISSING
+
+### PARITY lives in an aata chapter file, not in std
+
+`isEvenPerm` / `isOddPerm` are defined in `aata/5.1-permutation-groups.md:488`, not anywhere
+under `std/`. So "the alternating group A_n" — the subject of §10.2 — has no std home at all:
+there is no `inAlternating` predicate, and nothing to model a subgroup onto.
+
+That is a FILE-placement problem, not a language one (Chapter 9's lesson applies), and the
+fix is mechanical: lift `isEvenPerm` into `std/permutation/parity.b4m` beside the parity
+lemma that already lives there, then define A_n as the subgroup it cuts out. Until then
+§10.2's statements cannot even name their subject.
+
+### The four-case cycle analysis needs CONCRETE cycle arithmetic
+
+Judson's Lemma 10.10 shows any nontrivial normal subgroup of A_n contains a 3-cycle, by
+cases on σ's disjoint-cycle shape:
+
+| case | the identity verified |
+|---|---|
+| σ has a cycle of length > 3 | σ⁻¹(a₁a₂a₃)σ(a₁a₂a₃)⁻¹ = (a₁a₃a_r) |
+| σ = τ(a₁a₂a₃)(a₄a₅a₆) | σ⁻¹(a₁a₂a₄)σ(a₁a₂a₄)⁻¹ = (a₁a₄a₂a₆a₃) |
+| σ = τ(a₁a₂a₃), τ disjoint 2-cycles | σ² = (a₁a₃a₂) |
+| σ = τ(a₁a₂)(a₃a₄) | a further conjugation |
+
+Each is a multiplication of named cycles yielding a named cycle. std has cycle theory
+(`std/permutation/cycle.b4m`, `decomposition.b4m`,
+`everyPermutationOfAFiniteSetIsAProductOfDisjointCycles`) but no way to COMPUTE such a
+product symbolically — the entries a₁…a_r are variables, so this is cycle algebra over
+indeterminate points, not evaluation at concrete numbers.
+
+NOT probed as impossible. The honest statement is that it is a substantial piece of new
+machinery (a calculus for products of cycles with variable support), and the four identities
+above are its acceptance test. Recorded rather than attempted.
+
+### SIMPLICITY is stated per-subgroup, because there is no sort of subgroups
+
+`isSimpleWitness` in `std/group/normal.b4m` is
+`isTrivialSubgroup or isTheWholeGroup` — the property of THE subgroup that file carries, not
+"for all normal subgroups N of G". Quantifying over subgroups needs a sort of subgroups, the
+same limit Chapter 9 hit for ≅ (CHAPTER9-PAINPOINTS: "2b4m can state a theory and MODEL one
+theory in another, but cannot talk about theories as objects").
+
+The workable shape is the one std already uses for subgroups generally: a consumer declares
+its own membership predicate and proves the disjunction for it. `std/subgroup.b4m` has a
+second predicate `inSubgroup2` for exactly this reason (two subgroups at once), which is the
+declare-what-you-need pattern rather than a limitation.
+
+## WHAT WORKED, worth keeping
+
+### A coset is its MEMBERSHIP PREDICATE, and Judson's equalities survive that
+
+There is no sort of subsets of a group, so §10.1's `gN = Ng` is extensional agreement of two
+predicates and `aN = bN` is `inSubgroup(a⁻¹b)` (§6.1's
+`cosetsCoincideIffQuotientIsInTheSubgroup`). Both are exactly how Judson USES them — he never
+needs the coset as an object, only membership and equality — so the transliteration is
+faithful rather than a workaround. `coset.b4m` develops only the left coset (Lagrange needs
+one, and the proofs mirror), so `inRightCoset` is defined in `normal.b4m`.
+
+### `--axioms` does not see inside a `simplify` rewrite set
+
+Dropping aliases that `--axioms` reported unused removed `invProduct`, which IS cited — by
+the `simplify` step in `theFactorOperationIsWellDefined`. The check caught it immediately
+("reference not found"), but worth knowing: `--axioms` attributes what a proof RESTS on, and
+a rewrite named in a `simplify` set does not show up there. Same happened with
+`subgroupHasIdentity` when §10.2's work later needed it.
+
+### `simplify` will not reassociate to expose a cancellation
+
+`op(c, op(inverse(c), d)) = d` fails as a `simplify` goal even with `grpAssoc`,
+`grpInverseRight` and `grpIdentityLeft` in the set — it will not reassociate the nest to put
+`c` next to `inverse(c)`. Four explicit steps (regroup, cancel, identity, chain) do it, after
+which `simplify` closes the surrounding algebra happily. Consistent with the cheat-sheet's
+framing of `simplify` as "rewriting to a shared normal form" rather than a search.
