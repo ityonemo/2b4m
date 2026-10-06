@@ -44,14 +44,6 @@ Not a defect — the listing idiom is a deliberate choice and it carries the con
 But it means each §6.2 corollary is its own piece of work, not a one-liner off the
 theorem, and the chapter should say so rather than imply the corollaries are free.
 
-### A listing's length is not known to be unique (for groups)
-
-Needed by every divisibility corollary. For PERMUTATIONS this exists —
-`std/permutation/count.b4m` has the pigeonhole machinery and
-`listingsInBijectionHaveEqualLengths` (~472 lines) — but it hardcodes `compose` and
-the permutation sort. Generalizing it needs either sort polymorphism (absent) or a
-re-proof over the group sort. See the next entry: this is the same wall.
-
 ### `Seq` is re-postulated per carrier — five copies and counting
 
 `std/sequence.b4m` has the abstract fold, but each concrete sequence theory must
@@ -149,110 +141,6 @@ this; the std-file-layout convention already asks each parent to forward its
 sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
 plausibly do the other half (search declarations by statement shape).
 
-### RESOLVED — `Points` was missing a CONCAT postulate (the thinnest-carrier case)
-
-Left here because the diagnosis is the reusable part. §6.2's cycle-length theorem needs
-the IMAGE POINT-LIST — a `Points` whose i-th entry is σ(sᵢ) — and that could not be
-built. `Points` had only TWO building postulates (`pointsSingleton`, `pointsPrepend`)
-where `std/group/sequence.b4m`'s `Seq` has five.
-
-Both natural proof shapes were unavailable, and the second is the non-obvious one:
-
-- Fix the list and grow the image at the top (what `translatedSequenceExists` does):
-  needs an append. Not available.
-- Generalize the list INSIDE the induction and prepend σ(s₀) before an image list for the
-  TAIL: needs a list's tail, and `pointsPrepend` only adds at the FRONT (shifting entries
-  UP), so from an arbitrary s there is no way to reach a list whose i-th entry is s_{i+1}.
-  Verified by stating it — well-formed, but only as a `hole`.
-
-**Fixed by adding `pointsConcat`** (user decision, 2026-10-02), in the same shape as
-`seqConcat` minus the product clause since `Points` carries no fold. The theorem then
-followed: `imagePointsExist` by the ordinary prefix-growing induction, and
-`conjugateOfACycle` by induction on the length with `conjugationIsMultiplicative`
-splitting σ(T∘C)σ⁻¹ into (σTσ⁻¹)(σCσ⁻¹).
-
-**The lesson that outlives the fix:** a carrier's postulate set silently determines which
-INDUCTION SHAPES are available to it, and the failure does not look like a missing axiom —
-it looks like two unrelated proof attempts not working. A carrier-parameterized container
-theory (memory: `abstract-collections-direction`) would have given `Points` all five
-postulates for free; until then, when a construction over a fresh sequence sort will not
-go, compare its postulate list against `std/group/sequence.b4m`'s before assuming the
-proof is wrong.
-
-### §6.3 (Fermat/Euler): the stand-in schema CANNOT be a one-line transfer — it is circular
-
-Three rounds here. Recording all of them because two were wrong and the errors are the
-instructive part.
-
-**Round 1 (wrong).** "A schema cannot be instantiated at a predicate of your choosing
-through a model." A repro showed the parse error was real but the generalization was not.
-
-**Round 2 — engine gaps CLOSED** (`f8eef96`, `dcb7a3d`, both user-directed):
-- `[using model(M) src.sch(myPred)]` parses, and binds against the discharging schema.
-- A PROVEN source schema may be discharged with `<-` (previously only an axiom schema could).
-- A bare schema cite outside a schema body is now a diagnosed error.
-- `[using model(I.M) …]` resolves a model across a file boundary.
-
-All four verified, with the trust boundary probed: a citer gets the DISCHARGING schema's
-statement instantiated, so a weak discharge yields only the weak fact.
-
-**Round 3 — the remaining obstacle is LOGICAL, not mechanical.** I claimed the per-carrier
-stand-in would now be "a statement to write, not a proof to redo": declare
-`znSplittingAListing` over ℤ_n with its body the one-line
-`[using model(ZnListing) group_listing.splittingAListing]`, and discharge the source with it.
-
-That is CIRCULAR and the checker says so — "cyclic schema instantiation". The stand-in is
-what DISCHARGES the source schema for this carrier; its own proof therefore cannot be "cite
-the source via that discharge". Minimal repro confirms it in 25 lines, independent of ℤ_n.
-The checker is right; this is not an engine limitation to route around.
-
-Two workarounds exist and both are worse than they look:
-- **A second model** with identical maps, declared after the schema, discharging it. Checks
-  clean — and is exactly the duplicate-model somersault the user ruled out elsewhere in this
-  file. Adding one here to save a proof is the wrong trade.
-- **`[using import(group_listing) splittingAListing]`** in the stand-in's body. The file then
-  checks GREEN STANDALONE but fails the moment anything instantiates it ("'splittingAListing'
-  is a schema; use `instantiation`, not a fact citation"). **Note the hazard: `check <file>`
-  passed on a schema whose body is bogus** — a schema body is only really verified at an
-  instantiation, so a green single-file check is not evidence a schema is sound.
-
-**So the honest cost stands where it started:** a generic listing schema must be PROVED over
-each carrier, as `std/permutation/listing.b4m` does (its own `splittingAListing`, line 1462,
-with no model at all). For ℤ_n that means porting `splittingAPrefix`,
-`extendingASublisting` and `skippingAnEntry` too. Substantial, mechanical, not started.
-
-The engine work was still worth it — it fixed four real gaps — but it does not shorten this
-particular path. What WOULD is the carrier-parameterized container theory
-(memory: `abstract-collections-direction`), which is the same answer the re-postulated `Seq`
-and the thin `Points` postulate set both pointed at.
-
-Remaining for §6.3: (1) `splittingAListing` over ℤ_n, giving U(n)'s listing and hence φ(n);
-(2) Corollary 6.7 applied in U(n) for Euler; (3) φ(p) = p−1 for Fermat. None started.
-
-### A LISTING LENGTH is a ℕ but PRIMALITY is a ℤ notion, and no bridge existed
-
-Judson's Corollary 6.8 needs "the order divides |G|, and |G| is prime, so the order is
-1 or |G|". The order and the group's size are both ℕ — they are LISTING LENGTHS — while
-`std/primes.b4m` states `is_prime` over ℤ, and `std/peano/divides.b4m` has no primality
-notion at all. Neither direction existed:
-
-- no `toIntMul` (the embedding had `toIntAdd` but not its multiplicative twin), and
-- no transport of `divides` across `toInt`.
-
-Both landed (`70a99d2`) and are reusable well beyond this corollary, but they were a
-prerequisite nobody had hit, which is itself the signal: ℕ and ℤ have parallel
-`divides`/`gcd`/order theories and the embedding carries very little between them. The
-next cross-sort arithmetic fact will hit the same wall. (Judson has no such seam — he
-works in ℤ throughout and |G| is just a number.)
-
-### `or` is LEFT-associative, so a 3-way `case` is two nested splits
-
-`a or b or c` parses as `(a or b) or c`, so `case` on a trichotomy cannot take three
-arms — the first arm must assume `a or b` and split again. The diagnostic is good
-("or_elim: subproof must assume 'less_than(i, j) or i = j'") and names exactly the arm
-it wanted, which is the tell. Worth knowing before writing the arms, since restructuring
-afterwards is a re-indent of everything.
-
 ### A definition-block clause is UNIVERSALLY QUANTIFIED
 
 `pred inCyclic(g: Grp): inCyclic(g) iff inGenerated(gen, g)` makes
@@ -309,11 +197,16 @@ that the conclusion formula must be on the step carrying it.
 `indexSplits`, `belowTheBaseIsBelowTheSum` and `indexPastTheBase` are pure
 Peano-order facts — "an index below base+m is either below base or is base+j for some
 j<m" — with NO permutation content, but they are declared in
-`std/permutation/count.b4m`. Three unrelated files now alias them out of there:
-`std/permutation/dihedral.b4m`, `std/integer/mod-n-generators.b4m`, and now
-`std/group/lagrange.b4m`. Any file doing a block decomposition needs them, and none
-of those should import the permutation counting theory to get them. They belong in
-`std/peano/order.b4m` (or a `std/peano/block-index.b4m`). Mechanical move.
+`std/permutation/count.b4m`. They belong in `std/peano/order.b4m` (or a
+`std/peano/block-index.b4m`). Mechanical move.
+
+RE-PROBED 2026-10-06 and it has got WORSE, not better: they are now PROVED (not
+aliased) in FOUR files — `std/permutation/count.b4m`, `std/permutation/dihedral.b4m`,
+`std/integer/mod-n-generators.b4m` and `std/group/lagrange.b4m`. Every new block
+decomposition re-proves them rather than importing the permutation counting theory,
+which is the predictable outcome of leaving them in a file nobody wants to depend on.
+Lifting them is the same move that worked for `zeroBelowSucc` / `zeroIsNotSucc` /
+`succIsNotSuccSucc` (commit fb58e11).
 
 ---
 
@@ -363,3 +256,34 @@ split the three `listsTheBlocksBelow` clauses into three top-level lemmas, each
 taking the concatenation's two entrywise agreements plus only the clauses it uses.
 That is the better factoring — each clause argues on a different index split and they
 share nothing else — and the restriction is what produced it.
+
+---
+
+## RESOLVED AND REMOVED (ledger, 2026-10-06)
+
+Entries deleted from this file once re-probed green. Kept as one-liners because the
+file's rule is "ADDRESSED entries get removed" — this says WHAT was removed and where
+the resolution lives, so a reader does not re-derive them.
+
+- **A listing's length is not known to be unique (for groups)** — `lagrange.b4m:1876`
+  `anyTwoGroupListingsHaveTheSameLength`, a 141-line proof over the group sort. The
+  entry said this needed sort polymorphism or a re-proof; it was re-proved.
+- **§6.3's stand-in schema is circular** — resolved by the container theory the entry
+  itself predicted ("What WOULD shorten this is the carrier-parameterized container
+  theory"). `std/indexed.b4m` now carries `skippingAnEntry`, `extendingASublisting`,
+  `splittingAPrefix`, `splittingAListing`, and `mod-n-listing.b4m`'s `znSplitsAtUnits`
+  instantiates the last at `isUnit` — U(n)'s listing, φ(n)'s length (commit 7479d94).
+- **ℕ listing length vs ℤ primality, no bridge** — the entry already recorded "both
+  landed (`70a99d2`)" (`toIntMul`, `divides` transport) but sat under STILL MISSING.
+- **`or` is LEFT-associative so a 3-way `case` needs nesting** — re-probed FALSE. A
+  flat three-arm `case` on `a or b or c` checks clean (tested with `modus_ponens` arms,
+  no `tautology` shortcut masking the shape requirement). The cheat-sheet's "`case` is
+  the N-way eliminator" is correct.
+- **`Points` was missing a CONCAT postulate** — was already marked RESOLVED in place.
+
+Still open and re-probed 2026-10-06: the `fmt` brace crash (still panics,
+`fmt.zig:191`), schema-checked-only-at-instantiation (a bogus schema body still passes
+with "0 theorems proven"), `by definition` yielding the universal rather than the
+instance, and `Seq` re-postulation (seven carriers, 26 axioms — today's `indexed`
+models share THEOREMS, not postulates, so the copy cost is unchanged).
+

@@ -1,0 +1,107 @@
+# Chapter 7 (Introduction to Cryptography) — pain points & missing machinery
+
+A log kept WHILE transliterating Chapter 7, recording what the 2b4m language or
+standard library lacked at the moment it blocked a proof. Entries that are ADDRESSED
+get removed rather than annotated — what remains is what is still missing. Plain
+markdown without a `.md` extension so the literate checker never parses the fenced
+examples here.
+
+Same discipline as `CHAPTER5-PAINPOINTS` / `CHAPTER6-PAINPOINTS`: a claim here is a
+claim about the CHECKER AS IT IS, re-probed, not a recollection. Where I guessed and
+was wrong, the wrong guess stays recorded with the correction.
+
+---
+
+## THE SHAPE OF THIS CHAPTER IS DIFFERENT
+
+Chapters 3–6 are theory: definitions, theorems, proofs. Chapter 7 is an APPLICATION
+chapter, and most of its text is narrative — how a shift cipher works, why factoring
+is hard, Alice and Bob, a worked RSA example with p = 23, q = 29. Only two results
+are theorems at all:
+
+- §7.1: an affine cipher `c = ap + b` is decodable exactly when `a` is a unit, with
+  `f⁻¹(c) = a⁻¹c − a⁻¹b`.
+- §7.2: RSA's round trip — `y^D = x^{DE} = x^{kφ(n)+1} = (x^{φ(n)})^k·x = x`.
+
+Both are PROVED (`std/integer/mod-n.b4m`'s `anAffineCipherWithAUnitMultiplierDecodes`
+and `std/group/order-divides.b4m`'s
+`anExponentOneAboveAMultipleOfTheOrderIsTheIdentityMap`). So the chapter needs very
+little new machinery — which is itself the finding, and the reason this file is short
+next to Chapter 6's.
+
+## STILL MISSING
+
+### RSA's correctness is stated over a GROUP, not over ℤ_n — the gcd ≠ 1 case is unreachable
+
+Judson's proof splits:
+- `gcd(x, n) = 1` — then x is a unit, Euler applies, and the round trip is the group
+  fact that IS proved.
+- `gcd(x, n) ≠ 1` — "since n = pq and x < n, we know x is a multiple of p or a
+  multiple of q, but not both", then CRT finishes it.
+
+The second case is not a group statement at all: it needs n's FACTORIZATION as pq,
+the Chinese Remainder Theorem, and `x < n`. None of the three exists in std. So what
+is proved is RSA-for-units, which is the case the chapter actually computes with, and
+the other case is recorded as prose.
+
+The honest framing: the group fact is the mathematics; the second case is an artifact
+of RSA being stated over all of ℤ_n rather than over U(n).
+
+### No φ FUNCTION, so RSA's exponent arithmetic cannot be stated as the book writes it
+
+`DE ≡ 1 (mod m)` where `m = φ(n) = (p−1)(q−1)` is the key relation, and the proof
+needs `DE = kφ(n) + 1`. The proved theorem takes the group's size as a bare `Int`
+parameter `m` with `power(g, m) = E` as a premise, which is the same content — but
+`φ` itself does not exist, so the `m = (p−1)(q−1)` step cannot be written.
+
+THIS IS CHAPTER 6'S GAP, INHERITED. `CHAPTER6-PAINPOINTS:229` already records it:
+"Remaining for §6.3: (1) `splittingAListing` over ℤ_n, giving U(n)'s listing and hence
+φ(n); (2) Corollary 6.7 applied in U(n) for Euler; (3) φ(p) = p−1 for Fermat." Item (1)
+landed 2026-10-06 and (2) is Euler, also landed — but φ AS A FUNCTION was never built,
+so Chapter 7 meets the same wall from the other side. φ(n) would be the LENGTH of the units' listing
+(`mod_n_listing.znSplitsAtUnits`, landed 2026-10-06), and defining a FUNCTION from it
+needs listing-length uniqueness transported to U(n)
+(`lagrange.anyTwoGroupListingsHaveTheSameLength` exists for the group; it has not been
+transferred). Nothing here is new mathematics; the function is simply not built.
+
+### `addInverseRight` is not stated over ℤ_n (only the LEFT form)
+
+`std/integer/mod-n.b4m:263` has `addInverseLeft: add(neg(x), x) = ZERO` and no right
+counterpart, though `addCommutes` (:651) and `addIdentityRight` (:338) both exist. The
+affine proof needs the right form and derives it inline in three steps
+(commute + chain). A one-line theorem next to `addInverseLeft` would have saved it;
+left as an observation rather than added, since the same asymmetry may be deliberate
+elsewhere in the file.
+
+Worth checking whether the ℤ_n ring surface has other one-sided-only laws — this one
+was found by tripping over it, not by audit.
+
+### Matrices (the polyalphabetic cipher) are out of scope, as recorded in Chapter 4
+
+§7.1's last construction encrypts PAIRS of letters with an invertible 2×2 matrix over
+ℤ_26. There is no matrix theory in std, and the user ruled matrices out of scope
+during Chapter 4 (memory: `chapter4-exercises-progress` — "user: matrices not
+needed"). Recorded as prose.
+
+### Nothing in the chapter needed a new ENGINE feature
+
+Unlike Chapters 5 and 6, no entry here is about the checker. Both proofs went through
+first try on the existing primitives (`specialize`, `rewrite`, `chain`, `symmetry`)
+with no accelerant surprises, no model gymnastics and no schema work. The friction was
+entirely MISSING LIBRARY CONTENT (φ, congruence, CRT, one-sided ℤ_n laws), which is a
+much better place for it to be.
+
+---
+
+## RESOLVED AND REMOVED (ledger, 2026-10-06)
+
+- **"No congruence relation, so `≡ (mod n)` is spelled as ℤ_n equality"** — WRONG when
+  written, removed after probing. Congruence IS representable and the bridge DOES exist:
+  `aata/3.1-integers-mod-n.md` encodes `a ≡ b (mod n)` directly as `divides(n, sub(a, b))`
+  on ℤ (and says so explicitly), and `std/integer/mod-n.b4m:59` has
+  `axiom clsCongruent: forall a, b: Int; cls(a) = cls(b) iff divides(N, isub(a, b))`.
+  So RSA's `x^{DE} ≡ x (mod n)` is statable as Judson writes it; §7.2 just stops at
+  `power(g, …) = g` in the group. Connecting them is a short unwritten proof, not a
+  missing primitive. The wrong guess is logged because it was cheap to make and would
+  have sent someone building a predicate that already exists in another spelling.
+
