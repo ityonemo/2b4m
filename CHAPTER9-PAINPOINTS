@@ -1,0 +1,247 @@
+# Chapter 9 (Isomorphisms) — pain points & missing machinery
+
+A log kept WHILE transliterating Chapter 9, recording what the 2b4m language or
+standard library lacked at the moment it blocked a proof. Entries that are ADDRESSED
+get removed rather than annotated — what remains is what is still missing. Plain
+markdown without a `.md` extension so the literate checker never parses it.
+
+Same discipline as CHAPTER5/6/7-PAINPOINTS: a claim here is a claim about the CHECKER
+AS IT IS, re-probed, not a recollection.
+
+---
+
+## THE REAL LIMIT, after three wrong guesses about it
+
+My first draft of this file claimed four results were UNSTATABLE because "an isomorphism
+relates two theories and 2b4m cannot quantify over theories". Three of the four claims
+were wrong, and the pattern behind all three is the entry worth keeping.
+
+**What is actually true.** 2b4m has no sort of *groups*: a group is a theory (a sort
+plus operations plus axioms), and you cannot write `forall G: Group`. Identity-by-origin
+sharpens it — `import group` twice names ONE theory, so two abstract groups must be
+DECLARED independently (the choice `std/group/product.b4m` documents).
+
+**What does NOT follow, which is what I got wrong.** "Cannot quantify over theories"
+does not mean "cannot state theorems about several theories". It means you must FIX the
+arity by declaring that many. And declaring them is cheap:
+
+- **Cayley's Theorem** — I said the permutations of an abstract G had no home because
+  `std/permutation.b4m`'s `Fn` is single-sorted. Six declarations (`PermG`, `applyP`,
+  `composeP`, `idP`, extensionality, `lam`) and the whole theorem proves. Now in
+  `std/group/isomorphism.b4m`, 13 theorems. See the ledger.
+- **Transitivity of ≅** — I said it "needs THREE groups and two maps", as though that
+  settled it. Declaring three groups and two maps takes 16 declarations, and the
+  composite's operation-preservation proves in one `rewrite`. Probed 2026-10-06.
+- **Reflexivity of ≅** — the identity map on a declared group; trivial.
+
+So Theorem 9.10 is not blocked by any of its three ingredients — and all three are now
+PROVED (`reflexivityOfIsomorphism`, `symmetryOfIsomorphism`,
+`transitivityOfIsomorphism`, plus `compositePreservesIdentity` so the transitivity
+witness is an isomorphism of GROUPS and not merely a bijection preserving `op`).
+Transitivity declares a third group K and a second isomorphism χ : H → K; that is the
+whole cost of "needs three groups".
+
+What remains blocked is narrower: the *relation* ≅ cannot be NAMED, because naming it
+would quantify over pairs of theories. You can prove every instance you declare; you
+cannot say "for all groups G, H, ...". The mathematical content of Theorem 9.10 is
+complete; only the quantification is out of reach.
+
+**THE ERROR PATTERN.** All three guesses came from reasoning about what `std` HAS rather
+than what the language can EXPRESS, and all three were settled in minutes by writing the
+declarations and running the checker. The same pattern cost me real work twice more
+today (see the ledger: `splittingAPrefix` "threads the fold"). **Probe by writing the
+file, not by reading the library.**
+
+## STILL MISSING
+
+### `std/function.b4m` is SINGLE-SORTED, so φ : G → H is not an `Fn`
+
+`func apply(f: Fn, x: Element) => Element` (std/function.b4m:34) — a function's source
+and target are the SAME sort. An isomorphism's are different by construction, so the
+whole `Fn` layer (`invertible`, `inverse`, `compose`, `funcExtensionality`,
+`functionFromGraph`) is unavailable to it.
+
+`isomorphism.b4m` therefore declares φ and ψ as primitive functions and states
+bijectivity as the two round-trip axioms (`psiAfterPhi`, `phiAfterPsi`), deriving
+injectivity and surjectivity from them. That works and is only ~20 lines, but it means
+EVERY cross-sort map in std will re-derive the same facts: there is no reusable notion
+of "a bijection between two sorts".
+
+What would fix it: a two-sorted function theory (`Map` with `dom`/`cod` sorts as
+parameters), of which the current `Fn` is the diagonal case. Not attempted.
+
+### ℤ_n's modulus is a single `const N`, so there is no FAMILY of cyclic groups
+
+`std/integer/mod-n.b4m:49` declares `const N: Int` — one modulus per file. Theorem 9.21
+compares ℤ_m × ℤ_n with ℤ_mn for VARYING m and n, which needs three members of a family
+indexed by the modulus. `std/integer/mod-n-product.b4m` models ℤ_n × ℤ_n for a single
+N, which is the diagonal case.
+
+Memory `zn-via-models-spike` already settled that indexed sorts for ℤ_n are NOT the
+answer ("Fixed-const-N QUOTIENT sort + homomorphism axioms"), so the fixed-N design is
+deliberate. The cost shows up here: a theorem whose content is a relationship BETWEEN
+moduli is out of reach, and §9.2's headline result is exactly that.
+
+### |G| = |H| across an isomorphism needs a listing transported along φ
+
+Theorem 9.6 (2). With counts as listings (§6.2's convention), "|G| = |H|" means: given a
+listing of G of length n, φ's image is a listing of H of length n. Reachable — φ is
+injective and surjective, which is what a listing transport needs — but not built, and
+it would want `anyTwoGroupListingsHaveTheSameLength` on the H side to make the length
+well-defined. Theorem 9.6 (4) and (5) (cyclic transfers, subgroup orders transfer) are
+the same shape: the machinery exists over ONE group and does not travel along φ.
+
+### The order of a tuple is the lcm — needs `power` over the product sort
+
+Theorem 9.17. `pairIsIdentityIffComponentsAre` (added to `std/group/product.b4m`) is the
+structural half: the exponents killing (g,h) are the common multiples of the component
+orders. Getting to "the order IS the lcm" needs `power` over `Pair` — which
+`model ProductGroup` makes available in principle, since `std/group/power.b4m` is a
+group theory — plus lcm minimality from `std/integer/lattice.b4m`. Neither connection is
+made. `cubeIsIdentityComponentwise` is the k = 3 instance someone wrote by hand, which
+is the tell that the general version was wanted and skipped.
+
+## WHAT WORKED, worth keeping
+
+### Declaring two groups and modelling each onto `std/group.b4m` costs nothing
+
+`isomorphism.b4m` declares G and H with three axioms each, then
+`model GIsAGroup` / `model HIsAGroup` make both real groups — so right identity, right
+inverse, cancellation and identity-uniqueness all transfer instead of being re-proved
+twice. `phiPreservesIdentity` uses H's `cancelRight` through the model in one line.
+Six axioms of boilerplate for two full group corpora.
+
+A gotcha inside that: a model-transferred theorem keeps the SOURCE's binder order.
+`group.cancelRight` is `forall b, a, c` with the shared factor as `a`, and writing the
+transferred statement as `forall a, b, c; opH(a,c) = opH(b,c) -> a = b` fails with a
+good diagnostic naming the derived form. Read the source statement, do not guess.
+
+### `--library` caught a real gap in the FIRST draft of this file
+
+The §9.1 theorems all reason in H, so the first version of `isomorphism.b4m` never used
+`opGAssoc` or `opGInverseLeft` — G's structure was declared but idle, and
+`check --library std` failed with "2 unused axiom(s)". Adding Cayley's Theorem fixed it
+genuinely rather than by adding a token example: `leftTranslationIsSurjective` needs the
+inverse, and `leftTranslationComposes` IS associativity. The gate turned "I should
+probably do Cayley" into "the library is inconsistent until I do", which is the right
+pressure.
+
+---
+
+## RESOLVED AND REMOVED (ledger, 2026-10-06)
+
+### ~~Cayley's target — "the permutations OF G" — has no home~~ — WRONG, and instructive
+
+I recorded that Cayley's Theorem was UNSTATABLE: `std/permutation.b4m`'s `Fn` acts on a
+fixed `Element` sort, so "the group of permutations of an abstract G" supposedly had
+nowhere to live, and only the ingredients of Judson's proof were checkable.
+
+That was a false inference, and the theorem is now fully proved in
+`std/group/isomorphism.b4m` (13 theorems): `cayleyPreservesOp` (the map is a
+homomorphism — the hard part, via extensionality), `cayleyIsInjective`,
+`cayleyIdentity`, `imageHasIdentity`, `imageClosedUnderComposition`. Six declarations
+were all it took:
+
+```
+sort PermG
+func applyP(s: PermG, a: G) => G
+func composeP(s: PermG, t: PermG) => PermG
+const idP: PermG
+axiom permExtensionality: forall s, t: PermG;
+  (forall a: G; applyP(s, a) = applyP(t, a)) -> s = t
+func lam(g: G) => PermG
+axiom lamApply: forall g, a: G; applyP(lam(g), a) = opG(g, a)
+```
+
+**THE ERROR PATTERN, which is the valuable part.** I reasoned from what `std` HAS to
+what the LANGUAGE can express. Those are different questions. `std/permutation.b4m`
+genuinely cannot represent permutations of an abstract sort — but nothing stopped me
+from declaring the sort, and extensionality then does all the work (it is what turns
+pointwise agreement into equality of permutations, which is the step the homomorphism
+property needs).
+
+This is the SECOND time today the same pattern cost real work: I also claimed
+`splittingAPrefix`/`extendingASublisting` "thread the fold" and so could not live in
+`std/indexed.b4m`, on the strength of a grep that was counting `prop(` as `op(`. Both
+times the fix was to write the declarations and run the checker rather than to search
+for existing machinery. **Probe by writing the file, not by reading the library.**
+
+Three mechanical frictions showed up while building it, all small and all worth knowing:
+
+- a DEFINITION BLOCK cannot infer a clause variable's sort when it appears only inside
+  an existential: `pred inImage(s: PermG): inImage(s) iff (exists g: G; s = lam(g))`
+  fails with "cannot infer the sort of 'g'". A declared `pred` plus a named `axiom`
+  works, and is what a model would need anyway (a definition clause's name is mangled).
+- `specialize` on a `forall`-quantified AXIOM treats the binder as a premise to
+  discharge ("cannot discharge the guard premise"). `forall_elim` is the right rule.
+- an `iff` axiom needs explicit elimination before either direction is usable —
+  `[using tautology <hyp> <the-iff-at-the-point>]`, not a direct cite.
+
+
+### THEOREM NUMBERS: do not derive them, and prefer citing by content
+
+Chapter 9 exposed a process bug that had been silently producing wrong citations since
+Chapter 3. PreTeXt auto-numbers, so no number appears in the XML — I was DERIVING them
+by counting `<theorem|proposition|corollary|lemma|example|definition>` blocks in
+document order. Three things break that:
+
+1. Numbering is per CHAPTER, not per section. My first attempt restarted at each
+   `<section>` and produced §9.2 numbers that were all wrong.
+2. Some blocks have NO `xml:id` (`isomorph.xml` has three, `permute.xml` at least one),
+   and a regex keyed on `xml:id=` skips them — shifting every later number. My "fix" to
+   §9.2 was still wrong for exactly this reason, twice.
+3. `\begin{array}`-style blocks and `<example>`s share the sequence, so examples must be
+   counted but not cited.
+
+Corrected in this pass: Chapter 6's eleven citations were ALL wrong (Lemma 6.1→6.3,
+Theorem 6.2→6.4, 6.3→6.7, Lemma 6.4→6.8, Theorem 6.5→6.9, Corollaries 6.6→6.10,
+6.7→6.11, 6.9→6.12, Theorems 6.16→6.15, 6.17→6.16, 6.18→6.17); Chapter 9's §9.2 ones
+(Proposition 9.18→9.13, Theorems 9.21→9.17, 9.24→9.21). §9.1's (9.6, 9.10, 9.12) were
+right by luck — the id-less blocks are all in §9.2.
+
+Two citations could not be numbered at all because the block has no `xml:id`:
+§5.1's "any permutation of a finite set is a product of transpositions" and §3.3's
+one-step subgroup test. Both are now cited BY CONTENT ("§5.1's
+transposition-decomposition proposition", "§3.3's one-step subgroup test"), which is
+robust and arguably better for a reader anyway.
+
+RULE: cite a numbered result by its STATEMENT, not by a number, unless the number is
+verified against the rendered book. A derived number is a guess that looks like a fact.
+
+## PROCESS: I needed prompting to try things, and the diagnosis is NOT `model`
+
+The user observed that these results only got attempted after being asked, and proposed a
+cause: a weak grasp of `model`, or reading `model` in the category-theoretic sense (it is
+not that — it is structure interpretation, an overlay of symbol maps plus axiom discharges).
+
+Tested, and that is NOT the cause. None of the three language-level wrong calls involved
+`model`:
+
+| wrong call | what it actually needed | `model` involved? |
+|---|---|---|
+| "Cayley is unstatable" | `sort PermG`, `applyP`, `composeP`, extensionality | no |
+| "transitivity of ≅ is blocked" | `sort K` + a second isomorphism | no |
+| "`splittingAPrefix` threads the fold" | porting a schema | `model` was ALREADY the route |
+
+And `model` was used freely throughout: 5 citations in `std/group/isomorphism.b4m`
+(including `GIsAGroup`/`HIsAGroup`, which buy two complete group corpora for six axioms of
+boilerplate), 4 in `std/integer/mod-n-listing.b4m`. There was no reluctance to reach for it.
+
+**THE ACTUAL PATTERN: I did not DECLARE SORTS.** Every one of the three was a case where
+the answer was "write `sort X` plus two or three axioms". I treated the existing std
+vocabulary as the boundary of what is expressible, searched it, found nothing that fit, and
+reported a limitation. `std/permutation.b4m` genuinely cannot represent permutations of an
+abstract G — but that was never the question; the question was whether 2b4m can, and it can.
+
+The two ARE related, which may be why the user's instinct pointed at `model`: `model` is
+what makes declaring cheap. A fresh sort + three axioms + one `model` block inherits an
+entire corpus. So the rule is **DECLARE, THEN MODEL** — and I was skipping step one.
+
+What a future session should do differently, concretely:
+
+1. When a theorem seems to need a structure std lacks, FIRST write the 5–10 lines that
+   declare it (sort, operations, the characterising axioms — extensionality if it is a
+   function-like sort). Only then ask whether anything is missing.
+2. Treat "std has no X" as a fact about a FILE, never about the language.
+3. A claim of "unstatable" requires a failed probe, not a search. The probes that settled
+   all three of these took under five minutes each.

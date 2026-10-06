@@ -1,0 +1,870 @@
+// std/group/isomorphism.b4m — an ISOMORPHISM of groups (AATA §9.1).
+//
+// Two groups (G, ·) and (H, ∘) are isomorphic when there is a bijection φ : G → H with
+// φ(a·b) = φ(a)∘φ(b). This file states that for two ABSTRACT groups and proves what
+// Judson's Theorem 9.6 asserts: the inverse map is an isomorphism, and abelian/cyclic
+// structure transfers.
+//
+// TWO GROUPS MUST BE DECLARED, NOT ALIASED — the same forced choice `std/group/product.b4m`
+// documents. Namespaces are identity-by-origin, so `import group` twice names ONE theory and
+// `sort G = groupA.Grp` / `sort H = groupB.Grp` yields the SAME sort. An isomorphism's whole
+// content is a map between two INDEPENDENT groups, so both are declared here.
+//
+// φ IS A PRIMITIVE FUNCTION, not an `Fn` from std/function.b4m. `Fn` is a function on ONE
+// sort (`apply(f, x) : Element → Element`); an isomorphism's source and target are different
+// sorts, so the function layer cannot type it. Bijectivity is therefore stated directly
+// (injective + surjective) rather than borrowed as `invertible`.
+
+import group <<< "std/group.b4m"
+
+// -- the source group G -----------------------------------------------------------------------
+sort G
+const EG: G
+func opG(a: G, b: G) => G
+func invG(a: G) => G
+axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
+axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
+
+// -- the target group H -----------------------------------------------------------------------
+sort H
+const EH: H
+func opH(a: H, b: H) => H
+func invH(a: H) => H
+axiom opHAssoc: forall a, b, c: H; opH(opH(a, b), c) = opH(a, opH(b, c))
+axiom opHIdentityLeft: forall a: H; opH(EH, a) = a
+axiom opHInverseLeft: forall a: H; opH(invH(a), a) = EH
+
+// G and H are groups, so their derived laws (right identity, right inverse, cancellation,
+// uniqueness of the identity) come from std/group.b4m rather than being re-proved.
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+
+model HIsAGroup {
+  group.Grp: H
+  group.E: EH
+  group.op: opH
+  group.inverse: invH
+  group.opAssoc <- opHAssoc
+  group.opIdentityLeft <- opHIdentityLeft
+  group.opInverseLeft <- opHInverseLeft
+}
+
+// -- the isomorphism --------------------------------------------------------------------------
+// φ : G → H, bijective and operation-preserving. `psi` is its inverse map, characterized by
+// the two round-trip axioms — which is what "bijective" buys and all the proofs below use.
+func phi(a: G) => H
+func psi(b: H) => G
+
+axiom phiPreservesOp: forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
+axiom psiAfterPhi: forall a: G; psi(phi(a)) = a
+axiom phiAfterPsi: forall b: H; phi(psi(b)) = b
+
+// -- what an isomorphism preserves (Judson Thm 9.6) -------------------------------------------
+
+// φ is INJECTIVE: a left inverse forces it. (Judson's (1) and (2) "follow from the fact that
+// φ is a bijection"; this is that fact, made usable.)
+theorem phiIsInjective: forall a, b: G; phi(a) = phi(b) -> a = b
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-images-agree |
+            assume phi(a) = phi(b) {
+              @images-agree |
+                phi(a) = phi(b)
+                [by hypothesis given-images-agree]
+              @psi-at-a |
+                psi(phi(a)) = a
+                [using specialize psiAfterPhi(a)]
+              @psi-at-b |
+                psi(phi(b)) = b
+                [using specialize psiAfterPhi(b)]
+              @psi-of-the-shared-image-is-a |
+                psi(phi(b)) = a
+                [by rewrite images-agree psi-at-a]
+              @conclusion-equal |
+                a = b
+                [using chain psi-of-the-shared-image-is-a psi-at-b]
+            }
+          @discharge |
+            phi(a) = phi(b) -> a = b
+            [by implies_intro given-images-agree]
+        }
+      @discharge-b |
+        forall b: G; phi(a) = phi(b) -> a = b
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: G; phi(a) = phi(b) -> a = b
+    [by forall_intro generalize-a]
+qed
+
+// φ is SURJECTIVE: psi exhibits a preimage for every element of H.
+theorem phiIsSurjective: forall b: H; exists a: G; phi(a) = b
+proof
+  @generalize-b |
+    fix b: H {
+      @round-trip |
+        phi(psi(b)) = b
+        [using specialize phiAfterPsi(b)]
+      @conclusion-preimage |
+        exists a: G; phi(a) = b
+        [by exists_intro(psi(b)) round-trip]
+    }
+  @conclusion |
+    forall b: H; exists a: G; phi(a) = b
+    [by forall_intro generalize-b]
+qed
+
+// φ carries G's identity to H's. (Judson leaves this to the exercises; it is the step every
+// later structural claim needs.) From φ(e·e) = φ(e)∘φ(e) and e·e = e, cancel.
+theorem phiPreservesIdentity: phi(EG) = EH
+proof
+  @identity-is-idempotent |
+    opG(EG, EG) = EG
+    [using specialize opGIdentityLeft(EG)]
+  @phi-splits-the-product |
+    phi(opG(EG, EG)) = opH(phi(EG), phi(EG))
+    [using specialize phiPreservesOp(EG, EG)]
+  @phi-of-the-identity-is-idempotent |
+    phi(EG) = opH(phi(EG), phi(EG))
+    [by rewrite identity-is-idempotent phi-splits-the-product]
+  @identity-left-at-the-image |
+    opH(EH, phi(EG)) = phi(EG)
+    [using specialize opHIdentityLeft(phi(EG))]
+  @both-products-agree |
+    opH(EH, phi(EG)) = opH(phi(EG), phi(EG))
+    [using chain identity-left-at-the-image phi-of-the-identity-is-idempotent]
+  // H's cancellation law, transferred through HIsAGroup rather than cited in G's sort
+  @cancel-right-in-h |
+    forall b, a, c: H; opH(b, a) = opH(c, a) -> b = c
+    [using model(HIsAGroup) group.cancelRight]
+  @identity-is-the-image |
+    EH = phi(EG)
+    [using specialize cancel-right-in-h(EH, phi(EG), phi(EG)) both-products-agree]
+  @conclusion-identity |
+    phi(EG) = EH
+    [by symmetry identity-is-the-image]
+qed
+
+// ψ PRESERVES THE OPERATION, so the inverse map is an isomorphism too — Judson's (1).
+theorem psiPreservesOp: forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y))
+proof
+  @generalize-x |
+    fix x: H {
+      @generalize-y |
+        fix y: H {
+          // φ(ψ(x)·ψ(y)) = φ(ψ(x))∘φ(ψ(y)) = x∘y, and ψ∘φ = id finishes it
+          @phi-splits |
+            phi(opG(psi(x), psi(y))) = opH(phi(psi(x)), phi(psi(y)))
+            [using specialize phiPreservesOp(psi(x), psi(y))]
+          @phi-psi-at-x |
+            phi(psi(x)) = x
+            [using specialize phiAfterPsi(x)]
+          @phi-psi-at-y |
+            phi(psi(y)) = y
+            [using specialize phiAfterPsi(y)]
+          @first-factor-collapses |
+            phi(opG(psi(x), psi(y))) = opH(x, phi(psi(y)))
+            [by rewrite phi-psi-at-x phi-splits]
+          @image-of-the-product |
+            phi(opG(psi(x), psi(y))) = opH(x, y)
+            [by rewrite phi-psi-at-y first-factor-collapses]
+          @psi-of-both-sides |
+            psi(phi(opG(psi(x), psi(y)))) = psi(opH(x, y))
+            [by rewrite image-of-the-product reflexivity-at-psi]
+          @reflexivity-at-psi |
+            psi(phi(opG(psi(x), psi(y)))) = psi(phi(opG(psi(x), psi(y))))
+            [by reflexivity]
+          @psi-round-trips |
+            psi(phi(opG(psi(x), psi(y)))) = opG(psi(x), psi(y))
+            [using specialize psiAfterPhi(opG(psi(x), psi(y)))]
+          @conclusion-psi-preserves |
+            psi(opH(x, y)) = opG(psi(x), psi(y))
+            [using chain psi-of-both-sides psi-round-trips]
+        }
+      @discharge-y |
+        forall y: H; psi(opH(x, y)) = opG(psi(x), psi(y))
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y))
+    [by forall_intro generalize-x]
+qed
+
+// IF G IS ABELIAN, SO IS H — Judson's (3), the one he proves in the text:
+// "h₁h₂ = φ(g₁)φ(g₂) = φ(g₁g₂) = φ(g₂g₁) = φ(g₂)φ(g₁) = h₂h₁".
+theorem abelianTransfers: (forall a, b: G; opG(a, b) = opG(b, a)) ->
+  (forall x, y: H; opH(x, y) = opH(y, x))
+proof
+  @given-g-abelian |
+    assume forall a, b: G; opG(a, b) = opG(b, a) {
+      @g-is-abelian |
+        forall a, b: G; opG(a, b) = opG(b, a)
+        [by hypothesis given-g-abelian]
+      @generalize-x |
+        fix x: H {
+          @generalize-y |
+            fix y: H {
+              // pull x and y back to G, commute there, push forward
+              @x-is-an-image |
+                phi(psi(x)) = x
+                [using specialize phiAfterPsi(x)]
+              @y-is-an-image |
+                phi(psi(y)) = y
+                [using specialize phiAfterPsi(y)]
+              @preimages-commute |
+                opG(psi(x), psi(y)) = opG(psi(y), psi(x))
+                [using specialize g-is-abelian(psi(x), psi(y))]
+              @phi-splits-one-way |
+                phi(opG(psi(x), psi(y))) = opH(phi(psi(x)), phi(psi(y)))
+                [using specialize phiPreservesOp(psi(x), psi(y))]
+              @phi-splits-the-other-way |
+                phi(opG(psi(y), psi(x))) = opH(phi(psi(y)), phi(psi(x)))
+                [using specialize phiPreservesOp(psi(y), psi(x))]
+              @images-of-equal-products-agree |
+                phi(opG(psi(x), psi(y))) = opH(phi(psi(y)), phi(psi(x)))
+                [by rewrite preimages-commute phi-splits-the-other-way]
+              @products-in-h-agree |
+                opH(phi(psi(x)), phi(psi(y))) = opH(phi(psi(y)), phi(psi(x)))
+                [using chain phi-splits-one-way images-of-equal-products-agree]
+              @x-replaces-its-image |
+                opH(x, phi(psi(y))) = opH(phi(psi(y)), x)
+                [by rewrite x-is-an-image products-in-h-agree]
+              @conclusion-h-commutes |
+                opH(x, y) = opH(y, x)
+                [by rewrite y-is-an-image x-replaces-its-image]
+            }
+          @discharge-y |
+            forall y: H; opH(x, y) = opH(y, x)
+            [by forall_intro generalize-y]
+        }
+      @h-is-abelian |
+        forall x, y: H; opH(x, y) = opH(y, x)
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    (forall a, b: G; opG(a, b) = opG(b, a)) -> (forall x, y: H; opH(x, y) = opH(y, x))
+    [by implies_intro given-g-abelian]
+qed
+
+// -- CAYLEY'S THEOREM (Judson Thm 9.12): every group is a group of permutations -------------
+//
+// "For any g ∈ G, define λ_g : G → G by λ_g(a) = ga. We claim λ_g is a permutation of G."
+// The content is that LEFT TRANSLATION is a bijection, and the map g ↦ λ_g preserves the
+// operation (λ_{gh} = λ_g ∘ λ_h). Both are proved below over G.
+//
+// What is NOT built: the PERMUTATION GROUP itself as the target of an isomorphism. That needs
+// the permutations of a sort to be a group, and `std/permutation.b4m`'s `Fn` is a function on
+// `Element` — the function layer is single-sorted, so "permutations OF G" for an abstract G
+// has no home. Cayley's statement therefore remains prose; its two mathematical ingredients
+// are these theorems.
+
+// λ_g is INJECTIVE: ga = gb forces a = b — Judson's one-to-one step, verbatim.
+theorem leftTranslationIsInjective: forall g, a, b: G; opG(g, a) = opG(g, b) -> a = b
+proof
+  @conclusion |
+    forall g, a, b: G; opG(g, a) = opG(g, b) -> a = b
+    [using model(GIsAGroup) group.cancelLeft]
+qed
+
+// λ_g is SURJECTIVE: for each a, b = g⁻¹a gives λ_g(b) = a — Judson's onto step.
+theorem leftTranslationIsSurjective: forall g, a: G; exists b: G; opG(g, b) = a
+proof
+  @generalize-g |
+    fix g: G {
+      @generalize-a |
+        fix a: G {
+          // g(g⁻¹a) = (gg⁻¹)a = ea = a
+          @regroup |
+            opG(opG(g, invG(g)), a) = opG(g, opG(invG(g), a))
+            [using specialize opGAssoc(g, invG(g), a)]
+          @inverse-right-in-g |
+            forall x: G; opG(x, invG(x)) = EG
+            [using model(GIsAGroup) group.opInverseRight]
+          @g-times-its-inverse |
+            opG(g, invG(g)) = EG
+            [using specialize inverse-right-in-g(g)]
+          @identity-times-a |
+            opG(EG, a) = opG(g, opG(invG(g), a))
+            [by rewrite g-times-its-inverse regroup]
+          @identity-left-at-a |
+            opG(EG, a) = a
+            [using specialize opGIdentityLeft(a)]
+          @translation-hits-a |
+            a = opG(g, opG(invG(g), a))
+            [by rewrite identity-left-at-a identity-times-a]
+          @translation-hits-a-flipped |
+            opG(g, opG(invG(g), a)) = a
+            [by symmetry translation-hits-a]
+          @conclusion-preimage |
+            exists b: G; opG(g, b) = a
+            [by exists_intro(opG(invG(g), a)) translation-hits-a-flipped]
+        }
+      @discharge-a |
+        forall a: G; exists b: G; opG(g, b) = a
+        [by forall_intro generalize-a]
+    }
+  @conclusion |
+    forall g, a: G; exists b: G; opG(g, b) = a
+    [by forall_intro generalize-g]
+qed
+
+// g ↦ λ_g PRESERVES THE OPERATION: λ_{gh}(a) = λ_g(λ_h(a)), which is associativity read as
+// a statement about translations. This is why the image of g ↦ λ_g is a GROUP of permutations
+// rather than merely a set of them.
+theorem leftTranslationComposes: forall g, h, a: G; opG(opG(g, h), a) = opG(g, opG(h, a))
+proof
+  @conclusion |
+    forall g, h, a: G; opG(opG(g, h), a) = opG(g, opG(h, a))
+    [by cite opGAssoc]
+qed
+
+// -- CAYLEY'S THEOREM (Judson Thm 9.12), in full --------------------------------------------
+//
+// "Every group is isomorphic to a group of permutations." The permutations OF G are declared
+// here as their own sort with application, composition and EXTENSIONALITY — six declarations.
+// `std/permutation.b4m` cannot serve: its `Fn` acts on a fixed `Element`, so permutations of
+// an abstract G are not expressible there. That is a fact about that FILE, not about the
+// language: declaring the sort costs almost nothing and everything Judson claims then proves.
+//
+// (An earlier draft of this file recorded Cayley as "unstatable" for exactly that confusion —
+// reasoning from what std HAS to what the language can EXPRESS. See CHAPTER9-PAINPOINTS.)
+// a "permutation of G" as its own sort, with application
+sort PermG
+func applyP(s: PermG, a: G) => G
+func composeP(s: PermG, t: PermG) => PermG
+const idP: PermG
+axiom composeApplyP: forall s, t: PermG; forall a: G; applyP(composeP(s, t), a) = applyP(s, applyP(t, a))
+axiom idApplyP: forall a: G; applyP(idP, a) = a
+axiom permExtensionality: forall s, t: PermG; (forall a: G; applyP(s, a) = applyP(t, a)) -> s = t
+
+// the Cayley map: g |-> lambda_g
+func lam(g: G) => PermG
+axiom lamApply: forall g, a: G; applyP(lam(g), a) = opG(g, a)
+
+// CAYLEY: the map g |-> lambda_g preserves the operation and is injective.
+theorem cayleyPreservesOp: forall g, h: G; lam(opG(g, h)) = composeP(lam(g), lam(h))
+proof
+  @generalize-g |
+    fix g: G {
+      @generalize-h |
+        fix h: G {
+          @pointwise |
+            forall a: G; applyP(lam(opG(g, h)), a) = applyP(composeP(lam(g), lam(h)), a)
+            [by forall_intro agree-at-a]
+          @agree-at-a |
+            fix a: G {
+              @left-side |
+                applyP(lam(opG(g, h)), a) = opG(opG(g, h), a)
+                [using specialize lamApply(opG(g, h), a)]
+              @split |
+                applyP(composeP(lam(g), lam(h)), a) = applyP(lam(g), applyP(lam(h), a))
+                [using specialize composeApplyP(lam(g), lam(h), a)]
+              @inner |
+                applyP(lam(h), a) = opG(h, a)
+                [using specialize lamApply(h, a)]
+              @outer |
+                applyP(lam(g), opG(h, a)) = opG(g, opG(h, a))
+                [using specialize lamApply(g, opG(h, a))]
+              @split-at-inner |
+                applyP(composeP(lam(g), lam(h)), a) = applyP(lam(g), opG(h, a))
+                [by rewrite inner split]
+              @right-side |
+                applyP(composeP(lam(g), lam(h)), a) = opG(g, opG(h, a))
+                [using chain split-at-inner outer]
+              @assoc |
+                opG(opG(g, h), a) = opG(g, opG(h, a))
+                [using specialize opGAssoc(g, h, a)]
+              @left-is-assoc |
+                applyP(lam(opG(g, h)), a) = opG(g, opG(h, a))
+                [using chain left-side assoc]
+              @conclusion-agree |
+                applyP(lam(opG(g, h)), a) = applyP(composeP(lam(g), lam(h)), a)
+                [using chain left-is-assoc right-side]
+            }
+          @conclusion-equal |
+            lam(opG(g, h)) = composeP(lam(g), lam(h))
+            [using specialize permExtensionality(lam(opG(g, h)), composeP(lam(g), lam(h))) pointwise]
+        }
+      @discharge-h |
+        forall h: G; lam(opG(g, h)) = composeP(lam(g), lam(h))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: G; lam(opG(g, h)) = composeP(lam(g), lam(h))
+    [by forall_intro generalize-g]
+qed
+
+// Is the Cayley map INJECTIVE? lam(g) = lam(h) -> g = h
+theorem cayleyIsInjective: forall g, h: G; lam(g) = lam(h) -> g = h
+proof
+  @generalize-g |
+    fix g: G {
+      @generalize-h |
+        fix h: G {
+          @given-same-translation |
+            assume lam(g) = lam(h) {
+              @same-translation |
+                lam(g) = lam(h)
+                [by hypothesis given-same-translation]
+              // G's right identity, transferred through GIsAGroup
+              @identity-right-in-g |
+                forall x: G; opG(x, EG) = x
+                [using model(GIsAGroup) group.opIdentityRight]
+              // apply both to the identity: lam(g)(e) = g·e = g
+              @g-at-identity |
+                applyP(lam(g), EG) = opG(g, EG)
+                [using specialize lamApply(g, EG)]
+              @h-at-identity |
+                applyP(lam(h), EG) = opG(h, EG)
+                [using specialize lamApply(h, EG)]
+              @g-times-identity |
+                opG(g, EG) = g
+                [using specialize identity-right-in-g(g)]
+              @h-times-identity |
+                opG(h, EG) = h
+                [using specialize identity-right-in-g(h)]
+              @g-is-its-value |
+                applyP(lam(g), EG) = g
+                [using chain g-at-identity g-times-identity]
+              @h-is-its-value |
+                applyP(lam(h), EG) = h
+                [using chain h-at-identity h-times-identity]
+              @values-agree |
+                applyP(lam(h), EG) = g
+                [by rewrite same-translation g-is-its-value]
+              @conclusion-equal |
+                g = h
+                [using chain values-agree h-is-its-value]
+            }
+          @discharge |
+            lam(g) = lam(h) -> g = h
+            [by implies_intro given-same-translation]
+        }
+      @discharge-h |
+        forall h: G; lam(g) = lam(h) -> g = h
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: G; lam(g) = lam(h) -> g = h
+    [by forall_intro generalize-g]
+qed
+
+// and does the IMAGE form a group? identity + inverses, as permutations
+theorem cayleyIdentity: lam(EG) = idP
+proof
+  @pointwise |
+    forall a: G; applyP(lam(EG), a) = applyP(idP, a)
+    [by forall_intro agree-at-a]
+  @agree-at-a |
+    fix a: G {
+      @left |
+        applyP(lam(EG), a) = opG(EG, a)
+        [using specialize lamApply(EG, a)]
+      @identity-left |
+        opG(EG, a) = a
+        [using specialize opGIdentityLeft(a)]
+      @left-is-a |
+        applyP(lam(EG), a) = a
+        [using chain left identity-left]
+      @right |
+        applyP(idP, a) = a
+        [using specialize idApplyP(a)]
+      @conclusion-agree |
+        applyP(lam(EG), a) = applyP(idP, a)
+        [using chain left-is-a right-flipped]
+      @right-flipped |
+        a = applyP(idP, a)
+        [by symmetry right]
+    }
+  @conclusion |
+    lam(EG) = idP
+    [using specialize permExtensionality(lam(EG), idP) pointwise]
+qed
+
+// THE IMAGE as a subgroup of PermG: "s is a left translation"
+pred inImage(s: PermG)
+axiom inImageDef: forall s: PermG; inImage(s) iff (exists g: G; s = lam(g))
+
+// the image contains the identity, is closed under composition and inverses —
+// i.e. it IS a group of permutations, which is Cayley's claim.
+theorem imageHasIdentity: inImage(idP)
+proof
+  @identity-is-a-translation |
+    lam(EG) = idP
+    [by cite cayleyIdentity]
+  @flipped |
+    idP = lam(EG)
+    [by symmetry identity-is-a-translation]
+  @witness |
+    exists g: G; idP = lam(g)
+    [by exists_intro(EG) flipped]
+  @def-all |
+    forall s: PermG; inImage(s) iff (exists g: G; s = lam(g))
+    [by cite inImageDef]
+  @def |
+    inImage(idP) iff (exists g: G; idP = lam(g))
+    [by forall_elim(idP) def-all]
+  @conclusion |
+    inImage(idP)
+    [using tautology witness def]
+qed
+
+theorem imageClosedUnderComposition: forall s, t: PermG;
+  inImage(s) -> inImage(t) -> inImage(composeP(s, t))
+proof
+  @definition-of-inImage |
+    forall u: PermG; inImage(u) iff (exists g: G; u = lam(g))
+    [by cite inImageDef]
+  @generalize-s |
+    fix s: PermG {
+      @generalize-t |
+        fix t: PermG {
+          @given-s |
+            assume inImage(s) {
+              @s-in |
+                inImage(s)
+                [by hypothesis given-s]
+              @def-at-s |
+                inImage(s) iff (exists g: G; s = lam(g))
+                [by forall_elim(s) definition-of-inImage]
+              @s-is-a-translation |
+                exists g: G; s = lam(g)
+                [using tautology s-in def-at-s]
+              @given-t |
+                assume inImage(t) {
+                  @t-in |
+                    inImage(t)
+                    [by hypothesis given-t]
+                  @def-at-t |
+                    inImage(t) iff (exists g: G; t = lam(g))
+                    [by forall_elim(t) definition-of-inImage]
+                  @t-is-a-translation |
+                    exists g: G; t = lam(g)
+                    [using tautology t-in def-at-t]
+                  @with-s-witness |
+                    unpack a: G from s-is-a-translation {
+                      @s-is-lam-a |
+                        s = lam(a)
+                        [by hypothesis with-s-witness]
+                      @with-t-witness |
+                        unpack b: G from t-is-a-translation {
+                          @t-is-lam-b |
+                            t = lam(b)
+                            [by hypothesis with-t-witness]
+                          @product-is-a-translation |
+                            lam(opG(a, b)) = composeP(lam(a), lam(b))
+                            [using specialize cayleyPreservesOp(a, b)]
+                          @compose-at-a |
+                            composeP(s, t) = composeP(lam(a), t)
+                            [by rewrite s-is-lam-a reflexivity-compose]
+                          @reflexivity-compose |
+                            composeP(s, t) = composeP(s, t)
+                            [by reflexivity]
+                          @compose-at-both |
+                            composeP(s, t) = composeP(lam(a), lam(b))
+                            [by rewrite t-is-lam-b compose-at-a]
+                          @compose-is-lam |
+                            composeP(s, t) = lam(opG(a, b))
+                            [using chain compose-at-both product-is-a-translation-flipped]
+                          @product-is-a-translation-flipped |
+                            composeP(lam(a), lam(b)) = lam(opG(a, b))
+                            [by symmetry product-is-a-translation]
+                          @witness-for-the-composite |
+                            exists g: G; composeP(s, t) = lam(g)
+                            [by exists_intro(opG(a, b)) compose-is-lam]
+                          @def-at-composite |
+                            inImage(composeP(s, t)) iff (exists g: G; composeP(s, t) = lam(g))
+                            [by forall_elim(composeP(s, t)) definition-of-inImage]
+                          @conclusion-inner |
+                            inImage(composeP(s, t))
+                            [using tautology witness-for-the-composite def-at-composite]
+                        }
+                      @conclusion-with-t |
+                        inImage(composeP(s, t))
+                        [by exists_elim with-t-witness]
+                    }
+                  @conclusion-with-s |
+                    inImage(composeP(s, t))
+                    [by exists_elim with-s-witness]
+                }
+              @t-implies |
+                inImage(t) -> inImage(composeP(s, t))
+                [by implies_intro given-t]
+            }
+          @s-implies |
+            inImage(s) -> inImage(t) -> inImage(composeP(s, t))
+            [by implies_intro given-s]
+        }
+      @discharge-t |
+        forall t: PermG; inImage(s) -> inImage(t) -> inImage(composeP(s, t))
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s, t: PermG; inImage(s) -> inImage(t) -> inImage(composeP(s, t))
+    [by forall_intro generalize-s]
+qed
+
+// -- THE EQUIVALENCE-RELATION QUALIFIERS (Judson Thm 9.10's three parts) -------------------
+//
+// Theorem 9.10 — "isomorphism determines an equivalence relation on the class of all groups"
+// — cannot be STATED here: naming the relation ≅ would quantify over pairs of groups, and a
+// group in 2b4m is a THEORY (a sort plus operations plus axioms), not a value of some sort of
+// groups. But each of its three parts IS provable, and the three below are exactly what the
+// exercise asks for. An isomorphism in this file is the triple
+// (preserves-op, ψ∘φ = id, φ∘ψ = id), so each part is discharged by exhibiting that triple.
+//
+// SYMMETRY (G ≅ H  ⟹  H ≅ G). ψ is the witness: it preserves the operation
+// (`psiPreservesOp` above) and its two round trips are the SAME axioms read with the roles
+// swapped. Stated here so "ψ is an isomorphism H → G" is one citable fact rather than three
+// scattered ones.
+theorem symmetryOfIsomorphism:
+  (forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y)))
+  and (forall b: H; phi(psi(b)) = b)
+  and (forall a: G; psi(phi(a)) = a)
+proof
+  @psi-preserves |
+    forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y))
+    [by cite psiPreservesOp]
+  @phi-after-psi |
+    forall b: H; phi(psi(b)) = b
+    [by cite phiAfterPsi]
+  @psi-after-phi |
+    forall a: G; psi(phi(a)) = a
+    [by cite psiAfterPhi]
+  @preserves-and-forward |
+    (forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y)))
+      and (forall b: H; phi(psi(b)) = b)
+    [by and_intro psi-preserves phi-after-psi]
+  @conclusion |
+    (forall x, y: H; psi(opH(x, y)) = opG(psi(x), psi(y)))
+      and (forall b: H; phi(psi(b)) = b)
+      and (forall a: G; psi(phi(a)) = a)
+    [by and_intro preserves-and-forward psi-after-phi]
+qed
+
+// REFLEXIVITY (G ≅ G). The identity map on G is an isomorphism: it preserves the operation
+// trivially and is its own inverse. `idG` is declared rather than reusing `phi`, since φ is
+// the fixed map to H.
+func idG(a: G) => G
+axiom idGApply: forall a: G; idG(a) = a
+
+theorem reflexivityOfIsomorphism:
+  (forall a, b: G; idG(opG(a, b)) = opG(idG(a), idG(b)))
+  and (forall a: G; idG(idG(a)) = a)
+proof
+  @preserves |
+    forall a, b: G; idG(opG(a, b)) = opG(idG(a), idG(b))
+    [by forall_intro preserves-at-a]
+  @preserves-at-a |
+    fix a: G {
+      @inner-b |
+        fix b: G {
+          @id-at-the-product |
+            idG(opG(a, b)) = opG(a, b)
+            [using specialize idGApply(opG(a, b))]
+          @id-at-a |
+            idG(a) = a
+            [using specialize idGApply(a)]
+          @id-at-b |
+            idG(b) = b
+            [using specialize idGApply(b)]
+          @right-side-at-a |
+            opG(idG(a), idG(b)) = opG(a, idG(b))
+            [by rewrite id-at-a reflexivity-right]
+          @reflexivity-right |
+            opG(idG(a), idG(b)) = opG(idG(a), idG(b))
+            [by reflexivity]
+          @right-side |
+            opG(idG(a), idG(b)) = opG(a, b)
+            [by rewrite id-at-b right-side-at-a]
+          @conclusion-preserves-at-b |
+            idG(opG(a, b)) = opG(idG(a), idG(b))
+            [using chain id-at-the-product right-side-flipped]
+          @right-side-flipped |
+            opG(a, b) = opG(idG(a), idG(b))
+            [by symmetry right-side]
+        }
+      @discharge-b |
+        forall b: G; idG(opG(a, b)) = opG(idG(a), idG(b))
+        [by forall_intro inner-b]
+    }
+  @round-trip |
+    forall a: G; idG(idG(a)) = a
+    [by forall_intro round-trip-at-a]
+  @round-trip-at-a |
+    fix a: G {
+      @outer |
+        idG(idG(a)) = idG(a)
+        [using specialize idGApply(idG(a))]
+      @inner |
+        idG(a) = a
+        [using specialize idGApply(a)]
+      @conclusion-round-trip |
+        idG(idG(a)) = a
+        [using chain outer inner]
+    }
+  @conclusion |
+    (forall a, b: G; idG(opG(a, b)) = opG(idG(a), idG(b)))
+      and (forall a: G; idG(idG(a)) = a)
+    [by and_intro preserves round-trip]
+qed
+
+// TRANSITIVITY (G ≅ H, H ≅ K  ⟹  G ≅ K). This needs a THIRD group, so K and the second
+// isomorphism are declared here. That is the whole cost of "needs three groups" — 2b4m
+// cannot quantify over theories, but it can hold as many as a file writes down, and the
+// composite's three conditions then follow mechanically.
+sort K
+const EK: K
+func opK(a: K, b: K) => K
+func invK(a: K) => K
+axiom opKAssoc: forall a, b, c: K; opK(opK(a, b), c) = opK(a, opK(b, c))
+axiom opKIdentityLeft: forall a: K; opK(EK, a) = a
+axiom opKInverseLeft: forall a: K; opK(invK(a), a) = EK
+
+model KIsAGroup {
+  group.Grp: K
+  group.E: EK
+  group.op: opK
+  group.inverse: invK
+  group.opAssoc <- opKAssoc
+  group.opIdentityLeft <- opKIdentityLeft
+  group.opInverseLeft <- opKInverseLeft
+}
+
+// the second isomorphism, H → K
+func chi(b: H) => K
+func chiInv(c: K) => H
+axiom chiPreservesOp: forall x, y: H; chi(opH(x, y)) = opK(chi(x), chi(y))
+axiom chiInvAfterChi: forall x: H; chiInv(chi(x)) = x
+axiom chiAfterChiInv: forall z: K; chi(chiInv(z)) = z
+
+// the COMPOSITE G → K preserves the operation, and its round trips close — so χ∘φ is an
+// isomorphism and ≅ is transitive.
+theorem transitivityOfIsomorphism:
+  (forall a, b: G; chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b))))
+  and (forall a: G; psi(chiInv(chi(phi(a)))) = a)
+  and (forall z: K; chi(phi(psi(chiInv(z)))) = z)
+proof
+  @composite-preserves |
+    forall a, b: G; chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b)))
+    [by forall_intro preserves-at-a]
+  @preserves-at-a |
+    fix a: G {
+      @inner-b |
+        fix b: G {
+          @phi-splits |
+            phi(opG(a, b)) = opH(phi(a), phi(b))
+            [using specialize phiPreservesOp(a, b)]
+          @chi-splits |
+            chi(opH(phi(a), phi(b))) = opK(chi(phi(a)), chi(phi(b)))
+            [using specialize chiPreservesOp(phi(a), phi(b))]
+          @conclusion-composite-at-b |
+            chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b)))
+            [by rewrite phi-splits chi-splits]
+        }
+      @discharge-b |
+        forall b: G; chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b)))
+        [by forall_intro inner-b]
+    }
+  // the composite's inverse is ψ∘χ⁻¹, and the round trip collapses one layer at a time
+  @composite-round-trip |
+    forall a: G; psi(chiInv(chi(phi(a)))) = a
+    [by forall_intro round-trip-at-a]
+  @round-trip-at-a |
+    fix a: G {
+      @chi-cancels |
+        chiInv(chi(phi(a))) = phi(a)
+        [using specialize chiInvAfterChi(phi(a))]
+      @psi-at-the-inner |
+        psi(chiInv(chi(phi(a)))) = psi(phi(a))
+        [by rewrite chi-cancels psi-reflexivity]
+      @psi-reflexivity |
+        psi(chiInv(chi(phi(a)))) = psi(chiInv(chi(phi(a))))
+        [by reflexivity]
+      @psi-cancels |
+        psi(phi(a)) = a
+        [using specialize psiAfterPhi(a)]
+      @conclusion-round-trip-at-a |
+        psi(chiInv(chi(phi(a)))) = a
+        [using chain psi-at-the-inner psi-cancels]
+    }
+  // the other direction: (χ∘φ)∘(ψ∘χ⁻¹) = id on K
+  @composite-round-trip-back |
+    forall z: K; chi(phi(psi(chiInv(z)))) = z
+    [by forall_intro back-at-z]
+  @back-at-z |
+    fix z: K {
+      @phi-cancels-psi |
+        phi(psi(chiInv(z))) = chiInv(z)
+        [using specialize phiAfterPsi(chiInv(z))]
+      @chi-reflexivity |
+        chi(phi(psi(chiInv(z)))) = chi(phi(psi(chiInv(z))))
+        [by reflexivity]
+      @chi-at-the-inner |
+        chi(phi(psi(chiInv(z)))) = chi(chiInv(z))
+        [by rewrite phi-cancels-psi chi-reflexivity]
+      @chi-cancels-back |
+        chi(chiInv(z)) = z
+        [using specialize chiAfterChiInv(z)]
+      @conclusion-back-at-z |
+        chi(phi(psi(chiInv(z)))) = z
+        [using chain chi-at-the-inner chi-cancels-back]
+    }
+  @preserves-and-forward-trip |
+    (forall a, b: G; chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b))))
+      and (forall a: G; psi(chiInv(chi(phi(a)))) = a)
+    [by and_intro composite-preserves composite-round-trip]
+  @conclusion |
+    (forall a, b: G; chi(phi(opG(a, b))) = opK(chi(phi(a)), chi(phi(b))))
+      and (forall a: G; psi(chiInv(chi(phi(a)))) = a)
+      and (forall z: K; chi(phi(psi(chiInv(z)))) = z)
+    [by and_intro preserves-and-forward-trip composite-round-trip-back]
+qed
+
+// K IS A GROUP, and the composite carries G's identity to K's — so the transitivity witness
+// is an isomorphism of GROUPS, not merely a bijection preserving `op`. This is also what
+// exercises K's own three group axioms.
+theorem compositePreservesIdentity: chi(phi(EG)) = EK
+proof
+  @phi-at-the-identity |
+    phi(EG) = EH
+    [by cite phiPreservesIdentity]
+  @chi-at-eh-is-idempotent |
+    chi(opH(EH, EH)) = opK(chi(EH), chi(EH))
+    [using specialize chiPreservesOp(EH, EH)]
+  @eh-is-idempotent |
+    opH(EH, EH) = EH
+    [using specialize opHIdentityLeft(EH)]
+  @chi-of-eh-is-idempotent |
+    chi(EH) = opK(chi(EH), chi(EH))
+    [by rewrite eh-is-idempotent chi-at-eh-is-idempotent]
+  @identity-left-in-k |
+    opK(EK, chi(EH)) = chi(EH)
+    [using specialize opKIdentityLeft(chi(EH))]
+  @both-products-agree |
+    opK(EK, chi(EH)) = opK(chi(EH), chi(EH))
+    [using chain identity-left-in-k chi-of-eh-is-idempotent]
+  @cancel-right-in-k |
+    forall b, a, c: K; opK(b, a) = opK(c, a) -> b = c
+    [using model(KIsAGroup) group.cancelRight]
+  @ek-is-the-image |
+    EK = chi(EH)
+    [using specialize cancel-right-in-k(EK, chi(EH), chi(EH)) both-products-agree]
+  @chi-of-eh |
+    chi(EH) = EK
+    [by symmetry ek-is-the-image]
+  @conclusion |
+    chi(phi(EG)) = EK
+    [by rewrite phi-at-the-identity chi-of-eh]
+qed
