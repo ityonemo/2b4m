@@ -56,7 +56,8 @@ but forall_elim derives
 ```
 
 A GUARD PREMISE appearing where the claim is unguarded — verbatim the symptom pinned in
-`ACCELERANT-ON-GUARDED-SETS.md`, which lists three candidate root-cause readings and states none
+the then-open `ACCELERANT-ON-GUARDED-SETS.md` (since deleted; it listed three candidate
+root-cause readings and stated none
 is established. Painted production arrives at that blocker from the opposite side, which is
 evidence it and the accelerant-namespace question are one issue rather than two.
 

@@ -67,11 +67,16 @@ argument on each tactic:
   `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
   what the `aata/*.md` files do — aliasing the book's notation onto the std
   names — and what `set.b4m` did aliasing the element sort.)
-- **GUARDED cuts and accelerants** — an abstract theory whose laws are proved BY an
-  accelerant cannot currently instantiate at a predicated-cut target: the factor axioms
-  transfer relativized and the generated proof drops the guard premise. Open, pinned in
-  `ACCELERANT-ON-GUARDED-SETS.md` (three readings, plus the generality test that rules
-  out any fix resting on closure nominations).
+- **GUARDED cuts and accelerants** — RESOLVED 2026-10-05 (PR #7). An abstract theory whose
+  laws are proved BY an accelerant used to fail at a predicated-cut target: the axioms
+  transferred relativized while the generated proof dropped the guard premise. Two causes,
+  both fixed: (1) an accelerant abstracts a goal's free caller-locals into schema params,
+  which discarded the guard the binder carried — the synthetic now states each abstracted
+  param's guard as an antecedent, discharged at the call site; (2) accelerants now produce
+  in the AMBIENT namespace and their synthetics stamp symbols FINAL, so a model is applied
+  ONCE per `using model(M)` citation instead of a second time on re-elaboration. That second
+  fix also removed `no_relativize`, which had papered over the guard-doubling face of the
+  same bug. Fixtures: `tests/cases/model_overlap_{refinement,shift}.b4m`.
 - **`model`** overrides a whole signature at once — the industrial-strength
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
