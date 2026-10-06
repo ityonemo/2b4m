@@ -1,0 +1,70 @@
+# Chapter 8 (Algebraic Coding Theory) — DEFERRED pending matrices and vectors
+
+Chapter 8 is **not transliterated**, by decision (user, 2026-10-06): it is deferred
+until a matrix/vector layer exists, and that layer is itself deferred to a SWEEPBACK
+after the rest of the book is done. This file records the scope so the decision does
+not have to be re-derived, and so the sweepback has a worklist.
+
+Plain markdown without a `.md` extension so the literate checker never parses it.
+
+## Why it is deferred
+
+The chapter is matrix theory applied to error correction. `vendor/aata/src/algcodes.xml`
+mentions `matrix` / `matrices` / `\mathbf` **424 times**, and from §8.3 on the subject
+matter *is* linear algebra over ℤ_2:
+
+| section | content | matrix-dependent? |
+|---|---|---|
+| §8.1 Error-Detecting and Correcting Codes | Hamming weight/distance, repetition codes, maximum-likelihood decoding, block codes | PARTLY — the metric facts are not |
+| §8.2 Linear Codes | a code as a subSPACE of $\mathbb{Z}_2^n$ | yes |
+| §8.3 Parity-Check and Generator Matrices | the null space of $H$, generator $G$, syndrome decoding | entirely |
+| §8.4 Efficient Decoding | coset leaders, syndrome lookup tables | entirely |
+
+There is no matrix theory, no vector theory and no $\mathbb{Z}_2^n$ in `std`. The user
+ruled matrices out of scope during Chapter 4 (memory `chapter4-exercises-progress`:
+"user: matrices not needed") and that ruling stands through here.
+
+## What COULD be done before matrices exist
+
+Recorded so the sweepback knows what is already reachable, and so this is not mistaken
+for "nothing in Chapter 8 is provable".
+
+- **The Hamming metric on bit strings.** Weight, distance, and that distance is a
+  genuine metric (non-negativity, symmetry, the triangle inequality). These are facts
+  about strings, not about matrices — a bit string is an `Indexed` of booleans, which
+  `std/indexed.b4m` can carry.
+- **The minimum-distance theorem** (§8.1): a code detects up to $d-1$ errors and
+  corrects up to $\lfloor (d-1)/2 \rfloor$, where $d$ is the minimum distance between
+  codewords. This is pure metric reasoning plus ℕ arithmetic.
+- **Linear codes as a SUBGROUP** rather than a subspace. $\mathbb{Z}_2^n$ under
+  componentwise addition is an abelian group, and a linear code is a subgroup of it —
+  which `std/subgroup.b4m` already expresses, and which makes §8.4's coset-leader
+  decoding a Chapter 6 application (cosets partition the group; the leader is the
+  minimum-weight element of its coset). The *scalar multiplication* half, and therefore
+  "subspace", is what needs the vector layer.
+
+So the honest split is: the metric and the coset structure are reachable now; the
+generator/parity-check matrices are not, and they are what the chapter is actually
+about.
+
+## The sweepback worklist (matrices and vectors)
+
+When the matrix/vector layer is built, these are the consumers waiting for it — not
+only Chapter 8:
+
+1. **§7.1's polyalphabetic cipher** — encrypting letter PAIRS with an invertible
+   $2 \times 2$ matrix over $\mathbb{Z}_{26}$; `f(p) = Ap + b`, decoded by
+   `f⁻¹(p) = A⁻¹p − A⁻¹b`. Structurally the affine theorem one dimension up, and
+   `aata/7.1-private-key-cryptography.md` records it as prose for exactly this reason.
+2. **All of Chapter 8 §8.2–§8.4**, as above.
+3. **Chapter 4's deferred exercises** — Q₈ and GL₂ enumerations (memory
+   `chapter4-exercises-progress` lists them as open, with matrices as the blocker).
+4. **Chapter 12 (Matrix Groups and Symmetry)** and **Chapter 13's** representation
+   material, which are matrix groups by definition.
+
+What the layer needs, minimally, for the above: a `Matrix` sort over a ring parameter
+(so ℤ_2, ℤ_26 and ℝ all work), matrix multiplication with associativity, an identity,
+invertibility as a predicate with its inverse, and a `Vector` sort with matrix-vector
+application. A `model` of `std/group.b4m` at the invertible matrices then gives GL_n its
+group corpus for free — the same shape as `RealUnitsGroup` and `UnitsGroup` already in
+std.
