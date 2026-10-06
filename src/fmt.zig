@@ -260,33 +260,33 @@ test "declarations normalize to one per line at column 0" {
 
 test "a `hole` declaration is top-level: resets to column 0" {
     try expectFmt(
-        "pred p\n  hole h: p\n",
-        "pred p\nhole h: p\n",
+        "pred p()\n  hole h: p()\n",
+        "pred p()\nhole h: p()\n",
     );
 }
 
 test "proof steps: label alone on its line; statement and justification aligned; block body +4" {
     try expectFmt(
-        \\pred p
-        \\theorem t: p -> p
+        \\pred p()
+        \\theorem t: p() -> p()
         \\proof
-        \\  outer| assume p {   inner| p
+        \\  outer| assume p() {   inner| p()
         \\  [by hypothesis outer]  }
-        \\  conclusion| p -> p [by implies_intro outer]
+        \\  conclusion| p() -> p() [by implies_intro outer]
         \\qed
         \\
     ,
-        \\pred p
-        \\theorem t: p -> p
+        \\pred p()
+        \\theorem t: p() -> p()
         \\proof
         \\  @outer |
-        \\    assume p {
+        \\    assume p() {
         \\      @inner |
-        \\        p
+        \\        p()
         \\        [by hypothesis outer]
         \\    }
         \\  @conclusion |
-        \\    p -> p
+        \\    p() -> p()
         \\    [by implies_intro outer]
         \\qed
         \\
@@ -295,39 +295,39 @@ test "proof steps: label alone on its line; statement and justification aligned;
 
 test "case: arms nest one level under `case`, closing brace aligns with it" {
     try expectFmt(
-        \\pred p
-        \\pred q
-        \\theorem t: q
+        \\pred p()
+        \\pred q()
+        \\theorem t: q()
         \\proof
-        \\  d| p or q [by cite e]
-        \\  r| q
+        \\  d| p() or q() [by cite e]
+        \\  r| q()
         \\  case d {
-        \\  a| assume p { c| q [by hypothesis a] }
-        \\  b| assume q { c| q [by hypothesis b] }
+        \\  a| assume p() { c| q() [by hypothesis a] }
+        \\  b| assume q() { c| q() [by hypothesis b] }
         \\  }
         \\qed
         \\
     ,
-        \\pred p
-        \\pred q
-        \\theorem t: q
+        \\pred p()
+        \\pred q()
+        \\theorem t: q()
         \\proof
         \\  @d |
-        \\    p or q
+        \\    p() or q()
         \\    [by cite e]
         \\  @r |
-        \\    q
+        \\    q()
         \\    case d {
         \\      @a |
-        \\        assume p {
+        \\        assume p() {
         \\          @c |
-        \\            q
+        \\            q()
         \\            [by hypothesis a]
         \\        }
         \\      @b |
-        \\        assume q {
+        \\        assume q() {
         \\          @c |
-        \\            q
+        \\            q()
         \\            [by hypothesis b]
         \\        }
         \\    }
@@ -339,22 +339,22 @@ test "case: arms nest one level under `case`, closing brace aligns with it" {
 test "comments: standalone keeps its line at indent, trailing stays attached" {
     try expectFmt(
         \\// header
-        \\pred p
-        \\theorem t: p
+        \\pred p()
+        \\theorem t: p()
         \\proof
         \\// why
-        \\  conclusion| p // trailing
+        \\  conclusion| p() // trailing
         \\  [by cite missing]
         \\qed
         \\
     ,
         \\// header
-        \\pred p
-        \\theorem t: p
+        \\pred p()
+        \\theorem t: p()
         \\proof
         \\  // why
         \\  @conclusion |
-        \\    p // trailing
+        \\    p() // trailing
         \\    [by cite missing]
         \\qed
         \\

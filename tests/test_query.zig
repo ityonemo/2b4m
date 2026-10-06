@@ -84,6 +84,16 @@ pub fn addTests(
         \\
     );
 
+    // a NULLARY predicate renders with its parens on BOTH sides of a connective —
+    // `claims` reproduces the source token span, and a zero-argument call spans only
+    // its callee, so the `()` must be taken explicitly (a paren-balance count cannot
+    // see them: they sit outside the span).
+    ctx.ok(&.{ "query", "claims", "tests/cases/nullary_pred_parens.b4m", "aNullaryPredChainsThroughModusPonens" },
+        \\theorem aNullaryPredChainsThroughModusPonens
+        \\  base() -> other()
+        \\
+    );
+
     // a missing theorem is the same located error as outline (exit 1).
     ctx.fail(&.{ "query", "claims", "tests/cases/outline.b4m", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
 

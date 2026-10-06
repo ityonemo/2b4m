@@ -287,17 +287,24 @@ clauses (`func sub(a: Int, b: Int) => Int:` followed by `sub(a, b) = …`).
 
 ### KEYWORD: pred
 
-Declares a predicate (a function into `Prop`). Zero-argument predicates
-are atomic propositions and may be written bare.
+Declares a predicate (a function into `Prop`). A predicate ALWAYS writes its
+parameter list, so a zero-argument one — an atomic proposition — is `raining()`,
+never a bare `raining`. That one spelling serves every position: the
+declaration, a use in a formula, a schema parameter standing for it
+(`theorem t(q()): …`), and the argument supplied for that parameter
+(`instantiation t(raining())`).
 
 ```2b4m
 pred less_than(a: Nat, b: Nat)
-pred raining
+pred raining()
 ```
 
-A predicate declared bare like that is OPAQUE: it has no meaning beyond whatever
-axioms constrain it. Follow the declaration with `:` and a clause to DEFINE it
-instead — see **DEFINITION BLOCKS** below.
+(A nullary *function* is different: its zero-arity form is `const`, and a
+`func nil() => Nat` does apply bare as `nil`, like any constant.)
+
+A predicate declared with no defining clauses is OPAQUE: it has no meaning
+beyond whatever axioms constrain it. Follow the declaration with `:` and a
+clause to DEFINE it instead — see **DEFINITION BLOCKS** below.
 
 ### DEFINITION BLOCKS
 
@@ -463,13 +470,28 @@ Schematic axioms and theorems.
 A parenthesized parameter list makes an `axiom` or `theorem` **schematic**:
 a stored form with `comptime` semantics. Each `instantiate` use substitutes
 concrete, written-out arguments and (for theorem schemas) re-checks the proof at
-that instance. Formula-valued parameters are supplied as `fun` lambdas.
+that instance. Predicate- and function-valued parameters are supplied as `fun`
+lambdas.
+
+A parameter's SHAPE says what kind of thing it stands for — there is no keyword,
+and the four shapes are distinguished on one-token lookahead after the name:
+
+| spelling | kind | supplied as |
+|---|---|---|
+| `x: Nat` | a VALUE of that sort | a term |
+| `q()` | a nullary predicate — a PROPOSITION | a proposition |
+| `prop(Nat)`, `spec(Elem, Elem)` | a PREDICATE of that arity (result is `Prop`, always) | `fun x: Nat => …` |
+| `f(Item) => Item` | a FUNCTION with that result sort | `fun x: Item => …` |
+
+A predicate parameter writes no result because it cannot have one — a predicate
+is always into `Prop`. Note `(prop: Nat)` is unambiguously a VALUE parameter (the
+`:`); the predicate one means is `prop(Nat)`.
 
 ```2b4m
-axiom induction(prop: Nat -> Prop):
+axiom induction(prop(Nat)):
   prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
 
-theorem contrapositive(p: Prop, q: Prop): (p -> q) -> (not q) -> (not p)
+theorem contrapositive(p(), q()): (p() -> q()) -> (not q()) -> (not p())
 proof
   ...
 qed

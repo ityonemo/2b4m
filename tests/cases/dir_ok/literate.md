@@ -3,13 +3,13 @@
 Its one theorem counts like any other.
 
 ```2b4m
-pred p
-axiom pHolds: p
+pred p()
+axiom pHolds: p()
 
-theorem pIsTrue: p
+theorem pIsTrue: p()
 proof
   @conclusion |
-    p
+    p()
     [by cite pHolds]
 qed
 ```

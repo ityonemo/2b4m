@@ -49,8 +49,8 @@ the context makes obvious (`function_invertible`, not `std_function_invertible`)
 — never from the back, which is the part that identifies the theory.
 
 A **parenthesized parameter list makes a statement schematic** (a comptime
-form, instantiated per concrete argument): `axiom induction(prop: Nat -> Prop):
-...` is an assumption family; `theorem contrapositive(p: Prop, q: Prop): ...
+form, instantiated per concrete argument): `axiom induction(prop(Nat)):
+...` is an assumption family; `theorem contrapositive(p(), q()): ...
 proof ... qed` is a proven family whose proof is re-checked at every
 instantiation. The keyword carries the epistemic status either way — an axiom
 never has a proof, a theorem always does. Libraries exporting schematic
@@ -146,8 +146,12 @@ Every category has a distinct look:
 | Variables               | snake_case      | `a`, `k`, `high_word`          |
 
 - Functions and predicates should not be **one letter**: `succ` not `S`. The same
-  applies to schema parameters (`prop: Nat -> Prop`, not `P`) — they are
+  applies to schema parameters (`prop(Nat)`, not `P`) — they are
   function-shaped.
+- **A predicate always writes its parentheses**, a zero-argument one included:
+  `pred raining()`, used as `raining()`, parameterized as `(q())`, supplied as
+  `instantiation t(raining())`. One spelling in every position. (A nullary
+  *function* is the `const`-shaped exception and does apply bare.)
 - **Named mathematical constants keep their conventional lowercase spelling**:
   the circle constant `pi`, Euler's number `e`, and the imaginary unit `i` are
   written **lowercase**, not `PI`/`E`/`I` — their standard notation *is*

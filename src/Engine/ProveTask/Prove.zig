@@ -1834,11 +1834,19 @@ fn bindLambdaArg(self: *Prove, e: *Elab, arg_expr: *const ast.Expr, arg_sorts: [
             }
             return .{ .lambda = .{ .body = body.id, .params = fresh, .arg_sorts = arg_sorts, .result_sort = result_sort } };
         },
+        // A NULLARY pred argument is written `q()` — a zero-argument call, the same spelling
+        // its declaration and its uses carry. There is nothing to eta-expand, and the callee
+        // need not be a global: commonly it is the CALLER's own nullary-pred parameter being
+        // passed along (`s1(q())` inside `a(q())`). Elaborate it in the caller's scope, which
+        // resolves a schema param, a local binder, or a global alike.
+        .call => |c| {
+            if (arg_sorts.len != 0 or c.args.len != 0) {
+                return self.fail(Elab.exprLoc(arg_expr), "schema parameter expects a {d}-argument lambda or a bare symbol, got an application", .{arg_sorts.len});
+            }
+            const prop = try e.elaborateExpr(arg_expr);
+            return .{ .lambda = .{ .body = prop.id, .params = &.{}, .arg_sorts = &.{}, .result_sort = result_sort } };
+        },
         .name => |tok| {
-            // NULLARY: there is nothing to eta-expand, and the name need not be a global — it is
-            // commonly the CALLER's own nullary-pred parameter being passed along (`s1(q)` inside
-            // `a(q)`). Elaborate it in the caller's scope, which resolves a schema param, a local
-            // binder, or a global alike.
             if (arg_sorts.len == 0) {
                 const prop = try e.elaborateExpr(arg_expr);
                 return .{ .lambda = .{ .body = prop.id, .params = &.{}, .arg_sorts = &.{}, .result_sort = result_sort } };
