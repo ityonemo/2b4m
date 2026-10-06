@@ -114,7 +114,12 @@ const Printer = struct {
             .fvar => |v| try w.writeAll(self.displayName(v.name)),
             .app, .pred => |ap| {
                 try w.writeAll(self.symName(ap.sym));
-                if (ap.args.len > 0) {
+                // A nullary PREDICATE prints `base()`: a predicate always writes its parens, so
+                // a diagnostic must show the spelling the author has to type. A nullary APP is a
+                // const/nullary func and stays bare.
+                if (ap.args.len == 0 and self.pool.get(id) == .pred) {
+                    try w.writeAll("()");
+                } else if (ap.args.len > 0) {
                     // sym( arg0, arg1, … ) — push ")" then, for each arg from last to first,
                     // the arg then a ", " separator (except before arg0).
                     try stack.append(a, .{ .lit = ")" });

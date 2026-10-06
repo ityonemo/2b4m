@@ -467,13 +467,13 @@ fn elaborateName(self: *Elab, tok: lexer.Token) Error!Typed {
     // 3. schema parameter (only while elaborating a schema body/steps)
     if (self.schema_args) |sa| if (sa.get(name)) |arg| switch (arg) {
         .value => |v| return .{ .id = v.id, .sort = v.sort },
-        // A NULLARY pred param (`axiom a(q): …`, standing for a nullary `pred base`) binds as a
-        // zero-arity lambda: there is nothing to substitute, so its body IS the proposition and
-        // a bare use is correct — matching how a nullary pred is itself declared and used.
-        .lambda => |lam| if (lam.params.len == 0)
-            return .{ .id = lam.body, .sort = lam.result_sort }
-        else
-            return self.fail(tok.start, "schema parameter '{s}' needs arguments", .{self.text(tok)}),
+        // A pred param ALWAYS writes its parens, a nullary one included (`q()`), so NAME
+        // position is wrong for either arity — `.call` with zero args handles `q()`.
+        .lambda => |lam| return self.fail(tok.start, "schema parameter '{s}' needs its parentheses — write '{s}({s})'", .{
+            self.text(tok),
+            self.text(tok),
+            if (lam.params.len == 0) "" else "…",
+        }),
     };
     // 4. global
     return self.elaborateSymRef(tok, self.ns, name);
@@ -490,6 +490,13 @@ fn elaborateSymRef(self: *Elab, tok: lexer.Token, ns: InternPool.Index, name: St
             const sig = self.interner.keyOf(c.sig).sig;
             if (sig.args.len != 0) {
                 return self.fail(tok.start, "'{s}' expects {d} argument(s), got 0", .{ self.text(tok), sig.args.len });
+            }
+            // A PREDICATE always writes its parens — a nullary proposition is `base()`, never a
+            // bare `base`, so that one spelling serves its declaration, its uses, and a schema
+            // parameter standing for it. A nullary FUNC still applies bare: that is the
+            // `const`-shaped zero-arity form, and it is unaffected.
+            if (self.interner.keyOf(sym) == .pred) {
+                return self.fail(tok.start, "'{s}' is a predicate — write '{s}()'", .{ self.text(tok), self.text(tok) });
             }
             // a nullary guarded func (guard over globals only, no params) still owes its
             // precondition here; a guarded func WITH params can't reach name position (the

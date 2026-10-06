@@ -32,7 +32,7 @@ purpose; the tokens are thinking room.
 idea is borrowed from Zig's `comptime`:
 
 ```
-axiom induction(prop: Nat -> Prop):
+axiom induction(prop(Nat)):
   prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
 ```
 

@@ -134,7 +134,14 @@ fn go(self: *Delaborate, root: TermId) Allocator.Error!*const ast.Expr {
                 .app, .pred => |ap| {
                     if (ap.args.len == 0) {
                         const callee = self.symTok(@enumFromInt(@intFromEnum(ap.sym)));
-                        try results.append(a, try self.box(.{ .name = callee }));
+                        // A nullary PREDICATE prints `base()` — a predicate always writes its
+                        // parens, so the surface form must round-trip through re-elaboration
+                        // (which rejects a bare `base`). A nullary APP is a const/nullary func
+                        // and stays bare. The node tag already tells them apart.
+                        try results.append(a, if (self.pool.get(id) == .pred)
+                            try self.box(.{ .call = .{ .callee = callee, .args = &.{} } })
+                        else
+                            try self.box(.{ .name = callee }));
                     } else {
                         try work.append(a, .{ .rebuild = id });
                         const src = self.pool.args(ap);

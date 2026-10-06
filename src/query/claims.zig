@@ -200,6 +200,16 @@ fn formulaText(arena: Allocator, source: []const u8, e: *const ast.Expr) ![]cons
     var hi: u32 = 0;
     spanExpr(arena, e, &lo, &hi);
 
+    // A NULLARY call (`q()`) spans only its callee — there are no argument tokens to
+    // carry the span past the parens, and a balance count cannot see them because they
+    // sit outside the span. Take them explicitly, so a nullary predicate prints with the
+    // parens it must be written with.
+    if (hi < source.len and source[hi] == '(') {
+        var j = hi + 1;
+        while (j < source.len and (source[j] == ' ' or source[j] == '\t')) j += 1;
+        if (j < source.len and source[j] == ')') hi = j + 1;
+    }
+
     var opens: i32 = 0;
     for (source[lo..hi]) |c| {
         if (c == '(') opens += 1;

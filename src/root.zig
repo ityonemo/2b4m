@@ -606,19 +606,19 @@ test "splitCheckArgs: words before the file, an optional theorem after it" {
 }
 
 const single_theorem_source =
-    \\pred p
-    \\pred q
-    \\axiom pq: p
-    \\theorem good: p
+    \\pred p()
+    \\pred q()
+    \\axiom pq: p()
+    \\theorem good: p()
     \\proof
     \\  @conclusion |
-    \\    p
+    \\    p()
     \\    [by cite pq]
     \\qed
-    \\theorem broken: q
+    \\theorem broken: q()
     \\proof
     \\  @conclusion |
-    \\    q
+    \\    q()
     \\    [by cite pq]
     \\qed
     \\

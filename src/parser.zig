@@ -308,7 +308,7 @@ pub const Parser = struct {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
-                const params = try self.parseParams();
+                const params = try self.parseParams(false);
                 // `=> Result`, not `: Result` — the colon is reserved for a DEFINITION
                 // block (`func f(a: T) => U:` followed by its defining clauses). `=>` is
                 // already the lambda arrow (`fun k: Nat => body`), so it reads the same way:
@@ -328,7 +328,7 @@ pub const Parser = struct {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| return .{ .pred = .{ .alias = .{ .name = name, .target = target } } };
-                const params = try self.parseParams();
+                const params = try self.parseParams(true);
                 // `pred p(x: T):` opens a DEFINITION BLOCK — the declaration carries the
                 // clauses that characterize it. Bare `pred p(x: T)` stays opaque.
                 if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
@@ -607,8 +607,18 @@ pub const Parser = struct {
         }
     }
 
-    fn parseParams(self: *Parser) ParseError![]const ast.Binder {
-        if (self.tok.tag != .l_paren) return &.{};
+    /// `require_parens` is for `pred`: a predicate ALWAYS writes its signature's parens, so
+    /// a zero-argument one is `pred base()` and bare `pred base` is an error. A `func` does
+    /// not (its zero-arity form is `const`), and a nullary proposition is then written `base()`
+    /// at every use — one spelling in all four positions (declaration, schema parameter,
+    /// formula, schema argument).
+    fn parseParams(self: *Parser, require_parens: bool) ParseError![]const ast.Binder {
+        if (self.tok.tag != .l_paren) {
+            if (require_parens) {
+                return self.fail("a predicate writes its parameter list — a zero-argument predicate is 'name()', not a bare name", .{});
+            }
+            return &.{};
+        }
         _ = self.advance();
         var params: std.ArrayList(ast.Binder) = .empty;
         while (self.tok.tag != .r_paren) {
@@ -654,7 +664,7 @@ pub const Parser = struct {
     /// lookahead (and `=>` after the `)` separates func from pred):
     ///
     ///     x: Nat                  VALUE   `:`
-    ///     prop(Nat)   prop()      PRED    `(` … `)`
+    ///     prop(Nat)   q()          PRED    `(` … `)`
     ///     f(Item) => Item         FUNC    `(` … `)` `=>`
     ///
     /// A PRED writes no result because it cannot have one (see `ast.SchemaParam`). This frees
@@ -663,6 +673,11 @@ pub const Parser = struct {
     /// representable (`arg_sorts.len == 0` used to MEAN "value"), and kills the silent-kind
     /// change: `(prop: Nat)` is now unambiguously a VALUE param, and the predicate one meant is
     /// `prop(Nat)` — different shapes, not a missing arrow.
+    ///
+    /// A nullary pred is `q()`, never a bare `q`: a predicate always writes its parens, in
+    /// every position (`pred q()` declares, `q()` is used in a formula and supplied as an
+    /// argument). A BARE name here is an error — it would be ambiguous with a value param
+    /// whose sort was forgotten.
     ///
     /// `x: Nat` is deliberately `parseParams`' own binder spelling, and `prop(Nat)` /
     /// `f(Item) => Item` read like the `pred` / `func` declarations they stand for.
@@ -674,11 +689,9 @@ pub const Parser = struct {
             const kind: ast.SchemaParam.Kind = if (self.tok.tag == .colon) blk: {
                 _ = self.advance();
                 break :blk .{ .value = try self.expect(.identifier) };
-            } else if (self.tok.tag == .comma or self.tok.tag == .r_paren) blk: {
-                // A BARE name is a nullary PRED — a whole proposition. Parens are omitted, which
-                // is exactly how a nullary `pred base` is declared and how `base` is then used
-                // (bare, never `base()`), so the parameter standing for one reads the same way.
-                break :blk .{ .pred = &.{} };
+            } else if (self.tok.tag == .comma or self.tok.tag == .r_paren) {
+                // A nullary pred parameter is `q()`, matching how one is declared and used.
+                return self.fail("a schema parameter needs its kind: a value is 'x: Sort', a predicate 'q()' or 'q(Sort, …)', a function 'f(Sort) => Sort'", .{});
             } else blk: {
                 _ = try self.expect(.l_paren);
                 var sorts: std.ArrayList(Token) = .empty;
@@ -977,9 +990,17 @@ pub const Parser = struct {
                         // an atom: fall into APPLY below.
                     } else {
                         _ = self.advance();
-                        try conts.append(self.arena, .{ .call_arg = .{ .callee = name, .args = .empty } });
-                        level = .expr;
-                        continue :descend; // first argument
+                        // `p()` — a NULLARY application. A predicate always writes its
+                        // parens (see `parseParams`), so a zero-argument proposition is
+                        // `p()`, and the arg list is legitimately empty.
+                        if (self.tok.tag == .r_paren) {
+                            _ = self.advance();
+                            value = try self.newExpr(.{ .call = .{ .callee = name, .args = &.{} } });
+                        } else {
+                            try conts.append(self.arena, .{ .call_arg = .{ .callee = name, .args = .empty } });
+                            level = .expr;
+                            continue :descend; // first argument
+                        }
                     }
                 },
                 .l_paren => {
@@ -1278,15 +1299,15 @@ test "declarations parse" {
 
 test "theorem with nested proof blocks and instantiate" {
     const source =
-        \\theorem impExample: p -> (q -> p)
+        \\theorem impExample: p() -> (q() -> p())
         \\proof
-        \\  @outer | assume p {
-        \\    @inner | assume q {
-        \\      @got_p | p [by hypothesis outer]
+        \\  @outer | assume p() {
+        \\    @inner | assume q() {
+        \\      @got_p | p() [by hypothesis outer]
         \\    }
-        \\    @qtop | q -> p [by implies_intro inner]
+        \\    @qtop | q() -> p() [by implies_intro inner]
         \\  }
-        \\  @done | p -> (q -> p) [by implies_intro outer]
+        \\  @done | p() -> (q() -> p()) [by implies_intro outer]
         \\qed
         \\theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
         \\proof
@@ -1365,7 +1386,7 @@ test "hole declaration parses as ast.Decl.hole; carrying a proof is an error" {
     const arena = arena_state.allocator();
 
     {
-        const source = "pred p\nhole aspirational: p\n";
+        const source = "pred p()\nhole aspirational: p()\n";
         var sink: Diagnostics.Sink = .init(arena);
         var p: Parser = .init(arena, source, &sink);
         const file = try p.parseFile();
@@ -1377,7 +1398,7 @@ test "hole declaration parses as ast.Decl.hole; carrying a proof is an error" {
     }
     {
         // a hole with a proof body is rejected (once proved, it's a theorem)
-        const source = "pred p\nhole bad: p\nproof\n  @c | p [by cite pa]\nqed\n";
+        const source = "pred p()\nhole bad: p()\nproof\n  @c | p() [by cite pa]\nqed\n";
         var sink: Diagnostics.Sink = .init(arena);
         var p: Parser = .init(arena, source, &sink);
         _ = p.parseFile() catch {};
@@ -1387,11 +1408,11 @@ test "hole declaration parses as ast.Decl.hole; carrying a proof is an error" {
 
 test "@label step definitions; the label name interns without the sigil; refs stay bare" {
     const source =
-        \\pred p
-        \\theorem t: p
+        \\pred p()
+        \\theorem t: p()
         \\proof
-        \\  @base | p [by cite pAx]
-        \\  @conc | p [by symmetry base]
+        \\  @base | p() [by cite pAx]
+        \\  @conc | p() [by symmetry base]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1412,15 +1433,15 @@ test "@label step definitions; the label name interns without the sigil; refs st
 
 test "fact citations use the kind-agnostic `cite` rule word" {
     const source =
-        \\pred p
-        \\axiom pAx: p
-        \\theorem t1: p
+        \\pred p()
+        \\axiom pAx: p()
+        \\theorem t1: p()
         \\proof
-        \\  @conc | p [by cite pAx]
+        \\  @conc | p() [by cite pAx]
         \\qed
-        \\theorem t2: p
+        \\theorem t2: p()
         \\proof
-        \\  @conc | p [by cite t1]
+        \\  @conc | p() [by cite t1]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1441,11 +1462,11 @@ test "fact citations use the kind-agnostic `cite` rule word" {
 
 test "`axiom`/`theorem` are NO LONGER citation rule words" {
     const source =
-        \\pred p
-        \\axiom pAx: p
-        \\theorem t: p
+        \\pred p()
+        \\axiom pAx: p()
+        \\theorem t: p()
         \\proof
-        \\  @c | p [by axiom pAx]
+        \\  @c | p() [by axiom pAx]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1461,12 +1482,12 @@ test "`axiom`/`theorem` are NO LONGER citation rule words" {
 
 test "consecutive claim steps: a following label is not swallowed as a ref" {
     const source =
-        \\pred p
-        \\theorem t: p
+        \\pred p()
+        \\theorem t: p()
         \\proof
-        \\  @a | p [by cite x]
-        \\  @b | p [by modus_ponens a a]
-        \\  @c | p [by hypothesis b]
+        \\  @a | p() [by cite x]
+        \\  @b | p() [by modus_ponens a a]
+        \\  @c | p() [by hypothesis b]
         \\qed
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -1494,11 +1515,11 @@ test "by/using keyword: records the kind + enforces the vocabulary partition" {
     {
         var sink: Diagnostics.Sink = .init(arena);
         var p: Parser = .init(arena,
-            \\pred p
-            \\theorem t: p
+            \\pred p()
+            \\theorem t: p()
             \\proof
-            \\  @a | p [by cite x]
-            \\  @b | p [using specialize head]
+            \\  @a | p() [by cite x]
+            \\  @b | p() [using specialize head]
             \\qed
         , &sink);
         const file = try p.parseFile();
@@ -1510,24 +1531,24 @@ test "by/using keyword: records the kind + enforces the vocabulary partition" {
     // `using` on a KERNEL rule is rejected at parse.
     {
         var sink: Diagnostics.Sink = .init(arena);
-        var p: Parser = .init(arena, "pred p\ntheorem t: p\nproof\n  @a | p [using axiom x]\nqed", &sink);
+        var p: Parser = .init(arena, "pred p()\ntheorem t: p()\nproof\n  @a | p() [using axiom x]\nqed", &sink);
         _ = try p.parseFile();
         try testing.expect(sink.list.items.len >= 1);
     }
     // `by` on an ACCELERANT (here `model`, and a bare accelerant word) is rejected at parse.
     {
         var sink: Diagnostics.Sink = .init(arena);
-        var p: Parser = .init(arena, "pred p\ntheorem t: p\nproof\n  @a | p [by tautology]\nqed", &sink);
+        var p: Parser = .init(arena, "pred p()\ntheorem t: p()\nproof\n  @a | p() [by tautology]\nqed", &sink);
         _ = try p.parseFile();
         try testing.expect(sink.list.items.len >= 1);
     }
 }
 
-test "ZERO-ary predicates: bare and empty-paren forms" {
+test "ZERO-ary predicates write their parens; the bare form is rejected" {
     const source =
-        \\pred p
         \\pred q()
-        \\axiom both: p -> q
+        \\pred r()
+        \\axiom both: q() -> r()
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -1540,6 +1561,13 @@ test "ZERO-ary predicates: bare and empty-paren forms" {
     try testing.expectEqual(3, file.decls.len);
     try testing.expectEqual(0, file.decls[0].pred.local.params.len);
     try testing.expectEqual(0, file.decls[1].pred.local.params.len);
+
+    // a predicate ALWAYS writes its parameter list, so bare `pred p` is an error —
+    // one spelling serves the declaration, a use, a schema parameter, and an argument.
+    var bare_sink: Diagnostics.Sink = .init(arena);
+    var bare: Parser = .init(arena, "pred p", &bare_sink);
+    _ = bare.parseFile() catch {};
+    try testing.expectEqual(1, bare_sink.list.items.len);
 }
 
 test "error recovery: two bad declarations yield two diagnostics" {

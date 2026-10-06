@@ -499,7 +499,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tautology.b4m" });
 
     // non-consequence: the diagnostic carries the countermodel
-    ctx.fail(&.{ "check", "tests/cases/tautology_bad.b4m" }, "tests/cases/tautology_bad.b4m:10:12: error: tautology: not a propositional consequence; countermodel: p := true, q := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tautology_bad.b4m" }, "tests/cases/tautology_bad.b4m:10:12: error: tautology: not a propositional consequence; countermodel: p() := true, q() := false\n");
 
     // the atom cap is a hard, honest limit
     ctx.fail(&.{ "check", "tests/cases/tautology_cap.b4m" }, "tests/cases/tautology_cap.b4m:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
@@ -513,14 +513,14 @@ pub fn addTests(
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
-    ctx.fail(&.{ "check", "tests/cases/iff_bad.b4m" }, "tests/cases/iff_bad.b4m:19:25: error: tautology: not a propositional consequence; countermodel: A := true, B := true, C := false\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_bad.b4m" }, "tests/cases/iff_bad.b4m:19:27: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
     // iff — `and_intro` is forbidden from producing it (must use `iff_intro`)…
-    ctx.fail(&.{ "check", "tests/cases/iff_and_intro_bad.b4m" }, "tests/cases/iff_and_intro_bad.b4m:15:43: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `iff_intro` (which is the same rule, named for what it proves)\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_and_intro_bad.b4m" }, "tests/cases/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `iff_intro` (which is the same rule, named for what it proves)\n");
 
     // …and conversely `iff_intro` requires that shape — a plain conjunction is rejected.
-    ctx.fail(&.{ "check", "tests/cases/iff_intro_bad.b4m" }, "tests/cases/iff_intro_bad.b4m:14:29: error: iff_intro's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `and_intro`?\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_intro_bad.b4m" }, "tests/cases/iff_intro_bad.b4m:14:33: error: iff_intro's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `and_intro`?\n");
 
     // `iff_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
     // replace the sub-proposition P by Q at any position (subformula congruence,
@@ -530,10 +530,10 @@ pub fn addTests(
 
     // it is SOUND: the claim must be reachable by replacing P with Q (or Q with P
     // — iff_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_bad.b4m" }, "tests/cases/iff_rewrite_bad.b4m:17:12: error: iff_rewrite cannot derive 'R' from 'P' using '(P -> Q) and (Q -> P)' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_bad.b4m" }, "tests/cases/iff_rewrite_bad.b4m:17:12: error: iff_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
 
     // …and its first argument must be a biconditional, not a plain implication.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_notbicond.b4m" }, "tests/cases/iff_rewrite_notbicond.b4m:14:26: error: iff_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P -> Q'\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_notbicond.b4m" }, "tests/cases/iff_rewrite_notbicond.b4m:14:28: error: iff_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
 
     // BIDIRECTIONAL rewrite: an equation / biconditional cited in the "wrong"
     // orientation for the goal still rewrites — no preceding `symmetry` needed.
@@ -721,7 +721,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/smt_cert.b4m" });
 
     // mixed countermodel: arithmetic values plus opaque truth values
-    ctx.fail(&.{ "check", "tests/cases/smt_bad.b4m" }, "tests/cases/smt_bad.b4m:12:12: error: arithmetic: false at a := 0, p := false\n");
+    ctx.fail(&.{ "check", "tests/cases/smt_bad.b4m" }, "tests/cases/smt_bad.b4m:12:12: error: arithmetic: false at a := 0, p() := false\n");
 
     // instantiating strongInduction re-checks its full stored proof
     ctx.okSilent(&.{ "check", "tests/cases/strong_induction.b4m" });
