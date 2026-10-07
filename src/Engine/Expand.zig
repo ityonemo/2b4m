@@ -693,15 +693,15 @@ const Expander = struct {
                         const formula = try self.expandExpr(c.formula, env);
                         const args = try self.arena.alloc(*const ast.Expr, c.args.len);
                         for (c.args, args) |arg, *out| out.* = try self.expandExpr(arg, env);
-                        try f.out.append(self.arena, .{ .label = step.label, .body = .{ .claim = .{
-                            .formula = formula,
-                            .kind = c.kind,
-                            .rule = c.rule,
-                            .schema = c.schema,
-                            .args = args,
-                            .refs = c.refs,
-                            .fallback = c.fallback,
-                        } } });
+                        // COPY the claim and override only what expansion rewrites (the
+                        // formula and the args). Listing every field instead would silently
+                        // DROP any field added later — which is exactly what happened once,
+                        // costing three debugging rounds: the parse was correct and the value
+                        // evaporated here before the engine ever saw it.
+                        var expanded = c;
+                        expanded.formula = formula;
+                        expanded.args = args;
+                        try f.out.append(self.arena, .{ .label = step.label, .body = .{ .claim = expanded } });
                         f.idx += 1;
                     },
                     .assume => |blk| {
