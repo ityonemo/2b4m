@@ -172,7 +172,7 @@ for f in $(find std -name '*.b4m'); do
 done
 ```
 
-At the time of writing that found 6 of 98 files; 3 are fixed, 3 remain (cause 3 below).
+At the time of writing that found 6 of 98 files; all four causes below are now fixed.
 
 **FIXED — a `specialize` head that is a local step.** `specialize HEAD(args)` carries its head
 in the claim's `schema` slot, NOT `refs`, and the head may be a local step label. The admit path
@@ -193,26 +193,34 @@ every demand it raises is settled while suspending is still legal. NOTE the susp
 `resolveRefs` on the ORIGIN's formula, not in the parse — two wrong diagnoses before a
 `std.debug.print` at the failing point settled it. Gate: `tests/cases/fast_import_alias/`.
 
-**OPEN — a guarded-sort obligation's discharger.** Specializing a lemma whose binder is a
+**FIXED — a guarded-sort obligation's discharger.** Specializing a lemma whose binder is a
 REFINED sort (`forall f: Perm`, i.e. `Fn where invertible`) owes `invertible(arg)`. Strict meets
 it while instantiating the synthetic: `Elab.emitArgObligations` sees the refined param sort and
 calls `requireKnown` → `dischargeGoal` → `refForKnown`, which appends the supplying step to
-`known.reachable` (`Prove.zig:3210`) — the walk's seed list. `produceSpecialize` returns at its
-`admit_mode` check before resolving the head at all, so none of that runs.
+`known.reachable` — the walk's seed list. `produceSpecialize` returns at its `admit_mode`
+check before resolving the head at all, so an admitted step contributes NO such edge.
 
-Why the obvious seams do NOT reach it (each ruled out by instrumentation, not reasoning):
-- not in `c.refs` — no ref mentions it;
-- not in the claim's TERMS — collecting obligations from the goal and every written arg yields
-  ZERO (the arg is a bare variable; there is no guarded *application* in the claim);
-- not in the head's TERM — peeling the head's `forall` and reading the binder's sort reports NOT
-  refined, because term-pool binder sorts are stored already LOWERED TO THE CARRIER with the
-  refinement stripped.
+The guard is meant to be FOUND, not named. It is a well-formedness side condition on a term the
+author wrote, fully determined by the term plus the sort declaration; the only open question is
+"is it known in scope?", which is exactly `requireKnown`'s search. (A first fix, `guards(<step>)`
+syntax, was built and REVERTED: it made authors spell out hypothesis restatements the checker
+can and should find — and a flat-list variant was positionally ambiguous, since 22 of 43 sites
+carry both guards and hypothesis refs and some need two guards.)
 
-The guard lives only in the DECLARATION's sort Index, which the term never carries and the admit
-path never consults. Minimal repro (8 declarations, no imports) in the OPEN section below.
-Remaining instances: `std/permutation/dihedral.b4m` ×6, `decomposition.b4m` ×1,
-`dihedral-orders.b4m` ×1 — every one an `invertible(x)` restatement feeding a `specialize` at a
-`Perm`-bindered lemma.
+So the fix is to the LINT, not the search: the use-all-facts check is a lint over a COMPLETE
+citation graph, and with an admitted step in the proof the graph is incomplete, so it can only
+false-positive. It now runs only on a proof with no admitted step (`Prove.zig`, at the
+`checkAllStepsUsed` call). Strict always runs it, and strict is the gate.
+
+**WHEN TO RUMMAGE (user ruling 2026-10-07).** Search for guard obligations — refined-sort
+qualifiers, `requires` guards. NEVER search for an accelerant's LOGICAL INPUTS — the hyps
+`specialize` discharges, `chain`'s equations, `simplify`'s rewrites, `tautology`'s premises:
+those are what the inference consumes and are always named, as a plain list after the rule's own
+arguments: `[using accelerant accelerator_args(...) input1 input2 …]`. The engine already draws
+this line (`withGuardPremises` searches only the leading antecedents `wrapObligations` hoisted).
+
+Minimal repro (8 declarations, no imports) — `tests/cases/guarded_sort_obligation_root.b4m`,
+gated both ways:
 
 ```2b4m
 sort Element
@@ -248,6 +256,8 @@ proof
 qed
 ```
 
-TRAP met while investigating: those 8 steps LOOK like dead code, and removing one leaves the
-theorem count unchanged — because the guard obligation then finds ANOTHER discharger in scope.
-They are load-bearing. `--fast` is the broken side here; do not delete them.
+TRAP met while investigating: the 8 live instances (`dihedral.b4m` ×6, `decomposition.b4m`
+×1, `dihedral-orders.b4m` ×1) LOOKED like dead code, and removing one leaves the theorem count
+unchanged — because the guard obligation then finds ANOTHER discharger in scope. They are
+load-bearing. When `--fast` and strict disagree on an unused-fact error, `--fast` is the broken
+side; do not delete the step.
