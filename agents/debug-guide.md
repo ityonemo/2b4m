@@ -154,3 +154,100 @@ Note `--trace-facts` is deliberately exempt: it is a view OF the schedule, so it
 | a proof depends on something it shouldn't | `--axioms` |
 | is this really kernel-checked? | `2b4m debug taint`, then plain `2b4m check` |
 | output changed and the source didn't | `--chaos` sweep: if seeds disagree, it's a determinism bug |
+
+## `--fast` must never error where strict does not
+
+That is an INVARIANT (user ruling 2026-10-06), and it has been violated three distinct ways.
+All three come from the same root: an ADMITTED accelerant builds no certificate, so nothing
+carries the citation edges its proof would have had, and the use-all-facts walk then calls the
+steps it consumed dead. Strict never notices, because there the accelerant lowers to real steps
+whose refs the walk sees.
+
+Sweep for it with:
+
+```
+for f in $(find std -name '*.b4m'); do
+  2b4m check "$f" >/dev/null 2>&1 || continue          # strict must pass
+  2b4m check --fast "$f" >/dev/null 2>&1 || echo "VIOLATION $f"
+done
+```
+
+At the time of writing that found 6 of 98 files; 3 are fixed, 3 remain (cause 3 below).
+
+**FIXED — a `specialize` head that is a local step.** `specialize HEAD(args)` carries its head
+in the claim's `schema` slot, NOT `refs`, and the head may be a local step label. The admit path
+seeds cited steps as roots but walked `refs` only. (`std/permutation/listing.b4m`, 3 steps.)
+Gate: `tests/cases/fast_specialize_head_root.b4m`.
+
+**FIXED — a qualified ref leaked a diagnostic.** `localName` rejects a `ns.`-qualified token by
+DIAGNOSING it and returning an error; the seeding loop caught the error and continued, which
+does not unwrite the diagnostic. A `simplify` whose rewrite set names `peano.mulAddDistribLeft`
+then failed under `--fast` only. Fix: skip qualified tokens BEFORE the call (`seedLocalRoot`).
+(`std/peano/order.b4m`, `peano/subtraction.b4m`, `integer/mod-n-product.b4m`.)
+
+**FIXED — an admitted `import` of a re-export alias.** `[using import(I) thm]` is admitted by
+α-matching `thm`'s STATED formula; a re-export (`theorem sqrtOne = sqrt_theory.sqrtOne`) has
+none — identity is by ORIGIN. Fix: `factOrigin` follows the chain (as strict does via
+`ProveTask.factAlias`), and the read pass drives the whole admission into a scratch pool so
+every demand it raises is settled while suspending is still legal. NOTE the suspension was in
+`resolveRefs` on the ORIGIN's formula, not in the parse — two wrong diagnoses before a
+`std.debug.print` at the failing point settled it. Gate: `tests/cases/fast_import_alias/`.
+
+**OPEN — a guarded-sort obligation's discharger.** Specializing a lemma whose binder is a
+REFINED sort (`forall f: Perm`, i.e. `Fn where invertible`) owes `invertible(arg)`. Strict meets
+it while instantiating the synthetic: `Elab.emitArgObligations` sees the refined param sort and
+calls `requireKnown` → `dischargeGoal` → `refForKnown`, which appends the supplying step to
+`known.reachable` (`Prove.zig:3210`) — the walk's seed list. `produceSpecialize` returns at its
+`admit_mode` check before resolving the head at all, so none of that runs.
+
+Why the obvious seams do NOT reach it (each ruled out by instrumentation, not reasoning):
+- not in `c.refs` — no ref mentions it;
+- not in the claim's TERMS — collecting obligations from the goal and every written arg yields
+  ZERO (the arg is a bare variable; there is no guarded *application* in the claim);
+- not in the head's TERM — peeling the head's `forall` and reading the binder's sort reports NOT
+  refined, because term-pool binder sorts are stored already LOWERED TO THE CARRIER with the
+  refinement stripped.
+
+The guard lives only in the DECLARATION's sort Index, which the term never carries and the admit
+path never consults. Minimal repro (8 declarations, no imports) in the OPEN section below.
+Remaining instances: `std/permutation/dihedral.b4m` ×6, `decomposition.b4m` ×1,
+`dihedral-orders.b4m` ×1 — every one an `invertible(x)` restatement feeding a `specialize` at a
+`Perm`-bindered lemma.
+
+```2b4m
+sort Element
+sort Fn
+pred invertible(f: Fn)
+sort Perm = Fn where invertible
+func apply(f: Fn, x: Element) => Element
+const point: Element
+
+axiom permFixesPoint: forall f: Perm; apply(f, point) = point
+
+// strict: OK. `--fast`: "unused fact: step 'g-invertible' is never used".
+theorem aGuardDischargerIsNotDead: forall g: Fn; invertible(g) -> apply(g, point) = point
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-invertible |
+        assume invertible(g) {
+          @g-invertible |
+            invertible(g)
+            [by hypothesis given-invertible]
+          @applied |
+            apply(g, point) = point
+            [using specialize permFixesPoint(g)]
+        }
+      @conclusion-implication |
+        invertible(g) -> apply(g, point) = point
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall g: Fn; invertible(g) -> apply(g, point) = point
+    [by forall_intro generalize-g]
+qed
+```
+
+TRAP met while investigating: those 8 steps LOOK like dead code, and removing one leaves the
+theorem count unchanged — because the guard obligation then finds ANOTHER discharger in scope.
+They are load-bearing. `--fast` is the broken side here; do not delete them.
