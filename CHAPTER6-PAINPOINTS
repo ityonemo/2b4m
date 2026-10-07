@@ -141,6 +141,73 @@ this; the std-file-layout convention already asks each parent to forward its
 sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
 plausibly do the other half (search declarations by statement shape).
 
+**STRONGER EVIDENCE, 2026-10-07 (§10.2 audit) — a name index would NOT have been enough.**
+Asked what §10.2 still needs, I answered twice that std lacked something it has, and the
+failure was not that I guessed the wrong name. It was that I had the SHAPE in hand and no
+way to look it up:
+
+| I asserted absent | what was there |
+|---|---|
+| a predicate for a decomposition's SHAPE | `decomposesIntoDisjointCycles` already carries the cycle `Seq`, the count, disjointness, and the product |
+| a cycle's LENGTH | `isACycle(g)` unfolds to `g = cycle(s, succ(p))` — the length is a nameable witness |
+| conjugation as RELABELLING, `σ∘c∘σ⁻¹` relabels c's points | **`conjugateOfACycle`** in `std/permutation/cycle.b4m`, for ARBITRARY length, plus `conjugationIsMultiplicative` and `conjugateOfATransposition` |
+
+The third is the sharp case. I knew exactly the statement I wanted —
+`compose(compose(sigma, cycle(s, k)), inverse(sigma)) = cycle(t, k)` with `t` the image
+list — and declared it missing. One grep for the substring `conjugat` found it. A NAME
+index does not help here either: I would have had to already suspect "conjugate" as the
+word. What finds it is a query over statement STRUCTURE: "an equation whose left side is
+`compose(compose(?, ?), inverse(?))`".
+
+**BUG FOUND AND FIXED WHILE PROBING THIS: `query search <dir>` DID NOT RECURSE.**
+`2b4m query search std conjugate` reports "no theorem or axiom matching", while
+`2b4m query search std/permutation conjugate` returns `conjugateOfACycle`,
+`conjugateOfATransposition` and a third immediately. Same term, broader scope, FEWER
+results. Every hit `query search std <term>` can produce comes from `std/*.b4m` — it never
+descends into `std/group/`, `std/permutation/`, `std/peano/`, …, which is most of the
+library. GUIDE documents `<path>` as "a directory (search every `.b4m` under it — corpus
+discovery)", so the documented corpus-discovery scope was the one that could not see two
+thirds of the corpus. THAT is why I declared `conjugateOfACycle` absent: I searched `std`.
+
+Cause: `collectSearchFiles` in `main.zig` used a single-level `dir.iterate()` and dropped
+every `entry.kind != .file`, so subdirectories were discarded — while `collectCheckFiles`
+right above it already used the recursive `dir.walk()`. Fixed by using the same walk. The
+query that failed all conversation now works:
+
+    $ 2b4m query search std "compose inverse cycle"
+    std/permutation/cycle.b4m:1471  theorem conjugateOfACycle: … compose(compose(sigma,
+      cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
+
+one hit, the theorem I had declared missing. So TEXTUAL search over statements is far
+stronger than it appeared — it was not weak, it was blind.
+
+**THE ASK STILL STANDS, but narrower: a STRUCTURAL query the model can point at std.**
+`query search` matches name and statement TEXT by token overlap (its "fuzzy" was
+aspirational — a vector search was considered and never attached). With the recursion bug
+fixed, a well-chosen token query often suffices, so this is now an ergonomics upgrade
+rather than a hole. What it still cannot do is match a SHAPE: ask for a pattern with holes
+and get back statements equal up to alpha-renaming, sort aliasing and binder order —
+
+    2b4m query shape std "compose(compose(?s, ?f), inverse(?s)) = ?"
+      -> std/permutation/cycle.b4m:1471  theorem conjugateOfACycle: …
+         std/permutation/cycle.b4m:990   theorem conjugateOfATransposition: …
+         std/group/order.b4m:964         theorem conjugatePower: …
+
+with `?x` binding and `?` wild. Token search gets there when the operator names happen to
+be distinctive (`compose inverse cycle` did); it does not when the shape matters and the
+vocabulary is common (`op`, `add`, `mul` appear everywhere), nor when the match is up to a
+sort alias. A name index would not have helped either: I would have had to already suspect
+the word "conjugate".
+
+Both failures this chapter would have been one query each: the 90-line
+`powerSequenceExists` twin (shape `exists v: Seq; … at(v, i) = power(…)`) and today's
+three. At std's size the cost is no longer minutes — it is theorems written twice, and
+confidently wrong claims about what the library contains.
+
+Related: the memory note `std-has-no-index` now records that its "grep the distinctive
+TERM" rule governs ABSENCE claims too — but that is a discipline patch over a missing
+tool, not a fix.
+
 ### A definition-block clause is UNIVERSALLY QUANTIFIED
 
 `pred inCyclic(g: Grp): inCyclic(g) iff inGenerated(gen, g)` makes
