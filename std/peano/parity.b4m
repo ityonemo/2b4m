@@ -471,3 +471,64 @@ proof
     forall p: Nat; divides(TWO, mul(p, p)) -> divides(TWO, p)
     [by forall_intro generalize-p]
 qed
+
+// No two CONSECUTIVE numbers are both even — the other half of the parity dichotomy
+// (`evenOrOdd` says at least one of n, n+1 is even; this says not both). Their difference
+// is 1, and 2 does not divide 1.
+theorem twoDividesNoTwoConsecutive: forall m: Nat; divides(TWO, m) -> (not divides(TWO, succ(m)))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @given-m-even |
+        assume divides(TWO, m) {
+          @m-even |
+            divides(TWO, m)
+            [by hypothesis given-m-even]
+          @suppose-succ-even |
+            assume divides(TWO, succ(m)) {
+              @succ-even |
+                divides(TWO, succ(m))
+                [by hypothesis suppose-succ-even]
+              @two-divides-the-difference |
+                divides(TWO, sub(succ(m), m))
+                [using specialize dividesSub(TWO, succ(m), m) succ-even m-even]
+              @one-is-succ-zero |
+                ONE = succ(ZERO)
+                [by cite oneIsSuccZero]
+              @one-plus-m-unfolds |
+                add(succ(ZERO), m) = succ(add(ZERO, m))
+                [using specialize peano.addSuccLeft(ZERO, m)]
+              @zero-plus-m |
+                add(ZERO, m) = m
+                [using specialize peano.addZeroLeft(m)]
+              @succ-zero-plus-m |
+                add(succ(ZERO), m) = succ(m)
+                [by rewrite zero-plus-m one-plus-m-unfolds]
+              @one-plus-m |
+                add(ONE, m) = succ(m)
+                [by rewrite one-is-succ-zero succ-zero-plus-m]
+              @difference-cancels |
+                sub(add(ONE, m), m) = ONE
+                [using specialize subAddCancel(ONE, m)]
+              @difference-is-one |
+                sub(succ(m), m) = ONE
+                [by rewrite one-plus-m difference-cancels]
+              @two-divides-one |
+                divides(TWO, ONE)
+                [by rewrite difference-is-one two-divides-the-difference]
+            }
+          @two-does-not-divide-one |
+            not divides(TWO, ONE)
+            [by cite twoNotDivideOne]
+          @conclusion-succ-not-even |
+            not divides(TWO, succ(m))
+            [by not_intro suppose-succ-even two-divides-one two-does-not-divide-one]
+        }
+      @conclusion-at-m |
+        divides(TWO, m) -> (not divides(TWO, succ(m)))
+        [by implies_intro given-m-even]
+    }
+  @conclusion |
+    forall m: Nat; divides(TWO, m) -> (not divides(TWO, succ(m)))
+    [by forall_intro generalize-m]
+qed
