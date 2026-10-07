@@ -193,11 +193,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/fast_specialize_head_root.b4m" });
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/fast_specialize_head_root.b4m" });
 
-    // The OPEN half of the same invariant: a step discharging a GUARDED-SORT obligation is
-    // seeded by `refForKnown` only while strict builds the accelerant's certificate, so
-    // `--fast` still calls it dead (agents/debug-guide.md). Gated STRICT ONLY — add the
-    // `--fast` line when that is fixed.
+    // ... and a step discharging a GUARDED-SORT obligation is found by `requireKnown`'s
+    // search only while strict builds the certificate; an admitted step contributes no such
+    // edge. The use-all-facts lint therefore runs only on a proof with no admitted step —
+    // under `--fast` it could only false-positive. Gated BOTH ways.
     ctx.okSilent(&.{ "check", "tests/cases/guarded_sort_obligation_root.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/guarded_sort_obligation_root.b4m" });
 
     // ... and the cited fact may be a re-export ALIAS, whose statement lives in the ORIGIN's
     // file: admission has to follow the chain (strict does, via factAlias), and the read pass

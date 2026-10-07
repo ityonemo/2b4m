@@ -9302,7 +9302,15 @@ pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
     };
     const proven = try k.check(.{ .steps = self.low_steps.items, .blocks = self.low_blocks.items }, goal, goal_loc);
     if (!proven) return false;
-    if (!self.ctx.verify.draft) {
+    // The use-all-facts check is a lint over a COMPLETE citation graph. An ADMITTED step
+    // (`--fast`) builds no certificate and, in admit mode, never even computes its guard
+    // obligations — so it contributes none of the edges its certificate would carry (a
+    // hoisted `invertible(g)` discharged from a step the author never names, found by
+    // `requireKnown`'s search). Under that graph the check can only produce FALSE
+    // positives, and the invariant is that `--fast` never reports an error strict does not.
+    // So it runs only when every step in the proof was actually proved; strict always is,
+    // and strict is the gate.
+    if (!self.ctx.verify.draft and self.admitted.count() == 0) {
         if (!try self.checkAllStepsUsed()) return false;
     }
     return true;
