@@ -75,6 +75,48 @@ GOTCHA met while probing: `--fast` admitted a proof that strict check rejected
 (`'given-a-not-c' names a subproof; a step reference is required` — `specialize` needs the
 RESTATED hypothesis as a step, not the assume-block label). Confirm with plain `check`.
 
+### LEMMA 10.3's DESIGN — the pivot theorem, and where the real theory starts
+
+Settled 2026-10-07 by probing rather than estimating. TWO of the three things I called
+walls were not:
+
+- **the disjoint remainder** — `disjointPermutationsCommute` holds for ARBITRARY
+  permutations (not just transpositions, as I wrote), and `supportMember` says support IS
+  the moved set. ~60 lines gave `aDisjointFactorFixesWhateverTheOtherMoves`,
+  `aCompositeFixesWhatBothFactorsFix` and `aPrefixProductFixesWhatEveryEntryFixes`.
+- **variable-length conjugation** — case 2's computation
+  `sigma^-1(a1a2a3)sigma(a1a3a2) = (a1,a3,ar)` needs `c^-1` at only THREE points, because
+  the conjugated thing is a 3-cycle. No induction over `r`; `conjugateOfACycle` (arbitrary
+  length) does it. Verified concretely at r=5 with tau a disjoint 2-cycle.
+
+**THE PIVOT THEOREM** (shape verified to elaborate):
+
+    decomposesIntoDisjointCycles(f) -> f != identityFn ->
+    exists t: Fn; exists s: Points; exists p: Nat;
+      distinct(s, succ(p))
+      and f = compose(t, cycle(s, succ(p)))
+      and disjointSupports(t, cycle(s, succ(p)))
+
+`productUpToSucc` peels the decomposition's LAST entry (a cycle), the prefix product is
+`t`, and the three lemmas above give the disjointness. `f != identityFn` is what makes the
+run non-empty. Everything is in hand; ~150 lines.
+
+Why this is the right shape: each of Judson's cases needs only a few NAMED POINTS plus
+disjointness of the rest, so the classification is EXISTENTIAL — not a theorem about
+multisets of cycle lengths, which is what made it look large. `isACycle(g)` unpacks to
+`g = cycle(s, succ(p))` with `distinct(s, succ(p))`, so the length `succ(p)` and the points
+`at(s,0)…at(s,p)` are all nameable.
+
+With it, cases 1 and 2 become a split on `p` alone: `p = 2` is a 3-cycle (case 1, done),
+`p > 2` is case 2.
+
+**WHERE THE REAL THEORY STARTS.** Cases 3-5 look INSIDE `t` — "t also has a 3-cycle",
+"t is all 2-cycles", "t has an even number of further 2-cycles". That is the same
+classification one level down, so full Lemma 3 needs a RECURSION on the decomposition
+length with the parity invariant (sigma in A_n means an even transposition count) threaded
+through. THAT is the part that is design rather than transcription, and it is what remains
+after the pivot theorem and cases 1-2.
+
 ### §10.2 STATUS — Lemma 2's COMPUTATIONAL CONTENT IS DONE; Lemma 3 is theory-building
 
 `std/permutation/alternating-identities.b4m`, 41 theorems, strict and hole-free:
