@@ -1087,64 +1087,7 @@ qed
 //   (a,c,b) = (a,b)o(a,c)   and   (a,c,d) = (a,d)o(a,c)
 // so the RHS is [(a,b)o(a,c)] o [(a,d)o(a,c)].
 
-// the value of a four-factor composite at a point, as a chain of composeApply steps
-theorem fourFactorValue: forall p, q, r, t: Fn; forall x: Element;
-  apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-proof
-  @generalize-p |
-    fix p: Fn {
-      @generalize-q |
-        fix q: Fn {
-          @generalize-r |
-            fix r: Fn {
-              @generalize-t |
-                fix t: Fn {
-                  @generalize-x |
-                    fix x: Element {
-                      @split-outer |
-                        apply(compose(compose(p, q), compose(r, t)), x) = apply(compose(p, q), apply(compose(r, t), x))
-                        [using specialize composeApply(compose(p, q), compose(r, t), x)]
-                      @split-left |
-                        apply(compose(p, q), apply(compose(r, t), x)) = apply(p, apply(q, apply(compose(r, t), x)))
-                        [using specialize composeApply(p, q, apply(compose(r, t), x))]
-                      @split-right |
-                        apply(compose(r, t), x) = apply(r, apply(t, x))
-                        [using specialize composeApply(r, t, x)]
-                      @conclusion-value |
-                        apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-                        [using chain split-outer split-left split-right]
-                    }
-                  @discharge-x |
-                    forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-                    [by forall_intro generalize-x]
-                }
-              @discharge-t |
-                forall t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-                [by forall_intro generalize-t]
-            }
-          @discharge-r |
-            forall r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-            [by forall_intro generalize-r]
-        }
-      @discharge-q |
-        forall q, r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-        [by forall_intro generalize-q]
-    }
-  @conclusion |
-    forall p, q, r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
-    [by forall_intro generalize-p]
-qed
-
 // -- the two sides' values at a point ------------------------------------------------------
-
-// LHS (a,b)o(c,d) at x, as a nested apply
-theorem twoFactorValue: forall p, q: Fn; forall x: Element;
-  apply(compose(p, q), x) = apply(p, apply(q, x))
-proof
-  @conclusion |
-    forall p, q: Fn; forall x: Element; apply(compose(p, q), x) = apply(p, apply(q, x))
-    [by cite composeApply]
-qed
 
 //        (a,c): a->c ; (a,d) fixes c (c!=a, c!=d) ; (a,c): c->a ; (a,b): a->b.  = b
 
@@ -1233,7 +1176,7 @@ proof
                               @rhs-split |
                                 apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a) =
                                   apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), a))))
-                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), a)]
+                                [using simplify composeApply]
                               @ac-sends-a |
                                 apply(transposition(a, c), a) = c
                                 [using specialize transpositionAtFirst(a, c)]
@@ -1337,14 +1280,14 @@ proof
                                 [using specialize transpositionElsewhere(c, d, b) b-not-c b-not-d]
                               @lhs-split |
                                 apply(compose(transposition(a, b), transposition(c, d)), b) = apply(transposition(a, b), apply(transposition(c, d), b))
-                                [using specialize twoFactorValue(transposition(a, b), transposition(c, d), b)]
+                                [using simplify composeApply]
                               @lhs-is-a |
                                 apply(compose(transposition(a, b), transposition(c, d)), b) = a
                                 [using chain lhs-split cd-fixes-b ab-sends-b]
                               @rhs-split |
                                 apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b) =
                                   apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), b))))
-                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), b)]
+                                [using simplify composeApply]
                               @rhs-is-a |
                                 apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b) = a
                                 [using chain rhs-split ac-fixes-b ad-fixes-b ab-sends-b]
@@ -1441,14 +1384,14 @@ proof
                                 [using specialize transpositionElsewhere(a, c, d) d-not-a d-not-c]
                               @lhs-split |
                                 apply(compose(transposition(a, b), transposition(c, d)), c) = apply(transposition(a, b), apply(transposition(c, d), c))
-                                [using specialize twoFactorValue(transposition(a, b), transposition(c, d), c)]
+                                [using simplify composeApply]
                               @lhs-value |
                                 apply(compose(transposition(a, b), transposition(c, d)), c) = d
                                 [using chain lhs-split cd-sends-c ab-fixes-d]
                               @rhs-split |
                                 apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c) =
                                   apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), c))))
-                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), c)]
+                                [using simplify composeApply]
                               @rhs-value |
                                 apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c) = d
                                 [using chain rhs-split ac-sends-c ad-sends-a ac-fixes-d ab-fixes-d]
@@ -1550,14 +1493,14 @@ proof
                                     [using specialize transpositionAtFirst(a, c)]
                                   @lhs-split |
                                     apply(compose(transposition(a, b), transposition(c, d)), d) = apply(transposition(a, b), apply(transposition(c, d), d))
-                                    [using specialize twoFactorValue(transposition(a, b), transposition(c, d), d)]
+                                    [using simplify composeApply]
                                   @lhs-value |
                                     apply(compose(transposition(a, b), transposition(c, d)), d) = c
                                     [using chain lhs-split cd-sends-d ab-fixes-c]
                                   @rhs-split |
                                     apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d) =
                                       apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), d))))
-                                    [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), d)]
+                                    [using simplify composeApply]
                                   @rhs-value |
                                     apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d) = c
                                     [using chain rhs-split ac-fixes-d ad-sends-d ac-sends-a ab-fixes-c]
@@ -1649,14 +1592,14 @@ proof
                                         [using specialize transpositionElsewhere(a, d, x) x-not-a x-not-d]
                                       @lhs-split |
                                         apply(compose(transposition(a, b), transposition(c, d)), x) = apply(transposition(a, b), apply(transposition(c, d), x))
-                                        [using specialize twoFactorValue(transposition(a, b), transposition(c, d), x)]
+                                        [using simplify composeApply]
                                       @lhs-value |
                                         apply(compose(transposition(a, b), transposition(c, d)), x) = x
                                         [using chain lhs-split cd-fixes-x ab-fixes-x]
                                       @rhs-split |
                                         apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x) =
                                           apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), x))))
-                                        [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), x)]
+                                        [using simplify composeApply]
                                       @rhs-value |
                                         apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x) = x
                                         [using chain rhs-split ac-fixes-x ad-fixes-x ab-fixes-x]
@@ -2030,14 +1973,14 @@ proof
                             [using specialize transpositionAtSecond(i, j)]
                           @lhs-split |
                             apply(compose(transposition(i, j), transposition(i, a)), i) = apply(transposition(i, j), apply(transposition(i, a), i))
-                            [using specialize twoFactorValue(transposition(i, j), transposition(i, a), i)]
+                            [using simplify composeApply]
                           @lhs-value |
                             apply(compose(transposition(i, j), transposition(i, a)), i) = a
                             [using chain lhs-split ia-sends-i ij-fixes-a]
                           @rhs-split |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), i) =
                               apply(transposition(i, a), apply(transposition(i, j), apply(transposition(i, a), apply(transposition(i, j), i))))
-                            [using specialize fourFactorValue(transposition(i, a), transposition(i, j), transposition(i, a), transposition(i, j), i)]
+                            [using simplify composeApply]
                           @rhs-value |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), i) = a
                             [using chain rhs-split ij-sends-i ia-fixes-j ij-sends-j ia-sends-i]
@@ -2119,14 +2062,14 @@ proof
                             [using specialize transpositionElsewhere(i, a, j) j-not-i j-not-a]
                           @lhs-split |
                             apply(compose(transposition(i, j), transposition(i, a)), a) = apply(transposition(i, j), apply(transposition(i, a), a))
-                            [using specialize twoFactorValue(transposition(i, j), transposition(i, a), a)]
+                            [using simplify composeApply]
                           @lhs-value |
                             apply(compose(transposition(i, j), transposition(i, a)), a) = j
                             [using chain lhs-split ia-sends-a ij-sends-i]
                           @rhs-split |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), a) =
                               apply(transposition(i, a), apply(transposition(i, j), apply(transposition(i, a), apply(transposition(i, j), a))))
-                            [using specialize fourFactorValue(transposition(i, a), transposition(i, j), transposition(i, a), transposition(i, j), a)]
+                            [using simplify composeApply]
                           @rhs-value |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), a) = j
                             [using chain rhs-split ij-fixes-a ia-sends-a ij-sends-i ia-fixes-j]
@@ -2211,14 +2154,14 @@ proof
                             [using specialize transpositionAtSecond(i, a)]
                           @lhs-split |
                             apply(compose(transposition(i, j), transposition(i, a)), j) = apply(transposition(i, j), apply(transposition(i, a), j))
-                            [using specialize twoFactorValue(transposition(i, j), transposition(i, a), j)]
+                            [using simplify composeApply]
                           @lhs-value |
                             apply(compose(transposition(i, j), transposition(i, a)), j) = i
                             [using chain lhs-split ia-fixes-j ij-sends-j]
                           @rhs-split |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), j) =
                               apply(transposition(i, a), apply(transposition(i, j), apply(transposition(i, a), apply(transposition(i, j), j))))
-                            [using specialize fourFactorValue(transposition(i, a), transposition(i, j), transposition(i, a), transposition(i, j), j)]
+                            [using simplify composeApply]
                           @rhs-value |
                             apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), j) = i
                             [using chain rhs-split ij-sends-j ia-sends-i ij-fixes-a ia-sends-a]
@@ -2287,14 +2230,14 @@ proof
                                 [using specialize transpositionElsewhere(i, a, x) x-not-i x-not-a]
                               @lhs-split |
                                 apply(compose(transposition(i, j), transposition(i, a)), x) = apply(transposition(i, j), apply(transposition(i, a), x))
-                                [using specialize twoFactorValue(transposition(i, j), transposition(i, a), x)]
+                                [using simplify composeApply]
                               @lhs-value |
                                 apply(compose(transposition(i, j), transposition(i, a)), x) = x
                                 [using chain lhs-split ia-fixes-x ij-fixes-x]
                               @rhs-split |
                                 apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), x) =
                                   apply(transposition(i, a), apply(transposition(i, j), apply(transposition(i, a), apply(transposition(i, j), x))))
-                                [using specialize fourFactorValue(transposition(i, a), transposition(i, j), transposition(i, a), transposition(i, j), x)]
+                                [using simplify composeApply]
                               @rhs-value |
                                 apply(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), x) = x
                                 [using chain rhs-split ij-fixes-x ia-fixes-x]
@@ -2509,73 +2452,4 @@ proof
     forall i, j, a: Element; i != j -> i != a -> j != a ->
       compose(transposition(i, j), transposition(i, a)) = compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))
     [by forall_intro generalize-i]
-qed
-
-// The value of a SIX-factor composite at a point, shaped as the identities below need it:
-// a 3-cycle (two factors) composed with a squared 3-cycle (four). Same role as
-// `fourFactorValue` — it turns the composite into a nested `apply` that the three
-// transposition point lemmas can evaluate factor by factor.
-theorem sixFactorValue: forall p, q, r, t, u, v: Fn; forall x: Element;
-  apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
-  apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-proof
-  @generalize-p |
-    fix p: Fn {
-      @generalize-q |
-        fix q: Fn {
-          @generalize-r |
-            fix r: Fn {
-              @generalize-t |
-                fix t: Fn {
-                  @generalize-u |
-                    fix u: Fn {
-                      @generalize-v |
-                        fix v: Fn {
-                          @generalize-x |
-                            fix x: Element {
-                              @split-outer |
-                                apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
-                                  apply(compose(p, q), apply(compose(compose(r, t), compose(u, v)), x))
-                                [using specialize composeApply(compose(p, q), compose(compose(r, t), compose(u, v)), x)]
-                              @split-left |
-                                apply(compose(p, q), apply(compose(compose(r, t), compose(u, v)), x)) =
-                                  apply(p, apply(q, apply(compose(compose(r, t), compose(u, v)), x)))
-                                [using specialize composeApply(p, q, apply(compose(compose(r, t), compose(u, v)), x))]
-                              @split-inner-four |
-                                apply(compose(compose(r, t), compose(u, v)), x) = apply(r, apply(t, apply(u, apply(v, x))))
-                                [using specialize fourFactorValue(r, t, u, v, x)]
-                              @conclusion-value |
-                                apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
-                                  apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-                                [using chain split-outer split-left split-inner-four]
-                            }
-                          @discharge-x |
-                            forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-                            [by forall_intro generalize-x]
-                        }
-                      @discharge-v |
-                        forall v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-                        [by forall_intro generalize-v]
-                    }
-                  @discharge-u |
-                    forall u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-                    [by forall_intro generalize-u]
-                }
-              @discharge-t |
-                forall t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-                [by forall_intro generalize-t]
-            }
-          @discharge-r |
-            forall r, t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-            [by forall_intro generalize-r]
-        }
-      @discharge-q |
-        forall q, r, t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-        [by forall_intro generalize-q]
-    }
-  @conclusion |
-    forall p, q, r, t, u, v: Fn; forall x: Element;
-      apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
-      apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
-    [by forall_intro generalize-p]
 qed
