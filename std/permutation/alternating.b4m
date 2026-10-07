@@ -21,7 +21,6 @@ import peano_parity <<< "std/peano/parity.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import peano_subtraction <<< "std/peano/subtraction.b4m"
 import permutation_transpositions <<< "std/permutation/transpositions.b4m"
-import permutation_parity2 <<< "std/permutation/parity.b4m"
 
 // -- the vocabulary ------------------------------------------------------------------------
 
@@ -36,6 +35,13 @@ func inverse = permutation.inverse
 const identityFn = permutation.identityFn
 func transposition = permutation.transposition
 pred invertible = permutation.invertible
+
+func apply = permutation.apply
+axiom composeApply = function.composeApply
+axiom funcExtensionality = function.funcExtensionality
+theorem transpositionAtFirst = permutation.transpositionAtFirst
+theorem transpositionAtSecond = permutation.transpositionAtSecond
+theorem transpositionElsewhere = permutation.transpositionElsewhere
 
 func at = permutation_sequence.at
 func productUpTo = permutation_sequence.productUpTo
@@ -69,12 +75,12 @@ axiom allTranspositionsDef: forall s: Seq; forall n: Nat;
 pred isEvenPerm(g: Fn)
 axiom isEvenPermDef: forall g: Fn;
   isEvenPerm(g) iff (exists s: Seq; exists m: Nat;
-    allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m))
+  allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m))
 
 pred isOddPerm(g: Fn)
 axiom isOddPermDef: forall g: Fn;
   isOddPerm(g) iff (exists s: Seq; exists m: Nat;
-    allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, succ(m)))
+  allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, succ(m)))
 
 // A_n's membership predicate: the even permutations.
 pred inAlternating(g: Fn)
@@ -777,146 +783,146 @@ proof
                     fix n: Nat {
                       @given-sigma-invertible |
                         assume invertible(sigma) {
-                      @given-s-transpositions |
-                        assume allTranspositions(s, m) {
-                          @given-s-product |
-                            assume productUpTo(s, m) = sigma {
-                              @given-m-even |
-                                assume divides(TWO, m) {
-                                  @given-t-transpositions |
-                                    assume allTranspositions(t, n) {
-                                      @given-t-product |
-                                        assume productUpTo(t, n) = sigma {
-                                          @s-transpositions |
-                                            allTranspositions(s, m)
-                                            [by hypothesis given-s-transpositions]
-                                          @t-transpositions |
-                                            allTranspositions(t, n)
-                                            [by hypothesis given-t-transpositions]
-                                          @s-product |
-                                            productUpTo(s, m) = sigma
-                                            [by hypothesis given-s-product]
-                                          @t-product |
-                                            productUpTo(t, n) = sigma
-                                            [by hypothesis given-t-product]
-                                          @m-even |
-                                            divides(TWO, m)
-                                            [by hypothesis given-m-even]
-                                          // σ⁻¹ as a transposition product: reverse s.
-                                          @reversal-exists |
-                                            exists r: Seq; allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
-                                            [using specialize reversedIsTranspositions(s, m) s-transpositions]
-                                          @with-reversal |
-                                            unpack r: Seq from reversal-exists {
-                                              @reversal-facts |
-                                                allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
-                                                [by hypothesis with-reversal]
-                                              @r-transpositions |
-                                                allTranspositions(r, m)
-                                                [by and_elim_left reversal-facts]
-                                              @r-product-is-inverse |
-                                                productUpTo(r, m) = inverse(productUpTo(s, m))
-                                                [by and_elim_right reversal-facts]
-                                              // 1 = τ₁⋯τ_n · σ_m⋯σ₁ : concatenate t with r.
-                                              @concat-exists |
-                                                exists u: Seq;
-                                                  (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
-                                                  and (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i))
-                                                  and productUpTo(u, nadd(n, m)) = compose(productUpTo(t, n), productUpTo(r, m))
-                                                [using specialize seqConcat(t, r, n, m)]
-                                              @with-concat |
-                                                unpack u: Seq from concat-exists {
-                                                  @concat-facts |
-                                                    (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
+                          @given-s-transpositions |
+                            assume allTranspositions(s, m) {
+                              @given-s-product |
+                                assume productUpTo(s, m) = sigma {
+                                  @given-m-even |
+                                    assume divides(TWO, m) {
+                                      @given-t-transpositions |
+                                        assume allTranspositions(t, n) {
+                                          @given-t-product |
+                                            assume productUpTo(t, n) = sigma {
+                                              @s-transpositions |
+                                                allTranspositions(s, m)
+                                                [by hypothesis given-s-transpositions]
+                                              @t-transpositions |
+                                                allTranspositions(t, n)
+                                                [by hypothesis given-t-transpositions]
+                                              @s-product |
+                                                productUpTo(s, m) = sigma
+                                                [by hypothesis given-s-product]
+                                              @t-product |
+                                                productUpTo(t, n) = sigma
+                                                [by hypothesis given-t-product]
+                                              @m-even |
+                                                divides(TWO, m)
+                                                [by hypothesis given-m-even]
+                                              // σ⁻¹ as a transposition product: reverse s.
+                                              @reversal-exists |
+                                                exists r: Seq; allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
+                                                [using specialize reversedIsTranspositions(s, m) s-transpositions]
+                                              @with-reversal |
+                                                unpack r: Seq from reversal-exists {
+                                                  @reversal-facts |
+                                                    allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
+                                                    [by hypothesis with-reversal]
+                                                  @r-transpositions |
+                                                    allTranspositions(r, m)
+                                                    [by and_elim_left reversal-facts]
+                                                  @r-product-is-inverse |
+                                                    productUpTo(r, m) = inverse(productUpTo(s, m))
+                                                    [by and_elim_right reversal-facts]
+                                                  // 1 = τ₁⋯τ_n · σ_m⋯σ₁ : concatenate t with r.
+                                                  @concat-exists |
+                                                    exists u: Seq;
+                                                      (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
                                                       and (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i))
                                                       and productUpTo(u, nadd(n, m)) = compose(productUpTo(t, n), productUpTo(r, m))
-                                                    [by hypothesis with-concat]
-                                                  // the conjunction nests LEFT: (A and B) and C
-                                                  @u-agreement-pair |
-                                                    (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
-                                                      and (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i))
-                                                    [by and_elim_left concat-facts]
-                                                  @u-agrees-with-t |
-                                                    forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i)
-                                                    [by and_elim_left u-agreement-pair]
-                                                  @u-agrees-with-r |
-                                                    forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i)
-                                                    [by and_elim_right u-agreement-pair]
-                                                  @concat-product |
-                                                    productUpTo(u, nadd(n, m)) = compose(productUpTo(t, n), productUpTo(r, m))
-                                                    [by and_elim_right concat-facts]
-                                                  // the joined product is σ·σ⁻¹ = 1.
-                                                  @r-product-is-sigma-inverse |
-                                                    productUpTo(r, m) = inverse(sigma)
-                                                    [by rewrite s-product r-product-is-inverse]
-                                                  @joined-is-sigma-times-its-inverse |
-                                                    productUpTo(u, nadd(n, m)) = compose(sigma, inverse(sigma))
-                                                    [using simplify concat-product t-product r-product-is-sigma-inverse]
-                                                  @sigma-is-a-permutation |
-                                                    invertible(sigma)
-                                                    [by hypothesis given-sigma-invertible]
-                                                  @sigma-times-inverse-is-identity |
-                                                    compose(sigma, inverse(sigma)) = identityFn
-                                                    [using specialize inverseRight(sigma) sigma-is-a-permutation]
-                                                  @joined-is-identity |
-                                                    productUpTo(u, nadd(n, m)) = identityFn
-                                                    [using chain joined-is-sigma-times-its-inverse sigma-times-inverse-is-identity]
-                                                  @what-t-transpositions-means |
-                                                    allTranspositions(t, n) iff (forall i: Nat; nat_less_than(i, n) -> isTransposition(at(t, i)))
-                                                    [using specialize allTranspositionsDef(t, n)]
-                                                  @t-entries |
-                                                    forall i: Nat; nat_less_than(i, n) -> isTransposition(at(t, i))
-                                                    [using tautology what-t-transpositions-means t-transpositions]
-                                                  @what-r-transpositions-means |
-                                                    allTranspositions(r, m) iff (forall i: Nat; nat_less_than(i, m) -> isTransposition(at(r, i)))
-                                                    [using specialize allTranspositionsDef(r, m)]
-                                                  @r-entries |
-                                                    forall i: Nat; nat_less_than(i, m) -> isTransposition(at(r, i))
-                                                    [using tautology what-r-transpositions-means r-transpositions]
-                                                  @joined-entries |
-                                                    forall i: Nat; nat_less_than(i, nadd(n, m)) -> isTransposition(at(u, i))
-                                                    [using specialize concatenationPreservesTranspositions(u, t, r, n, m) u-agrees-with-t u-agrees-with-r t-entries r-entries]
-                                                  @joined-length-is-even |
-                                                    divides(TWO, nadd(n, m))
-                                                    [using specialize identityIsEvenLength(u, nadd(n, m)) joined-entries joined-is-identity]
-                                                  // 2 | (n+m) and 2 | m give 2 | (n+m)-m = n.
-                                                  @total-minus-m-is-even |
-                                                    divides(TWO, sub(nadd(n, m), m))
-                                                    [using specialize peano_divides.dividesSub(TWO, nadd(n, m), m) joined-length-is-even m-even]
-                                                  @total-minus-m-is-n |
-                                                    sub(nadd(n, m), m) = n
-                                                    [using specialize peano_subtraction.subAddCancel(n, m)]
-                                                  @conclusion-n-even |
+                                                    [using specialize seqConcat(t, r, n, m)]
+                                                  @with-concat |
+                                                    unpack u: Seq from concat-exists {
+                                                      @concat-facts |
+                                                        (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
+                                                          and (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i))
+                                                          and productUpTo(u, nadd(n, m)) = compose(productUpTo(t, n), productUpTo(r, m))
+                                                        [by hypothesis with-concat]
+                                                      // the conjunction nests LEFT: (A and B) and C
+                                                      @u-agreement-pair |
+                                                        (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i))
+                                                          and (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i))
+                                                        [by and_elim_left concat-facts]
+                                                      @u-agrees-with-t |
+                                                        forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i)
+                                                        [by and_elim_left u-agreement-pair]
+                                                      @u-agrees-with-r |
+                                                        forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i)
+                                                        [by and_elim_right u-agreement-pair]
+                                                      @concat-product |
+                                                        productUpTo(u, nadd(n, m)) = compose(productUpTo(t, n), productUpTo(r, m))
+                                                        [by and_elim_right concat-facts]
+                                                      // the joined product is σ·σ⁻¹ = 1.
+                                                      @r-product-is-sigma-inverse |
+                                                        productUpTo(r, m) = inverse(sigma)
+                                                        [by rewrite s-product r-product-is-inverse]
+                                                      @joined-is-sigma-times-its-inverse |
+                                                        productUpTo(u, nadd(n, m)) = compose(sigma, inverse(sigma))
+                                                        [using simplify concat-product t-product r-product-is-sigma-inverse]
+                                                      @sigma-is-a-permutation |
+                                                        invertible(sigma)
+                                                        [by hypothesis given-sigma-invertible]
+                                                      @sigma-times-inverse-is-identity |
+                                                        compose(sigma, inverse(sigma)) = identityFn
+                                                        [using specialize inverseRight(sigma) sigma-is-a-permutation]
+                                                      @joined-is-identity |
+                                                        productUpTo(u, nadd(n, m)) = identityFn
+                                                        [using chain joined-is-sigma-times-its-inverse sigma-times-inverse-is-identity]
+                                                      @what-t-transpositions-means |
+                                                        allTranspositions(t, n) iff (forall i: Nat; nat_less_than(i, n) -> isTransposition(at(t, i)))
+                                                        [using specialize allTranspositionsDef(t, n)]
+                                                      @t-entries |
+                                                        forall i: Nat; nat_less_than(i, n) -> isTransposition(at(t, i))
+                                                        [using tautology what-t-transpositions-means t-transpositions]
+                                                      @what-r-transpositions-means |
+                                                        allTranspositions(r, m) iff (forall i: Nat; nat_less_than(i, m) -> isTransposition(at(r, i)))
+                                                        [using specialize allTranspositionsDef(r, m)]
+                                                      @r-entries |
+                                                        forall i: Nat; nat_less_than(i, m) -> isTransposition(at(r, i))
+                                                        [using tautology what-r-transpositions-means r-transpositions]
+                                                      @joined-entries |
+                                                        forall i: Nat; nat_less_than(i, nadd(n, m)) -> isTransposition(at(u, i))
+                                                        [using specialize concatenationPreservesTranspositions(u, t, r, n, m) u-agrees-with-t u-agrees-with-r t-entries r-entries]
+                                                      @joined-length-is-even |
+                                                        divides(TWO, nadd(n, m))
+                                                        [using specialize identityIsEvenLength(u, nadd(n, m)) joined-entries joined-is-identity]
+                                                      // 2 | (n+m) and 2 | m give 2 | (n+m)-m = n.
+                                                      @total-minus-m-is-even |
+                                                        divides(TWO, sub(nadd(n, m), m))
+                                                        [using specialize peano_divides.dividesSub(TWO, nadd(n, m), m) joined-length-is-even m-even]
+                                                      @total-minus-m-is-n |
+                                                        sub(nadd(n, m), m) = n
+                                                        [using specialize peano_subtraction.subAddCancel(n, m)]
+                                                      @conclusion-n-even |
+                                                        divides(TWO, n)
+                                                        [by rewrite total-minus-m-is-n total-minus-m-is-even]
+                                                    }
+                                                  @conclusion-concat |
                                                     divides(TWO, n)
-                                                    [by rewrite total-minus-m-is-n total-minus-m-is-even]
+                                                    [by exists_elim with-concat]
                                                 }
-                                              @conclusion-concat |
+                                              @conclusion-reversal |
                                                 divides(TWO, n)
-                                                [by exists_elim with-concat]
+                                                [by exists_elim with-reversal]
                                             }
-                                          @conclusion-reversal |
-                                            divides(TWO, n)
-                                            [by exists_elim with-reversal]
+                                          @conclusion-t-product |
+                                            productUpTo(t, n) = sigma -> divides(TWO, n)
+                                            [by implies_intro given-t-product]
                                         }
-                                      @conclusion-t-product |
-                                        productUpTo(t, n) = sigma -> divides(TWO, n)
-                                        [by implies_intro given-t-product]
+                                      @conclusion-t-transpositions |
+                                        allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
+                                        [by implies_intro given-t-transpositions]
                                     }
-                                  @conclusion-t-transpositions |
-                                    allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
-                                    [by implies_intro given-t-transpositions]
+                                  @conclusion-m-even |
+                                    divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
+                                    [by implies_intro given-m-even]
                                 }
-                              @conclusion-m-even |
-                                divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
-                                [by implies_intro given-m-even]
+                              @conclusion-s-product |
+                                productUpTo(s, m) = sigma -> divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
+                                [by implies_intro given-s-product]
                             }
-                          @conclusion-s-product |
-                            productUpTo(s, m) = sigma -> divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
-                            [by implies_intro given-s-product]
-                        }
-                      @conclusion-s-transpositions |
-                        allTranspositions(s, m) -> productUpTo(s, m) = sigma -> divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
-                        [by implies_intro given-s-transpositions]
+                          @conclusion-s-transpositions |
+                            allTranspositions(s, m) -> productUpTo(s, m) = sigma -> divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
+                            [by implies_intro given-s-transpositions]
                         }
                       @conclusion-sigma-invertible |
                         invertible(sigma) -> allTranspositions(s, m) -> productUpTo(s, m) = sigma -> divides(TWO, m) -> allTranspositions(t, n) -> productUpTo(t, n) = sigma -> divides(TWO, n)
@@ -1062,4 +1068,910 @@ proof
   @conclusion |
     forall t: Fn; isEvenPerm(t) -> (not isOddPerm(t))
     [by forall_intro generalize-t]
+qed
+
+// -- Judson Lemma 1: A_n is generated by 3-cycles --------------------------------------
+//
+// "To show that the 3-cycles generate A_n, we need only show that any pair of
+// transpositions can be written as the product of 3-cycles. Since (a,b) = (b,a), every
+// pair of transpositions must be one of the following:"
+//
+//     (a,b)(a,b) = identity        -- std's `transpositionIsAnInvolution`
+//     (a,b)(c,d) = (a,c,b)(a,c,d)  -- `aPairOfDisjointTranspositionsIsAProductOfThreeCycles`
+//     (a,b)(a,c) = (a,c,b)         -- DEFINITIONAL, see below
+//
+// A 3-cycle needs no new sort. std's cycle fold (`cycleSucc`) makes
+// `cycle(s, 3) = (a0 a2) o (a0 a1) o ((a0 a0) o id)`, so a 3-cycle IS a composite of two
+// transpositions sharing their first point — which is why the third identity is a reading
+// of the definition rather than a theorem, and why the second carries the content.
+//   (a,c,b) = (a,b)o(a,c)   and   (a,c,d) = (a,d)o(a,c)
+// so the RHS is [(a,b)o(a,c)] o [(a,d)o(a,c)].
+
+// the value of a four-factor composite at a point, as a chain of composeApply steps
+theorem fourFactorValue: forall p, q, r, t: Fn; forall x: Element;
+  apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+proof
+  @generalize-p |
+    fix p: Fn {
+      @generalize-q |
+        fix q: Fn {
+          @generalize-r |
+            fix r: Fn {
+              @generalize-t |
+                fix t: Fn {
+                  @generalize-x |
+                    fix x: Element {
+                      @split-outer |
+                        apply(compose(compose(p, q), compose(r, t)), x) = apply(compose(p, q), apply(compose(r, t), x))
+                        [using specialize composeApply(compose(p, q), compose(r, t), x)]
+                      @split-left |
+                        apply(compose(p, q), apply(compose(r, t), x)) = apply(p, apply(q, apply(compose(r, t), x)))
+                        [using specialize composeApply(p, q, apply(compose(r, t), x))]
+                      @split-right |
+                        apply(compose(r, t), x) = apply(r, apply(t, x))
+                        [using specialize composeApply(r, t, x)]
+                      @conclusion-value |
+                        apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+                        [using chain split-outer split-left split-right]
+                    }
+                  @discharge-x |
+                    forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+                    [by forall_intro generalize-x]
+                }
+              @discharge-t |
+                forall t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+                [by forall_intro generalize-t]
+            }
+          @discharge-r |
+            forall r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+            [by forall_intro generalize-r]
+        }
+      @discharge-q |
+        forall q, r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, r, t: Fn; forall x: Element; apply(compose(compose(p, q), compose(r, t)), x) = apply(p, apply(q, apply(r, apply(t, x))))
+    [by forall_intro generalize-p]
+qed
+
+// -- the two sides' values at a point ------------------------------------------------------
+
+// LHS (a,b)o(c,d) at x, as a nested apply
+theorem twoFactorValue: forall p, q: Fn; forall x: Element;
+  apply(compose(p, q), x) = apply(p, apply(q, x))
+proof
+  @conclusion |
+    forall p, q: Fn; forall x: Element; apply(compose(p, q), x) = apply(p, apply(q, x))
+    [by cite composeApply]
+qed
+
+//        (a,c): a->c ; (a,d) fixes c (c!=a, c!=d) ; (a,c): c->a ; (a,b): a->b.  = b
+
+// `tautology` sees `a != c` and `c != a` as UNRELATED atoms, so symmetry of disequality
+// is a real step. Needed in every case below, hence its own lemma.
+theorem disequalityIsSymmetric: forall u, v: Element; u != v -> v != u
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @given-u-not-v |
+            assume u != v {
+              @u-not-v |
+                u != v
+                [by hypothesis given-u-not-v]
+              @suppose-v-equals-u |
+                assume v = u {
+                  @v-is-u |
+                    v = u
+                    [by hypothesis suppose-v-equals-u]
+                  @u-is-v |
+                    u = v
+                    [by symmetry v-is-u]
+                }
+              @conclusion-v-not-u |
+                v != u
+                [by not_intro suppose-v-equals-u u-is-v u-not-v]
+            }
+          @conclusion-implication |
+            u != v -> v != u
+            [by implies_intro given-u-not-v]
+        }
+      @discharge-v |
+        forall v: Element; u != v -> v != u
+        [by forall_intro generalize-v]
+    }
+  @conclusion |
+    forall u, v: Element; u != v -> v != u
+    [by forall_intro generalize-u]
+qed
+
+theorem bothSidesAgreeAtA: forall a, b, c, d: Element;
+  a != c -> a != d -> c != d ->
+  apply(compose(transposition(a, b), transposition(c, d)), a) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)),
+  compose(transposition(a, d), transposition(a, c))), a)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-c |
+                    assume a != c {
+                      @given-a-d |
+                        assume a != d {
+                          @given-c-d |
+                            assume c != d {
+                              @a-not-c |
+                                a != c
+                                [by hypothesis given-a-c]
+                              @a-not-d |
+                                a != d
+                                [by hypothesis given-a-d]
+                              @c-not-d |
+                                c != d
+                                [by hypothesis given-c-d]
+                              // LHS = b
+                              @lhs-split |
+                                apply(compose(transposition(a, b), transposition(c, d)), a) = apply(transposition(a, b), apply(transposition(c, d), a))
+                                [using specialize composeApply(transposition(a, b), transposition(c, d), a)]
+                              @inner-fixes-a |
+                                apply(transposition(c, d), a) = a
+                                [using specialize transpositionElsewhere(c, d, a) a-not-c a-not-d]
+                              @ab-sends-a |
+                                apply(transposition(a, b), a) = b
+                                [using specialize transpositionAtFirst(a, b)]
+                              @lhs-is-b |
+                                apply(compose(transposition(a, b), transposition(c, d)), a) = b
+                                [using chain lhs-split inner-fixes-a ab-sends-a]
+                              // RHS = b, innermost first
+                              @rhs-split |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a) =
+                                  apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), a))))
+                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), a)]
+                              @ac-sends-a |
+                                apply(transposition(a, c), a) = c
+                                [using specialize transpositionAtFirst(a, c)]
+                              @c-not-a |
+                                c != a
+                                [using specialize disequalityIsSymmetric(a, c) a-not-c]
+                              @ad-fixes-c |
+                                apply(transposition(a, d), c) = c
+                                [using specialize transpositionElsewhere(a, d, c) c-not-a c-not-d]
+                              @ac-sends-c |
+                                apply(transposition(a, c), c) = a
+                                [using specialize transpositionAtSecond(a, c)]
+                              @rhs-is-b |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a) = b
+                                [using chain rhs-split ac-sends-a ad-fixes-c ac-sends-c ab-sends-a]
+                              @conclusion-agree |
+                                apply(compose(transposition(a, b), transposition(c, d)), a) =
+                                  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                                [using chain lhs-is-b rhs-is-b]
+                            }
+                          @conclusion-c-d |
+                            c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                            [by implies_intro given-c-d]
+                        }
+                      @conclusion-a-d |
+                        a != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                        [by implies_intro given-a-d]
+                    }
+                  @conclusion-a-c |
+                    a != c -> a != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                    [by implies_intro given-a-c]
+                }
+              @discharge-d |
+                forall d: Element; a != c -> a != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != c -> a != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != c -> a != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != c -> a != d -> c != d ->
+      apply(compose(transposition(a, b), transposition(c, d)), a) =
+      apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+    [by forall_intro generalize-a]
+qed
+
+// -- identity (2)'s remaining four point-cases ---------------------------------------------
+// Each is the same shape as `bothSidesAgreeAtA`: expand both sides to nested `apply`s
+// (`twoFactorValue` / `fourFactorValue`), evaluate factor by factor with the three
+// transposition point lemmas, and `chain` the two values together.
+
+// at b: LHS (c,d) fixes b, then (a,b): b -> a.  RHS: all three (a,·) fix b, then (a,b): b -> a.
+theorem bothSidesAgreeAtB: forall a, b, c, d: Element;
+  a != b -> b != c -> b != d ->
+  apply(compose(transposition(a, b), transposition(c, d)), b) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)),
+  compose(transposition(a, d), transposition(a, c))), b)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-b |
+                    assume a != b {
+                      @given-b-c |
+                        assume b != c {
+                          @given-b-d |
+                            assume b != d {
+                              @a-not-b |
+                                a != b
+                                [by hypothesis given-a-b]
+                              @b-not-c |
+                                b != c
+                                [by hypothesis given-b-c]
+                              @b-not-d |
+                                b != d
+                                [by hypothesis given-b-d]
+                              @b-not-a |
+                                b != a
+                                [using specialize disequalityIsSymmetric(a, b) a-not-b]
+                              @ab-sends-b |
+                                apply(transposition(a, b), b) = a
+                                [using specialize transpositionAtSecond(a, b)]
+                              @ac-fixes-b |
+                                apply(transposition(a, c), b) = b
+                                [using specialize transpositionElsewhere(a, c, b) b-not-a b-not-c]
+                              @ad-fixes-b |
+                                apply(transposition(a, d), b) = b
+                                [using specialize transpositionElsewhere(a, d, b) b-not-a b-not-d]
+                              @cd-fixes-b |
+                                apply(transposition(c, d), b) = b
+                                [using specialize transpositionElsewhere(c, d, b) b-not-c b-not-d]
+                              @lhs-split |
+                                apply(compose(transposition(a, b), transposition(c, d)), b) = apply(transposition(a, b), apply(transposition(c, d), b))
+                                [using specialize twoFactorValue(transposition(a, b), transposition(c, d), b)]
+                              @lhs-is-a |
+                                apply(compose(transposition(a, b), transposition(c, d)), b) = a
+                                [using chain lhs-split cd-fixes-b ab-sends-b]
+                              @rhs-split |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b) =
+                                  apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), b))))
+                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), b)]
+                              @rhs-is-a |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b) = a
+                                [using chain rhs-split ac-fixes-b ad-fixes-b ab-sends-b]
+                              @conclusion-agree |
+                                apply(compose(transposition(a, b), transposition(c, d)), b) =
+                                  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                                [using chain lhs-is-a rhs-is-a]
+                            }
+                          @conclusion-b-d |
+                            b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                            [by implies_intro given-b-d]
+                        }
+                      @conclusion-b-c |
+                        b != c -> b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                        [by implies_intro given-b-c]
+                    }
+                  @conclusion-a-b |
+                    a != b -> b != c -> b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                    [by implies_intro given-a-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> b != c -> b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> b != c -> b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> b != c -> b != d -> apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> b != c -> b != d ->
+      apply(compose(transposition(a, b), transposition(c, d)), b) =
+      apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+    [by forall_intro generalize-a]
+qed
+
+// at c: LHS (c,d): c->d then (a,b) fixes d.
+//       RHS (a,c): c->a; (a,d): a->d; (a,c) fixes d; (a,b) fixes d.
+theorem bothSidesAgreeAtC: forall a, b, c, d: Element;
+  a != d -> b != d -> c != d ->
+  apply(compose(transposition(a, b), transposition(c, d)), c) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)),
+  compose(transposition(a, d), transposition(a, c))), c)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-d |
+                    assume a != d {
+                      @given-b-d |
+                        assume b != d {
+                          @given-c-d |
+                            assume c != d {
+                              @a-not-d |
+                                a != d
+                                [by hypothesis given-a-d]
+                              @b-not-d |
+                                b != d
+                                [by hypothesis given-b-d]
+                              @c-not-d |
+                                c != d
+                                [by hypothesis given-c-d]
+                              @d-not-a |
+                                d != a
+                                [using specialize disequalityIsSymmetric(a, d) a-not-d]
+                              @d-not-b |
+                                d != b
+                                [using specialize disequalityIsSymmetric(b, d) b-not-d]
+                              @d-not-c |
+                                d != c
+                                [using specialize disequalityIsSymmetric(c, d) c-not-d]
+                              @cd-sends-c |
+                                apply(transposition(c, d), c) = d
+                                [using specialize transpositionAtFirst(c, d)]
+                              @ab-fixes-d |
+                                apply(transposition(a, b), d) = d
+                                [using specialize transpositionElsewhere(a, b, d) d-not-a d-not-b]
+                              @ac-sends-c |
+                                apply(transposition(a, c), c) = a
+                                [using specialize transpositionAtSecond(a, c)]
+                              @ad-sends-a |
+                                apply(transposition(a, d), a) = d
+                                [using specialize transpositionAtFirst(a, d)]
+                              @ac-fixes-d |
+                                apply(transposition(a, c), d) = d
+                                [using specialize transpositionElsewhere(a, c, d) d-not-a d-not-c]
+                              @lhs-split |
+                                apply(compose(transposition(a, b), transposition(c, d)), c) = apply(transposition(a, b), apply(transposition(c, d), c))
+                                [using specialize twoFactorValue(transposition(a, b), transposition(c, d), c)]
+                              @lhs-value |
+                                apply(compose(transposition(a, b), transposition(c, d)), c) = d
+                                [using chain lhs-split cd-sends-c ab-fixes-d]
+                              @rhs-split |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c) =
+                                  apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), c))))
+                                [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), c)]
+                              @rhs-value |
+                                apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c) = d
+                                [using chain rhs-split ac-sends-c ad-sends-a ac-fixes-d ab-fixes-d]
+                              @conclusion-agree |
+                                apply(compose(transposition(a, b), transposition(c, d)), c) =
+                                  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                                [using chain lhs-value rhs-value]
+                            }
+                          @conclusion-c-d |
+                            c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                            [by implies_intro given-c-d]
+                        }
+                      @conclusion-b-d |
+                        b != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                        [by implies_intro given-b-d]
+                    }
+                  @conclusion-a-d |
+                    a != d -> b != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                    [by implies_intro given-a-d]
+                }
+              @discharge-d |
+                forall d: Element; a != d -> b != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != d -> b != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != d -> b != d -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != d -> b != d -> c != d ->
+      apply(compose(transposition(a, b), transposition(c, d)), c) =
+      apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+    [by forall_intro generalize-a]
+qed
+
+theorem bothSidesAgreeAtD: forall a, b, c, d: Element;
+  a != c -> a != d -> b != c -> c != d ->
+  apply(compose(transposition(a, b), transposition(c, d)), d) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-not-c |
+                    assume a != c {
+                      @given-a-not-d |
+                        assume a != d {
+                          @given-b-not-c |
+                            assume b != c {
+                              @given-c-not-d |
+                                assume c != d {
+                                  @a-not-c |
+                                    a != c
+                                    [by hypothesis given-a-not-c]
+                                  @a-not-d |
+                                    a != d
+                                    [by hypothesis given-a-not-d]
+                                  @b-not-c |
+                                    b != c
+                                    [by hypothesis given-b-not-c]
+                                  @c-not-d |
+                                    c != d
+                                    [by hypothesis given-c-not-d]
+                                  @c-not-a |
+                                    c != a
+                                    [using specialize disequalityIsSymmetric(a, c) a-not-c]
+                                  @d-not-a |
+                                    d != a
+                                    [using specialize disequalityIsSymmetric(a, d) a-not-d]
+                                  @c-not-b |
+                                    c != b
+                                    [using specialize disequalityIsSymmetric(b, c) b-not-c]
+                                  @d-not-c |
+                                    d != c
+                                    [using specialize disequalityIsSymmetric(c, d) c-not-d]
+                                  @cd-sends-d |
+                                    apply(transposition(c, d), d) = c
+                                    [using specialize transpositionAtSecond(c, d)]
+                                  @ab-fixes-c |
+                                    apply(transposition(a, b), c) = c
+                                    [using specialize transpositionElsewhere(a, b, c) c-not-a c-not-b]
+                                  @ac-fixes-d |
+                                    apply(transposition(a, c), d) = d
+                                    [using specialize transpositionElsewhere(a, c, d) d-not-a d-not-c]
+                                  @ad-sends-d |
+                                    apply(transposition(a, d), d) = a
+                                    [using specialize transpositionAtSecond(a, d)]
+                                  @ac-sends-a |
+                                    apply(transposition(a, c), a) = c
+                                    [using specialize transpositionAtFirst(a, c)]
+                                  @lhs-split |
+                                    apply(compose(transposition(a, b), transposition(c, d)), d) = apply(transposition(a, b), apply(transposition(c, d), d))
+                                    [using specialize twoFactorValue(transposition(a, b), transposition(c, d), d)]
+                                  @lhs-value |
+                                    apply(compose(transposition(a, b), transposition(c, d)), d) = c
+                                    [using chain lhs-split cd-sends-d ab-fixes-c]
+                                  @rhs-split |
+                                    apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d) =
+                                      apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), d))))
+                                    [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), d)]
+                                  @rhs-value |
+                                    apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d) = c
+                                    [using chain rhs-split ac-fixes-d ad-sends-d ac-sends-a ab-fixes-c]
+                                  @conclusion-agree |
+                                    apply(compose(transposition(a, b), transposition(c, d)), d) =
+                                      apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                                    [using chain lhs-value rhs-value]
+                                }
+                              @conclusion-c-not-d |
+                                c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                                [by implies_intro given-c-not-d]
+                            }
+                          @conclusion-b-not-c |
+                            b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                            [by implies_intro given-b-not-c]
+                        }
+                      @conclusion-a-not-d |
+                        a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                        [by implies_intro given-a-not-d]
+                    }
+                  @conclusion-a-not-c |
+                    a != c -> a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                    [by implies_intro given-a-not-c]
+                }
+              @discharge-d |
+                forall d: Element; a != c -> a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != c -> a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != c -> a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != c -> a != d -> b != c -> c != d -> apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+    [by forall_intro generalize-a]
+qed
+
+// elsewhere: x is none of a,b,c,d, so every factor fixes it.
+theorem bothSidesAgreeAtElsewhere: forall a, b, c, d, x: Element;
+  x != a -> x != b -> x != c -> x != d ->
+  apply(compose(transposition(a, b), transposition(c, d)), x) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @generalize-x |
+                    fix x: Element {
+                      @given-x-not-a |
+                        assume x != a {
+                          @given-x-not-b |
+                            assume x != b {
+                              @given-x-not-c |
+                                assume x != c {
+                                  @given-x-not-d |
+                                    assume x != d {
+                                      @x-not-a |
+                                        x != a
+                                        [by hypothesis given-x-not-a]
+                                      @x-not-b |
+                                        x != b
+                                        [by hypothesis given-x-not-b]
+                                      @x-not-c |
+                                        x != c
+                                        [by hypothesis given-x-not-c]
+                                      @x-not-d |
+                                        x != d
+                                        [by hypothesis given-x-not-d]
+                                      @cd-fixes-x |
+                                        apply(transposition(c, d), x) = x
+                                        [using specialize transpositionElsewhere(c, d, x) x-not-c x-not-d]
+                                      @ab-fixes-x |
+                                        apply(transposition(a, b), x) = x
+                                        [using specialize transpositionElsewhere(a, b, x) x-not-a x-not-b]
+                                      @ac-fixes-x |
+                                        apply(transposition(a, c), x) = x
+                                        [using specialize transpositionElsewhere(a, c, x) x-not-a x-not-c]
+                                      @ad-fixes-x |
+                                        apply(transposition(a, d), x) = x
+                                        [using specialize transpositionElsewhere(a, d, x) x-not-a x-not-d]
+                                      @lhs-split |
+                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(transposition(a, b), apply(transposition(c, d), x))
+                                        [using specialize twoFactorValue(transposition(a, b), transposition(c, d), x)]
+                                      @lhs-value |
+                                        apply(compose(transposition(a, b), transposition(c, d)), x) = x
+                                        [using chain lhs-split cd-fixes-x ab-fixes-x]
+                                      @rhs-split |
+                                        apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x) =
+                                          apply(transposition(a, b), apply(transposition(a, c), apply(transposition(a, d), apply(transposition(a, c), x))))
+                                        [using specialize fourFactorValue(transposition(a, b), transposition(a, c), transposition(a, d), transposition(a, c), x)]
+                                      @rhs-value |
+                                        apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x) = x
+                                        [using chain rhs-split ac-fixes-x ad-fixes-x ab-fixes-x]
+                                      @conclusion-agree |
+                                        apply(compose(transposition(a, b), transposition(c, d)), x) =
+                                          apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                        [using chain lhs-value rhs-value]
+                                    }
+                                  @conclusion-x-not-d |
+                                    x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                    [by implies_intro given-x-not-d]
+                                }
+                              @conclusion-x-not-c |
+                                x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                [by implies_intro given-x-not-c]
+                            }
+                          @conclusion-x-not-b |
+                            x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                            [by implies_intro given-x-not-b]
+                        }
+                      @conclusion-x-not-a |
+                        x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                        [by implies_intro given-x-not-a]
+                    }
+                  @discharge-x |
+                    forall x: Element; x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                    [by forall_intro generalize-x]
+                }
+              @discharge-d |
+                forall d, x: Element; x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d, x: Element; x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d, x: Element; x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d, x: Element; x != a -> x != b -> x != c -> x != d -> apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+    [by forall_intro generalize-a]
+qed
+
+// The pointwise agreement behind identity (2): five cases on where x sits.
+theorem agreeAtEveryPoint: forall a, b, c, d: Element;
+  a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+  forall x: Element;
+  apply(compose(transposition(a, b), transposition(c, d)), x) =
+  apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-not-b |
+                    assume a != b {
+                      @given-a-not-c |
+                        assume a != c {
+                          @given-a-not-d |
+                            assume a != d {
+                              @given-b-not-c |
+                                assume b != c {
+                                  @given-b-not-d |
+                                    assume b != d {
+                                      @given-c-not-d |
+                                        assume c != d {
+                                          @a-not-b |
+                                            a != b
+                                            [by hypothesis given-a-not-b]
+                                          @a-not-c |
+                                            a != c
+                                            [by hypothesis given-a-not-c]
+                                          @a-not-d |
+                                            a != d
+                                            [by hypothesis given-a-not-d]
+                                          @b-not-c |
+                                            b != c
+                                            [by hypothesis given-b-not-c]
+                                          @b-not-d |
+                                            b != d
+                                            [by hypothesis given-b-not-d]
+                                          @c-not-d |
+                                            c != d
+                                            [by hypothesis given-c-not-d]
+                                          @generalize-x |
+                                            fix x: Element {
+                                              @cases |
+                                                x = a or x = b or x = c or x = d or (x != a and x != b and x != c and x != d)
+                                                [using tautology]
+                                              @conclusion-at-x |
+                                                apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                case cases {
+                                                  @when-x-is-a |
+                                                    assume x = a {
+                                                      @x-is-a |
+                                                        x = a
+                                                        [by hypothesis when-x-is-a]
+                                                      @agree-at-a |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), a) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), a)
+                                                        [using specialize bothSidesAgreeAtA(a, b, c, d) a-not-c a-not-d c-not-d]
+                                                      @conclusion-when-x-is-a |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                        [by rewrite x-is-a agree-at-a]
+                                                    }
+                                                  @when-x-is-b |
+                                                    assume x = b {
+                                                      @x-is-b |
+                                                        x = b
+                                                        [by hypothesis when-x-is-b]
+                                                      @agree-at-b |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), b) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), b)
+                                                        [using specialize bothSidesAgreeAtB(a, b, c, d) a-not-b b-not-c b-not-d]
+                                                      @conclusion-when-x-is-b |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                        [by rewrite x-is-b agree-at-b]
+                                                    }
+                                                  @when-x-is-c |
+                                                    assume x = c {
+                                                      @x-is-c |
+                                                        x = c
+                                                        [by hypothesis when-x-is-c]
+                                                      @agree-at-c |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), c) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), c)
+                                                        [using specialize bothSidesAgreeAtC(a, b, c, d) a-not-d b-not-d c-not-d]
+                                                      @conclusion-when-x-is-c |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                        [by rewrite x-is-c agree-at-c]
+                                                    }
+                                                  @when-x-is-d |
+                                                    assume x = d {
+                                                      @x-is-d |
+                                                        x = d
+                                                        [by hypothesis when-x-is-d]
+                                                      @agree-at-d |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), d) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), d)
+                                                        [using specialize bothSidesAgreeAtD(a, b, c, d) a-not-c a-not-d b-not-c c-not-d]
+                                                      @conclusion-when-x-is-d |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                        [by rewrite x-is-d agree-at-d]
+                                                    }
+                                                  @when-x-is-elsewhere |
+                                                    assume x != a and x != b and x != c and x != d {
+                                                      @x-is-elsewhere |
+                                                        x != a and x != b and x != c and x != d
+                                                        [by hypothesis when-x-is-elsewhere]
+                                                      @x-not-a |
+                                                        x != a
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-b |
+                                                        x != b
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-c |
+                                                        x != c
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-d |
+                                                        x != d
+                                                        [using tautology x-is-elsewhere]
+                                                      @conclusion-when-x-is-elsewhere |
+                                                        apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                                        [using specialize bothSidesAgreeAtElsewhere(a, b, c, d, x) x-not-a x-not-b x-not-c x-not-d]
+                                                    }
+                                                }
+                                            }
+                                          @discharge-x |
+                                            forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                            [by forall_intro generalize-x]
+                                        }
+                                      @conclusion-c-not-d |
+                                        c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                        [by implies_intro given-c-not-d]
+                                    }
+                                  @conclusion-b-not-d |
+                                    b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                    [by implies_intro given-b-not-d]
+                                }
+                              @conclusion-b-not-c |
+                                b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                [by implies_intro given-b-not-c]
+                            }
+                          @conclusion-a-not-d |
+                            a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                            [by implies_intro given-a-not-d]
+                        }
+                      @conclusion-a-not-c |
+                        a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                        [by implies_intro given-a-not-c]
+                    }
+                  @conclusion-a-not-b |
+                    a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                    [by implies_intro given-a-not-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> forall x: Element; apply(compose(transposition(a, b), transposition(c, d)), x) = apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+    [by forall_intro generalize-a]
+qed
+
+// -- Judson Lemma 1, identity (2) -----------------------------------------------------------
+// (a,b)(c,d) = (a,c,b)(a,c,d) for a,b,c,d distinct. As composites of transpositions
+// (a 3-cycle (x,y,z) is (x,z)o(x,y)), that reads
+//   (a,b)o(c,d) = [(a,b)o(a,c)] o [(a,d)o(a,c)].
+// Extensionality over the five point-cases proved above.
+theorem aPairOfDisjointTranspositionsIsAProductOfThreeCycles:
+  forall a, b, c, d: Element;
+  a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+  compose(transposition(a, b), transposition(c, d)) =
+  compose(compose(transposition(a, b), transposition(a, c)),
+  compose(transposition(a, d), transposition(a, c)))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-b |
+                    assume a != b {
+                      @given-a-c |
+                        assume a != c {
+                          @given-a-d |
+                            assume a != d {
+                              @given-b-c |
+                                assume b != c {
+                                  @given-b-d |
+                                    assume b != d {
+                                      @given-c-d |
+                                        assume c != d {
+                                          @a-not-b |
+                                            a != b
+                                            [by hypothesis given-a-b]
+                                          @a-not-c |
+                                            a != c
+                                            [by hypothesis given-a-c]
+                                          @a-not-d |
+                                            a != d
+                                            [by hypothesis given-a-d]
+                                          @b-not-c |
+                                            b != c
+                                            [by hypothesis given-b-c]
+                                          @b-not-d |
+                                            b != d
+                                            [by hypothesis given-b-d]
+                                          @c-not-d |
+                                            c != d
+                                            [by hypothesis given-c-d]
+                                          @agree-everywhere |
+                                            forall x: Element;
+                                              apply(compose(transposition(a, b), transposition(c, d)), x) =
+                                              apply(compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c))), x)
+                                            [using specialize agreeAtEveryPoint(a, b, c, d) a-not-b a-not-c a-not-d b-not-c b-not-d c-not-d]
+                                          @conclusion-equal |
+                                            compose(transposition(a, b), transposition(c, d)) =
+                                              compose(compose(transposition(a, b), transposition(a, c)),
+                                              compose(transposition(a, d), transposition(a, c)))
+                                            [using specialize funcExtensionality(compose(transposition(a, b), transposition(c, d)), compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))) agree-everywhere]
+                                        }
+                                      @conclusion-c-d |
+                                        c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                                        [by implies_intro given-c-d]
+                                    }
+                                  @conclusion-b-d |
+                                    b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                                    [by implies_intro given-b-d]
+                                }
+                              @conclusion-b-c |
+                                b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                                [by implies_intro given-b-c]
+                            }
+                          @conclusion-a-d |
+                            a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                            [by implies_intro given-a-d]
+                        }
+                      @conclusion-a-c |
+                        a != c -> a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                        [by implies_intro given-a-c]
+                    }
+                  @conclusion-a-b |
+                    a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                    [by implies_intro given-a-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> compose(transposition(a, b), transposition(c, d)) = compose(compose(transposition(a, b), transposition(a, c)), compose(transposition(a, d), transposition(a, c)))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+      compose(transposition(a, b), transposition(c, d)) =
+      compose(compose(transposition(a, b), transposition(a, c)),
+      compose(transposition(a, d), transposition(a, c)))
+    [by forall_intro generalize-a]
 qed
