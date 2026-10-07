@@ -3878,3 +3878,505 @@ proof
       compose(transposition(i, j), transposition(a, k))
     [by forall_intro generalize-i]
 qed
+
+// -- a 3-cycle is invariant under ROTATION of its points -----------------------------------
+//
+// `(j,k,i) = (i,j,k)`: the same cycle, started at a different point. Needed by the
+// conjugation step, where conjugating `(i,j,a)^2` by `(i,j)(a,k)` lands on `(j,i,k)^2`,
+// which identity (1) turns into `(j,k,i)` — and that is `(i,j,k)`, Judson's claim.
+
+// at i.
+theorem rotationAgreesAtI: forall i, j, k: Element;
+  i != j -> i != k -> j != k ->
+  apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-k |
+                    assume i != k {
+                      @given-j-not-k |
+                        assume j != k {
+                          @i-not-j |
+                            i != j
+                            [by hypothesis given-i-not-j]
+                          @i-not-k |
+                            i != k
+                            [by hypothesis given-i-not-k]
+                          @j-not-k |
+                            j != k
+                            [by hypothesis given-j-not-k]
+                          @j-not-i |
+                            j != i
+                            [using specialize disequalityIsSymmetric(i, j) i-not-j]
+                          @jk-fixes-i |
+                            apply(transposition(j, k), i) = i
+                            [using specialize transpositionElsewhere(j, k, i) i-not-j i-not-k]
+                          @ji-sends-i |
+                            apply(transposition(j, i), i) = j
+                            [using specialize transpositionAtSecond(j, i)]
+                          @ij-sends-i |
+                            apply(transposition(i, j), i) = j
+                            [using specialize transpositionAtFirst(i, j)]
+                          @ik-fixes-j |
+                            apply(transposition(i, k), j) = j
+                            [using specialize transpositionElsewhere(i, k, j) j-not-i j-not-k]
+                          @lhs-split |
+                            apply(compose(transposition(j, i), transposition(j, k)), i) = apply(transposition(j, i), apply(transposition(j, k), i))
+                            [using simplify composeApply]
+                          @lhs-value |
+                            apply(compose(transposition(j, i), transposition(j, k)), i) = j
+                            [using simplify lhs-split jk-fixes-i ji-sends-i]
+                          @rhs-split |
+                            apply(compose(transposition(i, k), transposition(i, j)), i) = apply(transposition(i, k), apply(transposition(i, j), i))
+                            [using simplify composeApply]
+                          @rhs-value |
+                            apply(compose(transposition(i, k), transposition(i, j)), i) = j
+                            [using simplify rhs-split ij-sends-i ik-fixes-j]
+                          @conclusion-agree |
+                            apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+                            [using chain lhs-value rhs-value]
+                        }
+                      @conclusion-j-not-k |
+                        j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+                        [by implies_intro given-j-not-k]
+                    }
+                  @conclusion-i-not-k |
+                    i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+                    [by implies_intro given-i-not-k]
+                }
+              @conclusion-i-not-j |
+                i != j -> i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+                [by implies_intro given-i-not-j]
+            }
+          @discharge-k |
+            forall k: Element; i != j -> i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != j -> i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != j -> i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+    [by forall_intro generalize-i]
+qed
+
+// at j.
+theorem rotationAgreesAtJ: forall i, j, k: Element;
+  i != k -> j != k ->
+  apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-k |
+                assume i != k {
+                  @given-j-not-k |
+                    assume j != k {
+                      @i-not-k |
+                        i != k
+                        [by hypothesis given-i-not-k]
+                      @j-not-k |
+                        j != k
+                        [by hypothesis given-j-not-k]
+                      @k-not-i |
+                        k != i
+                        [using specialize disequalityIsSymmetric(i, k) i-not-k]
+                      @k-not-j |
+                        k != j
+                        [using specialize disequalityIsSymmetric(j, k) j-not-k]
+                      @jk-sends-j |
+                        apply(transposition(j, k), j) = k
+                        [using specialize transpositionAtFirst(j, k)]
+                      @ji-fixes-k |
+                        apply(transposition(j, i), k) = k
+                        [using specialize transpositionElsewhere(j, i, k) k-not-j k-not-i]
+                      @ij-sends-j |
+                        apply(transposition(i, j), j) = i
+                        [using specialize transpositionAtSecond(i, j)]
+                      @ik-sends-i |
+                        apply(transposition(i, k), i) = k
+                        [using specialize transpositionAtFirst(i, k)]
+                      @lhs-split |
+                        apply(compose(transposition(j, i), transposition(j, k)), j) = apply(transposition(j, i), apply(transposition(j, k), j))
+                        [using simplify composeApply]
+                      @lhs-value |
+                        apply(compose(transposition(j, i), transposition(j, k)), j) = k
+                        [using simplify lhs-split jk-sends-j ji-fixes-k]
+                      @rhs-split |
+                        apply(compose(transposition(i, k), transposition(i, j)), j) = apply(transposition(i, k), apply(transposition(i, j), j))
+                        [using simplify composeApply]
+                      @rhs-value |
+                        apply(compose(transposition(i, k), transposition(i, j)), j) = k
+                        [using simplify rhs-split ij-sends-j ik-sends-i]
+                      @conclusion-agree |
+                        apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+                        [using chain lhs-value rhs-value]
+                    }
+                  @conclusion-j-not-k |
+                    j != k -> apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+                    [by implies_intro given-j-not-k]
+                }
+              @conclusion-i-not-k |
+                i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+                [by implies_intro given-i-not-k]
+            }
+          @discharge-k |
+            forall k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+    [by forall_intro generalize-i]
+qed
+
+// at k.
+theorem rotationAgreesAtK: forall i, j, k: Element;
+  i != k -> j != k ->
+  apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-k |
+                assume i != k {
+                  @given-j-not-k |
+                    assume j != k {
+                      @i-not-k |
+                        i != k
+                        [by hypothesis given-i-not-k]
+                      @j-not-k |
+                        j != k
+                        [by hypothesis given-j-not-k]
+                      @k-not-i |
+                        k != i
+                        [using specialize disequalityIsSymmetric(i, k) i-not-k]
+                      @k-not-j |
+                        k != j
+                        [using specialize disequalityIsSymmetric(j, k) j-not-k]
+                      @jk-sends-k |
+                        apply(transposition(j, k), k) = j
+                        [using specialize transpositionAtSecond(j, k)]
+                      @ji-sends-j |
+                        apply(transposition(j, i), j) = i
+                        [using specialize transpositionAtFirst(j, i)]
+                      @ij-fixes-k |
+                        apply(transposition(i, j), k) = k
+                        [using specialize transpositionElsewhere(i, j, k) k-not-i k-not-j]
+                      @ik-sends-k |
+                        apply(transposition(i, k), k) = i
+                        [using specialize transpositionAtSecond(i, k)]
+                      @lhs-split |
+                        apply(compose(transposition(j, i), transposition(j, k)), k) = apply(transposition(j, i), apply(transposition(j, k), k))
+                        [using simplify composeApply]
+                      @lhs-value |
+                        apply(compose(transposition(j, i), transposition(j, k)), k) = i
+                        [using simplify lhs-split jk-sends-k ji-sends-j]
+                      @rhs-split |
+                        apply(compose(transposition(i, k), transposition(i, j)), k) = apply(transposition(i, k), apply(transposition(i, j), k))
+                        [using simplify composeApply]
+                      @rhs-value |
+                        apply(compose(transposition(i, k), transposition(i, j)), k) = i
+                        [using simplify rhs-split ij-fixes-k ik-sends-k]
+                      @conclusion-agree |
+                        apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+                        [using chain lhs-value rhs-value]
+                    }
+                  @conclusion-j-not-k |
+                    j != k -> apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+                    [by implies_intro given-j-not-k]
+                }
+              @conclusion-i-not-k |
+                i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+                [by implies_intro given-i-not-k]
+            }
+          @discharge-k |
+            forall k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != k -> j != k -> apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+    [by forall_intro generalize-i]
+qed
+
+// elsewhere: every factor fixes x.
+theorem rotationAgreesElsewhere: forall i, j, k, x: Element;
+  x != i -> x != j -> x != k ->
+  apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @generalize-x |
+                fix x: Element {
+                  @given-x-not-i |
+                    assume x != i {
+                      @given-x-not-j |
+                        assume x != j {
+                          @given-x-not-k |
+                            assume x != k {
+                              @x-not-i |
+                                x != i
+                                [by hypothesis given-x-not-i]
+                              @x-not-j |
+                                x != j
+                                [by hypothesis given-x-not-j]
+                              @x-not-k |
+                                x != k
+                                [by hypothesis given-x-not-k]
+                              @jk-fixes-x |
+                                apply(transposition(j, k), x) = x
+                                [using specialize transpositionElsewhere(j, k, x) x-not-j x-not-k]
+                              @ji-fixes-x |
+                                apply(transposition(j, i), x) = x
+                                [using specialize transpositionElsewhere(j, i, x) x-not-j x-not-i]
+                              @ij-fixes-x |
+                                apply(transposition(i, j), x) = x
+                                [using specialize transpositionElsewhere(i, j, x) x-not-i x-not-j]
+                              @ik-fixes-x |
+                                apply(transposition(i, k), x) = x
+                                [using specialize transpositionElsewhere(i, k, x) x-not-i x-not-k]
+                              @lhs-split |
+                                apply(compose(transposition(j, i), transposition(j, k)), x) = apply(transposition(j, i), apply(transposition(j, k), x))
+                                [using simplify composeApply]
+                              @lhs-value |
+                                apply(compose(transposition(j, i), transposition(j, k)), x) = x
+                                [using simplify lhs-split jk-fixes-x ji-fixes-x]
+                              @rhs-split |
+                                apply(compose(transposition(i, k), transposition(i, j)), x) = apply(transposition(i, k), apply(transposition(i, j), x))
+                                [using simplify composeApply]
+                              @rhs-value |
+                                apply(compose(transposition(i, k), transposition(i, j)), x) = x
+                                [using simplify rhs-split ij-fixes-x ik-fixes-x]
+                              @conclusion-agree |
+                                apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                [using chain lhs-value rhs-value]
+                            }
+                          @conclusion-x-not-k |
+                            x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                            [by implies_intro given-x-not-k]
+                        }
+                      @conclusion-x-not-j |
+                        x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                        [by implies_intro given-x-not-j]
+                    }
+                  @conclusion-x-not-i |
+                    x != i -> x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                    [by implies_intro given-x-not-i]
+                }
+              @discharge-x |
+                forall x: Element; x != i -> x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                [by forall_intro generalize-x]
+            }
+          @discharge-k |
+            forall k, x: Element; x != i -> x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k, x: Element; x != i -> x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k, x: Element; x != i -> x != j -> x != k -> apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+    [by forall_intro generalize-i]
+qed
+
+// pointwise agreement for the rotation, four cases.
+theorem theRotationAgreesEverywhere: forall i, j, k: Element;
+  i != j -> i != k -> j != k ->
+  forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-k |
+                    assume i != k {
+                      @given-j-not-k |
+                        assume j != k {
+                          @i-not-j |
+                            i != j
+                            [by hypothesis given-i-not-j]
+                          @i-not-k |
+                            i != k
+                            [by hypothesis given-i-not-k]
+                          @j-not-k |
+                            j != k
+                            [by hypothesis given-j-not-k]
+                          @generalize-x |
+                            fix x: Element {
+                              @cases |
+                                x = i or x = j or x = k or (x != i and x != j and x != k)
+                                [using tautology]
+                              @conclusion-at-x |
+                                apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                case cases {
+                                  @when-x-is-i |
+                                    assume x = i {
+                                      @x-is-i |
+                                        x = i
+                                        [by hypothesis when-x-is-i]
+                                      @agree-at-i |
+                                        apply(compose(transposition(j, i), transposition(j, k)), i) = apply(compose(transposition(i, k), transposition(i, j)), i)
+                                        [using specialize rotationAgreesAtI(i, j, k) i-not-j i-not-k j-not-k]
+                                      @conclusion-when-x-is-i |
+                                        apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                        [by rewrite x-is-i agree-at-i]
+                                    }
+                                  @when-x-is-j |
+                                    assume x = j {
+                                      @x-is-j |
+                                        x = j
+                                        [by hypothesis when-x-is-j]
+                                      @agree-at-j |
+                                        apply(compose(transposition(j, i), transposition(j, k)), j) = apply(compose(transposition(i, k), transposition(i, j)), j)
+                                        [using specialize rotationAgreesAtJ(i, j, k) i-not-k j-not-k]
+                                      @conclusion-when-x-is-j |
+                                        apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                        [by rewrite x-is-j agree-at-j]
+                                    }
+                                  @when-x-is-k |
+                                    assume x = k {
+                                      @x-is-k |
+                                        x = k
+                                        [by hypothesis when-x-is-k]
+                                      @agree-at-k |
+                                        apply(compose(transposition(j, i), transposition(j, k)), k) = apply(compose(transposition(i, k), transposition(i, j)), k)
+                                        [using specialize rotationAgreesAtK(i, j, k) i-not-k j-not-k]
+                                      @conclusion-when-x-is-k |
+                                        apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                        [by rewrite x-is-k agree-at-k]
+                                    }
+                                  @when-x-is-elsewhere |
+                                    assume x != i and x != j and x != k {
+                                      @x-is-elsewhere |
+                                        x != i and x != j and x != k
+                                        [by hypothesis when-x-is-elsewhere]
+                                      @x-not-i |
+                                        x != i
+                                        [using tautology x-is-elsewhere]
+                                      @x-not-j |
+                                        x != j
+                                        [using tautology x-is-elsewhere]
+                                      @x-not-k |
+                                        x != k
+                                        [using tautology x-is-elsewhere]
+                                      @conclusion-when-x-is-elsewhere |
+                                        apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                                        [using specialize rotationAgreesElsewhere(i, j, k, x) x-not-i x-not-j x-not-k]
+                                    }
+                                }
+                            }
+                          @discharge-x |
+                            forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                            [by forall_intro generalize-x]
+                        }
+                      @conclusion-j-not-k |
+                        j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                        [by implies_intro given-j-not-k]
+                    }
+                  @conclusion-i-not-k |
+                    i != k -> j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                    [by implies_intro given-i-not-k]
+                }
+              @conclusion-i-not-j |
+                i != j -> i != k -> j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                [by implies_intro given-i-not-j]
+            }
+          @discharge-k |
+            forall k: Element; i != j -> i != k -> j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != j -> i != k -> j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != j -> i != k -> j != k -> forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+    [by forall_intro generalize-i]
+qed
+
+// (j,k,i) = (i,j,k) — a 3-cycle is the same permutation started at any of its points.
+theorem aThreeCycleIsInvariantUnderRotation: forall i, j, k: Element;
+  i != j -> i != k -> j != k ->
+  compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-k |
+                    assume i != k {
+                      @given-j-not-k |
+                        assume j != k {
+                          @i-not-j |
+                            i != j
+                            [by hypothesis given-i-not-j]
+                          @i-not-k |
+                            i != k
+                            [by hypothesis given-i-not-k]
+                          @j-not-k |
+                            j != k
+                            [by hypothesis given-j-not-k]
+                          @agree-everywhere |
+                            forall x: Element; apply(compose(transposition(j, i), transposition(j, k)), x) = apply(compose(transposition(i, k), transposition(i, j)), x)
+                            [using specialize theRotationAgreesEverywhere(i, j, k) i-not-j i-not-k j-not-k]
+                          @conclusion-equal |
+                            compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+                            [using specialize funcExtensionality(compose(transposition(j, i), transposition(j, k)), compose(transposition(i, k), transposition(i, j))) agree-everywhere]
+                        }
+                      @conclusion-j-not-k |
+                        j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+                        [by implies_intro given-j-not-k]
+                    }
+                  @conclusion-i-not-k |
+                    i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+                    [by implies_intro given-i-not-k]
+                }
+              @conclusion-i-not-j |
+                i != j -> i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+                [by implies_intro given-i-not-j]
+            }
+          @discharge-k |
+            forall k: Element; i != j -> i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+            [by forall_intro generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != j -> i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != j -> i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+    [by forall_intro generalize-i]
+qed
