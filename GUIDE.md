@@ -62,6 +62,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: iff_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
 | `TACTIC: instantiation` | monomorphize a schema (`using`) |
 | `RULE: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
+| `WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` | logical inputs are named; guard obligations are searched for |
 | `RULE: chain` | prove A = Z from equations used any direction + congruence |
 | `RULE: model` | transfer a theory's theorem through a named model |
 | `TACTIC: simplify` | equational rewriting to a common normal form (documents `simplify_quantified` inline) |
@@ -138,6 +139,18 @@ theory demonstrating exactly those axioms nothing else exercises. A fact a
 `model` names as a discharger (`src <- local`, a `@`-projection, a guard
 witness) counts as used — that is consumption by the model machinery rather
 than by a citation.
+
+**A proof must use every fact it introduces.** `check` rejects a step whose formula no
+later step and not the conclusion ever reaches — `unused fact: step 'x' is never used`.
+Dead steps are usually abandoned attempts, and the check keeps a proof's skeleton honest.
+Two exemptions, both principled: `--draft` suspends it (you are mid-construction), and it
+does not run on a proof containing an ADMITTED step (one whose `using` word was trusted
+under `--fast`). An admitted step builds no certificate, so the citations its proof would
+have carried are absent — including a guard obligation discharged from a step the author
+never names — and the check could only report false positives. Strict mode always runs
+it, and strict is the gate. Corollary, worth knowing before you delete anything: if plain
+`check` passes a file and `--fast` reports an unused fact, `--fast` is wrong and the step
+is load-bearing. See `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` under Automation.
 
 **When a run does something you cannot explain from the source**, `--trace-facts` reports
 which fact each citation actually resolved to, and in which namespace — the question a name
@@ -1366,6 +1379,49 @@ trust policy, **certificate first, accelerated fallback**:
 A failed tactic never marks anything accelerated: wrong goals produce located errors
 with copy-pasteable detail (unjoinable normal forms, propositional
 countermodels, concrete arithmetic counterexamples).
+
+### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS
+
+Two kinds of fact reach a tactic, and the distinction is a rule, not an accident:
+
+- **LOGICAL INPUTS are always named.** Whatever the inference *consumes* is written out,
+  as a plain list after the rule's own arguments:
+  `[using <tactic> <tactic_args>(…) input1 input2 …]`. These are the hypotheses
+  `specialize` modus-ponenses against the cited lemma's `->` chain, `chain`'s equations,
+  `simplify`'s rewrite rules, `tautology`'s premises, `arithmetic`'s linear facts. A
+  tactic never goes looking for them.
+
+- **GUARD OBLIGATIONS are found, not named.** Writing a term can *owe* a proposition: a
+  `requires` guard (`div(a, b)` owes `b != ZERO`), or a refined-sort qualifier at an
+  argument (applying `forall f: Perm` at a plain `Fn` owes `invertible(f)`, since
+  `sort Perm = Fn where invertible`). These are **well-formedness side conditions on a
+  term the author already wrote** — the proposition is fully determined by the term plus
+  the declaration, so the only open question is whether it is known here. The checker
+  searches what the proof has established in scope (`fix`-block guards, enclosing
+  `assume` hypotheses, proved steps) and discharges it; an undischargeable one is a
+  located `unproved obligation` error.
+
+So the list after a tactic is exactly its logical inputs, and the ordering of that list
+is always knowable from the mathematics rather than from the tactic's internals:
+`specialize`'s order is the cited lemma's antecedent order, `chain`'s is the order its
+equations must meet in, and for `tautology` / `simplify` / `arithmetic` the list is a
+SET where order carries no information at all.
+
+Why the line matters: a guard obligation does not appear in the cited lemma's `->` chain
+(it comes from a *binder's sort*), so it has no position in that list — a label there
+could not be told from the next hypothesis without knowing the tactic's own conventions.
+And requiring it to be named would mean spelling out, by hand, hypothesis restatements
+the checker can and must find anyway.
+
+**Consequence for `--fast`.** The search's result is recorded as a side effect of
+performing it. An admitted (`--fast`) step builds no certificate and never computes its
+obligations, so it contributes none of those records — which is why the use-all-facts
+lint ("a proof must use every fact it introduces") runs only on a proof where every step
+was actually proved. Under `--fast` it could report only false positives, and the
+standing invariant is that **`--fast` never reports an error strict does not**. Strict
+always runs the lint, and strict is the gate. If the two modes ever disagree on an
+`unused fact` error, `--fast` is the broken side — the step is load-bearing; do not
+delete it (see `agents/debug-guide.md`).
 
 ### TACTIC: simplify
 

@@ -185,6 +185,16 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
 - `ext` — extensionality reduction (sets/functions) → propositional residue.
 - `tautology refs…` — propositional consequence (decides iff goals; consumes iff/`and`/`or`/`->` hyps). Atom cap 16. **Every non-propositional subformula is an OPAQUE ATOM** — see the gotcha below.
 - `arithmetic refs…` — linear arithmetic over Nat (Presburger). `arithmetic(module)` / `fallback(thm)` variants. `fallback(thm)` cites a proven theorem for a decide-but-can't-certify goal; the goal may be `thm` VERBATIM or a SPECIALIZED INSTANCE (the matcher infers the ∀-witnesses and discharges `thm`'s `->` antecedents from the step's refs, emitting a kernel-checked forall_elim+mp chain).
+- **Inputs are NAMED; guard obligations are FOUND.** The list after a tactic is exactly
+  what the inference consumes — `[using <tactic> <args>(…) input1 input2 …]`: the hyps
+  `specialize` modus-ponenses (in the cited lemma's antecedent order), `chain`'s equations
+  (in the order they must meet), `simplify`'s rewrites / `tautology`'s premises /
+  `arithmetic`'s facts (a SET — order carries nothing). A tactic never searches for these.
+  What it DOES search for is a guard obligation a written term owes — a `requires` guard
+  (`div(a,b)` owes `b != ZERO`), or a refined-sort qualifier (applying `forall f: Perm` at a
+  plain `Fn` owes `invertible(f)`) — met from `fix`-block guards, enclosing `assume`
+  hypotheses, or proved steps in scope. Never name those; an undischargeable one is an
+  `unproved obligation` error. Detail: `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` in GUIDE.md.
 - Discipline: in `std/*.b4m` use accelerants freely (shortest kernel-checked proof). In `aata/*.md` do NOT accelerate a step Judson spells out — transcribe it; accelerants only for algebra the book elides. (See `.claude/rules/aata-guide.md`.)
 
 ## DEFINITION BLOCKS — a declaration may carry its defining clauses

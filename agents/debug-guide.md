@@ -172,7 +172,7 @@ for f in $(find std -name '*.b4m'); do
 done
 ```
 
-At the time of writing that found 6 of 98 files; all four causes below are now fixed.
+All four causes below are now fixed, and the sweep is clean across `std/` and `tests/cases/`.
 
 **FIXED — a `specialize` head that is a local step.** `specialize HEAD(args)` carries its head
 in the claim's `schema` slot, NOT `refs`, and the head may be a local step label. The admit path
@@ -202,10 +202,10 @@ check before resolving the head at all, so an admitted step contributes NO such 
 
 The guard is meant to be FOUND, not named. It is a well-formedness side condition on a term the
 author wrote, fully determined by the term plus the sort declaration; the only open question is
-"is it known in scope?", which is exactly `requireKnown`'s search. (A first fix, `guards(<step>)`
-syntax, was built and REVERTED: it made authors spell out hypothesis restatements the checker
-can and should find — and a flat-list variant was positionally ambiguous, since 22 of 43 sites
-carry both guards and hypothesis refs and some need two guards.)
+"is it known in scope?", which is exactly `requireKnown`'s search. Making the author name the
+discharger was tried and abandoned: the steps are typically hypothesis restatements the checker
+can and should find, and a guard cannot just join the input list — a step can owe several guards
+AND supply hypothesis refs, so one list cannot separate the two roles.
 
 So the fix is to the LINT, not the search: the use-all-facts check is a lint over a COMPLETE
 citation graph, and with an admitted step in the proof the graph is incomplete, so it can only
@@ -256,8 +256,8 @@ proof
 qed
 ```
 
-TRAP met while investigating: the 8 live instances (`dihedral.b4m` ×6, `decomposition.b4m`
-×1, `dihedral-orders.b4m` ×1) LOOKED like dead code, and removing one leaves the theorem count
+TRAP met while investigating: the live instances (in `dihedral.b4m`, `decomposition.b4m` and
+`dihedral-orders.b4m`) LOOKED like dead code, and removing one leaves the theorem count
 unchanged — because the guard obligation then finds ANOTHER discharger in scope. They are
 load-bearing. When `--fast` and strict disagree on an unused-fact error, `--fast` is the broken
 side; do not delete the step.
