@@ -17,7 +17,9 @@ import group_sequence <<< "std/group/sequence.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 
+sort Element = function.Element
 sort Fn = function.Fn
+func apply = function.apply
 sort Perm = permutation.Perm
 const identityFn = function.identityFn
 func compose = function.compose
@@ -698,4 +700,110 @@ proof
     forall t: Fn; invertible(t) -> forall w: Seq; forall m: Nat;
       exists v: Seq; forall j: Nat; less_than(j, m) -> at(v, j) = compose(t, at(w, j))
     [by forall_intro generalize-t]
+qed
+theorem aCompositeFixesWhatBothFactorsFix = permutation.aCompositeFixesWhatBothFactorsFix
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+axiom identityApply = function.identityApply
+
+// A PREFIX PRODUCT fixes whatever every one of its entries fixes — induction on the run
+// length over `aCompositeFixesWhatBothFactorsFix`. This is what turns "each earlier cycle
+// is disjoint from the last" into "the prefix product is disjoint from the last", which is
+// how `f = tau o c` gets its disjointness hypothesis in a decomposition argument.
+theorem aPrefixProductFixesWhatEveryEntryFixes: forall s: Seq; forall x: Element; forall m: Nat;
+  (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-x |
+        fix x: Element {
+          @empty-product |
+            productUpTo(s, ZERO) = identityFn
+            [using specialize productUpToZero(s)]
+          @identity-fixes |
+            apply(identityFn, x) = x
+            [using specialize identityApply(x)]
+          @base-at-zero |
+            apply(productUpTo(s, ZERO), x) = x
+            [by rewrite empty-product identity-fixes]
+          @base-case |
+            (forall i: Nat; less_than(i, ZERO) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, ZERO), x) = x
+            [using tautology base-at-zero]
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume (forall i: Nat; less_than(i, k) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, k), x) = x {
+                  @inductive-hypothesis |
+                    (forall i: Nat; less_than(i, k) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, k), x) = x
+                    [by hypothesis given-inductive-hypothesis]
+                  @given-all-fix |
+                    assume forall i: Nat; less_than(i, succ(k)) -> apply(at(s, i), x) = x {
+                      @all-fix |
+                        forall i: Nat; less_than(i, succ(k)) -> apply(at(s, i), x) = x
+                        [by hypothesis given-all-fix]
+                      @generalize-earlier |
+                        fix i: Nat {
+                          @given-i-below-k |
+                            assume less_than(i, k) {
+                              @i-below-k |
+                                less_than(i, k)
+                                [by hypothesis given-i-below-k]
+                              @i-below-succ-k |
+                                less_than(i, succ(k))
+                                [using specialize lessThanSuccRight(i, k) i-below-k]
+                              @conclusion-entry-fixes |
+                                apply(at(s, i), x) = x
+                                [using specialize all-fix(i) i-below-succ-k]
+                            }
+                          @conclusion-earlier |
+                            less_than(i, k) -> apply(at(s, i), x) = x
+                            [by implies_intro given-i-below-k]
+                        }
+                      @earlier-all-fix |
+                        forall i: Nat; less_than(i, k) -> apply(at(s, i), x) = x
+                        [by forall_intro generalize-earlier]
+                      @prefix-fixes |
+                        apply(productUpTo(s, k), x) = x
+                        [by modus_ponens inductive-hypothesis earlier-all-fix]
+                      @k-below-succ-k |
+                        less_than(k, succ(k))
+                        [using specialize lessThanSelf(k)]
+                      @entry-k-fixes |
+                        apply(at(s, k), x) = x
+                        [using specialize all-fix(k) k-below-succ-k]
+                      @run-splits |
+                        productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                        [using specialize productUpToSucc(s, k)]
+                      @composite-fixes |
+                        apply(compose(productUpTo(s, k), at(s, k)), x) = x
+                        [using specialize aCompositeFixesWhatBothFactorsFix(productUpTo(s, k), at(s, k), x) entry-k-fixes prefix-fixes]
+                      @conclusion-at-succ-k |
+                        apply(productUpTo(s, succ(k)), x) = x
+                        [by rewrite run-splits composite-fixes]
+                    }
+                  @conclusion-implication |
+                    (forall i: Nat; less_than(i, succ(k)) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, succ(k)), x) = x
+                    [by implies_intro given-all-fix]
+                }
+              @conclusion-step-at-k |
+                ((forall i: Nat; less_than(i, k) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, k), x) = x) ->
+                  ((forall i: Nat; less_than(i, succ(k)) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, succ(k)), x) = x)
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat;
+              ((forall i: Nat; less_than(i, k) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, k), x) = x) ->
+              ((forall i: Nat; less_than(i, succ(k)) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, succ(k)), x) = x)
+            [by forall_intro induction-step]
+          @conclusion-for-x |
+            forall m: Nat; (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x
+            [using instantiation induction((fun m: Nat => (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x)) base-case induction-step-for-all-k]
+        }
+      @discharge-x |
+        forall x: Element; forall m: Nat; (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x
+        [by forall_intro generalize-x]
+    }
+  @conclusion |
+    forall s: Seq; forall x: Element; forall m: Nat;
+      (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x
+    [by forall_intro generalize-s]
 qed

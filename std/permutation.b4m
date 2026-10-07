@@ -275,6 +275,120 @@ qed
 // both x and f(x) (f keeps x's image in its own support, away from g's), so both
 // composites give f(x); symmetrically if g moves x; and if neither moves x both give x.
 // This is Judson's "disjoint cycles commute" — cycles never enter, only supports.
+// A COMPOSITE fixes whatever BOTH factors fix — the contrapositive of "the support of a
+// product lies in the union of the supports", in the form proofs want. Propagates a
+// fixed-point fact along a product, which is how a prefix product inherits it.
+theorem aCompositeFixesWhatBothFactorsFix: forall g, f: Fn; forall x: Element;
+  apply(f, x) = x -> apply(g, x) = x -> apply(compose(g, f), x) = x
+proof
+  @generalize-g |
+    fix g: Fn {
+      @generalize-f |
+        fix f: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-f-fixes |
+                assume apply(f, x) = x {
+                  @given-g-fixes |
+                    assume apply(g, x) = x {
+                      @f-fixes |
+                        apply(f, x) = x
+                        [by hypothesis given-f-fixes]
+                      @g-fixes |
+                        apply(g, x) = x
+                        [by hypothesis given-g-fixes]
+                      @split |
+                        apply(compose(g, f), x) = apply(g, apply(f, x))
+                        [using simplify composeApply]
+                      @conclusion-fixes |
+                        apply(compose(g, f), x) = x
+                        [using simplify split f-fixes g-fixes]
+                    }
+                  @conclusion-g |
+                    apply(g, x) = x -> apply(compose(g, f), x) = x
+                    [by implies_intro given-g-fixes]
+                }
+              @conclusion-f |
+                apply(f, x) = x -> apply(g, x) = x -> apply(compose(g, f), x) = x
+                [by implies_intro given-f-fixes]
+            }
+          @discharge-x |
+            forall x: Element; apply(f, x) = x -> apply(g, x) = x -> apply(compose(g, f), x) = x
+            [by forall_intro generalize-x]
+        }
+      @discharge-f |
+        forall f: Fn; forall x: Element; apply(f, x) = x -> apply(g, x) = x -> apply(compose(g, f), x) = x
+        [by forall_intro generalize-f]
+    }
+  @conclusion |
+    forall g, f: Fn; forall x: Element;
+      apply(f, x) = x -> apply(g, x) = x -> apply(compose(g, f), x) = x
+    [by forall_intro generalize-g]
+qed
+
+// A DISJOINT factor fixes whatever the other one moves — the pointwise half of
+// disjointness, in the form a proof of a product usually wants: when reasoning about
+// `tau · c` with `tau` disjoint from the cycle `c`, this is what lets `tau` be dropped at
+// every point `c` touches. Immediate from `supportMember` (support IS the moved set) plus
+// `disjointSupportsPointwise`.
+// if tau is disjoint from f and f MOVES x, then tau FIXES x
+theorem aDisjointFactorFixesWhateverTheOtherMoves: forall f: Fn; forall t: Fn; forall x: Element;
+  disjointSupports(f, t) -> apply(f, x) != x -> apply(t, x) = x
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-t |
+        fix t: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-disjoint |
+                assume disjointSupports(f, t) {
+                  @given-f-moves-x |
+                    assume apply(f, x) != x {
+                      @disjoint |
+                        disjointSupports(f, t)
+                        [by hypothesis given-disjoint]
+                      @f-moves-x |
+                        apply(f, x) != x
+                        [by hypothesis given-f-moves-x]
+                      @x-in-support-of-f-iff |
+                        member(x, support(f)) iff apply(f, x) != x
+                        [using specialize supportMember(f, x)]
+                      @x-in-support-of-f |
+                        member(x, support(f))
+                        [using tautology x-in-support-of-f-iff f-moves-x]
+                      @not-in-support-of-t |
+                        not member(x, support(t))
+                        [using specialize disjointSupportsPointwise(f, t, x) disjoint x-in-support-of-f]
+                      @x-in-support-of-t-iff |
+                        member(x, support(t)) iff apply(t, x) != x
+                        [using specialize supportMember(t, x)]
+                      @conclusion-t-fixes-x |
+                        apply(t, x) = x
+                        [using tautology x-in-support-of-t-iff not-in-support-of-t]
+                    }
+                  @conclusion-moves |
+                    apply(f, x) != x -> apply(t, x) = x
+                    [by implies_intro given-f-moves-x]
+                }
+              @conclusion-disjoint |
+                disjointSupports(f, t) -> apply(f, x) != x -> apply(t, x) = x
+                [by implies_intro given-disjoint]
+            }
+          @discharge-x |
+            forall x: Element; disjointSupports(f, t) -> apply(f, x) != x -> apply(t, x) = x
+            [by forall_intro generalize-x]
+        }
+      @discharge-t |
+        forall t: Fn; forall x: Element; disjointSupports(f, t) -> apply(f, x) != x -> apply(t, x) = x
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall f: Fn; forall t: Fn; forall x: Element;
+      disjointSupports(f, t) -> apply(f, x) != x -> apply(t, x) = x
+    [by forall_intro generalize-f]
+qed
+
 theorem disjointPermutationsCommute: forall f: Perm; forall g: Perm;
   disjointSupports(f, g) -> compose(f, g) = compose(g, f)
 proof
