@@ -1236,6 +1236,34 @@ order. With NO hyps it is a bare specialization (just the ∀-elim chain). For a
 parameterized SCHEMA (a `prop`-parameter), use `instantiation` instead — `specialize`
 is for ordinary quantified theorems.
 
+**`guards(<step>, …)` — naming a guarded-sort discharger.** When the cited fact binds a
+REFINED sort (`forall f: Perm`, where `sort Perm = Fn where invertible`), applying it at
+an ordinary `Fn` owes that sort's qualifier at the argument — `invertible(f)`. That
+obligation does NOT appear in the fact's `->` chain, so it has no place among the
+trailing hyp refs; name the step that proves it in `guards(…)` instead, one per refined
+binder, in binder order:
+
+```2b4m
+axiom permFixesPoint: forall f: Perm; apply(f, point) = point
+
+@g-is-invertible |
+  invertible(g)
+  [by hypothesis given-invertible]
+@applied |
+  apply(g, point) = point
+  [using specialize permFixesPoint(g) guards(g-is-invertible)]
+```
+
+Naming it is PREFERRED over leaving it out. Omitted, the obligation is discharged from
+whatever the proof happens to know at that point — which works, but records the citation
+nowhere, so the step that met the obligation looks unused to anything that does not build
+the certificate (`--fast` reports it dead). With `guards(…)` the citation is in the proof
+text, where a reader and both checking modes can see it.
+
+The same slot works on any accelerant whose cited terms carry a guard (`simplify`,
+`chain`, `tautology`, `arithmetic`), and sits after the rule's own arguments, before the
+ordinary refs.
+
 ### RULE: chain
 
 `[using chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited

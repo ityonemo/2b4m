@@ -2182,7 +2182,7 @@ fn lowerInstantiate(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, 
     for (c.refs, premises) |r, *out| out.* = try self.resolveStepRef(w, r);
     // under a model transfer the instance may lead with injected guard premises (see
     // `withGuardPremises`) — discharge them here like the accelerant site does.
-    return self.withGuardPremises(kb, c.rule.start, instance, goal, premises);
+    return self.withGuardPremises(w, c, kb, c.rule.start, instance, goal, premises);
 }
 
 // -- model transfer --------------------------------------------------------------------
@@ -2398,7 +2398,7 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
             .blocked => return self.fail(c.rule.start, "internal: transferred schema instance not resolved before process (read-pass bug)", .{}),
         };
         const instance = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(inst).fact.formula);
-        return self.withGuardPremises(kb, c.rule.start, instance, goal, try self.ctx.arena.alloc(kernel.SRef, 0));
+        return self.withGuardPremises(null, c, kb, c.rule.start, instance, goal, try self.ctx.arena.alloc(kernel.SRef, 0));
     }
     return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
 }
@@ -2800,7 +2800,7 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: 
     // premises = the accelerant's own refs (the producer's premise order): the head-cite (if
     // the head is local) then the hyps, matching the synthetic body's antecedent order.
     const prems = try self.accelerantPremises(w, c);
-    return self.withGuardPremises(kb, c.rule.start, instance, goal, prems);
+    return self.withGuardPremises(w, c, kb, c.rule.start, instance, goal, prems);
 }
 
 /// The `schema_instance` justification for a proven instance, discharging its GUARD PREMISES.
@@ -2812,7 +2812,7 @@ fn lowerUsing(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId, goal: 
 /// each in the CALLER's context: the enclosing fix-block guard, or closure recursion for a
 /// composite (`emitDischargeStep`). Shared by the accelerant (`lowerUsing`) and the user
 /// `[using instantiation …]` (`lowerInstantiate`) sites.
-fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermId, goal: TermId, prems: []const kernel.SRef) Error!kernel.Justification {
+fn withGuardPremises(self: *Prove, w: ?*const Walk, c: ast.Step.Claim, kb: kernel.BlockId, loc: u32, instance: TermId, goal: TermId, prems: []const kernel.SRef) Error!kernel.Justification {
     var total: usize = 0;
     var walk_f = instance;
     while (!self.pool.alphaEq(walk_f, goal)) {
@@ -2828,12 +2828,22 @@ fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermI
         if (!self.pool.alphaEq(walk_f, goal))
             return self.fail(loc, "the claim does not match the instance's conclusion:\n  claim:      {s}\n  instance:   {s}", .{ try self.renderTerm(goal), try self.renderTerm(instance) });
         const k = total - prems.len;
+        if (c.guards.len > k) {
+            return self.fail(c.guards[k].start, "`guards(…)` names {d} step(s) but this step has {d} guard obligation(s)", .{ c.guards.len, k });
+        }
         const all = try self.ctx.arena.alloc(kernel.SRef, total);
         var gf = instance;
         for (0..k) |i| {
             const n = self.pool.get(gf);
-            all[i] = (try self.emitDischargeStep(kb, loc, n.bin.lhs)) orelse
-                return self.fail(loc, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(n.bin.lhs)});
+            // a NAMED discharger (`guards(step, …)`) is used in preference to searching what
+            // the proof happens to know: the author states which step meets the obligation, so
+            // the citation is in the AST — visible to the use-all-facts walk and to `--fast`,
+            // which builds no certificate and so performs no search.
+            all[i] = if (i < c.guards.len and w != null)
+                try self.resolveStepRef(w.?, c.guards[i])
+            else
+                (try self.emitDischargeStep(kb, loc, n.bin.lhs)) orelse
+                    return self.fail(loc, "cannot discharge the guard premise '{s}' at this call site — name the step that proves it with `guards(<step>)`", .{try self.renderTerm(n.bin.lhs)});
             gf = n.bin.rhs;
         }
         @memcpy(all[k..], prems);
@@ -8891,6 +8901,14 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
                 error.Recover => {},
             };
             for (c.refs) |r| self.seedLocalRoot(w, r) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Recover => {},
+            };
+            // `guards(step, …)` names the steps discharging this step's guarded-sort
+            // obligations. They are consumed by the certificate strict builds and this path
+            // does not — so without seeding them here they look dead, which is exactly the
+            // divergence the named slot exists to remove.
+            for (c.guards) |g| self.seedLocalRoot(w, g) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Recover => {},
             };
