@@ -389,6 +389,104 @@ proof
     [by forall_intro generalize-f]
 qed
 
+// The CONVERSE of `aDisjointFactorFixesWhateverTheOtherMoves`: pointwise disjointness
+// ESTABLISHES the set-level `disjointSupports`. The two theorems above CONSUME disjointness
+// (given the sets are disjoint, deduce what each factor does to a point); this one produces
+// it, which is what a construction needs — a decomposition argument knows pointwise that its
+// prefix product and its last cycle never move a common point, and owes the set-level fact
+// before it can cite any of the disjointness theory.
+//
+// `support` IS the moved set (`supportMember`), so each point's membership question reduces
+// propositionally; `set.extensionality` then closes `intersection(…) = emptyset` from the
+// two inclusions (the empty-set direction is vacuous via `emptysetMember`).
+theorem disjointSupportsFromPointwise: forall f, g: Fn;
+  (forall x: Element; apply(f, x) != x -> apply(g, x) = x) -> disjointSupports(f, g)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-pointwise |
+            assume forall x: Element; apply(f, x) != x -> apply(g, x) = x {
+              @pointwise |
+                forall x: Element; apply(f, x) != x -> apply(g, x) = x
+                [by hypothesis given-pointwise]
+              @generalize-x |
+                fix x: Element {
+                  @in-intersection-iff-x |
+                    member(x, intersection(support(f), support(g))) iff
+                      (member(x, support(f)) and member(x, support(g)))
+                    [using specialize intersectionMember(support(f), support(g), x)]
+                  @in-support-f-iff-x |
+                    member(x, support(f)) iff apply(f, x) != x
+                    [using specialize supportMember(f, x)]
+                  @in-support-g-iff-x |
+                    member(x, support(g)) iff apply(g, x) != x
+                    [using specialize supportMember(g, x)]
+                  @f-moves-implies-g-fixes-x |
+                    apply(f, x) != x -> apply(g, x) = x
+                    [using specialize pointwise(x)]
+                  @not-in-intersection-x |
+                    not member(x, intersection(support(f), support(g)))
+                    [using tautology in-intersection-iff-x in-support-f-iff-x in-support-g-iff-x f-moves-implies-g-fixes-x]
+                  @not-in-emptyset-x |
+                    not member(x, emptyset)
+                    [using specialize emptysetMember(x)]
+                  @conclusion-intersection-into-emptyset-at-x |
+                    member(x, intersection(support(f), support(g))) -> member(x, emptyset)
+                    [using tautology not-in-intersection-x not-in-emptyset-x]
+                }
+              @intersection-is-included |
+                forall x: Element;
+                  member(x, intersection(support(f), support(g))) -> member(x, emptyset)
+                [by forall_intro generalize-x]
+              @generalize-x2 |
+                fix x2: Element {
+                  @in-intersection-iff-x2 |
+                    member(x2, intersection(support(f), support(g))) iff
+                      (member(x2, support(f)) and member(x2, support(g)))
+                    [using specialize intersectionMember(support(f), support(g), x2)]
+                  @in-support-f-iff-x2 |
+                    member(x2, support(f)) iff apply(f, x2) != x2
+                    [using specialize supportMember(f, x2)]
+                  @in-support-g-iff-x2 |
+                    member(x2, support(g)) iff apply(g, x2) != x2
+                    [using specialize supportMember(g, x2)]
+                  @f-moves-implies-g-fixes-x2 |
+                    apply(f, x2) != x2 -> apply(g, x2) = x2
+                    [using specialize pointwise(x2)]
+                  @not-in-intersection-x2 |
+                    not member(x2, intersection(support(f), support(g)))
+                    [using tautology in-intersection-iff-x2 in-support-f-iff-x2 in-support-g-iff-x2 f-moves-implies-g-fixes-x2]
+                  @not-in-emptyset-x2 |
+                    not member(x2, emptyset)
+                    [using specialize emptysetMember(x2)]
+                  @conclusion-emptyset-into-intersection-at-x2 |
+                    member(x2, emptyset) -> member(x2, intersection(support(f), support(g)))
+                    [using tautology not-in-intersection-x2 not-in-emptyset-x2]
+                }
+              @emptyset-is-included |
+                forall x2: Element;
+                  member(x2, emptyset) -> member(x2, intersection(support(f), support(g)))
+                [by forall_intro generalize-x2]
+              @conclusion-disjoint |
+                disjointSupports(f, g)
+                [using specialize extensionality(intersection(support(f), support(g)), emptyset) intersection-is-included emptyset-is-included]
+            }
+          @conclusion-implication |
+            (forall x: Element; apply(f, x) != x -> apply(g, x) = x) -> disjointSupports(f, g)
+            [by implies_intro given-pointwise]
+        }
+      @discharge-g |
+        forall g: Fn; (forall x: Element; apply(f, x) != x -> apply(g, x) = x) -> disjointSupports(f, g)
+        [by forall_intro generalize-g]
+    }
+  @conclusion |
+    forall f, g: Fn;
+      (forall x: Element; apply(f, x) != x -> apply(g, x) = x) -> disjointSupports(f, g)
+    [by forall_intro generalize-f]
+qed
+
 theorem disjointPermutationsCommute: forall f: Perm; forall g: Perm;
   disjointSupports(f, g) -> compose(f, g) = compose(g, f)
 proof

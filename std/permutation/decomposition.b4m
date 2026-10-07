@@ -72,6 +72,8 @@ axiom productUpToZero = permutation_sequence.productUpToZero
 axiom seqSingleton = permutation_sequence.seqSingleton
 axiom seqPrepend = permutation_sequence.seqPrepend
 theorem productOfPrepend = permutation_sequence.productOfPrepend
+axiom productUpToSucc = permutation_sequence.productUpToSucc
+theorem aPrefixProductIsDisjointFromADisjointEntry = permutation_sequence.aPrefixProductIsDisjointFromADisjointEntry
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
@@ -83,6 +85,9 @@ theorem strongInduction = peano_order.strongInduction
 theorem notLessThanZero = peano_order.notLessThanZero
 theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
 theorem succReflectsOrder = peano_order.succReflectsOrder
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+theorem lessThanIrreflexive = peano_order.lessThanIrreflexive
 define hasSize(a, n) = set_finite.hasSize(a, n)
 define isFinite(a) = set_finite.isFinite(a)
 theorem sizedSetHasAMember = set_finite.sizedSetHasAMember
@@ -1638,5 +1643,428 @@ proof
     }
   @conclusion |
     forall f: Perm; isFinite(support(f)) -> decomposesIntoDisjointCycles(f)
+    [by forall_intro generalize-f]
+qed
+
+// THE PIVOT: a non-identity product of disjoint cycles peels its LAST cycle off. The run is
+// non-empty (an empty product is the identity), so m = succ(k); `productUpToSucc` splits the
+// product as `prefix o at(w, k)`, and `aPrefixProductIsDisjointFromADisjointEntry` turns the
+// pairwise disjointness of the entries into disjointness of the prefix from that last cycle.
+//
+// This is the induction handle every case analysis on a cycle decomposition needs: it converts
+// "f decomposes" into "f = tau o c with c a cycle and tau disjoint from c", where tau is itself
+// a shorter product of the same disjoint cycles — so the recursion is on the run length.
+theorem aNonIdentityDecompositionPeelsOffALastCycle: forall f: Fn;
+  decomposesIntoDisjointCycles(f) -> f != identityFn ->
+  exists w: Seq; exists k: Nat;
+  isACycle(at(w, k))
+  and subset(support(at(w, k)), support(f))
+  and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+  and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(f)))
+  and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+  and f = compose(productUpTo(w, k), at(w, k))
+  and disjointSupports(productUpTo(w, k), at(w, k))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-decomposes |
+        assume decomposesIntoDisjointCycles(f) {
+          @decomposes |
+            decomposesIntoDisjointCycles(f)
+            [by hypothesis given-decomposes]
+          @given-not-identity |
+            assume f != identityFn {
+              @not-identity |
+                f != identityFn
+                [by hypothesis given-not-identity]
+              @with-decomposition-w |
+                unpack w: Seq from decomposes {
+                  @inner-existential |
+                    exists m: Nat;
+                      (forall i: Nat; less_than(i, m) -> isACycle(at(w, i)))
+                      and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f)))
+                      and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                      and productUpTo(w, m) = f
+                    [by hypothesis with-decomposition-w]
+                  @with-run-length-m |
+                    unpack m: Nat from inner-existential {
+                      @decomposition-facts |
+                        (forall i: Nat; less_than(i, m) -> isACycle(at(w, i)))
+                          and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f)))
+                          and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                          and productUpTo(w, m) = f
+                        [by hypothesis with-run-length-m]
+                      @cycle-support-and-disjointness |
+                        (forall i: Nat; less_than(i, m) -> isACycle(at(w, i)))
+                          and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f)))
+                          and (forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                        [by and_elim_left decomposition-facts]
+                      @product-is-f |
+                        productUpTo(w, m) = f
+                        [by and_elim_right decomposition-facts]
+                      @cycles-and-supports |
+                        (forall i: Nat; less_than(i, m) -> isACycle(at(w, i)))
+                          and (forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f)))
+                        [by and_elim_left cycle-support-and-disjointness]
+                      @entries-are-pairwise-disjoint |
+                        forall i: Nat; forall j: Nat; less_than(i, m) -> less_than(j, m) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                        [by and_elim_right cycle-support-and-disjointness]
+                      @entries-are-cycles |
+                        forall i: Nat; less_than(i, m) -> isACycle(at(w, i))
+                        [by and_elim_left cycles-and-supports]
+                      @entries-are-supported |
+                        forall i: Nat; less_than(i, m) -> subset(support(at(w, i)), support(f))
+                        [by and_elim_right cycles-and-supports]
+
+                      // the run cannot be empty: an empty product is the identity, and f is not.
+                      @run-is-zero-or-successor |
+                        m = ZERO or (exists k: Nat; m = succ(k))
+                        [using specialize zeroOrSucc(m)]
+                      @conclusion-peeled |
+                        exists w2: Seq; exists k: Nat;
+                          isACycle(at(w2, k))
+                          and subset(support(at(w2, k)), support(f))
+                          and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                          and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                          and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                          and f = compose(productUpTo(w2, k), at(w2, k))
+                          and disjointSupports(productUpTo(w2, k), at(w2, k))
+                        case run-is-zero-or-successor {
+                          @when-the-run-is-empty |
+                            assume m = ZERO {
+                              @run-is-empty |
+                                m = ZERO
+                                [by hypothesis when-the-run-is-empty]
+                              @empty-product-is-the-identity |
+                                productUpTo(w, ZERO) = identityFn
+                                [using specialize productUpToZero(w)]
+                              @f-is-the-identity |
+                                f = identityFn
+                                [using chain product-is-f run-is-empty empty-product-is-the-identity]
+                              @conclusion-absurd-empty-run |
+                                exists w2: Seq; exists k: Nat;
+                                  isACycle(at(w2, k))
+                                  and subset(support(at(w2, k)), support(f))
+                                  and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                                  and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                                  and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                                  and f = compose(productUpTo(w2, k), at(w2, k))
+                                  and disjointSupports(productUpTo(w2, k), at(w2, k))
+                                [by absurd f-is-the-identity not-identity]
+                            }
+                          @when-the-run-is-nonempty |
+                            assume exists q: Nat; m = succ(q) {
+                              @nonempty-run |
+                                exists q: Nat; m = succ(q)
+                                [by hypothesis when-the-run-is-nonempty]
+                              @with-predecessor-q |
+                                unpack q: Nat from nonempty-run {
+                                  @run-is-a-successor |
+                                    m = succ(q)
+                                    [by hypothesis with-predecessor-q]
+
+                                  // the last entry's own facts: q < succ(q) = m.
+                                  @q-below-successor-of-q |
+                                    less_than(q, succ(q))
+                                    [using specialize lessThanSelf(q)]
+                                  @q-below-m |
+                                    less_than(q, m)
+                                    [by rewrite run-is-a-successor q-below-successor-of-q]
+                                  @last-entry-is-a-cycle |
+                                    isACycle(at(w, q))
+                                    [using specialize entries-are-cycles(q) q-below-m]
+                                  @last-entry-is-supported |
+                                    subset(support(at(w, q)), support(f))
+                                    [using specialize entries-are-supported(q) q-below-m]
+
+                                  // the restricted entry facts, split back out of the conjunction proved above.
+                                  @generalize-i-for-cycles-below-q |
+                                    fix i: Nat {
+                                      @given-i-below-q-for-cycles |
+                                        assume less_than(i, q) {
+                                          @i-below-q-for-cycles |
+                                            less_than(i, q)
+                                            [by hypothesis given-i-below-q-for-cycles]
+                                          @i-below-successor-for-cycles |
+                                            less_than(i, succ(q))
+                                            [using specialize lessThanSuccRight(i, q) i-below-q-for-cycles]
+                                          @i-below-m-for-cycles |
+                                            less_than(i, m)
+                                            [by rewrite run-is-a-successor i-below-successor-for-cycles]
+                                          @conclusion-entry-i-is-a-cycle |
+                                            isACycle(at(w, i))
+                                            [using specialize entries-are-cycles(i) i-below-m-for-cycles]
+                                        }
+                                      @conclusion-i-below-q-is-a-cycle |
+                                        less_than(i, q) -> isACycle(at(w, i))
+                                        [by implies_intro given-i-below-q-for-cycles]
+                                    }
+                                  @entries-below-q-are-cycles |
+                                    forall i: Nat; less_than(i, q) -> isACycle(at(w, i))
+                                    [by forall_intro generalize-i-for-cycles-below-q]
+                                  @generalize-i-for-supports-below-q |
+                                    fix i: Nat {
+                                      @given-i-below-q-for-supports |
+                                        assume less_than(i, q) {
+                                          @i-below-q-for-supports |
+                                            less_than(i, q)
+                                            [by hypothesis given-i-below-q-for-supports]
+                                          @i-below-successor-for-supports |
+                                            less_than(i, succ(q))
+                                            [using specialize lessThanSuccRight(i, q) i-below-q-for-supports]
+                                          @i-below-m-for-supports |
+                                            less_than(i, m)
+                                            [by rewrite run-is-a-successor i-below-successor-for-supports]
+                                          @conclusion-entry-i-is-supported |
+                                            subset(support(at(w, i)), support(f))
+                                            [using specialize entries-are-supported(i) i-below-m-for-supports]
+                                        }
+                                      @conclusion-i-below-q-is-supported |
+                                        less_than(i, q) -> subset(support(at(w, i)), support(f))
+                                        [by implies_intro given-i-below-q-for-supports]
+                                    }
+                                  @entries-below-q-are-supported |
+                                    forall i: Nat; less_than(i, q) -> subset(support(at(w, i)), support(f))
+                                    [by forall_intro generalize-i-for-supports-below-q]
+
+                                  // pairwise disjointness restricts to the prefix, since every index below q is below m.
+                                  @generalize-i-for-disjointness |
+                                    fix i: Nat {
+                                      @generalize-j-for-disjointness |
+                                        fix j: Nat {
+                                          @given-i-below-q-disjoint |
+                                            assume less_than(i, q) {
+                                              @i-below-q-disjoint |
+                                                less_than(i, q)
+                                                [by hypothesis given-i-below-q-disjoint]
+                                              @given-j-below-q-disjoint |
+                                                assume less_than(j, q) {
+                                                  @j-below-q-disjoint |
+                                                    less_than(j, q)
+                                                    [by hypothesis given-j-below-q-disjoint]
+                                                  @given-i-differs-from-j |
+                                                    assume i != j {
+                                                      @i-differs-from-j |
+                                                        i != j
+                                                        [by hypothesis given-i-differs-from-j]
+                                                      @i-below-successor-for-disjointness |
+                                                        less_than(i, succ(q))
+                                                        [using specialize lessThanSuccRight(i, q) i-below-q-disjoint]
+                                                      @i-below-m-for-disjointness |
+                                                        less_than(i, m)
+                                                        [by rewrite run-is-a-successor i-below-successor-for-disjointness]
+                                                      @j-below-successor-for-disjointness |
+                                                        less_than(j, succ(q))
+                                                        [using specialize lessThanSuccRight(j, q) j-below-q-disjoint]
+                                                      @j-below-m-for-disjointness |
+                                                        less_than(j, m)
+                                                        [by rewrite run-is-a-successor j-below-successor-for-disjointness]
+                                                      @conclusion-entries-i-j-disjoint |
+                                                        disjointSupports(at(w, i), at(w, j))
+                                                        [using specialize entries-are-pairwise-disjoint(i, j) i-below-m-for-disjointness j-below-m-for-disjointness i-differs-from-j]
+                                                    }
+                                                  @conclusion-i-differs-gives-disjoint |
+                                                    i != j -> disjointSupports(at(w, i), at(w, j))
+                                                    [by implies_intro given-i-differs-from-j]
+                                                }
+                                              @conclusion-j-below-q-gives-disjoint |
+                                                less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                                [by implies_intro given-j-below-q-disjoint]
+                                            }
+                                          @conclusion-i-below-q-gives-disjoint |
+                                            less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                            [by implies_intro given-i-below-q-disjoint]
+                                        }
+                                      @discharge-j-for-disjointness |
+                                        forall j: Nat; less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                        [by forall_intro generalize-j-for-disjointness]
+                                    }
+                                  @entries-below-q-are-pairwise-disjoint |
+                                    forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j))
+                                    [by forall_intro generalize-i-for-disjointness]
+
+                                  // the split itself, and the disjointness of the prefix from the peeled cycle.
+                                  @product-splits-at-q |
+                                    productUpTo(w, succ(q)) = compose(productUpTo(w, q), at(w, q))
+                                    [using specialize productUpToSucc(w, q)]
+                                  @f-splits-at-q |
+                                    f = compose(productUpTo(w, q), at(w, q))
+                                    [using chain product-is-f run-is-a-successor product-splits-at-q]
+                                  @generalize-i-against-the-last |
+                                    fix i: Nat {
+                                      @given-i-below-q-against-the-last |
+                                        assume less_than(i, q) {
+                                          @i-below-q-against-the-last |
+                                            less_than(i, q)
+                                            [by hypothesis given-i-below-q-against-the-last]
+                                          @i-below-successor-against-the-last |
+                                            less_than(i, succ(q))
+                                            [using specialize lessThanSuccRight(i, q) i-below-q-against-the-last]
+                                          @i-below-m-against-the-last |
+                                            less_than(i, m)
+                                            [by rewrite run-is-a-successor i-below-successor-against-the-last]
+                                          // i != q: were they equal, q would be less than itself.
+                                          @q-is-not-below-itself |
+                                            not less_than(q, q)
+                                            [using specialize lessThanIrreflexive(q)]
+                                          @given-i-equals-q |
+                                            assume i = q {
+                                              @i-equals-q |
+                                                i = q
+                                                [by hypothesis given-i-equals-q]
+                                              @conclusion-q-below-itself |
+                                                less_than(q, q)
+                                                [by rewrite i-equals-q i-below-q-against-the-last]
+                                            }
+                                          @i-equals-q-gives-q-below-itself |
+                                            i = q -> less_than(q, q)
+                                            [by implies_intro given-i-equals-q]
+                                          @i-differs-from-q |
+                                            i != q
+                                            [using tautology i-equals-q-gives-q-below-itself q-is-not-below-itself]
+                                          @conclusion-entry-i-disjoint-from-the-last |
+                                            disjointSupports(at(w, i), at(w, q))
+                                            [using specialize entries-are-pairwise-disjoint(i, q) i-below-m-against-the-last q-below-m i-differs-from-q]
+                                        }
+                                      @conclusion-i-below-q-disjoint-from-the-last |
+                                        less_than(i, q) -> disjointSupports(at(w, i), at(w, q))
+                                        [by implies_intro given-i-below-q-against-the-last]
+                                    }
+                                  @every-prefix-entry-is-disjoint-from-the-last |
+                                    forall i: Nat; less_than(i, q) -> disjointSupports(at(w, i), at(w, q))
+                                    [by forall_intro generalize-i-against-the-last]
+                                  @prefix-is-disjoint-from-the-last |
+                                    disjointSupports(productUpTo(w, q), at(w, q))
+                                    [using specialize aPrefixProductIsDisjointFromADisjointEntry(w, at(w, q), q) every-prefix-entry-is-disjoint-from-the-last]
+
+                                  // assemble the seven conjuncts and witness w2 := w, k := q.
+                                  @the-last-cycle-is-supported |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                    [by and_intro last-entry-is-a-cycle last-entry-is-supported]
+                                  @the-last-cycle-over-the-cycle-prefix |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                      and (forall i: Nat; less_than(i, q) -> isACycle(at(w, i)))
+                                    [by and_intro the-last-cycle-is-supported entries-below-q-are-cycles]
+                                  @the-last-cycle-over-the-supported-prefix |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                      and (forall i: Nat; less_than(i, q) -> isACycle(at(w, i)))
+                                      and (forall i: Nat; less_than(i, q) -> subset(support(at(w, i)), support(f)))
+                                    [by and_intro the-last-cycle-over-the-cycle-prefix entries-below-q-are-supported]
+                                  @the-last-cycle-over-the-disjoint-prefix |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                      and (forall i: Nat; less_than(i, q) -> isACycle(at(w, i)))
+                                      and (forall i: Nat; less_than(i, q) -> subset(support(at(w, i)), support(f)))
+                                      and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                                    [by and_intro the-last-cycle-over-the-supported-prefix entries-below-q-are-pairwise-disjoint]
+                                  @the-decomposition-with-the-split |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                      and (forall i: Nat; less_than(i, q) -> isACycle(at(w, i)))
+                                      and (forall i: Nat; less_than(i, q) -> subset(support(at(w, i)), support(f)))
+                                      and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                                      and (f = compose(productUpTo(w, q), at(w, q)))
+                                    [by and_intro the-last-cycle-over-the-disjoint-prefix f-splits-at-q]
+                                  @peeled-facts |
+                                    (isACycle(at(w, q)))
+                                      and (subset(support(at(w, q)), support(f)))
+                                      and (forall i: Nat; less_than(i, q) -> isACycle(at(w, i)))
+                                      and (forall i: Nat; less_than(i, q) -> subset(support(at(w, i)), support(f)))
+                                      and (forall i: Nat; forall j: Nat; less_than(i, q) -> less_than(j, q) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                                      and (f = compose(productUpTo(w, q), at(w, q)))
+                                      and (disjointSupports(productUpTo(w, q), at(w, q)))
+                                    [by and_intro the-decomposition-with-the-split prefix-is-disjoint-from-the-last]
+                                  @peeled-at-q |
+                                    exists k: Nat;
+                                      isACycle(at(w, k))
+                                      and subset(support(at(w, k)), support(f))
+                                      and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+                                      and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(f)))
+                                      and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                                      and f = compose(productUpTo(w, k), at(w, k))
+                                      and disjointSupports(productUpTo(w, k), at(w, k))
+                                    [by exists_intro(q) peeled-facts]
+                                  @conclusion-peeled-at-q |
+                                    exists w2: Seq; exists k: Nat;
+                                      isACycle(at(w2, k))
+                                      and subset(support(at(w2, k)), support(f))
+                                      and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                                      and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                                      and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                                      and f = compose(productUpTo(w2, k), at(w2, k))
+                                      and disjointSupports(productUpTo(w2, k), at(w2, k))
+                                    [by exists_intro(w) peeled-at-q]
+                                }
+                              @conclusion-peeled-nonempty |
+                                exists w2: Seq; exists k: Nat;
+                                  isACycle(at(w2, k))
+                                  and subset(support(at(w2, k)), support(f))
+                                  and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                                  and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                                  and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                                  and f = compose(productUpTo(w2, k), at(w2, k))
+                                  and disjointSupports(productUpTo(w2, k), at(w2, k))
+                                [by exists_elim with-predecessor-q]
+                            }
+                        }
+                    }
+                  @conclusion-from-w |
+                    exists w2: Seq; exists k: Nat;
+                      isACycle(at(w2, k))
+                      and subset(support(at(w2, k)), support(f))
+                      and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                      and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                      and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                      and f = compose(productUpTo(w2, k), at(w2, k))
+                      and disjointSupports(productUpTo(w2, k), at(w2, k))
+                    [by exists_elim with-run-length-m]
+                }
+              @conclusion-exists |
+                exists w2: Seq; exists k: Nat;
+                  isACycle(at(w2, k))
+                  and subset(support(at(w2, k)), support(f))
+                  and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+                  and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+                  and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+                  and f = compose(productUpTo(w2, k), at(w2, k))
+                  and disjointSupports(productUpTo(w2, k), at(w2, k))
+                [by exists_elim with-decomposition-w]
+            }
+          @conclusion-not-identity-implies |
+            f != identityFn -> (exists w2: Seq; exists k: Nat;
+              isACycle(at(w2, k))
+              and subset(support(at(w2, k)), support(f))
+              and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+              and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+              and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+              and f = compose(productUpTo(w2, k), at(w2, k))
+              and disjointSupports(productUpTo(w2, k), at(w2, k)))
+            [by implies_intro given-not-identity]
+        }
+      @conclusion-for-f |
+        decomposesIntoDisjointCycles(f) -> f != identityFn -> (exists w2: Seq; exists k: Nat;
+          isACycle(at(w2, k))
+          and subset(support(at(w2, k)), support(f))
+          and (forall i: Nat; less_than(i, k) -> isACycle(at(w2, i)))
+          and (forall i: Nat; less_than(i, k) -> subset(support(at(w2, i)), support(f)))
+          and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w2, i), at(w2, j)))
+          and f = compose(productUpTo(w2, k), at(w2, k))
+          and disjointSupports(productUpTo(w2, k), at(w2, k)))
+        [by implies_intro given-decomposes]
+    }
+  @conclusion |
+    forall f: Fn;
+      decomposesIntoDisjointCycles(f) -> f != identityFn ->
+      exists w: Seq; exists k: Nat;
+      isACycle(at(w, k))
+      and subset(support(at(w, k)), support(f))
+      and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+      and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(f)))
+      and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+      and f = compose(productUpTo(w, k), at(w, k))
+      and disjointSupports(productUpTo(w, k), at(w, k))
     [by forall_intro generalize-f]
 qed

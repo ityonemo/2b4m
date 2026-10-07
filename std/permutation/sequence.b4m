@@ -702,6 +702,10 @@ proof
     [by forall_intro generalize-t]
 qed
 theorem aCompositeFixesWhatBothFactorsFix = permutation.aCompositeFixesWhatBothFactorsFix
+define disjointSupports(f, g) = permutation.disjointSupports(f, g)
+theorem disjointSupportsFromPointwise = permutation.disjointSupportsFromPointwise
+theorem aDisjointFactorFixesWhateverTheOtherMoves = permutation.aDisjointFactorFixesWhateverTheOtherMoves
+axiom composeApply = function.composeApply
 theorem lessThanSuccRight = peano_order.lessThanSuccRight
 axiom identityApply = function.identityApply
 
@@ -764,12 +768,12 @@ proof
                       @prefix-fixes |
                         apply(productUpTo(s, k), x) = x
                         [by modus_ponens inductive-hypothesis earlier-all-fix]
-                      @k-below-succ-k |
+                      @the-last-index-is-in-range |
                         less_than(k, succ(k))
                         [using specialize lessThanSelf(k)]
                       @entry-k-fixes |
                         apply(at(s, k), x) = x
-                        [using specialize all-fix(k) k-below-succ-k]
+                        [using specialize all-fix(k) the-last-index-is-in-range]
                       @run-splits |
                         productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
                         [using specialize productUpToSucc(s, k)]
@@ -805,5 +809,236 @@ proof
   @conclusion |
     forall s: Seq; forall x: Element; forall m: Nat;
       (forall i: Nat; less_than(i, m) -> apply(at(s, i), x) = x) -> apply(productUpTo(s, m), x) = x
+    [by forall_intro generalize-s]
+qed
+
+// -- a prefix product inherits its entries' disjointness ------------------------------------
+//
+// The companion to `aPrefixProductFixesWhatEveryEntryFixes` above: that lemma says the prefix
+// product fixes what EVERY entry fixes; these say it is DISJOINT from whatever every entry is
+// disjoint from. Together they are what lets a decomposition argument peel the last cycle off
+// a product — `f = productUpTo(w, k) o at(w, k)` with the two factors disjoint — which is the
+// hypothesis every disjointness theorem in std/permutation.b4m wants.
+
+// POINTWISE form, by induction on the run length: if every entry below m is disjoint from t,
+// then wherever the prefix product moves a point, t fixes it.
+theorem aPrefixProductIsPointwiseDisjointFromADisjointEntry:
+  forall s: Seq; forall t: Fn; forall m: Nat;
+  (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+  (forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-t |
+        fix t: Fn {
+          // base case: the empty product is the identity, which moves nothing.
+          @base-case-proof |
+            assume forall i: Nat; less_than(i, ZERO) -> disjointSupports(at(s, i), t) {
+              @generalize-x-base |
+                fix x: Element {
+                  @empty-product |
+                    productUpTo(s, ZERO) = identityFn
+                    [using specialize productUpToZero(s)]
+                  @identity-fixes-x |
+                    apply(identityFn, x) = x
+                    [using specialize identityApply(x)]
+                  @empty-product-fixes-x |
+                    apply(productUpTo(s, ZERO), x) = x
+                    [using chain empty-product identity-fixes-x]
+                  @conclusion-vacuous-at-x |
+                    apply(productUpTo(s, ZERO), x) != x -> apply(t, x) = x
+                    [using tautology empty-product-fixes-x]
+                }
+              @conclusion-base |
+                forall x: Element; apply(productUpTo(s, ZERO), x) != x -> apply(t, x) = x
+                [by forall_intro generalize-x-base]
+            }
+          @base-case |
+            (forall i: Nat; less_than(i, ZERO) -> disjointSupports(at(s, i), t)) ->
+              (forall x: Element; apply(productUpTo(s, ZERO), x) != x -> apply(t, x) = x)
+            [by implies_intro base-case-proof]
+
+          // inductive step: productUpTo(s, succ(k)) = prefix o at(s, k). A point the composite
+          // moves is moved by at least one of the two factors, and each is disjoint from t.
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume (forall i: Nat; less_than(i, k) -> disjointSupports(at(s, i), t)) ->
+                  (forall x: Element; apply(productUpTo(s, k), x) != x -> apply(t, x) = x) {
+                  @inductive-hypothesis |
+                    (forall i: Nat; less_than(i, k) -> disjointSupports(at(s, i), t)) ->
+                      (forall x: Element; apply(productUpTo(s, k), x) != x -> apply(t, x) = x)
+                    [by hypothesis given-inductive-hypothesis]
+                  @given-entries-below-succ-k |
+                    assume forall i: Nat; less_than(i, succ(k)) -> disjointSupports(at(s, i), t) {
+                      @entries-below-succ-k |
+                        forall i: Nat; less_than(i, succ(k)) -> disjointSupports(at(s, i), t)
+                        [by hypothesis given-entries-below-succ-k]
+                      @generalize-i-for-the-shorter-run |
+                        fix i: Nat {
+                          @given-i-below-k |
+                            assume less_than(i, k) {
+                              @i-below-k |
+                                less_than(i, k)
+                                [by hypothesis given-i-below-k]
+                              @i-below-succ-k |
+                                less_than(i, succ(k))
+                                [using specialize lessThanSuccRight(i, k) i-below-k]
+                              @conclusion-entry-i-disjoint |
+                                disjointSupports(at(s, i), t)
+                                [using specialize entries-below-succ-k(i) i-below-succ-k]
+                            }
+                          @conclusion-i-below-k-implies-disjoint |
+                            less_than(i, k) -> disjointSupports(at(s, i), t)
+                            [by implies_intro given-i-below-k]
+                        }
+                      @entries-below-k |
+                        forall i: Nat; less_than(i, k) -> disjointSupports(at(s, i), t)
+                        [by forall_intro generalize-i-for-the-shorter-run]
+                      @prefix-pointwise |
+                        forall x: Element; apply(productUpTo(s, k), x) != x -> apply(t, x) = x
+                        [by modus_ponens inductive-hypothesis entries-below-k]
+                      @the-last-index-is-in-range |
+                        less_than(k, succ(k))
+                        [using specialize lessThanSelf(k)]
+                      @last-entry-disjoint |
+                        disjointSupports(at(s, k), t)
+                        [using specialize entries-below-succ-k(k) the-last-index-is-in-range]
+                      @generalize-x-step |
+                        fix x: Element {
+                          @given-composite-moves-x |
+                            assume apply(productUpTo(s, succ(k)), x) != x {
+                              @composite-moves-x |
+                                apply(productUpTo(s, succ(k)), x) != x
+                                [by hypothesis given-composite-moves-x]
+                              @split-the-product |
+                                productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                                [using specialize productUpToSucc(s, k)]
+                              @composite-applies |
+                                apply(productUpTo(s, succ(k)), x) =
+                                  apply(productUpTo(s, k), apply(at(s, k), x))
+                                [using simplify split-the-product composeApply]
+                              // if the last entry moves x, t fixes x directly by disjointness;
+                              // otherwise the prefix must move x, and the hypothesis applies.
+                              @last-entry-moves-x-gives-t-fixes-x |
+                                apply(at(s, k), x) != x -> apply(t, x) = x
+                                [using specialize aDisjointFactorFixesWhateverTheOtherMoves(at(s, k), t, x) last-entry-disjoint]
+                              @prefix-moves-x-gives-t-fixes-x |
+                                apply(productUpTo(s, k), x) != x -> apply(t, x) = x
+                                [using specialize prefix-pointwise(x)]
+                              @given-last-entry-fixes-x |
+                                assume apply(at(s, k), x) = x {
+                                  @last-entry-fixes-x |
+                                    apply(at(s, k), x) = x
+                                    [by hypothesis given-last-entry-fixes-x]
+                                  @prefix-at-x-is-the-composite |
+                                    apply(productUpTo(s, succ(k)), x) = apply(productUpTo(s, k), x)
+                                    [using chain composite-applies last-entry-fixes-x]
+                                  @prefix-moves-x |
+                                    apply(productUpTo(s, k), x) != x
+                                    [by rewrite prefix-at-x-is-the-composite composite-moves-x]
+                                  @conclusion-t-fixes-x-when-last-fixes |
+                                    apply(t, x) = x
+                                    [by modus_ponens prefix-moves-x-gives-t-fixes-x prefix-moves-x]
+                                }
+                              @last-entry-fixes-x-gives-t-fixes-x |
+                                apply(at(s, k), x) = x -> apply(t, x) = x
+                                [by implies_intro given-last-entry-fixes-x]
+                              @conclusion-t-fixes-x |
+                                apply(t, x) = x
+                                [using tautology last-entry-moves-x-gives-t-fixes-x last-entry-fixes-x-gives-t-fixes-x]
+                            }
+                          @conclusion-composite-moves-x-implies-t-fixes-x |
+                            apply(productUpTo(s, succ(k)), x) != x -> apply(t, x) = x
+                            [by implies_intro given-composite-moves-x]
+                        }
+                      @conclusion-pointwise-at-succ-k |
+                        forall x: Element; apply(productUpTo(s, succ(k)), x) != x -> apply(t, x) = x
+                        [by forall_intro generalize-x-step]
+                    }
+                  @conclusion-implication-at-succ-k |
+                    (forall i: Nat; less_than(i, succ(k)) -> disjointSupports(at(s, i), t)) ->
+                      (forall x: Element; apply(productUpTo(s, succ(k)), x) != x -> apply(t, x) = x)
+                    [by implies_intro given-entries-below-succ-k]
+                }
+              @conclusion-induction-step-at-k |
+                ((forall i: Nat; less_than(i, k) -> disjointSupports(at(s, i), t)) ->
+                  (forall x: Element; apply(productUpTo(s, k), x) != x -> apply(t, x) = x)) ->
+                  ((forall i: Nat; less_than(i, succ(k)) -> disjointSupports(at(s, i), t)) ->
+                  (forall x: Element; apply(productUpTo(s, succ(k)), x) != x -> apply(t, x) = x))
+                [by implies_intro given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat;
+              ((forall i: Nat; less_than(i, k) -> disjointSupports(at(s, i), t)) ->
+              (forall x: Element; apply(productUpTo(s, k), x) != x -> apply(t, x) = x)) ->
+              ((forall i: Nat; less_than(i, succ(k)) -> disjointSupports(at(s, i), t)) ->
+              (forall x: Element; apply(productUpTo(s, succ(k)), x) != x -> apply(t, x) = x))
+            [by forall_intro induction-step]
+          @conclusion-for-t |
+            forall m: Nat;
+              (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+              (forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x)
+            [using instantiation induction((fun m: Nat => (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) -> (forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x))) base-case induction-step-for-all-k]
+        }
+      @discharge-t |
+        forall t: Fn; forall m: Nat;
+          (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+          (forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s: Seq; forall t: Fn; forall m: Nat;
+      (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+      (forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x)
+    [by forall_intro generalize-s]
+qed
+
+// SET-LEVEL: the prefix product's support is disjoint from the entry's. The pointwise form
+// above plus `disjointSupportsFromPointwise`.
+theorem aPrefixProductIsDisjointFromADisjointEntry:
+  forall s: Seq; forall t: Fn; forall m: Nat;
+  (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+  disjointSupports(productUpTo(s, m), t)
+proof
+  @generalize-s |
+    fix s: Seq {
+      @generalize-t |
+        fix t: Fn {
+          @generalize-m |
+            fix m: Nat {
+              @given-entries-disjoint |
+                assume forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t) {
+                  @entries-disjoint |
+                    forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)
+                    [by hypothesis given-entries-disjoint]
+                  @pointwise-disjoint |
+                    forall x: Element; apply(productUpTo(s, m), x) != x -> apply(t, x) = x
+                    [using specialize aPrefixProductIsPointwiseDisjointFromADisjointEntry(s, t, m) entries-disjoint]
+                  @conclusion-disjoint |
+                    disjointSupports(productUpTo(s, m), t)
+                    [using specialize disjointSupportsFromPointwise(productUpTo(s, m), t) pointwise-disjoint]
+                }
+              @conclusion-implication-at-m |
+                (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+                  disjointSupports(productUpTo(s, m), t)
+                [by implies_intro given-entries-disjoint]
+            }
+          @discharge-m |
+            forall m: Nat;
+              (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+              disjointSupports(productUpTo(s, m), t)
+            [by forall_intro generalize-m]
+        }
+      @discharge-t |
+        forall t: Fn; forall m: Nat;
+          (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+          disjointSupports(productUpTo(s, m), t)
+        [by forall_intro generalize-t]
+    }
+  @conclusion |
+    forall s: Seq; forall t: Fn; forall m: Nat;
+      (forall i: Nat; less_than(i, m) -> disjointSupports(at(s, i), t)) ->
+      disjointSupports(productUpTo(s, m), t)
     [by forall_intro generalize-s]
 qed
