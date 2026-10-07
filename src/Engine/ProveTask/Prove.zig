@@ -433,6 +433,54 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
 /// Elaborate a target fact's STATEMENT (its stated formula, relativized under `model`) into a
 /// caller-provided scratch `pool`, PUBLISHING NOTHING and CLAIMING NO FactKV key. This is the
 /// pure "statement elaborator" the trusted `--fast` admission uses to obtain the citation's
+/// Walk `(file, name)` to the ORIGIN that actually STATES the fact, following re-export
+/// aliases (`theorem sqrtOne = sqrt_theory.sqrtOne` has no formula of its own — identity is by
+/// ORIGIN). Each hop's file is PARSE-demanded, so the caller may suspend. Stops at a local
+/// fact, at a name it cannot resolve (the caller's own `declOf` reports that cleanly), or
+/// after 16 hops (a cycle is diagnosed elsewhere; do not spin).
+///
+/// Both the read pass and `process` call this, so a trusted citation's whole chain is parsed
+/// before the α-match runs — the invariant being that `--fast` must never report an error
+/// strict does not, and strict reaches the origin via `ProveTask.factAlias`.
+fn factOrigin(
+    self: *Context,
+    h: *Engine.Handle,
+    file: *InternPool.Index,
+    name: *StrId,
+) Allocator.Error!enum { ready, suspended } {
+    var hops: u8 = 0;
+    while (hops < 16) : (hops += 1) {
+        switch (try self.demandParse(h, file.*)) {
+            .parsed => {},
+            .parsing => |t| {
+                h.suspendOn(t);
+                return .suspended;
+            },
+            .unparsed => return .ready, // undiscovered — the caller diagnoses
+        }
+        const f = self.fileOf(file.*) orelse return .ready;
+        const d = self.declOf(f, name.*) orelse return .ready;
+        const alias = ast.aliasOf(d) orelse return .ready; // a local fact: the origin
+        // `ns.thm` hops to ns's file; a bare `thm` re-exports within this file.
+        if (alias.target.qualifier != InternPool.Index.none) {
+            const self_ns = try self.interner.namespace(.universe, file.*);
+            const state = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = alias.target.qualifier }) orelse return .ready;
+            const ix = switch (state) {
+                .done => |ix| ix,
+                .in_flight => |owner| {
+                    if (owner != h.self_index) h.suspendOn(owner);
+                    return .suspended;
+                },
+            };
+            if (self.interner.keyOf(ix) != .import) return .ready;
+            // the import Item holds a NAMESPACE index; its file is one level down.
+            file.* = self.interner.keyOf(self.interner.keyOf(ix).import.namespace).namespace.file;
+        }
+        name.* = tokName(alias.target);
+    }
+    return .ready;
+}
+
 /// stated proposition WITHOUT proving it — reusing the SAME relativization logic the strict
 /// goal phase runs (`ProveTask.elaborateGoalInto`): RefScan → resolveRefs → Elab with `model`.
 ///
@@ -446,19 +494,22 @@ pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns:
 pub fn elaborateFactStatement(
     self: *Context,
     h: *Engine.Handle,
-    file: InternPool.Index,
-    name: StrId,
+    file_arg: InternPool.Index,
+    name_arg: StrId,
     model: InternPool.Index,
     pool: *term.Pool,
 ) Allocator.Error!union(enum) { ready: term.TermId, suspended: void, failed: void } {
-    // the fact's file must be PARSED before its decl AST is readable.
-    switch (try self.demandParse(h, file)) {
-        .parsed => {},
-        .parsing => |t| {
-            h.suspendOn(t);
-            return .suspended;
-        },
-        .unparsed => {}, // undiscovered — declOf below reports it cleanly
+    // FOLLOW ALIASES to the origin that actually STATES the formula. A re-export
+    // (`theorem sqrtOne = sqrt_theory.sqrtOne`) has no formula of its own — identity is by
+    // ORIGIN — so reading the statement here has to chase the chain, exactly as the strict
+    // path does (`ProveTask.factAlias`). Without this an admitted `[using import(I) thm]`
+    // failed on an aliased `thm` while strict passed, breaking the invariant that `--fast`
+    // never reports an error strict does not.
+    var file = file_arg;
+    var name = name_arg;
+    switch (try factOrigin(self, h, &file, &name)) {
+        .ready => {},
+        .suspended => return .suspended,
     }
     const fid = self.fileOf(file) orelse {
         self.sink.add(0, 0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
@@ -643,7 +694,42 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
         .parsing => |t| return t,
         .unparsed => {}, // undiscovered — process's resolve diagnoses cleanly
     };
+    // DRIVE THE WHOLE ADMISSION HERE. `process`'s α-match may not suspend (its `.suspended`
+    // arm is a read-pass bug), and elaborating the cited statement can demand more than one
+    // parse: a re-export ALIAS sends it to the ORIGIN's file, whose own formula then needs its
+    // refs resolved. Running `elaborateFactStatement` now — into a throwaway pool, the result
+    // discarded — settles every one of those demands while suspending is still legal. `process`
+    // then re-runs it against the real pool and finds everything resolved.
+    if (src_file) |sf| if (self.trustedCiteName(c)) |cited| {
+        var scratch: term.Pool = .init(self.ctx.arena, self.ctx.arena);
+        switch (try elaborateFactStatement(self.ctx, self.h, sf, cited, .universe, &scratch)) {
+            .ready, .failed => {}, // `process` re-runs it and reports any failure there
+            // elaborateFactStatement already called suspendOn; hand back that blocker.
+            .suspended => return self.h.blocked_on,
+        }
+    };
     return null;
+}
+
+/// Seed `tok` as a use-all-facts root if it names a LOCAL STEP. A `ns.`-qualified token names a
+/// global fact and is skipped without touching `localName` (which would diagnose it). Used by
+/// the admit path: an admitted accelerant builds no certificate, so nothing else carries the
+/// citation edges its refs would have had.
+fn seedLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!void {
+    if (tok.qualifier != InternPool.Index.none) return;
+    const target = w.resolveStep(tokName(tok)) orelse return;
+    if (target == .step) try self.known.reachable.append(self.ctx.arena, @intFromEnum(self.ordinal_step.items[@intFromEnum(target.step)]));
+}
+
+/// The NAME of the fact a trusted engine-word citation reads, paired with `trustSourceFile`'s
+/// file. `model` cites `src.thm` in `refs[0]`; `import` cites `thm` there too (the import name
+/// itself is in `schema`). Null for an accelerant, which admits from the local goal.
+fn trustedCiteName(self: *Prove, c: ast.Step.Claim) ?StrId {
+    const word = self.trustWord(c) orelse return null;
+    return switch (word) {
+        .model, .import => if (c.refs.len == 1) tokName(c.refs[0]) else null,
+        else => null,
+    };
 }
 
 /// The source FILE whose decl AST a trusted engine-word citation is admitted against, or null
@@ -8788,14 +8874,26 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
             // an admitted accelerant builds no certificate, so nothing carries the citation
             // edges its premises would have had: the cited local steps are its use-all-facts
             // roots (a global fact cited by name is not a step and needs no root).
-            for (c.refs) |r| {
-                const name = self.localName(r) catch |err| switch (err) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Recover => continue,
-                };
-                const target = w.resolveStep(name) orelse continue;
-                if (target == .step) try self.known.reachable.append(self.ctx.arena, @intFromEnum(self.ordinal_step.items[@intFromEnum(target.step)]));
-            }
+            // `specialize HEAD(args)` carries its HEAD in `schema`, not `refs`, and the head
+            // may be a LOCAL STEP LABEL (a forall-shaped assumed or derived step). Without it
+            // a step consumed ONLY as a specialize head is called dead — which `--fast` did to
+            // three steps in std/permutation/listing.b4m that strict accepts.
+            // A `ns.`-QUALIFIED token names a global fact, never a local step, so it
+            // contributes no root and is skipped. It must be skipped BEFORE `localName`, which
+            // not only returns an error for a qualified token but DIAGNOSES it — and catching
+            // the error does not unwrite the diagnostic. That is what made `--fast` report
+            // "'peano.mulAddDistribLeft' cannot be namespace-qualified here" on a `simplify`
+            // whose rewrite set names a qualified lemma (std/peano/order.b4m and five more),
+            // where strict is silent.
+            var roots: [1]?lexer.Token = .{c.schema};
+            for (&roots) |maybe| if (maybe) |t| self.seedLocalRoot(w, t) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Recover => {},
+            };
+            for (c.refs) |r| self.seedLocalRoot(w, r) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Recover => {},
+            };
         },
         // model: the transferred statement = the source theorem elaborated under M's overlay
         // (relativization included). α-match the claim.
@@ -8863,6 +8961,11 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         if (!schema_transfer) {
             try self.admit(w, e, goal, c);
             if (self.trustWord(c)) |word| self.admitted.insert(word);
+            // RECORD the cited steps: `.accelerated` keeps only the tactic name, so without
+            // this the use-all-facts walk cannot see what an admitted accelerant consumed and
+            // reports its refs dead — an error strict never gives. Refs that do not resolve to
+            // a step (a block, a fact name) are skipped: the admitted step is not being
+            // checked here, and strict is what diagnoses a bad ref.
             return .{ .accelerated = c.rule.name };
         }
     }

@@ -1,0 +1,46 @@
+// A step that discharges a GUARDED-SORT obligation must not be reported dead under `--fast`.
+//
+// `permFixesPoint` binds `forall f: Perm`, and `Perm = Fn where invertible` is a REFINED sort,
+// so specializing it at the plain `Fn` `g` owes `invertible(g)`. The only thing in scope that
+// discharges that is `@g-invertible` — the step is LOAD-BEARING, not dead.
+//
+// STRICT meets the obligation while instantiating the accelerant's synthetic schema:
+// `Elab.emitArgObligations` sees the refined param sort and calls `requireKnown` →
+// `dischargeGoal` → `refForKnown`, which appends the supplying step to `known.reachable`, the
+// use-all-facts walk's seed list. `produceSpecialize` returns at its `admit_mode` check before
+// resolving the head at all, so under `--fast` none of that runs and the step looks unused.
+//
+// This file is gated STRICT ONLY. The `--fast` half is the open half of the invariant
+// "`--fast` must never error where strict does not" — see agents/debug-guide.md. Add
+// `ctx.okSilent(&.{"check", "--fast", <this file>})` when it is fixed.
+sort Element
+sort Fn
+pred invertible(f: Fn)
+sort Perm = Fn where invertible
+func apply(f: Fn, x: Element) => Element
+const point: Element
+
+// specializing this at a plain Fn incurs the guard obligation `invertible(f)`
+axiom permFixesPoint: forall f: Perm; apply(f, point) = point
+
+theorem aGuardDischargerIsNotDead: forall g: Fn; invertible(g) -> apply(g, point) = point
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-invertible |
+        assume invertible(g) {
+          @g-invertible |
+            invertible(g)
+            [by hypothesis given-invertible]
+          @applied |
+            apply(g, point) = point
+            [using specialize permFixesPoint(g)]
+        }
+      @conclusion-implication |
+        invertible(g) -> apply(g, point) = point
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall g: Fn; invertible(g) -> apply(g, point) = point
+    [by forall_intro generalize-g]
+qed
