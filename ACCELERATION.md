@@ -100,6 +100,43 @@ irregular names (`identityFn` → `identityApply`, not `identityFnApply`). Both 
 fixed by making the couplings explicit/structural — the canonical example of this
 rule.
 
+## Inputs are named; guard obligations are searched for
+
+A design rule for every accelerant, settled 2026-10-07.
+
+**An accelerant NEVER searches for its logical inputs.** Whatever the inference consumes
+is a named ref in the claim: `[using <tactic> <tactic_args>(…) input1 input2 …]`. The
+tactic reads that list and nothing else — no scanning the proof for a premise of the
+right shape, no scanning the scope for a usable lemma. (A tactic may resolve *well-known
+names* from scope — `arithmetic`'s `addZeroRight` and friends — which is name resolution,
+not search, and is governed by the naming-couplings rule above.)
+
+**A GUARD OBLIGATION, by contrast, is searched for, and should be.** When an accelerant
+restates a term that owes a side condition — a `requires` guard, or a refined-sort
+qualifier at an argument — the obligation is hoisted onto the generated synthetic as a
+leading antecedent (`wrapObligations`), and the citing site discharges it from what the
+proof knows in scope (`withGuardPremises` → `dischargeGoal` → `refForKnown`, which
+consults the `known` table of propositions established so far). That is correct: the
+proposition is fully determined by the term plus its declaration, so the only question is
+whether it holds here, and that is the same question whether the term was hand-written or
+restated by a tactic. There is exactly ONE search primitive in the engine
+(`Elab.Known.lookup`) and every path into it is a guard obligation.
+
+Do not be tempted to make the author name the discharger instead. The steps that meet
+these obligations are typically hypothesis restatements the checker can and must find
+anyway; and a guard could not simply join the input list, because it is not an antecedent
+of the cited fact. A step can owe several guards AND supply hypothesis refs, so one list
+could not separate the two roles without a positional convention the reader would have to
+know — the very thing the named-input rule exists to avoid.
+
+**Consequence for admitted steps.** The search's hit is what records that the supplying
+step was consumed. An admitted (`--fast`) step builds no certificate and, in admit mode,
+never computes its obligations — so it contributes no such record, and the use-all-facts
+lint must not run on a proof containing one (it could only false-positive). The standing
+invariant: `--fast` never reports an error strict does not. See
+`agents/debug-guide.md` for the four causes that violated it and the sweep that detects
+regressions.
+
 ## Registered accelerated tactics
 
 ### `tautology` — propositional consequence
