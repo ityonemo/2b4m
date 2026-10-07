@@ -259,23 +259,31 @@ fn collectCheckFiles(arena: std.mem.Allocator, dir_path: []const u8) ![]const []
     return paths.items;
 }
 
-/// Build the `{path, source}` set `query search` runs over. A DIRECTORY yields
-/// its top-level `.b4m` files (corpus discovery); a FILE yields that file plus
+/// Build the `{path, source}` set `query search` runs over. A DIRECTORY yields every
+/// `.b4m`/`.md` UNDER it, recursively (corpus discovery); a FILE yields that file plus
 /// everything it transitively imports (scope-aware).
+///
+/// The walk must RECURSE: a single-level `iterate()` saw only `std/*.b4m` and silently
+/// skipped `std/group/`, `std/permutation/`, … — most of the library. `query search std
+/// conjugate` then reported "no theorem or axiom matching" while `query search
+/// std/permutation conjugate` found three, so the documented corpus-discovery scope was
+/// the one that could not see the corpus.
 fn collectSearchFiles(arena: std.mem.Allocator, path: []const u8, std_root: []const u8) ![]const b4m.query.search.File {
     const cwd = Io.Dir.cwd();
     const st = try cwd.statFile(io, path, .{});
     var files: std.ArrayList(b4m.query.search.File) = .empty;
     if (st.kind == .directory) {
         var dir = try cwd.openDir(io, path, .{ .iterate = true });
-        var it = dir.iterate();
-        while (try it.next(io)) |entry| {
+        defer dir.close(io);
+        var walker = try dir.walk(arena);
+        defer walker.deinit();
+        while (try walker.next(io)) |entry| {
             // `.b4m` proofs and `.md` literate documents (readSource extracts
             // the ```2b4m blocks from the latter).
-            const is_b4m = std.mem.endsWith(u8, entry.name, ".b4m");
-            const is_md = std.mem.endsWith(u8, entry.name, ".md");
+            const is_b4m = std.mem.endsWith(u8, entry.path, ".b4m");
+            const is_md = std.mem.endsWith(u8, entry.path, ".md");
             if (entry.kind != .file or !(is_b4m or is_md)) continue;
-            const full = try std.fs.path.join(arena, &.{ path, entry.name });
+            const full = try std.fs.path.join(arena, &.{ path, entry.path });
             const src = readSource(arena, full) catch continue;
             try files.append(arena, .{ .path = full, .source = src });
         }

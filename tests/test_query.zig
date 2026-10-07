@@ -274,4 +274,17 @@ pub fn addTests(
 
     // no match: message + exit 1
     ctx.fail(&.{ "query", "search", "tests/cases/search_target.b4m", "zzznope" }, "no theorem or axiom matching 'zzznope'\n");
+
+    // `query search <dir>` RECURSES. `sub/uses_base.b4m` appears only if the walk
+    // descends — a single-level `iterate()` saw just the top-level files, which made
+    // `query search std <term>` blind to `std/group/`, `std/permutation/`, … (most of the
+    // library) while the same term found hits in those subdirectories directly. GUIDE
+    // advertises "every `.b4m` under it — corpus discovery", so that scope was the one
+    // scope that could not see the corpus.
+    ctx.ok(&.{ "query", "search", "tests/cases/dir_ok", "even" },
+        \\tests/cases/dir_ok/base.b4m:5:  axiom zeroEven: even(ZERO)
+        \\tests/cases/dir_ok/base.b4m:7:  theorem zeroIsEven: even(ZERO)
+        \\tests/cases/dir_ok/sub/uses_base.b4m:8:  theorem stillEven: even(ZERO)
+        \\
+    );
 }
