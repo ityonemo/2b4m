@@ -37,6 +37,7 @@
 import permutation <<< "std/permutation.b4m"
 import function <<< "std/function.b4m"
 import alternating <<< "std/permutation/alternating.b4m"
+import permutation_parity <<< "std/permutation/parity.b4m"
 
 sort Element = permutation.Element
 sort Fn = permutation.Fn
@@ -51,6 +52,16 @@ theorem transpositionAtFirst = permutation.transpositionAtFirst
 theorem transpositionAtSecond = permutation.transpositionAtSecond
 theorem transpositionElsewhere = permutation.transpositionElsewhere
 theorem disequalityIsSymmetric = alternating.disequalityIsSymmetric
+const identityFn = permutation.identityFn
+func inverse = permutation.inverse
+pred invertible = permutation.invertible
+theorem composeAssoc = function.composeAssoc
+theorem composeIdentityRight = function.composeIdentityRight
+theorem transpositionIsAnInvolution = permutation.transpositionIsAnInvolution
+theorem disjointTranspositionsCommute = permutation_parity.disjointTranspositionsCommute
+theorem aTwoSidedInverseIsUnique = function.aTwoSidedInverseIsUnique
+theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
+theorem composeIsAPermutation = permutation.composeIsAPermutation
 
 // -- identity (1): (i,a,j) = (i,j,a)^2 -----------------------------------------------------
 
@@ -3619,5 +3630,251 @@ proof
   @conclusion |
     forall i, j, a, b, c: Element; i != j -> i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> a != c -> b != c ->
       compose(transposition(a, c), transposition(a, b)) = compose(compose(compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))), compose(compose(transposition(i, c), transposition(i, j)), compose(transposition(i, b), transposition(i, j)))), compose(compose(transposition(i, b), transposition(i, j)), compose(transposition(i, a), transposition(i, j))))
+    [by forall_intro generalize-i]
+qed
+
+// -- Judson's conjugation step -------------------------------------------------------------
+//
+// "Using the normality of N, we see that [(i,j)(a,k)](i,j,a)^2[(i,j)(a,k)]^-1 = (i,j,k) is
+// in N." The conjugator sigma = (i,j)(a,k) is a product of DISJOINT transpositions, so it
+// is its own inverse — which is what lets the statement avoid `inverse` entirely.
+
+theorem aProductOfTwoDisjointTranspositionsSquaresToTheIdentity:
+  forall i, j, a, k: Element;
+  i != j -> a != k -> i != a -> i != k -> j != a -> j != k ->
+  compose(compose(transposition(i, j), transposition(a, k)),
+  compose(transposition(i, j), transposition(a, k))) = identityFn
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-j |
+                    assume i != j {
+                      @given-a-not-k |
+                        assume a != k {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-i-not-k |
+                                assume i != k {
+                                  @given-j-not-a |
+                                    assume j != a {
+                                      @given-j-not-k |
+                                        assume j != k {
+                                          @i-not-j |
+                                            i != j
+                                            [by hypothesis given-i-not-j]
+                                          @a-not-k |
+                                            a != k
+                                            [by hypothesis given-a-not-k]
+                                          @i-not-a |
+                                            i != a
+                                            [by hypothesis given-i-not-a]
+                                          @i-not-k |
+                                            i != k
+                                            [by hypothesis given-i-not-k]
+                                          @j-not-a |
+                                            j != a
+                                            [by hypothesis given-j-not-a]
+                                          @j-not-k |
+                                            j != k
+                                            [by hypothesis given-j-not-k]
+                                          @ij-cancels |
+                                            compose(transposition(i, j), transposition(i, j)) = identityFn
+                                            [using specialize transpositionIsAnInvolution(i, j)]
+                                          @ak-cancels |
+                                            compose(transposition(a, k), transposition(a, k)) = identityFn
+                                            [using specialize transpositionIsAnInvolution(a, k)]
+                                          // `assoc(composeAssoc)` right-nests both sides, so the
+                                          // regrouping is one step instead of four hand-written ones.
+                                          @right-nested |
+                                            compose(compose(transposition(i, j), transposition(a, k)),
+                                              compose(transposition(i, j), transposition(a, k))) =
+                                              compose(transposition(i, j),
+                                              compose(transposition(a, k),
+                                              compose(transposition(i, j), transposition(a, k))))
+                                            [using assoc(composeAssoc)]
+                                          // commute the inner (ak)(ij) -> (ij)(ak)
+                                          @inner-commuted |
+                                            compose(transposition(a, k), transposition(i, j)) = compose(transposition(i, j), transposition(a, k))
+                                            [using specialize disjointTranspositionsCommute(i, j, a, k) i-not-j a-not-k i-not-a i-not-k j-not-a j-not-k]
+                                          // after commuting, the tail is (ij)[(ak)(ak)] = (ij)·id
+                                          @regrouped-after-commute |
+                                            compose(transposition(a, k),
+                                              compose(transposition(i, j), transposition(a, k))) =
+                                              compose(compose(transposition(a, k), transposition(i, j)), transposition(a, k))
+                                            [using assoc(composeAssoc)]
+                                          @ij-times-identity |
+                                            compose(transposition(i, j), identityFn) = transposition(i, j)
+                                            [using specialize composeIdentityRight(transposition(i, j))]
+                                          @tail-collapses |
+                                            compose(compose(transposition(i, j), transposition(a, k)), transposition(a, k)) = transposition(i, j)
+                                            [using simplify assocShift ak-cancels ij-times-identity]
+                                          @assocShift |
+                                            compose(compose(transposition(i, j), transposition(a, k)), transposition(a, k)) =
+                                              compose(transposition(i, j), compose(transposition(a, k), transposition(a, k)))
+                                            [using assoc(composeAssoc)]
+                                          @conclusion-squares |
+                                            compose(compose(transposition(i, j), transposition(a, k)),
+                                              compose(transposition(i, j), transposition(a, k))) = identityFn
+                                            [using simplify right-nested regrouped-after-commute inner-commuted tail-collapses ij-cancels]
+                                        }
+                                      @conclusion-j-not-k |
+                                        j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                                        [by implies_intro given-j-not-k]
+                                    }
+                                  @conclusion-j-not-a |
+                                    j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                                    [by implies_intro given-j-not-a]
+                                }
+                              @conclusion-i-not-k |
+                                i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                                [by implies_intro given-i-not-k]
+                            }
+                          @conclusion-i-not-a |
+                            i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                            [by implies_intro given-i-not-a]
+                        }
+                      @conclusion-a-not-k |
+                        a != k -> i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                        [by implies_intro given-a-not-k]
+                    }
+                  @conclusion-i-not-j |
+                    i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                    [by implies_intro given-i-not-j]
+                }
+              @discharge-k |
+                forall k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, j), transposition(a, k))) = identityFn
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element;
+      i != j -> a != k -> i != a -> i != k -> j != a -> j != k ->
+      compose(compose(transposition(i, j), transposition(a, k)),
+      compose(transposition(i, j), transposition(a, k))) = identityFn
+    [by forall_intro generalize-i]
+qed
+
+// sigma o sigma = id makes sigma its OWN two-sided inverse, so `inverse(sigma) = sigma`
+// by uniqueness. This is what removes `inverse` from the conjugation statement.
+theorem aProductOfTwoDisjointTranspositionsIsItsOwnInverse:
+  forall i, j, a, k: Element;
+  i != j -> a != k -> i != a -> i != k -> j != a -> j != k ->
+  inverse(compose(transposition(i, j), transposition(a, k))) =
+  compose(transposition(i, j), transposition(a, k))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-j |
+                    assume i != j {
+                      @given-a-not-k |
+                        assume a != k {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-i-not-k |
+                                assume i != k {
+                                  @given-j-not-a |
+                                    assume j != a {
+                                      @given-j-not-k |
+                                        assume j != k {
+                                          @i-not-j |
+                                            i != j
+                                            [by hypothesis given-i-not-j]
+                                          @a-not-k |
+                                            a != k
+                                            [by hypothesis given-a-not-k]
+                                          @i-not-a |
+                                            i != a
+                                            [by hypothesis given-i-not-a]
+                                          @i-not-k |
+                                            i != k
+                                            [by hypothesis given-i-not-k]
+                                          @j-not-a |
+                                            j != a
+                                            [by hypothesis given-j-not-a]
+                                          @j-not-k |
+                                            j != k
+                                            [by hypothesis given-j-not-k]
+                                          @squares-to-identity |
+                                            compose(compose(transposition(i, j), transposition(a, k)),
+                                              compose(transposition(i, j), transposition(a, k))) = identityFn
+                                            [using specialize aProductOfTwoDisjointTranspositionsSquaresToTheIdentity(i, j, a, k) i-not-j a-not-k i-not-a i-not-k j-not-a j-not-k]
+                                          // sigma is invertible: it has sigma as a two-sided inverse
+                                          @ij-is-a-permutation |
+                                            invertible(transposition(i, j))
+                                            [using specialize transpositionIsAPermutation(i, j)]
+                                          @ak-is-a-permutation |
+                                            invertible(transposition(a, k))
+                                            [using specialize transpositionIsAPermutation(a, k)]
+                                          @sigma-is-a-permutation |
+                                            invertible(compose(transposition(i, j), transposition(a, k)))
+                                            [using specialize composeIsAPermutation(transposition(i, j), transposition(a, k)) ij-is-a-permutation ak-is-a-permutation]
+                                          @inverse-is-a-left-inverse |
+                                            compose(inverse(compose(transposition(i, j), transposition(a, k))), compose(transposition(i, j), transposition(a, k))) = identityFn
+                                            [using specialize function.inverseLeft(compose(transposition(i, j), transposition(a, k))) sigma-is-a-permutation]
+                                          @conclusion-self-inverse |
+                                            inverse(compose(transposition(i, j), transposition(a, k))) =
+                                              compose(transposition(i, j), transposition(a, k))
+                                            [using specialize aTwoSidedInverseIsUnique(compose(transposition(i, j), transposition(a, k)), inverse(compose(transposition(i, j), transposition(a, k))), compose(transposition(i, j), transposition(a, k))) inverse-is-a-left-inverse squares-to-identity]
+                                        }
+                                      @conclusion-j-not-k |
+                                        j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                                        [by implies_intro given-j-not-k]
+                                    }
+                                  @conclusion-j-not-a |
+                                    j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                                    [by implies_intro given-j-not-a]
+                                }
+                              @conclusion-i-not-k |
+                                i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                                [by implies_intro given-i-not-k]
+                            }
+                          @conclusion-i-not-a |
+                            i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                            [by implies_intro given-i-not-a]
+                        }
+                      @conclusion-a-not-k |
+                        a != k -> i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                        [by implies_intro given-a-not-k]
+                    }
+                  @conclusion-i-not-j |
+                    i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                    [by implies_intro given-i-not-j]
+                }
+              @discharge-k |
+                forall k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != j -> a != k -> i != a -> i != k -> j != a -> j != k -> inverse(compose(transposition(i, j), transposition(a, k))) = compose(transposition(i, j), transposition(a, k))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element;
+      i != j -> a != k -> i != a -> i != k -> j != a -> j != k ->
+      inverse(compose(transposition(i, j), transposition(a, k))) =
+      compose(transposition(i, j), transposition(a, k))
     [by forall_intro generalize-i]
 qed
