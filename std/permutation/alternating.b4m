@@ -2510,3 +2510,72 @@ proof
       compose(transposition(i, j), transposition(i, a)) = compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))
     [by forall_intro generalize-i]
 qed
+
+// The value of a SIX-factor composite at a point, shaped as the identities below need it:
+// a 3-cycle (two factors) composed with a squared 3-cycle (four). Same role as
+// `fourFactorValue` — it turns the composite into a nested `apply` that the three
+// transposition point lemmas can evaluate factor by factor.
+theorem sixFactorValue: forall p, q, r, t, u, v: Fn; forall x: Element;
+  apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
+  apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+proof
+  @generalize-p |
+    fix p: Fn {
+      @generalize-q |
+        fix q: Fn {
+          @generalize-r |
+            fix r: Fn {
+              @generalize-t |
+                fix t: Fn {
+                  @generalize-u |
+                    fix u: Fn {
+                      @generalize-v |
+                        fix v: Fn {
+                          @generalize-x |
+                            fix x: Element {
+                              @split-outer |
+                                apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
+                                  apply(compose(p, q), apply(compose(compose(r, t), compose(u, v)), x))
+                                [using specialize composeApply(compose(p, q), compose(compose(r, t), compose(u, v)), x)]
+                              @split-left |
+                                apply(compose(p, q), apply(compose(compose(r, t), compose(u, v)), x)) =
+                                  apply(p, apply(q, apply(compose(compose(r, t), compose(u, v)), x)))
+                                [using specialize composeApply(p, q, apply(compose(compose(r, t), compose(u, v)), x))]
+                              @split-inner-four |
+                                apply(compose(compose(r, t), compose(u, v)), x) = apply(r, apply(t, apply(u, apply(v, x))))
+                                [using specialize fourFactorValue(r, t, u, v, x)]
+                              @conclusion-value |
+                                apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
+                                  apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+                                [using chain split-outer split-left split-inner-four]
+                            }
+                          @discharge-x |
+                            forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+                            [by forall_intro generalize-x]
+                        }
+                      @discharge-v |
+                        forall v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+                        [by forall_intro generalize-v]
+                    }
+                  @discharge-u |
+                    forall u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+                    [by forall_intro generalize-u]
+                }
+              @discharge-t |
+                forall t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+                [by forall_intro generalize-t]
+            }
+          @discharge-r |
+            forall r, t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+            [by forall_intro generalize-r]
+        }
+      @discharge-q |
+        forall q, r, t, u, v: Fn; forall x: Element; apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) = apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+        [by forall_intro generalize-q]
+    }
+  @conclusion |
+    forall p, q, r, t, u, v: Fn; forall x: Element;
+      apply(compose(compose(p, q), compose(compose(r, t), compose(u, v))), x) =
+      apply(p, apply(q, apply(r, apply(t, apply(u, apply(v, x))))))
+    [by forall_intro generalize-p]
+qed
