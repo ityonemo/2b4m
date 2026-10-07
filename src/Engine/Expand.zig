@@ -701,7 +701,6 @@ const Expander = struct {
                             .args = args,
                             .refs = c.refs,
                             .fallback = c.fallback,
-                            .guards = c.guards,
                         } } });
                         f.idx += 1;
                     },

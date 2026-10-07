@@ -838,22 +838,6 @@ pub const Parser = struct {
                     fallback = try self.expect(.identifier);
                     _ = try self.expect(.r_paren);
                 }
-                // `guards(step, …)`: a contextual modifier like `fallback` above — the steps
-                // discharging this step's guarded-sort obligations, named rather than searched
-                // for. Recognized by text + `(` before the refs loop would swallow it.
-                var guards: []const Token = &.{};
-                if (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "guards")) {
-                    _ = self.advance(); // `guards`
-                    _ = try self.expect(.l_paren);
-                    var list: std.ArrayList(Token) = .empty;
-                    while (true) {
-                        try list.append(self.arena, try self.expectLabelRef());
-                        if (self.tok.tag != .comma) break;
-                        _ = self.advance();
-                    }
-                    _ = try self.expect(.r_paren);
-                    guards = try list.toOwnedSlice(self.arena);
-                }
                 // refs cite proof labels, which may be kebab-case
                 var refs: std.ArrayList(Token) = .empty;
                 while (self.tok.tag == .identifier or self.tok.tag == .kebab_identifier) {
@@ -884,7 +868,6 @@ pub const Parser = struct {
                     .args = args,
                     .refs = try refs.toOwnedSlice(self.arena),
                     .fallback = fallback,
-                    .guards = guards,
                 } } };
             },
         }
