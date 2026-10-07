@@ -38,6 +38,7 @@ import permutation <<< "std/permutation.b4m"
 import function <<< "std/function.b4m"
 import alternating <<< "std/permutation/alternating.b4m"
 import permutation_parity <<< "std/permutation/parity.b4m"
+import permutation_cycle <<< "std/permutation/cycle.b4m"
 
 sort Element = permutation.Element
 sort Fn = permutation.Fn
@@ -62,6 +63,8 @@ theorem disjointTranspositionsCommute = permutation_parity.disjointTransposition
 theorem aTwoSidedInverseIsUnique = function.aTwoSidedInverseIsUnique
 theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
 theorem composeIsAPermutation = permutation.composeIsAPermutation
+theorem conjugationIsMultiplicative = permutation_cycle.conjugationIsMultiplicative
+theorem conjugateOfATransposition = permutation_cycle.conjugateOfATransposition
 
 // -- identity (1): (i,a,j) = (i,j,a)^2 -----------------------------------------------------
 
@@ -4378,5 +4381,438 @@ proof
     }
   @conclusion |
     forall i, j, k: Element; i != j -> i != k -> j != k -> compose(transposition(j, i), transposition(j, k)) = compose(transposition(i, k), transposition(i, j))
+    [by forall_intro generalize-i]
+qed
+
+// -- the conjugator's action on the four letters -------------------------------------------
+// sigma = (i,j)(a,k) sends i<->j and a<->k. Each fact is two steps: the inner (ak) or the
+// outer (ij) moves the point, the other fixes it.
+// sigma(i) = j: (ak) fixes i, then (ij) sends i to j.
+theorem theConjugatorSendsFirstToSecond: forall i, j, a, k: Element;
+  i != a -> i != k ->
+  apply(compose(transposition(i, j), transposition(a, k)), i) = j
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-a |
+                    assume i != a {
+                      @given-i-not-k |
+                        assume i != k {
+                          @i-not-a |
+                            i != a
+                            [by hypothesis given-i-not-a]
+                          @i-not-k |
+                            i != k
+                            [by hypothesis given-i-not-k]
+                          @ak-fixes-i |
+                            apply(transposition(a, k), i) = i
+                            [using specialize transpositionElsewhere(a, k, i) i-not-a i-not-k]
+                          @ij-sends-i |
+                            apply(transposition(i, j), i) = j
+                            [using specialize transpositionAtFirst(i, j)]
+                          @split |
+                            apply(compose(transposition(i, j), transposition(a, k)), i) =
+                              apply(transposition(i, j), apply(transposition(a, k), i))
+                            [using simplify composeApply]
+                          @conclusion-image |
+                            apply(compose(transposition(i, j), transposition(a, k)), i) = j
+                            [using simplify split ak-fixes-i ij-sends-i]
+                        }
+                      @conclusion-i-not-k |
+                        i != k -> apply(compose(transposition(i, j), transposition(a, k)), i) = j
+                        [by implies_intro given-i-not-k]
+                    }
+                  @conclusion-i-not-a |
+                    i != a -> i != k -> apply(compose(transposition(i, j), transposition(a, k)), i) = j
+                    [by implies_intro given-i-not-a]
+                }
+              @discharge-k |
+                forall k: Element; i != a -> i != k -> apply(compose(transposition(i, j), transposition(a, k)), i) = j
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != a -> i != k -> apply(compose(transposition(i, j), transposition(a, k)), i) = j
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != a -> i != k -> apply(compose(transposition(i, j), transposition(a, k)), i) = j
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element; i != a -> i != k ->
+      apply(compose(transposition(i, j), transposition(a, k)), i) = j
+    [by forall_intro generalize-i]
+qed
+
+// sigma(j) = i: (ak) fixes j, then (ij) sends j to i.
+theorem theConjugatorSendsSecondToFirst: forall i, j, a, k: Element;
+  j != a -> j != k ->
+  apply(compose(transposition(i, j), transposition(a, k)), j) = i
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-j-not-a |
+                    assume j != a {
+                      @given-j-not-k |
+                        assume j != k {
+                          @j-not-a |
+                            j != a
+                            [by hypothesis given-j-not-a]
+                          @j-not-k |
+                            j != k
+                            [by hypothesis given-j-not-k]
+                          @ak-fixes-j |
+                            apply(transposition(a, k), j) = j
+                            [using specialize transpositionElsewhere(a, k, j) j-not-a j-not-k]
+                          @ij-sends-j |
+                            apply(transposition(i, j), j) = i
+                            [using specialize transpositionAtSecond(i, j)]
+                          @split |
+                            apply(compose(transposition(i, j), transposition(a, k)), j) = apply(transposition(i, j), apply(transposition(a, k), j))
+                            [using simplify composeApply]
+                          @conclusion-image |
+                            apply(compose(transposition(i, j), transposition(a, k)), j) = i
+                            [using simplify split ak-fixes-j ij-sends-j]
+                        }
+                      @conclusion-j-not-k |
+                        j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+                        [by implies_intro given-j-not-k]
+                    }
+                  @conclusion-j-not-a |
+                    j != a -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+                    [by implies_intro given-j-not-a]
+                }
+              @discharge-k |
+                forall k: Element; j != a -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; j != a -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; j != a -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element; j != a -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), j) = i
+    [by forall_intro generalize-i]
+qed
+
+// sigma(a) = k: (ak) sends a to k, then (ij) fixes k.
+theorem theConjugatorSendsThirdToFourth: forall i, j, a, k: Element;
+  i != k -> j != k ->
+  apply(compose(transposition(i, j), transposition(a, k)), a) = k
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-k |
+                    assume i != k {
+                      @given-j-not-k |
+                        assume j != k {
+                          @i-not-k |
+                            i != k
+                            [by hypothesis given-i-not-k]
+                          @j-not-k |
+                            j != k
+                            [by hypothesis given-j-not-k]
+                          @k-not-i |
+                            k != i
+                            [using specialize disequalityIsSymmetric(i, k) i-not-k]
+                          @k-not-j |
+                            k != j
+                            [using specialize disequalityIsSymmetric(j, k) j-not-k]
+                          @ak-sends-a |
+                            apply(transposition(a, k), a) = k
+                            [using specialize transpositionAtFirst(a, k)]
+                          @ij-fixes-k |
+                            apply(transposition(i, j), k) = k
+                            [using specialize transpositionElsewhere(i, j, k) k-not-i k-not-j]
+                          @split |
+                            apply(compose(transposition(i, j), transposition(a, k)), a) = apply(transposition(i, j), apply(transposition(a, k), a))
+                            [using simplify composeApply]
+                          @conclusion-image |
+                            apply(compose(transposition(i, j), transposition(a, k)), a) = k
+                            [using simplify split ak-sends-a ij-fixes-k]
+                        }
+                      @conclusion-j-not-k |
+                        j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+                        [by implies_intro given-j-not-k]
+                    }
+                  @conclusion-i-not-k |
+                    i != k -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+                    [by implies_intro given-i-not-k]
+                }
+              @discharge-k |
+                forall k: Element; i != k -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != k -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != k -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element; i != k -> j != k -> apply(compose(transposition(i, j), transposition(a, k)), a) = k
+    [by forall_intro generalize-i]
+qed
+
+// sigma(k) = a: (ak) sends k to a, then (ij) fixes a.
+theorem theConjugatorSendsFourthToThird: forall i, j, a, k: Element;
+  i != a -> j != a ->
+  apply(compose(transposition(i, j), transposition(a, k)), k) = a
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-a |
+                    assume i != a {
+                      @given-j-not-a |
+                        assume j != a {
+                          @i-not-a |
+                            i != a
+                            [by hypothesis given-i-not-a]
+                          @j-not-a |
+                            j != a
+                            [by hypothesis given-j-not-a]
+                          @a-not-i |
+                            a != i
+                            [using specialize disequalityIsSymmetric(i, a) i-not-a]
+                          @a-not-j |
+                            a != j
+                            [using specialize disequalityIsSymmetric(j, a) j-not-a]
+                          @ak-sends-k |
+                            apply(transposition(a, k), k) = a
+                            [using specialize transpositionAtSecond(a, k)]
+                          @ij-fixes-a |
+                            apply(transposition(i, j), a) = a
+                            [using specialize transpositionElsewhere(i, j, a) a-not-i a-not-j]
+                          @split |
+                            apply(compose(transposition(i, j), transposition(a, k)), k) = apply(transposition(i, j), apply(transposition(a, k), k))
+                            [using simplify composeApply]
+                          @conclusion-image |
+                            apply(compose(transposition(i, j), transposition(a, k)), k) = a
+                            [using simplify split ak-sends-k ij-fixes-a]
+                        }
+                      @conclusion-j-not-a |
+                        j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+                        [by implies_intro given-j-not-a]
+                    }
+                  @conclusion-i-not-a |
+                    i != a -> j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+                    [by implies_intro given-i-not-a]
+                }
+              @discharge-k |
+                forall k: Element; i != a -> j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != a -> j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != a -> j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element; i != a -> j != a -> apply(compose(transposition(i, j), transposition(a, k)), k) = a
+    [by forall_intro generalize-i]
+qed
+
+// -- Judson's conjugation: sigma (i,j,a)^2 sigma^-1 = (i,j,k) -------------------------------
+//
+// "Using the normality of N, we see that [(i,j)(a,k)](i,j,a)^2[(i,j)(a,k)]^-1 = (i,j,k) is
+// in N. Hence N must contain all of the 3-cycles (i,j,k)."
+//
+// Conjugation distributes over a product (`conjugationIsMultiplicative`) and relabels a
+// transposition by the conjugator's action (`conjugateOfATransposition`), so the four
+// factors of (i,j,a)^2 become transpositions of sigma-images: (ia)->(jk) and (ij)->(ji).
+// The result is (j,i,k)^2, which identity (1) turns into (j,k,i), which the rotation lemma
+// turns into (i,j,k).
+theorem conjugatingTheSquareReachesEveryThirdPoint: forall i, j, a, k: Element;
+  i != j -> i != a -> i != k -> j != a -> j != k ->
+  compose(compose(compose(transposition(i, j), transposition(a, k)),
+  compose(compose(transposition(i, a), transposition(i, j)),
+  compose(transposition(i, a), transposition(i, j)))),
+  inverse(compose(transposition(i, j), transposition(a, k)))) =
+  compose(transposition(i, k), transposition(i, j))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-k |
+                fix k: Element {
+                  @given-i-not-j |
+                    assume i != j {
+                      @given-i-not-a |
+                        assume i != a {
+                          @given-i-not-k |
+                            assume i != k {
+                              @given-j-not-a |
+                                assume j != a {
+                                  @given-j-not-k |
+                                    assume j != k {
+                                      @i-not-j |
+                                        i != j
+                                        [by hypothesis given-i-not-j]
+                                      @i-not-a |
+                                        i != a
+                                        [by hypothesis given-i-not-a]
+                                      @i-not-k |
+                                        i != k
+                                        [by hypothesis given-i-not-k]
+                                      @j-not-a |
+                                        j != a
+                                        [by hypothesis given-j-not-a]
+                                      @j-not-k |
+                                        j != k
+                                        [by hypothesis given-j-not-k]
+                                      // sigma is a permutation
+                                      @ij-is-a-permutation |
+                                        invertible(transposition(i, j))
+                                        [using specialize transpositionIsAPermutation(i, j)]
+                                      @ak-is-a-permutation |
+                                        invertible(transposition(a, k))
+                                        [using specialize transpositionIsAPermutation(a, k)]
+                                      @sigma-is-a-permutation |
+                                        invertible(compose(transposition(i, j), transposition(a, k)))
+                                        [using specialize composeIsAPermutation(transposition(i, j), transposition(a, k)) ij-is-a-permutation ak-is-a-permutation]
+                                      // conjugation distributes over the outer product
+                                      @split-outer |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)),
+                                          compose(compose(transposition(i, a), transposition(i, j)),
+                                          compose(transposition(i, a), transposition(i, j)))),
+                                          inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          compose(compose(compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, a), transposition(i, j))), inverse(compose(transposition(i, j), transposition(a, k)))),
+                                          compose(compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, a), transposition(i, j))), inverse(compose(transposition(i, j), transposition(a, k)))))
+                                        [using specialize conjugationIsMultiplicative(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j))) sigma-is-a-permutation]
+                                      // and over each (ia)(ij) factor
+                                      @split-inner |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)), compose(transposition(i, a), transposition(i, j))), inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          compose(compose(compose(compose(transposition(i, j), transposition(a, k)), transposition(i, a)), inverse(compose(transposition(i, j), transposition(a, k)))),
+                                          compose(compose(compose(transposition(i, j), transposition(a, k)), transposition(i, j)), inverse(compose(transposition(i, j), transposition(a, k)))))
+                                        [using specialize conjugationIsMultiplicative(compose(transposition(i, j), transposition(a, k)), transposition(i, a), transposition(i, j)) sigma-is-a-permutation]
+                                      // each conjugated transposition relabels by sigma
+                                      @conjugate-ia |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)), transposition(i, a)), inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          transposition(apply(compose(transposition(i, j), transposition(a, k)), i), apply(compose(transposition(i, j), transposition(a, k)), a))
+                                        [using specialize conjugateOfATransposition(compose(transposition(i, j), transposition(a, k)), i, a) sigma-is-a-permutation]
+                                      @conjugate-ij |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)), transposition(i, j)), inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          transposition(apply(compose(transposition(i, j), transposition(a, k)), i), apply(compose(transposition(i, j), transposition(a, k)), j))
+                                        [using specialize conjugateOfATransposition(compose(transposition(i, j), transposition(a, k)), i, j) sigma-is-a-permutation]
+                                      // sigma's action on the four letters
+                                      @sigma-i |
+                                        apply(compose(transposition(i, j), transposition(a, k)), i) = j
+                                        [using specialize theConjugatorSendsFirstToSecond(i, j, a, k) i-not-a i-not-k]
+                                      @sigma-j |
+                                        apply(compose(transposition(i, j), transposition(a, k)), j) = i
+                                        [using specialize theConjugatorSendsSecondToFirst(i, j, a, k) j-not-a j-not-k]
+                                      @sigma-a |
+                                        apply(compose(transposition(i, j), transposition(a, k)), a) = k
+                                        [using specialize theConjugatorSendsThirdToFourth(i, j, a, k) i-not-k j-not-k]
+                                      // identity (1) at (j, i, k): (j,i,k) = (j,k,i)^2 ... read as
+                                      // (j,k,i) = (j,i,k)^2 is the form proved, so cite it directly
+                                      @square-is-a-rotation |
+                                        compose(transposition(j, i), transposition(j, k)) =
+                                          compose(compose(transposition(j, k), transposition(j, i)),
+                                          compose(transposition(j, k), transposition(j, i)))
+                                        [using specialize aThreeCycleIsTheSquareOfItsTwist(j, i, k) j-not-i j-not-k i-not-k]
+                                      @j-not-i |
+                                        j != i
+                                        [using specialize disequalityIsSymmetric(i, j) i-not-j]
+                                      @rotation |
+                                        compose(transposition(j, i), transposition(j, k)) =
+                                          compose(transposition(i, k), transposition(i, j))
+                                        [using specialize aThreeCycleIsInvariantUnderRotation(i, j, k) i-not-j i-not-k j-not-k]
+                                      // STAGE 1: the conjugate IS (j,i,k)^2. `simplify` gets here —
+                                      // every rewrite runs left-to-right.
+                                      @conjugate-is-the-square |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)),
+                                          compose(compose(transposition(i, a), transposition(i, j)),
+                                          compose(transposition(i, a), transposition(i, j)))),
+                                          inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          compose(compose(transposition(j, k), transposition(j, i)),
+                                          compose(transposition(j, k), transposition(j, i)))
+                                        [using simplify split-outer split-inner conjugate-ia conjugate-ij sigma-i sigma-j sigma-a]
+                                      // STAGE 2: (j,i,k)^2 = (j,k,i) = (i,j,k). `square-is-a-rotation`
+                                      // must run BACKWARD here, so `chain`, not `simplify`.
+                                      @conclusion-conjugate |
+                                        compose(compose(compose(transposition(i, j), transposition(a, k)),
+                                          compose(compose(transposition(i, a), transposition(i, j)),
+                                          compose(transposition(i, a), transposition(i, j)))),
+                                          inverse(compose(transposition(i, j), transposition(a, k)))) =
+                                          compose(transposition(i, k), transposition(i, j))
+                                        [using chain conjugate-is-the-square square-is-a-rotation rotation]
+                                    }
+                                  @conclusion-j-not-k |
+                                    j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                                    [by implies_intro given-j-not-k]
+                                }
+                              @conclusion-j-not-a |
+                                j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                                [by implies_intro given-j-not-a]
+                            }
+                          @conclusion-i-not-k |
+                            i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                            [by implies_intro given-i-not-k]
+                        }
+                      @conclusion-i-not-a |
+                        i != a -> i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                        [by implies_intro given-i-not-a]
+                    }
+                  @conclusion-i-not-j |
+                    i != j -> i != a -> i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                    [by implies_intro given-i-not-j]
+                }
+              @discharge-k |
+                forall k: Element; i != j -> i != a -> i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+                [by forall_intro generalize-k]
+            }
+          @discharge-a |
+            forall a, k: Element; i != j -> i != a -> i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+            [by forall_intro generalize-a]
+        }
+      @discharge-j |
+        forall j, a, k: Element; i != j -> i != a -> i != k -> j != a -> j != k -> compose(compose(compose(transposition(i, j), transposition(a, k)), compose(compose(transposition(i, a), transposition(i, j)), compose(transposition(i, a), transposition(i, j)))), inverse(compose(transposition(i, j), transposition(a, k)))) = compose(transposition(i, k), transposition(i, j))
+        [by forall_intro generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, k: Element;
+      i != j -> i != a -> i != k -> j != a -> j != k ->
+      compose(compose(compose(transposition(i, j), transposition(a, k)),
+      compose(compose(transposition(i, a), transposition(i, j)),
+      compose(transposition(i, a), transposition(i, j)))),
+      inverse(compose(transposition(i, j), transposition(a, k)))) =
+      compose(transposition(i, k), transposition(i, j))
     [by forall_intro generalize-i]
 qed
