@@ -127,6 +127,14 @@ pub const Step = struct {
         /// as the certificate when the certifier chain declines (instead of the
         /// hard error). Keeps the step kernel-checked. Arithmetic-only for now.
         fallback: ?Token = null,
+        /// `<accelerant> … guards(step, …)`: the steps that discharge this step's
+        /// GUARDED-SORT obligations — one per refined binder of the cited fact, in binder
+        /// order. A guard obligation does NOT appear in the cited lemma's `->` chain (it
+        /// comes from a binder's sort REFINEMENT), so it cannot be positioned among `refs`
+        /// without the reader having to know the accelerant's own ordering. Its own slot
+        /// keeps the a-priori-knowable standard the other ref lists meet: `refs` are read
+        /// off the lemma's antecedents, `guards` off its binder list.
+        guards: []const Token = &.{},
 
         pub const Kind = enum { by, using };
     };
