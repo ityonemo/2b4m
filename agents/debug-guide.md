@@ -155,24 +155,46 @@ Note `--trace-facts` is deliberately exempt: it is a view OF the schedule, so it
 | is this really kernel-checked? | `2b4m debug taint`, then plain `2b4m check` |
 | output changed and the source didn't | `--chaos` sweep: if seeds disagree, it's a determinism bug |
 
-## `--fast` must never error where strict does not
+## `--fast` and strict must agree on the VERDICT
 
-That is an INVARIANT (user ruling 2026-10-06), and it has been violated three distinct ways.
-All three come from the same root: an ADMITTED accelerant builds no certificate, so nothing
-carries the citation edges its proof would have had, and the use-all-facts walk then calls the
-steps it consumed dead. Strict never notices, because there the accelerant lowers to real steps
-whose refs the walk sees.
+That is an INVARIANT (user ruling 2026-10-06), and it has two directions.
 
-Sweep for it with:
+**`--fast` must never ERROR where strict does not.** Violated four distinct ways, all from one
+root: an ADMITTED accelerant builds no certificate, so nothing carries the citation edges its
+proof would have had, and the use-all-facts walk then calls the steps it consumed dead. Strict
+never notices, because there the accelerant lowers to real steps whose refs the walk sees.
+
+**`--fast` must never ACCEPT what strict REJECTS.** Same root, opposite symptom: because the
+admitted step is not checked, nothing validated its refs either. Found 2026-10-07.
+
+Sweep for BOTH directions with:
 
 ```
-for f in $(find std -name '*.b4m'); do
-  2b4m check "$f" >/dev/null 2>&1 || continue          # strict must pass
-  2b4m check --fast "$f" >/dev/null 2>&1 || echo "VIOLATION $f"
+for f in $(find std aata examples tests/cases -name '*.b4m' -o -name '*.md'); do
+  s=0; 2b4m check        "$f" >/dev/null 2>&1 || s=1
+  f2=0; 2b4m check --fast "$f" >/dev/null 2>&1 || f2=1
+  [ "$s" = "$f2" ] || echo "VIOLATION $f (strict=$s fast=$f2)"
 done
 ```
 
-All four causes below are now fixed, and the sweep is clean across `std/` and `tests/cases/`.
+All five causes below are now fixed, and the sweep is clean across `std/`, `aata/`,
+`examples/` and `tests/cases/`.
+
+**FIXED (the ACCEPT direction) — an admitted accelerant's refs were never validated.** The
+admit path walks `refs` only to seed use-all-facts roots, and that walk skipped any name that
+did not resolve to a local step, reasoning that a global fact cited by name needs no root. But
+a ref naming NEITHER a local step nor a global fact is a typo, so `--fast` silently passed a
+proof strict rejects with `reference not found`. Fix: `seedAndCheckLocalRoot` diagnoses it
+(`namesAFact` counts an ALIAS to a fact too — a re-exported lemma is the ordinary way a file
+names another theory's fact, and `ast.factOf` returns null for an alias).
+
+TRAP met while fixing it: `c.schema` is OVERLOADED by rule word. For `specialize` it is the
+applied head (which may be a local step, so it must resolve); for `polynomial(peano)` /
+`arithmetic(integer)` / `assoc(lemma)` it is a THEORY MODULE or lemma name, neither a step nor
+a fact. Validating it unconditionally broke 19 files across `std/`, `aata/` and `examples/`.
+Hence two functions: `seedLocalRoot` (silent, for the overloaded slot) and
+`seedAndCheckLocalRoot` (validating, for `refs` and for `specialize`'s head).
+Gate: `tests/cases/fast_unknown_ref_bad.b4m`, asserted in BOTH modes.
 
 **FIXED — a `specialize` head that is a local step.** `specialize HEAD(args)` carries its head
 in the claim's `schema` slot, NOT `refs`, and the head may be a local step label. The admit path

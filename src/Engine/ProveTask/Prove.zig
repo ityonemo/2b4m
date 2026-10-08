@@ -715,10 +715,47 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
 /// global fact and is skipped without touching `localName` (which would diagnose it). Used by
 /// the admit path: an admitted accelerant builds no certificate, so nothing else carries the
 /// citation edges its refs would have had.
+///
+/// A name that resolves to nothing is SILENTLY skipped here, because `c.schema` — the other
+/// caller — is overloaded: for `specialize` it is a lemma-or-step head, but for
+/// `polynomial(peano)` / `arithmetic(integer)` it is a THEORY MODULE, which is neither a step
+/// nor a fact. `seedAndCheckLocalRoot` is the validating form, for the `refs` list.
 fn seedLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!void {
     if (tok.qualifier != InternPool.Index.none) return;
     const target = w.resolveStep(tokName(tok)) orelse return;
     if (target == .step) try self.known.reachable.append(self.ctx.arena, @intFromEnum(self.ordinal_step.items[@intFromEnum(target.step)]));
+}
+
+/// As `seedLocalRoot`, but also DIAGNOSES a ref that names nothing at all. An admitted
+/// accelerant is not checked here, so a typo'd ref would otherwise pass `--fast` and fail only
+/// under strict — the one direction the fast/strict invariant does not allow (`--fast` must
+/// never accept what strict rejects, just as it must never reject what strict accepts).
+/// Resolving to a local step or block is fine, and so is naming a global fact; naming neither
+/// is a typo. For `c.refs` (always logical inputs) and for `specialize`'s head — the only
+/// rule word whose `c.schema` must resolve (see `seedLocalRoot` on that slot's overloading).
+fn seedAndCheckLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!void {
+    if (tok.qualifier != InternPool.Index.none) return;
+    const name = tokName(tok);
+    const target = w.resolveStep(name) orelse {
+        if (self.namesAFact(name)) return;
+        return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)});
+    };
+    if (target == .step) try self.known.reachable.append(self.ctx.arena, @intFromEnum(self.ordinal_step.items[@intFromEnum(target.step)]));
+}
+
+/// Does `name` name a global fact — one already demanded (FactKV), or declared in this file's
+/// AST and not yet demanded? Mirrors `resolveStepRef`'s two-sided test, but counts an ALIAS to
+/// a fact too (`theorem addSuccLeft = peano.addSuccLeft`): `ast.factOf` returns null for an
+/// alias, and a re-exported lemma is the ordinary way a file names another theory's fact, so
+/// testing only for a local fact decl would reject every aliased rewrite lemma.
+fn namesAFact(self: *Prove, name: StrId) bool {
+    if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null) return true;
+    const fid = self.ctx.fileOf(self.file) orelse return false;
+    const d = self.ctx.declOf(fid, name) orelse return false;
+    return switch (d.*) {
+        .axiom, .hole, .theorem => true,
+        else => false,
+    };
 }
 
 /// The NAME of the fact a trusted engine-word citation reads, paired with `trustSourceFile`'s
@@ -8885,15 +8922,17 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
             // "'peano.mulAddDistribLeft' cannot be namespace-qualified here" on a `simplify`
             // whose rewrite set names a qualified lemma (std/peano/order.b4m and five more),
             // where strict is silent.
-            var roots: [1]?lexer.Token = .{c.schema};
-            for (&roots) |maybe| if (maybe) |t| self.seedLocalRoot(w, t) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.Recover => {},
-            };
-            for (c.refs) |r| self.seedLocalRoot(w, r) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.Recover => {},
-            };
+            // `c.schema` is OVERLOADED by rule word: for `specialize` it is the applied
+            // fact-or-step HEAD (so it both seeds a root and must resolve); for
+            // `polynomial(peano)` / `arithmetic(integer)` / `assoc(lemma)` it is a THEORY
+            // MODULE or a lemma name, which is not a local step and must NOT be diagnosed.
+            if (c.schema) |t| {
+                if (word == .specialize) try self.seedAndCheckLocalRoot(w, t) else self.seedLocalRoot(w, t) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Recover => {},
+                };
+            }
+            for (c.refs) |r| try self.seedAndCheckLocalRoot(w, r);
         },
         // model: the transferred statement = the source theorem elaborated under M's overlay
         // (relativization included). α-match the claim.
