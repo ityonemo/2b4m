@@ -1654,3 +1654,161 @@ proof
     forall sigma: Fn; invertible(sigma) -> forall k: Nat; forall s: Points; forall t: Points; (forall i: Nat; less_than(i, succ(k)) -> at(t, i) = apply(sigma, at(s, i))) -> compose(compose(sigma, cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
     [by forall_intro generalize-sigma]
 qed
+
+// -- how a cycle's INVERSE acts on its own points -------------------------------------------
+//
+// `cycleAdvances` / `cycleWrapsAround` say where a cycle SENDS each listed point. These say
+// where its inverse sends them: back one, and the first back to the last. Conjugating by a
+// cycle's inverse needs exactly this — and needs it at only a FEW points, which is what keeps
+// a conjugation argument over a cycle of VARIABLE length from needing induction on that
+// length (the conjugated object's point count is what bounds the work, not the cycle's).
+
+// c⁻¹ undoes c at every point. (A local copy of decomposition.b4m's lemma, which sits in a
+// file this one must not depend on; it is three lines from the inverse axioms.)
+theorem anInverseUndoesItsMapAtAPoint: forall c: Fn; invertible(c) ->
+  forall w: Element; apply(inverseFn(c), apply(c, w)) = w
+proof
+  @generalize-c |
+    fix c: Fn {
+      @given-invertible |
+        assume invertible(c) {
+          @c-invertible |
+            invertible(c)
+            [by hypothesis given-invertible]
+          @inverse-cancels |
+            compose(inverseFn(c), c) = identityFn
+            [using specialize inverseLeft(c) c-invertible]
+          @generalize-w |
+            fix w: Element {
+              @composite-applies |
+                apply(compose(inverseFn(c), c), w) = apply(inverseFn(c), apply(c, w))
+                [using specialize composeApply(inverseFn(c), c, w)]
+              @identity-fixes-w |
+                apply(identityFn, w) = w
+                [using specialize identityApply(w)]
+              @conclusion-undone-at-w |
+                apply(inverseFn(c), apply(c, w)) = w
+                [using chain composite-applies inverse-cancels identity-fixes-w]
+            }
+          @conclusion-undone |
+            forall w: Element; apply(inverseFn(c), apply(c, w)) = w
+            [by forall_intro generalize-w]
+        }
+      @conclusion-for-c |
+        invertible(c) -> forall w: Element; apply(inverseFn(c), apply(c, w)) = w
+        [by implies_intro given-invertible]
+    }
+  @conclusion |
+    forall c: Fn; invertible(c) -> forall w: Element; apply(inverseFn(c), apply(c, w)) = w
+    [by forall_intro generalize-c]
+qed
+
+// The INVERSE of a cycle RETREATS each listed point to the one before: c⁻¹(a_{i+1}) = a_i
+// for i < k. Immediate from `cycleAdvances` (c carries a_i to a_{i+1}) composed with
+// `anInverseUndoesItsMapAtAPoint`.
+theorem aCycleInverseRetreats: forall s: Points; forall k: Nat;
+  distinct(s, succ(k)) ->
+  forall i: Nat; less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-k |
+        fix k: Nat {
+          @given-distinct |
+            assume distinct(s, succ(k)) {
+              @the-points-are-distinct |
+                distinct(s, succ(k))
+                [by hypothesis given-distinct]
+              @the-cycle-is-a-permutation |
+                invertible(cycle(s, succ(k)))
+                [using specialize cycleIsAPermutation(s, succ(k))]
+              @the-inverse-undoes-the-cycle |
+                forall w: Element; apply(inverseFn(cycle(s, succ(k))), apply(cycle(s, succ(k)), w)) = w
+                [using specialize anInverseUndoesItsMapAtAPoint(cycle(s, succ(k))) the-cycle-is-a-permutation]
+              @the-cycle-advances-its-points |
+                forall i: Nat; less_than(i, k) -> apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+                [using specialize cycleAdvances(s, k) the-points-are-distinct]
+              @generalize-i |
+                fix i: Nat {
+                  @given-i-below-k |
+                    assume less_than(i, k) {
+                      @i-below-k |
+                        less_than(i, k)
+                        [by hypothesis given-i-below-k]
+                      @the-cycle-advances-point-i |
+                        apply(cycle(s, succ(k)), at(s, i)) = at(s, succ(i))
+                        [using specialize the-cycle-advances-its-points(i) i-below-k]
+                      @the-inverse-undoes-point-i |
+                        apply(inverseFn(cycle(s, succ(k))), apply(cycle(s, succ(k)), at(s, i))) = at(s, i)
+                        [using specialize the-inverse-undoes-the-cycle(at(s, i))]
+                      @conclusion-retreats-at-i |
+                        apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+                        [using chain the-cycle-advances-point-i the-inverse-undoes-point-i]
+                    }
+                  @conclusion-i-below-k-retreats |
+                    less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+                    [by implies_intro given-i-below-k]
+                }
+              @conclusion-retreats |
+                forall i: Nat; less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+                [by forall_intro generalize-i]
+            }
+          @conclusion-for-k |
+            distinct(s, succ(k)) ->
+              forall i: Nat; less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+            [by implies_intro given-distinct]
+        }
+      @discharge-k |
+        forall k: Nat; distinct(s, succ(k)) ->
+          forall i: Nat; less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat;
+      distinct(s, succ(k)) ->
+      forall i: Nat; less_than(i, k) -> apply(inverseFn(cycle(s, succ(k))), at(s, succ(i))) = at(s, i)
+    [by forall_intro generalize-s]
+qed
+
+// ...and sends the FIRST point back to the LAST: c⁻¹(a₀) = a_k, by `cycleWrapsAround`.
+theorem aCycleInverseWrapsBackward: forall s: Points; forall k: Nat;
+  distinct(s, succ(k)) -> apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-k |
+        fix k: Nat {
+          @given-distinct |
+            assume distinct(s, succ(k)) {
+              @the-points-are-distinct |
+                distinct(s, succ(k))
+                [by hypothesis given-distinct]
+              @the-cycle-is-a-permutation |
+                invertible(cycle(s, succ(k)))
+                [using specialize cycleIsAPermutation(s, succ(k))]
+              @the-cycle-wraps-the-last-point |
+                apply(cycle(s, succ(k)), at(s, k)) = at(s, ZERO)
+                [using specialize cycleWrapsAround(s, k) the-points-are-distinct]
+              @the-inverse-undoes-the-cycle |
+                forall w: Element; apply(inverseFn(cycle(s, succ(k))), apply(cycle(s, succ(k)), w)) = w
+                [using specialize anInverseUndoesItsMapAtAPoint(cycle(s, succ(k))) the-cycle-is-a-permutation]
+              @the-inverse-undoes-the-last-point |
+                apply(inverseFn(cycle(s, succ(k))), apply(cycle(s, succ(k)), at(s, k))) = at(s, k)
+                [using specialize the-inverse-undoes-the-cycle(at(s, k))]
+              @conclusion-wraps-backward |
+                apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
+                [using chain the-cycle-wraps-the-last-point the-inverse-undoes-the-last-point]
+            }
+          @conclusion-for-k |
+            distinct(s, succ(k)) -> apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
+            [by implies_intro given-distinct]
+        }
+      @discharge-k |
+        forall k: Nat; distinct(s, succ(k)) -> apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
+        [by forall_intro generalize-k]
+    }
+  @conclusion |
+    forall s: Points; forall k: Nat;
+      distinct(s, succ(k)) -> apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
+    [by forall_intro generalize-s]
+qed
