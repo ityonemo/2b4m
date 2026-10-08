@@ -55,6 +55,15 @@ pred divides = peano_divides.divides
 pred less_than = peano.less_than
 
 theorem identityIsAPermutation = permutation.identityIsAPermutation
+theorem transpositionIsAPermutation = permutation.transpositionIsAPermutation
+theorem lessThanSuccSplit = peano_order.lessThanSuccSplit
+func mul = peano.mul
+axiom induction = peano.induction
+theorem composeAssoc = function.composeAssoc
+theorem lessThanSelf = peano_order.lessThanSelf
+theorem lessThanSuccRight = peano_order.lessThanSuccRight
+axiom productUpToSucc = permutation_sequence.productUpToSucc
+theorem notLessThanZero = peano_order.notLessThanZero
 theorem composeIsAPermutation = permutation.composeIsAPermutation
 theorem inverseIsAPermutation = permutation.inverseIsAPermutation
 
@@ -2544,4 +2553,875 @@ proof
       (forall i: Nat; less_than(i, m) -> isAThreeCycle(at(r, i))) ->
       forall i: Nat; less_than(i, add(n, m)) -> isAThreeCycle(at(u, i))
     [using instantiation concatenationPreservesEntryProperty((fun g: Fn => isAThreeCycle(g)))]
+qed
+
+// -- a RUN of 3-cycles -----------------------------------------------------------------------
+//
+// Lemma 10.8's conclusion: an even permutation is a product of 3-cycles. A RUN rather than a
+// fixed count, because the length is what the induction on the transposition count produces,
+// and `aProductOfSubgroupEntriesIsInTheSubgroup` (Lemma 10.9's consumer) takes a run.
+
+define isAProductOfThreeCycles(g) = exists s: Seq; exists n: Nat;
+  (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+  and productUpTo(s, n) = g
+
+// The identity is the EMPTY run: n = ZERO, where the entry condition is vacuous and the
+// product is the identity by `productUpToZero`.
+theorem theIdentityIsAProductOfThreeCycles: isAProductOfThreeCycles(identityFn)
+proof
+  @the-identity-is-a-permutation |
+    invertible(identityFn)
+    [by cite identityIsAPermutation]
+  @a-sequence-exists |
+    exists s: Seq; at(s, ZERO) = identityFn and productUpTo(s, succ(ZERO)) = identityFn
+    [using specialize seqSingleton(identityFn) the-identity-is-a-permutation]
+  @with-some-sequence |
+    unpack s: Seq from a-sequence-exists {
+      @the-empty-product-is-the-identity |
+        productUpTo(s, ZERO) = identityFn
+        [using specialize productUpToZero(s)]
+      @generalize-i |
+        fix i: Nat {
+          @nothing-is-below-zero |
+            not less_than(i, ZERO)
+            [using specialize notLessThanZero(i)]
+          @conclusion-vacuous-at-i |
+            less_than(i, ZERO) -> isAThreeCycle(at(s, i))
+            [using tautology nothing-is-below-zero]
+        }
+      @every-entry-below-zero-is-a-three-cycle |
+        forall i: Nat; less_than(i, ZERO) -> isAThreeCycle(at(s, i))
+        [by forall_intro generalize-i]
+      @the-empty-run-works |
+        (forall i: Nat; less_than(i, ZERO) -> isAThreeCycle(at(s, i)))
+          and productUpTo(s, ZERO) = identityFn
+        [by and_intro every-entry-below-zero-is-a-three-cycle the-empty-product-is-the-identity]
+      @a-length-exists |
+        exists n: Nat; (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+          and productUpTo(s, n) = identityFn
+        [by exists_intro(ZERO) the-empty-run-works]
+      @conclusion-inner |
+        isAProductOfThreeCycles(identityFn)
+        [by exists_intro(s) a-length-exists]
+    }
+  @conclusion |
+    isAProductOfThreeCycles(identityFn)
+    [by exists_elim with-some-sequence]
+qed
+
+// A 3-CYCLE IS A PERMUTATION — it is a composite of two transpositions (std's fold), each a
+// permutation. Needed before a 3-cycle can be put into a `Seq` (`seqSingleton` is guarded on
+// invertibility).
+theorem aThreeCycleIsAPermutation: forall g: Fn; isAThreeCycle(g) -> invertible(g)
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-a-three-cycle |
+        assume isAThreeCycle(g) {
+          @the-three-cycle |
+            isAThreeCycle(g)
+            [by hypothesis given-a-three-cycle]
+          @with-the-first-point |
+            unpack x: Element from the-three-cycle {
+              @the-remaining-points-exist |
+                exists y: Element; exists z: Element;
+                  x != y and x != z and y != z and
+                  g = compose(transposition(x, z), transposition(x, y))
+                [by hypothesis with-the-first-point]
+              @with-the-second-point |
+                unpack y: Element from the-remaining-points-exist {
+                  @the-third-point-exists |
+                    exists z: Element;
+                      x != y and x != z and y != z and
+                      g = compose(transposition(x, z), transposition(x, y))
+                    [by hypothesis with-the-second-point]
+                  @with-the-third-point |
+                    unpack z: Element from the-third-point-exists {
+                      @the-points-and-the-fold |
+                        x != y and x != z and y != z and
+                          g = compose(transposition(x, z), transposition(x, y))
+                        [by hypothesis with-the-third-point]
+                      @the-fold |
+                        g = compose(transposition(x, z), transposition(x, y))
+                        [using tautology the-points-and-the-fold]
+                      @the-outer-transposition-is-a-permutation |
+                        invertible(transposition(x, z))
+                        [using specialize transpositionIsAPermutation(x, z)]
+                      @the-inner-transposition-is-a-permutation |
+                        invertible(transposition(x, y))
+                        [using specialize transpositionIsAPermutation(x, y)]
+                      @the-fold-is-a-permutation |
+                        invertible(compose(transposition(x, z), transposition(x, y)))
+                        [using specialize composeIsAPermutation(transposition(x, z), transposition(x, y)) the-outer-transposition-is-a-permutation the-inner-transposition-is-a-permutation]
+                      @conclusion-at-the-third-point |
+                        invertible(g)
+                        [by rewrite the-fold the-fold-is-a-permutation]
+                    }
+                  @conclusion-at-the-second-point |
+                    invertible(g)
+                    [by exists_elim with-the-third-point]
+                }
+              @conclusion-at-the-first-point |
+                invertible(g)
+                [by exists_elim with-the-second-point]
+            }
+          @conclusion-invertible |
+            invertible(g)
+            [by exists_elim with-the-first-point]
+        }
+      @conclusion-for-g |
+        isAThreeCycle(g) -> invertible(g)
+        [by implies_intro given-a-three-cycle]
+    }
+  @conclusion |
+    forall g: Fn; isAThreeCycle(g) -> invertible(g)
+    [by forall_intro generalize-g]
+qed
+
+// A PRODUCT of two 3-cycle runs is a 3-cycle run — `seqConcat` joins the sequences and
+// `concatenationPreservesThreeCycles` says the joined run's entries are still 3-cycles.
+// This is what lets the induction below absorb each transposition pair into the run it is
+// building, and what makes `isAProductOfThreeCycles` closed under composition.
+theorem aProductOfThreeCycleRunsIsAThreeCycleRun: forall g, h: Fn;
+  isAProductOfThreeCycles(g) -> isAProductOfThreeCycles(h) ->
+  isAProductOfThreeCycles(compose(g, h))
+proof
+  @generalize-g |
+    fix g: Fn {
+      @generalize-h |
+        fix h: Fn {
+          @given-g-is-a-run |
+            assume isAProductOfThreeCycles(g) {
+              @g-is-a-run |
+                isAProductOfThreeCycles(g)
+                [by hypothesis given-g-is-a-run]
+              @given-h-is-a-run |
+                assume isAProductOfThreeCycles(h) {
+                  @h-is-a-run |
+                    isAProductOfThreeCycles(h)
+                    [by hypothesis given-h-is-a-run]
+                  @with-g-sequence |
+                    unpack s: Seq from g-is-a-run {
+                      @g-length-exists |
+                        exists n: Nat;
+                          (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+                          and productUpTo(s, n) = g
+                        [by hypothesis with-g-sequence]
+                      @with-g-length |
+                        unpack m: Nat from g-length-exists {
+                          @g-run-facts |
+                            (forall i: Nat; less_than(i, m) -> isAThreeCycle(at(s, i)))
+                              and productUpTo(s, m) = g
+                            [by hypothesis with-g-length]
+                          @g-entries-are-three-cycles |
+                            forall i: Nat; less_than(i, m) -> isAThreeCycle(at(s, i))
+                            [by and_elim_left g-run-facts]
+                          @g-is-the-prefix-product |
+                            productUpTo(s, m) = g
+                            [by and_elim_right g-run-facts]
+                          @with-h-sequence |
+                            unpack t: Seq from h-is-a-run {
+                              @h-length-exists |
+                                exists n: Nat;
+                                  (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(t, i)))
+                                  and productUpTo(t, n) = h
+                                [by hypothesis with-h-sequence]
+                              @with-h-length |
+                                unpack n: Nat from h-length-exists {
+                                  @h-run-facts |
+                                    (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(t, i)))
+                                      and productUpTo(t, n) = h
+                                    [by hypothesis with-h-length]
+                                  @h-entries-are-three-cycles |
+                                    forall i: Nat; less_than(i, n) -> isAThreeCycle(at(t, i))
+                                    [by and_elim_left h-run-facts]
+                                  @h-is-the-suffix-product |
+                                    productUpTo(t, n) = h
+                                    [by and_elim_right h-run-facts]
+                                  @a-joined-sequence-exists |
+                                    exists u: Seq;
+                                      (forall i: Nat; less_than(i, m) -> at(u, i) = at(s, i))
+                                      and (forall i: Nat; less_than(i, n) -> at(u, add(m, i)) = at(t, i))
+                                      and productUpTo(u, add(m, n)) = compose(productUpTo(s, m), productUpTo(t, n))
+                                    [using specialize seqConcat(s, t, m, n)]
+                                  @with-the-joined-sequence |
+                                    unpack u: Seq from a-joined-sequence-exists {
+                                      @join-facts |
+                                        (forall i: Nat; less_than(i, m) -> at(u, i) = at(s, i))
+                                          and (forall i: Nat; less_than(i, n) -> at(u, add(m, i)) = at(t, i))
+                                          and productUpTo(u, add(m, n)) = compose(productUpTo(s, m), productUpTo(t, n))
+                                        [by hypothesis with-the-joined-sequence]
+                                      @the-two-agreements |
+                                        (forall i: Nat; less_than(i, m) -> at(u, i) = at(s, i))
+                                          and (forall i: Nat; less_than(i, n) -> at(u, add(m, i)) = at(t, i))
+                                        [by and_elim_left join-facts]
+                                      @the-joined-product |
+                                        productUpTo(u, add(m, n)) = compose(productUpTo(s, m), productUpTo(t, n))
+                                        [by and_elim_right join-facts]
+                                      @the-prefix-agrees |
+                                        forall i: Nat; less_than(i, m) -> at(u, i) = at(s, i)
+                                        [by and_elim_left the-two-agreements]
+                                      @the-suffix-agrees |
+                                        forall i: Nat; less_than(i, n) -> at(u, add(m, i)) = at(t, i)
+                                        [by and_elim_right the-two-agreements]
+                                      @the-joined-entries-are-three-cycles |
+                                        forall i: Nat; less_than(i, add(m, n)) -> isAThreeCycle(at(u, i))
+                                        [using specialize concatenationPreservesThreeCycles(u, s, t, m, n) the-prefix-agrees the-suffix-agrees g-entries-are-three-cycles h-entries-are-three-cycles]
+                                      @the-joined-product-is-the-composite |
+                                        productUpTo(u, add(m, n)) = compose(g, h)
+                                        [using chain the-joined-product g-is-the-prefix-product h-is-the-suffix-product]
+                                      @the-joined-run-works |
+                                        (forall i: Nat; less_than(i, add(m, n)) -> isAThreeCycle(at(u, i)))
+                                          and productUpTo(u, add(m, n)) = compose(g, h)
+                                        [by and_intro the-joined-entries-are-three-cycles the-joined-product-is-the-composite]
+                                      @a-joined-length-exists |
+                                        exists k: Nat;
+                                          (forall i: Nat; less_than(i, k) -> isAThreeCycle(at(u, i)))
+                                          and productUpTo(u, k) = compose(g, h)
+                                        [by exists_intro(add(m, n)) the-joined-run-works]
+                                      @conclusion-at-the-joined-sequence |
+                                        isAProductOfThreeCycles(compose(g, h))
+                                        [by exists_intro(u) a-joined-length-exists]
+                                    }
+                                  @conclusion-at-the-h-length |
+                                    isAProductOfThreeCycles(compose(g, h))
+                                    [by exists_elim with-the-joined-sequence]
+                                }
+                              @conclusion-at-the-h-sequence |
+                                isAProductOfThreeCycles(compose(g, h))
+                                [by exists_elim with-h-length]
+                            }
+                          @conclusion-at-the-g-length |
+                            isAProductOfThreeCycles(compose(g, h))
+                            [by exists_elim with-h-sequence]
+                        }
+                      @conclusion-at-the-g-sequence |
+                        isAProductOfThreeCycles(compose(g, h))
+                        [by exists_elim with-g-length]
+                    }
+                  @conclusion-closed |
+                    isAProductOfThreeCycles(compose(g, h))
+                    [by exists_elim with-g-sequence]
+                }
+              @conclusion-h-run-gives |
+                isAProductOfThreeCycles(h) -> isAProductOfThreeCycles(compose(g, h))
+                [by implies_intro given-h-is-a-run]
+            }
+          @conclusion-for-h |
+            isAProductOfThreeCycles(g) -> isAProductOfThreeCycles(h) ->
+              isAProductOfThreeCycles(compose(g, h))
+            [by implies_intro given-g-is-a-run]
+        }
+      @discharge-h |
+        forall h: Fn; isAProductOfThreeCycles(g) -> isAProductOfThreeCycles(h) ->
+          isAProductOfThreeCycles(compose(g, h))
+        [by forall_intro generalize-h]
+    }
+  @conclusion |
+    forall g, h: Fn;
+      isAProductOfThreeCycles(g) -> isAProductOfThreeCycles(h) ->
+      isAProductOfThreeCycles(compose(g, h))
+    [by forall_intro generalize-g]
+qed
+
+// A SINGLE 3-cycle is a run of length one. `seqSingleton` puts it in a sequence (guarded on
+// invertibility — hence `aThreeCycleIsAPermutation`), and the only index below succ(ZERO) is
+// ZERO, where the entry IS the 3-cycle.
+theorem aThreeCycleIsAProductOfThreeCycles: forall g: Fn;
+  isAThreeCycle(g) -> isAProductOfThreeCycles(g)
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-a-three-cycle |
+        assume isAThreeCycle(g) {
+          @the-three-cycle |
+            isAThreeCycle(g)
+            [by hypothesis given-a-three-cycle]
+          @the-three-cycle-is-a-permutation |
+            invertible(g)
+            [using specialize aThreeCycleIsAPermutation(g) the-three-cycle]
+          @a-sequence-exists |
+            exists s: Seq; at(s, ZERO) = g and productUpTo(s, succ(ZERO)) = g
+            [using specialize seqSingleton(g) the-three-cycle-is-a-permutation]
+          @with-the-sequence |
+            unpack s: Seq from a-sequence-exists {
+              @the-sequence-facts |
+                at(s, ZERO) = g and productUpTo(s, succ(ZERO)) = g
+                [by hypothesis with-the-sequence]
+              @the-entry-is-the-three-cycle |
+                at(s, ZERO) = g
+                [by and_elim_left the-sequence-facts]
+              @the-product-is-the-three-cycle |
+                productUpTo(s, succ(ZERO)) = g
+                [by and_elim_right the-sequence-facts]
+              @the-zeroth-entry-is-a-three-cycle |
+                isAThreeCycle(at(s, ZERO))
+                [by rewrite the-entry-is-the-three-cycle the-three-cycle]
+              @generalize-i |
+                fix i: Nat {
+                  @given-i-below-one |
+                    assume less_than(i, succ(ZERO)) {
+                      @i-below-one |
+                        less_than(i, succ(ZERO))
+                        [by hypothesis given-i-below-one]
+                      @i-is-below-zero-or-is-zero |
+                        less_than(i, ZERO) or i = ZERO
+                        [using specialize lessThanSuccSplit(i, ZERO) i-below-one]
+                      @nothing-is-below-zero |
+                        not less_than(i, ZERO)
+                        [using specialize notLessThanZero(i)]
+                      @i-is-zero |
+                        i = ZERO
+                        [using tautology i-is-below-zero-or-is-zero nothing-is-below-zero]
+                      @conclusion-entry-i-is-a-three-cycle |
+                        isAThreeCycle(at(s, i))
+                        [by rewrite i-is-zero the-zeroth-entry-is-a-three-cycle]
+                    }
+                  @conclusion-i-below-one-gives |
+                    less_than(i, succ(ZERO)) -> isAThreeCycle(at(s, i))
+                    [by implies_intro given-i-below-one]
+                }
+              @every-entry-is-a-three-cycle |
+                forall i: Nat; less_than(i, succ(ZERO)) -> isAThreeCycle(at(s, i))
+                [by forall_intro generalize-i]
+              @the-singleton-run-works |
+                (forall i: Nat; less_than(i, succ(ZERO)) -> isAThreeCycle(at(s, i)))
+                  and productUpTo(s, succ(ZERO)) = g
+                [by and_intro every-entry-is-a-three-cycle the-product-is-the-three-cycle]
+              @a-length-exists |
+                exists n: Nat;
+                  (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+                  and productUpTo(s, n) = g
+                [by exists_intro(succ(ZERO)) the-singleton-run-works]
+              @conclusion-at-the-sequence |
+                isAProductOfThreeCycles(g)
+                [by exists_intro(s) a-length-exists]
+            }
+          @conclusion-is-a-run |
+            isAProductOfThreeCycles(g)
+            [by exists_elim with-the-sequence]
+        }
+      @conclusion-for-g |
+        isAThreeCycle(g) -> isAProductOfThreeCycles(g)
+        [by implies_intro given-a-three-cycle]
+    }
+  @conclusion |
+    forall g: Fn; isAThreeCycle(g) -> isAProductOfThreeCycles(g)
+    [by forall_intro generalize-g]
+qed
+
+// Lemma 10.8's pair step, in RUN form: a pair of transpositions is a product of 3-cycles.
+// The three outcomes of `aPairOfTranspositionsIsAtMostTwoThreeCycles` each become a run —
+// the empty one, a singleton, or two singletons joined by closure.
+theorem aPairOfTranspositionsIsAProductOfThreeCycles: forall a, b, c, d: Element;
+  a != b -> c != d ->
+  isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-differs-from-b |
+                    assume a != b {
+                      @a-differs-from-b |
+                        a != b
+                        [by hypothesis given-a-differs-from-b]
+                      @given-c-differs-from-d |
+                        assume c != d {
+                          @c-differs-from-d |
+                            c != d
+                            [by hypothesis given-c-differs-from-d]
+                          @the-pair-resolves |
+                            ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                              or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                              or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                              compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                            [using specialize aPairOfTranspositionsIsAtMostTwoThreeCycles(a, b, c, d) a-differs-from-b c-differs-from-d]
+                          @conclusion-pair-is-a-run |
+                            isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                            case the-pair-resolves {
+                              @when-the-pair-is-the-identity |
+                                assume compose(transposition(a, b), transposition(c, d)) = identityFn {
+                                  @the-pair-is-the-identity |
+                                    compose(transposition(a, b), transposition(c, d)) = identityFn
+                                    [by hypothesis when-the-pair-is-the-identity]
+                                  @the-identity-is-a-run |
+                                    isAProductOfThreeCycles(identityFn)
+                                    [by cite theIdentityIsAProductOfThreeCycles]
+                                  @conclusion-identity-case |
+                                    isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                    [by rewrite the-pair-is-the-identity the-identity-is-a-run]
+                                }
+                              @when-the-pair-is-a-three-cycle |
+                                assume isAThreeCycle(compose(transposition(a, b), transposition(c, d))) {
+                                  @the-pair-is-a-three-cycle |
+                                    isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                    [by hypothesis when-the-pair-is-a-three-cycle]
+                                  @conclusion-three-cycle-case |
+                                    isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                    [using specialize aThreeCycleIsAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d))) the-pair-is-a-three-cycle]
+                                }
+                              @when-the-pair-is-two-three-cycles |
+                                assume exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                  compose(transposition(a, b), transposition(c, d)) = compose(g, h) {
+                                  @two-three-cycles-exist |
+                                    exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                    [by hypothesis when-the-pair-is-two-three-cycles]
+                                  @with-the-first-factor |
+                                    unpack g: Fn from two-three-cycles-exist {
+                                      @the-second-factor-exists |
+                                        exists h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                          compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                        [by hypothesis with-the-first-factor]
+                                      @with-the-second-factor |
+                                        unpack h: Fn from the-second-factor-exists {
+                                          @the-factor-facts |
+                                            isAThreeCycle(g) and isAThreeCycle(h) and
+                                              compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                            [by hypothesis with-the-second-factor]
+                                          @both-are-three-cycles |
+                                            isAThreeCycle(g) and isAThreeCycle(h)
+                                            [by and_elim_left the-factor-facts]
+                                          @the-pair-splits |
+                                            compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                            [by and_elim_right the-factor-facts]
+                                          @the-first-is-a-three-cycle |
+                                            isAThreeCycle(g)
+                                            [by and_elim_left both-are-three-cycles]
+                                          @the-second-is-a-three-cycle |
+                                            isAThreeCycle(h)
+                                            [by and_elim_right both-are-three-cycles]
+                                          @the-first-is-a-run |
+                                            isAProductOfThreeCycles(g)
+                                            [using specialize aThreeCycleIsAProductOfThreeCycles(g) the-first-is-a-three-cycle]
+                                          @the-second-is-a-run |
+                                            isAProductOfThreeCycles(h)
+                                            [using specialize aThreeCycleIsAProductOfThreeCycles(h) the-second-is-a-three-cycle]
+                                          @the-composite-is-a-run |
+                                            isAProductOfThreeCycles(compose(g, h))
+                                            [using specialize aProductOfThreeCycleRunsIsAThreeCycleRun(g, h) the-first-is-a-run the-second-is-a-run]
+                                          @conclusion-at-the-second-factor |
+                                            isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                            [by rewrite the-pair-splits the-composite-is-a-run]
+                                        }
+                                      @conclusion-at-the-first-factor |
+                                        isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                        [by exists_elim with-the-second-factor]
+                                    }
+                                  @conclusion-two-three-cycles-case |
+                                    isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                    [by exists_elim with-the-first-factor]
+                                }
+                            }
+                        }
+                      @conclusion-c-differs-gives |
+                        c != d -> isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                        [by implies_intro given-c-differs-from-d]
+                    }
+                  @conclusion-for-d |
+                    a != b -> c != d ->
+                      isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                    [by implies_intro given-a-differs-from-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> c != d ->
+                  isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> c != d ->
+              isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> c != d ->
+          isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> c != d ->
+      isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+    [by forall_intro generalize-a]
+qed
+
+// The pair step with the transpositions given ABSTRACTLY (as `isATransposition`) rather than
+// as explicit point pairs — which is the form the induction meets, since a transposition run's
+// entries are only known to satisfy `isATransposition`. Unpacking both gives the four points.
+theorem aPairOfTranspositionEntriesIsAProductOfThreeCycles: forall t, u: Fn;
+  isTransposition(t) -> isTransposition(u) -> isAProductOfThreeCycles(compose(t, u))
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-u |
+        fix u: Fn {
+          @given-t-is-a-transposition |
+            assume isTransposition(t) {
+              @t-is-a-transposition |
+                isTransposition(t)
+                [by hypothesis given-t-is-a-transposition]
+              @given-u-is-a-transposition |
+                assume isTransposition(u) {
+                  @u-is-a-transposition |
+                    isTransposition(u)
+                    [by hypothesis given-u-is-a-transposition]
+                  @with-the-first-point-of-t |
+                    unpack a: Element from t-is-a-transposition {
+                      @the-second-point-of-t-exists |
+                        exists v: Element; a != v and t = transposition(a, v)
+                        [by hypothesis with-the-first-point-of-t]
+                      @with-the-second-point-of-t |
+                        unpack b: Element from the-second-point-of-t-exists {
+                          @the-points-of-t |
+                            a != b and t = transposition(a, b)
+                            [by hypothesis with-the-second-point-of-t]
+                          @a-differs-from-b |
+                            a != b
+                            [by and_elim_left the-points-of-t]
+                          @t-is-that-transposition |
+                            t = transposition(a, b)
+                            [by and_elim_right the-points-of-t]
+                          @with-the-first-point-of-u |
+                            unpack c: Element from u-is-a-transposition {
+                              @the-second-point-of-u-exists |
+                                exists v: Element; c != v and u = transposition(c, v)
+                                [by hypothesis with-the-first-point-of-u]
+                              @with-the-second-point-of-u |
+                                unpack d: Element from the-second-point-of-u-exists {
+                                  @the-points-of-u |
+                                    c != d and u = transposition(c, d)
+                                    [by hypothesis with-the-second-point-of-u]
+                                  @c-differs-from-d |
+                                    c != d
+                                    [by and_elim_left the-points-of-u]
+                                  @u-is-that-transposition |
+                                    u = transposition(c, d)
+                                    [by and_elim_right the-points-of-u]
+                                  @the-explicit-pair-is-a-run |
+                                    isAProductOfThreeCycles(compose(transposition(a, b), transposition(c, d)))
+                                    [using specialize aPairOfTranspositionsIsAProductOfThreeCycles(a, b, c, d) a-differs-from-b c-differs-from-d]
+                                  @with-u-restored |
+                                    isAProductOfThreeCycles(compose(transposition(a, b), u))
+                                    [by rewrite u-is-that-transposition the-explicit-pair-is-a-run]
+                                  @conclusion-at-the-points-of-u |
+                                    isAProductOfThreeCycles(compose(t, u))
+                                    [by rewrite t-is-that-transposition with-u-restored]
+                                }
+                              @conclusion-at-the-first-point-of-u |
+                                isAProductOfThreeCycles(compose(t, u))
+                                [by exists_elim with-the-second-point-of-u]
+                            }
+                          @conclusion-at-the-second-point-of-t |
+                            isAProductOfThreeCycles(compose(t, u))
+                            [by exists_elim with-the-first-point-of-u]
+                        }
+                      @conclusion-at-the-first-point-of-t |
+                        isAProductOfThreeCycles(compose(t, u))
+                        [by exists_elim with-the-second-point-of-t]
+                    }
+                  @conclusion-pair-is-a-run |
+                    isAProductOfThreeCycles(compose(t, u))
+                    [by exists_elim with-the-first-point-of-t]
+                }
+              @conclusion-u-transposition-gives |
+                isTransposition(u) -> isAProductOfThreeCycles(compose(t, u))
+                [by implies_intro given-u-is-a-transposition]
+            }
+          @conclusion-for-u |
+            isTransposition(t) -> isTransposition(u) -> isAProductOfThreeCycles(compose(t, u))
+            [by implies_intro given-t-is-a-transposition]
+        }
+      @discharge-u |
+        forall u: Fn; isTransposition(t) -> isTransposition(u) ->
+          isAProductOfThreeCycles(compose(t, u))
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall t, u: Fn;
+      isTransposition(t) -> isTransposition(u) -> isAProductOfThreeCycles(compose(t, u))
+    [by forall_intro generalize-t]
+qed
+
+// mul(TWO, succ(j)) = succ(succ(mul(TWO, j))) — the two-step each induction step takes.
+theorem doublingASuccessorAddsTwo: forall j: Nat;
+  mul(TWO, succ(j)) = succ(succ(mul(TWO, j)))
+proof
+  @generalize-j |
+    fix j: Nat {
+      @conclusion-at-j |
+        mul(TWO, succ(j)) = succ(succ(mul(TWO, j)))
+        [using arithmetic(peano)]
+    }
+  @conclusion |
+    forall j: Nat; mul(TWO, succ(j)) = succ(succ(mul(TWO, j)))
+    [by forall_intro generalize-j]
+qed
+
+// LEMMA 10.8's INDUCTION: an EVEN-length run of transpositions has a 3-cycle-run product.
+// Induction on the number of PAIRS j, so the length is mul(TWO, j) and each step peels the
+// last two entries: productUpTo(s, m+2) = productUpTo(s, m) o (at(s,m) o at(s,m+1)) after
+// reassociating, where the prefix is a 3-cycle run by the hypothesis and the pair is one by
+// `aPairOfTranspositionEntriesIsAProductOfThreeCycles`. Closure joins them.
+theorem anEvenRunOfTranspositionsIsAProductOfThreeCycles: forall s: Seq; forall j: Nat;
+  (forall i: Nat; less_than(i, mul(TWO, j)) -> isTransposition(at(s, i))) ->
+  isAProductOfThreeCycles(productUpTo(s, mul(TWO, j)))
+proof
+  @generalize-s |
+    fix s: Seq {
+      // base case: zero pairs — the empty product is the identity, an empty 3-cycle run.
+      @base-case-proof |
+        assume forall i: Nat; less_than(i, mul(TWO, ZERO)) -> isTransposition(at(s, i)) {
+          @no-pairs-is-no-entries |
+            mul(TWO, ZERO) = ZERO
+            [using arithmetic(peano)]
+          @the-empty-product-is-the-identity |
+            productUpTo(s, ZERO) = identityFn
+            [using specialize productUpToZero(s)]
+          @the-identity-is-a-run |
+            isAProductOfThreeCycles(identityFn)
+            [by cite theIdentityIsAProductOfThreeCycles]
+          @the-empty-product-is-a-run |
+            isAProductOfThreeCycles(productUpTo(s, ZERO))
+            [by rewrite the-empty-product-is-the-identity the-identity-is-a-run]
+          @conclusion-base |
+            isAProductOfThreeCycles(productUpTo(s, mul(TWO, ZERO)))
+            [by rewrite no-pairs-is-no-entries the-empty-product-is-a-run]
+        }
+      @base-case |
+        (forall i: Nat; less_than(i, mul(TWO, ZERO)) -> isTransposition(at(s, i))) ->
+          isAProductOfThreeCycles(productUpTo(s, mul(TWO, ZERO)))
+        [by implies_intro base-case-proof]
+
+      // inductive step: j pairs to j+1 pairs.
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume (forall i: Nat; less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))) ->
+              isAProductOfThreeCycles(productUpTo(s, mul(TWO, k))) {
+              @inductive-hypothesis |
+                (forall i: Nat; less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))) ->
+                  isAProductOfThreeCycles(productUpTo(s, mul(TWO, k)))
+                [by hypothesis given-inductive-hypothesis]
+              @given-entries-below-the-longer-run |
+                assume forall i: Nat; less_than(i, mul(TWO, succ(k))) -> isTransposition(at(s, i)) {
+                  @entries-below-the-longer-run |
+                    forall i: Nat; less_than(i, mul(TWO, succ(k))) -> isTransposition(at(s, i))
+                    [by hypothesis given-entries-below-the-longer-run]
+                  @the-longer-run-is-two-more |
+                    mul(TWO, succ(k)) = succ(succ(mul(TWO, k)))
+                    [using specialize doublingASuccessorAddsTwo(k)]
+                  @entries-below-two-more |
+                    forall i: Nat; less_than(i, succ(succ(mul(TWO, k)))) -> isTransposition(at(s, i))
+                    [by rewrite the-longer-run-is-two-more entries-below-the-longer-run]
+
+                  // the prefix of mul(TWO,k) entries is a 3-cycle run
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-i-below-the-shorter-run |
+                        assume less_than(i, mul(TWO, k)) {
+                          @i-below-the-shorter-run |
+                            less_than(i, mul(TWO, k))
+                            [by hypothesis given-i-below-the-shorter-run]
+                          @i-below-one-more |
+                            less_than(i, succ(mul(TWO, k)))
+                            [using specialize lessThanSuccRight(i, mul(TWO, k)) i-below-the-shorter-run]
+                          @i-below-two-more |
+                            less_than(i, succ(succ(mul(TWO, k))))
+                            [using specialize lessThanSuccRight(i, succ(mul(TWO, k))) i-below-one-more]
+                          @conclusion-entry-i-is-a-transposition |
+                            isTransposition(at(s, i))
+                            [using specialize entries-below-two-more(i) i-below-two-more]
+                        }
+                      @conclusion-i-below-shorter-gives |
+                        less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))
+                        [by implies_intro given-i-below-the-shorter-run]
+                    }
+                  @entries-below-the-shorter-run |
+                    forall i: Nat; less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))
+                    [by forall_intro generalize-i]
+                  @the-prefix-is-a-run |
+                    isAProductOfThreeCycles(productUpTo(s, mul(TWO, k)))
+                    [by modus_ponens inductive-hypothesis entries-below-the-shorter-run]
+
+                  // the two peeled entries are transpositions
+                  @the-shorter-run-is-in-range |
+                    less_than(mul(TWO, k), succ(mul(TWO, k)))
+                    [using specialize lessThanSelf(mul(TWO, k))]
+                  @the-shorter-run-is-below-two-more |
+                    less_than(mul(TWO, k), succ(succ(mul(TWO, k))))
+                    [using specialize lessThanSuccRight(mul(TWO, k), succ(mul(TWO, k))) the-shorter-run-is-in-range]
+                  @the-first-peeled-entry-is-a-transposition |
+                    isTransposition(at(s, mul(TWO, k)))
+                    [using specialize entries-below-two-more(mul(TWO, k)) the-shorter-run-is-below-two-more]
+                  @the-next-index-is-in-range |
+                    less_than(succ(mul(TWO, k)), succ(succ(mul(TWO, k))))
+                    [using specialize lessThanSelf(succ(mul(TWO, k)))]
+                  @the-second-peeled-entry-is-a-transposition |
+                    isTransposition(at(s, succ(mul(TWO, k))))
+                    [using specialize entries-below-two-more(succ(mul(TWO, k))) the-next-index-is-in-range]
+                  @the-peeled-pair-is-a-run |
+                    isAProductOfThreeCycles(compose(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k)))))
+                    [using specialize aPairOfTranspositionEntriesIsAProductOfThreeCycles(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k)))) the-first-peeled-entry-is-a-transposition the-second-peeled-entry-is-a-transposition]
+
+                  // the product splits as prefix o (pair), after reassociating
+                  @the-product-peels-once |
+                    productUpTo(s, succ(mul(TWO, k))) = compose(productUpTo(s, mul(TWO, k)), at(s, mul(TWO, k)))
+                    [using specialize productUpToSucc(s, mul(TWO, k))]
+                  @the-product-peels-twice |
+                    productUpTo(s, succ(succ(mul(TWO, k)))) =
+                      compose(productUpTo(s, succ(mul(TWO, k))), at(s, succ(mul(TWO, k))))
+                    [using specialize productUpToSucc(s, succ(mul(TWO, k)))]
+                  @the-product-is-the-nested-composite |
+                    productUpTo(s, succ(succ(mul(TWO, k)))) =
+                      compose(compose(productUpTo(s, mul(TWO, k)), at(s, mul(TWO, k))), at(s, succ(mul(TWO, k))))
+                    [using chain the-product-peels-twice the-product-peels-once]
+                  @the-composite-reassociates |
+                    compose(compose(productUpTo(s, mul(TWO, k)), at(s, mul(TWO, k))), at(s, succ(mul(TWO, k)))) =
+                      compose(productUpTo(s, mul(TWO, k)), compose(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k)))))
+                    [using assoc(composeAssoc)]
+                  @the-product-splits |
+                    productUpTo(s, succ(succ(mul(TWO, k)))) =
+                      compose(productUpTo(s, mul(TWO, k)), compose(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k)))))
+                    [using chain the-product-is-the-nested-composite the-composite-reassociates]
+                  @the-split-is-a-run |
+                    isAProductOfThreeCycles(compose(productUpTo(s, mul(TWO, k)), compose(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k))))))
+                    [using specialize aProductOfThreeCycleRunsIsAThreeCycleRun(productUpTo(s, mul(TWO, k)), compose(at(s, mul(TWO, k)), at(s, succ(mul(TWO, k))))) the-prefix-is-a-run the-peeled-pair-is-a-run]
+                  @the-longer-product-is-a-run |
+                    isAProductOfThreeCycles(productUpTo(s, succ(succ(mul(TWO, k)))))
+                    [by rewrite the-product-splits the-split-is-a-run]
+                  @conclusion-longer-run-is-a-run |
+                    isAProductOfThreeCycles(productUpTo(s, mul(TWO, succ(k))))
+                    [by rewrite the-longer-run-is-two-more the-longer-product-is-a-run]
+                }
+              @conclusion-implication-at-succ-k |
+                (forall i: Nat; less_than(i, mul(TWO, succ(k))) -> isTransposition(at(s, i))) ->
+                  isAProductOfThreeCycles(productUpTo(s, mul(TWO, succ(k))))
+                [by implies_intro given-entries-below-the-longer-run]
+            }
+          @conclusion-induction-step-at-k |
+            ((forall i: Nat; less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))) ->
+              isAProductOfThreeCycles(productUpTo(s, mul(TWO, k)))) ->
+              ((forall i: Nat; less_than(i, mul(TWO, succ(k))) -> isTransposition(at(s, i))) ->
+              isAProductOfThreeCycles(productUpTo(s, mul(TWO, succ(k)))))
+            [by implies_intro given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          ((forall i: Nat; less_than(i, mul(TWO, k)) -> isTransposition(at(s, i))) ->
+          isAProductOfThreeCycles(productUpTo(s, mul(TWO, k)))) ->
+          ((forall i: Nat; less_than(i, mul(TWO, succ(k))) -> isTransposition(at(s, i))) ->
+          isAProductOfThreeCycles(productUpTo(s, mul(TWO, succ(k)))))
+        [by forall_intro induction-step]
+      @conclusion-for-s |
+        forall j: Nat;
+          (forall i: Nat; less_than(i, mul(TWO, j)) -> isTransposition(at(s, i))) ->
+          isAProductOfThreeCycles(productUpTo(s, mul(TWO, j)))
+        [using instantiation induction((fun j: Nat => (forall i: Nat; less_than(i, mul(TWO, j)) -> isTransposition(at(s, i))) -> isAProductOfThreeCycles(productUpTo(s, mul(TWO, j))))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: Seq; forall j: Nat;
+      (forall i: Nat; less_than(i, mul(TWO, j)) -> isTransposition(at(s, i))) ->
+      isAProductOfThreeCycles(productUpTo(s, mul(TWO, j)))
+    [by forall_intro generalize-s]
+qed
+
+// LEMMA 10.8 (Judson): the alternating group is generated by 3-cycles. An even permutation
+// has a transposition factorization of EVEN length (`isEvenPermDef`), so the length is
+// mul(TWO, j) for some j, and the induction above turns that run into a 3-cycle run.
+theorem everyEvenPermutationIsAProductOfThreeCycles: forall g: Fn;
+  inAlternating(g) -> isAProductOfThreeCycles(g)
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-in-the-alternating-group |
+        assume inAlternating(g) {
+          @in-the-alternating-group |
+            inAlternating(g)
+            [by hypothesis given-in-the-alternating-group]
+          @membership-unfolds |
+            inAlternating(g) iff (invertible(g) and isEvenPerm(g))
+            [using specialize inAlternatingDef(g)]
+          @g-is-even |
+            isEvenPerm(g)
+            [using tautology membership-unfolds in-the-alternating-group]
+          @evenness-unfolds |
+            isEvenPerm(g) iff (exists s: Seq; exists m: Nat;
+              allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m))
+            [using specialize isEvenPermDef(g)]
+          @a-factorization-exists |
+            exists s: Seq; exists m: Nat;
+              allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+            [using tautology evenness-unfolds g-is-even]
+          @with-the-factorization |
+            unpack s: Seq from a-factorization-exists {
+              @a-length-exists |
+                exists m: Nat;
+                  allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+                [by hypothesis with-the-factorization]
+              @with-the-length |
+                unpack m: Nat from a-length-exists {
+                  @the-factorization-facts |
+                    allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+                    [by hypothesis with-the-length]
+                  @the-entries-and-the-product |
+                    allTranspositions(s, m) and productUpTo(s, m) = g
+                    [by and_elim_left the-factorization-facts]
+                  @the-length-is-even |
+                    divides(TWO, m)
+                    [by and_elim_right the-factorization-facts]
+                  @the-entries-are-transpositions |
+                    allTranspositions(s, m)
+                    [by and_elim_left the-entries-and-the-product]
+                  @the-product-is-g |
+                    productUpTo(s, m) = g
+                    [by and_elim_right the-entries-and-the-product]
+                  @the-entries-unfold |
+                    allTranspositions(s, m) iff
+                      (forall i: Nat; less_than(i, m) -> isTransposition(at(s, i)))
+                    [using specialize allTranspositionsDef(s, m)]
+                  @every-entry-is-a-transposition |
+                    forall i: Nat; less_than(i, m) -> isTransposition(at(s, i))
+                    [using tautology the-entries-unfold the-entries-are-transpositions]
+                  // `divides` is transparent: divides(TWO, m) IS exists k; m = mul(TWO, k).
+                  @with-the-half-length |
+                    unpack j: Nat from the-length-is-even {
+                      @the-length-is-a-double |
+                        m = mul(TWO, j)
+                        [by hypothesis with-the-half-length]
+                      @every-entry-below-the-double-is-a-transposition |
+                        forall i: Nat; less_than(i, mul(TWO, j)) -> isTransposition(at(s, i))
+                        [by rewrite the-length-is-a-double every-entry-is-a-transposition]
+                      @the-double-product-is-a-run |
+                        isAProductOfThreeCycles(productUpTo(s, mul(TWO, j)))
+                        [using specialize anEvenRunOfTranspositionsIsAProductOfThreeCycles(s, j) every-entry-below-the-double-is-a-transposition]
+                      @the-product-is-a-run |
+                        isAProductOfThreeCycles(productUpTo(s, m))
+                        [by rewrite the-length-is-a-double the-double-product-is-a-run]
+                      @conclusion-at-the-half-length |
+                        isAProductOfThreeCycles(g)
+                        [by rewrite the-product-is-g the-product-is-a-run]
+                    }
+                  @conclusion-at-the-length |
+                    isAProductOfThreeCycles(g)
+                    [by exists_elim with-the-half-length]
+                }
+              @conclusion-at-the-factorization |
+                isAProductOfThreeCycles(g)
+                [by exists_elim with-the-length]
+            }
+          @conclusion-is-a-run |
+            isAProductOfThreeCycles(g)
+            [by exists_elim with-the-factorization]
+        }
+      @conclusion-for-g |
+        inAlternating(g) -> isAProductOfThreeCycles(g)
+        [by implies_intro given-in-the-alternating-group]
+    }
+  @conclusion |
+    forall g: Fn; inAlternating(g) -> isAProductOfThreeCycles(g)
+    [by forall_intro generalize-g]
 qed
