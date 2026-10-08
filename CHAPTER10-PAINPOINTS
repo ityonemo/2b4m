@@ -73,7 +73,15 @@ simplicity theorem), not a missing primitive.
 
 GOTCHA met while probing: `--fast` admitted a proof that strict check rejected
 (`'given-a-not-c' names a subproof; a step reference is required` — `specialize` needs the
-RESTATED hypothesis as a step, not the assume-block label). Confirm with plain `check`.
+RESTATED hypothesis as a step, not the assume-block label).
+
+**That was a CHECKER BUG, fixed 2026-10-07**, and it bit again here (a `specialize` head
+naming a step of the PREVIOUS theorem passed `--fast`, failed strict). It is the second
+direction of the fast/strict invariant: `--fast` must never ACCEPT what strict REJECTS, and
+an admitted accelerant was having its refs seeded as use-all-facts roots but never validated.
+Now diagnosed in both modes (`seedAndCheckLocalRoot`; gate
+`tests/cases/fast_unknown_ref_bad.b4m`; five causes catalogued in `agents/debug-guide.md`).
+Still confirm with plain `check` before calling a file done — that is what caught it.
 
 ### LEMMA 10.3's DESIGN — the pivot theorem, and where the real theory starts
 
@@ -85,21 +93,56 @@ walls were not:
   the moved set. ~60 lines gave `aDisjointFactorFixesWhateverTheOtherMoves`,
   `aCompositeFixesWhatBothFactorsFix` and `aPrefixProductFixesWhatEveryEntryFixes`.
 - **variable-length conjugation** — case 2's computation
-  `sigma^-1(a1a2a3)sigma(a1a3a2) = (a1,a3,ar)` needs `c^-1` at only THREE points, because
-  the conjugated thing is a 3-cycle. No induction over `r`; `conjugateOfACycle` (arbitrary
-  length) does it. Verified concretely at r=5 with tau a disjoint 2-cycle.
+  `sigma^-1(a1a2a3)sigma(a1a2a3)^-1 = (a1,a3,ar)` needs `sigma^-1` at only THREE points,
+  because the conjugated thing is a 3-cycle. No induction over `r`; `conjugateOfACycle`
+  (arbitrary length) does it.
 
-**THE PIVOT THEOREM** (shape verified to elaborate):
+  CONFIRMED 2026-10-07 by tracing r = 4, 5, 6, 7 in std's own cycle fold with tau a disjoint
+  2-cycle: the identity holds at every r, and `sigma^-1` at the three points is
+  `(a_r, a_1, a_2)` — `r` enters ONLY through `sigma^-1(a_1) = a_r`. The missing piece was
+  the inverse's action on a cycle's own points, now
+  `aCycleInverseRetreats` (`c^-1(a_{i+1}) = a_i` for i < k) and `aCycleInverseWrapsBackward`
+  (`c^-1(a_0) = a_k`) in `std/permutation/cycle.b4m` — three short lemmas off
+  `cycleAdvances` / `cycleWrapsAround` plus inverse cancellation. That these need only a FEW
+  point values is what keeps a conjugation over a variable-length cycle finite.
+
+**THE PIVOT THEOREM — LANDED 2026-10-07** as
+`aNonIdentityDecompositionPeelsOffALastCycle` in `std/permutation/decomposition.b4m`:
 
     decomposesIntoDisjointCycles(f) -> f != identityFn ->
-    exists t: Fn; exists s: Points; exists p: Nat;
-      distinct(s, succ(p))
-      and f = compose(t, cycle(s, succ(p)))
-      and disjointSupports(t, cycle(s, succ(p)))
+    exists w: Seq; exists k: Nat;
+      isACycle(at(w, k)) and subset(support(at(w, k)), support(f))
+      and (forall i < k; isACycle(at(w, i)))
+      and (forall i < k; subset(support(at(w, i)), support(f)))
+      and (forall i, j < k; i != j -> disjointSupports(at(w, i), at(w, j)))
+      and f = compose(productUpTo(w, k), at(w, k))
+      and disjointSupports(productUpTo(w, k), at(w, k))
 
-`productUpToSucc` peels the decomposition's LAST entry (a cycle), the prefix product is
-`t`, and the three lemmas above give the disjointness. `f != identityFn` is what makes the
-run non-empty. Everything is in hand; ~150 lines.
+**THE SHAPE I RECORDED ABOVE WAS WRONG, and the correction is instructive.** I had it as
+`exists t, s, p; f = compose(t, cycle(s, succ(p)))` — peel a NAMED cycle with its own point
+list and length. But `decomposesIntoDisjointCycles` produces a `Seq` of cycles plus a run
+length, not a `Points`/length pair, so the split is at the SEQUENCE level:
+`productUpToSucc` is already an axiom and gives `f = compose(productUpTo(w,q), at(w,q))`
+for free. The peeled factor is `at(w, k)`, a cycle by `isACycle`; unpacking it to
+`cycle(s, succ(p))` is a separate step a CONSUMER takes when it wants the points.
+
+Consequence: the prefix `productUpTo(w, k)` is itself a shorter product of the same
+disjoint cycles — so the recursion cases 3-5 need runs on the RUN LENGTH, with the whole
+prefix structure carried along. The named-cycle shape would have thrown that away.
+
+**What was actually missing in std was a CONVERSE.** std had only the directions that
+CONSUME disjointness (`disjointSupportsPointwise`,
+`aDisjointFactorFixesWhateverTheOtherMoves`). A construction needs to ESTABLISH it: it
+knows pointwise that its prefix product and last cycle never move a common point, and owes
+the set-level `intersection(support, support) = emptyset`. That is
+`disjointSupportsFromPointwise` (`std/permutation.b4m`), plus the sequence-level
+`aPrefixProductIsDisjointFromADisjointEntry` (`std/permutation/sequence.b4m`). 763 lines
+total. Note the comment already on `aPrefixProductFixesWhatEveryEntryFixes` named this gap
+before the tool to close it existed.
+
+MECHANICS worth keeping: `and` is **LEFT**-associative, so a 7-conjunct goal assembles with
+`and_intro` from the LEFT and `and_elim_left` on `A and B and C and D` yields `A and B and
+C`. And `chain` cannot prove a DISEQUATION — that needs `[by rewrite eq diseq]`.
 
 Why this is the right shape: each of Judson's cases needs only a few NAMED POINTS plus
 disjointness of the rest, so the classification is EXISTENTIAL — not a theorem about
