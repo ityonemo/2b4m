@@ -42,6 +42,8 @@ axiom funcExtensionality = function.funcExtensionality
 theorem transpositionAtFirst = permutation.transpositionAtFirst
 theorem transpositionAtSecond = permutation.transpositionAtSecond
 theorem transpositionElsewhere = permutation.transpositionElsewhere
+theorem transpositionIsAnInvolution = permutation.transpositionIsAnInvolution
+theorem transpositionIsSymmetric = permutation_parity.transpositionIsSymmetric
 
 func at = permutation_sequence.at
 func productUpTo = permutation_sequence.productUpTo
@@ -1917,4 +1919,629 @@ proof
       compose(compose(transposition(a, b), transposition(a, c)),
       compose(transposition(a, d), transposition(a, c)))
     [by forall_intro generalize-a]
+qed
+
+// -- Lemma 10.8: generation by 3-cycles -----------------------------------------------------
+//
+// Judson shows every PAIR of transpositions is a product of 3-cycles, in three cases:
+//   (a,b)(a,b) = id      (a,b)(a,c) = (a,c,b)      (a,b)(c,d) = (a,c,b)(a,c,d)
+// which is exactly the trichotomy on how {a,b} and {c,d} meet: equal as sets, sharing one
+// point, or disjoint. Enumerating every assignment of four points confirms the split is
+// exhaustive (seven reachable equality patterns: one disjoint, four sharing a point, two
+// equal), so Judson's "every pair must be one of" is provable rather than asserted.
+//
+// The 3-cycle needs no new sort: std's cycle fold (`cycleSucc`) makes (x,y,z) the composite
+// T(x,z) o T(x,y), so `isAThreeCycle` is stated directly on that form -- which is why the
+// sharing-one-point case below is DEFINITIONAL rather than a computation.
+
+// A 3-CYCLE, in std's own fold: (x,y,z) = T(x,z) o T(x,y) (`cycleSucc`), so a 3-cycle needs
+// no new sort — it IS a composite of two transpositions through a common first point.
+define isAThreeCycle(g) = exists x: Element; exists y: Element; exists z: Element;
+  x != y and x != z and y != z and
+  g = compose(transposition(x, z), transposition(x, y))
+
+// A pair of transpositions SHARING ONE POINT is a single 3-cycle. With s the shared point,
+// p the first's other point and q the second's, T(s,p) o T(s,q) = (s,q,p) — and in std's
+// fold (s,q,p) is T(s,p) o T(s,q), so this is DEFINITIONAL, not a computation. Stated for
+// all four sharing patterns because `transposition` is symmetric in its arguments.
+theorem aPairSharingOnePointIsAThreeCycle: forall s, p, q: Element;
+  s != p -> s != q -> p != q ->
+  isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+proof
+  @generalize-s |
+    fix s: Element {
+      @generalize-p |
+        fix p: Element {
+          @generalize-q |
+            fix q: Element {
+              @given-s-differs-from-p |
+                assume s != p {
+                  @s-differs-from-p |
+                    s != p
+                    [by hypothesis given-s-differs-from-p]
+                  @given-s-differs-from-q |
+                    assume s != q {
+                      @s-differs-from-q |
+                        s != q
+                        [by hypothesis given-s-differs-from-q]
+                      @given-p-differs-from-q |
+                        assume p != q {
+                          @p-differs-from-q |
+                            p != q
+                            [by hypothesis given-p-differs-from-q]
+                          // witness x := s, y := q, z := p
+                          @q-differs-from-p |
+                            q != p
+                            [using specialize disequalityIsSymmetric(p, q) p-differs-from-q]
+                          @the-witnesses-differ |
+                            s != q and s != p and q != p
+                            [using tautology s-differs-from-q s-differs-from-p q-differs-from-p]
+                          @the-composite-is-the-fold |
+                            compose(transposition(s, p), transposition(s, q)) =
+                              compose(transposition(s, p), transposition(s, q))
+                            [by reflexivity]
+                          @the-witnesses-work |
+                            (s != q and s != p and q != p) and
+                              compose(transposition(s, p), transposition(s, q)) =
+                              compose(transposition(s, p), transposition(s, q))
+                            [by and_intro the-witnesses-differ the-composite-is-the-fold]
+                          @a-third-point-exists |
+                            exists z: Element; (s != q and s != z and q != z) and
+                              compose(transposition(s, p), transposition(s, q)) =
+                              compose(transposition(s, z), transposition(s, q))
+                            [by exists_intro(p) the-witnesses-work]
+                          @a-second-point-exists |
+                            exists y: Element; exists z: Element; (s != y and s != z and y != z) and
+                              compose(transposition(s, p), transposition(s, q)) =
+                              compose(transposition(s, z), transposition(s, y))
+                            [by exists_intro(q) a-third-point-exists]
+                          @conclusion-is-a-three-cycle |
+                            isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+                            [by exists_intro(s) a-second-point-exists]
+                        }
+                      @conclusion-p-differs-gives-three-cycle |
+                        p != q -> isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+                        [by implies_intro given-p-differs-from-q]
+                    }
+                  @conclusion-s-differs-from-q-gives |
+                    s != q -> p != q ->
+                      isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+                    [by implies_intro given-s-differs-from-q]
+                }
+              @conclusion-for-q |
+                s != p -> s != q -> p != q ->
+                  isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+                [by implies_intro given-s-differs-from-p]
+            }
+          @discharge-q |
+            forall q: Element; s != p -> s != q -> p != q ->
+              isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+            [by forall_intro generalize-q]
+        }
+      @discharge-p |
+        forall p, q: Element; s != p -> s != q -> p != q ->
+          isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall s, p, q: Element; s != p -> s != q -> p != q ->
+      isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+    [by forall_intro generalize-s]
+qed
+
+// A pair of DISJOINT transpositions is a product of TWO 3-cycles:
+// (a,b)(c,d) = (a,c,b)(a,c,d), which in std's fold is
+// [T(a,b)oT(a,c)] o [T(a,d)oT(a,c)] — `aPairOfDisjointTranspositionsIsAProductOfThreeCycles`
+// proves that equation; this repackages it as "a composite of two things, each a 3-cycle".
+theorem aPairOfDisjointTranspositionsIsTwoThreeCycles: forall a, b, c, d: Element;
+  a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+  exists g, h: Fn;
+  isAThreeCycle(g) and isAThreeCycle(h) and
+  compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-differs-from-b |
+                    assume a != b {
+                      @a-differs-from-b |
+                        a != b
+                        [by hypothesis given-a-differs-from-b]
+                      @given-a-differs-from-c |
+                        assume a != c {
+                          @a-differs-from-c |
+                            a != c
+                            [by hypothesis given-a-differs-from-c]
+                          @given-a-differs-from-d |
+                            assume a != d {
+                              @a-differs-from-d |
+                                a != d
+                                [by hypothesis given-a-differs-from-d]
+                              @given-b-differs-from-c |
+                                assume b != c {
+                                  @b-differs-from-c |
+                                    b != c
+                                    [by hypothesis given-b-differs-from-c]
+                                  @given-b-differs-from-d |
+                                    assume b != d {
+                                      @b-differs-from-d |
+                                        b != d
+                                        [by hypothesis given-b-differs-from-d]
+                                      @given-c-differs-from-d |
+                                        assume c != d {
+                                          @c-differs-from-d |
+                                            c != d
+                                            [by hypothesis given-c-differs-from-d]
+                                          @the-pair-splits |
+                                            compose(transposition(a, b), transposition(c, d)) =
+                                              compose(compose(transposition(a, b), transposition(a, c)),
+                                              compose(transposition(a, d), transposition(a, c)))
+                                            [using specialize aPairOfDisjointTranspositionsIsAProductOfThreeCycles(a, b, c, d) a-differs-from-b a-differs-from-c a-differs-from-d b-differs-from-c b-differs-from-d c-differs-from-d]
+                                          // the first factor T(a,b)oT(a,c) shares the point a:
+                                          // it is the 3-cycle (a,c,b).
+                                          @the-first-factor-is-a-three-cycle |
+                                            isAThreeCycle(compose(transposition(a, b), transposition(a, c)))
+                                            [using specialize aPairSharingOnePointIsAThreeCycle(a, b, c) a-differs-from-b a-differs-from-c b-differs-from-c]
+                                          @d-differs-from-c |
+                                            d != c
+                                            [using specialize disequalityIsSymmetric(c, d) c-differs-from-d]
+                                          // the second factor T(a,d)oT(a,c) likewise: (a,c,d).
+                                          @the-second-factor-is-a-three-cycle |
+                                            isAThreeCycle(compose(transposition(a, d), transposition(a, c)))
+                                            [using specialize aPairSharingOnePointIsAThreeCycle(a, d, c) a-differs-from-d a-differs-from-c d-differs-from-c]
+                                          @both-factors-are-three-cycles |
+                                            isAThreeCycle(compose(transposition(a, b), transposition(a, c)))
+                                              and isAThreeCycle(compose(transposition(a, d), transposition(a, c)))
+                                            [by and_intro the-first-factor-is-a-three-cycle the-second-factor-is-a-three-cycle]
+                                          @the-factors-work |
+                                            (isAThreeCycle(compose(transposition(a, b), transposition(a, c)))
+                                              and isAThreeCycle(compose(transposition(a, d), transposition(a, c))))
+                                              and compose(transposition(a, b), transposition(c, d)) =
+                                              compose(compose(transposition(a, b), transposition(a, c)),
+                                              compose(transposition(a, d), transposition(a, c)))
+                                            [by and_intro both-factors-are-three-cycles the-pair-splits]
+                                          @a-second-factor-exists |
+                                            exists h: Fn;
+                                              (isAThreeCycle(compose(transposition(a, b), transposition(a, c)))
+                                              and isAThreeCycle(h))
+                                              and compose(transposition(a, b), transposition(c, d)) =
+                                              compose(compose(transposition(a, b), transposition(a, c)), h)
+                                            [by exists_intro(compose(transposition(a, d), transposition(a, c))) the-factors-work]
+                                          @conclusion-two-three-cycles |
+                                            exists g, h: Fn;
+                                              isAThreeCycle(g) and isAThreeCycle(h) and
+                                              compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                            [by exists_intro(compose(transposition(a, b), transposition(a, c))) a-second-factor-exists]
+                                        }
+                                      @conclusion-c-differs-gives |
+                                        c != d -> (exists g, h: Fn;
+                                          isAThreeCycle(g) and isAThreeCycle(h) and
+                                          compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                                        [by implies_intro given-c-differs-from-d]
+                                    }
+                                  @conclusion-b-differs-from-d-gives |
+                                    b != d -> c != d -> (exists g, h: Fn;
+                                      isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                                    [by implies_intro given-b-differs-from-d]
+                                }
+                              @conclusion-b-differs-from-c-gives |
+                                b != c -> b != d -> c != d -> (exists g, h: Fn;
+                                  isAThreeCycle(g) and isAThreeCycle(h) and
+                                  compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                                [by implies_intro given-b-differs-from-c]
+                            }
+                          @conclusion-a-differs-from-d-gives |
+                            a != d -> b != c -> b != d -> c != d -> (exists g, h: Fn;
+                              isAThreeCycle(g) and isAThreeCycle(h) and
+                              compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                            [by implies_intro given-a-differs-from-d]
+                        }
+                      @conclusion-a-differs-from-c-gives |
+                        a != c -> a != d -> b != c -> b != d -> c != d -> (exists g, h: Fn;
+                          isAThreeCycle(g) and isAThreeCycle(h) and
+                          compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                        [by implies_intro given-a-differs-from-c]
+                    }
+                  @conclusion-for-d |
+                    a != b -> a != c -> a != d -> b != c -> b != d -> c != d -> (exists g, h: Fn;
+                      isAThreeCycle(g) and isAThreeCycle(h) and
+                      compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                    [by implies_intro given-a-differs-from-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+                  (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                  compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+              (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+              compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+          (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+          compose(transposition(a, b), transposition(c, d)) = compose(g, h))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element;
+      a != b -> a != c -> a != d -> b != c -> b != d -> c != d ->
+      exists g, h: Fn;
+      isAThreeCycle(g) and isAThreeCycle(h) and
+      compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+    [by forall_intro generalize-a]
+qed
+
+// A pair THROUGH A COMMON FIRST POINT is the identity (when the other two points coincide)
+// or a single 3-cycle. Proved once, on the NORMALIZED form T(s,p) o T(s,q); the four ways a
+// pair of transpositions can share a point all rewrite to this by `transpositionIsSymmetric`,
+// so the general pair theorem below cites this rather than repeating the argument four times.
+theorem aPairThroughACommonPointIsTheIdentityOrAThreeCycle: forall s, p, q: Element;
+  s != p -> s != q ->
+  ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+  or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+proof
+  @generalize-s |
+    fix s: Element {
+      @generalize-p |
+        fix p: Element {
+          @generalize-q |
+            fix q: Element {
+              @given-s-differs-from-p |
+                assume s != p {
+                  @s-differs-from-p |
+                    s != p
+                    [by hypothesis given-s-differs-from-p]
+                  @given-s-differs-from-q |
+                    assume s != q {
+                      @s-differs-from-q |
+                        s != q
+                        [by hypothesis given-s-differs-from-q]
+                      @the-other-points-agree-or-differ |
+                        p = q or p != q
+                        [using tautology]
+                      @conclusion-identity-or-three-cycle |
+                        ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+                          or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+                        case the-other-points-agree-or-differ {
+                          @when-the-other-points-agree |
+                            assume p = q {
+                              @the-other-points-agree |
+                                p = q
+                                [by hypothesis when-the-other-points-agree]
+                              @the-doubled-transposition-is-the-identity |
+                                compose(transposition(s, p), transposition(s, p)) = identityFn
+                                [using specialize transpositionIsAnInvolution(s, p)]
+                              @the-pair-is-the-identity |
+                                compose(transposition(s, p), transposition(s, q)) = identityFn
+                                [by rewrite the-other-points-agree the-doubled-transposition-is-the-identity]
+                              @conclusion-when-the-other-points-agree |
+                                ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+                                  or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+                                [by or_intro_left the-pair-is-the-identity]
+                            }
+                          @when-the-other-points-differ |
+                            assume p != q {
+                              @the-other-points-differ |
+                                p != q
+                                [by hypothesis when-the-other-points-differ]
+                              @the-pair-is-a-three-cycle |
+                                isAThreeCycle(compose(transposition(s, p), transposition(s, q)))
+                                [using specialize aPairSharingOnePointIsAThreeCycle(s, p, q) s-differs-from-p s-differs-from-q the-other-points-differ]
+                              @conclusion-when-the-other-points-differ |
+                                ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+                                  or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+                                [by or_intro_right the-pair-is-a-three-cycle]
+                            }
+                        }
+                    }
+                  @conclusion-s-differs-from-q-gives |
+                    s != q ->
+                      ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+                      or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+                    [by implies_intro given-s-differs-from-q]
+                }
+              @conclusion-for-q |
+                s != p -> s != q ->
+                  ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+                  or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+                [by implies_intro given-s-differs-from-p]
+            }
+          @discharge-q |
+            forall q: Element; s != p -> s != q ->
+              ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+              or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+            [by forall_intro generalize-q]
+        }
+      @discharge-p |
+        forall p, q: Element; s != p -> s != q ->
+          ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+          or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+        [by forall_intro generalize-p]
+    }
+  @conclusion |
+    forall s, p, q: Element; s != p -> s != q ->
+      ((compose(transposition(s, p), transposition(s, q)) = identityFn)
+      or isAThreeCycle(compose(transposition(s, p), transposition(s, q))))
+    [by forall_intro generalize-s]
+qed
+
+// LEMMA 10.8's pair step: any pair of transpositions is the identity, one 3-cycle, or two.
+// The split is the trichotomy on how {a,b} meets {c,d} — four shared-point leads (each a
+// rewrite into `commonPoint`'s normalized form) and the disjoint case. Exhaustive by
+// tautology over the four equality atoms.
+theorem aPairOfTranspositionsIsAtMostTwoThreeCycles: forall a, b, c, d: Element;
+  a != b -> c != d ->
+  ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+  or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+  or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+  compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+proof
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @generalize-c |
+            fix c: Element {
+              @generalize-d |
+                fix d: Element {
+                  @given-a-differs-from-b |
+                    assume a != b {
+                      @a-differs-from-b |
+                        a != b
+                        [by hypothesis given-a-differs-from-b]
+                      @given-c-differs-from-d |
+                        assume c != d {
+                          @c-differs-from-d |
+                            c != d
+                            [by hypothesis given-c-differs-from-d]
+                          @b-differs-from-a |
+                            b != a
+                            [using specialize disequalityIsSymmetric(a, b) a-differs-from-b]
+                          @d-differs-from-c |
+                            d != c
+                            [using specialize disequalityIsSymmetric(c, d) c-differs-from-d]
+                          @how-the-pairs-meet |
+                            a = c or a = d or b = c or b = d
+                              or (a != c and a != d and b != c and b != d)
+                            [using tautology]
+                          @conclusion-at-most-two |
+                            ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                              or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                              or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                              compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                            case how-the-pairs-meet {
+                              // a = c: the pair is already T(a,b) o T(a,d) — no flip needed.
+                              @when-the-first-points-agree |
+                                assume a = c {
+                                  @the-first-points-agree |
+                                    a = c
+                                    [by hypothesis when-the-first-points-agree]
+                                  @a-differs-from-d-here |
+                                    a != d
+                                    [by rewrite the-first-points-agree c-differs-from-d]
+                                  @normalized-resolves-here |
+                                    ((compose(transposition(a, b), transposition(a, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(a, d))))
+                                    [using specialize aPairThroughACommonPointIsTheIdentityOrAThreeCycle(a, b, d) a-differs-from-b a-differs-from-d-here]
+                                  @pair-resolves-here |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d))))
+                                    [by rewrite the-first-points-agree normalized-resolves-here]
+                                  @conclusion-first-points-agree |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                                    [using tautology pair-resolves-here]
+                                }
+                              // a = d: flip the SECOND, T(c,a) = T(a,c).
+                              @when-the-first-meets-the-last |
+                                assume a = d {
+                                  @the-first-meets-the-last |
+                                    a = d
+                                    [by hypothesis when-the-first-meets-the-last]
+                                  @a-differs-from-c-here |
+                                    a != c
+                                    [by rewrite the-first-meets-the-last d-differs-from-c]
+                                  @the-second-flips |
+                                    transposition(a, c) = transposition(c, a)
+                                    [using specialize transpositionIsSymmetric(a, c)]
+                                  @normalized-resolves-there |
+                                    ((compose(transposition(a, b), transposition(a, c)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(a, c))))
+                                    [using specialize aPairThroughACommonPointIsTheIdentityOrAThreeCycle(a, b, c) a-differs-from-b a-differs-from-c-here]
+                                  @flipped-resolves-there |
+                                    ((compose(transposition(a, b), transposition(c, a)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, a))))
+                                    [by rewrite the-second-flips normalized-resolves-there]
+                                  @pair-resolves-there |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d))))
+                                    [by rewrite the-first-meets-the-last flipped-resolves-there]
+                                  @conclusion-first-meets-the-last |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                                    [using tautology pair-resolves-there]
+                                }
+                              // b = c: flip the FIRST, T(a,b) = T(b,a).
+                              @when-the-last-meets-the-first |
+                                assume b = c {
+                                  @the-last-meets-the-first |
+                                    b = c
+                                    [by hypothesis when-the-last-meets-the-first]
+                                  @b-differs-from-d-here |
+                                    b != d
+                                    [by rewrite the-last-meets-the-first c-differs-from-d]
+                                  @the-first-flips |
+                                    transposition(a, b) = transposition(b, a)
+                                    [using specialize transpositionIsSymmetric(a, b)]
+                                  @normalized-resolves-flipped |
+                                    ((compose(transposition(b, a), transposition(b, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(b, a), transposition(b, d))))
+                                    [using specialize aPairThroughACommonPointIsTheIdentityOrAThreeCycle(b, a, d) b-differs-from-a b-differs-from-d-here]
+                                  @restored-resolves-flipped |
+                                    ((compose(transposition(a, b), transposition(b, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(b, d))))
+                                    [by rewrite the-first-flips normalized-resolves-flipped]
+                                  @pair-resolves-flipped |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d))))
+                                    [by rewrite the-last-meets-the-first restored-resolves-flipped]
+                                  @conclusion-last-meets-the-first |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                                    [using tautology pair-resolves-flipped]
+                                }
+                              // b = d: flip BOTH.
+                              @when-the-last-points-agree |
+                                assume b = d {
+                                  @the-last-points-agree |
+                                    b = d
+                                    [by hypothesis when-the-last-points-agree]
+                                  @b-differs-from-c-here |
+                                    b != c
+                                    [by rewrite the-last-points-agree d-differs-from-c]
+                                  @the-first-flips-too |
+                                    transposition(a, b) = transposition(b, a)
+                                    [using specialize transpositionIsSymmetric(a, b)]
+                                  @the-second-flips-too |
+                                    transposition(b, c) = transposition(c, b)
+                                    [using specialize transpositionIsSymmetric(b, c)]
+                                  @normalized-resolves-both |
+                                    ((compose(transposition(b, a), transposition(b, c)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(b, a), transposition(b, c))))
+                                    [using specialize aPairThroughACommonPointIsTheIdentityOrAThreeCycle(b, a, c) b-differs-from-a b-differs-from-c-here]
+                                  @second-restored-both |
+                                    ((compose(transposition(b, a), transposition(c, b)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(b, a), transposition(c, b))))
+                                    [by rewrite the-second-flips-too normalized-resolves-both]
+                                  @first-restored-both |
+                                    ((compose(transposition(a, b), transposition(c, b)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, b))))
+                                    [by rewrite the-first-flips-too second-restored-both]
+                                  @pair-resolves-both |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d))))
+                                    [by rewrite the-last-points-agree first-restored-both]
+                                  @conclusion-last-points-agree |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                                    [using tautology pair-resolves-both]
+                                }
+                              // disjoint: two 3-cycles, by Judson's (a,b)(c,d) = (a,c,b)(a,c,d).
+                              @when-the-pairs-are-disjoint |
+                                assume a != c and a != d and b != c and b != d {
+                                  @the-pairs-are-disjoint |
+                                    a != c and a != d and b != c and b != d
+                                    [by hypothesis when-the-pairs-are-disjoint]
+                                  @a-differs-from-c-disjoint |
+                                    a != c
+                                    [using tautology the-pairs-are-disjoint]
+                                  @a-differs-from-d-disjoint |
+                                    a != d
+                                    [using tautology the-pairs-are-disjoint]
+                                  @b-differs-from-c-disjoint |
+                                    b != c
+                                    [using tautology the-pairs-are-disjoint]
+                                  @b-differs-from-d-disjoint |
+                                    b != d
+                                    [using tautology the-pairs-are-disjoint]
+                                  @two-three-cycles |
+                                    exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)
+                                    [using specialize aPairOfDisjointTranspositionsIsTwoThreeCycles(a, b, c, d) a-differs-from-b a-differs-from-c-disjoint a-differs-from-d-disjoint b-differs-from-c-disjoint b-differs-from-d-disjoint c-differs-from-d]
+                                  @conclusion-pairs-are-disjoint |
+                                    ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                                    [using tautology two-three-cycles]
+                                }
+                            }
+                        }
+                      @conclusion-c-differs-gives |
+                        c != d ->
+                          ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                          or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                          or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                          compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                        [by implies_intro given-c-differs-from-d]
+                    }
+                  @conclusion-for-d |
+                    a != b -> c != d ->
+                      ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                    [by implies_intro given-a-differs-from-b]
+                }
+              @discharge-d |
+                forall d: Element; a != b -> c != d ->
+                  ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+                  or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+                  or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+                  compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+                [by forall_intro generalize-d]
+            }
+          @discharge-c |
+            forall c, d: Element; a != b -> c != d ->
+              ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+              or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+              or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+              compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+            [by forall_intro generalize-c]
+        }
+      @discharge-b |
+        forall b, c, d: Element; a != b -> c != d ->
+          ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+          or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+          or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+          compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b, c, d: Element; a != b -> c != d ->
+      ((compose(transposition(a, b), transposition(c, d)) = identityFn)
+      or isAThreeCycle(compose(transposition(a, b), transposition(c, d)))
+      or (exists g, h: Fn; isAThreeCycle(g) and isAThreeCycle(h) and
+      compose(transposition(a, b), transposition(c, d)) = compose(g, h)))
+    [by forall_intro generalize-a]
+qed
+
+theorem concatenationPreservesEntryProperty = permutation_transpositions.concatenationPreservesEntryProperty
+
+// The 3-cycle instance of the concatenation lemma: joining two runs of 3-cycles gives a run
+// of 3-cycles. The schema lives in std/permutation/transpositions.b4m, where the same proof
+// serves `isATransposition`.
+theorem concatenationPreservesThreeCycles: forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i)) ->
+  (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i)) ->
+  (forall i: Nat; nat_less_than(i, n) -> isAThreeCycle(at(t, i))) ->
+  (forall i: Nat; nat_less_than(i, m) -> isAThreeCycle(at(r, i))) ->
+  forall i: Nat; nat_less_than(i, nadd(n, m)) -> isAThreeCycle(at(u, i))
+proof
+  @conclusion |
+    forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> at(u, i) = at(t, i)) ->
+      (forall i: Nat; nat_less_than(i, m) -> at(u, nadd(n, i)) = at(r, i)) ->
+      (forall i: Nat; nat_less_than(i, n) -> isAThreeCycle(at(t, i))) ->
+      (forall i: Nat; nat_less_than(i, m) -> isAThreeCycle(at(r, i))) ->
+      forall i: Nat; nat_less_than(i, nadd(n, m)) -> isAThreeCycle(at(u, i))
+    [using instantiation concatenationPreservesEntryProperty((fun g: Fn => isAThreeCycle(g)))]
 qed

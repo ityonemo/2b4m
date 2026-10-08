@@ -340,12 +340,16 @@ qed
 // An index below n+m lands in the first segment (i < n, where u agrees with t) or the second
 // (n ≤ i, where i = n + (i-n) and u agrees with r at the offset i-n). The second needs the
 // arithmetic: addSubCancel recovers i from its offset, which lies below m.
-theorem concatenationPreservesTranspositions: forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
+// The index-split lemma for a CONCATENATED run, over an ARBITRARY entry property. The
+// `isATransposition` instance below was this proof with one predicate baked in; `isAThreeCycle`
+// (std/permutation/alternating.b4m, Lemma 10.8) needs the same argument, so the property is a
+// schema parameter rather than the proof being copied.
+theorem concatenationPreservesEntryProperty(prop(Fn)): forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
   (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) ->
   (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) ->
-  (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) ->
-  (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) ->
-  forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+  (forall i: Nat; less_than(i, n) -> prop(at(t, i))) ->
+  (forall i: Nat; less_than(i, m) -> prop(at(r, i))) ->
+  forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
 proof
   @generalize-u |
     fix u: Seq {
@@ -362,9 +366,9 @@ proof
                           @given-agrees-r |
                             assume forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i) {
                               @given-t |
-                                assume forall i: Nat; less_than(i, n) -> isATransposition(at(t, i)) {
+                                assume forall i: Nat; less_than(i, n) -> prop(at(t, i)) {
                                   @given-r |
-                                    assume forall i: Nat; less_than(i, m) -> isATransposition(at(r, i)) {
+                                    assume forall i: Nat; less_than(i, m) -> prop(at(r, i)) {
                                       @agrees-t |
                                         forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)
                                         [by hypothesis given-agrees-t]
@@ -372,10 +376,10 @@ proof
                                         forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)
                                         [by hypothesis given-agrees-r]
                                       @t-transpositions |
-                                        forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))
+                                        forall i: Nat; less_than(i, n) -> prop(at(t, i))
                                         [by hypothesis given-t]
                                       @r-transpositions |
-                                        forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))
+                                        forall i: Nat; less_than(i, m) -> prop(at(r, i))
                                         [by hypothesis given-r]
                                       @generalize-i |
                                         fix i: Nat {
@@ -388,7 +392,7 @@ proof
                                                 less_than(i, n) or i = n or less_than(n, i)
                                                 [using specialize trichotomy(i, n)]
                                               @conclusion-entry |
-                                                isATransposition(at(u, i))
+                                                prop(at(u, i))
                                                 case i-before-or-after-n {
                                                   @when-in-first |
                                                     assume less_than(i, n) {
@@ -399,10 +403,10 @@ proof
                                                         at(u, i) = at(t, i)
                                                         [using specialize agrees-t(i) i-below-n]
                                                       @t-entry-is-a-transposition |
-                                                        isATransposition(at(t, i))
+                                                        prop(at(t, i))
                                                         [using specialize t-transpositions(i) i-below-n]
                                                       @conclusion-in-first |
-                                                        isATransposition(at(u, i))
+                                                        prop(at(u, i))
                                                         [by rewrite u-entry-is-t-entry t-entry-is-a-transposition]
                                                     }
                                                   @when-at-the-boundary |
@@ -429,13 +433,13 @@ proof
                                                         at(u, n) = at(r, ZERO)
                                                         [by rewrite n-plus-zero-is-n u-entry-at-offset-zero]
                                                       @r-first-is-a-transposition |
-                                                        isATransposition(at(r, ZERO))
+                                                        prop(at(r, ZERO))
                                                         [using specialize r-transpositions(ZERO) m-is-positive]
                                                       @u-entry-at-n-is-a-transposition |
-                                                        isATransposition(at(u, n))
+                                                        prop(at(u, n))
                                                         [by rewrite u-entry-at-n r-first-is-a-transposition]
                                                       @conclusion-at-the-boundary |
-                                                        isATransposition(at(u, i))
+                                                        prop(at(u, i))
                                                         [by rewrite i-is-n u-entry-at-n-is-a-transposition]
                                                     }
                                                   @when-in-second |
@@ -471,54 +475,71 @@ proof
                                                         at(u, i) = at(r, sub(i, n))
                                                         [by rewrite offset-recovers-i u-entry-at-offset]
                                                       @r-entry-is-a-transposition |
-                                                        isATransposition(at(r, sub(i, n)))
+                                                        prop(at(r, sub(i, n)))
                                                         [using specialize r-transpositions(sub(i, n)) offset-below-m]
                                                       @conclusion-in-second |
-                                                        isATransposition(at(u, i))
+                                                        prop(at(u, i))
                                                         [by rewrite u-entry-is-r-entry r-entry-is-a-transposition]
                                                     }
                                                 }
                                             }
                                           @conclusion-entry-implication |
-                                            less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                                            less_than(i, add(n, m)) -> prop(at(u, i))
                                             [by implies_intro given-i-in-range]
                                         }
                                       @conclusion-all |
-                                        forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                                        forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                                         [by forall_intro generalize-i]
                                     }
                                   @conclusion-r |
-                                    (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                                    (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                                     [by implies_intro given-r]
                                 }
                               @conclusion-t |
-                                (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                                (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                                 [by implies_intro given-t]
                             }
                           @conclusion-agrees-r |
-                            (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                            (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                             [by implies_intro given-agrees-r]
                         }
                       @conclusion-agrees-t |
-                        (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                        (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                         [by implies_intro given-agrees-t]
                     }
                   @discharge-m |
-                    forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                    forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                     [by forall_intro generalize-m]
                 }
               @discharge-n |
-                forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+                forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
                 [by forall_intro generalize-n]
             }
           @discharge-r |
-            forall r: Seq; forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+            forall r: Seq; forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
             [by forall_intro generalize-r]
         }
       @discharge-t |
-        forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) -> (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+        forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat; (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) -> (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) -> (forall i: Nat; less_than(i, n) -> prop(at(t, i))) -> (forall i: Nat; less_than(i, m) -> prop(at(r, i))) -> forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
         [by forall_intro generalize-t]
     }
+  @conclusion |
+    forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
+      (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) ->
+      (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) ->
+      (forall i: Nat; less_than(i, n) -> prop(at(t, i))) ->
+      (forall i: Nat; less_than(i, m) -> prop(at(r, i))) ->
+      forall i: Nat; less_than(i, add(n, m)) -> prop(at(u, i))
+    [by forall_intro generalize-u]
+qed
+
+theorem concatenationPreservesTranspositions: forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
+  (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) ->
+  (forall i: Nat; less_than(i, m) -> at(u, add(n, i)) = at(r, i)) ->
+  (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) ->
+  (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) ->
+  forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
+proof
   @conclusion |
     forall u: Seq; forall t: Seq; forall r: Seq; forall n: Nat; forall m: Nat;
       (forall i: Nat; less_than(i, n) -> at(u, i) = at(t, i)) ->
@@ -526,7 +547,7 @@ proof
       (forall i: Nat; less_than(i, n) -> isATransposition(at(t, i))) ->
       (forall i: Nat; less_than(i, m) -> isATransposition(at(r, i))) ->
       forall i: Nat; less_than(i, add(n, m)) -> isATransposition(at(u, i))
-    [by forall_intro generalize-u]
+    [using instantiation concatenationPreservesEntryProperty((fun g: Fn => isATransposition(g)))]
 qed
 
 // -- a product of products of transpositions is one ------------------------------------------------
