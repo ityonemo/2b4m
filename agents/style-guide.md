@@ -124,6 +124,18 @@ form is a fine content label: `@add-is-commutative`.)
   *use*). Then alias a name used more than once, qualify inline
   (`peano.mulSuccLeft`) for a single use. Prefer `by arithmetic(<module>)` in
   files layered above the primitives.
+- **Aliasing a name two theories both use** (`less_than`, `add`, `ZERO`): the
+  file's OWN SUBJECT takes the primary (bare) name and the visitor gets the
+  prefix — `std/real/units.b4m` is about ℝ, so `add` is ℝ's and Peano's is
+  `nat_add`. Spell that prefix `nat_`/`NAT_` (`nat_add`, `nat_less_than`,
+  `NAT_ZERO`), never a bare letter: the corpus drifted into `NZERO`, `nadd`,
+  `nmul` AND `nat_less_than` for the one idea, and a one-letter prefix breaks
+  the full-word naming rule above. But never prefix a name NOTHING competes
+  for — `nat_less_than` in a permutation file guarded against a `less_than`
+  that does not exist (permutations have no order), reading as a collision
+  where there is none. Check first: if no local declaration claims the bare
+  name, take it. A file whose aliases disagree about their own subject (`ZERO`
+  and `add` from mod-n beside a bare Peano `less_than`) is the real smell.
 - **Layout**: three lines per step — `@label |`, then the formula, then
   `[by …]`, formula/justification indented two spaces under the label; two-space
   indent per block depth; blank line between phases; `2b4m fmt` normalizes
