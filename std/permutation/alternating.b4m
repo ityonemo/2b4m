@@ -63,6 +63,8 @@ theorem composeAssoc = function.composeAssoc
 theorem lessThanSelf = peano_order.lessThanSelf
 theorem lessThanSuccRight = peano_order.lessThanSuccRight
 axiom productUpToSucc = permutation_sequence.productUpToSucc
+axiom seqPrepend = permutation_sequence.seqPrepend
+theorem productOfPrepend = permutation_sequence.productOfPrepend
 theorem notLessThanZero = peano_order.notLessThanZero
 theorem composeIsAPermutation = permutation.composeIsAPermutation
 theorem inverseIsAPermutation = permutation.inverseIsAPermutation
@@ -3424,4 +3426,607 @@ proof
   @conclusion |
     forall g: Fn; inAlternating(g) -> isAProductOfThreeCycles(g)
     [by forall_intro generalize-g]
+qed
+
+// A PAIR of transpositions is EVEN: the two-entry run has length succ(succ(ZERO)) = mul(TWO,
+// succ(ZERO)), which `divides(TWO, ·)` accepts. `seqPrepend` builds the run (x then the
+// singleton) and `productOfPrepend` says its product is the composite.
+theorem aProductOfTwoTranspositionsIsEven: forall t, u: Fn;
+  isTransposition(t) -> isTransposition(u) -> isEvenPerm(compose(t, u))
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-u |
+        fix u: Fn {
+          @given-t |
+            assume isTransposition(t) {
+              @t-is-a-transposition |
+                isTransposition(t)
+                [by hypothesis given-t]
+              @given-u |
+                assume isTransposition(u) {
+                  @u-is-a-transposition |
+                    isTransposition(u)
+                    [by hypothesis given-u]
+                  // both are permutations (unpacking gives the points; transpositions are)
+                  @with-the-first-point-of-t |
+                    unpack a: Element from t-is-a-transposition {
+                      @the-second-point-of-t-exists |
+                        exists v: Element; a != v and t = transposition(a, v)
+                        [by hypothesis with-the-first-point-of-t]
+                      @with-the-second-point-of-t |
+                        unpack b: Element from the-second-point-of-t-exists {
+                          @the-points-of-t |
+                            a != b and t = transposition(a, b)
+                            [by hypothesis with-the-second-point-of-t]
+                          @t-is-that-transposition |
+                            t = transposition(a, b)
+                            [by and_elim_right the-points-of-t]
+                          @that-transposition-is-a-permutation |
+                            invertible(transposition(a, b))
+                            [using specialize transpositionIsAPermutation(a, b)]
+                          @conclusion-t-is-a-permutation |
+                            invertible(t)
+                            [by rewrite t-is-that-transposition that-transposition-is-a-permutation]
+                        }
+                      @conclusion-t-permutation-inner |
+                        invertible(t)
+                        [by exists_elim with-the-second-point-of-t]
+                    }
+                  @t-is-a-permutation |
+                    invertible(t)
+                    [by exists_elim with-the-first-point-of-t]
+                  @with-the-first-point-of-u |
+                    unpack c: Element from u-is-a-transposition {
+                      @the-second-point-of-u-exists |
+                        exists v: Element; c != v and u = transposition(c, v)
+                        [by hypothesis with-the-first-point-of-u]
+                      @with-the-second-point-of-u |
+                        unpack d: Element from the-second-point-of-u-exists {
+                          @the-points-of-u |
+                            c != d and u = transposition(c, d)
+                            [by hypothesis with-the-second-point-of-u]
+                          @u-is-that-transposition |
+                            u = transposition(c, d)
+                            [by and_elim_right the-points-of-u]
+                          @that-second-transposition-is-a-permutation |
+                            invertible(transposition(c, d))
+                            [using specialize transpositionIsAPermutation(c, d)]
+                          @conclusion-u-is-a-permutation |
+                            invertible(u)
+                            [by rewrite u-is-that-transposition that-second-transposition-is-a-permutation]
+                        }
+                      @conclusion-u-permutation-inner |
+                        invertible(u)
+                        [by exists_elim with-the-second-point-of-u]
+                    }
+                  @u-is-a-permutation |
+                    invertible(u)
+                    [by exists_elim with-the-first-point-of-u]
+
+                  // the singleton run [u], then prepend t to get [t, u]
+                  @a-singleton-exists |
+                    exists s: Seq; at(s, ZERO) = u and productUpTo(s, succ(ZERO)) = u
+                    [using specialize seqSingleton(u) u-is-a-permutation]
+                  @with-the-singleton |
+                    unpack s: Seq from a-singleton-exists {
+                      @the-singleton-facts |
+                        at(s, ZERO) = u and productUpTo(s, succ(ZERO)) = u
+                        [by hypothesis with-the-singleton]
+                      @the-singleton-entry |
+                        at(s, ZERO) = u
+                        [by and_elim_left the-singleton-facts]
+                      @the-singleton-product |
+                        productUpTo(s, succ(ZERO)) = u
+                        [by and_elim_right the-singleton-facts]
+                      @a-prepend-exists |
+                        exists w: Seq; at(w, ZERO) = t and (forall i: Nat; at(w, succ(i)) = at(s, i))
+                        [using specialize seqPrepend(t, s) t-is-a-permutation]
+                      @with-the-prepend |
+                        unpack w: Seq from a-prepend-exists {
+                          @the-prepend-facts |
+                            at(w, ZERO) = t and (forall i: Nat; at(w, succ(i)) = at(s, i))
+                            [by hypothesis with-the-prepend]
+                          @the-head-is-t |
+                            at(w, ZERO) = t
+                            [by and_elim_left the-prepend-facts]
+                          @the-tail-agrees |
+                            forall i: Nat; at(w, succ(i)) = at(s, i)
+                            [by and_elim_right the-prepend-facts]
+                          @the-run-product |
+                            productUpTo(w, succ(succ(ZERO))) = compose(t, productUpTo(s, succ(ZERO)))
+                            [using specialize productOfPrepend(t, s, w, succ(ZERO)) the-head-is-t the-tail-agrees]
+                          @the-run-is-the-composite |
+                            productUpTo(w, succ(succ(ZERO))) = compose(t, u)
+                            [using chain the-run-product the-singleton-product]
+
+                          // both entries are transpositions
+                          @the-second-entry-is-u |
+                            at(w, succ(ZERO)) = at(s, ZERO)
+                            [using specialize the-tail-agrees(ZERO)]
+                          @the-second-entry-is-that-u |
+                            at(w, succ(ZERO)) = u
+                            [using chain the-second-entry-is-u the-singleton-entry]
+                          @the-head-entry-is-a-transposition |
+                            isTransposition(at(w, ZERO))
+                            [by rewrite the-head-is-t t-is-a-transposition]
+                          @the-second-entry-is-a-transposition |
+                            isTransposition(at(w, succ(ZERO)))
+                            [by rewrite the-second-entry-is-that-u u-is-a-transposition]
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-below-two |
+                                assume less_than(i, succ(succ(ZERO))) {
+                                  @i-below-two |
+                                    less_than(i, succ(succ(ZERO)))
+                                    [by hypothesis given-i-below-two]
+                                  @i-below-one-or-is-one |
+                                    less_than(i, succ(ZERO)) or i = succ(ZERO)
+                                    [using specialize lessThanSuccSplit(i, succ(ZERO)) i-below-two]
+                                  @conclusion-entry-i-is-a-transposition |
+                                    isTransposition(at(w, i))
+                                    case i-below-one-or-is-one {
+                                      @when-i-is-below-one |
+                                        assume less_than(i, succ(ZERO)) {
+                                          @i-below-one |
+                                            less_than(i, succ(ZERO))
+                                            [by hypothesis when-i-is-below-one]
+                                          @i-below-zero-or-is-zero |
+                                            less_than(i, ZERO) or i = ZERO
+                                            [using specialize lessThanSuccSplit(i, ZERO) i-below-one]
+                                          @nothing-below-zero |
+                                            not less_than(i, ZERO)
+                                            [using specialize notLessThanZero(i)]
+                                          @i-is-zero |
+                                            i = ZERO
+                                            [using tautology i-below-zero-or-is-zero nothing-below-zero]
+                                          @conclusion-head-case |
+                                            isTransposition(at(w, i))
+                                            [by rewrite i-is-zero the-head-entry-is-a-transposition]
+                                        }
+                                      @when-i-is-one |
+                                        assume i = succ(ZERO) {
+                                          @i-is-one |
+                                            i = succ(ZERO)
+                                            [by hypothesis when-i-is-one]
+                                          @conclusion-second-case |
+                                            isTransposition(at(w, i))
+                                            [by rewrite i-is-one the-second-entry-is-a-transposition]
+                                        }
+                                    }
+                                }
+                              @conclusion-i-below-two-gives |
+                                less_than(i, succ(succ(ZERO))) -> isTransposition(at(w, i))
+                                [by implies_intro given-i-below-two]
+                            }
+                          @every-entry-is-a-transposition |
+                            forall i: Nat; less_than(i, succ(succ(ZERO))) -> isTransposition(at(w, i))
+                            [by forall_intro generalize-i]
+                          @the-entries-fold |
+                            allTranspositions(w, succ(succ(ZERO))) iff
+                              (forall i: Nat; less_than(i, succ(succ(ZERO))) -> isTransposition(at(w, i)))
+                            [using specialize allTranspositionsDef(w, succ(succ(ZERO)))]
+                          @the-run-is-all-transpositions |
+                            allTranspositions(w, succ(succ(ZERO)))
+                            [using tautology the-entries-fold every-entry-is-a-transposition]
+
+                          // length two is even
+                          @two-is-even |
+                            divides(TWO, succ(succ(ZERO)))
+                            [using arithmetic(peano)]
+                          @the-witness-works |
+                            allTranspositions(w, succ(succ(ZERO)))
+                              and productUpTo(w, succ(succ(ZERO))) = compose(t, u)
+                              and divides(TWO, succ(succ(ZERO)))
+                            [using tautology the-run-is-all-transpositions the-run-is-the-composite two-is-even]
+                          @a-length-exists |
+                            exists m: Nat; allTranspositions(w, m)
+                              and productUpTo(w, m) = compose(t, u) and divides(TWO, m)
+                            [by exists_intro(succ(succ(ZERO))) the-witness-works]
+                          @a-factorization-exists |
+                            exists z: Seq; exists m: Nat; allTranspositions(z, m)
+                              and productUpTo(z, m) = compose(t, u) and divides(TWO, m)
+                            [by exists_intro(w) a-length-exists]
+                          @evenness-unfolds |
+                            isEvenPerm(compose(t, u)) iff (exists z: Seq; exists m: Nat;
+                              allTranspositions(z, m) and productUpTo(z, m) = compose(t, u)
+                              and divides(TWO, m))
+                            [using specialize isEvenPermDef(compose(t, u))]
+                          @conclusion-at-the-prepend |
+                            isEvenPerm(compose(t, u))
+                            [using tautology evenness-unfolds a-factorization-exists]
+                        }
+                      @conclusion-at-the-singleton |
+                        isEvenPerm(compose(t, u))
+                        [by exists_elim with-the-prepend]
+                    }
+                  @conclusion-is-even |
+                    isEvenPerm(compose(t, u))
+                    [by exists_elim with-the-singleton]
+                }
+              @conclusion-u-gives |
+                isTransposition(u) -> isEvenPerm(compose(t, u))
+                [by implies_intro given-u]
+            }
+          @conclusion-for-u |
+            isTransposition(t) -> isTransposition(u) -> isEvenPerm(compose(t, u))
+            [by implies_intro given-t]
+        }
+      @discharge-u |
+        forall u: Fn; isTransposition(t) -> isTransposition(u) -> isEvenPerm(compose(t, u))
+        [by forall_intro generalize-u]
+    }
+  @conclusion |
+    forall t, u: Fn; isTransposition(t) -> isTransposition(u) -> isEvenPerm(compose(t, u))
+    [by forall_intro generalize-t]
+qed
+
+// A 3-CYCLE IS IN A_n: in std's fold it IS a composite of two transpositions, so it is even
+// by the theorem above, and invertible by `aThreeCycleIsAPermutation`.
+theorem aThreeCycleIsInTheAlternatingGroup: forall g: Fn;
+  isAThreeCycle(g) -> inAlternating(g)
+proof
+  @generalize-g |
+    fix g: Fn {
+      @given-a-three-cycle |
+        assume isAThreeCycle(g) {
+          @the-three-cycle |
+            isAThreeCycle(g)
+            [by hypothesis given-a-three-cycle]
+          @the-three-cycle-is-a-permutation |
+            invertible(g)
+            [using specialize aThreeCycleIsAPermutation(g) the-three-cycle]
+          @with-the-first-point |
+            unpack x: Element from the-three-cycle {
+              @the-rest-exist |
+                exists y: Element; exists z: Element;
+                  x != y and x != z and y != z and
+                  g = compose(transposition(x, z), transposition(x, y))
+                [by hypothesis with-the-first-point]
+              @with-the-second-point |
+                unpack y: Element from the-rest-exist {
+                  @the-third-exists |
+                    exists z: Element;
+                      x != y and x != z and y != z and
+                      g = compose(transposition(x, z), transposition(x, y))
+                    [by hypothesis with-the-second-point]
+                  @with-the-third-point |
+                    unpack z: Element from the-third-exists {
+                      @the-points-and-fold |
+                        x != y and x != z and y != z and
+                          g = compose(transposition(x, z), transposition(x, y))
+                        [by hypothesis with-the-third-point]
+                      @x-differs-from-y |
+                        x != y
+                        [using tautology the-points-and-fold]
+                      @x-differs-from-z |
+                        x != z
+                        [using tautology the-points-and-fold]
+                      @the-fold |
+                        g = compose(transposition(x, z), transposition(x, y))
+                        [using tautology the-points-and-fold]
+                      @the-transposition-z-is-itself |
+                        transposition(x, z) = transposition(x, z)
+                        [by reflexivity]
+                      @the-pair-z-works |
+                        x != z and transposition(x, z) = transposition(x, z)
+                        [by and_intro x-differs-from-z the-transposition-z-is-itself]
+                      @a-second-point-z-exists |
+                        exists w2: Element; x != w2 and transposition(x, z) = transposition(x, w2)
+                        [by exists_intro(z) the-pair-z-works]
+                      @the-outer-factor-is-a-transposition |
+                        isTransposition(transposition(x, z))
+                        [by exists_intro(x) a-second-point-z-exists]
+                      @the-transposition-y-is-itself |
+                        transposition(x, y) = transposition(x, y)
+                        [by reflexivity]
+                      @the-pair-y-works |
+                        x != y and transposition(x, y) = transposition(x, y)
+                        [by and_intro x-differs-from-y the-transposition-y-is-itself]
+                      @a-second-point-y-exists |
+                        exists w2: Element; x != w2 and transposition(x, y) = transposition(x, w2)
+                        [by exists_intro(y) the-pair-y-works]
+                      @the-inner-factor-is-a-transposition |
+                        isTransposition(transposition(x, y))
+                        [by exists_intro(x) a-second-point-y-exists]
+                      @the-fold-is-even |
+                        isEvenPerm(compose(transposition(x, z), transposition(x, y)))
+                        [using specialize aProductOfTwoTranspositionsIsEven(transposition(x, z), transposition(x, y)) the-outer-factor-is-a-transposition the-inner-factor-is-a-transposition]
+                      @the-three-cycle-is-even |
+                        isEvenPerm(g)
+                        [by rewrite the-fold the-fold-is-even]
+                      @membership-unfolds |
+                        inAlternating(g) iff (invertible(g) and isEvenPerm(g))
+                        [using specialize inAlternatingDef(g)]
+                      @conclusion-at-the-third-point |
+                        inAlternating(g)
+                        [using tautology membership-unfolds the-three-cycle-is-a-permutation the-three-cycle-is-even]
+                    }
+                  @conclusion-at-the-second-point |
+                    inAlternating(g)
+                    [by exists_elim with-the-third-point]
+                }
+              @conclusion-at-the-first-point |
+                inAlternating(g)
+                [by exists_elim with-the-second-point]
+            }
+          @conclusion-in-the-alternating-group |
+            inAlternating(g)
+            [by exists_elim with-the-first-point]
+        }
+      @conclusion-for-g |
+        isAThreeCycle(g) -> inAlternating(g)
+        [by implies_intro given-a-three-cycle]
+    }
+  @conclusion |
+    forall g: Fn; isAThreeCycle(g) -> inAlternating(g)
+    [by forall_intro generalize-g]
+qed
+
+// A RUN whose entries all lie in N has its product in N — the subgroup-products argument,
+// but over a schema parameter `inN` so a consumer can supply its own membership predicate
+// (Lemma 10.9's N is a hypothesis, not a fixed predicate, so a model would not fit).
+// Induction on the run length: the empty product is the identity, and each step composes.
+theorem aProductOfEntriesInTheSubgroupIsInTheSubgroup(inN(Fn)):
+  inN(identityFn) ->
+  (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+  forall s: Seq; forall n: Nat;
+  (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n))
+proof
+  @given-identity-in-n |
+    assume inN(identityFn) {
+      @identity-in-n |
+        inN(identityFn)
+        [by hypothesis given-identity-in-n]
+      @given-closed |
+        assume forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b)) {
+          @closed-under-composition |
+            forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))
+            [by hypothesis given-closed]
+          @generalize-s |
+            fix s: Seq {
+              @base-case-proof |
+                assume forall i: Nat; less_than(i, ZERO) -> inN(at(s, i)) {
+                  @the-empty-product-is-the-identity |
+                    productUpTo(s, ZERO) = identityFn
+                    [using specialize productUpToZero(s)]
+                  @conclusion-base |
+                    inN(productUpTo(s, ZERO))
+                    [by rewrite the-empty-product-is-the-identity identity-in-n]
+                }
+              @base-case |
+                (forall i: Nat; less_than(i, ZERO) -> inN(at(s, i))) -> inN(productUpTo(s, ZERO))
+                [by implies_intro base-case-proof]
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume (forall i: Nat; less_than(i, k) -> inN(at(s, i))) -> inN(productUpTo(s, k)) {
+                      @inductive-hypothesis |
+                        (forall i: Nat; less_than(i, k) -> inN(at(s, i))) -> inN(productUpTo(s, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @given-entries-below-succ-k |
+                        assume forall i: Nat; less_than(i, succ(k)) -> inN(at(s, i)) {
+                          @entries-below-succ-k |
+                            forall i: Nat; less_than(i, succ(k)) -> inN(at(s, i))
+                            [by hypothesis given-entries-below-succ-k]
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-below-k |
+                                assume less_than(i, k) {
+                                  @i-below-k |
+                                    less_than(i, k)
+                                    [by hypothesis given-i-below-k]
+                                  @i-below-succ-k |
+                                    less_than(i, succ(k))
+                                    [using specialize lessThanSuccRight(i, k) i-below-k]
+                                  @conclusion-entry-i-in-n |
+                                    inN(at(s, i))
+                                    [using specialize entries-below-succ-k(i) i-below-succ-k]
+                                }
+                              @conclusion-i-below-k-gives |
+                                less_than(i, k) -> inN(at(s, i))
+                                [by implies_intro given-i-below-k]
+                            }
+                          @entries-below-k |
+                            forall i: Nat; less_than(i, k) -> inN(at(s, i))
+                            [by forall_intro generalize-i]
+                          @the-prefix-is-in-n |
+                            inN(productUpTo(s, k))
+                            [by modus_ponens inductive-hypothesis entries-below-k]
+                          @the-last-index-is-in-range |
+                            less_than(k, succ(k))
+                            [using specialize lessThanSelf(k)]
+                          @the-last-entry-is-in-n |
+                            inN(at(s, k))
+                            [using specialize entries-below-succ-k(k) the-last-index-is-in-range]
+                          @the-composite-is-in-n |
+                            inN(compose(productUpTo(s, k), at(s, k)))
+                            [using specialize closed-under-composition(productUpTo(s, k), at(s, k)) the-prefix-is-in-n the-last-entry-is-in-n]
+                          @the-product-peels |
+                            productUpTo(s, succ(k)) = compose(productUpTo(s, k), at(s, k))
+                            [using specialize productUpToSucc(s, k)]
+                          @conclusion-longer-product-in-n |
+                            inN(productUpTo(s, succ(k)))
+                            [by rewrite the-product-peels the-composite-is-in-n]
+                        }
+                      @conclusion-implication-at-succ-k |
+                        (forall i: Nat; less_than(i, succ(k)) -> inN(at(s, i))) ->
+                          inN(productUpTo(s, succ(k)))
+                        [by implies_intro given-entries-below-succ-k]
+                    }
+                  @conclusion-induction-step-at-k |
+                    ((forall i: Nat; less_than(i, k) -> inN(at(s, i))) -> inN(productUpTo(s, k))) ->
+                      ((forall i: Nat; less_than(i, succ(k)) -> inN(at(s, i))) -> inN(productUpTo(s, succ(k))))
+                    [by implies_intro given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  ((forall i: Nat; less_than(i, k) -> inN(at(s, i))) -> inN(productUpTo(s, k))) ->
+                  ((forall i: Nat; less_than(i, succ(k)) -> inN(at(s, i))) -> inN(productUpTo(s, succ(k))))
+                [by forall_intro induction-step]
+              @conclusion-for-s |
+                forall n: Nat;
+                  (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n))
+                [using instantiation induction((fun n: Nat => (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n)))) base-case induction-step-for-all-k]
+            }
+          @conclusion-all-sequences |
+            forall s: Seq; forall n: Nat;
+              (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n))
+            [by forall_intro generalize-s]
+        }
+      @conclusion-closed-gives |
+        (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+          (forall s: Seq; forall n: Nat;
+          (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n)))
+        [by implies_intro given-closed]
+    }
+  @conclusion |
+    inN(identityFn) ->
+      (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+      (forall s: Seq; forall n: Nat;
+      (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n)))
+    [by implies_intro given-identity-in-n]
+qed
+
+// LEMMA 10.9's general half: a subgroup N of A_n containing EVERY 3-cycle is all of A_n.
+// Judson states it as "N contains a 3-cycle" and uses normality to reach every 3-cycle by
+// conjugation; that conjugation step (which is where n >= 5 enters) is separate. This is the
+// half that follows from Lemma 10.8: every even permutation is a RUN of 3-cycles, each entry
+// is in N, so the product is in N.
+theorem aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup(inN(Fn)):
+  inN(identityFn) ->
+  (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+  (forall c: Fn; isAThreeCycle(c) -> inN(c)) ->
+  forall g: Fn; inAlternating(g) -> inN(g)
+proof
+  @given-identity-in-n |
+    assume inN(identityFn) {
+      @identity-in-n |
+        inN(identityFn)
+        [by hypothesis given-identity-in-n]
+      @given-closed |
+        assume forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b)) {
+          @closed-under-composition |
+            forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))
+            [by hypothesis given-closed]
+          @given-every-three-cycle-in-n |
+            assume forall c: Fn; isAThreeCycle(c) -> inN(c) {
+              @every-three-cycle-in-n |
+                forall c: Fn; isAThreeCycle(c) -> inN(c)
+                [by hypothesis given-every-three-cycle-in-n]
+              @runs-in-n-have-products-in-n |
+                forall s: Seq; forall n: Nat;
+                  (forall i: Nat; less_than(i, n) -> inN(at(s, i))) -> inN(productUpTo(s, n))
+                [using instantiation aProductOfEntriesInTheSubgroupIsInTheSubgroup((fun g: Fn => inN(g))) identity-in-n closed-under-composition]
+              @generalize-g |
+                fix g: Fn {
+                  @given-g-is-even |
+                    assume inAlternating(g) {
+                      @g-is-even |
+                        inAlternating(g)
+                        [by hypothesis given-g-is-even]
+                      @g-is-a-three-cycle-run |
+                        isAProductOfThreeCycles(g)
+                        [using specialize everyEvenPermutationIsAProductOfThreeCycles(g) g-is-even]
+                      @with-the-run |
+                        unpack s: Seq from g-is-a-three-cycle-run {
+                          @a-length-exists |
+                            exists n: Nat;
+                              (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+                              and productUpTo(s, n) = g
+                            [by hypothesis with-the-run]
+                          @with-the-length |
+                            unpack n: Nat from a-length-exists {
+                              @the-run-facts |
+                                (forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i)))
+                                  and productUpTo(s, n) = g
+                                [by hypothesis with-the-length]
+                              @the-entries-are-three-cycles |
+                                forall i: Nat; less_than(i, n) -> isAThreeCycle(at(s, i))
+                                [by and_elim_left the-run-facts]
+                              @the-product-is-g |
+                                productUpTo(s, n) = g
+                                [by and_elim_right the-run-facts]
+                              @generalize-i |
+                                fix i: Nat {
+                                  @given-i-in-range |
+                                    assume less_than(i, n) {
+                                      @i-in-range |
+                                        less_than(i, n)
+                                        [by hypothesis given-i-in-range]
+                                      @entry-i-is-a-three-cycle |
+                                        isAThreeCycle(at(s, i))
+                                        [using specialize the-entries-are-three-cycles(i) i-in-range]
+                                      @conclusion-entry-i-in-n |
+                                        inN(at(s, i))
+                                        [using specialize every-three-cycle-in-n(at(s, i)) entry-i-is-a-three-cycle]
+                                    }
+                                  @conclusion-i-in-range-gives |
+                                    less_than(i, n) -> inN(at(s, i))
+                                    [by implies_intro given-i-in-range]
+                                }
+                              @every-entry-is-in-n |
+                                forall i: Nat; less_than(i, n) -> inN(at(s, i))
+                                [by forall_intro generalize-i]
+                              @the-product-is-in-n |
+                                inN(productUpTo(s, n))
+                                [using specialize runs-in-n-have-products-in-n(s, n) every-entry-is-in-n]
+                              @conclusion-at-the-length |
+                                inN(g)
+                                [by rewrite the-product-is-g the-product-is-in-n]
+                            }
+                          @conclusion-at-the-run |
+                            inN(g)
+                            [by exists_elim with-the-length]
+                        }
+                      @conclusion-g-in-n |
+                        inN(g)
+                        [by exists_elim with-the-run]
+                    }
+                  @conclusion-even-gives-in-n |
+                    inAlternating(g) -> inN(g)
+                    [by implies_intro given-g-is-even]
+                }
+              @conclusion-every-even-in-n |
+                forall g: Fn; inAlternating(g) -> inN(g)
+                [by forall_intro generalize-g]
+            }
+          @conclusion-three-cycles-give |
+            (forall c: Fn; isAThreeCycle(c) -> inN(c)) ->
+              (forall g: Fn; inAlternating(g) -> inN(g))
+            [by implies_intro given-every-three-cycle-in-n]
+        }
+      @conclusion-closed-gives |
+        (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+          (forall c: Fn; isAThreeCycle(c) -> inN(c)) ->
+          (forall g: Fn; inAlternating(g) -> inN(g))
+        [by implies_intro given-closed]
+    }
+  @conclusion |
+    inN(identityFn) ->
+      (forall a, b: Fn; inN(a) -> inN(b) -> inN(compose(a, b))) ->
+      (forall c: Fn; isAThreeCycle(c) -> inN(c)) ->
+      (forall g: Fn; inAlternating(g) -> inN(g))
+    [by implies_intro given-identity-in-n]
+qed
+
+// VERIFYING the two schemas: instantiate at A_n itself. A_n contains the identity, is closed
+// under composition, and contains every 3-cycle (`aThreeCycleIsInTheAlternatingGroup`), so the
+// schema yields `inAlternating(g) -> inAlternating(g)` — trivial as a statement, but it forces
+// both schema BODIES to be proved, which a declaration alone does not.
+theorem theAlternatingGroupContainsEveryEvenPermutation:
+  forall g: Fn; inAlternating(g) -> inAlternating(g)
+proof
+  @the-identity-is-in-the-alternating-group |
+    inAlternating(identityFn)
+    [by cite theIdentityIsInTheAlternatingGroup]
+  @the-alternating-group-is-closed |
+    forall a, b: Fn; inAlternating(a) -> inAlternating(b) -> inAlternating(compose(a, b))
+    [by cite theAlternatingGroupIsClosedUnderComposition]
+  @every-three-cycle-is-in-the-alternating-group |
+    forall c: Fn; isAThreeCycle(c) -> inAlternating(c)
+    [by cite aThreeCycleIsInTheAlternatingGroup]
+  @conclusion |
+    forall g: Fn; inAlternating(g) -> inAlternating(g)
+    [using instantiation aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-in-the-alternating-group the-alternating-group-is-closed every-three-cycle-is-in-the-alternating-group]
 qed
