@@ -1,0 +1,51 @@
+// `--fast` must never ACCEPT what strict REJECTS — the other half of the fast/strict
+// invariant, and the direction the earlier fixtures do not cover (they guard against `--fast`
+// reporting an error strict does not).
+//
+// An admitted accelerant builds no certificate, so nothing re-checks its refs. The admit path
+// walks them only to seed use-all-facts roots, and that walk used to skip anything that did
+// not resolve to a local step — on the reasoning that a global fact cited by name needs no
+// root and "strict is what diagnoses a bad ref". But a ref naming NEITHER a local step nor a
+// global fact is a typo, and skipping it let `--fast` pass a proof strict rejects.
+//
+// Here `p-holds-everywhere` is a step of `first`, not of `second`. Both modes must reject.
+sort T
+pred p(x: T)
+pred q(x: T)
+axiom pEverywhere: forall x: T; p(x)
+axiom pImpliesQ: forall x: T; p(x) -> q(x)
+
+theorem first: forall x: T; q(x)
+proof
+  @generalize-x |
+    fix x: T {
+      @p-holds-everywhere |
+        forall y: T; p(y)
+        [by cite pEverywhere]
+      @p-at-x |
+        p(x)
+        [using specialize p-holds-everywhere(x)]
+      @conclusion-q-at-x |
+        q(x)
+        [using specialize pImpliesQ(x) p-at-x]
+    }
+  @conclusion |
+    forall x: T; q(x)
+    [by forall_intro generalize-x]
+qed
+
+theorem second: forall x: T; q(x)
+proof
+  @generalize-x |
+    fix x: T {
+      @p-at-x |
+        p(x)
+        [using specialize p-holds-everywhere(x)]
+      @conclusion-q-at-x |
+        q(x)
+        [using specialize pImpliesQ(x) p-at-x]
+    }
+  @conclusion |
+    forall x: T; q(x)
+    [by forall_intro generalize-x]
+qed
