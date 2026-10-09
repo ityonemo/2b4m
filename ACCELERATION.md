@@ -251,7 +251,7 @@ regressions.
   (the `cooper` link, `src/Engine/ProveTask/presburger.zig` trace + `src/Engine/ProveTask/Prove.zig`
   `cooperInduction`) closes the **quantifier-alternation tail**: a
   `forall x…; exists y; body` goal replays its Cooper elimination as
-  kernel steps — for a period-1 trace, a boundary witness under an `or_intro`;
+  kernel steps — for a period-1 trace, a boundary witness under an `either_left`/`either_right`;
   for a period-D trace (e.g. the parity `evenOrOdd`, `forall x; exists y; x=2y ∨
   x=2y+1`), a SYNTHESIZED induction on the fixed variable (predicate `P(k)` =
   the body, base `P(ZERO)`, step `P(k)→P(succ(k))` by unpacking the IH witness
