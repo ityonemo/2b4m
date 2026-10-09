@@ -4,6 +4,78 @@ A `2b4m` formalization of OpenAI's withdrawn preprint *"Algebraicity of Weil cla
 abelian eightfolds"* ([pre-withdrawal PDF](https://github.com/openai/math/blob/adc7f1241b42e322a6451854ab7e4b4c146bf78a/preprints/Algebraicity-of-Weil-classes-on-split-abelian-eightfolds-September-18-2026/paper.pdf),
 [withdrawal notice](https://github.com/openai/math/blob/main/preprints/Algebraicity-of-Weil-classes-on-split-abelian-eightfolds-September-18-2026/README.md)).
 
+## What 2b4m is, and why this is checkable by hand
+
+[**2b4m**](https://github.com/ityonemo/2b4m) ("too big for margin", after Fermat) is a proof
+checker designed on an unusual premise: proofs are *not* expected to be written by humans, but
+they are expected to be **extremely easy for humans to check**. It is built for exactly the
+situation this directory is in — a machine-generated argument that someone needs to audit.
+
+Three design choices matter for reading what follows, and none of them require you to learn
+the language first.
+
+**Proofs are explicit named steps.** Every step states its formula in full and names the rule
+and the earlier steps that justify it. There is no proof search, no hidden context, no tactic
+that silently does three things. What is written is exactly what the checker checked:
+
+```
+theorem theExtraObjectIsNotAScalarGraph: not isAScalarGraph(theExtraObject)
+proof
+  @given-it-were-a-scalar-graph |
+    assume isAScalarGraph(theExtraObject) {
+      @it-is-a-scalar-graph |
+        isAScalarGraph(theExtraObject)
+        [by hypothesis given-it-were-a-scalar-graph]
+      @then-it-annihilates |
+        pair(theExtraObject, exceptionalPart) = zeroPairing
+        [using specialize aScalarGraphAnnihilatesTheExceptionalPart(theExtraObject)
+          it-is-a-scalar-graph]
+      @but-it-detects |
+        pair(theExtraObject, exceptionalPart) != zeroPairing
+        [by cite theExtraObjectDetectsTheExceptionalPart]
+    }
+  @conclusion |
+    not isAScalarGraph(theExtraObject)
+    [by not_intro given-it-were-a-scalar-graph then-it-annihilates but-it-detects]
+qed
+```
+
+That is the whole proof, verbatim from `detection/nonpolarization.md`, and you can read it as
+what it is: *suppose it were a scalar graph; then it annihilates the exceptional part; but it
+detects it; contradiction.* The step labels
+are the argument's outline — `2b4m query outline <file> <theorem>` prints just that column.
+Connectives are words (`and`, `or`, `not`, `->`, `iff`), every name is greppable, and
+diagnostics quote surface syntax back at you. **A mathematician with no proof-assistant
+experience should be able to follow it and object to it.** That is the design goal, and it is
+the reason this audit is worth publishing rather than just asserting a conclusion.
+
+**Shimming in a borrowed fact is one line.** A formalization of a paper's *architecture* does
+not want to redevelop Hodge theory or Floer homology — it wants to assume the cited results
+and check how they compose. In 2b4m that assumption is a first-class declaration:
+
+```
+hole remmertProperMapping
+  cites "Grauert-Remmert, Coherent Analytic Sheaves [15]: proper mapping theorem":
+  forall h: AnalyticSpace; isProperOverTheBase(h) -> isClosedAnalytic(imageInTheBase(h))
+```
+
+A `hole` is an unproved step. A **cited** hole is one assumed on an external authority: the
+checker still treats it as an assumption, still lists it, and prints its locator on every run —
+but it does not block a strict check, because the one thing a proof checker cannot do is
+confirm that Grauert–Remmert says what that line claims. An *uncited* hole does block. So the
+assumption set is always visible and always attributed, and you can audit the formalization by
+reading 36 one-line citations instead of trusting a 5,000-line development.
+
+Deliberately, `axiom` is reserved for a theory's own primitives (𝔽₂'s ring laws, here) and
+`axiom ... cites` is a hard error — so a borrowed theorem cannot be quietly relabelled as a
+local axiom, which is how an unproved step stops being visible.
+
+**The strategy, then:** axiomatize the interface, formalize the architecture. What the paper
+*cites*, we cite. What the paper claims to *prove*, we prove — and if it does not go through,
+the checker names the step and everything resting on it.
+
+## The two chains
+
 It exists as **two chains** that differ in exactly one mathematical input — the reverse
 stabilization-trace sign of §3.4 — and run that difference all the way to Theorem 1.1.
 
