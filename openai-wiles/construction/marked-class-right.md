@@ -45,28 +45,22 @@ const polarizationPower: CycleClass
 func scale(q: CycleClass, z: CycleClass) => CycleClass
 func add(z: CycleClass, w: CycleClass) => CycleClass
 
-// PROPOSITION 12.3, now wired end to end rather than assumed. It is CONDITIONAL on Lemma 3.6
-// (`../legendrian/stabilization-traces.md`), whose outermost stabilization trace is the
-// defect, so an error at §3.4 surfaces when checking Theorem 1.1.
+// PROPOSITION 12.3. CONDITIONAL on Lemma 3.6
+// (`../legendrian/stabilization-traces-right.md`), so §3.4's count decides it.
 //
-// The chain 10.7 -> 11.3 -> 11.4 -> 12.3 is PROVED, in `../detection/nonpolarization.md` and
+// The chain 10.7 -> 11.3 -> 11.4 -> 12.3 is proved in `../detection/nonpolarization.md` and
 // `../detection/transport.md`: nonpolarization detection, transport to the generic fibre by
 // smooth proper base change, transport to a complex period by Betti-étale comparison, and the
-// Baire choice with the Weil-projection extraction. Each rests on citations.
+// Baire choice with the Weil-projection extraction.
 //
-// §12.3's LAST MOVE, decomposed into its two cited pieces rather than asserted whole. The
-// move is: a rational algebraic class with nonzero Weil projection becomes an INTEGRAL
-// subvariety in the marked form a*theta^4 + w. The paper does it in two steps, and each is
-// standard:
+// §12.3's last move — a rational algebraic class with nonzero Weil projection becomes an
+// INTEGRAL subvariety in the marked form a*theta^4 + w — is two cited steps:
 //
-//   (a) A rational algebraic class is a finite rational combination of classes of integral
-//       subvarieties. That is the DEFINITION of the image of CH^4 ⊗ Q, nothing more.
-//   (b) Since the Weil projection of the combination is nonzero, some constituent has nonzero
-//       Weil projection; clearing the denominator and splitting off the polarization component
-//       gives a*theta^4 + w with w the Weil part. Linear algebra on the decomposition
-//       H^8 = <theta^4> ⊕ W_K ⊕ (rest) of §2.
-//
-// Neither step is particular to this paper, and both are cited in §12.3.
+//   (a) a rational algebraic class is a finite rational combination of classes of integral
+//       subvarieties (the definition of the image of CH^4 ⊗ Q);
+//   (b) some constituent has nonzero Weil projection, and formula (2.3) splits it. Note (2.3)
+//       has exactly TWO summands at j = 4 — H^8 ∩ H^{4,4} = Q.theta^4 ⊕ W_K — which is why
+//       "its class has precisely the form (12.5)" follows rather than needing assumption.
 hole aRationalAlgebraicClassIsACombinationOfSubvarieties cites "manuscript Prop 12.3: Express a cycle representing this component as a finite rational linear combination of integral codimension-four subvarieties":
   transport.isRationalAlgebraicClass(transport.theComplexPeriodClass) ->
   (exists p: Period; inParameterSet(p) and avoidsExceptional(p) and

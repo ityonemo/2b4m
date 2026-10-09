@@ -56,12 +56,10 @@ hole theExtraObjectDetectsTheExceptionalPart cites "manuscript §10.6 + §2 (2.6
 // restated on the class the proposition is about.
 const theDetectedClass: Class // zeta_s
 
-// NOTE: an earlier version declared `theExtraObjectDetectsTheDetectedClass` —
-// pair(C, zeta_s) != zeroPairing — as an axiom. That was the most dangerous of the set: the
-// manuscript DERIVES the inequality of the two sides from the Euler identities, so asserting
-// that C detects zeta_s comes close to assuming Prop 10.7's conclusion. Rebuilding 10.7 as a
-// difference argument removed the need for it, and it is deleted rather than left as an
-// uncited hole (which the checker cannot see).
+// Note what is NOT assumed here: that C detects zeta_s (pair(C, zeta_s) != zeroPairing).
+// The manuscript DERIVES the inequality of the two sides from the Euler identities, so
+// asserting it would come close to assuming Prop 10.7's conclusion. §10.7 below is built as a
+// difference argument instead.
 
 // …hence the extra object is NOT a scalar graph. Proved, and this is the whole force of
 // "one further graph detects it" (§1.3): the detection is what separates C from the g_k.
@@ -88,19 +86,9 @@ qed
 ## Proposition 10.7 itself
 
 The step from the Euler-pairing identities to "`ζ_s` is outside the span" is the paper's
-computation (10.16). An earlier version of this file decomposed it **wrongly**, and the
-correction is instructive, so both are recorded.
+computation (10.16).
 
-**What I wrote first.** Two axioms: "the pairing against a class in the span vanishes if it
-vanishes on every power", and "every test object pairs to zero against every power". That
-second axiom is **false in the manuscript's setting**, and the manuscript says so plainly:
-
-> The leading intersection factor is nonzero because `l` is ample.
-
-The pairings against the powers are emphatically *not* zero. I had replaced a determination
-argument with a vanishing argument — it type-checked, and it was not the paper's reasoning.
-
-**What (10.16) actually argues.** The pairings `∫_{X_s} e^{kl} ζ_s = χ(P_k, E)` are computed
+**What (10.16) argues.** The pairings `∫_{X_s} e^{kl} ζ_s = χ(P_k, E)` are computed
 for **every** `k ≥ 1`. Expanding `z = Σ_{a=0}^{8} z_a l^a` gives
 
     ∫ e^{kl} z = ∫ l⁸ · Σ_a z_a k^{8−a} / (8−a)!
@@ -147,25 +135,19 @@ qed
 ## Proposition 10.7, proved
 
 ```2b4m
-// §10.7's CLOSING MOVE. Three earlier attempts at this got it wrong, and the reason each
-// time was the same: `pair`, `addPairings` and `sumOverGraphs` were OPAQUE, so every step
-// relating them had to be assumed. Modelling the decomposition EXPLICITLY makes all three
-// assumptions into theorems.
-//
-// The manuscript: "Testing the second equality by ch(P_C^dual) in (10.13) would give
+// §10.7's CLOSING MOVE, modelled as the DIFFERENCE it is. The manuscript: "Testing the second equality by ch(P_C^dual) in (10.13) would give
 // chi(P_C, E) = nu sum_j chi(P_C, P_j). The two sides differ, by the Euler and intersection
 // identities, by nu c.alpha_ex != 0."
 //
-// What is actually needed, and all of it is cited:
+// What is needed, and all of it is cited:
 //
 //   (2.7)   alpha = alpha_ex + g1 + g2 + g3                 -- an explicit 4-term sum
 //   (10.15) chi(P_C, P_j) = c . g_j                         -- the graph pairings
 //   bilinearity of chi(P, -)                                -- standard
 //
 // With the sum written out, the graph sum IS pair(C,g1)+pair(C,g2)+pair(C,g3), the split of
-// pair(C,alpha) is a consequence of bilinearity rather than an assumption, and cancellation
-// comes from the pairing values' own additive theory instead of being asserted about an
-// opaque function.
+// pair(C,alpha) follows from bilinearity, and cancellation comes from the pairing values'
+// additive theory. All three were assumptions before the decomposition was explicit.
 
 // The three scalar-slope graph classes of (2.7), and the test class alpha they build.
 const graphOne: Class
@@ -196,9 +178,8 @@ hole thePairingIsAdditive
 func sumOverGraphs(t: TestObject) => Class:
   sumOverGraphs(t) = addPairings(addPairings(pair(t, graphOne), pair(t, graphTwo)), pair(t, graphThree))
 
-// Pairing values form an abelian group under addPairings. Rather than assert cancellation
-// about an opaque function (which three earlier drafts did, each time defending it as "a
-// group is cancellative"), the GROUP LAWS are stated and cancellation is PROVED from them.
+// Pairing values form an abelian group under addPairings. The GROUP LAWS are stated and
+// cancellation is PROVED from them, rather than asserted about an opaque function.
 func addPairings(x: Class, y: Class) => Class
 func negPairing(x: Class) => Class
 
@@ -282,10 +263,7 @@ qed
 // CITATION, §10.7's opening line: "Lemma 7.4 and Proposition 10.2 identify
 // chi(P_k, E) = nu g_k . alpha, chi(P_C, E) = nu c . alpha."
 //
-// LOCATOR CORRECTED: an earlier version cited this to (10.7)/(10.12)/(10.13). Those are the
-// equations the SPAN-MEMBERSHIP branch uses (the periodic Euler pairing and the eta_E
-// identity); the identification of chi(P_C, E) with nu c . alpha is Lemma 7.4 + Prop 10.2,
-// as §10.7's own first sentence says.
+// (Not (10.7)/(10.12)/(10.13) — those are what the SPAN-MEMBERSHIP branch uses.)
 hole theDetectedPairingIsAgainstAlpha
   cites "manuscript §10.7 opening (Lemma 7.4 + Prop 10.2): chi(P_C, E) = nu c . alpha":
   pair(theExtraObject, theDetectedClass) = pair(theExtraObject, testClass)

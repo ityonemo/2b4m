@@ -3,27 +3,19 @@
 A `2b4m` formalization of the **main thrust** of OpenAI's withdrawn manuscript
 *"Algebraicity of Weil classes on split abelian eightfolds"*, built **top-down with `hole`s**.
 
-## Method
+## Scope
 
-Start from Theorem 1.1. State every premise it needs as a `hole` — an aspirational
-placeholder the checker tracks but does not let you forget. Prove the theorem from those.
-Then take each hole in turn: either *prove* it from smaller holes, or recognise it as a
-**result the paper cites** and flip it to an `axiom`. Repeat until no holes remain.
+This file is §12.4: Theorem 1.1 from a spanning pair of algebraic Weil classes. The
+construction below it — Proposition 12.3 and the detection chain — lives in
+`construction/` and `detection/`; §3.4's stabilization-trace count, which is where the two
+chains diverge, lives in `legendrian/`.
 
-Why this order matters here, and not just stylistically: writing the axioms first lets the
-formalizer *choose* convenient premises, and a convenient premise is how you accidentally
-assume the thing you meant to check. Holes-first makes the checker name what is actually
-needed. `2b4m check --axioms` then reports the full assumption set, and default `check`
-**rejects any hole that survives** — so an unjustified step cannot hide.
-
-A first attempt at this file went axioms-first (kept as `architecture-axioms-first.md.bak`).
-Strict check caught a real modelling error in it — see "What the checker caught" below — and
-that error is exactly the kind holes-first prevents.
+Every unproved step is a `hole` with a citation, so `2b4m check --axioms` prints the full
+assumption set. See the top-level `README.md`.
 
 ## The objects
 
-The objects shared with the quarantined assumption come from `construction/marked-class.md`,
-so the axiom is stated once, in the file that explains what it costs.
+Shared objects come from `construction/marked-class-wrong.md`.
 
 ```2b4m
 import construction <<< "construction/marked-class-wrong.md"
@@ -401,32 +393,12 @@ proof
 qed
 ```
 
-## Classifying the six remaining holes
+## The cited inputs
 
-The instruction was: drive holes back until each is a *well-known result*, then flip it to an
-axiom. Doing that honestly means separating the holes that really are citations from the ones
-that are the paper's own contributions — because flipping the latter to axioms is where this
-method stops being verification and starts being assumption.
+§12.4 rests on four standard facts about the cycle class map and the conjugation endomorphism,
+plus Proposition 12.3 (proved in `construction/marked-class-wrong.md`). Each is a `hole`
+with its source named.
 
-| hole | status |
-|---|---|
-| `algebraicClassesSubtract` | **well-known.** The image of the cycle class map is a ℚ-subspace; closure under subtraction is immediate. Flip to axiom. |
-| `aPolarizationPowerIsAlgebraic` | **well-known.** `θ` is a divisor class, `θ⁴` an intersection of divisors. Flip to axiom. |
-| `anAlgebraicEndomorphismPreservesAlgebraicity` | **well-known.** Functoriality of the cycle class map under an algebraic correspondence. Flip to axiom. |
-| `theConjugationEndomorphismExists` | **mixed.** That `m·1₈ + D` is an algebraic endomorphism is standard; the *independence* is the eigenvalue computation `λ± = (m ± i√d)⁸`, which is elementary arithmetic in ℂ (checked numerically — see below) but is the paper's own step. Split, then flip. |
-| `aMarkedClassSpreadsToEveryFiber` | **NOT a citation.** This is Lemmas 12.1 + 12.2, and 12.2 has a multi-page proof of its own: eight syzygy sequences, proper base change, flatness of the eighth syzygy on a possibly-singular base. Flipping it to an axiom assumes a substantial part of the paper. |
-| `aMarkedPeriodExists` | **NOT a citation.** This is Proposition 12.3, whose input is Proposition 11.4, which rests on Sections 2–11 — i.e. the entire construction, including the sign bookkeeping of Section 6 and the stabilization traces of §3.4 where the withdrawn error lives. |
-
-So four flip cleanly and two do not. The two that do not are precisely where the paper's
-content is, and one of them (`aMarkedPeriodExists`) transitively contains the error. **That is
-the honest result of this exercise:** the architecture composes, and what it composes *from*
-is assumed.
-
-Stated as a slogan: this formalization proves that *if* Sections 2–11 deliver one algebraic
-class with nonzero Weil part at one good period, *then* Theorem 1.1 follows. The withdrawal
-says Sections 2–11 do not deliver it.
-
-### The four that flip
 
 ```2b4m
 // WELL-KNOWN: the image of the cycle class map CH^4(A) ⊗ Q -> H^8(A, Q) is a Q-subspace.
@@ -443,7 +415,7 @@ hole theCycleClassMapIsFunctorial cites "standard: functoriality of the cycle cl
   forall z: CycleClass;
   isAlgebraicEndomorphism(p, e) -> isAlgebraic(p, z) -> isAlgebraic(p, pullback(e, z))
 
-// The endomorphism m*1 + D of §12.4. Its two halves are separated, and only one is assumed:
+// The endomorphism m*1 + D of §12.4. Its two halves are separated:
 //
 //   ALGEBRAICITY — standard: an integral matrix commuting with every period in U defines an
 //   algebraic endomorphism of every fiber. Axiom, cited, and a fair one.
@@ -456,8 +428,7 @@ hole theCycleClassMapIsFunctorial cites "standard: functoriality of the cycle cl
 //   arg(m + i*sqrt(d)) lies in (0, pi/8) under the paper's bound, checked numerically for
 //   d = 1..39 including the bound's tightness.
 //
-// So the existential below is no longer an axiom: it is assembled from one citation and one
-// proof.
+// The existential below is assembled from one citation and one proof.
 hole theConjugationIsAlgebraic cites "manuscript §12.4: The integral matrix m.1_8 + D commutes with every period in U, and hence defines an algebraic endomorphism of every A_Pi": forall p: Period;
   inParameterSet(p) -> isAlgebraicEndomorphism(p, eigenvalues.theConjugation)
 
@@ -492,10 +463,7 @@ proof
 qed
 ```
 
-### The two that do not
-
-These are flipped to axioms as well — otherwise nothing downstream can be checked — but they
-are labelled for what they are, and `--axioms` will report them beside the genuine citations.
+### Lemmas 12.1 and 12.2, and Proposition 12.3
 
 ```2b4m
 // Lemmas 12.1 + 12.2, decomposed until only citations remain.
@@ -526,10 +494,7 @@ are labelled for what they are, and `--axioms` will report them beside the genui
 
 // The component a class's Hilbert point lands in.
 //
-// NOTE: an earlier version also declared `hasProperImage` and an axiom saying a good period
-// avoids every proper image. That axiom was DEAD (nothing cited it) and far stronger than
-// Lemma 12.1, which speaks of one period's own component rather than every class at once.
-// Both are deleted. The E_Hilb clause is not needed here: `everyAlgebraicClassOccursInSomeFamily`
+// The E_Hilb clause of Lemma 12.1 is not needed here: `everyAlgebraicClassOccursInSomeFamily`
 // already delivers a component, and `chern.inComponent` is what the spreading consumes.
 func markingComponentOf(p: Period, z: CycleClass) => ParameterPoint
 
@@ -689,11 +654,8 @@ proof
     [by forall_intro generalize-p]
 qed
 
-// Proposition 12.3, re-exported from the file that proves it. It is a THEOREM there now —
-// decomposed into the detection chain of `../detection/` plus §12.3's cited last move — so
-// the alias is a theorem alias. An earlier version declared it `axiom`, with a comment
-// reading "NOT a citation", which was true of the assumption it then was and is the wrong
-// declaration KIND now that it is proved.
+// Proposition 12.3, re-exported from the file that proves it — the detection chain of
+// `../detection/` plus §12.3's cited last move.
 theorem aMarkedAlgebraicClassExistsAtSomeGoodPeriod =
   construction.aMarkedAlgebraicClassExistsAtSomeGoodPeriod
 ```

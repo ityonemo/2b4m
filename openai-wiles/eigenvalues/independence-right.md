@@ -1,8 +1,8 @@
-# The second Weil class, decomposed
+# The second Weil class
 
-§12.4's second half was a hole: `theConjugationEndomorphism` bundled a standard fact with
-the paper's own eigenvalue computation. This file separates them, so the standard half is an
-axiom and the paper's half is **proved**.
+§12.4's second half: the conjugation endomorphism `m·1₈ + D` carries a nonzero Weil class to
+an independent one, so the pair spans. The standard inputs are cited; the paper's eigenvalue
+argument is proved.
 
 ## What the paper argues
 
@@ -16,7 +16,7 @@ axiom and the paper's half is **proved**.
 > pullback were a rational multiple `r·w`, those two components would give `λ₊ = r = λ₋`, a
 > contradiction. Thus `w` and its pullback are independent.
 
-## The logical core, which is what actually needs checking
+## The logical core
 
 Strip the geometry and the argument is: *if `λ₊ ≠ λ₋` then no scalar `r` satisfies both
 `λ₊ = r` and `λ₋ = r`.* That is all the independence rests on, and it is provable outright.

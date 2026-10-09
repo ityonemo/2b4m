@@ -43,31 +43,10 @@ axiom reverseTraceSign = traces.reverseTraceSign
 // φ₀ — "standard real-plane Legendrian link ϕ₀ ⊂ S¹⁵ at the negative end" (§3.4).
 const phiZero: Link
 
-// RETRACTED DIAGNOSIS, kept because the retraction is the finding.
-//
-// An earlier version of this file claimed the defect was HERE: that [6] grants the reverse
-// sign only when the TARGET is loose, that the outermost trace targets φ₀, that nothing
-// establishes isLoose(φ₀), and that §3.4 is therefore CIRCULAR because it presents looseness
-// as the output of the very insertion that assumes it. The checker duly reported
-//
-//   error: cannot discharge the guard premise 'isLoose(phiZero)' at this call site
-//
-// and that looked like a verified diagnosis. It was not. The guard was INVENTED in
-// `traces.b4m`, not read from [6]. Reading Lemma 3.4's proof (arXiv:1303.0588v2 p. 14)
-// shows the looseness hypothesis belongs to the DESTABILIZATION traces G3/G4, not to the
-// reverse trace G2 = φ₁ → φ₀, which [6] grants unconditionally at I(G2) = (-1)^k = +1.
-// So the manuscript's step is fine as cited, and the "repair" below repaired nothing.
-//
-// What the withdrawal notice actually says is a different claim: that the correct reverse
-// sign in the MANUSCRIPT's convention is −1, not +1, "accounting for the opposite source
-// orientations of the two branches of the standard cusp", giving I_new = I(f₁) − m = −2m ≠ 0.
-// That is a convention mismatch between [6]'s index and the manuscript's count, and it is
-// NOT checked here — see the caveat in `traces.b4m`. Nothing in this directory confirms or
-// refutes it.
-//
-// The theorem below is retained because it is TRUE and cited: the forward trace φ₀ → φ₁
-// carries (-1)^{k-1} = −1 for any φ, by [6] Lemma 3.4's first case.
-theorem theOutermostTraceContributesMinusOneAsRepaired:
+// The FORWARD trace φ₀ → φ₁, sign (-1)^{k-1} = −1 at k = 4, by [6] Lemma 3.4's first case
+// ("for any φ", no hypothesis). Not used by §3.4's insertion — which is all reverse traces —
+// but it is the other half of (3.6) and is proved here for completeness.
+theorem theForwardTraceContributesMinusOne:
   traceSign(phiZero, stabilize(phiZero)) = neg(ONE)
 proof
   @conclusion |
@@ -88,16 +67,6 @@ carries `−1` in the manuscript's convention, the count is `I(f₁) − m = −
 convention against the manuscript's, which this directory does not do.
 
 ```2b4m
-// The forward trace's sign, by [6] Lemma 3.4's "for any φ" case. (Duplicate of the theorem
-// above under its pre-retraction name; kept so existing citations resolve.)
-theorem theOutermostTraceContributesMinusOne:
-  traceSign(phiZero, stabilize(phiZero)) = neg(ONE)
-proof
-  @conclusion |
-    traceSign(phiZero, stabilize(phiZero)) = neg(ONE)
-    [using specialize forwardTraceSign(phiZero)]
-qed
-
 // A reverse trace at a stabilized target, which is what every inserted trace in §3.4 is.
 // No looseness step is needed: reverseTraceSign carries no guard, per [6]'s G1-G4 table.
 theorem anInnerTraceContributesMinusOne: forall l: Link;
@@ -125,21 +94,12 @@ Transcribing that application makes the dependency explicit: Lemma 3.6 needs the
 the zero count needs the outermost trace to contribute `+1`, and that is the hole.
 
 ```2b4m
-// -- establishing looseness FIRST, which is what breaks the circle ---------------------------
+// -- the negative asymptote is loose --------------------------------------------------------
 //
-// [6] §2, line 462: "Any Legendrian submanifold Λ ⊂ Y can be MADE loose by stabilizing it in
-// arbitrarily small neighborhood of a point. Moreover, it can be made loose even without
-// changing its formal Legendrian isotopy class."
-//
-// Note the verb: you do not PROVE φ₀ loose, you REPLACE it by a stabilized link. So the
-// repair is not "add a hypothesis" — it is to perform the stabilization BEFORE the trace
-// insertion, so that every subsequent +1 sign is licensed and the count can then be driven
-// to zero. The manuscript does the operations in the other order, which is the circularity.
-//
-// The link the construction actually works with is `stabilize(phiZero)` — φ₀ stabilized
-// once. Written directly rather than as a named constant plus an equation: an earlier draft
-// introduced `theNegativeLinkAfterStabilizing` and then ASSUMED it equalled
-// `stabilize(phiZero)`, which is a definition masquerading as an assumption.
+// [9, Thm 2.3]'s other hypothesis: the asymptotic negative boundary has a loose component.
+// §3.4 inserts traces ordered "from the m-fold stabilization ϕ_m at the innermost end to ϕ_0
+// outward", so the link the construction works with is `stabilize(phiZero)` — and a
+// stabilization is loose by [6] §2.2's definition. No separate assumption needed.
 theorem theNegativeLinkIsLoose: isLoose(stabilize(phiZero))
 proof
   @conclusion |
@@ -147,12 +107,9 @@ proof
     [using specialize aStabilizationIsLoose(phiZero)]
 qed
 
-// The total signed double count after inserting the traces. The manuscript's `I(f₁) + m`.
-//
-// Modelled as an actual SUM rather than an opaque constant, so the arithmetic is PROVED:
-// `initialIndex` is I(f₁), and `insertedTotal` is the sum of the inserted traces' signs.
-// An earlier draft made the count opaque and held "the count is zero" as a hole; with the
-// sum written out, std/integer discharges it.
+// The total signed double count after inserting the traces: the manuscript's `I(f₁) + m`.
+// Modelled as an actual SUM, not an opaque constant, so std/integer discharges the arithmetic
+// rather than it being assumed.
 const initialIndex: Int // I(f₁), negative; the manuscript puts m = -I(f₁)
 
 // §3.4: "Put m = -I(f1) > 0", i.e. I(f1) < 0. A cited fact rather than a code comment,
@@ -164,10 +121,9 @@ hole theInitialIndexIsNegative
 // `insertedTotal(n)` = n inserted REVERSE traces, each carrying whatever sign this chain's
 // traces module gives: n times that sign.
 //
-// MODEL FIX, and the reason the right/wrong split means anything. An earlier version defined
-// this as `insertedTotal(n) = n`, hard-coding "+1 per trace" into the DEFINITION — which made
-// the trace sign DECORATIVE. Swapping the sign module left the count unchanged and BOTH
-// chains passed, a false negative. The total must be n times the ACTUAL sign.
+// The total is n times the sign, NOT a constant: that is what makes the right/wrong split
+// meaningful. (Defining it as `insertedTotal(n) = n` would hard-code +1 into the definition
+// and both chains would pass, making the right/wrong split meaningless.)
 const theReverseTraceSign: Int
 
 func insertedTotal(n: Int) => Int:
@@ -205,23 +161,9 @@ qed
 //    exists a compactly supported Hamiltonian regular homotopy f_t, connecting f_0 = f with
 //    an EMBEDDING f_1."
 //
-// CITATION CORRECTED. An earlier version of this comment read "[6, Theorem 3.6] = the
-// manuscript's [9, Theorem 2.3]", equating two DIFFERENT results in two different papers:
-//
-//   [6] Thm 3.6 (arXiv:1303.0588v2) — immersion with a CONICAL POINT p; hypothesis is
-//       "the Legendrian link of f_0 at p is loose and I(f_0) = 0"; conclusion is an
-//       embedding WITH A CONICAL POINT at p.
-//   [9] Thm 2.3 (arXiv:1303.0586v1) — immersion CYLINDRICAL AT -infinity; hypothesis is
-//       I(f) = 0 plus a loose component of the asymptotic negative boundary.
-//
-// The manuscript cites [9], and its own hypothesis list ("the target is a simply connected
-// Liouville manifold with a negative end ... the negative asymptote has one loose component;
-// and its signed double count is zero") matches [9]. The axiom's CONTENT was right; only the
-// attribution was wrong.
-//
-// Both of [9]'s substantive hypotheses are carried below. An earlier version dropped
-// looseness and took only the zero count, which let the argument reach an embedding without
-// establishing looseness of the negative link.
+// Both of [9]'s substantive hypotheses are carried below: the zero count AND a loose
+// component of the asymptotic negative boundary. (Note this is [9], arXiv:1303.0586v1 — NOT
+// [6] Thm 3.6, which is the conical-point version and a different result.)
 pred anEmbeddedLagrangianExists()
 hole exactCancellation cites "arXiv:1303.0586v1 (Eliashberg-Murphy, Lagrangian caps) Thm 2.3: I(f)=0 + a loose negative-boundary component => embedding": forall n: Int;
   isLoose(stabilize(phiZero)) -> theSignedDoubleCount(n) = ZERO ->
