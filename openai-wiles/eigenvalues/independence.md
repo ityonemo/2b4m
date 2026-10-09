@@ -194,9 +194,13 @@ hole theConjugationActsByItsEigenvalues cites "manuscript §12.4: On the two det
   plusComponent(pullback(theConjugation, w)) = mulComplex(lambdaPlus, plusComponent(w)) and
   minusComponent(pullback(theConjugation, w)) = mulComplex(lambdaMinus, minusComponent(w))
 
-// PROPORTIONALITY, as §12.4 uses it: the pullback IS a scalar multiple r*w. Declared with a
-// separate axiom rather than a definition block, because the defining clause binds its own
-// existential witness and a clause variable must be settled by the clause's symbols.
+// PROPORTIONALITY, as §12.4 uses it: the pullback IS a scalar multiple r*w.
+//
+// This DEFINES the predicate — it is not an assumption about the world, and doubting it is
+// not coherent. It cannot use a definition block, because the defining clause binds its own
+// existential witness (`r`) and a clause variable must be settled by the clause's symbols;
+// so it is written as the axiom the block would have emitted. Noted here because `--axioms`
+// lists it beside genuine assumptions, where it should be read as a definition.
 pred isProportional(p: Period, v: WeilClass, w: WeilClass)
 
 axiom proportionalityIsBeingAScalarMultiple:

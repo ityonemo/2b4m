@@ -689,9 +689,11 @@ proof
     [by forall_intro generalize-p]
 qed
 
-// NOT a citation: Proposition 12.3, resting on Sections 2-11 — the whole construction, with
-// the withdrawn sign error inside it. Quarantined in its own file so that flipping it cannot
-// happen quietly: see `construction/marked-class.md`.
-axiom aMarkedAlgebraicClassExistsAtSomeGoodPeriod =
+// Proposition 12.3, re-exported from the file that proves it. It is a THEOREM there now —
+// decomposed into the detection chain of `../detection/` plus §12.3's cited last move — so
+// the alias is a theorem alias. An earlier version declared it `axiom`, with a comment
+// reading "NOT a citation", which was true of the assumption it then was and is the wrong
+// declaration KIND now that it is proved.
+theorem aMarkedAlgebraicClassExistsAtSomeGoodPeriod =
   construction.aMarkedAlgebraicClassExistsAtSomeGoodPeriod
 ```
