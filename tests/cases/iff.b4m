@@ -2,8 +2,8 @@
 //
 // `P iff Q` is SURFACE-ONLY: it desugars at elaborate time to
 // `(P -> Q) and (Q -> P)` and never reaches the kernel. So a biconditional is
-// proved with iff_intro (the two directions) and eliminated with
-// iff_elim_forward / iff_elim_backward — thin renames of the `and` rules that
+// proved with make_equivalence (the two directions) and eliminated with
+// equiv_forward / equiv_converse — thin renames of the `and` rules that
 // read as what they mean. Critically, `tautology` sees the desugared
 // conjunction, so it decides iff goals AND consumes iff hypotheses for free —
 // the property the set/collection membership-axiom sweep relies on.
@@ -14,7 +14,7 @@ pred C()
 
 // -- intro / elim -----------------------------------------------------------
 
-// iff_intro from the two directions.
+// make_equivalence from the two directions.
 theorem introFromDirections: (A() -> B()) -> (B() -> A()) -> (A() iff B())
 proof
   @given-forward |
@@ -23,25 +23,25 @@ proof
         assume B() -> A() {
           @forward-direction | A() -> B() [by hypothesis given-forward]
           @backward-direction | B() -> A() [by hypothesis given-backward]
-          @the-iff | A() iff B() [by iff_intro forward-direction backward-direction]
+          @the-iff | A() iff B() [by make_equivalence forward-direction backward-direction]
         }
-      @backward-gives-iff | (B() -> A()) -> (A() iff B()) [by implies_intro given-backward]
+      @backward-gives-iff | (B() -> A()) -> (A() iff B()) [by discharge given-backward]
     }
-  @conclusion | (A() -> B()) -> (B() -> A()) -> (A() iff B()) [by implies_intro given-forward]
+  @conclusion | (A() -> B()) -> (B() -> A()) -> (A() iff B()) [by discharge given-forward]
 qed
 
-// iff_elim_forward / iff_elim_backward recover each direction; iff_intro puts
+// equiv_forward / equiv_converse recover each direction; make_equivalence puts
 // them back — a round-trip through the sugar.
 theorem elimThenIntroRoundTrips: (A() iff B()) -> (A() iff B())
 proof
   @given-iff |
     assume A() iff B() {
       @the-iff | A() iff B() [by hypothesis given-iff]
-      @forward-direction | A() -> B() [by iff_elim_forward the-iff]
-      @backward-direction | B() -> A() [by iff_elim_backward the-iff]
-      @rebuilt | A() iff B() [by iff_intro forward-direction backward-direction]
+      @forward-direction | A() -> B() [by equiv_forward the-iff]
+      @backward-direction | B() -> A() [by equiv_converse the-iff]
+      @rebuilt | A() iff B() [by make_equivalence forward-direction backward-direction]
     }
-  @conclusion | (A() iff B()) -> (A() iff B()) [by implies_intro given-iff]
+  @conclusion | (A() iff B()) -> (A() iff B()) [by discharge given-iff]
 qed
 
 // -- tautology closes iff goals ---------------------------------------------
@@ -65,9 +65,9 @@ proof
           @the-a | A() [by hypothesis given-a]
           @b | B() [using tautology the-iff the-a]
         }
-      @a-implies-b | A() -> B() [by implies_intro given-a]
+      @a-implies-b | A() -> B() [by discharge given-a]
     }
-  @conclusion | (A() iff B()) -> A() -> B() [by implies_intro given-iff]
+  @conclusion | (A() iff B()) -> A() -> B() [by discharge given-iff]
 qed
 
 // backward direction too.
@@ -81,9 +81,9 @@ proof
           @the-b | B() [by hypothesis given-b]
           @a | A() [using tautology the-iff the-b]
         }
-      @b-implies-a | B() -> A() [by implies_intro given-b]
+      @b-implies-a | B() -> A() [by discharge given-b]
     }
-  @conclusion | (A() iff B()) -> B() -> A() [by implies_intro given-iff]
+  @conclusion | (A() iff B()) -> B() -> A() [by discharge given-iff]
 qed
 
 // iff transitivity — iff mixed with the connective machinery, via tautology.
@@ -97,7 +97,7 @@ proof
           @b-iff-c | B() iff C() [by hypothesis given-b-iff-c]
           @a-iff-c | A() iff C() [using tautology a-iff-b b-iff-c]
         }
-      @b-iff-c-gives-a-iff-c | (B() iff C()) -> (A() iff C()) [by implies_intro given-b-iff-c]
+      @b-iff-c-gives-a-iff-c | (B() iff C()) -> (A() iff C()) [by discharge given-b-iff-c]
     }
-  @conclusion | (A() iff B()) -> (B() iff C()) -> (A() iff C()) [by implies_intro given-a-iff-b]
+  @conclusion | (A() iff B()) -> (B() iff C()) -> (A() iff C()) [by discharge given-a-iff-b]
 qed

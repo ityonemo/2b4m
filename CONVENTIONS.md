@@ -263,11 +263,11 @@ skeleton.
   label that just re-narrates its syntax earns nothing. On a line reading
   `forall b, d: Nat; ...`, `@for-all-b-d` is dead weight; the step's real
   contribution is *discharging the `fix`* (`@discharge-b`). Likewise a
-  `forall_elim` step's content is the *specialization* it performs
+  `apply_at` step's content is the *specialization* it performs
   (`@specialized-to-this-a-b`), not that the result is now quantifier-free.
   Ask "what did this step DO to the argument?" — that is the name.
 - **Steps that assert nothing should not exist.** Specialization towers
-  collapse with multi-argument `forall_elim(A, B, C)`; modus-ponens discharge
+  collapse with multi-argument `apply_at(A, B, C)`; modus-ponens discharge
   ladders collapse with `tautology` (see the apply-a-lemma idiom below). Only
   name what survives.
 
@@ -285,10 +285,10 @@ words — the role IS the content for these):
 | the implication at fixed `k` | `@induction-step-at-k` |
 | the generalized step premise | `@induction-step-for-all-k` |
 | fix-block generalizing a statement binder | `@generalize-<var>` |
-| forall_intro closing such a block | `@discharge-<var>` (it discharges the `fix`; do NOT name it `@for-all-<var>`, which merely echoes the formula) |
-| forall_elim specializing a lemma | `@specialized-<to-what>` / `@<fact>-at-<args>` (name the specialization, not that it is now quantifier-free) |
+| generalize closing such a block | `@discharge-<var>` (it discharges the `fix`; do NOT name it `@for-all-<var>`, which merely echoes the formula) |
+| apply_at specializing a lemma | `@specialized-<to-what>` / `@<fact>-at-<args>` (name the specialization, not that it is now quantifier-free) |
 | assume-block (hypothesis intro) | `@given-<content>` (`@given-b-nonzero`) |
-| implies_intro export | `@<cond>-implies-<result>` |
+| discharge export | `@<cond>-implies-<result>` |
 | the existential feeding an unpack | `@<thing>-exists` (`@gap-exists`) |
 | unpack-block naming a witness | `@with-<role>-<var>` (`@with-gap-d`, `@with-quotient-j`); fallback `@with-witness-<var>` |
 | case arms (`case`/`or_elim` branches) | `@when-<condition>` (`@when-zero`, `@when-successor`) |
@@ -306,7 +306,7 @@ steps, no filler:
     [by cite modIntro]
   @remainder-is-determined-nine-six |
     SIX != ZERO -> less_than(THREE, SIX) -> add(mul(SIX, ONE), THREE) = NINE -> mod(NINE, SIX) = THREE
-    [by forall_elim(NINE, SIX, ONE, THREE) remainder-is-unique]
+    [by apply_at(NINE, SIX, ONE, THREE) remainder-is-unique]
   @conclusion |
     mod(NINE, SIX) = THREE
     [using tautology remainder-is-determined-nine-six six-is-nonzero three-is-below-six sum-is-nine]

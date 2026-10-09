@@ -102,7 +102,7 @@ pub fn addTests(
     // axioms/theorems it pulls in are listed.
     ctx.ok(&.{ "query", "uses", "tests/cases/outline.b4m" },
         \\theorem everyoneIsQ
-        \\  rules: cite×2 forall_elim×2 hypothesis×2 modus_ponens forall_intro
+        \\  rules: cite×2 apply_at×2 hypothesis×2 modus_ponens generalize
         \\  cites: either pImpliesQ
         \\
     );
@@ -153,11 +153,11 @@ pub fn addTests(
         \\        }
         \\      @induction-step-at-k |
         \\        add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
-        \\        [by implies_intro given-inductive-hypothesis]
+        \\        [by discharge given-inductive-hypothesis]
         \\    }
         \\  @induction-step-for-all-k |
         \\    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
-        \\    [by forall_intro induction-step]
+        \\    [by generalize induction-step]
         \\
         \\  @conclusion |
         \\    forall n: Nat; add(n, ZERO) = n
@@ -182,10 +182,10 @@ pub fn addTests(
         \\    [by cite addSuccLeft]
         \\  @simplify-6 |
         \\    forall b1: Nat; add(succ(ZERO), b1) = succ(add(ZERO, b1))
-        \\    [by forall_elim(ZERO) simplify-5]
+        \\    [by apply_at(ZERO) simplify-5]
         \\  @simplify-7 |
         \\    add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
-        \\    [by forall_elim(succ(ZERO)) simplify-6]
+        \\    [by apply_at(succ(ZERO)) simplify-6]
         \\  @simplify-8 |
         \\    add(succ(ZERO), succ(ZERO)) = succ(add(ZERO, succ(ZERO)))
         \\    [by rewrite simplify-7 simplify-4]
@@ -194,7 +194,7 @@ pub fn addTests(
         \\    [by cite addZeroLeft]
         \\  @simplify-10 |
         \\    add(ZERO, succ(ZERO)) = succ(ZERO)
-        \\    [by forall_elim(succ(ZERO)) simplify-9]
+        \\    [by apply_at(succ(ZERO)) simplify-9]
         \\  @simplify-11 |
         \\    add(succ(ZERO), succ(ZERO)) = succ(succ(ZERO))
         \\    [by rewrite simplify-10 simplify-8]

@@ -21,7 +21,7 @@
 //! maps (LocalStepKV: label -> step/block ordinal; LocalIdentKV: binder name -> block),
 //! and block DESCOPING (exit frames carry marks; internals truncate at exit, while a
 //! block's own label lives in the PARENT scope — a closed subproof stays citable for
-//! implies_intro/forall_intro, its internals do not; the kernel's accessibility rules,
+//! discharge/generalize, its internals do not; the kernel's accessibility rules,
 //! enforced at resolution time).
 //!
 //! WHAT THE DRIVER OWNS (semantics), via a comptime duck-typed `driver`:
@@ -121,7 +121,7 @@ stack: std.ArrayList(Frame) = .empty,
 /// LocalStepKV — live step/block labels, innermost-last (reverse-scan lookup).
 local_steps: std.ArrayList(LocalStep) = .empty,
 /// EVERY bound step/block label, appended and NEVER truncated. `resolveStep` falls back
-/// here for a label that has descoped (a not_intro / or_elim citing steps at the CONCLUSION
+/// here for a label that has descoped (a contradiction / or_elim citing steps at the CONCLUSION
 /// of a closed sibling subproof — the kernel then enforces the ancestor accessibility rule,
 /// per the module's "resolution time" contract). Shadow/duplicate checks stay on the LIVE
 /// `local_steps`; this map is resolution-only. Reverse scan = most-recent binding wins (fine
@@ -163,7 +163,7 @@ pub fn findStep(self: *const Walk, name: StrId) ?LocalTarget {
 
 /// Resolve a label for a CITATION: the live scope first, then any closed subproof's label
 /// (the kernel enforces cross-scope accessibility). This is what step/block references use;
-/// not_intro/or_elim cite steps at a closed subproof's conclusion through the fallback.
+/// contradiction/or_elim cite steps at a closed subproof's conclusion through the fallback.
 pub fn resolveStep(self: *const Walk, name: StrId) ?LocalTarget {
     if (self.findStep(name)) |t| return t;
     var i = self.closed_steps.items.len;

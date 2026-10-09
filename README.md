@@ -161,7 +161,7 @@ across files*, or *finding a lemma by concept* when the name is fuzzy.
   with headers on `fix`/`assume`/`unpack`/`case`).
 - `query theorem <file> <name> [--sig]` — a declaration's full source, aliases
   followed to the origin; `--sig` prints just the one-line statement (handy for
-  reading binder order before a `forall_elim`).
+  reading binder order before a `apply_at`).
 - `query whereis <file> <identifier>` — trace an identifier through every
   alias/import hop to its **origin**.
 - `query search <file|dir> <query>` — fuzzy-search theorem/axiom names +

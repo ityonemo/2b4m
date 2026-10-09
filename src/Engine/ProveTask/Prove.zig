@@ -12,7 +12,7 @@
 //!
 //! ORDINAL ALIGNMENT: Walk assigns StepOrdinals/BlockOrdinals in walk order; this driver
 //! appends exactly ONE main kernel step per walked leaf step (synthetics — multi-arg
-//! forall_elim intermediates — carry no ordinal) and one kernel block per entered block,
+//! apply_at intermediates — carry no ordinal) and one kernel block per entered block,
 //! so `ordinal_step`/`ordinal_block` map Walk ordinals -> kernel ids by index (asserted).
 //!
 //! FAILED CITATIONS WEDGE: a cited theorem whose ProveTask failed leaves its FactKV entry
@@ -158,7 +158,7 @@ producer_premise_refs: ?[]const lexer.Token = null,
 /// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
 /// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
 /// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
-/// forall_intro derivation. Empty outside a transfer / for unguarded goals.
+/// generalize derivation. Empty outside a transfer / for unguarded goals.
 quant_guards: []const ?TermId = &.{},
 
 /// `goal_source` = the case goal in SOURCE space (== `goal` unless under a model transfer); the
@@ -994,7 +994,7 @@ fn lastBlock(self: *const Prove) kernel.BlockId {
 
 /// A refined binder TEACHES its guard inside the block it opens: each qualifier's atom (what a
 /// guarded use of the variable requires) and the conjoined guard (what the kernel's guarded
-/// forall_intro / a `requires` over the conjunction states).
+/// generalize / a `requires` over the conjunction states).
 fn teachBinder(self: *Prove, b: BoundVar) Error!void {
     const blk = self.lastBlock();
     for (b.quals) |q| try self.known.teach(self.ctx.arena, q, blk, null);
@@ -1120,7 +1120,7 @@ fn producerPremiseFormula(self: *const Prove, sref: kernel.SRef) TermId {
     return self.low_steps.items[@intFromEnum(sref.id)].formula;
 }
 
-/// Append a SYNTHETIC kernel step (multi-arg forall_elim intermediate) — no ordinal.
+/// Append a SYNTHETIC kernel step (multi-arg apply_at intermediate) — no ordinal.
 fn emitSynthetic(self: *Prove, kb: kernel.BlockId, loc: u32, formula: TermId, just: kernel.Justification) Error!kernel.SRef {
     const id: kernel.StepId = @enumFromInt(self.low_steps.items.len);
     try self.low_steps.append(self.ctx.arena, .{
@@ -1176,7 +1176,7 @@ const BoundVar = struct { v: term.Node.Fvar, guard: ?TermId, quals: []const Term
 /// hygienic fvar at the CARRIER, and — for a refined sort — build its guard `inH(v)`
 /// (conjoined over multiple qualifiers). The fvar (carrier sort) goes to the Walk via
 /// pending_binder; the guard is returned for the block's `fix.guard` slot ([by predicate]
-/// surfaces it; forall_intro makes it the antecedent).
+/// surfaces it; generalize makes it the antecedent).
 fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     const name = try self.localName(b.name);
     if (w.findIdent(name) != null) {
@@ -1218,14 +1218,14 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
 }
 
 /// Produce a PROVEN step whose formula is the guard `g` (`good(t)`), and return its SRef —
-/// for auto-discharging a refined-sort `forall_elim`'s leaked guard. Sources, in order:
+/// for auto-discharging a refined-sort `apply_at`'s leaked guard. Sources, in order:
 ///   (1) a prior in-scope step already asserting `g` → cite it directly (no new step);
 ///   (2) an enclosing fix-block whose guard is `g` → emit a `[by predicate]` (hypothesis);
 ///   (3) a MODEL-NOMINATED discharger (13e): the model named a fact establishing the guard of
 ///       `t`'s head symbol. BASE (`t` a const): the fact's formula IS `g` → cite it directly
 ///       (the kernel re-checks fact.formula == g, so the nomination is verified, not trusted).
 ///       COMPOSITE (`t = op(a…)`): the fact is a CLOSURE `∀…; (⋀ guard(argᵢ)) -> guard(op(…))`;
-///       forall_elim it at the args, RECURSIVELY discharge each guarded-arg premise, and_intro
+///       apply_at it at the args, RECURSIVELY discharge each guarded-arg premise, both
 ///       the results, modus_ponens. (Recursion re-enters `emitDischargeStep` per premise.)
 /// Returns null if `g` isn't dischargeable any of these ways (the caller falls back to the
 /// plain, guard-leaking elim). Emits ordinary kernel steps into `low_steps`; the final proof is
@@ -1254,7 +1254,7 @@ fn emitConjunctExtractFrom(self: *Prove, kb: kernel.BlockId, loc: u32, whole: Te
     for (path.items) |left| {
         const n = self.pool.get(cur_t);
         cur_t = if (left) n.bin.lhs else n.bin.rhs;
-        step = try self.emitSynthetic(kb, loc, cur_t, if (left) .{ .and_elim_left = step } else .{ .and_elim_right = step });
+        step = try self.emitSynthetic(kb, loc, cur_t, if (left) .{ .and_lhs = step } else .{ .and_rhs = step });
     }
     return step;
 }
@@ -1293,8 +1293,8 @@ fn conjunctPath(self: *Prove, tree: TermId, g: TermId, path: *std.ArrayList(bool
 /// UNCONDITIONALLY (mapped to itself under a guarded model). Since `∀v;P ⊢ ∀v; guard(v)->P`,
 /// synthesize: per binder an UNGUARDED `fix` with one nested `assume` PER GUARD (a
 /// multi-qualifier sort injects several, in claim order); innermost cite the fact +
-/// multi-arg forall_elim to Core; unwind with implies_intro per assume + forall_intro per
-/// fix — deriving exactly the claim's guard CHAIN. Returns the OUTERMOST forall_intro
+/// multi-arg apply_at to Core; unwind with discharge per assume + generalize per
+/// fix — deriving exactly the claim's guard CHAIN. Returns the OUTERMOST generalize
 /// justification, or null if `goal` isn't a guarded relativization of `fact_f`.
 fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.Index, fact_f: TermId, goal: TermId) Error!?kernel.Justification {
     // Walk goal + fact in PARALLEL, classifying each leading `->` on the goal by DIFF against the
@@ -1355,7 +1355,7 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
         }
         asm_blk[i] = abs_;
     }
-    // innermost: cite the fact, then multi-arg forall_elim at all eigenvars → Core.
+    // innermost: cite the fact, then multi-arg apply_at at all eigenvars → Core.
     const inner = parent;
     const kind = self.ctx.interner.keyOf(stmt).fact.kind;
     var cur = try self.emitSynthetic(inner, loc, fact_f, switch (kind) {
@@ -1366,10 +1366,10 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
     for (eigen.items) |ev| {
         const fvt = try self.pool.add(.{ .fvar = ev });
         const opened = try self.pool.open(self.pool.get(cur_f).quant.body, fvt);
-        cur = try self.emitSynthetic(inner, loc, opened, .{ .forall_elim = .{ .step = cur, .with = fvt, .with_loc = loc } });
+        cur = try self.emitSynthetic(inner, loc, opened, .{ .apply_at = .{ .step = cur, .with = fvt, .with_loc = loc } });
         cur_f = opened;
     }
-    // unwind inner→outer: implies_intro per assume (rebuilding the guard chain), forall_intro
+    // unwind inner→outer: discharge per assume (rebuilding the guard chain), generalize
     // per fix. Every export but the OUTERMOST is an emitted synthetic in its enclosing block;
     // the outermost is returned as the claim's justification.
     var conc = g; // Core (== fact core)
@@ -1382,13 +1382,13 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
         while (j > 0) {
             j -= 1;
             self.closeSyntheticBlock(asm_blk[i][j]);
-            just = .{ .implies_intro = .{ .id = asm_blk[i][j], .loc = loc } };
+            just = .{ .discharge = .{ .id = asm_blk[i][j], .loc = loc } };
             conc = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = gs[j], .rhs = conc } });
             const encl = if (j > 0) asm_blk[i][j - 1] else fix_blk[i];
             _ = try self.emitSynthetic(encl, loc, conc, just);
         }
         self.closeSyntheticBlock(fix_blk[i]);
-        just = .{ .forall_intro = .{ .id = fix_blk[i], .loc = loc } };
+        just = .{ .generalize = .{ .id = fix_blk[i], .loc = loc } };
         const ev = eigen.items[i];
         const closed = try self.pool.close(conc, ev.name);
         conc = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = ev.sort, .hint = ev.name, .body = closed } });
@@ -1408,16 +1408,16 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
 ///
 /// The recursion is a tree over the WITNESS structure: discharging `g = guard(op(a,b))` via a
 /// closure needs the SRefs of discharging `guard(a)` / `guard(b)` first, then emits its own
-/// elim/and_intro/modus_ponens. Modeled as a worklist of `Op` frames + a `results` SRef stack,
+/// elim/both/modus_ponens. Modeled as a worklist of `Op` frames + a `results` SRef stack,
 /// two-color (a compound op is pushed, its sub-goals solved, then it COMBINES from their results).
 ///
 /// `Op` variants:
 ///   - `.solve` a single guard goal: dischargeLocal → SRef; else a model CLOSURE applies → cite +
-///     forall_elim NOW (no children), then push `.mp_chain` + a `.conj` per `->` premise; else a
+///     apply_at NOW (no children), then push `.mp_chain` + a `.conj` per `->` premise; else a
 ///     top-level conjunction → push `.conj`; else FAIL.
 ///   - `.conj` discharge a conjunction TREE: `and` → push `.and_fold` + `.conj`(lhs)+`.conj`(rhs);
 ///     leaf → `.solve` it.
-///   - `.and_fold` / `.mp_chain` COMBINE: pop child SRefs, emit and_intro / the modus_ponens chain.
+///   - `.and_fold` / `.mp_chain` COMBINE: pop child SRefs, emit both / the modus_ponens chain.
 /// A failed sub-goal sets `failed` (like the recursion's `orelse return null`), abandoning the
 /// driver (any steps already emitted are orphaned — exactly as the recursion left them).
 fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?kernel.SRef {
@@ -1428,7 +1428,7 @@ fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?
     const Op = union(enum) {
         solve: TermId, // discharge a single guard goal g
         conj: TermId, // discharge a conjunction tree f (fold of leaf solves)
-        and_fold: TermId, // pop 2 child SRefs → and_intro(f) → push
+        and_fold: TermId, // pop 2 child SRefs → both(f) → push
         mp_chain: struct { cur: kernel.SRef, cur_formula: TermId, g: TermId, nprem: usize }, // pop nprem premise SRefs → cite-elim'd `cur` mp'd down to g
     };
     var work: std.ArrayList(Op) = .empty;
@@ -1478,7 +1478,7 @@ fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?
             .and_fold => |f| {
                 const r = results.pop().?;
                 const l = results.pop().?;
-                try results.append(a, try self.emitSynthetic(kb, loc, f, .{ .and_intro = .{ .left = l, .right = r } }));
+                try results.append(a, try self.emitSynthetic(kb, loc, f, .{ .both = .{ .left = l, .right = r } }));
             },
             .mp_chain => |mc| {
                 // the nprem premise SRefs are the top of `results`, in premise order (premise 0
@@ -1504,7 +1504,7 @@ fn dischargeGoal(self: *Prove, kb: kernel.BlockId, loc: u32, g0: TermId) Error!?
 
 /// Try to SET UP a model-closure discharge of `g = pred(t)` (t = op(args)) onto `work`: find the
 /// first nominated fact that either IS `g` (base — cite, push its SRef, done) or applies as a
-/// CLOSURE (cite + forall_elim the args NOW — those steps need no children — then push an
+/// CLOSURE (cite + apply_at the args NOW — those steps need no children — then push an
 /// `.mp_chain` combiner + a `.conj` sub-goal per `->` premise). Returns true if a discharge was set
 /// up (base pushed a result, or closure pushed frames), false if no fact applied (caller continues).
 fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.mem.Allocator, work: anytype) Error!union(enum) { base: kernel.SRef, setup, none } {
@@ -1532,7 +1532,7 @@ fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.me
         if (self.pool.alphaEq(formula, g)) {
             return .{ .base = try self.emitSynthetic(kb, loc, g, cite_just) };
         }
-        // CLOSURE: cite + forall_elim at the args (no children); then push mp_chain + premises.
+        // CLOSURE: cite + apply_at at the args (no children); then push mp_chain + premises.
         if (tnode != .app) continue;
         const args = self.pool.args(tnode.app);
         var cur = try self.emitSynthetic(kb, loc, formula, cite_just);
@@ -1545,7 +1545,7 @@ fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.me
                 break;
             }
             const opened = try self.pool.open(node.quant.body, arg);
-            cur = try self.emitSynthetic(kb, loc, opened, .{ .forall_elim = .{ .step = cur, .with = arg, .with_loc = loc } });
+            cur = try self.emitSynthetic(kb, loc, opened, .{ .apply_at = .{ .step = cur, .with = arg, .with_loc = loc } });
             cur_formula = opened;
         }
         if (!ok) continue;
@@ -1592,7 +1592,7 @@ fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.S
     const target = w.resolveStep(name) orelse {
         // nicety: a global fact cited where a step label belongs — name the fix. Check both the
         // FactKV (already-demanded) and the file's AST (a same-file fact decl that nothing
-        // demanded, e.g. the cited axiom in `forall_elim(t) myAxiom`), so it fires regardless.
+        // demanded, e.g. the cited axiom in `apply_at(t) myAxiom`), so it fires regardless.
         const is_fact = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null or
             (tok.qualifier == InternPool.Index.none and if (self.ctx.fileOf(self.file)) |fid|
                 if (self.ctx.declOf(fid, name)) |d| ast.factOf(d) != null else false
@@ -2965,8 +2965,8 @@ fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
 ///   body    = [HEAD-formula ->]  <arg-instantiated HEAD tail>   (the `->`-tail after the
 ///             ∀ prefix is peeled at the params; a LOCAL head prepends its formula as the
 ///             first antecedent so the schema proof needn't cite it externally)
-///   proof   = (global) cite HEAD; forall_elim(params)
-///             (local)  assume HEAD-formula; forall_elim(params) on the assumption
+///   proof   = (global) cite HEAD; apply_at(params)
+///             (local)  assume HEAD-formula; apply_at(params) on the assumption
 /// The call site then instantiates at the args and discharges: (local head-step +) the hyps.
 fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = goal;
@@ -3041,8 +3041,8 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 
     // WALK the head formula (as `tail` was built) collecting, IN ORDER, the ∀-binders'
     // params and the kept `->` ANTECEDENTS — the schema body is `ant0 -> ant1 -> … -> C`
-    // and its proof assumes each antecedent, threads forall_elim(param)/modus_ponens(ant)
-    // to C, then implies_intro back. For a LOCAL head the head formula is antecedent #0.
+    // and its proof assumes each antecedent, threads apply_at(param)/modus_ponens(ant)
+    // to C, then discharge back. For a LOCAL head the head formula is antecedent #0.
     var ants: std.ArrayList(TermId) = .empty; // kept antecedents, in body order
     if (head_local) try ants.append(self.ctx.arena, head_formula);
     // re-walk head_formula interleaving to enumerate the `->` LHSs at the params.
@@ -3095,8 +3095,8 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 
 /// Build the synthetic schema's PROOF for specialize: prove `ants[0] -> … -> consequent`
 /// from the head. Structure: assume each antecedent (nested blocks), and in the innermost
-/// context walk the head interleaving forall_elim(param) and modus_ponens(the matching
-/// assumed antecedent) to reach `consequent`; then implies_intro back out through each block.
+/// context walk the head interleaving apply_at(param) and modus_ponens(the matching
+/// assumed antecedent) to reach `consequent`; then discharge back out through each block.
 /// A GLOBAL head is cited (axiom/theorem); a LOCAL head is antecedent #0 (assumed, restated
 /// by hypothesis). Handles the contiguous case (no interior `->`) as the ants-empty subset.
 fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token, head_local: bool, head_formula: TermId, pnames: []const StrId, ants: []const TermId, consequent: TermId) Error![]const ast.Step {
@@ -3117,7 +3117,7 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
     } else {
         try inner.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(head_formula), .by, try self.internStrRt("cite"), &.{}, try self.headRef(head)));
     }
-    // walk the head, emitting a forall_elim step per binder and a modus_ponens step per `->`
+    // walk the head, emitting a apply_at step per binder and a modus_ponens step per `->`
     // (discharged by the matching assumed antecedent). `cur`/`cur_label` track the running
     // step; `ai` indexes params, `hi` indexes antecedents (offset past the local-head one).
     var cur = head_formula;
@@ -3133,7 +3133,7 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
             const lbl = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "elim{d}", .{stepn}));
             const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
             arg1[0] = try b.nameExpr(pnames[pi]);
-            try inner.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(opened), .by, try self.internStr("forall_elim"), arg1, try self.oneRef(b, cur_label)));
+            try inner.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(opened), .by, try self.internStr("apply_at"), arg1, try self.oneRef(b, cur_label)));
             cur = opened;
             cur_label = lbl;
             pi += 1;
@@ -3151,7 +3151,7 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
         } else break;
     }
     // the innermost block's LAST step (cur_label) IS `consequent`; wrap up below.
-    // now wrap `inner` in nested assume blocks (innermost = ants[last]) + implies_intro out.
+    // now wrap `inner` in nested assume blocks (innermost = ants[last]) + discharge out.
     // build from the innermost outward.
     var body_steps = try inner.toOwnedSlice(self.ctx.arena);
     var i: usize = ants.len;
@@ -3175,7 +3175,7 @@ fn buildSpecializeProof(self: *Prove, b: *Accelerant.Builder, head: lexer.Token,
             if (i == 0) try b.intern("conclusion") else try b.intern(try std.fmt.allocPrint(self.ctx.arena, "export{d}", .{i})),
             exported,
             .by,
-            try self.internStr("implies_intro"),
+            try self.internStr("discharge"),
             &.{},
             try self.oneRef(b, ablk[i]),
         ));
@@ -3211,7 +3211,7 @@ fn syntheticObligations(self: *Prove, w: *const Walk, seen: []const TermId) Erro
 
 /// Prepend a synthetic's obligations as LEADING ANTECEDENTS of its schema body, `assume`d around
 /// its proof (so every step inside knows them, as the citing proof did), and exported back out by
-/// `implies_intro`. The call site discharges them from what it knows (`withGuardPremises` →
+/// `discharge`. The call site discharges them from what it knows (`withGuardPremises` →
 /// `refForKnown`), exactly like the premises it cites. The generated theorem thereby states the
 /// preconditions of the terms it mentions instead of re-owing them where nothing can teach them.
 fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: []const TermId) Error!ast.Decl {
@@ -3226,7 +3226,7 @@ fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: [
         const opened = try b.assumeStep(blk, try b.termExpr(obls[i]), steps);
         const exported = try b.implies(try b.termExpr(obls[i]), body);
         const export_label = if (i == 0) try b.intern("conclusion") else try b.intern(try std.fmt.allocPrint(self.ctx.arena, "obligation-export{d}", .{i}));
-        const closed = try b.claimStep(export_label, exported, .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(b, blk));
+        const closed = try b.claimStep(export_label, exported, .by, try self.internStr("discharge"), &.{}, try self.oneRef(b, blk));
         const pair = try self.ctx.arena.alloc(ast.Step, 2);
         pair[0] = opened;
         pair[1] = closed;
@@ -3479,7 +3479,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
 
 /// Wrap the innermost cert `inner` (which concludes `goal`) in nested `assume prem_i { … }`
 /// blocks (innermost = the last premise), restating each hypothesis and exporting `prem_i ->
-/// …` with `implies_intro` out through each level — the shape `buildSpecializeProof` uses.
+/// …` with `discharge` out through each level — the shape `buildSpecializeProof` uses.
 /// With no premises the cert steps are the proof body verbatim.
 fn wrapTautologyPremises(self: *Prove, b: *Accelerant.Builder, prems: []const TautAst.Prem, goal: TermId, inner: []const ast.Step) Error![]const ast.Step {
     var body_steps = inner;
@@ -3503,7 +3503,7 @@ fn wrapTautologyPremises(self: *Prove, b: *Accelerant.Builder, prems: []const Ta
             if (i == 0) try b.intern("conclusion") else try self.freshNamed("export"),
             exported,
             .by,
-            try self.internStr("implies_intro"),
+            try self.internStr("discharge"),
             &.{},
             try self.oneRef(b, prems[i].blk_label),
         ));
@@ -3516,7 +3516,7 @@ fn wrapTautologyPremises(self: *Prove, b: *Accelerant.Builder, prems: []const Ta
 /// `TautCert` (which emitted kernel steps into a shared `Lowering`): every recursive site
 /// that opened a kernel block instead builds a fresh `assume { … }` AST block here. The
 /// step vocabulary is identical (excluded-middle split per atom → `or_elim`; leaves derive
-/// the goal structurally or `absurd` a refuted premise). No step budget (strict-only: the
+/// the goal structurally or `ex_falso` a refuted premise). No step budget (strict-only: the
 /// cert MUST build for a `valid` verdict — an unbuildable one is an internal bug, not a
 /// fallback). `theoryLeaf` (arithmetic) is DROPPED — pure propositional never needs it.
 const TautAst = struct {
@@ -3534,7 +3534,7 @@ const TautAst = struct {
         formula: TermId,
         /// the label of the restated `[by hypothesis]` step inside the enclosing assume block
         label: StrId,
-        /// the assume block's own label (referenced by the hypothesis / implies_intro steps)
+        /// the assume block's own label (referenced by the hypothesis / discharge steps)
         blk_label: StrId,
     };
 
@@ -3584,7 +3584,7 @@ const TautAst = struct {
         return self.emit(&blk.body, formula, "hypothesis", &.{blk.label});
     }
 
-    /// Prove `goal` in `block`. The entry point: a refuted premise closes by `absurd`; a
+    /// Prove `goal` in `block`. The entry point: a refuted premise closes by `ex_falso`; a
     /// true goal derives structurally; otherwise split on the first unassigned atom via an
     /// excluded-middle lemma + `or_elim` over the two assumption branches.
     ///
@@ -3618,7 +3618,7 @@ const TautAst = struct {
                 } else null;
                 if (refuted_premise) |pr| {
                     const refuted = try self.deriveFalse(blk, pr.formula);
-                    _ = try self.emit(blk, self.goal, "absurd", &.{ pr.label, refuted });
+                    _ = try self.emit(blk, self.goal, "ex_falso", &.{ pr.label, refuted });
                     continue;
                 }
                 if (self.eval(self.goal) == true) {
@@ -3664,7 +3664,7 @@ const TautAst = struct {
         };
     }
 
-    /// `atom or not atom` the classical way: not_intro on the negated disjunction, then
+    /// `atom or not atom` the classical way: contradiction on the negated disjunction, then
     /// double_negation. A fixed AST gadget (the port of `TautCert.emitLem`).
     fn emitLem(self: *TautAst, block: *std.ArrayList(ast.Step), atom: TermId, not_atom: TermId, disj: TermId) CertError!StrId {
         const not_disj = try self.pool().add(.{ .not = disj });
@@ -3672,16 +3672,16 @@ const TautAst = struct {
 
         var outer = try self.openBlock();
         const hyp_outer = try self.hyp(&outer, not_disj);
-        // inner: assume atom, derive the disjunction by or_intro_left.
+        // inner: assume atom, derive the disjunction by either_left.
         var inner = try self.openBlock();
         const hyp_inner = try self.hyp(&inner, atom);
-        const or_left = try self.emit(&inner.body, disj, "or_intro_left", &.{hyp_inner});
+        const or_left = try self.emit(&inner.body, disj, "either_left", &.{hyp_inner});
         try self.finishBlock(&outer.body, &inner, atom);
-        const derived_not = try self.emit(&outer.body, not_atom, "not_intro", &.{ inner.label, or_left, hyp_outer });
-        const or_right = try self.emit(&outer.body, disj, "or_intro_right", &.{derived_not});
+        const derived_not = try self.emit(&outer.body, not_atom, "contradiction", &.{ inner.label, or_left, hyp_outer });
+        const or_right = try self.emit(&outer.body, disj, "either_right", &.{derived_not});
         try self.finishBlock(block, &outer, not_disj);
 
-        const nn = try self.emit(block, not_not, "not_intro", &.{ outer.label, or_right, hyp_outer });
+        const nn = try self.emit(block, not_not, "contradiction", &.{ outer.label, or_right, hyp_outer });
         return self.emit(block, disj, "double_negation", &.{nn});
     }
 
@@ -3717,9 +3717,9 @@ const TautAst = struct {
             combine_and: struct { block: *std.ArrayList(ast.Step), f: TermId }, // pops left,right
             combine_or_left: struct { block: *std.ArrayList(ast.Step), f: TermId }, // pops l
             combine_or_right: struct { block: *std.ArrayList(ast.Step), f: TermId }, // pops r
-            // true.implies (true consequent): child already emitted into blk.body; finish + implies_intro.
+            // true.implies (true consequent): child already emitted into blk.body; finish + discharge.
             combine_true_implies: struct { block: *std.ArrayList(ast.Step), f: TermId, blk: *OpenBlock, ante: TermId },
-            // true.implies (false antecedent): refutation on `results`; emit absurd inside blk.body, then finish + implies_intro.
+            // true.implies (false antecedent): refutation on `results`; emit ex_falso inside blk.body, then finish + discharge.
             combine_true_implies_absurd: struct { block: *std.ArrayList(ast.Step), f: TermId, blk: *OpenBlock, ante: TermId, conseq: TermId, hyp: StrId },
             // false.and: child (refuted `side`) already on `results`.
             combine_false_and: struct { block: *std.ArrayList(ast.Step), f: TermId, nf: TermId, side: TermId, left_false: bool },
@@ -3739,7 +3739,7 @@ const TautAst = struct {
                 .true => switch (self.pool().get(e.f)) {
                     .bin => |bn| switch (bn.op) {
                         .and_op => {
-                            // children into same block; combine emits and_intro/iff_intro.
+                            // children into same block; combine emits both/make_equivalence.
                             try work.append(sa, .{ .combine_and = .{ .block = e.block, .f = e.f } });
                             try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bn.rhs } });
                             try work.append(sa, .{ .expand = .{ .mode = .true, .block = e.block, .f = bn.lhs } });
@@ -3762,9 +3762,9 @@ const TautAst = struct {
                             } else {
                                 // antecedent false: assume it, refute it, explode into consequent.
                                 const h = try self.hyp(blk, bn.lhs);
-                                // absurd(h, refuted) emitted after the refutation resolves — but the
+                                // ex_falso(h, refuted) emitted after the refutation resolves — but the
                                 // recursive version emits it INSIDE blk.body before finishBlock. A
-                                // dedicated combine emits absurd then finishes + implies_intro.
+                                // dedicated combine emits ex_falso then finishes + discharge.
                                 try work.append(sa, .{ .combine_true_implies_absurd = .{ .block = e.block, .f = e.f, .blk = blk, .ante = bn.lhs, .conseq = bn.rhs, .hyp = h } });
                                 try work.append(sa, .{ .expand = .{ .mode = .false, .block = &blk.body, .f = bn.lhs } });
                             }
@@ -3814,36 +3814,36 @@ const TautAst = struct {
             .combine_and => |c| {
                 const right = results.pop().?;
                 const left = results.pop().?;
-                const rule: []const u8 = if (self.p.isBiconditionalShape(c.f)) "iff_intro" else "and_intro";
+                const rule: []const u8 = if (self.p.isBiconditionalShape(c.f)) "make_equivalence" else "both";
                 try results.append(sa, try self.emit(c.block, c.f, rule, &.{ left, right }));
             },
             .combine_or_left => |c| {
                 const l = results.pop().?;
-                try results.append(sa, try self.emit(c.block, c.f, "or_intro_left", &.{l}));
+                try results.append(sa, try self.emit(c.block, c.f, "either_left", &.{l}));
             },
             .combine_or_right => |c| {
                 const r = results.pop().?;
-                try results.append(sa, try self.emit(c.block, c.f, "or_intro_right", &.{r}));
+                try results.append(sa, try self.emit(c.block, c.f, "either_right", &.{r}));
             },
             .combine_true_implies => |c| {
                 // true-consequent branch: child already emitted into blk.body; discard its label.
                 _ = results.pop().?;
                 try self.finishBlock(c.block, c.blk, c.ante);
-                try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                try results.append(sa, try self.emit(c.block, c.f, "discharge", &.{c.blk.label}));
             },
             .combine_true_implies_absurd => |c| {
                 const refuted = results.pop().?;
-                _ = try self.emit(&c.blk.body, c.conseq, "absurd", &.{ c.hyp, refuted });
+                _ = try self.emit(&c.blk.body, c.conseq, "ex_falso", &.{ c.hyp, refuted });
                 try self.finishBlock(c.block, c.blk, c.ante);
-                try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                try results.append(sa, try self.emit(c.block, c.f, "discharge", &.{c.blk.label}));
             },
             .combine_false_and => |c| {
                 const refuted = results.pop().?;
                 var blk = try self.openBlock();
                 const h = try self.hyp(&blk, c.f);
-                const elim = try self.emit(&blk.body, c.side, if (c.left_false) "and_elim_left" else "and_elim_right", &.{h});
+                const elim = try self.emit(&blk.body, c.side, if (c.left_false) "and_lhs" else "and_rhs", &.{h});
                 try self.finishBlock(c.block, &blk, c.f);
-                try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, elim, refuted }));
+                try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, elim, refuted }));
             },
             .combine_false_or => |c| {
                 const not_right = results.pop().?;
@@ -3855,11 +3855,11 @@ const TautAst = struct {
                 try self.finishBlock(&blk.body, &left, c.lhs);
                 var right = try self.openBlock();
                 const rh = try self.hyp(&right, c.rhs);
-                _ = try self.emit(&right.body, c.lhs, "absurd", &.{ rh, not_right });
+                _ = try self.emit(&right.body, c.lhs, "ex_falso", &.{ rh, not_right });
                 try self.finishBlock(&blk.body, &right, c.rhs);
                 const conc = try self.emit(&blk.body, c.lhs, "or_elim", &.{ h, left.label, right.label });
                 try self.finishBlock(c.block, &blk, c.f);
-                try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conc, not_left }));
+                try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conc, not_left }));
             },
             .combine_false_implies => |c| {
                 const not_conseq = results.pop().?;
@@ -3868,14 +3868,14 @@ const TautAst = struct {
                 const h = try self.hyp(&blk, c.f);
                 const conseq = try self.emit(&blk.body, c.rhs, "modus_ponens", &.{ h, ante });
                 try self.finishBlock(c.block, &blk, c.f);
-                try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conseq, not_conseq }));
+                try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conseq, not_conseq }));
             },
             .combine_false_not => |c| {
                 const truth = results.pop().?;
                 var blk = try self.openBlock();
                 const h = try self.hyp(&blk, c.f);
                 try self.finishBlock(c.block, &blk, c.f);
-                try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, truth, h }));
+                try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, truth, h }));
             },
         };
         return results.items[0];
@@ -3925,7 +3925,7 @@ fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRul
     // model TRANSFER the cited lemma is RELATIVIZED — `∀a; inH(a) -> ∀b; … -> lhs=rhs` — with
     // guard `->`s interleaved with the binders; SKIP them here to reach the equation (they are
     // discharged where the lemma is applied: emitInstance cites + forall_elims the lemma, and the
-    // instance ProveTask runs under the model so the forall_elim discharge machinery strips them).
+    // instance ProveTask runs under the model so the apply_at discharge machinery strips them).
     var binders: std.ArrayList(simplify_mod.Binder) = .empty;
     var body = formula;
     while (true) {
@@ -3988,7 +3988,7 @@ fn produceSimplify(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
 /// `[using simplify_quantified refs…]` — like simplify but the goal is `forall …; s = t`.
 /// Peel the ∀ prefix into fresh eigenvariable fvars, run the simplify core on the body
 /// equation, and re-generalize: the synthetic schema's proof `fix`es each eigenvariable,
-/// proves the body via the EqCert, and `forall_intro`s back out.
+/// proves the body via the EqCert, and `generalize`s back out.
 fn produceSimplifyQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     if (c.args.len != 0) return self.fail(c.rule.start, "simplify_quantified takes no arguments", .{});
     // peel the ∀ prefix into fresh eigenvariables; the body must be an equation.
@@ -4223,7 +4223,7 @@ fn keptPremises(self: *Prove, cites: []const EqCert.RuleCite, formulae: []const 
 /// Wrap the cert `inner` (proving the equation `eq_prop`) in nested `assume <local-prem>`
 /// blocks — one per LOCAL rule premise the cert CITES, restating its hypothesis (under the
 /// deterministic `prem-…` label the cert cites) and exporting `prem_i -> …` with
-/// `implies_intro` out through each level. With no such premises the cert steps pass through
+/// `discharge` out through each level. With no such premises the cert steps pass through
 /// verbatim. (Same shape as tautology's `wrapTautologyPremises`.)
 ///
 /// A premise the cert never cites is DROPPED — not wrapped: it was offered to the normalizer
@@ -4258,7 +4258,7 @@ fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites_in: []const 
             if (i == 0) try b.intern("conclusion") else try self.freshNamed("export"),
             try b.termExpr(exported),
             .by,
-            try self.internStr("implies_intro"),
+            try self.internStr("discharge"),
             &.{},
             try self.oneRef(b, blk_label),
         ));
@@ -4267,7 +4267,7 @@ fn wrapSimplifyPremises(self: *Prove, b: *Accelerant.Builder, cites_in: []const 
     return body_steps;
 }
 
-/// Wrap `body_steps` (proving `inner`) in `assume good(p_i) { … }` + `implies_intro` per param
+/// Wrap `body_steps` (proving `inner`) in `assume good(p_i) { … }` + `discharge` per param
 /// guard, outermost = guards[0], so the synthetic's statement becomes
 /// `good(p_0) -> … -> inner`. Unlike `wrapSimplifyPremises` a guard has no local cite to
 /// restate — nothing inside the body needs to NAME it; it only has to be assumed so the
@@ -4288,7 +4288,7 @@ fn wrapParamGuards(self: *Prove, b: *Accelerant.Builder, guards: []const TermId,
             if (i == 0) try b.intern("conclusion") else try self.freshNamed("export-guard"),
             try b.termExpr(prop),
             .by,
-            try self.internStr("implies_intro"),
+            try self.internStr("discharge"),
             &.{},
             try self.oneRef(b, blk_label),
         ));
@@ -4299,7 +4299,7 @@ fn wrapParamGuards(self: *Prove, b: *Accelerant.Builder, guards: []const TermId,
 
 /// Wrap the premise-wrapped `body_steps` (proving `inner_prop = prem0 -> … -> (s = t)`) in
 /// nested `fix` blocks for the ∀ eigenvariables (outermost = eigen[0]), concluding each level
-/// with `forall_intro`. With no eigenvariables the steps pass through unchanged (plain
+/// with `generalize`. With no eigenvariables the steps pass through unchanged (plain
 /// simplify). The `fix` binder re-uses each eigenvariable's DISPLAY name — the same name the
 /// cert body's delaborated fvars carry, so they re-resolve to the binder.
 fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.Node.Fvar, inner_prop: TermId, body_steps: []const ast.Step) Error![]const ast.Step {
@@ -4311,7 +4311,7 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
         i -= 1;
         const fv = eigen[i];
         // GUARD level (13e, a transferred `_quantified` goal): wrap the current steps in
-        // `assume guard(v) { … }` + an implies_intro export INSIDE this fix — forall_intro
+        // `assume guard(v) { … }` + an discharge export INSIDE this fix — generalize
         // then derives the guarded `∀v; guard(v) -> …` (matching the relativized body), and
         // the discharge machinery finds `guard(v)` via the assume-source (2c).
         if (i < self.quant_guards.len) if (self.quant_guards[i]) |g| {
@@ -4319,7 +4319,7 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
             var gsteps: std.ArrayList(ast.Step) = .empty;
             try gsteps.append(self.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(g), steps));
             prop = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = g, .rhs = prop } });
-            try gsteps.append(self.ctx.arena, try b.claimStep(try self.freshNamed("export-guard"), try b.termExpr(prop), .by, try self.internStr("implies_intro"), &.{}, try self.oneRef(b, blk_label)));
+            try gsteps.append(self.ctx.arena, try b.claimStep(try self.freshNamed("export-guard"), try b.termExpr(prop), .by, try self.internStr("discharge"), &.{}, try self.oneRef(b, blk_label)));
             steps = try gsteps.toOwnedSlice(self.ctx.arena);
         };
         const fix_label = try self.freshNamed("fix");
@@ -4334,7 +4334,7 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
             if (i == 0) try b.intern("conclusion") else try self.freshNamed("gen"),
             try b.termExpr(prop),
             .by,
-            try self.internStr("forall_intro"),
+            try self.internStr("generalize"),
             &.{},
             try self.oneRef(b, fix_label),
         ));
@@ -4345,8 +4345,8 @@ fn wrapSimplifyForall(self: *Prove, b: *Accelerant.Builder, eigen: []const term.
 
 /// Re-close `prop` over the peeled ∀ eigenvariables (outermost = eigen[0]), re-adding each
 /// level's peeled relativization guard (`∀v; inH(v) -> …`) — the schema-body counterpart of
-/// the kernel's guarded forall_intro (the fix binder re-resolves to the refined sort under the
-/// model, so its forall_intro derives the guarded form; the stated body must match).
+/// the kernel's guarded generalize (the fix binder re-resolves to the refined sort under the
+/// model, so its generalize derives the guarded form; the stated body must match).
 fn closeOverEigen(self: *Prove, prop_in: TermId, eigen: []const term.Node.Fvar) Error!TermId {
     var prop = prop_in;
     var ei: usize = eigen.len;
@@ -4747,7 +4747,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
 //     so the sides coincide iff they are the same multiset of atoms under A/C.
 // The synthetic schema is specialize-shaped exactly as simplify's (value params abstract the
 // goal's free fix-eigenvariable fvars; the `_quantified` variants re-generalize peeled ∀
-// eigenvariables via `fix`/`forall_intro`); the shared `finishReorder` builds it.
+// eigenvariables via `fix`/`generalize`); the shared `finishReorder` builds it.
 
 /// Resolve an accelerant ARGUMENT (a bare-name expr naming an equation lemma) into a prepared
 /// rewrite rule + its cert cite — the arg-expr analogue of `prepareRule` (which takes a ref
@@ -5386,8 +5386,8 @@ fn peelForallEq(self: *Prove, goal: TermId, c: ast.Step.Claim, comptime who: []c
 
 /// The shared TAIL for both reordering accelerants (identical to `buildSimplify`'s tail): the
 /// rules/cites + the two normalized `Result`s are already built (in PARAM space); emit the
-/// EqCert join, wrap in the LOCAL-premise `assume`/`implies_intro` and ∀-eigenvariable
-/// `fix`/`forall_intro` shells, and package the synthetic schema. `local_prems` are the
+/// EqCert join, wrap in the LOCAL-premise `assume`/`discharge` and ∀-eigenvariable
+/// `fix`/`generalize` shells, and package the synthetic schema. `local_prems` are the
 /// PreparedRules whose origin is a LOCAL step (restated by hypothesis + discharged at the call
 /// site); the AC triple / assoc lemma when global is cited INSIDE the cert. `name_prefix` seeds
 /// the schema hash name.
@@ -5475,7 +5475,7 @@ fn produceExtensionality(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step
 
 /// `[using extensionality_quantified(extLemma) unfold1 …]` — like extensionality but the goal
 /// is `forall …; s = t`. Peel the ∀ prefix into fresh eigenvariables, run the core on the body
-/// equation, and re-generalize via the `fix`/`forall_intro` shell.
+/// equation, and re-generalize via the `fix`/`generalize` shell.
 fn produceExtensionalityQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     if (c.schema == null) return self.fail(c.rule.start, "extensionality_quantified requires an extensionality lemma: [using extensionality_quantified(<lemma>) <unfold lemmas>]", .{});
     const peeled = (try self.peelForallEq(goal, c, "extensionality_quantified")) orelse return null;
@@ -5495,7 +5495,7 @@ const ExtLemma = struct {
 };
 
 /// Shared core for both extensionality variants. Instantiate the ext lemma at (s, t), prove each
-/// pointwise obligation (`fix x` → unfold → close residue → forall_intro), then modus_ponens the
+/// pointwise obligation (`fix x` → unfold → close residue → generalize), then modus_ponens the
 /// chain to `s = t`; wrap in the ∀-eigenvariable `fix` shell and package the synthetic schema.
 fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
     // ADMIT: the goal-shape + ext-lemma-present validation ran in the produce* caller. Everything
@@ -5682,7 +5682,7 @@ fn findMemberOp(self: *Prove, id: TermId) ?term.SymId {
 }
 
 /// Emit the extensionality certificate proving `s = t` into `block`: cite the ext lemma,
-/// forall_elim it at (s, t) to reach `Ob1 -> (Ob2 ->) s = t`, prove each obligation, and
+/// apply_at it at (s, t) to reach `Ob1 -> (Ob2 ->) s = t`, prove each obligation, and
 /// modus_ponens the chain. The lemma cite + each obligation step live directly in `block`.
 fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), lemma: ExtLemma, unfolds: []const ExtUnfold, s: TermId, t: TermId, c: ast.Step.Claim) Error!void {
     // step 0: cite the ext lemma.
@@ -5692,7 +5692,7 @@ fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
     law_refs[0] = lemma.head;
     try block.append(self.ctx.arena, try b.claimStep(law, try b.termExpr(lemma.formula), .by, try self.internStrRt(word), &.{}, law_refs));
 
-    // forall_elim at (s, t): one multi-arg elim peels both structure binders.
+    // apply_at at (s, t): one multi-arg elim peels both structure binders.
     var chain_formula = lemma.formula;
     for ([_]TermId{ s, t }) |arg| {
         chain_formula = try self.pool.open(self.pool.get(chain_formula).quant.body, arg);
@@ -5701,7 +5701,7 @@ fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
     const elim_args = try self.ctx.arena.alloc(*const ast.Expr, 2);
     elim_args[0] = try b.termExpr(s);
     elim_args[1] = try b.termExpr(t);
-    try block.append(self.ctx.arena, try b.claimStep(elim_lbl, try b.termExpr(chain_formula), .by, try self.internStr("forall_elim"), elim_args, try self.oneRef(b, law)));
+    try block.append(self.ctx.arena, try b.claimStep(elim_lbl, try b.termExpr(chain_formula), .by, try self.internStr("apply_at"), elim_args, try self.oneRef(b, law)));
 
     // prove each obligation + modus_ponens it into the chain; the last mp proves `s = t`.
     var chain_label = elim_lbl;
@@ -5719,7 +5719,7 @@ fn emitExtEquation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
 }
 
 /// Prove one obligation `forall x: <element>; body` — a `fix x { … }` block closing the pointwise
-/// residue — then `forall_intro` it. Returns the label of the forall_intro step (in `block`).
+/// residue — then `generalize` it. Returns the label of the generalize step (in `block`).
 fn emitExtObligation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), ob: TermId, universe: SortId, unfolds: []const ExtUnfold, c: ast.Step.Claim) Error!StrId {
     const q = self.pool.get(ob).quant; // forall x: <element>; body
     const x: term.Node.Fvar = .{ .name = try self.freshNamed("x"), .sort = universe };
@@ -5733,7 +5733,7 @@ fn emitExtObligation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList
         try self.emitExtSetResidue(b, &fix_steps, body, x_id, unfolds, c);
     }
 
-    // wrap the fix block + forall_intro out.
+    // wrap the fix block + generalize out.
     const fix_label = try self.freshNamed("fix");
     const bname = b.tok(try self.displayName(x.name));
     const fix_step: ast.Step = .{ .label = b.tok(fix_label), .body = .{ .fix = .{ .name = bname, .sort = b.sortTok(universe), .steps = fix_steps.items } } };
@@ -5743,7 +5743,7 @@ fn emitExtObligation(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList
     const closed = try self.pool.close(body, x.name);
     const ob_closed = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = universe, .hint = x.name, .body = closed } });
     const gen_label = try self.freshNamed("pointwise-holds-for-all");
-    try block.append(self.ctx.arena, try b.claimStep(gen_label, try b.termExpr(ob_closed), .by, try self.internStr("forall_intro"), &.{}, try self.oneRef(b, fix_label)));
+    try block.append(self.ctx.arena, try b.claimStep(gen_label, try b.termExpr(ob_closed), .by, try self.internStr("generalize"), &.{}, try self.oneRef(b, fix_label)));
     return gen_label;
 }
 
@@ -5854,7 +5854,7 @@ fn emitExtUnfoldMembership(self: *Prove, b: *Accelerant.Builder, block: *std.Arr
 }
 
 /// Process ONE `op(args…)` for extensionality unfolding: instantiate the matching cited membership
-/// lemma at (args…, x) — cite + forall_elim per op-arg then x, dedup + record the premise — and
+/// lemma at (args…, x) — cite + apply_at per op-arg then x, dedup + record the premise — and
 /// QUEUE the op's set-typed args onto `stack` (nested operators unfold too). Was self-recursive;
 /// now pushes follow-up `.op` work instead. `Work`/`stack` are the driver's (comptime-typed).
 fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), app: term.Node.App, x_id: TermId, unfolds: []const ExtUnfold, out: *std.ArrayList(TautAst.Prem), wa: std.mem.Allocator, stack: anytype) Error!void {
@@ -5886,7 +5886,7 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
         return;
     };
 
-    // cite the lemma; forall_elim at each op-arg, then at x.
+    // cite the lemma; apply_at at each op-arg, then at x.
     const cite_label = try self.freshNamed("membership-lemma");
     const word: []const u8 = "cite";
     const cite_refs = try self.ctx.arena.alloc(lexer.Token, 1);
@@ -5907,7 +5907,7 @@ fn emitExtUnfoldOp(self: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(a
         const lbl = try self.freshNamed("membership-at-element");
         const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
         arg1[0] = try b.termExpr(val);
-        try block.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(cur), .by, try self.internStr("forall_elim"), arg1, try self.oneRef(b, cur_label)));
+        try block.append(self.ctx.arena, try b.claimStep(lbl, try b.termExpr(cur), .by, try self.internStr("apply_at"), arg1, try self.oneRef(b, cur_label)));
         cur_label = lbl;
     }
     // dedup by formula, then record as a premise.
@@ -6165,7 +6165,7 @@ const ArithCert = struct {
         return label;
     }
 
-    /// `forall_elim` the fact at `label` (formula `cur`) at each binding, appending steps;
+    /// `apply_at` the fact at `label` (formula `cur`) at each binding, appending steps;
     /// returns the final label + opened formula.
     fn elimChain(self: *ArithCert, block: *std.ArrayList(ast.Step), label: StrId, cur: TermId, bindings: []const TermId) Error!struct { label: StrId, formula: TermId } {
         var cur_label = label;
@@ -6175,7 +6175,7 @@ const ArithCert = struct {
             const opened = try self.p.pool.open(qn.quant.body, val);
             const arg1 = try self.p.ctx.arena.alloc(*const ast.Expr, 1);
             arg1[0] = try self.b.termExpr(val);
-            cur_label = try self.claim(block, opened, "forall_elim", arg1, &.{cur_label});
+            cur_label = try self.claim(block, opened, "apply_at", arg1, &.{cur_label});
             cur_formula = opened;
         }
         return .{ .label = cur_label, .formula = cur_formula };
@@ -6323,7 +6323,7 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
     // package with the cert's ACTUAL conclusion (`proved_prop`), not the raw `goal_p`: the
     // ∀-re-generalization shell (wrapArithForall) re-quantifies at the eigenvariables' fresh
     // names, so `proved_prop` is alpha-equal to `goal_p` but its binder hints match the proof's
-    // final `forall_intro` steps. Declaring the schema body from `proved_prop` keeps the stated
+    // final `generalize` steps. Declaring the schema body from `proved_prop` keeps the stated
     // schema and the emitted proof's conclusion byte-identical (a hint mismatch would surface as
     // "claims forall b1 but derives forall …", the cooper_witness bug).
     return try self.packageArith(w, &b, "arithmetic", proved_prop, prems, abs, body_steps.items, c);
@@ -6367,7 +6367,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
 
 /// `fallback(thm)` path: the certifier chain declined (or the goal isn't in the certifiable
 /// fragment) but the goal is an INSTANCE of the manually-proven theorem `fb`. Emit the cert:
-/// cite `fb`, forall_elim at the inferred witnesses, then modus_ponens each `->` antecedent
+/// cite `fb`, apply_at at the inferred witnesses, then modus_ponens each `->` antecedent
 /// against the matching cited ref. Every step kernel-checked. Fast-path when `fb`'s statement
 /// α-equals the goal (cite it directly). Packages the synthetic schema.
 fn buildArithFallback(self: *Prove, w: *const Walk, b: *Accelerant.Builder, fb: lexer.Token, goal_p: TermId, prems: []const ArithPremise, abs: FvarAbstraction, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
@@ -6434,7 +6434,7 @@ fn buildArithFallback(self: *Prove, w: *const Walk, b: *Accelerant.Builder, fb: 
             return self.fail(fb.start, "fallback theorem '{s}' needs a hypothesis '{s}' — supply it as a ref to the arithmetic step", .{ self.text(fb), try self.renderTerm(ant) });
     }
 
-    // emit: cite fb, forall_elim at each witness, modus_ponens each antecedent.
+    // emit: cite fb, apply_at at each witness, modus_ponens each antecedent.
     const word: []const u8 = if (is_axiom) "axiom" else "theorem";
     const cite_label = try self.freshNamed("arith-fallback");
     const cite_refs = try self.ctx.arena.alloc(lexer.Token, 1);
@@ -6523,7 +6523,7 @@ const OrderHyp = struct { lo: TermId, hi: TermId, ref: StrId };
 ///   (a) order composition `less_than(s, t)` (s != t): fold a path s < … < t;
 ///   (b) self-loop `less_than(x, x)`: fold a cycle;
 ///   (c) INFEASIBILITY of an arbitrary conclusion: fold a cycle to `less_than(x, x)`, contradict
-///       with `lessThanIrreflexive`, then `absurd`.
+///       with `lessThanIrreflexive`, then `ex_falso`.
 /// Stage 1 (scaling) lifts a hypothesis by a literal coefficient via
 /// `multiplicationPreservesOrder`; stage 2 (sum) combines two edges over distinct variables via
 /// `additionPreservesOrder`. Declines (false) on any out-of-fragment shape.
@@ -6603,7 +6603,7 @@ fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
     const concl_label = (try self.emitFarkasConclusion(cert, &inner, symbols, less_than, body, edges.items, hyps.items, &node_ids)) orelse return false;
 
     // 4. wrap `inner` in nested assume blocks (innermost antecedent first): each block restates
-    //    its hypothesis, runs the (progressively) exported proof, and `implies_intro` exports
+    //    its hypothesis, runs the (progressively) exported proof, and `discharge` exports
     //    `H_k -> … -> C`. Mirrors `wrapSimplifyPremises`.
     _ = concl_label;
     var carry_steps = inner.items;
@@ -6622,12 +6622,12 @@ fn arithFarkasCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step)
         var lvl: std.ArrayList(ast.Step) = .empty;
         try lvl.append(self.ctx.arena, try cert.b.assumeStep(blk_label, try cert.b.termExpr(ante_formulae.items[k]), blk_body.items));
         const exported = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = ante_formulae.items[k], .rhs = carry_formula } });
-        _ = try cert.claim(&lvl, exported, "implies_intro", &.{}, &.{blk_label});
+        _ = try cert.claim(&lvl, exported, "discharge", &.{}, &.{blk_label});
         carry_formula = exported;
         carry_steps = try lvl.toOwnedSlice(self.ctx.arena);
     }
 
-    // 5. wrap in the ∀ fix/forall_intro shell.
+    // 5. wrap in the ∀ fix/generalize shell.
     const wrapped = try self.wrapArithForall(cert, peel.eigen, peel.body, carry_steps);
     try out.appendSlice(self.ctx.arena, wrapped.steps);
     proved_prop.* = wrapped.prop;
@@ -6646,7 +6646,7 @@ fn farkasNodeId(self: *Prove, list: *std.ArrayList(TermId), t: TermId) Error!usi
 /// Prove the Farkas conclusion `body`, returning the label of a step proving it (or null to
 /// decline). (a)/(b): if `body` is an order atom `less_than(s, t)`, compose a chain s < … < t
 /// (a cycle when s == t). (c): otherwise fold ANY cycle to `less_than(x, x)`, contradict with
-/// `lessThanIrreflexive`, and `absurd` proves the (arbitrary) conclusion.
+/// `lessThanIrreflexive`, and `ex_falso` proves the (arbitrary) conclusion.
 fn emitFarkasConclusion(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, less_than: term.SymId, body: TermId, edges: []const farkas.Edge, hyps: []const OrderHyp, node_ids: *std.ArrayList(TermId)) Error!?StrId {
     const cn = self.pool.get(body);
     const is_order = cn == .pred and self.symIs(cn.pred.sym, less_than) and cn.pred.args.len == 2;
@@ -6667,12 +6667,12 @@ fn emitFarkasConclusion(self: *Prove, cert: *ArithCert, block: *std.ArrayList(as
     const cycle_label = try self.emitFarkasFold(cert, block, symbols, refutation.chain, hyps);
     const cnode = node_ids.items[refutation.node];
 
-    // cite lessThanIrreflexive, forall_elim at cnode → `not less_than(cnode, cnode)`; absurd
+    // cite lessThanIrreflexive, apply_at at cnode → `not less_than(cnode, cnode)`; ex_falso
     // against the folded `less_than(cnode, cnode)` proves the (arbitrary) `body`.
     const irr_stmt = (try self.arithLemmaFormula("lessThanIrreflexive", symbols)).?;
     const irr_label = try cert.citeLemma(block, "lessThanIrreflexive", irr_stmt);
     const not_lt = try cert.elimChain(block, irr_label, irr_stmt, &.{cnode});
-    return try cert.claim(block, body, "absurd", &.{}, &.{ cycle_label, not_lt.label });
+    return try cert.claim(block, body, "ex_falso", &.{}, &.{ cycle_label, not_lt.label });
 }
 
 /// Fold an order chain (edge indices, each hi linking to the next lo) into a single proof
@@ -6753,7 +6753,7 @@ fn isFarkasAddSum(self: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool
 }
 
 /// For each base hypothesis and literal k, emit a SCALED edge `less_than(mul(k,lo), mul(k,hi))`
-/// via `multiplicationPreservesOrder` (k = succ(c), so forall_elim at c = succ^{k-1}(ZERO)),
+/// via `multiplicationPreservesOrder` (k = succ(c), so apply_at at c = succ^{k-1}(ZERO)),
 /// appending it to `edges`/`hyps`/`node_ids`. Returns false (declines) if the lemma or the
 /// mul/succ/zero symbols are absent.
 fn emitFarkasScaledEdges(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, literals: []const usize, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
@@ -6961,7 +6961,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
     if (!try mixed.deriveGoal(&inner)) return false;
 
     // nest the stripped antecedents' assume blocks (innermost = last antecedent), exporting
-    // `a_i -> …` out through each with implies_intro.
+    // `a_i -> …` out through each with discharge.
     var wrapped_body = inner.items;
     var residual = body;
     var i = strip_assumes.items.len;
@@ -6973,7 +6973,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
         var lvl: std.ArrayList(ast.Step) = .empty;
         try lvl.append(self.ctx.arena, try cert.b.assumeStep(strip_blocks[i], try cert.b.termExpr(strip_assumes.items[i]), blk_body.items));
         residual = try self.pool.add(.{ .bin = .{ .op = .implies, .lhs = strip_assumes.items[i], .rhs = residual } });
-        _ = try cert.claim(&lvl, residual, "implies_intro", &.{}, &.{strip_blocks[i]});
+        _ = try cert.claim(&lvl, residual, "discharge", &.{}, &.{strip_blocks[i]});
         wrapped_body = lvl.items;
     }
     try body_steps.appendSlice(self.ctx.arena, wrapped_body);
@@ -7050,7 +7050,7 @@ const MixedAst = struct {
         return out.items;
     }
 
-    /// Prove `self.body` in `block`. A refuted premise closes by `absurd`; a true goal derives
+    /// Prove `self.body` in `block`. A refuted premise closes by `ex_falso`; a true goal derives
     /// structurally (theory leaves via the arith certs); a fully-decided branch that is
     /// theory-UNSAT derives a theory contradiction; otherwise split on the first unassigned
     /// atom via excluded-middle + `or_elim`.
@@ -7072,14 +7072,14 @@ const MixedAst = struct {
             if (failed) continue; // a leaf/theory discharge failed; drain, then return false.
             switch (frame) {
                 .expand => |blk| {
-                    // a premise assumed false on this branch → absurd (rare; premises are true).
+                    // a premise assumed false on this branch → ex_falso (rare; premises are true).
                     const refuted_idx: ?usize = for (self.premise_labels.items, 0..) |pl, i| {
                         if (self.eval(pl.formula) == false) break i;
                     } else null;
                     if (refuted_idx) |ri| {
                         const pl = self.premise_labels.items[ri];
                         if (try self.deriveFalse(blk, pl.formula)) |refuted| {
-                            _ = try self.cert.claim(blk, self.body, "absurd", &.{}, &.{ pl.label, refuted });
+                            _ = try self.cert.claim(blk, self.body, "ex_falso", &.{}, &.{ pl.label, refuted });
                         } else failed = true;
                         continue;
                     }
@@ -7132,7 +7132,7 @@ const MixedAst = struct {
 
     /// A fully-decided theory-UNSAT branch: for each theory atom assigned FALSE, try to PROVE
     /// it (positively) from the true theory literals via the equation/order cert; on success,
-    /// `absurd` the proof against the atom's assumed-false hypothesis, closing the branch to any
+    /// `ex_falso` the proof against the atom's assumed-false hypothesis, closing the branch to any
     /// goal. Returns false if no such contradiction can be built.
     fn deriveTheoryContradiction(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error!bool {
         for (self.atoms, self.assignment) |a, v| {
@@ -7144,10 +7144,10 @@ const MixedAst = struct {
             const proof = try self.p.arithLastLabel(probe.items);
             try block.appendSlice(self.p.ctx.arena, probe.items);
             // restate the assumed-false literal `not a` as a step (the assume-block hypothesis),
-            // then `absurd` the positive proof against it (absurd wants s1 = P, s2 = not P).
+            // then `ex_falso` the positive proof against it (ex_falso wants s1 = P, s2 = not P).
             const not_a = try self.pool().add(.{ .not = a });
             const neg_ref = try self.emit(block, not_a, "hypothesis", &.{self.litBlock(a)});
-            _ = try self.cert.claim(block, self.body, "absurd", &.{}, &.{ proof, neg_ref });
+            _ = try self.cert.claim(block, self.body, "ex_falso", &.{}, &.{ proof, neg_ref });
             return true;
         }
         return false;
@@ -7177,7 +7177,7 @@ const MixedAst = struct {
         return label;
     }
 
-    /// `atom or not atom` classically: not_intro on the negated disjunction, double_negation.
+    /// `atom or not atom` classically: contradiction on the negated disjunction, double_negation.
     fn emitLem(self: *MixedAst, block: *std.ArrayList(ast.Step), atom: TermId, not_atom: TermId, disj: TermId) Error!StrId {
         const not_disj = try self.pool().add(.{ .not = disj });
         const not_not = try self.pool().add(.{ .not = not_disj });
@@ -7185,12 +7185,12 @@ const MixedAst = struct {
         const hyp_outer = try self.hyp(&outer, not_disj);
         var innerb = try self.openBlock();
         const hyp_inner = try self.hyp(&innerb, atom);
-        const or_left = try self.emit(&innerb.body, disj, "or_intro_left", &.{hyp_inner});
+        const or_left = try self.emit(&innerb.body, disj, "either_left", &.{hyp_inner});
         try self.finishBlock(&outer.body, &innerb, atom);
-        const derived_not = try self.emit(&outer.body, not_atom, "not_intro", &.{ innerb.label, or_left, hyp_outer });
-        const or_right = try self.emit(&outer.body, disj, "or_intro_right", &.{derived_not});
+        const derived_not = try self.emit(&outer.body, not_atom, "contradiction", &.{ innerb.label, or_left, hyp_outer });
+        const or_right = try self.emit(&outer.body, disj, "either_right", &.{derived_not});
         try self.finishBlock(block, &outer, not_disj);
-        const nn = try self.emit(block, not_not, "not_intro", &.{ outer.label, or_right, hyp_outer });
+        const nn = try self.emit(block, not_not, "contradiction", &.{ outer.label, or_right, hyp_outer });
         return self.emit(block, disj, "double_negation", &.{nn});
     }
 
@@ -7318,35 +7318,35 @@ const MixedAst = struct {
                 .combine_and => |c| {
                     const right = results.pop().?;
                     const left = results.pop().?;
-                    const rule: []const u8 = if (self.p.isBiconditionalShape(c.f)) "iff_intro" else "and_intro";
+                    const rule: []const u8 = if (self.p.isBiconditionalShape(c.f)) "make_equivalence" else "both";
                     try results.append(sa, try self.emit(c.block, c.f, rule, &.{ left, right }));
                 },
                 .combine_or_left => |c| {
                     const l = results.pop().?;
-                    try results.append(sa, try self.emit(c.block, c.f, "or_intro_left", &.{l}));
+                    try results.append(sa, try self.emit(c.block, c.f, "either_left", &.{l}));
                 },
                 .combine_or_right => |c| {
                     const r = results.pop().?;
-                    try results.append(sa, try self.emit(c.block, c.f, "or_intro_right", &.{r}));
+                    try results.append(sa, try self.emit(c.block, c.f, "either_right", &.{r}));
                 },
                 .combine_true_implies => |c| {
                     _ = results.pop().?;
                     try self.finishBlock(c.block, c.blk, c.ante);
-                    try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                    try results.append(sa, try self.emit(c.block, c.f, "discharge", &.{c.blk.label}));
                 },
                 .combine_true_implies_absurd => |c| {
                     const refuted = results.pop().?;
-                    _ = try self.emit(&c.blk.body, c.conseq, "absurd", &.{ c.hyp, refuted });
+                    _ = try self.emit(&c.blk.body, c.conseq, "ex_falso", &.{ c.hyp, refuted });
                     try self.finishBlock(c.block, c.blk, c.ante);
-                    try results.append(sa, try self.emit(c.block, c.f, "implies_intro", &.{c.blk.label}));
+                    try results.append(sa, try self.emit(c.block, c.f, "discharge", &.{c.blk.label}));
                 },
                 .combine_false_and => |c| {
                     const refuted = results.pop().?;
                     var blk = try self.openBlock();
                     const h = try self.hyp(&blk, c.f);
-                    const elim = try self.emit(&blk.body, c.side, if (c.left_false) "and_elim_left" else "and_elim_right", &.{h});
+                    const elim = try self.emit(&blk.body, c.side, if (c.left_false) "and_lhs" else "and_rhs", &.{h});
                     try self.finishBlock(c.block, &blk, c.f);
-                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, elim, refuted }));
+                    try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, elim, refuted }));
                 },
                 .combine_false_or => |c| {
                     const not_right = results.pop().?;
@@ -7358,11 +7358,11 @@ const MixedAst = struct {
                     try self.finishBlock(&blk.body, &left, c.lhs);
                     var right = try self.openBlock();
                     const rh = try self.hyp(&right, c.rhs);
-                    _ = try self.emit(&right.body, c.lhs, "absurd", &.{ rh, not_right });
+                    _ = try self.emit(&right.body, c.lhs, "ex_falso", &.{ rh, not_right });
                     try self.finishBlock(&blk.body, &right, c.rhs);
                     const conc = try self.emit(&blk.body, c.lhs, "or_elim", &.{ h, left.label, right.label });
                     try self.finishBlock(c.block, &blk, c.f);
-                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conc, not_left }));
+                    try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conc, not_left }));
                 },
                 .combine_false_implies => |c| {
                     const not_conseq = results.pop().?;
@@ -7371,14 +7371,14 @@ const MixedAst = struct {
                     const h = try self.hyp(&blk, c.f);
                     const conseq = try self.emit(&blk.body, c.rhs, "modus_ponens", &.{ h, ante });
                     try self.finishBlock(c.block, &blk, c.f);
-                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, conseq, not_conseq }));
+                    try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conseq, not_conseq }));
                 },
                 .combine_false_not => |c| {
                     const truth = results.pop().?;
                     var blk = try self.openBlock();
                     const h = try self.hyp(&blk, c.f);
                     try self.finishBlock(c.block, &blk, c.f);
-                    try results.append(sa, try self.emit(c.block, c.nf, "not_intro", &.{ blk.label, truth, h }));
+                    try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, truth, h }));
                 },
             }
         }
@@ -7391,7 +7391,7 @@ const MixedAst = struct {
 /// body must be `exists y; disj`. Trace the Cooper elimination, reconstruct each boundary
 /// witness as a term, and prove the body at the first witness whose opened disjunction has a
 /// provable arm (equation/order under the fix vars), lifting through the or-intro path with an
-/// `exists_intro`. Wraps in the `fix`/`forall_intro` shell. Declines on period>1 (induction —
+/// `witness`. Wraps in the `fix`/`generalize` shell. Declines on period>1 (induction —
 /// not ported) or a nested/multi-var shape.
 fn arithCooperCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
     if (symbols.nat == null) return false;
@@ -7498,22 +7498,22 @@ fn arithCooperInduction(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.
     const assume_block_label = try self.freshNamed("given-ih");
     try assume_body.append(self.ctx.arena, try cert.b.claimStep(ih_label, try cert.b.termExpr(p_k), .by, try self.internStr("hypothesis"), &.{}, try self.oneRef(cert.b, assume_block_label)));
     try assume_body.append(self.ctx.arena, unpack_step);
-    // export P(succ(k)) out of the unpack (exists_elim).
-    _ = try cert.claim(&assume_body, p_succ_k, "exists_elim", &.{}, &.{unpack_block_label});
+    // export P(succ(k)) out of the unpack (unpacked).
+    _ = try cert.claim(&assume_body, p_succ_k, "unpacked", &.{}, &.{unpack_block_label});
     const assume_step = try cert.b.assumeStep(assume_block_label, try cert.b.termExpr(p_k), assume_body.items);
 
     // the fix k block: assume P(k), conclude P(succ(k)), export the implication.
     var fix_body: std.ArrayList(ast.Step) = .empty;
     try fix_body.append(self.ctx.arena, assume_step);
-    _ = try cert.claim(&fix_body, step_impl, "implies_intro", &.{}, &.{assume_block_label});
+    _ = try cert.claim(&fix_body, step_impl, "discharge", &.{}, &.{assume_block_label});
     const fixr = try cert.fixStep("cooper-step-fix", k.name, nat, fix_body.items);
     const step_forall = try self.closeForallVar(step_impl, k.name, nat);
 
-    // assemble `out`: base steps, then the fix block, then the step's forall_intro, then the
+    // assemble `out`: base steps, then the fix block, then the step's generalize, then the
     // induction instantiation. (base + step labels must precede the instantiation cite.)
     try out.appendSlice(self.ctx.arena, base_steps.items);
     try out.append(self.ctx.arena, fixr.step);
-    const step_cite = try cert.claim(out, step_forall, "forall_intro", &.{}, &.{fixr.label});
+    const step_cite = try cert.claim(out, step_forall, "generalize", &.{}, &.{fixr.label});
 
     // --- instantiate the `induction` schema at P -----------------------------------------
     // build the predicate arg `fun x => P(x)` as a lambda AST expr (binder trims to the
@@ -7665,7 +7665,7 @@ fn closeForallVar(self: *Prove, body: TermId, name: StrId, sort: term.SortId) Er
 
 /// Prove `exists y; disj` in `block` at one of `candidates`: open the body at the witness,
 /// prove a provable arm of the (possibly disjunctive) instance, lift through the or-intro
-/// path, and emit `exists_intro`. Returns false if no candidate closes.
+/// path, and emit `witness`. Returns false if no candidate closes.
 fn arithEmitExistsWitness(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const en = self.pool.get(exists_body);
     if (en != .quant or en.quant.q != .exists) return false;
@@ -7682,17 +7682,17 @@ fn arithEmitExistsWitness(self: *Prove, cert: *ArithCert, block: *std.ArrayList(
         while (pi > 0) {
             pi -= 1;
             const disj = try self.arithDisjAt(instance, found.path[0..pi]);
-            const rule: []const u8 = if (found.path[pi]) "or_intro_right" else "or_intro_left";
+            const rule: []const u8 = if (found.path[pi]) "either_right" else "either_left";
             arm_label = try cert.claim(block, disj, rule, &.{}, &.{arm_label});
             arm_formula = disj;
         }
-        // exists_intro at the witness.
+        // witness at the witness.
         const arg1 = try self.ctx.arena.alloc(*const ast.Expr, 1);
         arg1[0] = try cert.b.termExpr(wtn);
         const label = try self.freshNamed("arith");
         const refs = try self.ctx.arena.alloc(lexer.Token, 1);
         refs[0] = cert.b.tok(arm_label);
-        try block.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(exists_body), .by, try self.internStr("exists_intro"), arg1, refs));
+        try block.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(exists_body), .by, try self.internStr("witness"), arg1, refs));
         return true;
     }
     return false;
@@ -7753,7 +7753,7 @@ fn arithBuildWitness(self: *Prove, replay: presburger_mod.Replay, dump: presburg
     }
     // A witness that is exactly a fixed eigenvariable (`y := x` for `exists y; x = y or …`, the
     // left arm reflexive) is fine: the proof pool is locally nameless and hash-consed, so
-    // `exists_intro(x)` closes only the existential slot and the instance re-checks as written.
+    // `witness(x)` closes only the existential slot and the instance re-checks as written.
     const offset = dump.konst + j;
     const base = if (fix_index) |pos| blk: {
         if (pos >= fix_vars.len) return null;
@@ -7766,7 +7766,7 @@ fn arithBuildWitness(self: *Prove, replay: presburger_mod.Replay, dump: presburg
 }
 
 /// Peel `goal`'s ∀ prefix into fresh eigenvariables (outermost first); return the body + the
-/// eigenvariables (for the `fix`/`forall_intro` re-generalization shell). Used by each
+/// eigenvariables (for the `fix`/`generalize` re-generalization shell). Used by each
 /// arithmetic certifier so a `forall …; body` goal skeletonizes to `body` at fixed vars.
 const ArithPeel = struct { body: TermId, eigen: []const term.Node.Fvar, opened: []const TermId };
 fn arithPeel(self: *Prove, goal: TermId) Error!ArithPeel {
@@ -7786,8 +7786,8 @@ fn arithPeel(self: *Prove, goal: TermId) Error!ArithPeel {
 }
 
 /// Wrap `inner` steps (proving `body`) in nested `fix` blocks for `eigen` (outermost first),
-/// concluding each level with `forall_intro`. Returns the wrapped steps + the eigen-closed
-/// prop the outermost `forall_intro` proves (the schema body must use THIS prop, so its
+/// concluding each level with `generalize`. Returns the wrapped steps + the eigen-closed
+/// prop the outermost `generalize` proves (the schema body must use THIS prop, so its
 /// binder hints match the fix blocks). (Same shell as `wrapSimplifyForall`.)
 const WrappedArith = struct { steps: []const ast.Step, prop: TermId };
 fn wrapArithForall(self: *Prove, cert: *ArithCert, eigen: []const term.Node.Fvar, body: TermId, inner: []const ast.Step) Error!WrappedArith {
@@ -7803,7 +7803,7 @@ fn wrapArithForall(self: *Prove, cert: *ArithCert, eigen: []const term.Node.Fvar
         prop = try self.pool.add(.{ .quant = .{ .q = .forall, .sort = fv.sort, .hint = fv.name, .body = closed } });
         var lvl: std.ArrayList(ast.Step) = .empty;
         try lvl.append(self.ctx.arena, fixr.step);
-        _ = try cert.claim(&lvl, prop, "forall_intro", &.{}, &.{fixr.label});
+        _ = try cert.claim(&lvl, prop, "generalize", &.{}, &.{fixr.label});
         steps = try lvl.toOwnedSlice(self.ctx.arena);
     }
     return .{ .steps = steps, .prop = prop };
@@ -7816,7 +7816,7 @@ fn wrapArithForall(self: *Prove, cert: *ArithCert, eigen: []const term.Node.Fvar
 ///   - an order atom `less_than(s, t)`: find the difference `d` with `add(s, succ(d)) = t`
 ///     an additive identity, prove that equation, and cite `lessThanIntro` (`add(a,succ(d))=b
 ///     -> less_than(a,b)`).
-/// Wraps the body proof in the `fix`/`forall_intro` shell. Returns false (declines) on any
+/// Wraps the body proof in the `fix`/`generalize` shell. Returns false (declines) on any
 /// shape/normal-form mismatch — the caller tries the next certifier.
 fn arithEquationCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const peel = try self.arithPeel(goal_p);
@@ -7833,11 +7833,11 @@ fn arithEquationCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Ste
 ///
 /// The EXISTS case is a witness search: `exists y; inner` tries constant witnesses
 /// succ^k(ZERO), k=0..33, proving `inner[y:=witness]` by the equation/order cert, then
-/// `exists_intro` (the old arithCertCore C2c). Handles e.g. `exists y; add(y,y) =
+/// `witness` (the old arithCertCore C2c). Handles e.g. `exists y; add(y,y) =
 /// succ(succ(ZERO))` (witness y=1). A NESTED exists recursed; now an explicit backtracking
 /// frame stack — one frame per open exists level, `k` its next witness index; a child frame
 /// lives for exactly one parent witness attempt (child exhausted → pop → parent advances).
-/// On a leaf success the leaf steps + one `exists_intro` per level (innermost→outermost,
+/// On a leaf success the leaf steps + one `witness` per level (innermost→outermost,
 /// each citing the previous last label) flatten into `block` — the same step sequence the
 /// recursive appendSlice chain produced. Scratch on the pool's GPA.
 fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
@@ -7896,8 +7896,8 @@ fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
         else
             false;
         if (!ok) continue; // next witness at this level
-        // SUCCESS: flatten — the leaf steps, then one exists_intro per level innermost first
-        // (accumulated in `probe`), the whole sequence + the root's exists_intro into `block`.
+        // SUCCESS: flatten — the leaf steps, then one witness per level innermost first
+        // (accumulated in `probe`), the whole sequence + the root's witness into `block`.
         var inst_label = try self.arithLastLabel(probe.items);
         var i = stack.items.len;
         while (i > 0) {
@@ -7912,7 +7912,7 @@ fn arithBodyEqCert(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
             const label = try self.freshNamed("arith");
             const refs = try self.ctx.arena.alloc(lexer.Token, 1);
             refs[0] = cert.b.tok(inst_label);
-            try out.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(fr.formula), .by, try self.internStr("exists_intro"), arg1, refs));
+            try out.append(self.ctx.arena, try cert.b.claimStep(label, try cert.b.termExpr(fr.formula), .by, try self.internStr("witness"), arg1, refs));
             inst_label = label;
         }
         return true;
@@ -8033,7 +8033,7 @@ fn arithCanon(self: *Prove, symbols: presburger_mod.Symbols, rules: []const simp
 
 /// Emit a proof of `less_than(s, t)` via `lessThanIntro`: synthesize the difference witness
 /// `d` (from the normalized towers), prove `add(s, succ(d)) = t`, then cite `lessThanIntro`,
-/// forall_elim at (s, d, t), and modus_ponens the equation. Declines (false) when the towers
+/// apply_at at (s, d, t), and modus_ponens the equation. Declines (false) when the towers
 /// don't yield a nonneg difference or the equation can't join. (Peano shape; the ℤ nonneg-
 /// antecedent variant is not needed by the fixtures.)
 fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
@@ -8060,7 +8060,7 @@ fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step
     if (!try self.arithEmitEquation(cert, block, eq_lhs, t, &.{}, symbols)) return false;
     const eq_label = try self.arithLastLabel(block.items);
 
-    // cite lessThanIntro, forall_elim at (s, d, t), modus_ponens the equation → less_than(s,t).
+    // cite lessThanIntro, apply_at at (s, d, t), modus_ponens the equation → less_than(s,t).
     const intro_stmt = (try self.arithLemmaFormula("lessThanIntro", symbols)) orelse return false;
     const intro_label = try cert.citeLemma(block, "lessThanIntro", intro_stmt);
     const elim = try cert.elimChain(block, intro_label, intro_stmt, &.{ s, d, t });
@@ -8074,7 +8074,7 @@ fn arithEmitOrder(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step
 /// `add(m, succ(d)) = t`; substituting `m` yields `add(s, succ(add(succ(w), d))) = t`, i.e. the
 /// goal's difference is `add(succ(w), d)`. Emit: the elim instance + mp, an `unpack w` block
 /// proving the goal via `lessThanIntro` (the difference equation reduced under the witness
-/// equation), and `exists_elim` exporting `less_than(s, t)`. Declines when no premise anchors
+/// equation), and `unpacked` exporting `less_than(s, t)`. Declines when no premise anchors
 /// `s`, the goal→premise difference isn't a ground tower, or a lemma is absent.
 fn arithEmitOrderFromPremise(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
     const less_than = symbols.less_than orelse return false;
@@ -8135,7 +8135,7 @@ fn arithEmitOrderFromPremise(self: *Prove, cert: *ArithCert, block: *std.ArrayLi
             .steps = ub.items,
         } } };
         try block.append(self.ctx.arena, unpack_step);
-        _ = try cert.claim(block, goal, "exists_elim", &.{}, &.{unpack_block});
+        _ = try cert.claim(block, goal, "unpacked", &.{}, &.{unpack_block});
         return true;
     }
     return false;
@@ -8571,7 +8571,7 @@ fn arithLastLabel(self: *Prove, steps: []const ast.Step) Error!StrId {
 
 /// Build a well-known lemma's exact `forall …` statement from the arithmetic `symbols`. The
 /// cert cites the lemma by name and states THIS formula on the cite step (the kernel re-checks
-/// it against the resolved fact, and forall_elim opens it at the arguments). The shapes match
+/// it against the resolved fact, and apply_at opens it at the arguments). The shapes match
 /// the std peano/integer statements: a mis-shape simply fails the generated ProveTask's
 /// kernel check. `null` when a needed symbol is absent.
 fn arithLemmaFormula(self: *Prove, name: []const u8, symbols: presburger_mod.Symbols) Error!?TermId {
@@ -9030,8 +9030,8 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         else => {},
     }
     const wants_args: usize = switch (kind) {
-        .forall_elim => if (c.args.len == 0) 1 else c.args.len,
-        .exists_intro => 1,
+        .apply_at => if (c.args.len == 0) 1 else c.args.len,
+        .witness => 1,
         else => 0,
     };
     if (c.args.len != wants_args) {
@@ -9072,7 +9072,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             // AUTO-WEAKENING (model transfer): a source axiom holding UNCONDITIONALLY on the
             // carrier, mapped to itself, has a RELATIVIZED step claim `∀v; guard(v) -> …` while
             // the fact derives the bare `∀v; …`. Since `∀v; P ⊢ ∀v; guard(v) -> P`, synthesize the
-            // weakening (nested guarded `fix` + cite + multi-arg forall_elim + forall_intro).
+            // weakening (nested guarded `fix` + cite + multi-arg apply_at + generalize).
             if (self.model != InternPool.Index.none and self.model != .universe) {
                 const fact_f = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(stmt).fact.formula);
                 if (!self.pool.alphaEq(fact_f, goal)) {
@@ -9101,15 +9101,15 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 .antecedent = try self.resolveStepRef(w, c.refs[1]),
             } };
         },
-        .implies_intro => {
+        .discharge => {
             try self.wantRefs(c, 1);
-            return .{ .implies_intro = try self.resolveBlockRef(w, c.refs[0]) };
+            return .{ .discharge = try self.resolveBlockRef(w, c.refs[0]) };
         },
-        .forall_intro => {
+        .generalize => {
             try self.wantRefs(c, 1);
-            return .{ .forall_intro = try self.resolveBlockRef(w, c.refs[0]) };
+            return .{ .generalize = try self.resolveBlockRef(w, c.refs[0]) };
         },
-        .forall_elim => {
+        .apply_at => {
             try self.wantRefs(c, 1);
             const start = try self.resolveStepRef(w, c.refs[0]);
             var cur_formula = self.low_steps.items[@intFromEnum(start.id)].formula;
@@ -9146,7 +9146,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 try stripGuards(self, kb, goal, &cur_formula, &ops, aloc);
                 const node = self.pool.get(cur_formula);
                 if (node != .quant or node.quant.q != .forall) {
-                    return self.fail(aloc, "forall_elim: '{s}' is not universally quantified here", .{try self.renderTerm(cur_formula)});
+                    return self.fail(aloc, "apply_at: '{s}' is not universally quantified here", .{try self.renderTerm(cur_formula)});
                 }
                 const arg = (try e.elaborateExpr(arg_expr)).id;
                 try ops.append(self.ctx.arena, .{ .elim = .{ .arg = arg, .loc = aloc } });
@@ -9161,7 +9161,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             var cur_f = self.low_steps.items[@intFromEnum(start.id)].formula;
             for (ops.items, 0..) |op, i| {
                 const result: TermId, const just: kernel.Justification = switch (op) {
-                    .elim => |el| .{ try self.pool.open(self.pool.get(cur_f).quant.body, el.arg), .{ .forall_elim = .{ .step = cur, .with = el.arg, .with_loc = el.loc } } },
+                    .elim => |el| .{ try self.pool.open(self.pool.get(cur_f).quant.body, el.arg), .{ .apply_at = .{ .step = cur, .with = el.arg, .with_loc = el.loc } } },
                     .discharge => |d| .{ d.result, .{ .modus_ponens = .{ .implication = cur, .antecedent = d.guard } } },
                 };
                 if (i == ops.items.len - 1) return just;
@@ -9173,15 +9173,15 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             }
             unreachable; // ops is non-empty; the last iteration returns
         },
-        .exists_intro => {
+        .witness => {
             try self.wantRefs(c, 1);
             const arg = try e.elaborateExpr(c.args[0]);
             const aloc = Elab.exprLoc(c.args[0]);
             var step = try self.resolveStepRef(w, c.refs[0]);
             // RELATIVIZED ∃ (model transfer): the goal `∃x; good(x) and P(x)` opens at the witness
             // to `good(w) and P(w)`, but the cited step provides only `P(w)`. Re-conjoin the guard:
-            // discharge `good(w)` (source 2b — the witness's own unpack carries it) and and_intro it
-            // onto the step, so exists_intro witnesses the full relativized body.
+            // discharge `good(w)` (source 2b — the witness's own unpack carries it) and both it
+            // onto the step, so witness witnesses the full relativized body.
             const gnode = self.pool.get(goal);
             if (gnode == .quant and gnode.quant.q == .exists) {
                 const body = try self.pool.open(gnode.quant.body, arg.id);
@@ -9189,63 +9189,63 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 const step_f = self.low_steps.items[@intFromEnum(step.id)].formula;
                 if (bn == .bin and bn.bin.op == .and_op and !self.pool.alphaEq(step_f, body) and self.pool.alphaEq(bn.bin.rhs, step_f)) {
                     if (try self.emitDischargeStep(kb, aloc, bn.bin.lhs)) |g_step| {
-                        step = try self.emitSynthetic(kb, aloc, body, .{ .and_intro = .{ .left = g_step, .right = step } });
+                        step = try self.emitSynthetic(kb, aloc, body, .{ .both = .{ .left = g_step, .right = step } });
                     }
                 }
             }
-            return .{ .exists_intro = .{
+            return .{ .witness = .{
                 .step = step,
                 .witness = arg.id,
                 .witness_loc = aloc,
             } };
         },
-        .exists_elim => {
+        .unpacked => {
             try self.wantRefs(c, 1);
-            return .{ .exists_elim = try self.resolveBlockRef(w, c.refs[0]) };
+            return .{ .unpacked = try self.resolveBlockRef(w, c.refs[0]) };
         },
-        .and_intro => {
+        .both => {
             try self.wantRefs(c, 2);
             if (self.isBiconditionalShape(goal)) {
-                return self.fail(c.rule.start, "this goal is a biconditional '(X -> Y) and (Y -> X)' — use `iff_intro` (which is the same rule, named for what it proves)", .{});
+                return self.fail(c.rule.start, "this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)", .{});
             }
-            return .{ .and_intro = .{
+            return .{ .both = .{
                 .left = try self.resolveStepRef(w, c.refs[0]),
                 .right = try self.resolveStepRef(w, c.refs[1]),
             } };
         },
-        .and_elim_left => {
+        .and_lhs => {
             try self.wantRefs(c, 1);
-            return .{ .and_elim_left = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .and_lhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .and_elim_right => {
+        .and_rhs => {
             try self.wantRefs(c, 1);
-            return .{ .and_elim_right = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .and_rhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .iff_intro => {
+        .make_equivalence => {
             try self.wantRefs(c, 2);
             if (!self.isBiconditionalShape(goal)) {
-                return self.fail(c.rule.start, "iff_intro's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `and_intro`?", .{});
+                return self.fail(c.rule.start, "make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?", .{});
             }
-            return .{ .and_intro = .{
+            return .{ .both = .{
                 .left = try self.resolveStepRef(w, c.refs[0]),
                 .right = try self.resolveStepRef(w, c.refs[1]),
             } };
         },
-        .iff_elim_forward => {
+        .equiv_forward => {
             try self.wantRefs(c, 1);
-            return .{ .and_elim_left = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .and_lhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .iff_elim_backward => {
+        .equiv_converse => {
             try self.wantRefs(c, 1);
-            return .{ .and_elim_right = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .and_rhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .or_intro_left => {
+        .either_left => {
             try self.wantRefs(c, 1);
-            return .{ .or_intro_left = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .either_left = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .or_intro_right => {
+        .either_right => {
             try self.wantRefs(c, 1);
-            return .{ .or_intro_right = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .either_right = try self.resolveStepRef(w, c.refs[0]) };
         },
         .or_elim => {
             try self.wantRefs(c, 3);
@@ -9255,17 +9255,17 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 .right = try self.resolveBlockRef(w, c.refs[2]),
             } };
         },
-        .not_intro => {
+        .contradiction => {
             try self.wantRefs(c, 3);
-            return .{ .not_intro = .{
+            return .{ .contradiction = .{
                 .block = try self.resolveBlockRef(w, c.refs[0]),
                 .s1 = try self.resolveStepRef(w, c.refs[1]),
                 .s2 = try self.resolveStepRef(w, c.refs[2]),
             } };
         },
-        .absurd => {
+        .ex_falso => {
             try self.wantRefs(c, 2);
-            return .{ .absurd = .{
+            return .{ .ex_falso = .{
                 .s1 = try self.resolveStepRef(w, c.refs[0]),
                 .s2 = try self.resolveStepRef(w, c.refs[1]),
             } };
@@ -9289,9 +9289,9 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 .target = try self.resolveStepRef(w, c.refs[1]),
             } };
         },
-        .iff_rewrite => {
+        .equiv_rewrite => {
             try self.wantRefs(c, 2);
-            return .{ .iff_rewrite = .{
+            return .{ .equiv_rewrite = .{
                 .biconditional = try self.resolveStepRef(w, c.refs[0]),
                 .target = try self.resolveStepRef(w, c.refs[1]),
             } };
@@ -9401,26 +9401,26 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
                 try mark(reached, &work, arena, @intFromEnum(r.implication.id));
                 try mark(reached, &work, arena, @intFromEnum(r.antecedent.id));
             },
-            .forall_elim => |r| try mark(reached, &work, arena, @intFromEnum(r.step.id)),
-            .exists_intro => |r| try mark(reached, &work, arena, @intFromEnum(r.step.id)),
-            .and_intro => |r| {
+            .apply_at => |r| try mark(reached, &work, arena, @intFromEnum(r.step.id)),
+            .witness => |r| try mark(reached, &work, arena, @intFromEnum(r.step.id)),
+            .both => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.left.id));
                 try mark(reached, &work, arena, @intFromEnum(r.right.id));
             },
-            .and_elim_left, .and_elim_right, .or_intro_left, .or_intro_right, .double_negation, .symmetry => |sr| try mark(reached, &work, arena, @intFromEnum(sr.id)),
+            .and_lhs, .and_rhs, .either_left, .either_right, .double_negation, .symmetry => |sr| try mark(reached, &work, arena, @intFromEnum(sr.id)),
             .rewrite => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.equation.id));
                 try mark(reached, &work, arena, @intFromEnum(r.target.id));
             },
-            .iff_rewrite => |r| {
+            .equiv_rewrite => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.biconditional.id));
                 try mark(reached, &work, arena, @intFromEnum(r.target.id));
             },
-            .absurd => |r| {
+            .ex_falso => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.s1.id));
                 try mark(reached, &work, arena, @intFromEnum(r.s2.id));
             },
-            .not_intro => |r| {
+            .contradiction => |r| {
                 if (lastStepOf(blocks, r.block.id)) |ls| try mark(reached, &work, arena, ls);
                 try mark(reached, &work, arena, @intFromEnum(r.s1.id));
                 try mark(reached, &work, arena, @intFromEnum(r.s2.id));
@@ -9430,7 +9430,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
                 if (lastStepOf(blocks, r.left.id)) |ls| try mark(reached, &work, arena, ls);
                 if (lastStepOf(blocks, r.right.id)) |ls| try mark(reached, &work, arena, ls);
             },
-            .implies_intro, .forall_intro, .exists_elim => |b| {
+            .discharge, .generalize, .unpacked => |b| {
                 if (lastStepOf(blocks, b.id)) |ls| try mark(reached, &work, arena, ls);
             },
             .hypothesis => {},

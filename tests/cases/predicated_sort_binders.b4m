@@ -3,7 +3,7 @@
 //   ∀h: H; P    ==>  ∀h: G; inH(h) -> P        (hypothesis)
 //   ∃h: H; P    ==>  ∃h: G; inH(h) and P        (conjunct)
 //   fix h: H    ==>  the fix block carries guard inH(h); `[by predicate <lbl>]`
-//                    surfaces it, and forall_intro concludes ∀h; inH(h) -> …
+//                    surfaces it, and generalize concludes ∀h; inH(h) -> …
 //   unpack h: H ==>  no special guard — the ∃ it unpacks already carries inH(h)
 //                    (extract via and_elim). Kernel-checked, no accelerated taint.
 sort G
@@ -22,7 +22,7 @@ proof
     [by cite pAll]
 qed
 
-// fix h: H — the guard inH(h) is available via `predicate`, and forall_intro
+// fix h: H — the guard inH(h) is available via `predicate`, and generalize
 // concludes the relativized ∀h; inH(h) -> P(h).
 theorem forallOverHByFix: forall h: H; P(h)
 proof
@@ -36,14 +36,14 @@ proof
         [by cite pAll]
       @p-if-in-subset |
         inH(h) -> P(h)
-        [by forall_elim(h) identity-law]
+        [by apply_at(h) identity-law]
       @conclusion-p |
         P(h)
         [by modus_ponens p-if-in-subset h-in-subset]
     }
   @conclusion |
     forall h: H; P(h)
-    [by forall_intro generalize-h]
+    [by generalize generalize-h]
 qed
 
 // unpack h: H — the guard rides in the unpacked existential (inH(h) and P(h)).
@@ -59,18 +59,18 @@ proof
         [by hypothesis with-h]
       @p-of-h |
         P(h)
-        [by and_elim_right h-guard-and-p]
+        [by and_rhs h-guard-and-p]
       @h-in-subset |
         inH(h)
-        [by and_elim_left h-guard-and-p]
+        [by and_lhs h-guard-and-p]
       @repacked |
         inH(h) and P(h)
-        [by and_intro h-in-subset p-of-h]
+        [by both h-in-subset p-of-h]
       @exists-out |
         exists x: H; P(x)
-        [by exists_intro(h) repacked]
+        [by witness(h) repacked]
     }
   @conclusion |
     exists x: H; P(x)
-    [by exists_elim with-h]
+    [by unpacked with-h]
 qed

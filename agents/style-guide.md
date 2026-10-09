@@ -47,14 +47,14 @@ write and check that it reads.
 - **Name the MOVE, not the proposition.** The formula line is right there — a
   label that re-narrates its syntax earns nothing. `@for-all-b-d` on a
   `forall b, d; …` line is dead weight; the step's real contribution is
-  *discharging the `fix`* → `@discharge-b`. A `forall_elim` step's content is
+  *discharging the `fix`* → `@discharge-b`. A `apply_at` step's content is
   the *specialization* → `@specialized-to-a-b` / `@lemma-at-a-b`, not that it is
   now quantifier-free. Ask: "what did this step DO?"
 - **A specialized fact folds its instance into the name**:
   `@remainder-is-unique-nine-six`. Long names are fine — noise is
   meaninglessness, not length.
 - **Steps that assert nothing should not exist.** Collapse specialization towers
-  with multi-arg `forall_elim(A, B, C)`; collapse modus-ponens ladders with
+  with multi-arg `apply_at(A, B, C)`; collapse modus-ponens ladders with
   `tautology` (the apply-a-lemma idiom). Only name what survives.
 
 ### Stock names for structural roles (use these exact spellings)
@@ -71,10 +71,10 @@ write and check that it reads.
 | implication at fixed `k` | `@induction-step-at-k` |
 | generalized step premise | `@induction-step-for-all-k` |
 | fix-block generalizing a statement binder | `@generalize-<var>` (NOT `@gen-a`) |
-| forall_intro closing such a block | `@discharge-<var>` (NOT `@close-a`, and NOT `@for-all-<var>` which just echoes the formula) |
-| forall_elim specializing a lemma | `@specialized-<to-what>` / `@<fact>-at-<args>` |
+| generalize closing such a block | `@discharge-<var>` (NOT `@close-a`, and NOT `@for-all-<var>` which just echoes the formula) |
+| apply_at specializing a lemma | `@specialized-<to-what>` / `@<fact>-at-<args>` |
 | assume-block (hypothesis intro) | `@given-<content>` (`@given-b-nonzero`) |
-| implies_intro export | `@<cond>-implies-<result>` |
+| discharge export | `@<cond>-implies-<result>` |
 | existential feeding an unpack | `@<thing>-exists` (`@gap-exists`) |
 | unpack-block naming a witness | `@with-<role>-<var>` (`@with-quotient-j`); fallback `@with-witness-<var>` |
 | case / or_elim arms | `@when-<condition>` (`@when-zero`, `@when-successor`) |

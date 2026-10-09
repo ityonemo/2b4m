@@ -155,7 +155,7 @@ source theorem (what to transfer) — necessary because a sort has multiple mode
 
 Spelling follows 2b4m's parameterized-tactic convention: the **instance is
 parenthesized** (the mode selector, exactly like `assoc(opAssoc)`,
-`polynomial(theory)`, `forall_elim(t) step`) and the **source theorem is a bare
+`polynomial(theory)`, `apply_at(t) step`) and the **source theorem is a bare
 ref** (the fact operated on). No `with` particle — the `by` grammar has none
 anywhere; parens carry the configuration/operand distinction. The model name alone
 resolves which namespace of overloads to apply — there is nothing else to name.

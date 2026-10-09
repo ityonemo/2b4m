@@ -418,7 +418,7 @@ test "invalid characters produce invalid token" {
     // the old symbolic connectives are gone: bare slashes are invalid
     try expectTags("/ \\", &.{ .invalid, .invalid });
     // 'and'/'or' are keywords, but identifiers merely containing them are not
-    try expectTags("and_intro orx", &.{ .identifier, .identifier });
+    try expectTags("both orx", &.{ .identifier, .identifier });
 }
 
 test "imports: keyword, arrow, string, qualified names" {

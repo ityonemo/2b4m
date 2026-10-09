@@ -174,43 +174,43 @@ proof
       @some-fact | <formula> [by cite someAxiom]
       @conclusion-inner | P(a) [by ...]
     }
-  @conclusion | forall a: Nat; P(a) [by forall_intro generalize-a]
+  @conclusion | forall a: Nat; P(a) [by generalize generalize-a]
 qed
 ```
 
 - Every step is `@label | <formula> [<keyword> <rule> <refs>]` (label, formula, justification — the formula and `[…]` indented two spaces under the label). Blocks nest two spaces.
 - **TWO justification keywords**: `[by <rule> …]` for KERNEL PRIMITIVES (pure inference, always kernel-checked — the whole proof-rule table below); `[using <name> …]` for ACCELERANTS + `instantiation` + `model`/`import` (engine proof-generation). The parser ENFORCES the split: `by` on an accelerant, or `using` on a primitive, is a hard parse error. `--fast` can trust MOST `using` words (accelerants + `model`/`import`), but NOT `instantiation`: an instantiation's content is the schema body's proof at the args — the per-instance proof is the only soundness gate, so it is ALWAYS kernel-checked even under `--fast` (#93).
-- A `fix x: S { … }` block generalizes; a SEPARATE `forall_intro <block-label>` step discharges it (the block is not itself the universal). Same for `assume F { … }` + `implies_intro`.
+- A `fix x: S { … }` block generalizes; a SEPARATE `generalize <block-label>` step discharges it (the block is not itself the universal). Same for `assume F { … }` + `discharge`.
 - Inside an `assume F { … }` block, restate the assumption with `[by hypothesis <block-label>]`. Inside a `fix h: H` (refined sort), get its guard `inH(h)` with `[by predicate <block-label>]`.
-- Refs are SPACE-separated: `[by and_intro a b]` NOT `a, b`.
-- Term arguments go in parens on the rule: `[by forall_elim(succ(b)) some-step]`.
+- Refs are SPACE-separated: `[by both a b]` NOT `a, b`.
+- Term arguments go in parens on the rule: `[by apply_at(succ(b)) some-step]`.
 
 ## Proof rules — EXACT ref counts (the drift-prone part)
 
 | rule | refs | notes |
 |---|---|---|
-| `cite NAME` | 0 (names a stmt) | kind-agnostic fact citation (cites an axiom OR a theorem; the kernel picks the arm by resolved kind). Must introduce a cited fact AS A STEP before a later `forall_elim` references it — `@a \| forall …; … [by cite foo]` then `forall_elim(t) a`. (`axiom`/`theorem` are no longer rule words.) |
+| `cite NAME` | 0 (names a stmt) | kind-agnostic fact citation (cites an axiom OR a theorem; the kernel picks the arm by resolved kind). Must introduce a cited fact AS A STEP before a later `apply_at` references it — `@a \| forall …; … [by cite foo]` then `apply_at(t) a`. (`axiom`/`theorem` are no longer rule words.) |
 | `hypothesis BLOCK` | 1 block | restate an enclosing assume/unpack assumption |
 | `predicate FIXBLOCK` | 1 block | guard `inH(h)` of a refined `fix h: H` |
 | `modus_ponens IMP ANT` | 2 | order: implication FIRST, antecedent second |
-| `implies_intro BLOCK` | 1 block | discharge `assume` → implication |
-| `forall_intro BLOCK` | 1 block | discharge `fix` → universal |
-| `forall_elim(t, …) STEP` | 1 step (+ term args) | multi-arg peels several binders in one step |
-| `exists_intro(t) STEP` | 1 step (+ witness term) | |
-| `exists_elim BLOCK` | 1 block | export an `unpack` block's witness-free conclusion |
-| `and_intro L R` | 2 | REJECTS a biconditional-shape goal `(X->Y) and (Y->X)` — use `iff_intro` |
-| `and_elim_left STEP` / `and_elim_right STEP` | 1 | |
-| `iff_intro FWD BWD` | 2 | forward `P->Q` then backward `Q->P`; goal must be `P iff Q` shape |
-| `iff_elim_forward STEP` / `iff_elim_backward STEP` | 1 | recover `P->Q` / `Q->P` from `P iff Q` |
-| `or_intro_left STEP` / `or_intro_right STEP` | 1 | |
+| `discharge BLOCK` | 1 block | discharge `assume` → implication |
+| `generalize BLOCK` | 1 block | discharge `fix` → universal |
+| `apply_at(t, …) STEP` | 1 step (+ term args) | multi-arg peels several binders in one step |
+| `witness(t) STEP` | 1 step (+ witness term) | |
+| `unpacked BLOCK` | 1 block | export an `unpack` block's witness-free conclusion |
+| `both L R` | 2 | REJECTS a biconditional-shape goal `(X->Y) and (Y->X)` — use `make_equivalence` |
+| `and_lhs STEP` / `and_rhs STEP` | 1 | |
+| `make_equivalence FWD BWD` | 2 | forward `P->Q` then backward `Q->P`; goal must be `P iff Q` shape |
+| `equiv_forward STEP` / `equiv_converse STEP` | 1 | recover `P->Q` / `Q->P` from `P iff Q` |
+| `either_left STEP` / `either_right STEP` | 1 | |
 | **`or_elim DISJ LBLOCK RBLOCK`** | **3 (1 step + 2 blocks)** | **BINARY only.** A 3-way split needs `case <disj> { … }` (see below), NOT a 3-ref or_elim |
-| `not_intro BLOCK S1 S2` | 3 (1 block + 2 steps) | the block's assumption yielded contradiction S1/S2 |
-| `absurd S1 S2` | 2 | from a contradiction, conclude anything |
+| `contradiction BLOCK S1 S2` | 3 (1 block + 2 steps) | the block's assumption yielded contradiction S1/S2 |
+| `ex_falso S1 S2` | 2 | from a contradiction, conclude anything |
 | `double_negation STEP` | 1 | `not not P` → `P` |
 | `reflexivity` | 0 | `t = t` |
 | `symmetry STEP` | 1 | `x=y` → `y=x` |
 | `rewrite EQ TARGET` | 2 | replace EQ's lhs by rhs (or rhs by lhs) in TARGET — **bidirectional**, no `symmetry` needed to reorient |
-| `iff_rewrite BICOND TARGET` | 2 | from `P iff Q`, replace sub-prop P by Q (or Q by P) in TARGET (any position). Bidirectional, kernel-checked, no taint |
+| `equiv_rewrite BICOND TARGET` | 2 | from `P iff Q`, replace sub-prop P by Q (or Q by P) in TARGET (any position). Bidirectional, kernel-checked, no taint |
 
 (`instantiation`/`model` are NOT in this table — they are `using` accelerants, below.)
 
@@ -227,10 +227,10 @@ qed
 ## iff (surface sugar)
 
 `P iff Q` desugars to `(P -> Q) and (Q -> P)`; the kernel never sees `iff`. Therefore:
-- Prove with `iff_intro fwd bwd`; eliminate with `iff_elim_forward` / `iff_elim_backward`.
+- Prove with `make_equivalence fwd bwd`; eliminate with `equiv_forward` / `equiv_converse`.
 - `tautology` DECIDES `iff` goals and CONSUMES `iff` hypotheses for free (it sees the desugared conjunction).
-- `iff_rewrite BICOND TARGET` substitutes P↔Q across a goal (subformula congruence).
-- The shape `(X -> Y) and (Y -> X)` is CANONICALLY an iff: `and_intro` refuses it (use `iff_intro`), `iff_intro` requires it. So write biconditionals as `iff`, not hand-rolled conjunctions.
+- `equiv_rewrite BICOND TARGET` substitutes P↔Q across a goal (subformula congruence).
+- The shape `(X -> Y) and (Y -> X)` is CANONICALLY an iff: `both` refuses it (use `make_equivalence`), `make_equivalence` requires it. So write biconditionals as `iff`, not hand-rolled conjunctions.
 
 ## Accelerants (tactics) — cited with `using`, NOT `by` — one-liners; detail at `### TACTIC: <name>` in GUIDE.md
 
@@ -245,10 +245,10 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
 - `assoc_commut` / `assoc_commut_quantified` — reorder an A/C sum; bare = add/mul, `(assoc,comm,swap)` for a custom op; `_quantified` peels a `forall` prefix.
 - `assoc(assocLemma)` — associativity-ONLY equality (required lemma arg; no commutativity).
 - `polynomial(theory)` — nonlinear `add`/`mul` identity by canonical expansion. In a **ring theory** (`neg`/`sub` in scope) it also expands `sub`/`neg`, cancels inverses (`t+neg(t)→0`), and folds numeral coefficients by expansion (`2q+2q=4q`, `(2q+1)²=4q²+4q+1`); pure-ℕ (`peano`) unaffected.
-- `specialize HEAD(args) hyps…` — apply a `forall`-quantified fact in one step (∀-elim at args + modus_ponens each hyp; emits the kernel chain). `HEAD` may be a declared THEOREM/AXIOM name **or a LOCAL STEP LABEL** (a `forall`-shaped assumed/derived step) — no need to hand-roll `forall_elim`+`modus_ponens` for a local universal.
+- `specialize HEAD(args) hyps…` — apply a `forall`-quantified fact in one step (∀-elim at args + modus_ponens each hyp; emits the kernel chain). `HEAD` may be a declared THEOREM/AXIOM name **or a LOCAL STEP LABEL** (a `forall`-shaped assumed/derived step) — no need to hand-roll `apply_at`+`modus_ponens` for a local universal.
 - `ext` — extensionality reduction (sets/functions) → propositional residue.
 - `tautology refs…` — propositional consequence (decides iff goals; consumes iff/`and`/`or`/`->` hyps). Atom cap 16. **Every non-propositional subformula is an OPAQUE ATOM** — see the gotcha below.
-- `arithmetic refs…` — linear arithmetic over Nat (Presburger). `arithmetic(module)` / `fallback(thm)` variants. `fallback(thm)` cites a proven theorem for a decide-but-can't-certify goal; the goal may be `thm` VERBATIM or a SPECIALIZED INSTANCE (the matcher infers the ∀-witnesses and discharges `thm`'s `->` antecedents from the step's refs, emitting a kernel-checked forall_elim+mp chain).
+- `arithmetic refs…` — linear arithmetic over Nat (Presburger). `arithmetic(module)` / `fallback(thm)` variants. `fallback(thm)` cites a proven theorem for a decide-but-can't-certify goal; the goal may be `thm` VERBATIM or a SPECIALIZED INSTANCE (the matcher infers the ∀-witnesses and discharges `thm`'s `->` antecedents from the step's refs, emitting a kernel-checked apply_at+mp chain).
 - **Inputs are NAMED; guard obligations are FOUND.** The list after a tactic is exactly
   what the inference consumes — `[using <tactic> <args>(…) input1 input2 …]`: the hyps
   `specialize` modus-ponenses (in the cited lemma's antecedent order), `chain`'s equations
@@ -306,7 +306,7 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
 
 ## Gotchas that bite (memorize)
 
-- **`fix` takes ONE binder.** `fix a, b: Nat {` is a PARSE ERROR — nest them: `fix a: Nat { fix b: Nat { … } }`, discharging with one `forall_intro` per level (inner discharges `forall b; …`, outer `forall a, b; …`).
+- **`fix` takes ONE binder.** `fix a, b: Nat {` is a PARSE ERROR — nest them: `fix a: Nat { fix b: Nat { … } }`, discharging with one `generalize` per level (inner discharges `forall b; …`, outer `forall a, b; …`).
 - **Literate `.md` fence discipline**: 2b4m code lives in ` ```2b4m … ``` ` blocks; every block must be CLOSED before prose. A missing/misplaced ``` fence makes the checker try to parse prose as 2b4m ("expected a declaration, got 'The'"). When inserting a new theorem in an `.md`, keep it inside one fenced block (or open+close its own).
 - **Gates don't pin counts**: `tests/test_*.zig` uses `ctx.okSilent(&.{"check", FILE})` (asserts "checks OK, exit 0") — NOT a `"OK: N declarations, …"` golden. So an edit that changes decl/theorem counts needs NO gate update; just make sure the file still checks. (A few `--fast`/accelerated gates keep a full banner golden with counts — leave those.) Run `2b4m fmt <file>` before `fmt --check` gates.
 - `[by hole]` is INVALID — `hole` is a top-level declaration, not a justification. Every obligation must really be proved (or the theorem itself is a `hole`).
@@ -315,11 +315,11 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
   unrelated atoms: `power(g,m) = g` + `g != E` does NOT give `power(g,m) != E` (it prints a
   countermodel setting all three independently). A `forall` is one atom, so it yields no
   instance. Fix: do the non-propositional step yourself (assume the negation, `chain` to
-  the contradiction, `implies_intro`), then let `tautology` close it. If the countermodel
+  the contradiction, `discharge`), then let `tautology` close it. If the countermodel
   names atoms you believe are linked, that link is the step you still owe.
 - `or_elim` is BINARY. 3-way → `case`.
-- Cite a theorem/axiom as a `[by cite X]` STEP before a later `forall_elim` refs that step.
-- No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `iff_intro`/`iff_elim_forward`/`iff_elim_backward`.
+- Cite a theorem/axiom as a `[by cite X]` STEP before a later `apply_at` refs that step.
+- No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `make_equivalence`/`equiv_forward`/`equiv_converse`.
 - A `func` cannot return `Prop` and cannot take a `-> Prop` parameter; predicates are opaque (no body).
 - No variable shadowing (checker-enforced). When generalizing a statement binder, reuse the statement's binder name.
 - A declarations-only file (no `theorem`s) checks with an informational note + exit 0 — that's fine, it's a dependency. A file that declares theorems but a proof fails is a hard error.

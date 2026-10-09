@@ -756,7 +756,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
             }
             inst_formula = f;
             // proof (a proof-carrying schema): nest `assume g_i { … }` innermost-last, exporting
-            // `g_i -> …` by implies_intro; the outermost export is the instance's conclusion.
+            // `g_i -> …` by discharge; the outermost export is the instance's conclusion.
             if (inst_steps) |steps| {
                 var body = steps;
                 var j = guards.items.len;
@@ -777,7 +777,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
                         if (j == 0) try b.intern("conclusion") else prove.freshNamed("guard-export") catch return error.OutOfMemory,
                         exported,
                         .by,
-                        try b.intern("implies_intro"),
+                        try b.intern("discharge"),
                         &.{},
                         refs,
                     ));

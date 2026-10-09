@@ -49,7 +49,7 @@ pub const Block = struct {
         assume: TermId,
         /// `fix h` (∀-intro subproof). A PREDICATED fix (`fix h: H`, H = G where inH)
         /// carries `guard = inH(h)` — available as the block's hypothesis, and made
-        /// the antecedent of the `forall_intro` conclusion (`∀h; inH(h) -> body`).
+        /// the antecedent of the `generalize` conclusion (`∀h; inH(h) -> body`).
         fix: struct { v: term.Node.Fvar, guard: ?TermId = null },
         unpack: struct { v: term.Node.Fvar, source: SRef },
     };
@@ -70,19 +70,19 @@ pub const Justification = union(enum) {
     axiom_ref: struct { stmt: InternPool.Index, loc: u32 },
     theorem_ref: struct { stmt: InternPool.Index, loc: u32 },
     modus_ponens: struct { implication: SRef, antecedent: SRef },
-    implies_intro: BRef,
-    forall_intro: BRef,
-    forall_elim: struct { step: SRef, with: TermId, with_loc: u32 },
-    exists_intro: struct { step: SRef, witness: TermId, witness_loc: u32 },
-    exists_elim: BRef,
-    and_intro: struct { left: SRef, right: SRef },
-    and_elim_left: SRef,
-    and_elim_right: SRef,
-    or_intro_left: SRef,
-    or_intro_right: SRef,
+    discharge: BRef,
+    generalize: BRef,
+    apply_at: struct { step: SRef, with: TermId, with_loc: u32 },
+    witness: struct { step: SRef, witness: TermId, witness_loc: u32 },
+    unpacked: BRef,
+    both: struct { left: SRef, right: SRef },
+    and_lhs: SRef,
+    and_rhs: SRef,
+    either_left: SRef,
+    either_right: SRef,
     or_elim: struct { disj: SRef, left: BRef, right: BRef },
-    not_intro: struct { block: BRef, s1: SRef, s2: SRef },
-    absurd: struct { s1: SRef, s2: SRef },
+    contradiction: struct { block: BRef, s1: SRef, s2: SRef },
+    ex_falso: struct { s1: SRef, s2: SRef },
     double_negation: SRef,
     reflexivity,
     /// from a proven `x = y`, conclude `y = x`
@@ -93,7 +93,7 @@ pub const Justification = union(enum) {
     /// obtained by replacing occurrences of the sub-PROPOSITION `P` with `Q`.
     /// Sound because `iff` is a full congruence in classical FOL; the same
     /// congruence walker (`rewriteMatches`) is reused, with `P`/`Q` as props.
-    iff_rewrite: struct { biconditional: SRef, target: SRef },
+    equiv_rewrite: struct { biconditional: SRef, target: SRef },
     /// A monomorphized schema instance (elaborator-licensed: instantiation of
     /// a stored form at written-down arguments is the system's comptime axiom
     /// rule; proof-carrying schemas were re-checked at this instance before
@@ -417,22 +417,22 @@ pub const Kernel = struct {
                 }
                 try self.requireClaim(step, "modus_ponens", node.bin.rhs);
             },
-            .implies_intro => |r| {
+            .discharge => |r| {
                 const b = try self.checkClosedBlockRef(proof, r, i, at);
                 if (b.kind != .assume) {
-                    return self.fail(r.loc, "implies_intro requires an assume subproof", .{});
+                    return self.fail(r.loc, "discharge requires an assume subproof", .{});
                 }
                 const derived = try self.pool.add(.{ .bin = .{
                     .op = .implies,
                     .lhs = b.kind.assume,
                     .rhs = try self.requireLastFormula(proof, b, r.loc),
                 } });
-                try self.requireClaim(step, "implies_intro", derived);
+                try self.requireClaim(step, "discharge", derived);
             },
-            .forall_intro => |r| {
+            .generalize => |r| {
                 const b = try self.checkClosedBlockRef(proof, r, i, at);
                 if (b.kind != .fix) {
-                    return self.fail(r.loc, "forall_intro requires a fix subproof", .{});
+                    return self.fail(r.loc, "generalize requires a fix subproof", .{});
                 }
                 const v = b.kind.fix.v;
                 try self.checkEigen(proof, r.id, v.name, i, r.loc);
@@ -450,13 +450,13 @@ pub const Kernel = struct {
                     .hint = v.name,
                     .body = body,
                 } });
-                try self.requireClaim(step, "forall_intro", derived);
+                try self.requireClaim(step, "generalize", derived);
             },
-            .forall_elim => |r| {
+            .apply_at => |r| {
                 const src = try self.checkStepRef(proof, r.step, i, at);
                 const node = self.pool.get(src.formula);
                 if (node != .quant or node.quant.q != .forall) {
-                    return self.fail(r.step.loc, "forall_elim expects a universal, got '{s}'", .{
+                    return self.fail(r.step.loc, "apply_at expects a universal, got '{s}'", .{
                         try self.render(src.formula),
                     });
                 }
@@ -467,13 +467,13 @@ pub const Kernel = struct {
                     });
                 }
                 const derived = try self.pool.open(node.quant.body, r.with);
-                try self.requireClaim(step, "forall_elim", derived);
+                try self.requireClaim(step, "apply_at", derived);
             },
-            .exists_intro => |r| {
+            .witness => |r| {
                 const src = try self.checkStepRef(proof, r.step, i, at);
                 const node = self.pool.get(step.formula);
                 if (node != .quant or node.quant.q != .exists) {
-                    return self.fail(step.loc, "exists_intro must claim an existential, not '{s}'", .{
+                    return self.fail(step.loc, "witness must claim an existential, not '{s}'", .{
                         try self.render(step.formula),
                     });
                 }
@@ -485,15 +485,15 @@ pub const Kernel = struct {
                 }
                 const expected = try self.pool.open(node.quant.body, r.witness);
                 if (!self.pool.alphaEq(src.formula, expected)) {
-                    return self.fail(r.step.loc, "exists_intro: expected '{s}', got '{s}'", .{
+                    return self.fail(r.step.loc, "witness: expected '{s}', got '{s}'", .{
                         try self.render(expected), try self.render(src.formula),
                     });
                 }
             },
-            .exists_elim => |r| {
+            .unpacked => |r| {
                 const b = try self.checkClosedBlockRef(proof, r, i, at);
                 if (b.kind != .unpack) {
-                    return self.fail(r.loc, "exists_elim requires an unpack subproof", .{});
+                    return self.fail(r.loc, "unpacked requires an unpack subproof", .{});
                 }
                 const u = b.kind.unpack;
                 // validate the source is a well-formed accessible existential
@@ -506,24 +506,24 @@ pub const Kernel = struct {
                     });
                 }
                 try self.checkEigen(proof, r.id, u.v.name, i, r.loc);
-                try self.requireClaim(step, "exists_elim", conclusion);
+                try self.requireClaim(step, "unpacked", conclusion);
             },
-            .and_intro => |r| {
+            .both => |r| {
                 const l = try self.checkStepRef(proof, r.left, i, at);
                 const rt = try self.checkStepRef(proof, r.right, i, at);
                 const derived = try self.pool.add(.{ .bin = .{ .op = .and_op, .lhs = l.formula, .rhs = rt.formula } });
-                try self.requireClaim(step, "and_intro", derived);
+                try self.requireClaim(step, "both", derived);
             },
-            .and_elim_left, .and_elim_right => |r| {
+            .and_lhs, .and_rhs => |r| {
                 const src = try self.checkStepRef(proof, r, i, at);
                 const node = self.pool.get(src.formula);
                 if (node != .bin or node.bin.op != .and_op) {
                     return self.fail(r.loc, "expects a conjunction, got '{s}'", .{try self.render(src.formula)});
                 }
-                const derived = if (step.just == .and_elim_left) node.bin.lhs else node.bin.rhs;
+                const derived = if (step.just == .and_lhs) node.bin.lhs else node.bin.rhs;
                 try self.requireClaim(step, "and_elim", derived);
             },
-            .or_intro_left, .or_intro_right => |r| {
+            .either_left, .either_right => |r| {
                 const src = try self.checkStepRef(proof, r, i, at);
                 const node = self.pool.get(step.formula);
                 if (node != .bin or node.bin.op != .or_op) {
@@ -531,7 +531,7 @@ pub const Kernel = struct {
                         try self.render(step.formula),
                     });
                 }
-                const side = if (step.just == .or_intro_left) node.bin.lhs else node.bin.rhs;
+                const side = if (step.just == .either_left) node.bin.lhs else node.bin.rhs;
                 if (!self.pool.alphaEq(side, src.formula)) {
                     return self.fail(r.loc, "or_intro: expected '{s}', got '{s}'", .{
                         try self.render(side), try self.render(src.formula),
@@ -561,10 +561,10 @@ pub const Kernel = struct {
                     }
                 }
             },
-            .not_intro => |r| {
+            .contradiction => |r| {
                 const b = try self.checkClosedBlockRef(proof, r.block, i, at);
                 if (b.kind != .assume) {
-                    return self.fail(r.block.loc, "not_intro requires an assume subproof", .{});
+                    return self.fail(r.block.loc, "contradiction requires an assume subproof", .{});
                 }
                 // SOUNDNESS: the contradictory steps must be available at the
                 // END of the cited subproof — i.e. in it or an enclosing scope
@@ -575,16 +575,16 @@ pub const Kernel = struct {
                         return self.fail(sr.loc, "reference does not precede this step", .{});
                     }
                     if (!isAncestorOrSelf(proof, stepAt(proof, sr.id).block, r.block.id)) {
-                        return self.fail(sr.loc, "not_intro: '{s}' is not accessible at the conclusion of the cited subproof", .{
+                        return self.fail(sr.loc, "contradiction: '{s}' is not accessible at the conclusion of the cited subproof", .{
                             self.str(stepAt(proof, sr.id).label),
                         });
                     }
                 }
                 try self.checkContradiction(proof, r.s1, r.s2);
                 const derived = try self.pool.add(.{ .not = b.kind.assume });
-                try self.requireClaim(step, "not_intro", derived);
+                try self.requireClaim(step, "contradiction", derived);
             },
-            .absurd => |r| {
+            .ex_falso => |r| {
                 _ = try self.checkStepRef(proof, r.s1, i, at);
                 _ = try self.checkStepRef(proof, r.s2, i, at);
                 try self.checkContradiction(proof, r.s1, r.s2);
@@ -663,13 +663,13 @@ pub const Kernel = struct {
                     });
                 }
             },
-            .iff_rewrite => |r| {
+            .equiv_rewrite => |r| {
                 const bicond_step = try self.checkStepRef(proof, r.biconditional, i, at);
                 const target = try self.checkStepRef(proof, r.target, i, at);
                 // require the desugared biconditional shape `(P -> Q) and (Q -> P)`
                 // and extract P, Q. (`P iff Q` always desugars to exactly this.)
                 const pq = self.iffSides(bicond_step.formula) orelse {
-                    return self.fail(r.biconditional.loc, "iff_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got '{s}'", .{
+                    return self.fail(r.biconditional.loc, "equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got '{s}'", .{
                         try self.render(bicond_step.formula),
                     });
                 };
@@ -680,7 +680,7 @@ pub const Kernel = struct {
                 if (!self.rewriteMatches(target.formula, step.formula, pq.p, pq.q) and
                     !self.rewriteMatches(target.formula, step.formula, pq.q, pq.p))
                 {
-                    return self.fail(step.loc, "iff_rewrite cannot derive '{s}' from '{s}' using '{s}' (tried both orientations)", .{
+                    return self.fail(step.loc, "equiv_rewrite cannot derive '{s}' from '{s}' using '{s}' (tried both orientations)", .{
                         try self.render(step.formula),
                         try self.render(target.formula),
                         try self.render(bicond_step.formula),
@@ -703,7 +703,7 @@ pub const Kernel = struct {
 
     /// If `id` is a biconditional `(P -> Q) and (Q -> P)` (what `P iff Q`
     /// desugars to — matching antecedents/consequents), return its sides
-    /// `{ p, q }`; otherwise null. Used by `iff_rewrite` to license replacing
+    /// `{ p, q }`; otherwise null. Used by `equiv_rewrite` to license replacing
     /// the sub-proposition P by Q.
     fn iffSides(self: *Kernel, id: TermId) ?struct { p: TermId, q: TermId } {
         const n = self.pool.get(id);
@@ -878,7 +878,7 @@ test "forged proof: eigenvariable leak is rejected" {
         // d(x) inside the fix-block over the SAME x
         .{ .formula = dx, .just = .{ .axiom_ref = .{ .stmt = leak_stmt, .loc = 0 } }, .block = @enumFromInt(1), .label = s1, .loc = 0 },
         // the illegal generalization
-        .{ .formula = goal, .just = .{ .forall_intro = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(0), .label = s2, .loc = 0 },
+        .{ .formula = goal, .just = .{ .generalize = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(0), .label = s2, .loc = 0 },
     };
     try expectRejected(&rig, arena, .{ .steps = &steps, .blocks = &blocks }, goal, "eigenvariable 'x' occurs free");
 }
@@ -901,7 +901,7 @@ test "forged proof: citing into a closed subproof is rejected" {
         // p inside the assume-block (fine on its own)
         .{ .formula = p_id, .just = .{ .hypothesis = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(1), .label = s0, .loc = 0 },
         // root step steals p from the closed subproof
-        .{ .formula = p_id, .just = .{ .and_elim_left = .{ .id = @enumFromInt(0), .loc = 0 } }, .block = @enumFromInt(0), .label = s1, .loc = 0 },
+        .{ .formula = p_id, .just = .{ .and_lhs = .{ .id = @enumFromInt(0), .loc = 0 } }, .block = @enumFromInt(0), .label = s1, .loc = 0 },
     };
     try expectRejected(&rig, arena, .{ .steps = &steps, .blocks = &blocks }, p_id, "'s0' is not accessible");
 }
@@ -970,7 +970,7 @@ test "forged proof: discharging a subproof from inside itself is rejected" {
         .{ .parent = @enumFromInt(0), .label = asm_b, .kind = .{ .assume = p_id }, .first_step = 0, .last_step = 1 },
     };
     const steps = [_]Step{
-        .{ .formula = p_imp_p, .just = .{ .implies_intro = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(1), .label = s0, .loc = 0 },
+        .{ .formula = p_imp_p, .just = .{ .discharge = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(1), .label = s0, .loc = 0 },
     };
     try expectRejected(&rig, arena, .{ .steps = &steps, .blocks = &blocks }, p_imp_p, "cannot conclude from subproof");
 }

@@ -51,7 +51,7 @@ Result: `check --library std` goes from 3 errors to 1.
 ```
 std/group.b4m:433: AffineGroup@assoc{…}: step claims
   'forall b1: Real; notMinusOne(b1) -> … star(star(starInverse(a), b1), b2) = …'
-but forall_elim derives
+but apply_at derives
   'notMinusOne(starInverse(a)) -> forall b1: Real; notMinusOne(b1) -> …'
 ```
 
@@ -91,9 +91,9 @@ established each link:
    `painted_production = true`.
 2. `prepareRule` (`Prove.zig:3832`) strips `opAssoc`'s relativization guard to reach the
    equation — `[PR] skip 'opAssoc' model=4264 painted=true`. Its own doc comment says this
-   is sound only because "the instance ProveTask runs under the model so the forall_elim
+   is sound only because "the instance ProveTask runs under the model so the apply_at
    discharge machinery strips them".
-3. The synthetic's `forall_elim` at `recip(a)` leaks `nonzero(recip(a))`. `stripGuards`
+3. The synthetic's `apply_at` at `recip(a)` leaks `nonzero(recip(a))`. `stripGuards`
    (`Prove.zig:8941`) DOES detect it — `[SG] impl=true eqg=false` — and calls
    `emitDischargeStep`.
 4. `setupClosure` (`Prove.zig:1402`) DOES find the nomination

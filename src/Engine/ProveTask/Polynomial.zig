@@ -84,7 +84,7 @@ fn freshFvar(self: *Prove, ops: Ops) Error!struct { name: StrId, term: TermId } 
 fn quantifyRule(self: *Prove, binders: []const simplify_mod.Binder, lhs: TermId, rhs: TermId) Error!TermId {
     var body = try self.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
     // close innermost-first (last binder becomes the innermost quant) so the outer quant is
-    // binders[0] — matching emitInstance's outermost-first forall_elim walk.
+    // binders[0] — matching emitInstance's outermost-first apply_at walk.
     var i = binders.len;
     while (i > 0) {
         i -= 1;

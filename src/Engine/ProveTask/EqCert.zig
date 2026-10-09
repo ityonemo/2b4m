@@ -11,7 +11,7 @@
 //! CITING A RULE INSTANCE (`emitInstance`): a rewrite by rule R at bindings β needs the
 //! specific equation `R@β` as a proven step. The rule's ORIGIN is cited once (a GLOBAL
 //! axiom/theorem by its fact word + token, or a LOCAL premise restated as a hypothesis in
-//! the enclosing assume block), then a `forall_elim` per binder specializes it at β. The
+//! the enclosing assume block), then a `apply_at` per binder specializes it at β. The
 //! result is the instance equation the `rewrite` step consumes.
 //!
 //! SCOPE: the emitted steps assume nothing about their surrounding block beyond the cited
@@ -64,9 +64,9 @@ fn oneRef(self: *EqCert, name: StrId) Error![]const Token {
     return r;
 }
 
-/// Emit the citation + `forall_elim` chain specializing rule #`ri` at `bindings`; append the
+/// Emit the citation + `apply_at` chain specializing rule #`ri` at `bindings`; append the
 /// steps to `block` and return the label of the step proving the instance equation. Mirrors
-/// the eager `emitInstance`: cite the origin, then one `forall_elim` per binder.
+/// the eager `emitInstance`: cite the origin, then one `apply_at` per binder.
 fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindings: []const TermId) Error!StrId {
     const rule = self.rules[ri];
     // step 0: the rule's quantified formula, cited from its origin.
@@ -83,13 +83,13 @@ fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindi
         },
         .local => |l| cur_label = l.hyp, // already a proven step (restated hypothesis)
     }
-    // one forall_elim per binder, opening the formula at the matched binding. Under a model
+    // one apply_at per binder, opening the formula at the matched binding. Under a model
     // TRANSFER the cited lemma is RELATIVIZED — `∀a; inH(a) -> ∀b; …` — so a guard `->` sits
     // between binders; SKIP it (advance past the antecedent) so the next `∀` is found. The
-    // forall_elim step is emitted claiming the guard-STRIPPED opened form; the instance ProveTask
-    // (which runs under the model) discharges the leaked guard via its forall_elim machinery.
+    // apply_at step is emitted claiming the guard-STRIPPED opened form; the instance ProveTask
+    // (which runs under the model) discharges the leaked guard via its apply_at machinery.
     var cur_formula = rule.formula;
-    const forall_elim = self.b.interner.internString("forall_elim") catch return error.OutOfMemory;
+    const apply_at = self.b.interner.internString("apply_at") catch return error.OutOfMemory;
     for (rule.binders, bindings) |_, val| {
         while (true) {
             const n = self.pool.get(cur_formula);
@@ -113,7 +113,7 @@ fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindi
         const lbl = try self.fresh("simplify");
         const arg1 = try self.b.arena.alloc(*const ast.Expr, 1);
         arg1[0] = try self.b.termExpr(val);
-        try block.append(self.b.arena, try self.b.claimStep(lbl, try self.b.termExpr(opened), .by, forall_elim, arg1, try self.oneRef(cur_label)));
+        try block.append(self.b.arena, try self.b.claimStep(lbl, try self.b.termExpr(opened), .by, apply_at, arg1, try self.oneRef(cur_label)));
         cur_formula = opened;
         cur_label = lbl;
     }

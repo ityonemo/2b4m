@@ -1,4 +1,4 @@
-//! Integration gates — command-line contract: usage, flags, error diagnostics, and the fmt --check exemplars, plus kernel-mechanic fixtures (define, div guards, not_intro, forward refs, case/shadow rules).
+//! Integration gates — command-line contract: usage, flags, error diagnostics, and the fmt --check exemplars, plus kernel-mechanic fixtures (define, div guards, contradiction, forward refs, case/shadow rules).
 //!
 //! Each gate spawns the built `2b4m` binary and asserts its stdout / stderr /
 //! exit code; wired into the `test` step via `test_step.dependOn`.
@@ -131,7 +131,7 @@ pub fn addTests(
     // citing an axiom where a proof STEP is required: the diagnostic must
     // point at the fix (materialize it as a step first), not report a bare
     // "unknown reference".
-    ctx.fail(&.{ "check", "tests/cases/axiom_as_step_bad.b4m" }, "tests/cases/axiom_as_step_bad.b4m:14:24: error: 'pall' is a fact, not a proof step; introduce it as a step first with `[by cite pall]`, then reference that step\n");
+    ctx.fail(&.{ "check", "tests/cases/axiom_as_step_bad.b4m" }, "tests/cases/axiom_as_step_bad.b4m:14:21: error: 'pall' is a fact, not a proof step; introduce it as a step first with `[by cite pall]`, then reference that step\n");
 
     ctx.fail(&.{ "check", "tests/cases/fix_shadow_bad.b4m" }, "tests/cases/fix_shadow_bad.b4m:10:13: error: 'a' shadows an enclosing variable; choose a fresh name\n");
 
@@ -236,7 +236,7 @@ pub fn addTests(
     // a `case` arm assuming the wrong disjunct is a located error
     ctx.fail(&.{ "check", "tests/cases/case_bad_arm.b4m" }, "tests/cases/case_bad_arm.b4m:19:8: error: or_elim: subproof must assume 'p(Z)'\n");
 
-    // forall_elim at several arguments emits the chain in one written step
+    // apply_at at several arguments emits the chain in one written step
     ctx.okSilent(&.{ "check", "tests/cases/forall_elim_multi.b4m" });
 
     // no-shadowing rule: disjoint sibling subproofs may reuse a fix var
@@ -367,13 +367,13 @@ pub fn addTests(
         \\
     );
 
-    // Review fix: not_intro may only cite steps available at the END of
+    // Review fix: contradiction may only cite steps available at the END of
     // the cited subproof, not inside deeper nested assumptions
-    ctx.fail(&.{ "check", "tests/cases/not_intro_nested_bad.b4m" }, "tests/cases/not_intro_nested_bad.b4m:24:21: error: not_intro: 's1' is not accessible at the conclusion of the cited subproof\n");
+    ctx.fail(&.{ "check", "tests/cases/not_intro_nested_bad.b4m" }, "tests/cases/not_intro_nested_bad.b4m:24:25: error: contradiction: 's1' is not accessible at the conclusion of the cited subproof\n");
 
     // Review fix: a block whose only content is a nested subproof has no
     // conclusion to discharge (was: kernel panic)
-    ctx.fail(&.{ "check", "tests/cases/no_conclusion_bad.b4m" }, "tests/cases/no_conclusion_bad.b4m:18:23: error: subproof 'b' has no concluding step of its own\n");
+    ctx.fail(&.{ "check", "tests/cases/no_conclusion_bad.b4m" }, "tests/cases/no_conclusion_bad.b4m:18:19: error: subproof 'b' has no concluding step of its own\n");
 
     // `hole`: an aspirational axiom-shaped placeholder. Default mode REJECTS a
     // file that rests on one, enumerating each hole with its location and the

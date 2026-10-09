@@ -64,7 +64,7 @@ The full verbatim source of one declaration — statement + `proof … qed` + it
 leading doc-comment. **Follows aliases across files** to the real proof; axioms
 are marked. `--sig` prints **just the statement** (kind + name + formula),
 wrap-collapsed to one line — the fast way to read **binder order / arity before
-a `forall_elim`** (its args are outermost-first, and the statement may wrap in
+a `apply_at`** (its args are outermost-first, and the statement may wrap in
 source, so grep+head is unreliable).
 
 ```
@@ -111,7 +111,7 @@ alias-aware, where a multi-line `[by …]` and alias indirection defeat grep.
 ```
 $ 2b4m query uses aata/3.2-groups.md invProduct
 theorem invProduct
-  rules: assoc axiom×2 forall_elim×4 rewrite×3 theorem modus_ponens symmetry forall_intro×2
+  rules: assoc axiom×2 apply_at×4 rewrite×3 theorem modus_ponens symmetry generalize×2
   cites: inverseRight identityLeft inverseUnique
 ```
 
@@ -142,7 +142,7 @@ no accelerated tactics — every step is kernel-checked
 Writing a proof and need a lemma:
 1. `2b4m query search std <concept>` — find candidates by name/statement.
 2. `2b4m query theorem <file> <name> --sig` — read its exact statement + binder
-   order before citing it in a `forall_elim`.
+   order before citing it in a `apply_at`.
 3. `2b4m query whereis <myfile> <name>` — if it's aliased, see where it really
    lives (and confirm it's reachable from your file's scope).
 4. `2b4m query outline <file> <similar-theorem>` — model your proof's structure

@@ -378,7 +378,7 @@ pub fn elaborateExpr(self: *Elab, root: *const ast.Expr) Error!Typed {
             while (i > 0) {
                 i -= 1;
                 // inject the binder's guard: the CONJUNCTION of its qualifiers (canonical —
-                // matches the kernel's guarded-fix forall_intro derivation and bindProofVar),
+                // matches the kernel's guarded-fix generalize derivation and bindProofVar),
                 // as a single `guard -> body` (∀) / `guard and body` (∃).
                 if (try self.conjoinQuals(f.quals, f.fresh[i], f.sort)) |guard| {
                     const connective: term.BinOp = if (q.q == .forall) .implies else .and_op;
@@ -905,7 +905,7 @@ pub fn qualifierApp(self: *Elab, qual: InternPool.Index, arg: TermId) Error!Term
 
 /// The CONJUNCTION of a refined sort's qualifier guards over `fvar` — the CANONICAL
 /// relativization guard shape (`inH(v) and inK(v)`, left-fold in declaration order; a single
-/// qualifier is just its atom). Matches bindProofVar and the kernel's guarded forall_intro.
+/// qualifier is just its atom). Matches bindProofVar and the kernel's guarded generalize.
 /// Null for an unrefined sort.
 fn conjoinQuals(self: *Elab, quals: []const InternPool.Index, fvar: StrId, sort: SortId) Error!?TermId {
     var guard: ?TermId = null;

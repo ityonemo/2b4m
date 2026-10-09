@@ -3,7 +3,7 @@
 //! Walks the parsed AST (never elaborates) and reports, per proof, what each
 //! one leans on:
 //!   - **rules** — the distinct justification rules/tactics its steps invoke
-//!     (`modus_ponens`, `arithmetic`, `rewrite`, `forall_elim`, …), each with a
+//!     (`modus_ponens`, `arithmetic`, `rewrite`, `apply_at`, …), each with a
 //!     count;
 //!   - **cites** — the distinct names it pulls in by `[by cite X]`,
 //!     `[by cite Y]`, or `[by instantiate S(…)]` — i.e. the OTHER
