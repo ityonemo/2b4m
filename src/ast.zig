@@ -135,7 +135,7 @@ pub const Step = struct {
     pub const UnpackBlock = struct { name: Token, sort: Token, from: Token, steps: []const Step };
     /// `case disj { arm* }` — eliminate the disjunction proved by step
     /// `disj`, one `arm` per (left-nested) disjunct, all arms concluding the
-    /// step's goal. Sugar for a hand-written (nested) `or_elim`.
+    /// step's goal. Sugar for a hand-written (nested) `common_conclusion`.
     pub const CaseBlock = struct {
         /// the shared goal every arm concludes (stated on the step line)
         goal: *const Expr,

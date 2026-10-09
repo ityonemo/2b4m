@@ -129,7 +129,7 @@ pub const RuleStr = enum(u32) {
     equiv_converse,
     either_left,
     either_right,
-    or_elim,
+    common_conclusion,
     contradiction,
     ex_falso,
     double_negation,

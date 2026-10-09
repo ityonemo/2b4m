@@ -911,7 +911,7 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
                 return self.fail(step.label.start, "case over a disjunction needs at least two arms", .{});
             }
             // the arm blocks walk as siblings (assume-shaped); caseConclude assembles the
-            // (possibly nested, for N>2) or_elim tree over the disjunction structure.
+            // (possibly nested, for N>2) common_conclusion tree over the disjunction structure.
             // under a model transfer, also keep the goal in SOURCE space (see `source_formulas`).
             const goal_source: TermId = if (self.sourceSpaceAccelerants()) blk: {
                 var se = self.sourceElab(w);
@@ -923,7 +923,7 @@ fn processInner(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     }
 }
 
-/// The `case` step's conclusion, after both arm blocks walked: emit the or_elim step.
+/// The `case` step's conclusion, after both arm blocks walked: emit the common_conclusion step.
 pub fn caseConclude(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.BlockOrdinal) Allocator.Error!bool {
     self.caseConcludeInner(w, step, block) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -1001,14 +1001,14 @@ fn teachBinder(self: *Prove, b: BoundVar) Error!void {
     if (b.guard) |g| if (b.quals.len != 1) try self.known.teach(self.ctx.arena, g, blk, null);
 }
 
-/// Build the (possibly nested) or_elim justification for a `case` over a LEFT-NESTED
+/// Build the (possibly nested) common_conclusion justification for a `case` over a LEFT-NESTED
 /// disjunction. `disj_ref`/`disj_formula` are the disjunction step + its term; `arms` are
 /// the walked arm assume-blocks, one per disjunct, in left-to-right disjunct order.
-///   - 2 arms: one `or_elim{disj, arms[0], arms[1]}`.
+///   - 2 arms: one `common_conclusion{disj, arms[0], arms[1]}`.
 ///   - N>2: the disjunction is `LHS or arms[N-1]` where LHS is the (N-1)-way nested
 ///     disjunction; build a SYNTHETIC block that assumes LHS, re-derives it as a
 ///     hypothesis, recurses over `arms[0..N-1]` inside it, concludes the goal, and the
-///     top or_elim uses that synthetic block as its left, `arms[N-1]` as its right.
+///     top common_conclusion uses that synthetic block as its left, `arms[N-1]` as its right.
 /// (Ported from the eager Prover's emitCaseTree, retargeted to synthetic blocks.)
 fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel.SRef, disj_formula: TermId, arms: []const kernel.BRef, goal: TermId) Error!kernel.Justification {
     {
@@ -1021,8 +1021,8 @@ fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel
     // ITERATIVE (was linear recursion peeling one arm off the right per level, nesting a synthetic
     // block each time). DESCEND: at each level >2 create the block + emit its hypothesis, recording
     // the level; the disjunction's LHS (the first N-1 arms) is the next level. Stop at the 2-arm
-    // base. UNWIND: build the innermost or_elim, then for each recorded level emit `goal` via the
-    // inner justification, close the block, and wrap in the outer or_elim. Depth = arm count.
+    // base. UNWIND: build the innermost common_conclusion, then for each recorded level emit `goal` via the
+    // inner justification, close the block, and wrap in the outer common_conclusion. Depth = arm count.
     var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
     defer scratch.deinit();
     const wa = scratch.allocator();
@@ -1043,8 +1043,8 @@ fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel
         cur_disj_formula = lhs;
         cur_arms = cur_arms[0 .. cur_arms.len - 1];
     }
-    // base: a 2-arm or_elim over the current (possibly innermost-block) disjunction.
-    var just: kernel.Justification = .{ .or_elim = .{ .disj = cur_disj_ref, .left = cur_arms[0], .right = cur_arms[1] } };
+    // base: a 2-arm common_conclusion over the current (possibly innermost-block) disjunction.
+    var just: kernel.Justification = .{ .common_conclusion = .{ .disj = cur_disj_ref, .left = cur_arms[0], .right = cur_arms[1] } };
     // unwind: innermost level last-recorded → pop; emit `goal` in its block via `just`, close, wrap.
     var i = levels.items.len;
     while (i > 0) {
@@ -1052,7 +1052,7 @@ fn emitCaseTree(self: *Prove, parent: kernel.BlockId, loc: u32, disj_ref: kernel
         const lv = levels.items[i];
         _ = try self.emitSynthetic(lv.block, loc, goal, just);
         self.closeSyntheticBlock(lv.block);
-        just = .{ .or_elim = .{ .disj = lv.disj_ref, .left = .{ .id = lv.block, .loc = loc }, .right = lv.right_arm } };
+        just = .{ .common_conclusion = .{ .disj = lv.disj_ref, .left = .{ .id = lv.block, .loc = loc }, .right = lv.right_arm } };
     }
     return just;
 }
@@ -1151,7 +1151,7 @@ fn newBlock(self: *Prove, w: *const Walk, label: StrId, parent: kernel.BlockId, 
 }
 
 /// Create a SYNTHETIC kernel block (no Walk counterpart, so no ordinal record) and return
-/// its id — for the nested or_elim spine of an N-arm `case`. `first_step` opens at the
+/// its id — for the nested common_conclusion spine of an N-arm `case`. `first_step` opens at the
 /// current step count; seal with `closeSyntheticBlock`.
 fn newSyntheticBlock(self: *Prove, label: StrId, parent: kernel.BlockId, kind: kernel.Block.Kind) Error!kernel.BlockId {
     const id: kernel.BlockId = @enumFromInt(self.low_blocks.items.len);
@@ -3515,7 +3515,7 @@ fn wrapTautologyPremises(self: *Prove, b: *Accelerant.Builder, prems: []const Ta
 /// The truth-search certificate, emitted as AST steps. A faithful port of the eager
 /// `TautCert` (which emitted kernel steps into a shared `Lowering`): every recursive site
 /// that opened a kernel block instead builds a fresh `assume { … }` AST block here. The
-/// step vocabulary is identical (excluded-middle split per atom → `or_elim`; leaves derive
+/// step vocabulary is identical (excluded-middle split per atom → `common_conclusion`; leaves derive
 /// the goal structurally or `ex_falso` a refuted premise). No step budget (strict-only: the
 /// cert MUST build for a `valid` verdict — an unbuildable one is an internal bug, not a
 /// fallback). `theoryLeaf` (arithmetic) is DROPPED — pure propositional never needs it.
@@ -3586,14 +3586,14 @@ const TautAst = struct {
 
     /// Prove `goal` in `block`. The entry point: a refuted premise closes by `ex_falso`; a
     /// true goal derives structurally; otherwise split on the first unassigned atom via an
-    /// excluded-middle lemma + `or_elim` over the two assumption branches.
+    /// excluded-middle lemma + `common_conclusion` over the two assumption branches.
     ///
     /// An iterative DFS over the decision tree (was self-recursion in the two split arms;
     /// depth is the ≤16-atom cap, but Zig will disallow recursion regardless). `expand`
     /// handles one node (premise-refute / true-derive / split); a split pushes `finish`
     /// (below) then the right-arm setup then the left-arm setup+expand, so the LEFT subtree
     /// fully drains before the RIGHT arm's `assignment[idx]` is set, and the `finish` frame
-    /// (finishBlocks + or_elim + restore) runs after BOTH arms — identical to the recursive
+    /// (finishBlocks + common_conclusion + restore) runs after BOTH arms — identical to the recursive
     /// set/recurse/restore discipline. Scratch stacks on the pool's GPA. The goal-proving
     /// step is the block's last; callers read it from there (no label to return).
     fn deriveGoal(self: *TautAst, block: *std.ArrayList(ast.Step)) CertError!void {
@@ -3605,7 +3605,7 @@ const TautAst = struct {
             expand: *std.ArrayList(ast.Step),
             // set the right arm's assignment, then expand it into `right.body`.
             arm_right: struct { idx: usize, right: *OpenBlock },
-            // both arms drained: finish them into `block` + or_elim + restore assignment.
+            // both arms drained: finish them into `block` + common_conclusion + restore assignment.
             finish: struct { block: *std.ArrayList(ast.Step), idx: usize, atom: TermId, not_atom: TermId, lem: StrId, left: *OpenBlock, right: *OpenBlock },
         };
         var work: std.ArrayList(Frame) = .empty;
@@ -3659,7 +3659,7 @@ const TautAst = struct {
                 try self.finishBlock(c.block, c.right, c.not_atom);
                 self.assignment[c.idx] = null;
                 self.lit_blocks[c.idx] = null;
-                _ = try self.emit(c.block, self.goal, "or_elim", &.{ c.lem, c.left.label, c.right.label });
+                _ = try self.emit(c.block, self.goal, "common_conclusion", &.{ c.lem, c.left.label, c.right.label });
             },
         };
     }
@@ -3857,7 +3857,7 @@ const TautAst = struct {
                 const rh = try self.hyp(&right, c.rhs);
                 _ = try self.emit(&right.body, c.lhs, "ex_falso", &.{ rh, not_right });
                 try self.finishBlock(&blk.body, &right, c.rhs);
-                const conc = try self.emit(&blk.body, c.lhs, "or_elim", &.{ h, left.label, right.label });
+                const conc = try self.emit(&blk.body, c.lhs, "common_conclusion", &.{ h, left.label, right.label });
                 try self.finishBlock(c.block, &blk, c.f);
                 try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conc, not_left }));
             },
@@ -6868,7 +6868,7 @@ fn emitFarkasCommEq(cert: *ArithCert, block: *std.ArrayList(ast.Step), comm_stmt
 /// The MIXED-D2 certifier: a goal whose boolean structure mixes propositional atoms with
 /// linear/order (theory) atoms. Peel the ∀ prefix + strip the leading `->` premises (surfaced
 /// as local hypotheses), then prove the residual body by a propositional-skeleton proof
-/// (excluded-middle split + `or_elim` per atom, like the tautology cert) whose leaves are
+/// (excluded-middle split + `common_conclusion` per atom, like the tautology cert) whose leaves are
 /// discharged EITHER propositionally (an assumed literal) OR by the arithmetic equation/order
 /// certs (a theory atom, closed from the branch's assumed theory literals). Every step is
 /// kernel-checked. Declines (false) when `smt.decideMixed` doesn't confirm validity, when the
@@ -6985,7 +6985,7 @@ fn arithMixedCert(self: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step),
     return true;
 }
 
-/// The mixed-skeleton certificate emitter (D2): a propositional excluded-middle/or_elim
+/// The mixed-skeleton certificate emitter (D2): a propositional excluded-middle/common_conclusion
 /// skeleton over the goal's atoms whose leaves are discharged EITHER by an assumed literal
 /// (propositional) OR by the arithmetic equation/order certs (a theory atom, closed from the
 /// branch's assumed theory literals). Mirrors `TautAst` but adds theory-leaf discharge.
@@ -7053,7 +7053,7 @@ const MixedAst = struct {
     /// Prove `self.body` in `block`. A refuted premise closes by `ex_falso`; a true goal derives
     /// structurally (theory leaves via the arith certs); a fully-decided branch that is
     /// theory-UNSAT derives a theory contradiction; otherwise split on the first unassigned
-    /// atom via excluded-middle + `or_elim`.
+    /// atom via excluded-middle + `common_conclusion`.
     fn deriveGoal(self: *MixedAst, block: *std.ArrayList(ast.Step)) Error!bool {
         var scratch: std.heap.ArenaAllocator = .init(self.pool().gpa);
         defer scratch.deinit();
@@ -7123,7 +7123,7 @@ const MixedAst = struct {
                     try self.finishBlock(c.block, c.right, c.not_atom);
                     self.assignment[c.idx] = null;
                     self.lit_blocks[c.idx] = null;
-                    _ = try self.cert.claim(c.block, self.body, "or_elim", &.{}, &.{ c.lem, c.left.label, c.right.label });
+                    _ = try self.cert.claim(c.block, self.body, "common_conclusion", &.{}, &.{ c.lem, c.left.label, c.right.label });
                 },
             }
         }
@@ -7360,7 +7360,7 @@ const MixedAst = struct {
                     const rh = try self.hyp(&right, c.rhs);
                     _ = try self.emit(&right.body, c.lhs, "ex_falso", &.{ rh, not_right });
                     try self.finishBlock(&blk.body, &right, c.rhs);
-                    const conc = try self.emit(&blk.body, c.lhs, "or_elim", &.{ h, left.label, right.label });
+                    const conc = try self.emit(&blk.body, c.lhs, "common_conclusion", &.{ h, left.label, right.label });
                     try self.finishBlock(c.block, &blk, c.f);
                     try results.append(sa, try self.emit(c.block, c.nf, "contradiction", &.{ blk.label, conc, not_left }));
                 },
@@ -7557,15 +7557,15 @@ fn arithWitnessCandidates(self: *Prove, symbols: presburger_mod.Symbols, ih_witn
     return out.items;
 }
 
-/// Prove `goal` (= P(succ(k))) by an `or_elim` over `disj` (the IH witness disjunction at
+/// Prove `goal` (= P(succ(k))) by an `common_conclusion` over `disj` (the IH witness disjunction at
 /// y0). Each arm assumes one disjunct — an equation over k, y0 — restates it by hypothesis,
 /// and proves `goal` by the witness search using that equation as a rewrite premise. Returns
-/// the concluding `or_elim` step's label, or null if any arm fails.
+/// the concluding `common_conclusion` step's label, or null if any arm fails.
 ///
 /// A right-nested `or` was handled by self-recursion on the rhs; now an iterative
 /// descend-then-unwind over the spine: DESCEND emits each level's left arm and seeds its
 /// right-arm body (the next level's target block); UNWIND (innermost→outermost) wraps each
-/// right body as its assume block and claims the level's `or_elim` — the same emission
+/// right body as its assume block and claims the level's `common_conclusion` — the same emission
 /// order the recursion produced. Scratch stacks on the pool's GPA; the right bodies are
 /// scratch-heap-allocated so their pointers stay stable across levels.
 fn arithEmitInductionCases(self: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), disj: TermId, disj_label: StrId, goal: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!?StrId {
@@ -7577,7 +7577,7 @@ fn arithEmitInductionCases(self: *Prove, cert: *ArithCert, block: *std.ArrayList
     const sa = scratch.allocator();
 
     const Level = struct {
-        block: *std.ArrayList(ast.Step), // where this level's assume/or_elim steps land
+        block: *std.ArrayList(ast.Step), // where this level's assume/common_conclusion steps land
         rhs: TermId,
         disj_label: StrId,
         left_label: StrId,
@@ -7620,12 +7620,12 @@ fn arithEmitInductionCases(self: *Prove, cert: *ArithCert, block: *std.ArrayList
         break;
     }
 
-    // unwind: close each level's right assume + or_elim, innermost first; the outermost
-    // level's or_elim label (the last popped) is the result.
+    // unwind: close each level's right assume + common_conclusion, innermost first; the outermost
+    // level's common_conclusion label (the last popped) is the result.
     var result: StrId = undefined;
     while (levels.pop()) |lvl| {
         try lvl.block.append(self.ctx.arena, try cert.b.assumeStep(lvl.right_label, try cert.b.termExpr(lvl.rhs), lvl.right_body.items));
-        result = try cert.claim(lvl.block, goal, "or_elim", &.{}, &.{ lvl.disj_label, lvl.left_label, lvl.right_label });
+        result = try cert.claim(lvl.block, goal, "common_conclusion", &.{}, &.{ lvl.disj_label, lvl.left_label, lvl.right_label });
     }
     return result;
 }
@@ -9247,9 +9247,9 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             try self.wantRefs(c, 1);
             return .{ .either_right = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .or_elim => {
+        .common_conclusion => {
             try self.wantRefs(c, 3);
-            return .{ .or_elim = .{
+            return .{ .common_conclusion = .{
                 .disj = try self.resolveStepRef(w, c.refs[0]),
                 .left = try self.resolveBlockRef(w, c.refs[1]),
                 .right = try self.resolveBlockRef(w, c.refs[2]),
@@ -9425,7 +9425,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
                 try mark(reached, &work, arena, @intFromEnum(r.s1.id));
                 try mark(reached, &work, arena, @intFromEnum(r.s2.id));
             },
-            .or_elim => |r| {
+            .common_conclusion => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.disj.id));
                 if (lastStepOf(blocks, r.left.id)) |ls| try mark(reached, &work, arena, ls);
                 if (lastStepOf(blocks, r.right.id)) |ls| try mark(reached, &work, arena, ls);

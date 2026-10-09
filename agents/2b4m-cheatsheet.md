@@ -13,7 +13,7 @@ For depth on one thing, extract its GUIDE section (leaf sections are bounded by
 the next heading of any level):
 
 ```
-awk '/^#+ /{p=0} /^### RULE: or_elim$/{p=1} p' GUIDE.md      # a proof rule
+awk '/^#+ /{p=0} /^### RULE: common_conclusion$/{p=1} p' GUIDE.md      # a proof rule
 awk '/^#+ /{p=0} /^### TACTIC: tautology$/{p=1} p' GUIDE.md  # an accelerant
 awk '/^#+ /{p=0} /^### KEYWORD: sort$/{p=1} p' GUIDE.md      # a declaration keyword
 ```
@@ -203,7 +203,7 @@ qed
 | `make_equivalence FWD BWD` | 2 | forward `P->Q` then backward `Q->P`; goal must be `P iff Q` shape |
 | `equiv_forward STEP` / `equiv_converse STEP` | 1 | recover `P->Q` / `Q->P` from `P iff Q` |
 | `either_left STEP` / `either_right STEP` | 1 | |
-| **`or_elim DISJ LBLOCK RBLOCK`** | **3 (1 step + 2 blocks)** | **BINARY only.** A 3-way split needs `case <disj> { … }` (see below), NOT a 3-ref or_elim |
+| **`common_conclusion DISJ LBLOCK RBLOCK`** | **3 (1 step + 2 blocks)** | **BINARY only.** A 3-way split needs `case <disj> { … }` (see below), NOT a 3-ref common_conclusion |
 | `contradiction BLOCK S1 S2` | 3 (1 block + 2 steps) | the block's assumption yielded contradiction S1/S2 |
 | `ex_falso S1 S2` | 2 | from a contradiction, conclude anything |
 | `double_negation STEP` | 1 | `not not P` → `P` |
@@ -214,7 +214,7 @@ qed
 
 (`instantiation`/`model` are NOT in this table — they are `using` accelerants, below.)
 
-`case <disj-step> { @when-left| assume A { … } @when-right| assume B { … } }` — the 3-way (or N-way) disjunction eliminator. Use this instead of trying to give `or_elim` more than 2 arms.
+`case <disj-step> { @when-left| assume A { … } @when-right| assume B { … } }` — the 3-way (or N-way) disjunction eliminator. Use this instead of trying to give `common_conclusion` more than 2 arms.
 
 ## Formula syntax edges
 
@@ -317,7 +317,7 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
   instance. Fix: do the non-propositional step yourself (assume the negation, `chain` to
   the contradiction, `discharge`), then let `tautology` close it. If the countermodel
   names atoms you believe are linked, that link is the step you still owe.
-- `or_elim` is BINARY. 3-way → `case`.
+- `common_conclusion` is BINARY. 3-way → `case`.
 - Cite a theorem/axiom as a `[by cite X]` STEP before a later `apply_at` refs that step.
 - No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `make_equivalence`/`equiv_forward`/`equiv_converse`.
 - A `func` cannot return `Prop` and cannot take a `-> Prop` parameter; predicates are opaque (no body).

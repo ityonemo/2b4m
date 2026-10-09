@@ -291,7 +291,7 @@ words — the role IS the content for these):
 | discharge export | `@<cond>-implies-<result>` |
 | the existential feeding an unpack | `@<thing>-exists` (`@gap-exists`) |
 | unpack-block naming a witness | `@with-<role>-<var>` (`@with-gap-d`, `@with-quotient-j`); fallback `@with-witness-<var>` |
-| case arms (`case`/`or_elim` branches) | `@when-<condition>` (`@when-zero`, `@when-successor`) |
+| case arms (`case`/`common_conclusion` branches) | `@when-<condition>` (`@when-zero`, `@when-successor`) |
 | a flipped equation (`[by symmetry x]`) | `@<content>-flipped` |
 
 The induction payoff line reads

@@ -152,7 +152,7 @@ regressions.
   cap.
 - **Certificate status**: certificate-first (B2). Every valid goal within
   the step budget replays as ordinary kernel steps — an inline excluded
-  middle plus or_elim per split atom, structural derivation at the leaves —
+  middle plus common_conclusion per split atom, structural derivation at the leaves —
   so typical uses stay kernel-checked and check green by default. The accelerated
   verdict is admitted only under `--fast` as the over-budget fallback, marking
   that use accelerated only.

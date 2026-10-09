@@ -77,7 +77,7 @@ write and check that it reads.
 | discharge export | `@<cond>-implies-<result>` |
 | existential feeding an unpack | `@<thing>-exists` (`@gap-exists`) |
 | unpack-block naming a witness | `@with-<role>-<var>` (`@with-quotient-j`); fallback `@with-witness-<var>` |
-| case / or_elim arms | `@when-<condition>` (`@when-zero`, `@when-successor`) |
+| case / common_conclusion arms | `@when-<condition>` (`@when-zero`, `@when-successor`) |
 | a flipped equation (`[by symmetry x]`) | `@<content>-flipped` |
 
 (When a lemma's own name is already an assertion — `addIsCommutative` — its kebab
