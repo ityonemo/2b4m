@@ -89,7 +89,7 @@ theorem mulOneLeft = parity.mulOneLeft
 theorem mulZeroLeft = parity.mulZeroLeft
 theorem mulSelf = parity.mulSelf
 theorem aRepeatedTermVanishes = parity.aRepeatedTermVanishes
-axiom oneVariableExhaustion = parity.oneVariableExhaustion
+theorem oneVariableExhaustion = parity.oneVariableExhaustion
 ```
 
 ## Lemma 6.2 — the boundary orientation sign
