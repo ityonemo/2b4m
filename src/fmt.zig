@@ -272,7 +272,7 @@ test "proof steps: label alone on its line; statement and justification aligned;
         \\proof
         \\  outer| assume p() {   inner| p()
         \\  [by hypothesis outer]  }
-        \\  conclusion| p() -> p() [by implies_intro outer]
+        \\  conclusion| p() -> p() [by discharge outer]
         \\qed
         \\
     ,
@@ -287,7 +287,7 @@ test "proof steps: label alone on its line; statement and justification aligned;
         \\    }
         \\  @conclusion |
         \\    p() -> p()
-        \\    [by implies_intro outer]
+        \\    [by discharge outer]
         \\qed
         \\
     );
@@ -399,7 +399,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\  // why this step
         \\  s| p(a) [by cite e]
         \\  }
-        \\  conclusion| forall a: Nat; p(a) [by forall_intro g]
+        \\  conclusion| forall a: Nat; p(a) [by generalize g]
         \\qed
         \\
     ,
@@ -415,7 +415,7 @@ test "standalone comment inside a nested block aligns with the steps (carries ex
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a)
-        \\    [by forall_intro g]
+        \\    [by generalize g]
         \\qed
         \\
     );
@@ -434,7 +434,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\  p(a, b)
         \\  [by cite e]
         \\  }
-        \\  conclusion| forall a: Nat; p(a, a) [by forall_intro g]
+        \\  conclusion| forall a: Nat; p(a, a) [by generalize g]
         \\qed
         \\
     ,
@@ -450,7 +450,7 @@ test "wrapped formula continuation inside a nested block re-indents to owner + 2
         \\    }
         \\  @conclusion |
         \\    forall a: Nat; p(a, a)
-        \\    [by forall_intro g]
+        \\    [by generalize g]
         \\qed
         \\
     );

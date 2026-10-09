@@ -258,7 +258,7 @@ fn matchPattern(
 
 /// Match a rule's full lhs (or any pattern with the rule's binders as wildcards) against
 /// `t`; returns the complete binding vector in binder order, or null. For the certificate
-/// emitter, which plans a rewrite at a known position and needs the forall_elim arguments.
+/// emitter, which plans a rewrite at a known position and needs the apply_at arguments.
 pub fn matchRule(arena: Allocator, pool: *term.Pool, interner: *const InternPool, rule: Rule, pattern: TermId, t: TermId) Allocator.Error!?[]const TermId {
     const bound = try arena.alloc(?TermId, rule.binders.len);
     @memset(bound, null);

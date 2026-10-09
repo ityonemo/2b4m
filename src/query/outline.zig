@@ -7,7 +7,7 @@
 //!   assume <formula>
 //!   unpack u from <source>
 //!   case <disj>            (each arm: `<label> assume <formula>`)
-//! Plain claim steps (modus_ponens, rewrite, forall_elim, axiom, …) are bare
+//! Plain claim steps (modus_ponens, rewrite, apply_at, axiom, …) are bare
 //! labels: no rule, no refs, no formula. Nesting is shown by indentation
 //! (2 spaces per block level).
 //!

@@ -270,11 +270,11 @@ proof
         }
       @conclusion-implication |
         invertible(g) -> apply(g, point) = point
-        [by implies_intro given-invertible]
+        [by discharge given-invertible]
     }
   @conclusion |
     forall g: Fn; invertible(g) -> apply(g, point) = point
-    [by forall_intro generalize-g]
+    [by generalize generalize-g]
 qed
 ```
 

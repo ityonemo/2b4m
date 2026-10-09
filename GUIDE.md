@@ -42,24 +42,24 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: hypothesis` | restate an enclosing block's assumption/witness |
 | `RULE: predicate` | surface a predicated `fix h: H` binder's guard |
 | `RULE: modus_ponens` | from `P -> Q` and `P`, conclude `Q` |
-| `RULE: implies_intro` | discharge an `assume` block as an implication |
-| `RULE: forall_intro` | discharge a `fix` block as a universal |
-| `RULE: forall_elim` | specialize a universal at one or more terms |
-| `RULE: exists_intro` | from `P[t]`, conclude `exists x; P[x]` |
-| `RULE: exists_elim` | export an `unpack` block's witness-free conclusion |
-| `RULE: and_intro` | conjunction from both conjuncts (rejects iff shape) |
-| `RULE: and_elim_left` / `and_elim_right` | project a conjunction |
-| `RULE: iff_intro` | a biconditional from its two directions |
-| `RULE: iff_elim_forward` / `iff_elim_backward` | recover a direction of an iff |
-| `RULE: or_intro_left` / `or_intro_right` | inject into a disjunction |
+| `RULE: discharge` | discharge an `assume` block as an implication |
+| `RULE: generalize` | discharge a `fix` block as a universal |
+| `RULE: apply_at` | specialize a universal at one or more terms |
+| `RULE: witness` | from `P[t]`, conclude `exists x; P[x]` |
+| `RULE: unpacked` | export an `unpack` block's witness-free conclusion |
+| `RULE: both` | conjunction from both conjuncts (rejects iff shape) |
+| `RULE: and_lhs` / `and_rhs` | project a conjunction |
+| `RULE: make_equivalence` | a biconditional from its two directions |
+| `RULE: equiv_forward` / `equiv_converse` | recover a direction of an iff |
+| `RULE: either_left` / `either_right` | inject into a disjunction |
 | `RULE: or_elim` | binary case analysis over a disjunction |
-| `RULE: not_intro` | derive a negation from a contradiction |
-| `RULE: absurd` | from a contradiction, conclude anything |
+| `RULE: contradiction` | derive a negation from a contradiction |
+| `RULE: ex_falso` | from a contradiction, conclude anything |
 | `RULE: double_negation` | from `not not P`, conclude `P` |
 | `RULE: reflexivity` | `t = t` |
 | `RULE: symmetry` | from `x = y`, conclude `y = x` |
 | `RULE: rewrite` | replace an equation's LHS by its RHS in a target |
-| `RULE: iff_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
+| `RULE: equiv_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
 | `TACTIC: instantiation` | monomorphize a schema (`using`) |
 | `RULE: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
 | `WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` | logical inputs are named; guard obligations are searched for |
@@ -204,7 +204,7 @@ sort HK = G where inH and inK // several qualifiers: the guard is their CONJUNCT
 
 Chained `and` qualifiers (or a refined sort refining another refined sort) accumulate
 into one CONJOINED guard `(inH(x) and inK(x)) ->` — the canonical shape the kernel's
-guarded `forall_intro` derives, so statements, `fix` blocks, and model transfers all agree.
+guarded `generalize` derives, so statements, `fix` blocks, and model transfers all agree.
 
 The guard appears at each position `H` is used:
 
@@ -212,9 +212,9 @@ The guard appears at each position `H` is used:
   `exists h: H; P` means `exists h: G; inH(h) and P` (an existential over `H`
   *asserts* membership).
 - **`fix h: H`** — the fix block carries `inH(h)` as its guard: surface it with
-  `[by predicate <fix-label>]`, and `forall_intro` concludes the relativized
+  `[by predicate <fix-label>]`, and `generalize` concludes the relativized
   `forall h; inH(h) -> …`. `unpack h: H` needs nothing special — the existential
-  it opens already carries `inH(h)` as a conjunct (project it with `and_elim_left`).
+  it opens already carries `inH(h)` as a conjunct (project it with `and_lhs`).
 - **Function arguments** — `func f(x: H) => R` makes every call owe `inH(t)` for the
   actual argument `t` (an undischarged obligation is an error), like a `requires`.
 - **Function results** — `func op(a: H, b: H) => H` asserts `op` is *closed* on `H`
@@ -786,12 +786,12 @@ operators, `iff` is the biconditional (lowest precedence), and `=` / `!=`
 compare terms of the same sort.
 
 `P iff Q` is **surface sugar** — it desugars to `(P -> Q) and (Q -> P)` and never
-reaches the kernel. So a biconditional is proved with `iff_intro`, eliminated with
-`iff_elim_forward`/`iff_elim_backward`, and — because `tautology` sees the
+reaches the kernel. So a biconditional is proved with `make_equivalence`, eliminated with
+`equiv_forward`/`equiv_converse`, and — because `tautology` sees the
 desugared conjunction — `tautology` decides `iff` goals and consumes `iff`
-hypotheses for free. `iff_rewrite` substitutes across it (see Justification rules).
-Because the shape `(X -> Y) and (Y -> X)` is canonically a biconditional, `and_intro`
-is forbidden from producing it (use `iff_intro`) and `iff_intro` requires it.
+hypotheses for free. `equiv_rewrite` substitutes across it (see Justification rules).
+Because the shape `(X -> Y) and (Y -> X)` is canonically a biconditional, `both`
+is forbidden from producing it (use `make_equivalence`) and `make_equivalence` requires it.
 
 **Mixed boolean operators require explicit parentheses.** A same-operator
 chain is fine unparenthesized (`a or b or c`, `a -> b -> c`, `not not a`),
@@ -836,7 +836,7 @@ earlier steps and enclosing blocks by (bare) label.
 ### Subproof keywords
 
 **`assume`** opens a block under a hypothesis; discharging it with
-`implies_intro` yields the implication, with `not_intro` the negation.
+`discharge` yields the implication, with `contradiction` the negation.
 
 ```2b4m
 @hyp |
@@ -845,11 +845,11 @@ earlier steps and enclosing blocks by (bare) label.
   }
 @imp |
   less_than(a, b) -> less_than(a, succ(b))
-  [by implies_intro hyp]
+  [by discharge hyp]
 ```
 
 **`fix`** opens a block with a fresh, arbitrary variable; discharging it
-with `forall_intro` yields the universal. Fix variables must be globally
+with `generalize` yields the universal. Fix variables must be globally
 fresh within the proof.
 
 ```2b4m
@@ -859,11 +859,11 @@ fresh within the proof.
   }
 @all |
   forall n: Nat; ...
-  [by forall_intro gen]
+  [by generalize gen]
 ```
 
 **`unpack ... from`** opens a block naming the witness of a previously
-established existential; `exists_elim` exports any witness-free conclusion.
+established existential; `unpacked` exports any witness-free conclusion.
 
 ```2b4m
 @use-witness |
@@ -875,7 +875,7 @@ established existential; `exists_elim` exports any witness-free conclusion.
   }
 @exported |
   less_than(a, b)
-  [by exists_elim use-witness]
+  [by unpacked use-witness]
 ```
 
 **`case ... on`** states a goal, then proves it by splitting a previously
@@ -928,9 +928,9 @@ Every step ends with a bracketed justification whose FIRST word is one of **two
 keywords** — the parser enforces the split:
 
 - **`[by <rule> <refs>]`** — a KERNEL PRIMITIVE: pure inference the kernel checks
-  directly (everything in this table down to `iff_rewrite`, plus `cite`). Refs are
+  directly (everything in this table down to `equiv_rewrite`, plus `cite`). Refs are
   step or block labels (and fact names for `cite`). Term arguments go in parens:
-  `[by forall_elim(succ(b)) some-step]`.
+  `[by apply_at(succ(b)) some-step]`.
 - **`[using <name> <refs>]`** — ENGINE PROOF-GENERATION: an ACCELERANT (the tactics
   below — `simplify`, `assoc_commut`, `polynomial`, `tautology`, `arithmetic`,
   `specialize`, …) or `instantiation` / `model`. These generate a kernel-checked
@@ -945,10 +945,10 @@ below it (see the Index for the full anchor list).
 **The complete partition** (every rule word is on exactly one side):
 
 - **`by`** (kernel primitives): `cite`, `hypothesis`, `predicate`, `modus_ponens`,
-  `implies_intro`, `forall_intro`, `forall_elim`, `exists_intro`, `exists_elim`,
-  `and_intro`, `and_elim_left`, `and_elim_right`, `iff_intro`, `iff_elim_forward`,
-  `iff_elim_backward`, `or_intro_left`, `or_intro_right`, `or_elim`, `not_intro`,
-  `absurd`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `iff_rewrite`.
+  `discharge`, `generalize`, `apply_at`, `witness`, `unpacked`,
+  `both`, `and_lhs`, `and_rhs`, `make_equivalence`, `equiv_forward`,
+  `equiv_converse`, `either_left`, `either_right`, `or_elim`, `contradiction`,
+  `ex_falso`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `equiv_rewrite`.
 - **`using`** (engine proof-generation): `instantiation`, `model`, `import`, and the
   accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
   `assoc_commut_quantified`, `assoc`, `assoc_quantified`, `polynomial`,
@@ -961,24 +961,24 @@ below it (see the Index for the full anchor list).
 | `hypothesis BLOCK` | restate an enclosing block's assumption (or unpacked witness fact) |
 | `predicate FIXBLOCK` | surface the guard of a predicated `fix h: H` binder — the fact `inH(h)` its refined sort provides |
 | `modus_ponens IMP ANT` | from `P -> Q` and `P`, conclude `Q` |
-| `implies_intro BLOCK` | discharge an assume block as an implication |
-| `forall_intro BLOCK` | discharge a fix block as a universal |
-| `forall_elim(t, ...) STEP` | specialize a universal at one or more terms — `forall_elim(A, B)` peels two binders in one step (the intermediate chain is synthesized) |
-| `exists_intro(t) STEP` | from `P[t]`, conclude `exists x; P[x]` |
-| `exists_elim BLOCK` | export an unpack block's witness-free conclusion |
-| `and_intro L R` | conjunction from both conjuncts. REJECTS a biconditional-shape goal `(X -> Y) and (Y -> X)` — use `iff_intro` |
-| `and_elim_left STEP` / `and_elim_right STEP` | project a conjunction |
-| `iff_intro FWD BWD` | a biconditional `P iff Q` from its two directions (`P -> Q` then `Q -> P`). Requires an `iff`-shaped goal (a plain conjunction is `and_intro`'s job) |
-| `iff_elim_forward STEP` / `iff_elim_backward STEP` | recover a direction of `P iff Q` (`P -> Q` / `Q -> P`) |
-| `or_intro_left STEP` / `or_intro_right STEP` | inject into a disjunction |
+| `discharge BLOCK` | discharge an assume block as an implication |
+| `generalize BLOCK` | discharge a fix block as a universal |
+| `apply_at(t, ...) STEP` | specialize a universal at one or more terms — `apply_at(A, B)` peels two binders in one step (the intermediate chain is synthesized) |
+| `witness(t) STEP` | from `P[t]`, conclude `exists x; P[x]` |
+| `unpacked BLOCK` | export an unpack block's witness-free conclusion |
+| `both L R` | conjunction from both conjuncts. REJECTS a biconditional-shape goal `(X -> Y) and (Y -> X)` — use `make_equivalence` |
+| `and_lhs STEP` / `and_rhs STEP` | project a conjunction |
+| `make_equivalence FWD BWD` | a biconditional `P iff Q` from its two directions (`P -> Q` then `Q -> P`). Requires an `iff`-shaped goal (a plain conjunction is `both`'s job) |
+| `equiv_forward STEP` / `equiv_converse STEP` | recover a direction of `P iff Q` (`P -> Q` / `Q -> P`) |
+| `either_left STEP` / `either_right STEP` | inject into a disjunction |
 | `or_elim DISJ LBLOCK RBLOCK` | case analysis: both assume blocks conclude the claim |
-| `not_intro BLOCK S1 S2` | the assumption led to the contradiction `S1`/`S2`, so its negation holds |
-| `absurd S1 S2` | from a contradiction, conclude anything |
+| `contradiction BLOCK S1 S2` | the assumption led to the contradiction `S1`/`S2`, so its negation holds |
+| `ex_falso S1 S2` | from a contradiction, conclude anything |
 | `double_negation STEP` | from `not not P`, conclude `P` |
 | `reflexivity` | `t = t` |
 | `symmetry STEP` | from a proven `x = y`, conclude `y = x` |
 | `rewrite EQ TARGET` | replace occurrences of the equation's left side with its right side in `TARGET` |
-| `iff_rewrite BICOND TARGET` | the propositional analogue of `rewrite`: from `P iff Q`, replace the sub-proposition `P` by `Q` at any position in `TARGET` (under connectives and quantifiers). A kernel-checked rule, no accelerant taint |
+| `equiv_rewrite BICOND TARGET` | the propositional analogue of `rewrite`: from `P iff Q`, replace the sub-proposition `P` by `Q` at any position in `TARGET` (under connectives and quantifiers). A kernel-checked rule, no accelerant taint |
 | `using instantiation NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
 | `simplify refs...` | tactic: join both sides of an equation by rewriting (see Automation) |
 | `simplify_quantified refs...` | tactic: `simplify` under a `forall` prefix, without a hand `fix` (see Automation) |
@@ -1034,97 +1034,97 @@ the fact `inH(h)` that the refined sort `H = G where inH` provides. One ref: the
   [by modus_ponens have-imp have-p]
 ```
 
-### RULE: implies_intro
+### RULE: discharge
 
-`[by implies_intro BLOCK]` — one ref: an `assume P { … }` block whose last step is
+`[by discharge BLOCK]` — one ref: an `assume P { … }` block whose last step is
 `Q`; concludes `P -> Q`.
 
-### RULE: forall_intro
+### RULE: generalize
 
-`[by forall_intro BLOCK]` — one ref: a `fix x: S { … }` block whose last step is
+`[by generalize BLOCK]` — one ref: a `fix x: S { … }` block whose last step is
 `P(x)`; concludes `forall x: S; P(x)`. The fix variable must be globally fresh.
 (For a predicated `fix x: H`, the conclusion is the relativized
 `forall x: G; inH(x) -> P(x)`.)
 
-### RULE: forall_elim
+### RULE: apply_at
 
-`[by forall_elim(t, ...) STEP]` — one step ref (a universal) plus a **parenthesized
+`[by apply_at(t, ...) STEP]` — one step ref (a universal) plus a **parenthesized
 term list**. The **multi-arg form peels several binders in one step**:
-`forall_elim(A, B) STEP` on `forall x; forall y; P(x, y)` yields `P(A, B)` — the
+`apply_at(A, B) STEP` on `forall x; forall y; P(x, y)` yields `P(A, B)` — the
 intermediate `forall y; P(A, y)` chain is synthesized for you. Supply one term per
 binder you want to peel.
 
 ```2b4m
 @specialized |
   P(A, B)
-  [by forall_elim(A, B) universal-step]
+  [by apply_at(A, B) universal-step]
 ```
 
-### RULE: exists_intro
+### RULE: witness
 
-`[by exists_intro(t) STEP]` — one step ref proving `P[t]` plus the witness term `t`
+`[by witness(t) STEP]` — one step ref proving `P[t]` plus the witness term `t`
 in parens; concludes `exists x; P[x]`.
 
-### RULE: exists_elim
+### RULE: unpacked
 
-`[by exists_elim BLOCK]` — one ref: an `unpack u: S from WIT { … }` block whose
+`[by unpacked BLOCK]` — one ref: an `unpack u: S from WIT { … }` block whose
 last step is **witness-free** (does not mention `u`); exports that conclusion. The
 eigenvariable `u` may not escape — a conclusion mentioning `u` is a kernel error.
 
 ```2b4m
 @exported |
   less_than(a, b)          // no `u` here
-  [by exists_elim use-witness]
+  [by unpacked use-witness]
 ```
 
-### RULE: and_intro
+### RULE: both
 
-`[by and_intro L R]` — two refs, one per conjunct; concludes `L and R`. **REJECTS a
+`[by both L R]` — two refs, one per conjunct; concludes `L and R`. **REJECTS a
 biconditional-shaped goal** `(X -> Y) and (Y -> X)` — that shape is canonically an
-`iff`, so use `iff_intro` for it. Conversely, a plain (non-iff) conjunction is
-`and_intro`'s job, not `iff_intro`'s.
+`iff`, so use `make_equivalence` for it. Conversely, a plain (non-iff) conjunction is
+`both`'s job, not `make_equivalence`'s.
 
-### RULE: and_elim_left
+### RULE: and_lhs
 
-`[by and_elim_left STEP]` — one ref proving `L and R`; projects the left conjunct
-`L`. (`and_elim_right` projects `R`.)
+`[by and_lhs STEP]` — one ref proving `L and R`; projects the left conjunct
+`L`. (`and_rhs` projects `R`.)
 
-### RULE: and_elim_right
+### RULE: and_rhs
 
-`[by and_elim_right STEP]` — one ref proving `L and R`; projects the right conjunct
+`[by and_rhs STEP]` — one ref proving `L and R`; projects the right conjunct
 `R`.
 
-### RULE: iff_intro
+### RULE: make_equivalence
 
-`[by iff_intro FWD BWD]` — two refs: a step proving `P -> Q` and a step proving
-`Q -> P`; concludes `P iff Q`. **Requires an `iff`-shaped goal.** `and_intro`
-rejects that shape, and `iff_intro` rejects a plain conjunction — the two are
+`[by make_equivalence FWD BWD]` — two refs: a step proving `P -> Q` and a step proving
+`Q -> P`; concludes `P iff Q`. **Requires an `iff`-shaped goal.** `both`
+rejects that shape, and `make_equivalence` rejects a plain conjunction — the two are
 complementary. `iff` is surface sugar for `(P -> Q) and (Q -> P)`.
 
 ```2b4m
 @bicond |
   P iff Q
-  [by iff_intro forward-imp backward-imp]
+  [by make_equivalence forward-imp backward-imp]
 ```
 
-### RULE: iff_elim_forward
+### RULE: equiv_forward
 
-`[by iff_elim_forward STEP]` — one ref proving `P iff Q`; recovers the forward
-direction `P -> Q`. (`iff_elim_backward` recovers `Q -> P`.)
+`[by equiv_forward STEP]` — one ref proving `P iff Q`; recovers the forward
+direction `P -> Q`. (`equiv_converse` recovers `Q -> P`.)
 
-### RULE: iff_elim_backward
+### RULE: equiv_converse
 
-`[by iff_elim_backward STEP]` — one ref proving `P iff Q`; recovers the backward
+`[by equiv_converse STEP]` — one ref proving `P iff Q`; recovers the backward
 direction `Q -> P`.
 
-### RULE: or_intro_left
+### RULE: either_left
 
-`[by or_intro_left STEP]` — one ref proving `P`; concludes `P or Q` for the goal's
-right disjunct `Q`. (`or_intro_right` proves `Q` to conclude `P or Q`.)
+`[by either_left STEP]` — one ref proving `P`; concludes `P or Q` for the goal's
+right disjunct `Q`. (`either_right` proves `Q` to conclude `P or Q`.)
 
-### RULE: or_intro_right
+### RULE: either_right
 
-`[by or_intro_right STEP]` — one ref proving `Q`; concludes `P or Q`.
+`[by either_right STEP]` — one ref proving `Q`; concludes `P or Q`.
 
 ### RULE: or_elim
 
@@ -1146,9 +1146,9 @@ hand-nested `or_elim` (elim the outer, then elim `A or B` inside the left arm) o
 far better — the `case` sugar, which fans out a left-nested disjunction into N
 arms automatically (see `case ... on` under Subproof keywords).
 
-### RULE: not_intro
+### RULE: contradiction
 
-`[by not_intro BLOCK S1 S2]` — **THREE refs**: an `assume P { … }` block and two of
+`[by contradiction BLOCK S1 S2]` — **THREE refs**: an `assume P { … }` block and two of
 its steps `S1`, `S2` that contradict each other (`S1 = X`, `S2 = not X`). Concludes
 `not P`. The contradiction pair is named explicitly; both steps must live inside the
 block.
@@ -1156,12 +1156,12 @@ block.
 ```2b4m
 @neg |
   not even(ONE)
-  [by not_intro assumed-block contra-a contra-b]
+  [by contradiction assumed-block contra-a contra-b]
 ```
 
-### RULE: absurd
+### RULE: ex_falso
 
-`[by absurd S1 S2]` — two refs proving `X` and `not X`; concludes **any** goal
+`[by ex_falso S1 S2]` — two refs proving `X` and `not X`; concludes **any** goal
 (ex falso). Use it to close an unreachable arm.
 
 ### RULE: double_negation
@@ -1192,9 +1192,9 @@ rewrites both sides to a common form when many rewrites would be needed.)
   [by rewrite eq-a-b target-Pa]
 ```
 
-### RULE: iff_rewrite
+### RULE: equiv_rewrite
 
-`[by iff_rewrite BICOND TARGET]` — two refs: a biconditional `P iff Q` and a target
+`[by equiv_rewrite BICOND TARGET]` — two refs: a biconditional `P iff Q` and a target
 step; the **propositional analogue of `rewrite`**. It replaces the sub-proposition
 `P` by `Q` — **or `Q` by `P`** (bidirectional, like `rewrite`) — at any position in
 the target, **under connectives and quantifiers**, which plain `rewrite` (a
@@ -1203,7 +1203,7 @@ term-equation rule) cannot reach. A kernel-checked rule with **no accelerant tai
 ```2b4m
 @rewritten |
   R(Q)
-  [by iff_rewrite bicond-P-Q target-R-of-P]
+  [by equiv_rewrite bicond-P-Q target-R-of-P]
 ```
 
 ### TACTIC: instantiation
@@ -1228,12 +1228,12 @@ prefix), then modus_ponens each trailing hyp ref against a leading `->` antecede
 left to right. The result must be the goal. **`HEAD` may be a declared THEOREM/AXIOM
 name OR a LOCAL STEP LABEL** — a `forall`-shaped fact held in a proof step (an
 `assume`d, unpacked, or derived universal). So a local universal gets the same
-one-liner as a named lemma (no need to hand-roll `forall_elim` + `modus_ponens`).
+one-liner as a named lemma (no need to hand-roll `apply_at` + `modus_ponens`).
 
-This is pure sugar over `forall_elim` + `modus_ponens` — it EMITS those kernel
+This is pure sugar over `apply_at` + `modus_ponens` — it EMITS those kernel
 steps as a certificate the kernel re-checks, so it is fully verified and carries no
 `--fast` taint. It exists to collapse the ubiquitous three-step "apply a lemma"
-ritual (`@rule | ∀…; P->Q [by cite L]` / `@at-a | P(a)->Q(a) [by forall_elim(a)
+ritual (`@rule | ∀…; P->Q [by cite L]` / `@at-a | P(a)->Q(a) [by apply_at(a)
 rule]` / `@got | Q(a) [by modus_ponens at-a hyp]`) into a single step with no
 throwaway `-rule`/`-at-args` labels.
 
@@ -1441,7 +1441,7 @@ instead of hanging.
 
 `simplify` proves a bare equation; on a `forall x…; s = t` goal use
 `simplify_quantified`, which peels the universal prefix (no hand `fix`),
-runs the same core on the body, and closes with `forall_intro`. Each tactic
+runs the same core on the body, and closes with `generalize`. Each tactic
 suggests the other if you pick the wrong one for the goal shape.
 
 ### TACTIC: assoc_commut
@@ -1645,9 +1645,9 @@ look obviously true:
   `countermodel: power(g, m) = g := true, g = E := false, power(g, m) = E := true` —
   consistent, because nothing tells it that the first two atoms constrain the third.
   Derive the equality chain explicitly instead: assume the negation, `chain` to
-  `g = E`, `implies_intro`, and THEN hand the implication plus `g != E` to `tautology`.
+  `g = E`, `discharge`, and THEN hand the implication plus `g != E` to `tautology`.
 - **A quantified statement is one atom.** `forall x: T; p(x)` does not yield `p(a)`.
-  Reasoning INSIDE a quantifier wants `fix` + `specialize` (or `forall_elim`), and only
+  Reasoning INSIDE a quantifier wants `fix` + `specialize` (or `apply_at`), and only
   the resulting quantifier-free facts are `tautology`'s business.
 - **`f(a) = b` says nothing about `f`.** Congruence, injectivity and function
   application are all invisible to it; those are `rewrite`, `symmetry`, and the
@@ -1704,7 +1704,7 @@ can't do cleanly.
 |---|---|
 | `2b4m query outline <file> [theorem]` | the proof *skeleton*: one line per step (bare label), with a header on each block opener (`fix`/`assume`/`unpack`/`case`). No theorem arg = every proof in the file. |
 | `2b4m query claims <file> [theorem]` | the same skeleton as `outline`, but each step shows its **claim formula** instead of its label — the propositions the proof establishes, label-free (block openers keep their `fix`/`assume`/`case` headers). Reads as the mathematical content; `outline` reads as the table of contents. Works on proof-carrying schemas too. |
-| `2b4m query theorem <file> <name> [--sig]` | the full verbatim source of one declaration — statement + `proof … qed` + leading doc-comment. Follows aliases across files to the real proof; axioms are marked. `--sig` prints **just the statement** (kind + name + formula), wrap-collapsed to one line — handy for reading binder order/arity before a `forall_elim`. |
+| `2b4m query theorem <file> <name> [--sig]` | the full verbatim source of one declaration — statement + `proof … qed` + leading doc-comment. Follows aliases across files to the real proof; axioms are marked. `--sig` prints **just the statement** (kind + name + formula), wrap-collapsed to one line — handy for reading binder order/arity before a `apply_at`. |
 | `2b4m query whereis <file> <identifier>` | trace an identifier through every alias/import hop to its **origin** — the file-chase as one command. Works for any named decl (theorem/axiom/func/pred/sort/const/define/schema) and for import namespaces. Each hop shows `file:line` + the source line; the origin is marked. |
 | `2b4m query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.b4m`/`.md` under it, RECURSIVELY — corpus discovery, so `search std <term>` really does cover `std/group/`, `std/permutation/`, …) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
 

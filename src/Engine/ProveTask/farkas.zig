@@ -8,7 +8,7 @@
 //! Nodes are opaque `usize` identities (the caller maps its terms to them);
 //! edges are `less_than` hypotheses by index. The output is an ordered chain of
 //! hypothesis indices forming a cycle, which the emitter replays as a
-//! `lessThanTransitive` fold closed by `lessThanIrreflexive` + `absurd`.
+//! `lessThanTransitive` fold closed by `lessThanIrreflexive` + `ex_falso`.
 //!
 //! The difference-logic case has all-1 Farkas multipliers (each hypothesis
 //! used once). The general case — coefficient scaling over `mul`-by-literal

@@ -743,11 +743,11 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\        [by cite opUnitLeft]
         \\      @conclusion-twice |
         \\        op(UNIT, op(UNIT, a)) = op(UNIT, a)
-        \\        [by forall_elim(op(UNIT, a)) unit-left]
+        \\        [by apply_at(op(UNIT, a)) unit-left]
         \\    }
         \\  @conclusion |
         \\    forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
-        \\    [by forall_intro generalize-a]
+        \\    [by generalize generalize-a]
         \\qed
         \\
         },

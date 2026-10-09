@@ -187,7 +187,7 @@ regressions.
      the goal. The matcher infers `x⃗` by first-order-matching `C` against the
      goal, discharges each antecedent `Aᵢ(x⃗)` from a supplied ref whose formula
      matches it (order-independent; the step's other refs are the `arithmetic`
-     decision premises), and EMITS a `theorem_ref → forall_elim(x⃗) →
+     decision premises), and EMITS a `theorem_ref → apply_at(x⃗) →
      modus_ponens(refs)` chain the KERNEL re-checks — so a mis-inferred witness
      can never pass. (`tests/cases/arithmetic_fallback_specialize.b4m`;
      `std/integer/divides.b4m`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
@@ -223,11 +223,11 @@ regressions.
   `addIsCommutative`/`addLeftSwap` rewrites); *order* goals synthesize the
   difference witness d, certify `add(a, succ(d)) = b`, and close with a
   `lessThanIntro` instance; *existentials* search a constant witness tower
-  and reduce via `exists_intro`. *Hypotheses* (cited `less_than`/`=`
+  and reduce via `witness`. *Hypotheses* (cited `less_than`/`=`
   steps) enter by witness substitution: each order premise is
   `lessThanElim`-unpacked and its flipped witness equation becomes a
   ground rewrite rule, so difference-logic chains (including transitivity)
-  certify; the conclusion exports back through `exists_elim`. When the
+  certify; the conclusion exports back through `unpacked`. When the
   rewrite-normalizer declines an equation goal that nonetheless follows by
   CANCELLING an equality premise — the premise's sides don't occur literally in
   the goal, so no rewrite fires, but the goal is a linear COMBINATION of it (e.g.
@@ -239,12 +239,12 @@ regressions.
   Needs `addIsCommutative`/`addLeftSwap`/`addCancelLeft` in scope. *Mixed
   skeletons* (D2) replay as tautology-style case splits whose boolean dead
   ends close by deriving the conflicting arithmetic literal from the
-  branch's assumptions, then `absurd`. *Farkas* (`src/farkas.zig`) certifies
+  branch's assumptions, then `ex_falso`. *Farkas* (`src/farkas.zig`) certifies
   difference-logic constraint combinations — combining SEVERAL hypotheses,
   which the single-atom order cert cannot: an infeasible cycle `x < ... < x`
   (folded with `lessThanTransitive`), order composition (`a<b -> b<c -> a<c`, a
   path fold), an arbitrary/`false`-shaped conclusion (fold a cycle, contradict
-  with `lessThanIrreflexive`, `absurd`), COEFFICIENT SCALING (`mul`-by-literal
+  with `lessThanIrreflexive`, `ex_falso`), COEFFICIENT SCALING (`mul`-by-literal
   bounds scaled via `multiplicationPreservesOrder`), and SUMS of distinct-
   variable bounds (`a<b ∧ c<d -> add(a,c)<add(b,d)`, via
   `additionPreservesOrder` + `addIsCommutative` + transitivity). *Cooper-replay*
@@ -324,7 +324,7 @@ regressions.
   - **function / equational model**: the residue is an equation
     `apply(f, x) = apply(g, x)` → closed by the rewrite join (the `simplify`
     machinery over the cited `<op>Apply` lemmas).
-  Then `forall_intro` each obligation and `modus_ponens` the chain to the equation.
+  Then `generalize` each obligation and `modus_ponens` the chain to the equation.
   Like every accelerant it is a generated schema the kernel re-checks; `2b4m debug
   accelerant` prints it.
 

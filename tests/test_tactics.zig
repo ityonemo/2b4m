@@ -166,7 +166,7 @@ pub fn addTests(
 
     // GUARDED model (`model … where <pred>`): the transfer is RELATIVIZED — every
     // carrier ∀ gains `guard(x) ->` — and strict materialization discharges the
-    // guard obligation at each forall_elim over a guarded universal (recursing on
+    // guard obligation at each apply_at over a guarded universal (recursing on
     // the instantiation term: constant → base closure fact; eigenvariable → the
     // in-scope `assume guard(a)`; composite → a closure fact + recursion). Fully
     // kernel-checked, no taint.
@@ -176,11 +176,11 @@ pub fn addTests(
     // with no closure fact in scope fails with an actionable message (the graceful
     // fallback point for future author-supplied obligations).
     // (demand path: no discharger nominated for good(ZED), so the transferred proof's
-    // forall_elim(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
-    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.b4m" }, "tests/cases/model_guarded_source.b4m:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but forall_elim derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
+    // apply_at(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
+    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.b4m" }, "tests/cases/model_guarded_source.b4m:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but apply_at derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
-    // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `exists_intro`);
+    // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `witness`);
     // a case split re-emits or_elim + arm hypotheses. (Sources check fine too.)
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness_source.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness.b4m" });
@@ -199,7 +199,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken.b4m" });
     // MULTI-BINDER auto-weakening: an unconditional axiom over N carrier binders
     // (here 2), mapped to itself, weakened by nested fix/assume with one chained
-    // forall_elim at the core. Needed for group axioms like opAssoc (3 binders).
+    // apply_at at the core. Needed for group axioms like opAssoc (3 binders).
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken_multi_source.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken_multi.b4m" });
     // the paradigm case end to end: a SUBGROUP modeling its own group's carrier —
@@ -389,7 +389,7 @@ pub fn addTests(
 
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
-    // by `[by predicate <lbl>]`, made the forall_intro antecedent), `unpack h: H`
+    // by `[by predicate <lbl>]`, made the generalize antecedent), `unpack h: H`
     // gets it from the ∃'s conjunct. Pure sugar over the carrier; kernel-checked.
     ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_binders.b4m" });
     // PREDICATED SORT — func RESULT closure: `func op2(a: H, b: H): H`
@@ -505,7 +505,7 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/tautology_cap.b4m" }, "tests/cases/tautology_cap.b4m:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
 
     // `iff` surface sugar: `P iff Q` desugars to `(P -> Q) and (Q -> P)` (never
-    // reaches the kernel). iff_intro/iff_elim_forward/iff_elim_backward are thin
+    // reaches the kernel). make_equivalence/equiv_forward/equiv_converse are thin
     // renames of the `and` rules; crucially `tautology` DECIDES iff goals and
     // CONSUMES iff hypotheses for free (it sees the desugared conjunction) — the
     // property the set/collection membership-axiom corpus relies on.
@@ -516,24 +516,24 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/iff_bad.b4m" }, "tests/cases/iff_bad.b4m:19:27: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
-    // iff — `and_intro` is forbidden from producing it (must use `iff_intro`)…
-    ctx.fail(&.{ "check", "tests/cases/iff_and_intro_bad.b4m" }, "tests/cases/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `iff_intro` (which is the same rule, named for what it proves)\n");
+    // iff — `both` is forbidden from producing it (must use `make_equivalence`)…
+    ctx.fail(&.{ "check", "tests/cases/iff_and_intro_bad.b4m" }, "tests/cases/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
 
-    // …and conversely `iff_intro` requires that shape — a plain conjunction is rejected.
-    ctx.fail(&.{ "check", "tests/cases/iff_intro_bad.b4m" }, "tests/cases/iff_intro_bad.b4m:14:33: error: iff_intro's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `and_intro`?\n");
+    // …and conversely `make_equivalence` requires that shape — a plain conjunction is rejected.
+    ctx.fail(&.{ "check", "tests/cases/iff_intro_bad.b4m" }, "tests/cases/iff_intro_bad.b4m:14:33: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
 
-    // `iff_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
+    // `equiv_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
     // replace the sub-proposition P by Q at any position (subformula congruence,
     // under connectives AND quantifiers), reusing the `=`-rewrite walker. A
     // kernel-checked rule (no --fast taint), sound because iff is a congruence.
     ctx.okSilent(&.{ "check", "tests/cases/iff_rewrite.b4m" });
 
     // it is SOUND: the claim must be reachable by replacing P with Q (or Q with P
-    // — iff_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_bad.b4m" }, "tests/cases/iff_rewrite_bad.b4m:17:12: error: iff_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
+    // — equiv_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
+    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_bad.b4m" }, "tests/cases/iff_rewrite_bad.b4m:17:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
 
     // …and its first argument must be a biconditional, not a plain implication.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_notbicond.b4m" }, "tests/cases/iff_rewrite_notbicond.b4m:14:28: error: iff_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
+    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_notbicond.b4m" }, "tests/cases/iff_rewrite_notbicond.b4m:14:30: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
 
     // BIDIRECTIONAL rewrite: an equation / biconditional cited in the "wrong"
     // orientation for the goal still rewrites — no preceding `symmetry` needed.
@@ -588,7 +588,7 @@ pub fn addTests(
 
     // Farkas extensions: order composition (a<b -> b<c -> a<c, no cycle)
     // and the infeasibility cap (contradictory order hyps prove an
-    // arbitrary conclusion via lessThanIrreflexive + absurd).
+    // arbitrary conclusion via lessThanIrreflexive + ex_falso).
     ctx.okSilent(&.{ "check", "tests/cases/farkas_ext.b4m" });
 
     // Farkas coefficient scaling: a hypothesis scaled by a literal
@@ -630,7 +630,7 @@ pub fn addTests(
 
     // Cooper-replay layer 2 (witness direction): a `forall x; exists y; …`
     // goal with a period-1 Cooper trace elaborates fully — the cooper link
-    // picks a boundary witness and emits exists_intro over an or-intro arm.
+    // picks a boundary witness and emits witness over an or-intro arm.
     ctx.okSilent(&.{ "check", "tests/cases/cooper_witness.b4m" });
 
     // Cooper-replay layer 3 (periodicity direction): a period-2 (parity) ∀∃
@@ -690,7 +690,7 @@ pub fn addTests(
     // theorem, not alpha-equal): the matcher peels the ∀ prefix (inferring the
     // witnesses by matching the conclusion against the goal) and discharges any
     // leading `->` antecedents from the step's refs, emitting a kernel-certified
-    // forall_elim+modus_ponens chain. Verifies STRICT (the fallback targets are
+    // apply_at+modus_ponens chain. Verifies STRICT (the fallback targets are
     // axiom-proven, no holes) — so the emitted specialization really re-checks.
     ctx.okSilent(&.{ "check", "tests/cases/arithmetic_fallback_specialize.b4m" });
 

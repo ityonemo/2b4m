@@ -1317,9 +1317,9 @@ test "theorem with nested proof blocks and instantiate" {
         \\    @inner | assume q() {
         \\      @got_p | p() [by hypothesis outer]
         \\    }
-        \\    @qtop | q() -> p() [by implies_intro inner]
+        \\    @qtop | q() -> p() [by discharge inner]
         \\  }
-        \\  @done | p() -> (q() -> p()) [by implies_intro outer]
+        \\  @done | p() -> (q() -> p()) [by discharge outer]
         \\qed
         \\theorem addZeroRight: forall n: Nat; add(n, ZERO) = n
         \\proof
@@ -1344,7 +1344,7 @@ test "theorem with nested proof blocks and instantiate" {
     const inner = outer.steps[0].body.assume;
     try testing.expectEqual(1, inner.steps.len);
     const done = thm.local.steps[1].body.claim;
-    try testing.expectEqualStrings("implies_intro", source[done.rule.start..done.rule.end]);
+    try testing.expectEqualStrings("discharge", source[done.rule.start..done.rule.end]);
     try testing.expectEqual(1, done.refs.len);
 
     const inst = file.decls[1].theorem.local.steps[0].body.claim;

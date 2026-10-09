@@ -43,7 +43,7 @@ proof
     }
   @conclusion |
     forall a: T; op(E, a) = a
-    [by forall_intro generalize-a]
+    [by generalize generalize-a]
 qed
 ```
 

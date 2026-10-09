@@ -628,7 +628,7 @@ const test_source =
     \\            [using specialize addZeroLeft(ZERO)]
     \\          @elim |
     \\            add(ZERO, ZERO) = ZERO
-    \\            [by forall_elim(ZERO) inst]
+    \\            [by apply_at(ZERO) inst]
     \\        }
     \\    }
     \\qed
@@ -677,7 +677,7 @@ test "renderDecl: the reprint RE-PARSES to the same tree (render ∘ parse is id
     try testing.expect(std.mem.indexOf(u8, once, "[using arithmetic(peano) fallback(addZeroLeft) restated]") != null);
     try testing.expect(std.mem.indexOf(u8, once, "[using instantiation addZeroLeft(fun n: Nat => even(n), succ(ZERO))]") != null);
     try testing.expect(std.mem.indexOf(u8, once, "[using specialize addZeroLeft(ZERO)]") != null);
-    try testing.expect(std.mem.indexOf(u8, once, "[by forall_elim(ZERO) inst]") != null);
+    try testing.expect(std.mem.indexOf(u8, once, "[by apply_at(ZERO) inst]") != null);
 }
 
 test "needParen: `->` is right-associative, and/or left-associative, mixed boolean operators and quantifiers parenthesize" {
@@ -705,7 +705,7 @@ test "selector: a line inside a nested block resolves to that step's rule token;
     const file = try parseTest(arena, test_source);
     // `@elim |` is the label line of the last claim; its rule token is on the line after next.
     const elim_label_line = offsetLine(test_source, @intCast(std.mem.indexOf(u8, test_source, "@elim |").?));
-    const rule_off: u32 = @intCast(std.mem.indexOf(u8, test_source, "forall_elim(ZERO) inst").?);
+    const rule_off: u32 = @intCast(std.mem.indexOf(u8, test_source, "apply_at(ZERO) inst").?);
     try testing.expectEqual(rule_off, lineToStepOffset(test_source, file, elim_label_line).?);
     try testing.expectEqual(rule_off, lineToStepOffset(test_source, file, elim_label_line + 2).?);
     try testing.expectEqual(rule_off, stepLabelOffset(test_source, file, "shape", "elim").?);
