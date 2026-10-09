@@ -134,7 +134,7 @@ const State = struct {
         /// published like an axiom AND registered in `ctx.hole_taint` under its own name, so
         /// dependents inherit the taint. Default mode rejects a hole-resting result; --draft
         /// allows. `name` is the hole's own StrId (its taint seed).
-        hole: struct { formula: *const ast.Expr, name: InternPool.StrId },
+        hole: struct { formula: *const ast.Expr, name: InternPool.StrId, cites: InternPool.StrId = .none },
     };
 };
 
@@ -260,7 +260,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
             // first. See [[hole-mechanism]].
             const off = try st.prove.pool.reify(st.goal.?, self.interner);
             const fact = try self.facts.publish(self.io, key, .axiom, off, st.goal_loc);
-            try self.recordHoleReached(.{ .name = hh.name, .file = task.file, .loc = st.goal_loc });
+            try self.recordHoleReached(.{ .name = hh.name, .file = task.file, .loc = st.goal_loc, .cites = hh.cites });
             // a hole is an axiom to the kernel, so it seeds the axiom taint like one; the
             // `--axioms` report tells the two apart by consulting `holes_reached`.
             try self.recordAxiomTaint(fact, try self.arena.dupe(InternPool.Index, &.{fact}));
@@ -535,7 +535,9 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
                     try demandDiag(self, task, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.interner.stringBytes(task.name), self.interner.stringBytes(task.name) });
                     return null;
                 }
-                break :blk .{ .hole = .{ .formula = f.formula, .name = task.name } };
+                // the CITED-HOLE locator rides along as an interned StrId (the parser stamped
+                // the string token's contents); `.none` for a bare hole.
+                break :blk .{ .hole = .{ .formula = f.formula, .name = task.name, .cites = if (f.cites) |c| c.name else .none } };
             },
             .alias => {
                 try demandDiag(self, task, "fact aliases are not yet supported by the demand prover", .{});
@@ -557,7 +559,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
             .suspended, .failed => return null,
         },
         .hole => |hh| switch (try Expand.expandFormula(self, h, task.file, hh.formula, .{ .model = task.model })) {
-            .ready => |f| .{ .hole = .{ .formula = f, .name = hh.name } },
+            .ready => |f| .{ .hole = .{ .formula = f, .name = hh.name, .cites = hh.cites } },
             .suspended, .failed => return null,
         },
         .theorem => |t| switch (try Expand.expandProof(self, h, task.file, t.formula, t.steps, .{ .model = task.model })) {

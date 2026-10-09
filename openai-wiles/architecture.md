@@ -430,16 +430,16 @@ says Sections 2–11 do not deliver it.
 
 ```2b4m
 // WELL-KNOWN: the image of the cycle class map CH^4(A) ⊗ Q -> H^8(A, Q) is a Q-subspace.
-axiom theAlgebraicClassesFormASubspace: forall p: Period;
+hole theAlgebraicClassesFormASubspace cites "standard: the image of CH^4(A) (x) Q -> H^8(A,Q) is a Q-subspace": forall p: Period;
   forall z: CycleClass; forall w: CycleClass;
   isAlgebraic(p, add(z, w)) -> isAlgebraic(p, z) -> isAlgebraic(p, w)
 
 // WELL-KNOWN: theta is a divisor class, so any rational multiple of theta^4 is algebraic.
-axiom aPowerOfThePolarizationIsAlgebraic: forall p: Period; forall a: CycleClass;
+hole aPowerOfThePolarizationIsAlgebraic cites "standard: theta is a divisor class, so theta^4 is an intersection of divisors": forall p: Period; forall a: CycleClass;
   inParameterSet(p) -> isAlgebraic(p, scale(a, polarizationPower))
 
 // WELL-KNOWN: functoriality of the cycle class map under an algebraic correspondence.
-axiom theCycleClassMapIsFunctorial: forall p: Period; forall e: Endomorphism;
+hole theCycleClassMapIsFunctorial cites "standard: functoriality of the cycle class map under an algebraic correspondence": forall p: Period; forall e: Endomorphism;
   forall z: CycleClass;
   isAlgebraicEndomorphism(p, e) -> isAlgebraic(p, z) -> isAlgebraic(p, pullback(e, z))
 
@@ -458,7 +458,7 @@ axiom theCycleClassMapIsFunctorial: forall p: Period; forall e: Endomorphism;
 //
 // So the existential below is no longer an axiom: it is assembled from one citation and one
 // proof.
-axiom theConjugationIsAlgebraic: forall p: Period;
+hole theConjugationIsAlgebraic cites "manuscript §12.4: The integral matrix m.1_8 + D commutes with every period in U, and hence defines an algebraic endomorphism of every A_Pi": forall p: Period;
   inParameterSet(p) -> isAlgebraicEndomorphism(p, eigenvalues.theConjugation)
 
 // §12.4's endomorphism, PROVED rather than assumed.
@@ -507,16 +507,103 @@ are labelled for what they are, and `--axioms` will report them beside the genui
 //   LEMMA 12.1's exceptional loci — PROVED in `hilbert-parameters.md` from Remmert's proper
 //   mapping theorem plus "a proper closed analytic subset has empty interior".
 //
-// What is left is one citation: a class algebraic at a period avoiding the exceptional loci
-// is the marked class of a parameter point in the component. That is precisely the content of
-// Lemma 12.1 — the countable family of Hilbert components COVERS every closed subscheme of
-// every fiber, and the exceptional locus E is removed exactly so that the covering component
-// is proper over U. Cited to [16] (Hilbert schemes) and [15] (proper base change).
-axiom anAlgebraicClassAtAGoodPeriodIsMarkedByTheComponent: forall p: Period;
+// §12.4's step from "algebraic at a good period" to "marked by a component", now MODELLED
+// on Lemma 12.1 rather than held as an invented bridge.
+//
+// §12.4: "Its Hilbert point belongs to one of the connected parameter spaces H in Lemma
+// 12.1. Since Pi was chosen outside E_Hilb, that component's image cannot be a proper subset
+// of U. Thus H -> U is surjective."
+//
+// Lemma 12.1 supplies the two halves separately, and both are citations:
+//
+//   COVERING  — "every closed subscheme of every fiber A_Pi occurs in at least one family."
+//   PROPERNESS — "the union E_Hilb of those images which are proper subsets is a countable
+//                 union of proper closed analytic subsets of U", so a period avoiding
+//                 E_Hilb is in no proper image.
+//
+// Composing them gives the step: the class's subscheme occurs in SOME component, and since
+// the period avoids E_Hilb that component's image is not proper.
+
+// The component a class's Hilbert point lands in.
+//
+// NOTE: an earlier version also declared `hasProperImage` and an axiom saying a good period
+// avoids every proper image. That axiom was DEAD (nothing cited it) and far stronger than
+// Lemma 12.1, which speaks of one period's own component rather than every class at once.
+// Both are deleted. The E_Hilb clause is not needed here: `everyAlgebraicClassOccursInSomeFamily`
+// already delivers a component, and `chern.inComponent` is what the spreading consumes.
+func markingComponentOf(p: Period, z: CycleClass) => ParameterPoint
+
+// CITATION (Lemma 12.1, the covering clause): an algebraic class at a period is the marked
+// class of a parameter point in some component of the countable collection.
+hole everyAlgebraicClassOccursInSomeFamily cites "manuscript Lemma 12.1: every closed subscheme of every fiber A_Pi occurs in at least one family": forall p: Period; forall z: CycleClass;
+  inParameterSet(p) -> isAlgebraic(p, z) ->
+  (chern.inComponent(markingComponentOf(p, z)) and
+  chern.markedClassAt(markingComponentOf(p, z)) = z)
+
+// §12.4's step, PROVED from Lemma 12.1's two clauses.
+theorem anAlgebraicClassAtAGoodPeriodIsMarkedByTheComponent: forall p: Period;
   forall z: CycleClass;
   inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
   (exists b: ParameterPoint;
   chern.inComponent(b) and chern.markedClassAt(b) = z)
+proof
+  @generalize-p |
+    fix p: Period {
+      @generalize-z |
+        fix z: CycleClass {
+          @given-p-in-the-parameter-set |
+            assume inParameterSet(p) {
+              @p-is-in-the-parameter-set |
+                inParameterSet(p)
+                [by hypothesis given-p-in-the-parameter-set]
+              @given-p-avoids |
+                assume avoidsExceptional(p) {
+                  @given-z-algebraic |
+                    assume isAlgebraic(p, z) {
+                      @z-is-algebraic |
+                        isAlgebraic(p, z)
+                        [by hypothesis given-z-algebraic]
+                      @the-class-occurs-in-a-family |
+                        chern.inComponent(markingComponentOf(p, z)) and
+                          chern.markedClassAt(markingComponentOf(p, z)) = z
+                        [using specialize everyAlgebraicClassOccursInSomeFamily(p, z) p-is-in-the-parameter-set z-is-algebraic]
+                      @conclusion-a-marking-point-exists |
+                        exists b: ParameterPoint;
+                          chern.inComponent(b) and chern.markedClassAt(b) = z
+                        [by exists_intro(markingComponentOf(p, z)) the-class-occurs-in-a-family]
+                    }
+                  @conclusion-algebraic-gives |
+                    isAlgebraic(p, z) ->
+                      (exists b: ParameterPoint;
+                      chern.inComponent(b) and chern.markedClassAt(b) = z)
+                    [by implies_intro given-z-algebraic]
+                }
+              @conclusion-avoids-gives |
+                avoidsExceptional(p) -> isAlgebraic(p, z) ->
+                  (exists b: ParameterPoint;
+                  chern.inComponent(b) and chern.markedClassAt(b) = z)
+                [by implies_intro given-p-avoids]
+            }
+          @conclusion-at-z |
+            inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+              (exists b: ParameterPoint;
+              chern.inComponent(b) and chern.markedClassAt(b) = z)
+            [by implies_intro given-p-in-the-parameter-set]
+        }
+      @discharge-z |
+        forall z: CycleClass;
+          inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+          (exists b: ParameterPoint;
+          chern.inComponent(b) and chern.markedClassAt(b) = z)
+        [by forall_intro generalize-z]
+    }
+  @conclusion |
+    forall p: Period; forall z: CycleClass;
+      inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+      (exists b: ParameterPoint;
+      chern.inComponent(b) and chern.markedClassAt(b) = z)
+    [by forall_intro generalize-p]
+qed
 
 // §12.4's spreading principle, PROVED rather than assumed.
 theorem theMarkedClassIsConstantAcrossTheFamily: forall p: Period; forall z: CycleClass;

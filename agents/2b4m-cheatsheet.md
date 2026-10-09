@@ -54,6 +54,70 @@ axiom declared there that no theorem there rests on — which is why `std/` carr
 than leaving a caller to be the first to exercise one. If you add an axiom to
 `std/`, add the example that uses it.
 
+## THE AXIOMATIZATION RULE — write `hole` FIRST, always
+
+**`axiom` is reserved for a result you can point to in the literature.** Everything else —
+the source's own mathematics, your modelling decisions, your reconstructions of an argument,
+anything you believe but cannot cite — is a `hole`.
+
+**The habit that matters: a new declaration you cannot cite goes in as `hole` from the
+start.** Not `axiom`-then-audit. The audit pass is where rationalization happens, and it is
+reliably too weak to catch your own reasoning: a plausible name plus a confident comment
+survives self-review almost every time. `hole` inverts the default — strict `check` refuses
+the tree until the thing is proved or you find the actual citation, and there is no interval
+in which a bogus axiom sits there looking settled.
+
+Measured failure rate on exactly this (the openai-wiles formalization, 2026-10-09): applying
+the test *after* writing axioms caught 4 of 29 as violations; the round that CLOSED those
+holes introduced 5 new violations, 3 of them written during the round whose stated purpose
+was applying the test. Self-audit does not converge. Writing `hole` first does.
+
+### Closing a hole means PROVING it
+
+Closing is **never** relabelling. These are all the same prohibited move:
+
+- `hole X` → `axiom X` (the bare version)
+- `hole X` → `axiom X2` where `X2` is `X` renamed, or `X` with a premise bolted on
+- `hole X` → `theorem X` proved from `axiom Y` where `Y` is `X`'s content under a new name
+
+A hole is closed when it is a `theorem` whose leaves are all genuine citations. Expect the
+axiom count to **rise** when you do this honestly — one large assumption becomes several
+small cited ones. A count that stays flat while holes vanish is the signature of relabelling.
+
+### The four ways a bogus axiom disguises itself
+
+All four were committed in one session, with confident comments on each:
+
+1. **The swallow.** An axiom whose statement produces the goal's whole existential, named as
+   if it were a lemma (`aCycleClassDecomposesIntoIntegralSubvarieties`). Test: does its
+   conclusion look like what you set out to prove?
+2. **The invented hypothesis.** A guard attributed to the source that the source does not
+   state — found by reading a lemma's STATEMENT and never its PROOF, where the real
+   conditions live. Cost here: a confident, published, wrong diagnosis.
+3. **The textbook-sounding assumption about your own symbols.** "A group is cancellative",
+   "projections are linear" — true of groups and projections, but the symbol in your file is
+   an opaque `func` with no theory attached, so nothing makes it true. Test: is the structure
+   the claim relies on actually declared?
+4. **The restated argument.** You formalize a *determination* argument as a *vanishing*
+   argument, or assert a ground equation where the source gives a per-index identity. It
+   type-checks, it is not the source's reasoning. Test: can you map each axiom to a specific
+   sentence, with its quantifiers intact?
+
+### Verification hygiene
+
+- **Never write "verified against the source" unless you read the source**, in this session,
+  and can quote it. A false axiom with a confident comment checks green forever.
+- **Axiomatize a reference from the REFERENCE, not from the paper citing it.** A convention
+  mismatch between source and citer is invisible to a formalization built the other way — it
+  inherits exactly the error it was meant to detect. "Does the paper quote [6] correctly" and
+  "does [6]'s claim mean the same thing in the paper's convention" are different questions.
+- **An orphaned proof is a silent failure.** If you prove a lemma and then `axiom` the
+  conclusion it was meant to feed, the proof carries no weight and nothing reports it. Check
+  that each theorem you prove is actually cited by something above it.
+- **An UNCITED hole is invisible** (see the gotcha list). Delete dead stubs; don't leave them.
+- `--axioms` is the deliverable, not the green checkmark. Read the statements it lists, not
+  their names.
+
 ## STRATEGY: build DOWN from the goal, or UP from the primitives?
 
 Both work. Picking wrong costs rework, so decide deliberately. The rule of thumb:

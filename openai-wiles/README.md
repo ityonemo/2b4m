@@ -1,149 +1,96 @@
-# openai-fixed — the same manuscript, with the §3.4 defect repaired
+# openai-wiles — a formalization of the withdrawn Weil-classes manuscript
 
-> This is `../openai-erratum/` with the §3.4 circularity removed. Plain `2b4m check` — not
-> `--draft` — passes it with **zero holes**, resting on 29 erratum-specific axioms, every one
-> a result the manuscript cites. See "The axiom audit" for a statement-by-statement reading
-> against that rule, including the three axioms that failed it on an earlier pass.
+> A `2b4m` formalization of OpenAI's withdrawn manuscript *"Algebraicity of Weil classes on
+> split abelian eightfolds"*, built top-down with `hole`s and driven down to cited axioms.
+> Plain `2b4m check` — not `--draft` — passes it with **zero holes**, resting on 29
+> erratum-specific axioms.
 >
-> **WHAT IS FIXED: the `isLoose` problem, and only that.** The manuscript's outermost trace
-> `φ₁ → φ₀` uses the `+1` sign, which [6] grants only when the target link is loose — and
-> looseness is what §3.4 claims to *produce*. Two routes out, both taken here: stabilize `φ₀`
-> first (free, by [6] line 462, and then loose by Lemma 2.2), and make the outermost trace
-> FORWARD (granted "for any φ", no looseness needed). Either breaks the circle; the count
-> stays zero at `I(f₁) + (m+1) − 1 = 0`, and `exactCancellation` now carries **both** of
-> [6, Thm 3.6]'s hypotheses rather than just the count.
->
-> **Do not read this as "the paper is fixed."** [6] itself notes that any Legendrian can be
-> made loose by one extra stabilization, so this gap was always trivially closable; and a
-> published account describes a different, worse error (possibly spurious, or about another
-> theorem — it is unresolved). Note that OpenAI's withdrawal is not evidence of severity:
-> these manuscripts have no human author who could act on a margin
-> note. See the contested-diagnosis note below.
+> **READ THE AUDIT FIRST.** This directory's headline finding was for a time a diagnosis of
+> §3.4 as *circular*, and that diagnosis was **WRONG** — it rested on a hypothesis this
+> formalization invented and attributed to reference [6]. The retraction, and a
+> source-by-source audit of all 29 axioms (which found four citation errors, all mine), are
+> in "The axiom audit" and "What was gotten wrong". The honest state: nothing here confirms
+> or refutes OpenAI's stated reason for withdrawal.
 
-On **6 October 2026** OpenAI published 722 machine-generated mathematics manuscripts to
-`github.com/openai/math`. On **7 October** three were withdrawn. From their
-[`history.md`](https://github.com/openai/math/blob/main/history.md):
+## What was gotten wrong
 
-> In "Algebraicity of Weil classes on split abelian eightfolds" a sign error invalidates a
-> stabilization-trace cancellation argument and the construction used by two dependent
-> papers. As a result, we have withdrawn the following three manuscripts:
-> - Algebraicity of Weil classes on split abelian eightfolds
-> - Algebraicity of Kuga–Satake Correspondences for K3 Surfaces
-> - The rational Hodge conjecture for products of K3 surfaces
+Stated first, because it is the most useful thing here.
 
-The three form a tower. Weil classes are the canonical test case for the Hodge conjecture;
-the Kuga–Satake construction attaches an abelian variety to a K3 surface, so algebraicity for
-abelian eightfolds is what makes that correspondence algebraic; and the Hodge conjecture for
-products of K3 surfaces follows from the correspondence. One sign error at the base took
-down the headline claim — a case of a Millennium Problem — two levels up.
-
-**None of the three had a Lean formalization.** At the time of withdrawal roughly 42% of
-top-line results in the repo did.
-
-## The diagnosis is contested
-
-Stated up front because it bears on everything below.
-
-OpenAI's notice says only: *"a sign error invalidates a stabilization-trace cancellation
-argument and the construction used by two dependent papers."* It does not say which sign.
-
-**What this formalization found:** [6, Lemma 3.4]'s third bullet grants the `(−1)^k` trace
-sign only *"if in addition φ is assumed to be a loose Legendrian knot"*. §3.4's outermost
-inserted trace is `φ₁ → φ₀`, whose target is the **given** standard real-plane link, and the
-manuscript establishes no looseness for it — it treats looseness as the *output* of the
-insertion ("The negative link is now loose"). Checking Theorem 1.1 reports exactly that:
+For most of this exercise the directory asserted a confident diagnosis: that §3.4 is
+**circular** — that [6] grants the `+1` reverse-trace sign only when the target link is
+loose, that §3.4's outermost trace targets the given link `φ₀`, that nothing establishes its
+looseness, and that §3.4 presents looseness as the *output* of the very insertion the sign
+justifies. The checker appeared to confirm it:
 
 ```
 error: cannot discharge the guard premise 'isLoose(phiZero)' at this call site
 ```
 
-**A published account says something different.** One secondhand summary describes the error
-as: *"with initial signed count −m, the reverse traces contribute −m, giving −2m rather than
-zero."* That requires equation (3.6) to be **backwards**. Checked against the vendored source:
+**That diagnosis was wrong, and the error was manufactured here.** The looseness guard on
+`reverseTraceSign` was never in [6]. It was written into `legendrian/traces.b4m` with a
+confident justification ("[6]'s proof obtains these traces (its G2/G4) through Corollary 2.5,
+which destabilizes a loose knot") that is false. Reading Lemma 3.4's **proof** — which had
+not been read; only its statement had — settles it. [6] builds four immersions and assigns:
 
-- [6] is explicit — `G₁: φ → φ₁` has `I(G₁) = (−1)^{k−1}`; `G₂: φ₁ → φ` has `I(G₂) = (−1)^k`.
-- At `k = 4` that is `φ → φ₁ : −1` and `φ₁ → φ : +1`, which is **what (3.6) says**. The
-  manuscript's quotation of its source is correct.
-- To get `−m` the traces would have to run `φ_j → φ_{j+1}`, i.e. ordered `φ₀` innermost to
-  `φₘ` outward — the opposite of the manuscript's stated ordering.
+| trace | direction | index at `k = 4` |
+|---|---|---|
+| `G₁` | `φ → φ₁` (stabilize) | `(−1)^{k−1} = −1` |
+| `G₂` | `φ₁ → φ` (**reverse**) | `(−1)^k = +1` |
+| `G₃` | `φ₋₁ → φ` (from destabilization) | `(−1)^{k−1} = −1` |
+| `G₄` | `φ → φ₋₁` (**destabilize**) | `(−1)^k = +1` |
 
-So the `−2m` account cannot be reconciled with [6] plus the manuscript's own ordering. Three
-possibilities, undecided here: the summary is garbled; OpenAI calls the other direction
-"reverse"; or **the diagnosis below is wrong**, in which case the looseness gap is a second,
-independent defect rather than the one that caused the withdrawal.
+Looseness gates `G₃`/`G₄` — the destabilization direction, which needs Corollary 2.5 to
+produce `φ₋₁`. The reverse trace `G₂` needs none: `φ₁` is a stabilization and hence already
+loose, and `G₂` comes from Lemma 2.1 applied to the same homotopy as `G₁`. The manuscript
+quotes all of this correctly in its equation (3.6).
 
-What is not in doubt: the looseness precondition in [6] is real, the manuscript does not
-establish it, and it uses the sign that requires it.
+So the manuscript's step is fine as cited, and the "repair" this directory applied repaired
+nothing. The `openai-erratum` companion — which existed solely to hold the unrepaired step
+and emit that error — has been removed.
 
-### Sharpened: the defect is a CIRCULARITY, not just a missing hypothesis
+### What OpenAI actually says, and why it is still unresolved here
 
-Reading further into [6] strengthens the finding, and changes its character.
+The [withdrawal notice](https://github.com/openai/math/blob/main/preprints/Algebraicity-of-Weil-classes-on-split-abelian-eightfolds-September-18-2026/README.md)
+states a different defect:
 
-[6]'s **Theorem 3.6** is the result the manuscript invokes (as [9, Thm 2.3]):
+> The proof assigns each reverse stabilization trace sign `+1` and therefore claims that
+> inserting `m` such traces makes the signed count zero. Accounting for the opposite source
+> orientations of the two branches of the standard cusp gives sign `−1` for each reverse
+> trace in this convention. The resulting count is therefore `I_new = I(f₁) − m = −2m ≠ 0`.
 
-> Let `f₀ : L → X` be a Lagrangian immersion with a conical point … **If the Legendrian link
-> of `f₀` at `p` is loose and if `I(f₀) = 0`,** then there exists a Hamiltonian regular
-> homotopy … connecting `f₀` to a Lagrangian **embedding**.
+This is where the `−2m` figure comes from — it is the miscomputed count, not a commenter's
+handle, which is how it was misread here for a while.
 
-Two independent hypotheses: **looseness** and **zero index**. And [6]'s Theorem 3.7 — which
-does precisely what §3.4 attempts, reducing `|I|` by inserting Lemma 3.4 traces — likewise
-takes looseness as a *hypothesis*, never deriving it.
+**This directory neither confirms nor refutes it.** [6] plainly assigns `I(G₂) = (−1)^k = +1`
+in *its* convention, so the notice is asserting a **convention mismatch** between [6]'s index
+and the manuscript's signed double-point count — not an error inside [6]. Adjudicating that
+means comparing two orientation conventions, which is unformalized work. The axiom
+`reverseTraceSign` carries [6]'s sign, as [6] states it, with the caveat recorded at the
+declaration.
 
-So the structure [6] actually supports is:
+### The methodological finding
 
-    link loose                 ⇒ (Thm 3.7) reduce to SI = |I|
-    link loose AND I = 0       ⇒ (Thm 3.6) obtain an EMBEDDING
+This is the part worth generalizing past this paper.
 
-§3.4 needs the second. Its problem is the order of justification:
+**The reference was axiomatized from the citing paper's rendering of it, not from the
+reference.** A formalization built that way inherits exactly the error it was meant to
+detect: a convention mismatch between source and citer is invisible to it by construction.
+Checking *"does the manuscript quote [6] accurately"* — which it does — is not the same as
+checking *"does [6]'s sign mean the same thing in the manuscript's convention"*, and only the
+second would have caught the defect OpenAI reports.
 
-- The `(−1)^k = +1` trace sign it uses is available **only if the target link is loose**.
-- It uses those `+1` signs to drive the count to zero.
-- It presents looseness as the **output** of that same insertion: *"The negative link is now
-  loose and the total signed double count is `I(f₁) + m = 0`."*
+Two failure modes compounded:
 
-Looseness is needed to license the signs that establish the count, but is offered as a
-consequence of the construction those signs justify. That is circular, and it is a stronger
-objection than "a hypothesis is missing" — a missing hypothesis can be supplied, whereas
-circular justification has to be re-ordered.
+1. **Reading statements, not proofs.** Lemma 3.4's statement is a disjunction of two cases;
+   which case applies to which trace is settled three paragraphs later, in the proof.
+2. **A comment asserting verification that had not happened.** `traces.b4m` carried the line
+   "verified against the source" above a claim that contradicted the source. Nothing in the
+   toolchain can catch that — a false axiom with a confident comment checks green.
 
-**It is still repairable**, and by the same move: make `φ₀` loose *first* (free, by [6] line
-462 — any Legendrian can be made loose by one extra stabilization without changing its formal
-isotopy class), *then* every trace's `+1` is licensed and the count closes. `openai-fixed/`
-takes the other available route — one forward trace, which needs no looseness at all — and
-reaches zero as well. Either breaks the circle.
+The audit that found all of this is a **source-by-source reading of every axiom's statement
+against the cited text**, below. It found four citation errors in 29 axioms. None was
+detectable by `2b4m check`.
 
-What this does **not** settle is whether the circularity is what OpenAI withdrew over. It
-remains compatible with both candidate diagnoses.
-
-### Most likely: this is a SECONDARY gap, trivially fixable
-
-The evidence points against the finding below being *the* error that caused the withdrawal.
-
-**[6] makes looseness free.** Line 462 of the source: *"Any Legendrian submanifold Λ ⊂ Y can
-be made loose by stabilizing it in arbitrarily small neighborhood of a point. Moreover, it
-can be made loose even without changing its formal Legendrian isotopy class."* So if you need
-`φ₀` loose, you stabilize once more — which is repair (C), arrived at from the other side.
-The gap is presentational: a referee writes "insert `m+2`" in the margin and moves on.
-
-**The withdrawal says nothing about severity.** An earlier draft of this note argued that
-withdrawing rather than repairing implies the defect was not locally fixable. That inference
-is wrong. These manuscripts are machine-generated — roughly three hours of model compute
-each, with no human author who has verified the argument. "Insert `m+2` traces" is a margin
-note a referee can act on; it is not something OpenAI can act on, because acting on it means
-a human taking authorship of a repair inside an 80-page symplectic-topology argument nobody
-there has checked. Withdrawal is the only available move whether the gap is two traces or
-a broken convention.
-
-So the withdrawal is not evidence either way, and the two candidate diagnoses sit roughly
-even. What remains true is the first point: **[6] makes looseness free, so the gap below is
-trivially closable** — which makes it the kind of thing a human reader skims past and a
-checker catches, a decent advertisement for formalization and a weak one for this particular
-diagnosis being *the* error.
-
-What `openai-fixed/` demonstrates is therefore narrower than "the paper is repaired": it
-shows that *this* gap closes without disturbing the count, and that the architecture above
-§3.4 is unaffected. If the real error is the inverted convention, the repair here does not
-touch it.
 
 ## What is here
 
@@ -154,10 +101,10 @@ touch it.
 | `parity.b4m` | 𝔽₂, the field the paper's sign exponents live in, plus exhaustion as a schema |
 | `signs.md` | the sign identities of Section 6, quoted from the paper and proved |
 
-Run `2b4m check openai-erratum` to verify. For the assumption set behind the main theorem:
+Run `2b4m check openai-wiles` to verify. For the assumption set behind the main theorem:
 
 ```
-2b4m check --axioms openai-erratum/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
+2b4m check --axioms openai-wiles/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
 ```
 
 which reports **29 erratum-specific axioms**, each a result the manuscript cites. The audit
@@ -235,10 +182,10 @@ residue on the Lemma 6.2 collapse is a sum of **doubled** terms — `r + r`, `a 
 Queried, not remembered:
 
 ```
-2b4m check --axioms openai-fixed/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
+2b4m check --axioms openai-wiles/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
 ```
 
-**Zero holes, 40 axioms — 29 erratum-specific plus 11 from std's ℤ.** `openai-fixed` passes
+**Zero holes, 40 axioms — 29 erratum-specific plus 11 from std's ℤ.** `openai-wiles` passes
 plain `2b4m check`, not `--draft`.
 
 Zero holes is a cheap number if you reach it by relabelling, so the audit that matters is not
@@ -246,7 +193,38 @@ the hole count but a reading of every axiom's *statement* against the rule: **`a
 results the paper cites; the paper's own mathematics must be proved.** That audit failed
 twice, and both failures are recorded below because the pattern is the point.
 
-### What the audit caught
+### Round two: the citation audit
+
+Every axiom's statement was then read against the **cited text itself** — the manuscript, [6]
+(arXiv:1303.0588v2), [9] (arXiv:1303.0586v1) — rather than against the manuscript's prose
+about them. Four errors, all introduced here, none visible to `2b4m check`:
+
+| axiom | the error | status |
+|---|---|---|
+| `reverseTraceSign` | carried an `isLoose` guard **not in [6]**; see "What was gotten wrong" | guard removed; [6]'s G1–G4 table transcribed |
+| `exactCancellation` | comment read "[6, Thm 3.6] = the manuscript's [9, Thm 2.3]" — **two different results in two different papers**: [6] Thm 3.6 is about a *conical point*, [9] Thm 2.3 about an immersion *cylindrical at −∞*. The manuscript cites [9], and its hypothesis list matches [9] | re-attributed to [9] Thm 2.3, quoted verbatim; content was already right |
+| `aStabilizationIsLoose` | attributed to [6] Lemma 2.2, which says *"if χ(U) = 0, then Λ and Λ_U are formally Legendrian isotopic"* — a formal-isotopy claim with a hypothesis, not a looseness claim | re-attributed to [6] §2.2, which is where looseness is defined |
+| `membershipInTheSpanForcesAnnihilation` | decomposed into "every test object pairs to zero against every power", which is **false in the manuscript's setting** — it says *"The leading intersection factor is nonzero because `l` is ample"*. A *determination* argument had been replaced by a *vanishing* argument | rebuilt as (10.16)'s polynomial-interpolation argument: the pairings for all `k` force `ζ_s = ν Σ e^{−jl}`, which fails the test against `P_C` |
+
+Verified correct against source, with the quotations that settle them:
+
+- `forwardTraceSign` — [6] Lemma 3.4, `I(G₁) = (−1)^{k−1}`. ✓
+- `theExtraObjectDetectsTheExceptionalPart`, `aScalarGraphAnnihilatesTheExceptionalPart` —
+  §10.6: *"Here α = α_ex + g₁ + g₂ + g₃, g_k · α_ex = 0, and c · α_ex ≠ 0."* ✓
+- `everyPeriodIsHitByTheComponent` — §12.4: *"Thus H → U is surjective."* ✓
+- `aRationalAlgebraicClassIsACombinationOfSubvarieties`,
+  `aNonzeroWeilProjectionSelectsAMarkedConstituent` — Prop 12.3: *"Express a cycle … as a
+  finite rational linear combination of integral codimension-four subvarieties. At least one
+  constituent has a nonzero Weil projection."* ✓
+- `remmertProperMapping` — Lemma 12.1: *"Remmert's proper mapping theorem makes their images
+  closed analytic [15]."* ✓
+- `theEigenvaluesAreNonrealConjugates` — re-verified numerically, `d = 1..39`: with
+  `m = ⌊√d·cot(π/8)⌋+1`, `arg(m+i√d) ∈ (0, π/8)` and `(m+i√d)⁸` is nonreal; the floor itself
+  fails the bound. No violations. ✓
+- The remaining citations (base change and Betti–étale [20], Baire, formula (2.3),
+  `ch₄(O_Z) = [Z]` of [14], Hilbert schemes [16]) match the manuscript's own attributions. ✓
+
+### What round one caught
 
 Three axioms were doing the paper's work while wearing a citation's name. Each is now a
 theorem, and the decomposition is what added the axiom count from 13 to 29 — more axioms, but
@@ -308,12 +286,17 @@ Geometry of the paper, cited as such — §10's Euler-pairing identities:
 
 ### So: did we fix the theorem?
 
-**We fixed §3.4, and we checked everything above it.** That is a narrower claim than "the
-theorem is proved", and the difference is worth stating precisely:
+**No, and there was nothing here to fix.** The §3.4 defect this directory claimed to repair
+was manufactured by a fabricated axiom. What survives is narrower:
 
 > Every step from §3.4 up to Theorem 1.1 is kernel-checked, and each remaining assumption is
-> either textbook or a clearly-identified geometric input the manuscript cites. §3.4's
-> circularity is removable without disturbing anything above it.
+> a result the manuscript cites — with the four citations above corrected after being read
+> against their sources.
+
+On OpenAI's stated reason for withdrawal — the reverse-trace sign being `−1` rather than `+1`
+in the manuscript's convention — this directory is **silent**. It carries [6]'s sign as [6]
+states it. Deciding the question requires comparing orientation conventions, which is not
+formalized here.
 
 What is **not** claimed: that Sections 4–11's symplectic topology is correct. Those sections
 are the origin of the cited geometric inputs above (`anAlternatingChernCharacterIsAlgebraic`,
@@ -326,10 +309,9 @@ Two things the checker caught that are worth recording:
 - When the count became a proved theorem, the forward-trace step went **dead** — strict check
   reported it unused, meaning the repair was decorative. Making `theRepairedInsertionTotal`
   conditional on the trace sign fixed that. A repair nothing consumes is not a repair.
-- `openai-erratum` was re-synced to carry the *same* decomposed axiom set as `openai-fixed`,
-  differing only in `legendrian/stabilization-traces.md`. It still fails with
-  `cannot discharge the guard premise 'isLoose(phiZero)'` — so the §3.4 error is not an
-  artifact of a convenient assumption elsewhere.
+- The `openai-erratum` companion directory has been **removed**. It existed to hold the
+  manuscript's §3.4 step unrepaired so the checker would reject it. Since the rejection came
+  from a fabricated guard (see below), there was nothing left for it to demonstrate.
 
 ## Findings so far
 

@@ -254,6 +254,11 @@ pub const ProjectResult = struct {
         line: usize,
         /// theorem names that (transitively) rest on this hole
         dependents: []const []const u8,
+        /// the CITED-HOLE locator (`hole x cites "src": …`), or null for a bare hole. A cited
+        /// hole does NOT fail a strict check: the citation asserts an external authority this
+        /// checker cannot verify, so the run discloses it rather than rejecting it. Bare holes
+        /// are still rejected — a citation is the only thing that buys passage.
+        cites: ?[]const u8 = null,
     };
 
     pub fn ok(self: *const ProjectResult) bool {
@@ -432,6 +437,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
             .path = f.path,
             .line = lc.line + 1,
             .dependents = dep_list,
+            .cites = if (h.cites == InternPool.Index.none) null else ctx.interner.stringBytes(h.cites),
         });
     }
     // `holes_reached` is filled in the order proofs REACHED the holes — i.e. in scheduling

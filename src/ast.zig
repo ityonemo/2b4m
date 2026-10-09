@@ -183,7 +183,17 @@ pub const Pred = union(enum) {
 /// parametric template — `axiom foo(prop(T)): …`); the parser sets it from the
 /// optional `(params)`, so "a schema is an axiom with params" is a downstream reading, not a
 /// separate decl kind. A theorem wraps a `Fact` + its proof steps.
-pub const Fact = struct { name: Token, formula: *const Expr, params: ?[]const SchemaParam = null };
+/// `cites` is the CITATION on a `hole` — `hole name cites "locator": formula`. A cited hole
+/// is still a hole (it is reported, and the kernel treats it as an assumption), but it does
+/// not FAIL a strict check: the citation is the claim that some external source vouches for
+/// it, which this checker cannot verify and therefore discloses instead. Null on an axiom or
+/// theorem, and on a bare hole — which strict mode still rejects.
+pub const Fact = struct {
+    name: Token,
+    formula: *const Expr,
+    params: ?[]const SchemaParam = null,
+    cites: ?Token = null,
+};
 
 pub const Axiom = union(enum) {
     local: Fact,
@@ -215,6 +225,13 @@ pub const Decl = union(enum) {
     axiom: Axiom,
     /// `hole name: formula` — an aspirational placeholder, accepted like an axiom but
     /// disclosed as a hole (default mode rejects; --draft allows). Same shape as Axiom.
+    ///
+    /// `hole name cites "locator": formula` — a CITED hole: assumed on the authority of an
+    /// external source. Still a hole (still reported, still an assumption to the kernel), but
+    /// strict mode PASSES it, printing the citation so a reader can check what the checker
+    /// cannot. This is the honest home for a borrowed result: `axiom` is for a theory's own
+    /// primitives, and relabelling a borrowed result as an axiom is how an unproved step
+    /// stops being visible.
     hole: Axiom,
     theorem: Theorem,
     /// `model <Name> { <src>: <tgt> …; <src> <- <localThm> … }` — a model of an imported

@@ -1,0 +1,88 @@
+// openai-wiles/legendrian/traces.b4m — reference [6]'s stabilization traces, axiomatized.
+//
+// T. Ekholm, Y. Eliashberg, E. Murphy, I. Smith, "Constructing exact Lagrangian immersions
+// with few double points", Geom. Funct. Anal. 23 (2013) 1772-1803, arXiv:1303.0588v2 —
+// the manuscript's reference [6], whose numbering it follows.
+//
+// WELL-KNOWN RESULTS, axiomatized from the source — and this file's history is a caution
+// worth keeping. An earlier version put an `isLoose` guard on `reverseTraceSign`, claiming
+// [6] obtains the reverse trace through Corollary 2.5 (which destabilizes a loose knot).
+// That was WRONG, and it was invented here, not read from [6]: the sign assignments live in
+// Lemma 3.4's PROOF, which had not been read. See the G1-G4 table below.
+
+import integer <<< "std/integer.b4m"
+
+sort Link // a Legendrian link
+sort Nat2 // source dimension is 2k; `half` is k
+sort Int = integer.Int
+const ZERO = integer.ZERO
+const ONE = integer.ONE
+func neg = integer.neg
+func add = integer.add
+
+// `stabilize(L)` is the U-stabilization of L ([6] §2.1).
+func stabilize(l: Link) => Link
+
+// LOOSE ([6] §2, after Lemma 2.2): "A Legendrian submanifold is loose if it is isotopic to
+// the stabilization of another Legendrian knot."
+pred isLoose(l: Link)
+
+// A STABILIZATION IS LOOSE — [6] §2.2, definitional.
+//
+// CITATION CORRECTED. An earlier version attributed this to [6] Lemma 2.2, which says
+// something else entirely:
+//
+//   "Lemma 2.2. Let Lambda in Y be a Legendrian submanifold and Lambda_U its U-stabilization.
+//    Then if the Euler characteristic chi(U) of U satisfies chi(U) = 0, then Lambda and
+//    Lambda_U are formally Legendrian isotopic."
+//
+// That is a FORMAL ISOTOPY statement carrying a chi(U) = 0 hypothesis, not a looseness
+// claim. Looseness of a stabilization is instead [6] §2.2's own definition -- "A Legendrian
+// submanifold is loose if it is isotopic to the stabilization of another Legendrian knot" --
+// and [6] uses it as such (the proof of Corollary 2.5 reads "If Lambda is loose then
+// according to Lemma 2.2 the stabilization ..."). Cited here to §2.2.
+hole aStabilizationIsLoose cites "arXiv:1303.0588v2 (Ekholm-Eliashberg-Murphy-Smith) §2.2: a Legendrian is loose iff isotopic to a stabilization": forall l: Link; isLoose(stabilize(l))
+
+// -- the two trace signs, at source dimension 8 (k = 4) -------------------------------------
+//
+// [6, Lemma 3.4, third bullet], verbatim:
+//
+//   "if n = 2k then, for any phi, we can arrange that I(h1^-) = (-1)^{k-1}, and if in
+//    ADDITION phi is assumed to be a LOOSE Legendrian knot, then we can arrange also that
+//    I(h1^-) = (-1)^k."
+//
+// At k = 4: (-1)^{k-1} = -1 and (-1)^k = +1. The manuscript's equation (3.6) quotes this
+// correctly. But quoting the STATEMENT is not enough — which trace gets which sign is
+// settled in the PROOF (arXiv:1303.0588v2, p. 14), where four Lagrangian immersions are
+// built and their indices assigned:
+//
+//   G1:  phi      -> phi_1     (stabilize)      I(G1) = (-1)^{k-1} = -1
+//   G2:  phi_1    -> phi       (REVERSE)        I(G2) = (-1)^k     = +1
+//   G3:  phi_{-1} -> phi       (from destab.)   I(G3) = (-1)^{k-1} = -1
+//   G4:  phi      -> phi_{-1}  (DESTABILIZE)    I(G4) = (-1)^k     = +1
+//
+// So the LOOSENESS hypothesis belongs to G3/G4 — the destabilization direction, which needs
+// Corollary 2.5 to produce phi_{-1}. G2, the reverse trace phi_1 -> phi, needs NO looseness:
+// phi_1 is a stabilization and hence already loose, and G2 comes from Lemma 2.1 applied to
+// the same homotopy {phi_t} as G1. Guarding G2 on isLoose(phi) was this file's own error.
+//
+// `traceSign(source, target)` is the signed double count contributed by one trace.
+func traceSign(source: Link, target: Link) => Int
+
+// FORWARD trace, l -> stabilize(l): sign (-1)^{k-1} = -1 at k = 4. Available FOR ANY l —
+// the source says "for any phi", so this axiom carries no hypothesis.
+hole forwardTraceSign cites "arXiv:1303.0588v2 Lemma 3.4 + proof p.14: I(G1) = (-1)^{k-1}, G1 going phi -> phi_1": forall l: Link;
+  traceSign(l, stabilize(l)) = neg(ONE)
+
+// REVERSE trace, stabilize(l) -> l: [6]'s G2, sign (-1)^k = +1 at k = 4. UNCONDITIONAL —
+// no looseness hypothesis, per the G1-G4 table above.
+//
+// CAVEAT, and it is the live question about this paper: OpenAI's withdrawal notice says the
+// correct sign here is -1, "accounting for the opposite source orientations of the two
+// branches of the standard cusp ... in this convention". [6] plainly assigns I(G2) = (-1)^k
+// = +1 in ITS convention, so the notice is asserting a CONVENTION MISMATCH between [6]'s
+// index I and the manuscript's signed double-point count -- not an error inside [6]. This
+// file cannot adjudicate that: doing so means comparing the two orientation conventions,
+// which is unformalized work here. The sign below is [6]'s, as [6] states it.
+hole reverseTraceSign cites "arXiv:1303.0588v2 Lemma 3.4 + proof p.14: I(G2) = (-1)^k, G2 going phi_1 -> phi. DISPUTED: OpenAI's withdrawal notice says -1 in the manuscript's convention": forall l: Link;
+  traceSign(stabilize(l), l) = ONE
