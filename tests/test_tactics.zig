@@ -181,11 +181,11 @@ pub fn addTests(
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
     // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `witness`);
-    // a case split re-emits or_elim + arm hypotheses. (Sources check fine too.)
+    // a case split re-emits common_conclusion + arm hypotheses. (Sources check fine too.)
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness_source.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_case_source.b4m" });
-    // case split (or_elim + hypothesis) now materializes guardedly.
+    // case split (common_conclusion + hypothesis) now materializes guardedly.
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_case.b4m" });
     // SAME-FILE guarded model: the source theory and the model share one file (the
     // paradigm subgroup case — H ⊆ G on one carrier). Mapping sources are bare
@@ -348,7 +348,7 @@ pub fn addTests(
     // flips to a passing check once accelerants emit model-mangled synthetics.
     // (Counters #NN/$NN are stable per-file elaboration-order IDs.)
     // UNINSTANTIATED SCHEMA IS UNCHECKED (#93): this schema's body has a malformed step (a 4-ref
-    // or_elim — the kernel's or_elim is binary), but the schema is NEVER instantiated. There is no
+    // common_conclusion — the kernel's common_conclusion is binary), but the schema is NEVER instantiated. There is no
     // decl-time check anymore (a schema needn't be a universal; the per-instance proof is the only
     // gate), so the demand engine never checks this dead schema — the file passes. Consistent with
     // "uncited code isn't checked"; a future --library mode would catch it. Both modes pass (no

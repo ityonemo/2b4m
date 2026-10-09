@@ -14,7 +14,7 @@ can print exactly one topic — from its anchor up to the next heading of any le
 with awk:
 
 ```
-awk '/^#+ /{p=0} /^### RULE: or_elim$/{p=1} p' GUIDE.md
+awk '/^#+ /{p=0} /^### RULE: common_conclusion$/{p=1} p' GUIDE.md
 ```
 
 `/^#+ /` matches any markdown heading; `p` turns on at the anchor and off at the
@@ -52,7 +52,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: make_equivalence` | a biconditional from its two directions |
 | `RULE: equiv_forward` / `equiv_converse` | recover a direction of an iff |
 | `RULE: either_left` / `either_right` | inject into a disjunction |
-| `RULE: or_elim` | binary case analysis over a disjunction |
+| `RULE: common_conclusion` | binary case analysis over a disjunction |
 | `RULE: contradiction` | derive a negation from a contradiction |
 | `RULE: ex_falso` | from a contradiction, conclude anything |
 | `RULE: double_negation` | from `not not P`, conclude `P` |
@@ -880,9 +880,9 @@ established existential; `unpacked` exports any witness-free conclusion.
 
 **`case ... on`** states a goal, then proves it by splitting a previously
 established disjunction into one arm per disjunct — sugar for a (possibly
-nested) `or_elim`. Each arm is an `assume`-block over one disjunct that must
+nested) `common_conclusion`. Each arm is an `assume`-block over one disjunct that must
 conclude the goal. A left-nested `(A or B) or C` fans out automatically; you
-write N arms, not a hand-nested `or_elim` tree.
+write N arms, not a hand-nested `common_conclusion` tree.
 
 ```2b4m
 @result |
@@ -915,7 +915,7 @@ The disjunction (`tri-q1q2`) is any prior step proving `A or B or ...`; the
 "kind" of split is whatever lemma produced it (`trichotomy`, `zeroOrSucc`,
 …). To split an existential, `unpack` its witness first, then
 `case` on a disjunction about the now-in-scope witness. `case` is elaborator
-sugar: the kernel checks the synthesized `or_elim` exactly as if hand-written,
+sugar: the kernel checks the synthesized `common_conclusion` exactly as if hand-written,
 so it adds no trust.
 
 Steps may cite labels across the whole enclosing block regardless of textual
@@ -947,7 +947,7 @@ below it (see the Index for the full anchor list).
 - **`by`** (kernel primitives): `cite`, `hypothesis`, `predicate`, `modus_ponens`,
   `discharge`, `generalize`, `apply_at`, `witness`, `unpacked`,
   `both`, `and_lhs`, `and_rhs`, `make_equivalence`, `equiv_forward`,
-  `equiv_converse`, `either_left`, `either_right`, `or_elim`, `contradiction`,
+  `equiv_converse`, `either_left`, `either_right`, `common_conclusion`, `contradiction`,
   `ex_falso`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `equiv_rewrite`.
 - **`using`** (engine proof-generation): `instantiation`, `model`, `import`, and the
   accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
@@ -971,7 +971,7 @@ below it (see the Index for the full anchor list).
 | `make_equivalence FWD BWD` | a biconditional `P iff Q` from its two directions (`P -> Q` then `Q -> P`). Requires an `iff`-shaped goal (a plain conjunction is `both`'s job) |
 | `equiv_forward STEP` / `equiv_converse STEP` | recover a direction of `P iff Q` (`P -> Q` / `Q -> P`) |
 | `either_left STEP` / `either_right STEP` | inject into a disjunction |
-| `or_elim DISJ LBLOCK RBLOCK` | case analysis: both assume blocks conclude the claim |
+| `common_conclusion DISJ LBLOCK RBLOCK` | case analysis: both assume blocks conclude the claim |
 | `contradiction BLOCK S1 S2` | the assumption led to the contradiction `S1`/`S2`, so its negation holds |
 | `ex_falso S1 S2` | from a contradiction, conclude anything |
 | `double_negation STEP` | from `not not P`, conclude `P` |
@@ -1126,23 +1126,23 @@ right disjunct `Q`. (`either_right` proves `Q` to conclude `P or Q`.)
 
 `[by either_right STEP]` — one ref proving `Q`; concludes `P or Q`.
 
-### RULE: or_elim
+### RULE: common_conclusion
 
-`[by or_elim DISJ LBLOCK RBLOCK]` — **THREE refs, and it is BINARY**: a step proving
+`[by common_conclusion DISJ LBLOCK RBLOCK]` — **THREE refs, and it is BINARY**: a step proving
 `A or B`, then two `assume` blocks — `assume A { … }` and `assume B { … }` — **each
 of which must conclude the same goal**. That shared conclusion is the result.
 
 ```2b4m
 @goal-from-cases |
   R
-  or_elim disj {
+  common_conclusion disj {
     @left  | assume A { … @out | R | [by …] }
     @right | assume B { … @out | R | [by …] }
   }
 ```
 
-Footgun: `or_elim` is **not N-ary**. A three-way split `(A or B) or C` needs either a
-hand-nested `or_elim` (elim the outer, then elim `A or B` inside the left arm) or —
+Footgun: `common_conclusion` is **not N-ary**. A three-way split `(A or B) or C` needs either a
+hand-nested `common_conclusion` (elim the outer, then elim `A or B` inside the left arm) or —
 far better — the `case` sugar, which fans out a left-nested disjunction into N
 arms automatically (see `case ... on` under Subproof keywords).
 

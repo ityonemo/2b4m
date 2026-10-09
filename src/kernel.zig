@@ -80,7 +80,7 @@ pub const Justification = union(enum) {
     and_rhs: SRef,
     either_left: SRef,
     either_right: SRef,
-    or_elim: struct { disj: SRef, left: BRef, right: BRef },
+    common_conclusion: struct { disj: SRef, left: BRef, right: BRef },
     contradiction: struct { block: BRef, s1: SRef, s2: SRef },
     ex_falso: struct { s1: SRef, s2: SRef },
     double_negation: SRef,
@@ -538,24 +538,24 @@ pub const Kernel = struct {
                     });
                 }
             },
-            .or_elim => |r| {
+            .common_conclusion => |r| {
                 const disj = try self.checkStepRef(proof, r.disj, i, at);
                 const node = self.pool.get(disj.formula);
                 if (node != .bin or node.bin.op != .or_op) {
-                    return self.fail(r.disj.loc, "or_elim expects a disjunction, got '{s}'", .{
+                    return self.fail(r.disj.loc, "common_conclusion expects a disjunction, got '{s}'", .{
                         try self.render(disj.formula),
                     });
                 }
                 inline for (.{ .{ r.left, node.bin.lhs }, .{ r.right, node.bin.rhs } }) |case| {
                     const b = try self.checkClosedBlockRef(proof, case[0], i, at);
                     if (b.kind != .assume or !self.pool.alphaEq(b.kind.assume, case[1])) {
-                        return self.fail(case[0].loc, "or_elim: subproof must assume '{s}'", .{
+                        return self.fail(case[0].loc, "common_conclusion: subproof must assume '{s}'", .{
                             try self.render(case[1]),
                         });
                     }
                     const b_conc = try self.requireLastFormula(proof, b, case[0].loc);
                     if (!self.pool.alphaEq(b_conc, step.formula)) {
-                        return self.fail(case[0].loc, "or_elim: subproof concludes '{s}', not '{s}'", .{
+                        return self.fail(case[0].loc, "common_conclusion: subproof concludes '{s}', not '{s}'", .{
                             try self.render(b_conc), try self.render(step.formula),
                         });
                     }

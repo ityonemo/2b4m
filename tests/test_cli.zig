@@ -234,7 +234,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/case_split.b4m" });
 
     // a `case` arm assuming the wrong disjunct is a located error
-    ctx.fail(&.{ "check", "tests/cases/case_bad_arm.b4m" }, "tests/cases/case_bad_arm.b4m:19:8: error: or_elim: subproof must assume 'p(Z)'\n");
+    ctx.fail(&.{ "check", "tests/cases/case_bad_arm.b4m" }, "tests/cases/case_bad_arm.b4m:19:8: error: common_conclusion: subproof must assume 'p(Z)'\n");
 
     // apply_at at several arguments emits the chain in one written step
     ctx.okSilent(&.{ "check", "tests/cases/forall_elim_multi.b4m" });

@@ -32,7 +32,7 @@
 //!   - `process(w, step, block) !bool` — the semantic work once refs are clean: elaborate
 //!     the claim/hypothesis/binder sort, truth-check. false = failed (diagnostic already
 //!     recorded by the driver).
-//!   - `caseConclude(w, step, block) !bool` — a `case` step's or_elim conclusion check,
+//!   - `caseConclude(w, step, block) !bool` — a `case` step's common_conclusion conclusion check,
 //!     which runs only after ALL its arms have walked.
 //!   - `exitBlock(w, block) !void` — the block just descoped; the driver closes its side
 //!     (e.g. seals the kernel block's step range).
@@ -121,7 +121,7 @@ stack: std.ArrayList(Frame) = .empty,
 /// LocalStepKV — live step/block labels, innermost-last (reverse-scan lookup).
 local_steps: std.ArrayList(LocalStep) = .empty,
 /// EVERY bound step/block label, appended and NEVER truncated. `resolveStep` falls back
-/// here for a label that has descoped (a contradiction / or_elim citing steps at the CONCLUSION
+/// here for a label that has descoped (a contradiction / common_conclusion citing steps at the CONCLUSION
 /// of a closed sibling subproof — the kernel then enforces the ancestor accessibility rule,
 /// per the module's "resolution time" contract). Shadow/duplicate checks stay on the LIVE
 /// `local_steps`; this map is resolution-only. Reverse scan = most-recent binding wins (fine
@@ -163,7 +163,7 @@ pub fn findStep(self: *const Walk, name: StrId) ?LocalTarget {
 
 /// Resolve a label for a CITATION: the live scope first, then any closed subproof's label
 /// (the kernel enforces cross-scope accessibility). This is what step/block references use;
-/// contradiction/or_elim cite steps at a closed subproof's conclusion through the fallback.
+/// contradiction/common_conclusion cite steps at a closed subproof's conclusion through the fallback.
 pub fn resolveStep(self: *const Walk, name: StrId) ?LocalTarget {
     if (self.findStep(name)) |t| return t;
     var i = self.closed_steps.items.len;
