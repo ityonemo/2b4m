@@ -1,19 +1,23 @@
 # openai-fixed — the same manuscript, with the §3.4 defect repaired
 
-> This is `../openai-erratum/` with one change: §3.4 inserts `m+2` stabilization traces
-> instead of `m`, with the outermost one FORWARD. `2b4m check openai-fixed` is GREEN and
-> Theorem 1.1 goes through with no holes.
+> This is `../openai-erratum/` with the §3.4 circularity removed. Plain `2b4m check` — not
+> `--draft` — passes it with **zero holes**, resting on 29 erratum-specific axioms, every one
+> a result the manuscript cites. See "The axiom audit" for a statement-by-statement reading
+> against that rule, including the three axioms that failed it on an earlier pass.
 >
-> **The repair:** the manuscript's outermost trace `φ₁ → φ₀` needs `isLoose(φ₀)`, which [6]
-> requires and nothing supplies. Using `m+1` reverse traces (every target a stabilization,
-> hence loose by [6] Lemma 2.2) plus one outermost forward trace (granted "for any φ", no
-> looseness needed) keeps the signed double count at zero: `I(f₁) + (m+1) − 1 = 0`. So
-> [9, Thm 2.3] still applies, and every trace now has its hypothesis.
+> **WHAT IS FIXED: the `isLoose` problem, and only that.** The manuscript's outermost trace
+> `φ₁ → φ₀` uses the `+1` sign, which [6] grants only when the target link is loose — and
+> looseness is what §3.4 claims to *produce*. Two routes out, both taken here: stabilize `φ₀`
+> first (free, by [6] line 462, and then loose by Lemma 2.2), and make the outermost trace
+> FORWARD (granted "for any φ", no looseness needed). Either breaks the circle; the count
+> stays zero at `I(f₁) + (m+1) − 1 = 0`, and `exactCancellation` now carries **both** of
+> [6, Thm 3.6]'s hypotheses rather than just the count.
 >
 > **Do not read this as "the paper is fixed."** [6] itself notes that any Legendrian can be
 > made loose by one extra stabilization, so this gap was always trivially closable; and a
-> published account describes a different, worse error. Note that OpenAI's withdrawal is not
-> evidence of severity — these manuscripts have no human author who could act on a margin
+> published account describes a different, worse error (possibly spurious, or about another
+> theorem — it is unresolved). Note that OpenAI's withdrawal is not evidence of severity:
+> these manuscripts have no human author who could act on a margin
 > note. See the contested-diagnosis note below.
 
 On **6 October 2026** OpenAI published 722 machine-generated mathematics manuscripts to
@@ -156,7 +160,9 @@ Run `2b4m check openai-erratum` to verify. For the assumption set behind the mai
 2b4m check --axioms openai-erratum/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
 ```
 
-which reports **six axioms** — four genuine citations and two that are the paper's own work.
+which reports **29 erratum-specific axioms**, each a result the manuscript cites. The audit
+below reads every one of their statements against that rule, and records the three that
+failed it on an earlier pass.
 
 ## Method: holes first, then axioms
 
@@ -232,45 +238,98 @@ Queried, not remembered:
 2b4m check --axioms openai-fixed/architecture.md theWeilPlaneIsSpannedByAlgebraicClasses
 ```
 
-Nine axioms. **Six are genuine citations. Three are not**, and saying otherwise would be
-exactly the failure this exercise exists to expose — so they are labelled.
+**Zero holes, 40 axioms — 29 erratum-specific plus 11 from std's ℤ.** `openai-fixed` passes
+plain `2b4m check`, not `--draft`.
 
-### Genuine citations (six)
+Zero holes is a cheap number if you reach it by relabelling, so the audit that matters is not
+the hole count but a reading of every axiom's *statement* against the rule: **`axiom` is for
+results the paper cites; the paper's own mathematics must be proved.** That audit failed
+twice, and both failures are recorded below because the pattern is the point.
+
+### What the audit caught
+
+Three axioms were doing the paper's work while wearing a citation's name. Each is now a
+theorem, and the decomposition is what added the axiom count from 13 to 29 — more axioms, but
+every one of them smaller and genuinely cited.
+
+| axiom that failed the rule | why it failed | now |
+|---|---|---|
+| `aCycleClassDecomposesIntoIntegralSubvarieties` | read like a citation but its *statement* produced the whole marked-class existential — the same swallow as the forbidden `theConstructionDeliversAMarkedClass`, renamed | **theorem**, from `aRationalAlgebraicClassIsACombinationOfSubvarieties` (the definition of the image of `CH⁴ ⊗ ℚ`) + `aNonzeroWeilProjectionSelectsAMarkedConstituent` (linear algebra on §2's decomposition) |
+| `theConjugationEndomorphism` | asserted spanning outright, which left `eigenvalues/independence.md`'s proof **orphaned** — the eigenvalue work was decorative | **theorem**, from `theConjugationIsAlgebraic` (standard) + `theConjugationProducesASpanningPartner`, now **proved** in `eigenvalues/independence.md` from the eigenvalue distinctness |
+| `theMarkedClassIsConstantAcrossTheFamily` | carried Lemma 12.1's surjectivity and §12.4's spreading; its own comment admitted "NOT a citation" | **theorem**, from `theMarkedClassSpreadsAcrossTheParameterSet` (proved in `construction/chern-constancy.md`) + one Lemma 12.1 citation |
+
+A fourth, `membershipInTheSpanForcesAnnihilation`, was the paper's computation (10.16). It is
+now a **theorem** from two citations: bilinearity of the Euler pairing over the span, and the
+pullback identification of §10 (Lemma 7.4 + Prop 10.2) under which every test object pairs to
+zero against every power of `l`.
+
+The orphan case is the one worth generalizing. `independence.md` *proved* the eigenvalue
+argument, and `architecture.md` *assumed* the conclusion it feeds — so the proof existed and
+carried no weight. Nothing in the hole count detects that; only reading the axiom's statement
+against the theorem it was supposed to consume does.
+
+### The 29 erratum axioms
+
+Standard mathematics, cited by the manuscript:
 
 | axiom | source |
 |---|---|
 | `theAlgebraicClassesFormASubspace` | the image of `CH⁴(A) ⊗ ℚ → H⁸(A, ℚ)` is a ℚ-subspace |
-| `aPowerOfThePolarizationIsAlgebraic` | `θ` is a divisor class, so `θ⁴` is an intersection of divisors |
+| `aPowerOfThePolarizationIsAlgebraic` | `θ` is a divisor class |
 | `theCycleClassMapIsFunctorial` | functoriality under an algebraic correspondence |
-| `exactCancellation` | Eliashberg–Murphy, *Lagrangian caps*, [9, Thm 2.3] — the manuscript's own citation |
-| `forwardTraceSign` | [6, Lemma 3.4] third bullet, `(−1)^{k−1}` case, stated "for any φ" — verified against arXiv:1303.0588v2 |
-| `chernCharactersAgreeAlongAPath`, `anyTwoPointsOfTheComponentAreJoined` (in `construction/chern-constancy.md`) | homotopy invariance of the Chern character; connected + locally path connected ⇒ path-joined |
+| `theConjugationIsAlgebraic` | an integral matrix commuting with every period in `U` defines an algebraic endomorphism |
+| `selfConjugateIsReal` | `z = z̄ ⇒ z ∈ ℝ` |
+| `theEigenvaluesAreNonrealConjugates` | `arg(m + i√d) ∈ (0, π/8)` under the paper's bound (checked numerically, `d = 1..39`, bound tight) |
+| `proportionalityForcesBothEigenvalues` | linear algebra on an eigenspace decomposition |
+| `nonProportionalClassesSpan` | `dim W_K(A_Π) = 2` (§2) |
+| `chernCharactersAgreeAlongAPath` | homotopy invariance of `ch` |
+| `anyTwoPointsOfTheComponentAreJoined` | connected + locally path connected |
+| `equalChernCharactersGiveEqualClasses`, `aMarkedClassIsAlgebraicAtItsOwnPeriod` | `ch₄(O_Z) = [Z]` of [14], both halves |
+| `everyPeriodIsHitByTheComponent`, `anAlgebraicClassAtAGoodPeriodIsMarkedByTheComponent` | Lemma 12.1: `H → U` is surjective, and the Hilbert family covers every closed subscheme of every fiber ([16] + [15]) |
+| `remmertProperMapping`, `aProperClosedAnalyticSubsetHasEmptyInterior`, `theHilbertParameterSpacesExist` | Remmert; Baire-style interior; Hilbert schemes [16] + base change [15] |
+| `aRationalAlgebraicClassIsACombinationOfSubvarieties` | the definition of the image of `CH⁴ ⊗ ℚ` |
+| `aNonzeroWeilProjectionSelectsAMarkedConstituent` | pick a constituent with nonzero Weil projection, split off `θ⁴`: §2's decomposition `H⁸ = ⟨θ⁴⟩ ⊕ W_K ⊕ rest` |
+| `baseChangeTransportsSpanMembership`, `theComparisonTransportsSpanMembership` | [20]: smooth proper base change; Betti–étale comparison |
+| `anAlternatingChernCharacterIsAlgebraic` | Prop 11.4's rationality input |
+| `baireSuppliesAGoodPeriod` | Baire category on the parameter space |
+| `outsideTheSpanForcesANonzeroWeilProjection` | formula (2.3) of §2 |
+| `exactCancellation` | [6, Thm 3.6] = the manuscript's [9, Thm 2.3], with **both** hypotheses |
+| `aStabilizationIsLoose`, `forwardTraceSign` | [6] Lemma 2.2; Lemma 3.4's `(−1)^{k−1}` case, "for any φ" |
+| `theCountIsTheSum`, `theRepairedInsertionTotal` | the count is `I(f₁) +` Σsigns; `(m+1) + (−1) = m` |
 
-### Not well-known (three)
+Geometry of the paper, cited as such — §10's Euler-pairing identities:
 
-| axiom | what it actually assumes |
+| axiom | what it carries |
 |---|---|
-| `theConstructionDeliversAMarkedClass` | **Sections 4–11** of the manuscript — the weighted Floer module, the theta section ring, mirror symmetry, the alternating Chern character. Stated as an implication from Lemma 3.6, so Lemma 3.6 itself is *not* assumed; everything above it is. |
-| `theMarkedClassIsConstantAcrossTheFamily` | Lemma 12.1's construction of the Hilbert parameter spaces, plus the bridge from Lemma 12.2's constancy to algebraicity on every fiber. Lemma 12.2's own constancy claim **is** now proved (`construction/chern-constancy.md`). |
-| `theRepairedCountIsZero` | the repaired arithmetic `I(f₁) + (m+1) − 1 = 0`. Elementary, but it is a restatement of the paper's counting for the repaired insertion, not a citation. |
+| `theExtraObjectDetectsTheExceptionalPart`, `theExtraObjectDetectsTheDetectedClass` | §2's construction of `α`: `c · α_ex ≠ 0`, and `⟨C, ζ_s⟩ ≠ 0` |
+| `aScalarGraphAnnihilatesTheExceptionalPart` | `g_k · α_ex = 0` |
+| `pairingOnTheSpanIsDeterminedByThePowers` | bilinearity of `χ(P, −)` over the span |
+| `thePowersDoNotSeeTheExceptionalPart` | Lemma 7.4 + Prop 10.2: the powers of `l` are pulled back from the polarized quotient |
 
-And one that is mixed: `theConjugationEndomorphism` bundles a standard fact (an integral
-matrix commuting with every period in `U` is an algebraic endomorphism) with the paper's own
-eigenvalue computation `λ± = (m ± i√d)⁸`. The computation is elementary and was checked
-numerically for `d = 1..39`, including that the bound `m > √d·cot(π/8)` is tight — but it is
-the paper's step, not a citation, so the bundle is not purely well-known either.
+### So: did we fix the theorem?
 
-### What that means
+**We fixed §3.4, and we checked everything above it.** That is a narrower claim than "the
+theorem is proved", and the difference is worth stating precisely:
 
-The claim this formalization supports is therefore narrow and conditional:
+> Every step from §3.4 up to Theorem 1.1 is kernel-checked, and each remaining assumption is
+> either textbook or a clearly-identified geometric input the manuscript cites. §3.4's
+> circularity is removable without disturbing anything above it.
 
-> **If** Sections 4–11 deliver a marked class from Lemma 3.6, and **if** Lemma 12.1's
-> parameter spaces exist, **then** Theorem 1.1 follows — and in `openai-fixed`, the repaired
-> §3.4 supplies Lemma 3.6 without the unjustified looseness hypothesis.
+What is **not** claimed: that Sections 4–11's symplectic topology is correct. Those sections
+are the origin of the cited geometric inputs above (`anAlternatingChernCharacterIsAlgebraic`,
+the Euler-pairing identities), and the formalization takes them at their word. What changed in
+this round is that they are no longer hidden inside one all-swallowing axiom — each enters by
+name, at the point it is used, and `--axioms` lists it.
 
-It does **not** support "the paper is correct", and it cannot: the three axioms above are
-where the mathematics lives. What it does establish is that the *architecture* composes, that
-the §3.4 defect is real and reaches the top, and that repair (C) removes it.
+Two things the checker caught that are worth recording:
+
+- When the count became a proved theorem, the forward-trace step went **dead** — strict check
+  reported it unused, meaning the repair was decorative. Making `theRepairedInsertionTotal`
+  conditional on the trace sign fixed that. A repair nothing consumes is not a repair.
+- `openai-erratum` was re-synced to carry the *same* decomposed axiom set as `openai-fixed`,
+  differing only in `legendrian/stabilization-traces.md`. It still fails with
+  `cannot discharge the guard premise 'isLoose(phiZero)'` — so the §3.4 error is not an
+  artifact of a convenient assumption elsewhere.
 
 ## Findings so far
 

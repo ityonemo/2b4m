@@ -27,10 +27,13 @@ so the axiom is stated once, in the file that explains what it costs.
 
 ```2b4m
 import construction <<< "construction/marked-class.md"
+import eigenvalues <<< "eigenvalues/independence.md"
+import chern <<< "construction/chern-constancy.md"
 
 sort Period = construction.Period
 sort CycleClass = construction.CycleClass
-sort Endomorphism
+sort Endomorphism = eigenvalues.Endomorphism
+sort ParameterPoint = chern.ParameterPoint
 
 // U is the parameter set of §2; `avoidsExceptional` is "Π ∉ E", the union of the countably
 // many proper closed analytic loci removed by Propositions 2.2, 8.4 and Lemma 12.1.
@@ -44,7 +47,7 @@ const polarizationPower = construction.polarizationPower
 
 func scale = construction.scale
 func add = construction.add
-func pullback(e: Endomorphism, z: CycleClass) => CycleClass
+func pullback = eigenvalues.pullback
 
 pred isAlgebraic = construction.isAlgebraic
 pred inWeilPlane = construction.inWeilPlane
@@ -52,7 +55,7 @@ pred isZeroClass = construction.isZeroClass
 pred isAlgebraicEndomorphism(p: Period, e: Endomorphism)
 
 // v and w are independent and span the two-dimensional rational Weil space W_K(A_Π).
-pred spansTheWeilPlane(p: Period, v: CycleClass, w: CycleClass)
+pred spansTheWeilPlane = eigenvalues.spansTheWeilPlane
 ```
 
 ## Theorem 1.1, stated first
@@ -440,14 +443,53 @@ axiom theCycleClassMapIsFunctorial: forall p: Period; forall e: Endomorphism;
   forall z: CycleClass;
   isAlgebraicEndomorphism(p, e) -> isAlgebraic(p, z) -> isAlgebraic(p, pullback(e, z))
 
-// The endomorphism m*1 + D, with the eigenvalue argument for independence. The algebraicity
-// half is standard (an integral matrix commuting with every period in U); the independence
-// half is the paper's own elementary computation, verified numerically in
-// the README for d = 1..39, including the tightness of the bound m > sqrt(d)*cot(pi/8).
-axiom theConjugationEndomorphism: exists e: Endomorphism;
+// The endomorphism m*1 + D of §12.4. Its two halves are separated, and only one is assumed:
+//
+//   ALGEBRAICITY — standard: an integral matrix commuting with every period in U defines an
+//   algebraic endomorphism of every fiber. Axiom, cited, and a fair one.
+//
+//   SPANNING — the paper's eigenvalue argument, PROVED in `eigenvalues/independence.md`
+//   (`theConjugationProducesASpanningPartner`): the eigenvalues are nonreal conjugates, hence
+//   distinct, hence no scalar is both, hence w and its pullback are non-proportional, hence
+//   spanning. The two axioms it rests on are the eigenspace linear algebra and
+//   dim W_K = 2 — both standard — plus the elementary numeric fact that
+//   arg(m + i*sqrt(d)) lies in (0, pi/8) under the paper's bound, checked numerically for
+//   d = 1..39 including the bound's tightness.
+//
+// So the existential below is no longer an axiom: it is assembled from one citation and one
+// proof.
+axiom theConjugationIsAlgebraic: forall p: Period;
+  inParameterSet(p) -> isAlgebraicEndomorphism(p, eigenvalues.theConjugation)
+
+// §12.4's endomorphism, PROVED rather than assumed.
+theorem theConjugationEndomorphism: exists e: Endomorphism;
   (forall p: Period; inParameterSet(p) -> isAlgebraicEndomorphism(p, e)) and
   (forall p: Period; forall w: CycleClass;
   inParameterSet(p) -> (not isZeroClass(w)) -> spansTheWeilPlane(p, w, pullback(e, w)))
+proof
+  @the-conjugation-is-algebraic |
+    forall p: Period;
+      inParameterSet(p) -> isAlgebraicEndomorphism(p, eigenvalues.theConjugation)
+    [by cite theConjugationIsAlgebraic]
+  @the-conjugation-spans |
+    forall p: Period; forall w: CycleClass;
+      inParameterSet(p) -> (not isZeroClass(w)) ->
+      spansTheWeilPlane(p, w, pullback(eigenvalues.theConjugation, w))
+    [by cite eigenvalues.theConjugationProducesASpanningPartner]
+  @both-halves |
+    (forall p: Period;
+      inParameterSet(p) -> isAlgebraicEndomorphism(p, eigenvalues.theConjugation)) and
+      (forall p: Period; forall w: CycleClass;
+      inParameterSet(p) -> (not isZeroClass(w)) ->
+      spansTheWeilPlane(p, w, pullback(eigenvalues.theConjugation, w)))
+    [by and_intro the-conjugation-is-algebraic the-conjugation-spans]
+  @conclusion |
+    exists e: Endomorphism;
+      (forall p: Period; inParameterSet(p) -> isAlgebraicEndomorphism(p, e)) and
+      (forall p: Period; forall w: CycleClass;
+      inParameterSet(p) -> (not isZeroClass(w)) -> spansTheWeilPlane(p, w, pullback(e, w)))
+    [by exists_intro(eigenvalues.theConjugation) both-halves]
+qed
 ```
 
 ### The two that do not
@@ -456,17 +498,109 @@ These are flipped to axioms as well — otherwise nothing downstream can be chec
 are labelled for what they are, and `--axioms` will report them beside the genuine citations.
 
 ```2b4m
-// Lemma 12.1 + 12.2. The CONSTANCY half (Lemma 12.2) is no longer assumed — it is proved in
-// `construction/chern-constancy.md` from homotopy invariance of the Chern character plus
-// connectedness of the parameter component, both textbook. What remains assumed here is the
-// bridge from that constancy to algebraicity on every fiber, which additionally needs Lemma
-// 12.1's surjectivity H -> U and the formula ch_4(O_Z) = [Z] of [14].
+// Lemmas 12.1 + 12.2, decomposed until only citations remain.
 //
-// NOT fully a citation: Lemma 12.1's construction of the Hilbert parameter spaces is the
-// paper's own. Labelled accordingly.
-axiom theMarkedClassIsConstantAcrossTheFamily: forall p: Period; forall z: CycleClass;
+//   LEMMA 12.2's constancy — PROVED in `chern-constancy.md` from homotopy invariance of the
+//   Chern character plus connectedness of the component.
+//   §12.4's SPREADING — PROVED in the same file (`theMarkedClassSpreadsAcrossTheParameterSet`)
+//   from that constancy plus surjectivity of H -> U (Lemma 12.1) and ch_4(O_Z) = [Z] of [14].
+//   LEMMA 12.1's exceptional loci — PROVED in `hilbert-parameters.md` from Remmert's proper
+//   mapping theorem plus "a proper closed analytic subset has empty interior".
+//
+// What is left is one citation: a class algebraic at a period avoiding the exceptional loci
+// is the marked class of a parameter point in the component. That is precisely the content of
+// Lemma 12.1 — the countable family of Hilbert components COVERS every closed subscheme of
+// every fiber, and the exceptional locus E is removed exactly so that the covering component
+// is proper over U. Cited to [16] (Hilbert schemes) and [15] (proper base change).
+axiom anAlgebraicClassAtAGoodPeriodIsMarkedByTheComponent: forall p: Period;
+  forall z: CycleClass;
+  inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+  (exists b: ParameterPoint;
+  chern.inComponent(b) and chern.markedClassAt(b) = z)
+
+// §12.4's spreading principle, PROVED rather than assumed.
+theorem theMarkedClassIsConstantAcrossTheFamily: forall p: Period; forall z: CycleClass;
   inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
   forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)
+proof
+  @the-marked-class-spreads |
+    forall b: ParameterPoint;
+      chern.inComponent(b) ->
+      forall q: Period; inParameterSet(q) -> isAlgebraic(q, chern.markedClassAt(b))
+    [by cite chern.theMarkedClassSpreadsAcrossTheParameterSet]
+  @generalize-p |
+    fix p: Period {
+      @generalize-z |
+        fix z: CycleClass {
+          @given-p-in-the-parameter-set |
+            assume inParameterSet(p) {
+              @p-is-in-the-parameter-set |
+                inParameterSet(p)
+                [by hypothesis given-p-in-the-parameter-set]
+              @given-p-avoids-the-exceptional-loci |
+                assume avoidsExceptional(p) {
+                  @p-avoids-the-exceptional-loci |
+                    avoidsExceptional(p)
+                    [by hypothesis given-p-avoids-the-exceptional-loci]
+                  @given-z-algebraic-at-p |
+                    assume isAlgebraic(p, z) {
+                      @z-is-algebraic-at-p |
+                        isAlgebraic(p, z)
+                        [by hypothesis given-z-algebraic-at-p]
+                      @a-parameter-point-marks-z |
+                        exists b: ParameterPoint;
+                          chern.inComponent(b) and chern.markedClassAt(b) = z
+                        [using specialize anAlgebraicClassAtAGoodPeriodIsMarkedByTheComponent(p, z) p-is-in-the-parameter-set p-avoids-the-exceptional-loci z-is-algebraic-at-p]
+                      @with-the-marking-point |
+                        unpack b: ParameterPoint from a-parameter-point-marks-z {
+                          @the-marking-facts |
+                            chern.inComponent(b) and chern.markedClassAt(b) = z
+                            [by hypothesis with-the-marking-point]
+                          @the-point-is-in-the-component |
+                            chern.inComponent(b)
+                            [by and_elim_left the-marking-facts]
+                          @the-point-marks-z |
+                            chern.markedClassAt(b) = z
+                            [by and_elim_right the-marking-facts]
+                          @the-marked-class-is-algebraic-everywhere |
+                            forall q: Period;
+                              inParameterSet(q) -> isAlgebraic(q, chern.markedClassAt(b))
+                            [using specialize the-marked-class-spreads(b) the-point-is-in-the-component]
+                          @conclusion-z-is-algebraic-everywhere |
+                            forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)
+                            [by rewrite the-point-marks-z the-marked-class-is-algebraic-everywhere]
+                        }
+                      @conclusion-spread-at-z |
+                        forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)
+                        [by exists_elim with-the-marking-point]
+                    }
+                  @conclusion-algebraic-gives |
+                    isAlgebraic(p, z) ->
+                      (forall q: Period; inParameterSet(q) -> isAlgebraic(q, z))
+                    [by implies_intro given-z-algebraic-at-p]
+                }
+              @conclusion-avoiding-gives |
+                avoidsExceptional(p) -> isAlgebraic(p, z) ->
+                  (forall q: Period; inParameterSet(q) -> isAlgebraic(q, z))
+                [by implies_intro given-p-avoids-the-exceptional-loci]
+            }
+          @conclusion-at-z |
+            inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+              (forall q: Period; inParameterSet(q) -> isAlgebraic(q, z))
+            [by implies_intro given-p-in-the-parameter-set]
+        }
+      @discharge-z |
+        forall z: CycleClass;
+          inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+          forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)
+        [by forall_intro generalize-z]
+    }
+  @conclusion |
+    forall p: Period; forall z: CycleClass;
+      inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
+      forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)
+    [by forall_intro generalize-p]
+qed
 
 // NOT a citation: Proposition 12.3, resting on Sections 2-11 — the whole construction, with
 // the withdrawn sign error inside it. Quarantined in its own file so that flipping it cannot
