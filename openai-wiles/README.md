@@ -1,16 +1,61 @@
 # openai-wiles — a formalization of the withdrawn Weil-classes manuscript
 
 > A `2b4m` formalization of OpenAI's withdrawn manuscript *"Algebraicity of Weil classes on
-> split abelian eightfolds"*, built top-down with `hole`s and driven down to cited axioms.
-> Plain `2b4m check` — not `--draft` — passes it with **zero holes**, resting on 29
-> erratum-specific axioms.
+> split abelian eightfolds"*, built as **TWO CHAINS** that differ in exactly one mathematical
+> input: the reverse stabilization-trace sign of §3.4.
 >
-> **READ THE AUDIT FIRST.** This directory's headline finding was for a time a diagnosis of
-> §3.4 as *circular*, and that diagnosis was **WRONG** — it rested on a hypothesis this
-> formalization invented and attributed to reference [6]. The retraction, and a
-> source-by-source audit of all 29 axioms (which found four citation errors, all mine), are
-> in "The axiom audit" and "What was gotten wrong". The honest state: nothing here confirms
-> or refutes OpenAI's stated reason for withdrawal.
+> ```
+> 2b4m check openai-wiles/architecture-right.md theWeilPlaneIsSpannedByAlgebraicClasses  # PASSES
+> 2b4m check openai-wiles/architecture-wrong.md theWeilPlaneIsSpannedByAlgebraicClasses  # FAILS
+> ```
+>
+> The `-right` chain carries **[6]'s sign** (`+1`, as arXiv:1303.0588v2 Lemma 3.4's *proof*
+> states it, and as the manuscript's (3.6) quotes it): the count closes to zero,
+> [9, Thm 2.3] applies, Lemma 3.6 goes through, Theorem 1.1 follows.
+>
+> The `-wrong` chain carries the sign **OpenAI's withdrawal notice** says is correct in the
+> manuscript's convention (`−1`): the count is `I(f₁) + I(f₁) = −2m`, provably nonzero, so
+> [9, Thm 2.3]'s hypothesis cannot be met and Lemma 3.6 is unprovable. Strict check fails
+> naming that step, with the blast radius up to Theorem 1.1.
+>
+> `./diff-chains.sh` shows the difference. Four of the six duplicated files differ **only** in
+> an import path; the mathematics diverges in exactly two places — `traces-*.b4m`'s sign axiom
+> and `stabilization-traces-*.md`'s arithmetic.
+>
+> **READ THE AUDIT FIRST.** This directory's earlier headline finding — that §3.4 is
+> *circular* — was **WRONG**, and rested on a hypothesis this formalization invented and
+> attributed to [6]. See "What was gotten wrong". Neither chain decides which convention is
+> right; between them they show the sign is the hinge.
+
+## Why two chains and not one parameterized body
+
+`import` names a fixed path, so a shared file cannot choose which sign module it pulls — and
+an attempt to have the two roots inject the sign downward fails because the shared consumer
+would have to name one root. (Cyclical *imports* are allowed; it is cyclical *dependencies*
+that are not. The cycle works for one root, but it does not branch.)
+
+So the chain is duplicated from the sign up to Theorem 1.1: six files, four of which differ by
+one import line. `diff-chains.sh` makes that auditable rather than asking a reader to trust it.
+
+### The bug this structure exposed
+
+The first attempt at the split **still passed on both signs**, which is worth recording as a
+failure mode. `stabilization-traces.md` defined
+
+```
+func insertedTotal(n: Int) => Int:
+  insertedTotal(n) = n
+```
+
+hard-coding "+1 per inserted trace" into the **definition**. The trace sign was therefore
+decorative: swapping the module changed nothing downstream. The fix makes the total `n` times
+the actual sign, pinned to `traceSign(stabilize(phiZero), phiZero)` by a cited hole, so the
+two chains genuinely diverge.
+
+**The general lesson:** a formalization that reproduces a claimed error is only evidence if
+flipping the disputed input actually changes the outcome. A green tree can mean the input never
+mattered. This is the same shape as an earlier round here, where strict check reported a repair
+step **dead** because nothing consumed the sign it established.
 
 ## What was gotten wrong
 

@@ -138,7 +138,7 @@ by contradiction, and *that* is the piece this file contributes: the paper's eig
 computation is now load-bearing rather than decorative.
 
 ```2b4m
-import construction <<< "../construction/marked-class.md"
+import construction <<< "../construction/marked-class-right.md"
 
 sort Period = construction.Period
 sort WeilClass = construction.CycleClass

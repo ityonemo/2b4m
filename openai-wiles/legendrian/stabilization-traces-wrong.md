@@ -21,7 +21,7 @@ Reading the insertion in the direction the manuscript specifies — innermost `�
 That is [6]'s reverse direction, sign `(−1)ᵏ = +1` at `k = 4`, exactly as (3.6) says.
 
 ```2b4m
-import traces <<< "traces.b4m"
+import traces <<< "traces-wrong.b4m"
 import integer <<< "std/integer.b4m"
 
 sort Link = traces.Link
@@ -31,6 +31,8 @@ const ONE = integer.ONE
 func neg = integer.neg
 func sub = integer.sub
 func add = integer.add
+func mul = integer.mul
+pred less_than = integer.less_than
 func stabilize = traces.stabilize
 func traceSign = traces.traceSign
 pred isLoose = traces.isLoose
@@ -98,17 +100,17 @@ qed
 
 // A reverse trace at a stabilized target, which is what every inserted trace in §3.4 is.
 // No looseness step is needed: reverseTraceSign carries no guard, per [6]'s G1-G4 table.
-theorem anInnerTraceContributesPlusOne: forall l: Link;
-  traceSign(stabilize(stabilize(l)), stabilize(l)) = ONE
+theorem anInnerTraceContributesMinusOne: forall l: Link;
+  traceSign(stabilize(stabilize(l)), stabilize(l)) = neg(ONE)
 proof
   @generalize-l |
     fix l: Link {
       @conclusion-at-l |
-        traceSign(stabilize(stabilize(l)), stabilize(l)) = ONE
+        traceSign(stabilize(stabilize(l)), stabilize(l)) = neg(ONE)
         [using specialize reverseTraceSign(stabilize(l))]
     }
   @conclusion |
-    forall l: Link; traceSign(stabilize(stabilize(l)), stabilize(l)) = ONE
+    forall l: Link; traceSign(stabilize(stabilize(l)), stabilize(l)) = neg(ONE)
     [by forall_intro generalize-l]
 qed
 ```
@@ -153,13 +155,29 @@ qed
 // sum written out, std/integer discharges it.
 const initialIndex: Int // I(f₁), negative; the manuscript puts m = -I(f₁)
 
-// `insertedTotal(n)` is the signed total of n inserted REVERSE traces. Each carries +1 by
-// equation (3.6) — `reverseTraceSign`, with [6]'s sign — so n of them total n. Written as a
-// DEFINITION rather than left opaque with an axiom asserting the total: the content is "each
-// contributes +1", and stating it this way makes the two counting holes provable instead of
-// assumed.
+// §3.4: "Put m = -I(f1) > 0", i.e. I(f1) < 0. A cited fact rather than a code comment,
+// because whether this chain's count can reach zero turns on I(f1) being STRICTLY negative.
+hole theInitialIndexIsNegative
+  cites "manuscript §3.4: Put m = -I(f1) > 0 — equation (3.4) gives I(f1) < 0":
+  less_than(initialIndex, ZERO)
+
+// `insertedTotal(n)` = n inserted REVERSE traces, each carrying whatever sign this chain's
+// traces module gives: n times that sign.
+//
+// MODEL FIX, and the reason the right/wrong split means anything. An earlier version defined
+// this as `insertedTotal(n) = n`, hard-coding "+1 per trace" into the DEFINITION — which made
+// the trace sign DECORATIVE. Swapping the sign module left the count unchanged and BOTH
+// chains passed, a false negative. The total must be n times the ACTUAL sign.
+const theReverseTraceSign: Int
+
 func insertedTotal(n: Int) => Int:
-  insertedTotal(n) = n
+  insertedTotal(n) = mul(n, theReverseTraceSign)
+
+// The inserted traces of §3.4 are reverse traces at stabilized targets, so each carries
+// `reverseTraceSign`'s value — +1 in the right chain, -1 in the wrong one.
+hole theInsertedSignIsTheReverseTraceSign
+  cites "manuscript §3.4: Insert m reverse traces in separated radial collars near the puncture, ordered from the m-fold stabilization phi_m at the innermost end to phi_0 outward":
+  theReverseTraceSign = traceSign(stabilize(phiZero), phiZero)
 
 // The total signed double count after the insertion: the immersion's own index plus what the
 // inserted traces contribute. This is §3.4's "the total signed double count is I(f1) + m".
@@ -214,53 +232,123 @@ hole exactCancellation cites "arXiv:1303.0586v1 (Eliashberg-Murphy, Lagrangian c
 // reverse traces ... the total signed double count is I(f1) + m = 0." Each reverse trace
 // carries +1 by equation (3.6), so m of them total m = -I(f1).
 //
-// PROVED from the definition: m reverse traces at +1 each total m = -I(f1).
-//
-// (An earlier version of this file asserted a DIFFERENT total here, for an "m+1 reverse plus
-// one forward" insertion that existed only to repair a defect this formalization had
-// invented. That insertion appears nowhere in the manuscript; it is deleted.)
-theorem theInsertedTracesTotalM:
-  insertedTotal(neg(initialIndex)) = neg(initialIndex)
+// The inserted total, as a function of this chain's sign.
+theorem theInsertedTracesTotal:
+  insertedTotal(neg(initialIndex)) = mul(neg(initialIndex), theReverseTraceSign)
 proof
-  @each-trace-contributes-one |
-    forall n: Int; insertedTotal(n) = n
+  @the-total-is-n-times-the-sign |
+    forall n: Int; insertedTotal(n) = mul(n, theReverseTraceSign)
     [by definition(0) insertedTotal]
   @conclusion |
-    insertedTotal(neg(initialIndex)) = neg(initialIndex)
-    [by forall_elim(neg(initialIndex)) each-trace-contributes-one]
+    insertedTotal(neg(initialIndex)) = mul(neg(initialIndex), theReverseTraceSign)
+    [by forall_elim(neg(initialIndex)) the-total-is-n-times-the-sign]
 qed
 
-// …so the count is ZERO. PROVED from the two holes above: I(f₁) + (−I(f₁)) = 0 in
-// std/integer. This is the manuscript's "I(f1) + m = 0".
-theorem theCountIsZero:
-  theSignedDoubleCount(neg(initialIndex)) = ZERO
+// This chain's sign, read off its traces module.
+theorem theInsertedSignValue: theReverseTraceSign = neg(ONE)
+proof
+  @the-inserted-sign-is-the-reverse-trace-sign |
+    theReverseTraceSign = traceSign(stabilize(phiZero), phiZero)
+    [by cite theInsertedSignIsTheReverseTraceSign]
+  @the-reverse-trace-sign |
+    traceSign(stabilize(phiZero), phiZero) = neg(ONE)
+    [using specialize reverseTraceSign(phiZero)]
+  @conclusion |
+    theReverseTraceSign = neg(ONE)
+    [using chain the-inserted-sign-is-the-reverse-trace-sign the-reverse-trace-sign]
+qed
+
+// THE COUNT, with this chain's sign. m traces at -1 total -m = I(f1), so the count is
+// I(f1) + I(f1) = -2m. This is the withdrawal notice's arithmetic, kernel-checked.
+theorem theCountIsTwiceTheInitialIndex:
+  theSignedDoubleCount(neg(initialIndex)) = add(initialIndex, initialIndex)
 proof
   @the-count-is-the-sum |
     theSignedDoubleCount(neg(initialIndex))
       = add(initialIndex, insertedTotal(neg(initialIndex)))
     [using specialize theCountIsTheSum(neg(initialIndex))]
-  @the-inserted-traces-total-m |
-    insertedTotal(neg(initialIndex)) = neg(initialIndex)
-    [by cite theInsertedTracesTotalM]
-  @the-sum-cancels |
-    add(initialIndex, neg(initialIndex)) = ZERO
+  @the-inserted-total |
+    insertedTotal(neg(initialIndex)) = mul(neg(initialIndex), theReverseTraceSign)
+    [by cite theInsertedTracesTotal]
+  @the-sign-is-minus-one |
+    theReverseTraceSign = neg(ONE)
+    [by cite theInsertedSignValue]
+  @the-total-at-minus-one |
+    insertedTotal(neg(initialIndex)) = mul(neg(initialIndex), neg(ONE))
+    [by rewrite the-sign-is-minus-one the-inserted-total]
+  @minus-m-times-minus-one-is-the-index |
+    mul(neg(initialIndex), neg(ONE)) = initialIndex
     [using polynomial(integer)]
+  @the-inserted-total-is-the-index |
+    insertedTotal(neg(initialIndex)) = initialIndex
+    [using chain the-total-at-minus-one minus-m-times-minus-one-is-the-index]
   @conclusion |
-    theSignedDoubleCount(neg(initialIndex)) = ZERO
-    [using chain the-count-is-the-sum the-inserted-traces-total-m the-sum-cancels]
+    theSignedDoubleCount(neg(initialIndex)) = add(initialIndex, initialIndex)
+    [by rewrite the-inserted-total-is-the-index the-count-is-the-sum]
 qed
 
-// LEMMA 3.6 — the conclusion Section 3 exports.
-theorem anEmbeddedSpinLagrangianExists: anEmbeddedLagrangianExists()
+// …and it is NOT zero. I(f1) < 0 gives I(f1) + I(f1) < I(f1) + 0 = I(f1) < 0, so the count is
+// strictly negative. This is the notice's "-2m != 0", from std/integer's order theory.
+theorem theCountIsNegative:
+  less_than(theSignedDoubleCount(neg(initialIndex)), ZERO)
 proof
-  @the-count-is-zero |
-    theSignedDoubleCount(neg(initialIndex)) = ZERO
-    [by cite theCountIsZero]
-  @the-negative-link-is-loose |
-    isLoose(stabilize(phiZero))
-    [by cite theNegativeLinkIsLoose]
+  @the-index-is-negative |
+    less_than(initialIndex, ZERO)
+    [by cite theInitialIndexIsNegative]
+  @adding-the-index-preserves-order |
+    less_than(add(initialIndex, initialIndex), add(initialIndex, ZERO))
+    [using specialize integer.additionPreservesOrder(initialIndex, ZERO, initialIndex) the-index-is-negative]
+  @adding-zero-does-nothing |
+    add(initialIndex, ZERO) = initialIndex
+    [using polynomial(integer)]
+  @twice-the-index-is-below-the-index |
+    less_than(add(initialIndex, initialIndex), initialIndex)
+    [by rewrite adding-zero-does-nothing adding-the-index-preserves-order]
+  @twice-the-index-is-negative |
+    less_than(add(initialIndex, initialIndex), ZERO)
+    [using specialize integer.lessThanTransitive(add(initialIndex, initialIndex), initialIndex, ZERO) twice-the-index-is-below-the-index the-index-is-negative]
+  @the-count-is-twice-the-index |
+    theSignedDoubleCount(neg(initialIndex)) = add(initialIndex, initialIndex)
+    [by cite theCountIsTwiceTheInitialIndex]
   @conclusion |
-    anEmbeddedLagrangianExists()
-    [using specialize exactCancellation(neg(initialIndex)) the-negative-link-is-loose the-count-is-zero]
+    less_than(theSignedDoubleCount(neg(initialIndex)), ZERO)
+    [by rewrite the-count-is-twice-the-index twice-the-index-is-negative]
 qed
+
+theorem theCountIsNotZero:
+  theSignedDoubleCount(neg(initialIndex)) != ZERO
+proof
+  @the-count-is-negative |
+    less_than(theSignedDoubleCount(neg(initialIndex)), ZERO)
+    [by cite theCountIsNegative]
+  @given-it-were-zero |
+    assume theSignedDoubleCount(neg(initialIndex)) = ZERO {
+      @it-is-zero |
+        theSignedDoubleCount(neg(initialIndex)) = ZERO
+        [by hypothesis given-it-were-zero]
+      @zero-is-below-zero |
+        less_than(ZERO, ZERO)
+        [by rewrite it-is-zero the-count-is-negative]
+      @nothing-is-below-itself |
+        not less_than(ZERO, ZERO)
+        [using specialize integer.lessThanIrreflexive(ZERO)]
+    }
+  @conclusion |
+    theSignedDoubleCount(neg(initialIndex)) != ZERO
+    [by not_intro given-it-were-zero zero-is-below-zero nothing-is-below-itself]
+qed
+
+// LEMMA 3.6 CANNOT BE PROVED IN THIS CHAIN, and that is the whole point of the wrong/right
+// split. [9, Thm 2.3] requires a ZERO signed double count; here the count is provably
+// NEGATIVE (`theCountIsNegative`), hence nonzero (`theCountIsNotZero`), so the hypothesis is
+// unavailable and §3.4's insertion delivers nothing.
+//
+// Left as an UNCITED hole deliberately: strict `2b4m check` then FAILS and names this step,
+// with the blast radius up to Theorem 1.1. Writing the discharge anyway gives
+//
+//   error: step claims 'theSignedDoubleCount(neg(initialIndex)) = ZERO'
+//          but the theorem derives '... = add(initialIndex, initialIndex)'
+//
+// which is the withdrawal notice's I_new = I(f1) - m = -2m != 0.
+hole anEmbeddedSpinLagrangianExists: anEmbeddedLagrangianExists()
 ```
