@@ -147,54 +147,298 @@ qed
 ## Proposition 10.7, proved
 
 ```2b4m
-// §10.7's CLOSING MOVE, modelled as the DIFFERENCE it actually is.
+// §10.7's CLOSING MOVE. Three earlier attempts at this got it wrong, and the reason each
+// time was the same: `pair`, `addPairings` and `sumOverGraphs` were OPAQUE, so every step
+// relating them had to be assumed. Modelling the decomposition EXPLICITLY makes all three
+// assumptions into theorems.
 //
 // The manuscript: "Testing the second equality by ch(P_C^dual) in (10.13) would give
 // chi(P_C, E) = nu sum_j chi(P_C, P_j). The two sides differ, by the Euler and intersection
 // identities, by nu c.alpha_ex != 0."
 //
-// A first attempt here modelled the graph sum as ZERO. That is wrong, and (10.15) says so:
-// chi(P_C, P_j) = c . g_j, which the manuscript never claims vanishes. The argument is that
-// the two sides differ by the alpha_ex term, because alpha = alpha_ex + g1 + g2 + g3 and the
-// graph sum accounts only for the g_j.
+// What is actually needed, and all of it is cited:
 //
-// So: the pairing against the extra object SPLITS as the exceptional term plus the graph
-// sum. The determined form supplies only the graph sum. Their difference is the exceptional
-// term, which is nonzero -- and that is the contradiction.
-func sumOverGraphs(t: TestObject) => Class // nu * sum_j chi(t, P_j) = nu * sum_j c.g_j
+//   (2.7)   alpha = alpha_ex + g1 + g2 + g3                 -- an explicit 4-term sum
+//   (10.15) chi(P_C, P_j) = c . g_j                         -- the graph pairings
+//   bilinearity of chi(P, -)                                -- standard
+//
+// With the sum written out, the graph sum IS pair(C,g1)+pair(C,g2)+pair(C,g3), the split of
+// pair(C,alpha) is a consequence of bilinearity rather than an assumption, and cancellation
+// comes from the pairing values' own additive theory instead of being asserted about an
+// opaque function.
 
-// Pairing values live in a Q_l-vector space, so addition CANCELS. Modelled with the two
-// group facts the argument needs, rather than left opaque: with `addPairings` opaque,
-// "adding a nonzero term changes the value" would have to be assumed, and that is not a
-// citation -- it is cancellation, which is true because the values form a group.
-func addPairings(x: Class, y: Class) => Class:
-  addPairings(zeroPairing, y) = y
+// The three scalar-slope graph classes of (2.7), and the test class alpha they build.
+const graphOne: Class
+const graphTwo: Class
+const graphThree: Class
 
-// NOT A CITATION, so a HOLE. This was defended as "a group is cancellative on the right",
-// but `addPairings` here is an OPAQUE binary function with a single clause — there is no
-// group structure for cancellation to follow from. Closing it means either giving the
-// pairing values an actual abelian-group theory (so cancellation is a theorem of it) or
-// modelling them in std's ring/field layer.
-hole pairingAdditionCancels: forall x: Class; forall y: Class;
+// Addition of classes, and of pairing values. Both are the SAME abelian group operation in
+// the manuscript (everything lands in Q_l), so one theory serves.
+func addClass(x: Class, y: Class) => Class
+
+// CITATION, (2.7): alpha = alpha_ex + g1 + g2 + g3. Written as the explicit sum it is, so
+// nothing downstream has to assume how alpha decomposes.
+const testClass: Class
+
+hole alphaIsTheExplicitSum
+  cites "manuscript (2.7): alpha = alpha_ex + g1 + g2 + g3":
+  testClass = addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree)
+
+// CITATION: the Euler pairing chi(P, -) is ADDITIVE in its second argument. Standard
+// (it is a bilinear form), and it is what "by the Euler and intersection identities" uses.
+hole thePairingIsAdditive
+  cites "standard: the Euler pairing chi(P, -) is bilinear, hence additive in its second argument":
+  forall t: TestObject; forall x: Class; forall y: Class;
+  pair(t, addClass(x, y)) = addPairings(pair(t, x), pair(t, y))
+
+// The graph sum, DEFINED as the actual sum of the three graph pairings rather than left as
+// an opaque function. This is what (10.15) computes termwise.
+func sumOverGraphs(t: TestObject) => Class:
+  sumOverGraphs(t) = addPairings(addPairings(pair(t, graphOne), pair(t, graphTwo)), pair(t, graphThree))
+
+// Pairing values form an abelian group under addPairings. Rather than assert cancellation
+// about an opaque function (which three earlier drafts did, each time defending it as "a
+// group is cancellative"), the GROUP LAWS are stated and cancellation is PROVED from them.
+func addPairings(x: Class, y: Class) => Class
+func negPairing(x: Class) => Class
+
+hole pairingValuesFormAnAbelianGroup
+  cites "standard: Euler pairing values lie in Q_l, an abelian group under addition":
+  forall x: Class; forall y: Class; forall z: Class;
+  addPairings(addPairings(x, y), z) = addPairings(x, addPairings(y, z)) and
+  addPairings(x, zeroPairing) = x and
+  addPairings(x, negPairing(x)) = zeroPairing and
+  addPairings(x, y) = addPairings(y, x)
+
+// PROVED from the group laws: x + y = y forces x = 0.
+theorem pairingAdditionCancels: forall x: Class; forall y: Class;
   addPairings(x, y) = y -> x = zeroPairing
+proof
+  @the-group-laws |
+    forall x: Class; forall y: Class; forall z: Class;
+      addPairings(addPairings(x, y), z) = addPairings(x, addPairings(y, z)) and
+      addPairings(x, zeroPairing) = x and
+      addPairings(x, negPairing(x)) = zeroPairing and
+      addPairings(x, y) = addPairings(y, x)
+    [by cite pairingValuesFormAnAbelianGroup]
+  @generalize-x |
+    fix x: Class {
+      @generalize-y |
+        fix y: Class {
+          @given-the-sum-is-y |
+            assume addPairings(x, y) = y {
+              @the-sum-is-y |
+                addPairings(x, y) = y
+                [by hypothesis given-the-sum-is-y]
+              @the-laws-at-x-y |
+                addPairings(addPairings(x, y), negPairing(y))
+                  = addPairings(x, addPairings(y, negPairing(y))) and
+                  addPairings(x, zeroPairing) = x and
+                  addPairings(x, negPairing(x)) = zeroPairing and
+                  addPairings(x, y) = addPairings(y, x)
+                [by forall_elim(x, y, negPairing(y)) the-group-laws]
+              @associativity-at-x-y |
+                addPairings(addPairings(x, y), negPairing(y))
+                  = addPairings(x, addPairings(y, negPairing(y)))
+                [using tautology the-laws-at-x-y]
+              @identity-at-x |
+                addPairings(x, zeroPairing) = x
+                [using tautology the-laws-at-x-y]
+              @the-laws-at-y |
+                addPairings(addPairings(y, y), negPairing(y))
+                  = addPairings(y, addPairings(y, negPairing(y))) and
+                  addPairings(y, zeroPairing) = y and
+                  addPairings(y, negPairing(y)) = zeroPairing and
+                  addPairings(y, y) = addPairings(y, y)
+                [by forall_elim(y, y, negPairing(y)) the-group-laws]
+              @inverse-at-y |
+                addPairings(y, negPairing(y)) = zeroPairing
+                [using tautology the-laws-at-y]
+              // add neg(y) to both sides of x + y = y:
+              @the-left-side-rewrites |
+                addPairings(y, negPairing(y))
+                  = addPairings(x, addPairings(y, negPairing(y)))
+                [by rewrite the-sum-is-y associativity-at-x-y]
+              @zero-is-x-plus-zero |
+                zeroPairing = addPairings(x, zeroPairing)
+                [by rewrite inverse-at-y the-left-side-rewrites]
+              @conclusion-x-is-zero |
+                x = zeroPairing
+                [using chain identity-at-x zero-is-x-plus-zero]
+            }
+          @conclusion-at-y |
+            addPairings(x, y) = y -> x = zeroPairing
+            [by implies_intro given-the-sum-is-y]
+        }
+      @discharge-y |
+        forall y: Class; addPairings(x, y) = y -> x = zeroPairing
+        [by forall_intro generalize-y]
+    }
+  @conclusion |
+    forall x: Class; forall y: Class; addPairings(x, y) = y -> x = zeroPairing
+    [by forall_intro generalize-x]
+qed
 
-// NOT A CITATION, so a HOLE. §2 gives the decomposition alpha = alpha_ex + g1 + g2 + g3 for
-// the TEST class alpha (2.7), not for zeta_s; this statement asserts the split as a ground
-// fact about theDetectedClass, conflating the two. Closing it means modelling alpha and its
-// summands, and relating zeta_s to them the way (10.7)/(10.12)/(10.13) do.
-hole thePairingSplitsOverTheDecomposition:
+// CITATION, §10.7's opening line: "Lemma 7.4 and Proposition 10.2 identify
+// chi(P_k, E) = nu g_k . alpha, chi(P_C, E) = nu c . alpha."
+//
+// LOCATOR CORRECTED: an earlier version cited this to (10.7)/(10.12)/(10.13). Those are the
+// equations the SPAN-MEMBERSHIP branch uses (the periodic Euler pairing and the eta_E
+// identity); the identification of chi(P_C, E) with nu c . alpha is Lemma 7.4 + Prop 10.2,
+// as §10.7's own first sentence says.
+hole theDetectedPairingIsAgainstAlpha
+  cites "manuscript §10.7 opening (Lemma 7.4 + Prop 10.2): chi(P_C, E) = nu c . alpha":
+  pair(theExtraObject, theDetectedClass) = pair(theExtraObject, testClass)
+
+// PROVED from (2.7) + additivity: the pairing against the detected class splits into the
+// exceptional term plus the three graph terms, i.e. the graph sum.
+theorem thePairingSplitsOverTheDecomposition:
   pair(theExtraObject, theDetectedClass)
   = addPairings(pair(theExtraObject, exceptionalPart), sumOverGraphs(theExtraObject))
+proof
+  @additivity |
+    forall t: TestObject; forall x: Class; forall y: Class;
+      pair(t, addClass(x, y)) = addPairings(pair(t, x), pair(t, y))
+    [by cite thePairingIsAdditive]
+  @alpha-is-the-sum |
+    testClass = addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree)
+    [by cite alphaIsTheExplicitSum]
+  @the-detected-pairing-is-against-alpha |
+    pair(theExtraObject, theDetectedClass) = pair(theExtraObject, testClass)
+    [by cite theDetectedPairingIsAgainstAlpha]
+  // rewrite the pairing's argument into the explicit 4-term sum, then peel terms off the
+  // right by additivity:
+  @the-pairing-against-the-explicit-sum |
+    pair(theExtraObject, theDetectedClass)
+      = pair(theExtraObject,
+      addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree))
+    [by rewrite alpha-is-the-sum the-detected-pairing-is-against-alpha]
+  @split-off-graph-three |
+    pair(theExtraObject,
+      addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree))
+      = addPairings(
+      pair(theExtraObject, addClass(addClass(exceptionalPart, graphOne), graphTwo)),
+      pair(theExtraObject, graphThree))
+    [by forall_elim(theExtraObject, addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree) additivity]
+  @split-off-graph-two |
+    pair(theExtraObject, addClass(addClass(exceptionalPart, graphOne), graphTwo))
+      = addPairings(
+      pair(theExtraObject, addClass(exceptionalPart, graphOne)),
+      pair(theExtraObject, graphTwo))
+    [by forall_elim(theExtraObject, addClass(exceptionalPart, graphOne), graphTwo) additivity]
+  @split-off-graph-one |
+    pair(theExtraObject, addClass(exceptionalPart, graphOne))
+      = addPairings(
+      pair(theExtraObject, exceptionalPart),
+      pair(theExtraObject, graphOne))
+    [by forall_elim(theExtraObject, exceptionalPart, graphOne) additivity]
+  // substitute the two inner splits into the outer one, left-nesting the three graph terms:
+  @split-with-two-inner |
+    pair(theExtraObject,
+      addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree))
+      = addPairings(addPairings(
+      pair(theExtraObject, addClass(exceptionalPart, graphOne)),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree))
+    [by rewrite split-off-graph-two split-off-graph-three]
+  @split-fully |
+    pair(theExtraObject,
+      addClass(addClass(addClass(exceptionalPart, graphOne), graphTwo), graphThree))
+      = addPairings(addPairings(addPairings(
+      pair(theExtraObject, exceptionalPart), pair(theExtraObject, graphOne)),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree))
+    [by rewrite split-off-graph-one split-with-two-inner]
+  @the-detected-pairing-fully-split |
+    pair(theExtraObject, theDetectedClass)
+      = addPairings(addPairings(addPairings(
+      pair(theExtraObject, exceptionalPart), pair(theExtraObject, graphOne)),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree))
+    [using chain the-pairing-against-the-explicit-sum split-fully]
+  @the-graph-sum-definition |
+    forall t: TestObject; sumOverGraphs(t)
+      = addPairings(addPairings(pair(t, graphOne), pair(t, graphTwo)), pair(t, graphThree))
+    [by definition(0) sumOverGraphs]
+  @the-graph-sum-is-the-three-terms |
+    sumOverGraphs(theExtraObject)
+      = addPairings(addPairings(pair(theExtraObject, graphOne),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree))
+    [by forall_elim(theExtraObject) the-graph-sum-definition]
+  @the-group-laws |
+    forall x: Class; forall y: Class; forall z: Class;
+      addPairings(addPairings(x, y), z) = addPairings(x, addPairings(y, z)) and
+      addPairings(x, zeroPairing) = x and
+      addPairings(x, negPairing(x)) = zeroPairing and
+      addPairings(x, y) = addPairings(y, x)
+    [by cite pairingValuesFormAnAbelianGroup]
+  // ((e + g1) + g2) + g3  =  (e + (g1 + g2)) + g3  =  e + ((g1 + g2) + g3)
+  @the-laws-inner |
+    addPairings(addPairings(pair(theExtraObject, exceptionalPart),
+      pair(theExtraObject, graphOne)), pair(theExtraObject, graphTwo))
+      = addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo))) and
+      addPairings(pair(theExtraObject, exceptionalPart), zeroPairing)
+      = pair(theExtraObject, exceptionalPart) and
+      addPairings(pair(theExtraObject, exceptionalPart),
+      negPairing(pair(theExtraObject, exceptionalPart))) = zeroPairing and
+      addPairings(pair(theExtraObject, exceptionalPart), pair(theExtraObject, graphOne))
+      = addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, exceptionalPart))
+    [by forall_elim(pair(theExtraObject, exceptionalPart), pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo)) the-group-laws]
+  @regroup-inner |
+    addPairings(addPairings(pair(theExtraObject, exceptionalPart),
+      pair(theExtraObject, graphOne)), pair(theExtraObject, graphTwo))
+      = addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo)))
+    [using tautology the-laws-inner]
+  @the-laws-outer |
+    addPairings(addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo))),
+      pair(theExtraObject, graphThree))
+      = addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(addPairings(pair(theExtraObject, graphOne),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree))) and
+      addPairings(pair(theExtraObject, exceptionalPart), zeroPairing)
+      = pair(theExtraObject, exceptionalPart) and
+      addPairings(pair(theExtraObject, exceptionalPart),
+      negPairing(pair(theExtraObject, exceptionalPart))) = zeroPairing and
+      addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo)))
+      = addPairings(addPairings(pair(theExtraObject, graphOne),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, exceptionalPart))
+    [by forall_elim(pair(theExtraObject, exceptionalPart), addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree)) the-group-laws]
+  @regroup-outer |
+    addPairings(addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo))),
+      pair(theExtraObject, graphThree))
+      = addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(addPairings(pair(theExtraObject, graphOne),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree)))
+    [using tautology the-laws-outer]
+  @the-split-regrouped-once |
+    pair(theExtraObject, theDetectedClass)
+      = addPairings(addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(pair(theExtraObject, graphOne), pair(theExtraObject, graphTwo))),
+      pair(theExtraObject, graphThree))
+    [by rewrite regroup-inner the-detected-pairing-fully-split]
+  @the-split-regrouped |
+    pair(theExtraObject, theDetectedClass)
+      = addPairings(pair(theExtraObject, exceptionalPart),
+      addPairings(addPairings(pair(theExtraObject, graphOne),
+      pair(theExtraObject, graphTwo)), pair(theExtraObject, graphThree)))
+    [using chain the-split-regrouped-once regroup-outer]
+  @conclusion |
+    pair(theExtraObject, theDetectedClass)
+      = addPairings(pair(theExtraObject, exceptionalPart), sumOverGraphs(theExtraObject))
+    [by rewrite the-graph-sum-is-the-three-terms the-split-regrouped]
+qed
 
-// NOT A CITATION, so a HOLE. (10.15) gives chi(P_C, P_j) = c . g_j for each j; that the SUM
-// over j is exactly this file's `sumOverGraphs(theExtraObject)` is this formalization's
-// construction, asserted here as a ground equation. Closing it means modelling the graph
-// sum as an actual finite sum over j = 1,2,3.
-hole theDeterminedFormContributesOnlyTheGraphSum:
+// CITATION (10.16)'s determined form: zeta_s = nu sum_j e^{-jl}, so pairing the extra object
+// against it gives exactly the graph sum -- no exceptional term. This is the half of (10.16)
+// that makes the two sides differ.
+hole theDeterminedFormContributesOnlyTheGraphSum
+  cites "manuscript (10.15)+(10.16): chi(P_C, P_j) = c . g_j, and the determined form is nu sum_j e^{-jl}":
   pair(theExtraObject, theDeterminedForm) = sumOverGraphs(theExtraObject)
 
-// "The two sides differ ... by nu c.alpha_ex != 0" -- PROVED from cancellation rather than
-// assumed. If the split equalled the graph sum alone, the exceptional term would be zero.
+// "The two sides differ ... by nu c.alpha_ex != 0" -- PROVED from the cancellation theorem.
+// If the split equalled the graph sum alone, the exceptional term would be zero.
 theorem aNonzeroExceptionalTermMakesADifference:
   pair(theExtraObject, exceptionalPart) != zeroPairing ->
   addPairings(pair(theExtraObject, exceptionalPart), sumOverGraphs(theExtraObject))
@@ -228,8 +472,8 @@ proof
     [by implies_intro given-the-exceptional-term-is-nonzero]
 qed
 
-// PROVED: the detected class's pairing against the extra object differs from the determined
-// form's. This is §10.7's contradiction, as a theorem.
+// §10.7's contradiction, PROVED: the detected class and the determined form pair DIFFERENTLY
+// against the extra object -- the first carries the exceptional term, the second does not.
 theorem theDetectedClassPairsDifferentlyFromTheDeterminedForm:
   pair(theExtraObject, theDetectedClass) != pair(theExtraObject, theDeterminedForm)
 proof
