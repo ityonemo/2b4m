@@ -26,9 +26,9 @@ The objects shared with the quarantined assumption come from `construction/marke
 so the axiom is stated once, in the file that explains what it costs.
 
 ```2b4m
-import construction <<< "construction/marked-class.md"
-import eigenvalues <<< "eigenvalues/independence.md"
-import chern <<< "construction/chern-constancy.md"
+import construction <<< "construction/marked-class-right.md"
+import eigenvalues <<< "eigenvalues/independence-right.md"
+import chern <<< "construction/chern-constancy-right.md"
 
 sort Period = construction.Period
 sort CycleClass = construction.CycleClass

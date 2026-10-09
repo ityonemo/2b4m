@@ -28,7 +28,7 @@ that — which is the reason it is not axiomatized. The chain is wired through L
 §3.4 is reached when checking Theorem 1.1.
 
 ```2b4m
-import legendrian <<< "../legendrian/stabilization-traces.md"
+import legendrian <<< "../legendrian/stabilization-traces-wrong.md"
 import transport <<< "../detection/transport.md"
 
 sort Period

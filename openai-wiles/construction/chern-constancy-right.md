@@ -137,7 +137,7 @@ With both, the spreading follows from constancy by transport along the fibre map
 constancy theorem above is the step that carries the weight.
 
 ```2b4m
-import marked <<< "marked-class.md"
+import marked <<< "marked-class-right.md"
 
 sort Period = marked.Period
 sort CycleClass = marked.CycleClass
