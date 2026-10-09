@@ -443,7 +443,7 @@ axiom theCycleClassMapIsFunctorial: forall p: Period; forall e: Endomorphism;
 // The endomorphism m*1 + D, with the eigenvalue argument for independence. The algebraicity
 // half is standard (an integral matrix commuting with every period in U); the independence
 // half is the paper's own elementary computation, verified numerically in
-// `eigenvalues/README.md` for d = 1..39 including the tightness of m > sqrt(d)*cot(pi/8).
+// the README for d = 1..39, including the tightness of the bound m > sqrt(d)*cot(pi/8).
 axiom theConjugationEndomorphism: exists e: Endomorphism;
   (forall p: Period; inParameterSet(p) -> isAlgebraicEndomorphism(p, e)) and
   (forall p: Period; forall w: CycleClass;
@@ -456,8 +456,14 @@ These are flipped to axioms as well — otherwise nothing downstream can be chec
 are labelled for what they are, and `--axioms` will report them beside the genuine citations.
 
 ```2b4m
-// NOT a citation: Lemmas 12.1 + 12.2 (Hilbert parameter spaces, and constancy of the marked
-// Chern character across a connected component). Lemma 12.2's proof runs several pages.
+// Lemma 12.1 + 12.2. The CONSTANCY half (Lemma 12.2) is no longer assumed — it is proved in
+// `construction/chern-constancy.md` from homotopy invariance of the Chern character plus
+// connectedness of the parameter component, both textbook. What remains assumed here is the
+// bridge from that constancy to algebraicity on every fiber, which additionally needs Lemma
+// 12.1's surjectivity H -> U and the formula ch_4(O_Z) = [Z] of [14].
+//
+// NOT fully a citation: Lemma 12.1's construction of the Hilbert parameter spaces is the
+// paper's own. Labelled accordingly.
 axiom theMarkedClassIsConstantAcrossTheFamily: forall p: Period; forall z: CycleClass;
   inParameterSet(p) -> avoidsExceptional(p) -> isAlgebraic(p, z) ->
   forall q: Period; inParameterSet(q) -> isAlgebraic(q, z)

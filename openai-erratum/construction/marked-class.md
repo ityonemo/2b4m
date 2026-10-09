@@ -27,6 +27,8 @@ reference [6]. A formalization that axiomatizes this proposition cannot see any 
 So: assumed, labelled, and imported by `architecture.md` under a name that says what it is.
 
 ```2b4m
+import legendrian <<< "../legendrian/stabilization-traces.md"
+
 sort Period
 sort CycleClass
 
@@ -39,11 +41,37 @@ const polarizationPower: CycleClass
 func scale(q: CycleClass, z: CycleClass) => CycleClass
 func add(z: CycleClass, w: CycleClass) => CycleClass
 
-// PROPOSITION 12.3 — ASSUMED. Not a well-known result: the paper's own Sections 2-11, which
-// transitively include the invalidated stabilization-trace argument of §3.4.
-axiom aMarkedAlgebraicClassExistsAtSomeGoodPeriod: exists p: Period;
+// PROPOSITION 12.3 — no longer a bare assumption. It is now CONDITIONAL on Lemma 3.6, whose
+// proof is transcribed in `../legendrian/stabilization-traces.md` and whose outermost
+// stabilization trace is the defect. The chain is wired end to end, so an error at §3.4
+// surfaces when checking Theorem 1.1.
+//
+// Everything BETWEEN Lemma 3.6 and Proposition 12.3 — Sections 4 through 11 — remains
+// assumed, each being pages of the paper's own symplectic topology. That assumption is the
+// IMPLICATION below, not its conclusion.
+axiom theConstructionDeliversAMarkedClass:
+  legendrian.anEmbeddedLagrangianExists() ->
+  (exists p: Period;
+  inParameterSet(p) and avoidsExceptional(p) and
+  (exists a: CycleClass; exists w: CycleClass;
+  inWeilPlane(p, w) and (not isZeroClass(w)) and
+  isAlgebraic(p, add(scale(a, polarizationPower), w))))
+
+theorem aMarkedAlgebraicClassExistsAtSomeGoodPeriod: exists p: Period;
   inParameterSet(p) and avoidsExceptional(p) and
   (exists a: CycleClass; exists w: CycleClass;
   inWeilPlane(p, w) and (not isZeroClass(w)) and
   isAlgebraic(p, add(scale(a, polarizationPower), w)))
+proof
+  @lemma-three-six-gives-an-embedded-lagrangian |
+    legendrian.anEmbeddedLagrangianExists()
+    [by cite legendrian.anEmbeddedSpinLagrangianExists]
+  @conclusion |
+    exists p: Period;
+      inParameterSet(p) and avoidsExceptional(p) and
+      (exists a: CycleClass; exists w: CycleClass;
+      inWeilPlane(p, w) and (not isZeroClass(w)) and
+      isAlgebraic(p, add(scale(a, polarizationPower), w)))
+    [using specialize theConstructionDeliversAMarkedClass lemma-three-six-gives-an-embedded-lagrangian]
+qed
 ```

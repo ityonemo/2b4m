@@ -1,0 +1,253 @@
+// openai-erratum/parity.b4m — THE SIGN FIELD F2
+//
+// Part of an attempt to formalize the sign bookkeeping of OpenAI's withdrawn manuscript
+// "Algebraicity of Weil classes on split abelian eightfolds" (September 18, 2026), recovered
+// from commit adc7f1241b of github.com/openai/math. See README in this directory.
+//
+// The paper's Section 6 opens with "Throughout this section all sign exponents are read
+// modulo two", and every sign claim in it is a polynomial identity in such exponents. So the
+// right carrier is the FIELD WITH TWO ELEMENTS, not naturals-with-a-parity-predicate: the
+// paper's claims are then EQUATIONS, and the kernel checks them as such.
+//
+// F2 is axiomatized directly rather than built as Z/2Z over std/integer: the whole point is a
+// two-element carrier where `exhaustion` lets a proof case-split on every variable, which is
+// what makes the paper's identities decidable. A quotient construction would carry the
+// representative baggage and give nothing back here.
+
+sort F2
+const ZED: F2
+const ONE: F2
+func add(a: F2, b: F2) => F2
+func mul(a: F2, b: F2) => F2
+
+// THE TWO ELEMENTS ARE DISTINCT, AND THEY ARE THE ONLY ONES. `exhaustion` is what makes
+// every identity below provable by case analysis — it is the finiteness the paper relies on
+// when it reads exponents modulo two.
+axiom zeroIsNotOne: ZED != ONE
+axiom exhaustion: forall a: F2; a = ZED or a = ONE
+
+// Addition: the group structure, with every element its own inverse (characteristic two).
+axiom addZeroRight: forall a: F2; add(a, ZED) = a
+axiom addSelf: forall a: F2; add(a, a) = ZED
+axiom addIsCommutative: forall a, b: F2; add(a, b) = add(b, a)
+axiom addIsAssociative: forall a, b, c: F2; add(add(a, b), c) = add(a, add(b, c))
+
+// Multiplication: ONE is the unit, ZED absorbs, and ONE*ONE = ONE. With `exhaustion` these
+// three determine the table.
+axiom mulOneRight: forall a: F2; mul(a, ONE) = a
+axiom mulZeroRight: forall a: F2; mul(a, ZED) = ZED
+axiom mulIsCommutative: forall a, b: F2; mul(a, b) = mul(b, a)
+axiom mulIsAssociative: forall a, b, c: F2; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulDistributes: forall a, b, c: F2;
+  mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+
+// -- the consequences a sign computation actually uses ---------------------------------------
+
+// ZED is a left unit for addition too.
+theorem addZeroLeft: forall a: F2; add(ZED, a) = a
+proof
+  @generalize-a |
+    fix a: F2 {
+      @addition-commutes |
+        add(ZED, a) = add(a, ZED)
+        [using specialize addIsCommutative(ZED, a)]
+      @zero-on-the-right |
+        add(a, ZED) = a
+        [using specialize addZeroRight(a)]
+      @conclusion-at-a |
+        add(ZED, a) = a
+        [using chain addition-commutes zero-on-the-right]
+    }
+  @conclusion |
+    forall a: F2; add(ZED, a) = a
+    [by forall_intro generalize-a]
+qed
+
+// ONE is a left unit for multiplication.
+theorem mulOneLeft: forall a: F2; mul(ONE, a) = a
+proof
+  @generalize-a |
+    fix a: F2 {
+      @multiplication-commutes |
+        mul(ONE, a) = mul(a, ONE)
+        [using specialize mulIsCommutative(ONE, a)]
+      @one-on-the-right |
+        mul(a, ONE) = a
+        [using specialize mulOneRight(a)]
+      @conclusion-at-a |
+        mul(ONE, a) = a
+        [using chain multiplication-commutes one-on-the-right]
+    }
+  @conclusion |
+    forall a: F2; mul(ONE, a) = a
+    [by forall_intro generalize-a]
+qed
+
+// ZED absorbs on the left.
+theorem mulZeroLeft: forall a: F2; mul(ZED, a) = ZED
+proof
+  @generalize-a |
+    fix a: F2 {
+      @multiplication-commutes |
+        mul(ZED, a) = mul(a, ZED)
+        [using specialize mulIsCommutative(ZED, a)]
+      @zero-on-the-right |
+        mul(a, ZED) = ZED
+        [using specialize mulZeroRight(a)]
+      @conclusion-at-a |
+        mul(ZED, a) = ZED
+        [using chain multiplication-commutes zero-on-the-right]
+    }
+  @conclusion |
+    forall a: F2; mul(ZED, a) = ZED
+    [by forall_intro generalize-a]
+qed
+
+// IDEMPOTENCE: every element squares to itself — the identity that collapses the paper's
+// binomial terms (an exponent and its square have the same parity).
+theorem mulSelf: forall a: F2; mul(a, a) = a
+proof
+  @generalize-a |
+    fix a: F2 {
+      @the-two-cases |
+        a = ZED or a = ONE
+        [using specialize exhaustion(a)]
+      @conclusion-at-a |
+        mul(a, a) = a
+        case the-two-cases {
+          @when-zero |
+            assume a = ZED {
+              @a-is-zero |
+                a = ZED
+                [by hypothesis when-zero]
+              @zero-squares-to-zero |
+                mul(ZED, ZED) = ZED
+                [using specialize mulZeroRight(ZED)]
+              @conclusion-zero-case |
+                mul(a, a) = a
+                [by rewrite a-is-zero zero-squares-to-zero]
+            }
+          @when-one |
+            assume a = ONE {
+              @a-is-one |
+                a = ONE
+                [by hypothesis when-one]
+              @one-squares-to-one |
+                mul(ONE, ONE) = ONE
+                [using specialize mulOneRight(ONE)]
+              @conclusion-one-case |
+                mul(a, a) = a
+                [by rewrite a-is-one one-squares-to-one]
+            }
+        }
+    }
+  @conclusion |
+    forall a: F2; mul(a, a) = a
+    [by forall_intro generalize-a]
+qed
+
+// CANCELLATION as the paper uses it: x + x vanishes, so a term appearing TWICE drops out.
+// "every exterior input contraction sign occurs twice, while the node sign occurs once"
+// (Section 6.2) is exactly this.
+theorem aRepeatedTermVanishes: forall a, b: F2; add(add(a, b), b) = a
+proof
+  @generalize-a |
+    fix a: F2 {
+      @generalize-b |
+        fix b: F2 {
+          @regroup |
+            add(add(a, b), b) = add(a, add(b, b))
+            [using specialize addIsAssociative(a, b, b)]
+          @the-pair-vanishes |
+            add(b, b) = ZED
+            [using specialize addSelf(b)]
+          @with-the-pair-gone |
+            add(add(a, b), b) = add(a, ZED)
+            [using chain regroup the-pair-vanishes]
+          @zero-is-a-unit |
+            add(a, ZED) = a
+            [using specialize addZeroRight(a)]
+          @conclusion-at-b |
+            add(add(a, b), b) = a
+            [using chain with-the-pair-gone zero-is-a-unit]
+        }
+      @discharge-b |
+        forall b: F2; add(add(a, b), b) = a
+        [by forall_intro generalize-b]
+    }
+  @conclusion |
+    forall a, b: F2; add(add(a, b), b) = a
+    [by forall_intro generalize-a]
+qed
+
+// EXHAUSTION AS A SCHEMA: a one-variable F2 claim follows from its two instances. An
+// n-variable identity then costs n nested applications of this, instead of 2^n hand-written
+// cases — which is what makes the paper's four- and eight-variable sign identities tractable.
+theorem oneVariableExhaustion(prop(F2)):
+  prop(ZED) -> prop(ONE) -> forall a: F2; prop(a)
+proof
+  @given-at-zero |
+    assume prop(ZED) {
+      @holds-at-zero |
+        prop(ZED)
+        [by hypothesis given-at-zero]
+      @given-at-one |
+        assume prop(ONE) {
+          @holds-at-one |
+            prop(ONE)
+            [by hypothesis given-at-one]
+          @generalize-a |
+            fix a: F2 {
+              @the-two-cases |
+                a = ZED or a = ONE
+                [using specialize exhaustion(a)]
+              @conclusion-at-a |
+                prop(a)
+                case the-two-cases {
+                  @when-zero |
+                    assume a = ZED {
+                      @a-is-zero |
+                        a = ZED
+                        [by hypothesis when-zero]
+                      @conclusion-zero-case |
+                        prop(a)
+                        [by rewrite a-is-zero holds-at-zero]
+                    }
+                  @when-one |
+                    assume a = ONE {
+                      @a-is-one |
+                        a = ONE
+                        [by hypothesis when-one]
+                      @conclusion-one-case |
+                        prop(a)
+                        [by rewrite a-is-one holds-at-one]
+                    }
+                }
+            }
+          @conclusion-everywhere |
+            forall a: F2; prop(a)
+            [by forall_intro generalize-a]
+        }
+      @conclusion-one-gives |
+        prop(ONE) -> forall a: F2; prop(a)
+        [by implies_intro given-at-one]
+    }
+  @conclusion |
+    prop(ZED) -> prop(ONE) -> forall a: F2; prop(a)
+    [by implies_intro given-at-zero]
+qed
+
+// VERIFYING the schema — it is only checked at an instantiation. Idempotence again, this time
+// via exhaustion rather than by hand.
+theorem mulSelfAgain: forall a: F2; mul(a, a) = a
+proof
+  @zero-squares-to-zero |
+    mul(ZED, ZED) = ZED
+    [using specialize mulZeroRight(ZED)]
+  @one-squares-to-one |
+    mul(ONE, ONE) = ONE
+    [using specialize mulOneRight(ONE)]
+  @conclusion |
+    forall a: F2; mul(a, a) = a
+    [using instantiation oneVariableExhaustion((fun a: F2 => mul(a, a) = a)) zero-squares-to-zero one-squares-to-one]
+qed
