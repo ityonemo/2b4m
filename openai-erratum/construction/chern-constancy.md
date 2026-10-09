@@ -119,3 +119,131 @@ resolution exists, as its comment says), not Lemma 12.2's conclusion.
 
 That is a real improvement over assuming the conclusion, because the conclusion is where the
 quantifier moves from one fiber to all of them — and that move is now proved.
+
+## §12.4's spreading step, which is what the architecture consumes
+
+`architecture.md` needs more than constancy: it needs *"the marked class is algebraic at
+every period in `U`"*. That is §12.4's last move, and it decomposes into the constancy proved
+above plus two citations:
+
+1. **Surjectivity of `H → U`** (Lemma 12.1): every period in `U` is the image of some
+   parameter point in the component. This is what makes a statement about `H` into a
+   statement about `U`.
+2. **`ch₄(O_Z) = [Z]`** (the Grothendieck–Riemann–Roch computation of [14]): the degree-four
+   part of the marked Chern character *is* the cycle class, so a constant Chern character
+   means a constant — hence everywhere-algebraic — cycle class.
+
+With both, the spreading follows from constancy by transport along the fibre map. The
+constancy theorem above is the step that carries the weight.
+
+```2b4m
+import marked <<< "marked-class.md"
+
+sort Period = marked.Period
+sort CycleClass = marked.CycleClass
+
+pred inParameterSet = marked.inParameterSet
+pred avoidsExceptional = marked.avoidsExceptional
+pred isAlgebraic = marked.isAlgebraic
+
+// The fibre map H -> U of Lemma 12.1, and the class it marks out at a parameter point.
+func periodOf(b: ParameterPoint) => Period
+func markedClassAt(b: ParameterPoint) => CycleClass
+
+// CITATION (Lemma 12.1, surjectivity of H -> U): every period in U is hit by some parameter
+// point of the component.
+axiom everyPeriodIsHitByTheComponent: forall p: Period;
+  inParameterSet(p) -> exists b: ParameterPoint; inComponent(b) and periodOf(b) = p
+
+// CITATION ([14], ch_4(O_Z) = [Z]): equal marked Chern characters at two parameter points
+// give equal marked cycle classes. This is the degree-four part of the identity.
+axiom equalChernCharactersGiveEqualClasses: forall b, c: ParameterPoint;
+  markedChernCharacter(b) = markedChernCharacter(c) ->
+  markedClassAt(b) = markedClassAt(c)
+
+// CITATION ([14] again, the algebraicity half): the class marked out at a parameter point is
+// algebraic at that point's period — it is the cycle class of an actual subscheme.
+axiom aMarkedClassIsAlgebraicAtItsOwnPeriod: forall b: ParameterPoint;
+  inComponent(b) -> isAlgebraic(periodOf(b), markedClassAt(b))
+
+// §12.4's SPREADING STEP, PROVED. Given a parameter point whose marked class is the one we
+// care about, every other period in U is hit by some point of the same component, the Chern
+// characters there agree by the constancy theorem, hence the marked classes agree, hence the
+// class is algebraic there too.
+theorem theMarkedClassSpreadsAcrossTheParameterSet: forall b: ParameterPoint;
+  inComponent(b) ->
+  forall q: Period; inParameterSet(q) -> isAlgebraic(q, markedClassAt(b))
+proof
+  @the-characters-are-constant |
+    forall b, c: ParameterPoint;
+      inComponent(b) -> inComponent(c) ->
+      markedChernCharacter(b) = markedChernCharacter(c)
+    [by cite theMarkedChernCharacterIsConstant]
+  @generalize-b |
+    fix b: ParameterPoint {
+      @given-b-in-the-component |
+        assume inComponent(b) {
+          @b-is-in-the-component |
+            inComponent(b)
+            [by hypothesis given-b-in-the-component]
+          @generalize-q |
+            fix q: Period {
+              @given-q-in-the-parameter-set |
+                assume inParameterSet(q) {
+                  @q-is-in-the-parameter-set |
+                    inParameterSet(q)
+                    [by hypothesis given-q-in-the-parameter-set]
+                  @a-parameter-point-over-q |
+                    exists c: ParameterPoint; inComponent(c) and periodOf(c) = q
+                    [using specialize everyPeriodIsHitByTheComponent(q) q-is-in-the-parameter-set]
+                  @with-the-point-over-q |
+                    unpack c: ParameterPoint from a-parameter-point-over-q {
+                      @the-point-facts |
+                        inComponent(c) and periodOf(c) = q
+                        [by hypothesis with-the-point-over-q]
+                      @the-point-is-in-the-component |
+                        inComponent(c)
+                        [by and_elim_left the-point-facts]
+                      @the-point-lies-over-q |
+                        periodOf(c) = q
+                        [by and_elim_right the-point-facts]
+                      @the-characters-agree |
+                        markedChernCharacter(b) = markedChernCharacter(c)
+                        [using specialize the-characters-are-constant(b, c) b-is-in-the-component the-point-is-in-the-component]
+                      @the-classes-agree |
+                        markedClassAt(b) = markedClassAt(c)
+                        [using specialize equalChernCharactersGiveEqualClasses(b, c) the-characters-agree]
+                      @the-point-class-is-algebraic |
+                        isAlgebraic(periodOf(c), markedClassAt(c))
+                        [using specialize aMarkedClassIsAlgebraicAtItsOwnPeriod(c) the-point-is-in-the-component]
+                      @the-point-class-is-algebraic-at-q |
+                        isAlgebraic(q, markedClassAt(c))
+                        [by rewrite the-point-lies-over-q the-point-class-is-algebraic]
+                      @conclusion-the-class-is-algebraic-at-q |
+                        isAlgebraic(q, markedClassAt(b))
+                        [by rewrite the-classes-agree the-point-class-is-algebraic-at-q]
+                    }
+                  @the-class-is-algebraic-at-q |
+                    isAlgebraic(q, markedClassAt(b))
+                    [by exists_elim with-the-point-over-q]
+                }
+              @conclusion-at-q |
+                inParameterSet(q) -> isAlgebraic(q, markedClassAt(b))
+                [by implies_intro given-q-in-the-parameter-set]
+            }
+          @conclusion-for-every-period |
+            forall q: Period; inParameterSet(q) -> isAlgebraic(q, markedClassAt(b))
+            [by forall_intro generalize-q]
+        }
+      @conclusion-at-b |
+        inComponent(b) ->
+          (forall q: Period; inParameterSet(q) -> isAlgebraic(q, markedClassAt(b)))
+        [by implies_intro given-b-in-the-component]
+    }
+  @conclusion |
+    forall b: ParameterPoint;
+      inComponent(b) ->
+      forall q: Period; inParameterSet(q) -> isAlgebraic(q, markedClassAt(b))
+    [by forall_intro generalize-b]
+qed
+```

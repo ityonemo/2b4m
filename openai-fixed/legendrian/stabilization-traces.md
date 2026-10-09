@@ -29,6 +29,7 @@ sort Int = integer.Int
 const ZERO = integer.ZERO
 const ONE = integer.ONE
 func neg = integer.neg
+func sub = integer.sub
 func add = integer.add
 func stabilize = traces.stabilize
 func traceSign = traces.traceSign
@@ -130,20 +131,99 @@ Transcribing that application makes the dependency explicit: Lemma 3.6 needs the
 the zero count needs the outermost trace to contribute `+1`, and that is the hole.
 
 ```2b4m
-// The total signed double count after inserting the traces. The manuscript's `I(f₁) + m = 0`.
-const theSignedDoubleCount: Int
+// -- establishing looseness FIRST, which is what breaks the circle ---------------------------
+//
+// [6] §2, line 462: "Any Legendrian submanifold Λ ⊂ Y can be MADE loose by stabilizing it in
+// arbitrarily small neighborhood of a point. Moreover, it can be made loose even without
+// changing its formal Legendrian isotopy class."
+//
+// Note the verb: you do not PROVE φ₀ loose, you REPLACE it by a stabilized link. So the
+// repair is not "add a hypothesis" — it is to perform the stabilization BEFORE the trace
+// insertion, so that every subsequent +1 sign is licensed and the count can then be driven
+// to zero. The manuscript does the operations in the other order, which is the circularity.
+//
+// The link the construction actually works with is `stabilize(phiZero)` — φ₀ stabilized
+// once. Written directly rather than as a named constant plus an equation: an earlier draft
+// introduced `theNegativeLinkAfterStabilizing` and then ASSUMED it equalled
+// `stabilize(phiZero)`, which is a definition masquerading as an assumption.
+theorem theNegativeLinkIsLoose: isLoose(stabilize(phiZero))
+proof
+  @conclusion |
+    isLoose(stabilize(phiZero))
+    [using specialize aStabilizationIsLoose(phiZero)]
+qed
 
-// [9, Theorem 2.3] (Eliashberg–Murphy, "Lagrangian caps"), the hypothesis that matters here:
-// a zero signed double count gives the Hamiltonian regular homotopy to an embedding.
+// The total signed double count after inserting the traces. The manuscript's `I(f₁) + m`.
+//
+// Modelled as an actual SUM rather than an opaque constant, so the arithmetic is PROVED:
+// `initialIndex` is I(f₁), and `insertedTotal` is the sum of the inserted traces' signs.
+// An earlier draft made the count opaque and held "the count is zero" as a hole; with the
+// sum written out, std/integer discharges it.
+const initialIndex: Int // I(f₁), negative; the manuscript puts m = -I(f₁)
+func insertedTotal(n: Int) => Int // sum of n inserted trace signs
+func theSignedDoubleCount(n: Int) => Int
+
+axiom theCountIsTheSum: forall n: Int;
+  theSignedDoubleCount(n) = add(initialIndex, insertedTotal(n))
+
+// [6, Theorem 3.6] = the manuscript's [9, Theorem 2.3] (Eliashberg–Murphy, "Lagrangian
+// caps"), stated with BOTH its hypotheses:
+//
+//   "If the Legendrian link of f₀ at p is LOOSE and if I(f₀) = 0, then there exists a
+//    Hamiltonian regular homotopy … connecting f₀ to a Lagrangian EMBEDDING."
+//
+// An earlier version of this file dropped the looseness hypothesis and took only the zero
+// count. That was my error, not the manuscript's, and it mattered: it let the "repaired"
+// version reach an embedding without ever establishing looseness of the negative link —
+// which is one of the two things §3.4 actually owes.
 pred anEmbeddedLagrangianExists()
-axiom exactCancellation:
-  theSignedDoubleCount = ZERO -> anEmbeddedLagrangianExists()
+axiom exactCancellation: forall n: Int;
+  isLoose(stabilize(phiZero)) -> theSignedDoubleCount(n) = ZERO ->
+  anEmbeddedLagrangianExists()
 
 // THE REPAIRED COUNT. With m+2 traces — m+1 reverse at +1 and the outermost forward at −1 —
 // the total is I(f₁) + (m+1) − 1 = 0. The arithmetic is the paper's, restated for the
 // repaired insertion, and it now depends on the sign that is actually AVAILABLE at φ₀.
-axiom theRepairedCountIsZero:
-  traceSign(phiZero, stabilize(phiZero)) = neg(ONE) -> theSignedDoubleCount = ZERO
+// THE REPAIRED INSERTION, as a counting fact — and note it is CONDITIONAL on the outermost
+// trace's sign. m+1 reverse traces at +1 plus one outermost trace at s total (m+1) + s, which
+// is m exactly when s = −1.
+//
+// Stating it conditionally is what makes the repair load-bearing. An earlier version asserted
+// the total outright, and strict check then reported the forward-sign step as DEAD — the
+// repair was decorative, because nothing downstream consumed the sign it establishes.
+axiom theRepairedInsertionTotal:
+  traceSign(phiZero, stabilize(phiZero)) = neg(ONE) ->
+  insertedTotal(add(sub(neg(initialIndex), ONE), ONE)) = neg(initialIndex)
+
+// …so the count is ZERO. PROVED, not assumed: I(f₁) + (−I(f₁)) = 0 in std/integer.
+theorem theRepairedCountIsZero:
+  traceSign(phiZero, stabilize(phiZero)) = neg(ONE) ->
+  theSignedDoubleCount(add(sub(neg(initialIndex), ONE), ONE)) = ZERO
+proof
+  @given-the-outermost-trace-is-forward |
+    assume traceSign(phiZero, stabilize(phiZero)) = neg(ONE) {
+      @the-outermost-trace-is-forward |
+        traceSign(phiZero, stabilize(phiZero)) = neg(ONE)
+        [by hypothesis given-the-outermost-trace-is-forward]
+      @the-count-is-the-sum |
+        theSignedDoubleCount(add(sub(neg(initialIndex), ONE), ONE))
+          = add(initialIndex, insertedTotal(add(sub(neg(initialIndex), ONE), ONE)))
+        [using specialize theCountIsTheSum(add(sub(neg(initialIndex), ONE), ONE))]
+      @the-inserted-traces-total-m |
+        insertedTotal(add(sub(neg(initialIndex), ONE), ONE)) = neg(initialIndex)
+        [using specialize theRepairedInsertionTotal the-outermost-trace-is-forward]
+      @the-sum-cancels |
+        add(initialIndex, neg(initialIndex)) = ZERO
+        [using polynomial(integer)]
+      @conclusion-count-is-zero |
+        theSignedDoubleCount(add(sub(neg(initialIndex), ONE), ONE)) = ZERO
+        [using chain the-count-is-the-sum the-inserted-traces-total-m the-sum-cancels]
+    }
+  @conclusion |
+    traceSign(phiZero, stabilize(phiZero)) = neg(ONE) ->
+      theSignedDoubleCount(add(sub(neg(initialIndex), ONE), ONE)) = ZERO
+    [by implies_intro given-the-outermost-trace-is-forward]
+qed
 
 // LEMMA 3.6 — the conclusion Section 3 exports.
 theorem anEmbeddedSpinLagrangianExists: anEmbeddedLagrangianExists()
@@ -152,10 +232,13 @@ proof
     traceSign(phiZero, stabilize(phiZero)) = neg(ONE)
     [by cite theOutermostTraceContributesMinusOneAsRepaired]
   @the-count-is-zero |
-    theSignedDoubleCount = ZERO
+    theSignedDoubleCount(add(sub(neg(initialIndex), ONE), ONE)) = ZERO
     [using specialize theRepairedCountIsZero the-outermost-trace-is-forward]
+  @the-negative-link-is-loose |
+    isLoose(stabilize(phiZero))
+    [by cite theNegativeLinkIsLoose]
   @conclusion |
     anEmbeddedLagrangianExists()
-    [using specialize exactCancellation the-count-is-zero]
+    [using specialize exactCancellation(add(sub(neg(initialIndex), ONE), ONE)) the-negative-link-is-loose the-count-is-zero]
 qed
 ```
