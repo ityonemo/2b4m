@@ -1,8 +1,20 @@
-# openai-erratum — a withdrawn manuscript, transcribed so the checker finds the defect
+# openai-fixed — the same manuscript, with the §3.4 defect repaired
 
-> **THIS DIRECTORY DOES NOT CHECK, BY DESIGN.** `2b4m check openai-erratum` is RED, and that
-> is the result. It transcribes the manuscript as written; the checker rejects the step the
-> manuscript gets wrong. For the repaired version that does check, see `../openai-fixed/`.
+> This is `../openai-erratum/` with one change: §3.4 inserts `m+2` stabilization traces
+> instead of `m`, with the outermost one FORWARD. `2b4m check openai-fixed` is GREEN and
+> Theorem 1.1 goes through with no holes.
+>
+> **The repair:** the manuscript's outermost trace `φ₁ → φ₀` needs `isLoose(φ₀)`, which [6]
+> requires and nothing supplies. Using `m+1` reverse traces (every target a stabilization,
+> hence loose by [6] Lemma 2.2) plus one outermost forward trace (granted "for any φ", no
+> looseness needed) keeps the signed double count at zero: `I(f₁) + (m+1) − 1 = 0`. So
+> [9, Thm 2.3] still applies, and every trace now has its hypothesis.
+>
+> **Do not read this as "the paper is fixed."** [6] itself notes that any Legendrian can be
+> made loose by one extra stabilization, so this gap was always trivially closable; and a
+> published account describes a different, worse error. Note that OpenAI's withdrawal is not
+> evidence of severity — these manuscripts have no human author who could act on a margin
+> note. See the contested-diagnosis note below.
 
 On **6 October 2026** OpenAI published 722 machine-generated mathematics manuscripts to
 `github.com/openai/math`. On **7 October** three were withdrawn. From their
