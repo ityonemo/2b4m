@@ -10,7 +10,7 @@ The withdrawn text is recovered from commit `adc7f1241b` of `github.com/openai/m
 `preprints/Algebraicity-of-Weil-classes-on-split-abelian-eightfolds-September-18-2026/paper.pdf`.
 It is absent from the current catalogue.
 
-Run `2b4m check openai-erratum` to verify this directory.
+Run `2b4m check openai-wiles` to verify this directory.
 
 ## Why this is formalizable at all
 

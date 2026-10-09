@@ -573,12 +573,22 @@ pub fn main(init: std.process.Init) !u8 {
     // Holes: aspirational placeholders. Default mode REJECTS any file that has
     // them (they are enumerated with their dependents as the reason) so a
     // hole-bearing result is never mistaken for complete; --draft allows them.
-    if (result.holes.len > 0 and !draft) {
+    // A CITED hole (`hole x cites "src": …`) does not fail a strict run: the citation asserts
+    // an external authority this checker cannot verify, so the run DISCLOSES it (below, with
+    // the OK line) instead of rejecting. A BARE hole is still rejected — the citation is the
+    // only thing that buys passage, which is what keeps `hole` the honest home for a borrowed
+    // result rather than a second escape hatch beside `axiom`.
+    var bare_holes: usize = 0;
+    for (result.holes) |h| {
+        if (h.cites == null) bare_holes += 1;
+    }
+    if (bare_holes > 0 and !draft) {
         var buf: [4096]u8 = undefined;
         var fw: Io.File.Writer = .init(.stderr(), io, &buf);
         const err = &fw.interface;
-        try err.print("error: {d} hole(s) remain (default mode rejects holes; use --draft while filling them):\n", .{result.holes.len});
+        try err.print("error: {d} uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites \"<source>\"` if an external source vouches for one):\n", .{bare_holes});
         for (result.holes) |h| {
+            if (h.cites != null) continue;
             try err.print("  - {s}  ({s}:{d})", .{ h.name, h.path, h.line });
             if (h.dependents.len > 0) {
                 try err.writeAll("  — rested on by: ");
@@ -642,7 +652,15 @@ pub fn main(init: std.process.Init) !u8 {
             try out.print("\n  — rests on {d} axiom(s):", .{result.axioms.len});
             for (result.axioms) |a| {
                 try out.print("\n      {s}  ({s}:{d})", .{ a.name, a.path, a.line });
-                if (a.is_hole) try out.writeAll("  — HOLE");
+                // a CITED hole is marked as such: still an assumption, but one with an
+                // external authority named — a reader weighs it differently from a bare hole.
+                if (a.is_hole) {
+                    var cited_locator: ?[]const u8 = null;
+                    for (result.holes) |h| {
+                        if (std.mem.eql(u8, h.name, a.name) and h.line == a.line) cited_locator = h.cites;
+                    }
+                    if (cited_locator != null) try out.writeAll("  — CITED HOLE") else try out.writeAll("  — HOLE");
+                }
                 // a DEFINITION is not an assumption to weigh: it introduces a symbol, and
                 // doubting it is not coherent. Marked so the report's real content — what
                 // this result actually ASSUMES — is readable at a glance.
@@ -664,6 +682,23 @@ pub fn main(init: std.process.Init) !u8 {
     }
     // --draft with holes: loud disclosure that the result rests on aspirational
     // placeholders, listing them (like the --fast banner). Exit stays 0.
+    // CITED HOLES: a strict run passes with these, but they are assumptions on someone else's
+    // authority — the one thing this checker cannot check. Say so, with each locator, so the
+    // citations are reviewable in one place rather than scattered through comments.
+    {
+        var cited: usize = 0;
+        for (result.holes) |h| {
+            if (h.cites != null) cited += 1;
+        }
+        if (cited > 0) {
+            try out.print("\n  \u{2014} {d} CITED hole(s) — assumed on external authority, NOT verified here; check each citation:", .{cited});
+            for (result.holes) |h| {
+                if (h.cites) |c| {
+                    try out.print("\n      {s}  ({s}:{d})\n          cites {s}", .{ h.name, h.path, h.line, c });
+                }
+            }
+        }
+    }
     if (draft and result.holes.len > 0) {
         try out.print("\n  \u{2014} DRAFT — {d} hole(s) unfilled (aspirational; the result is conditional on them):", .{result.holes.len});
         for (result.holes) |h| {

@@ -379,7 +379,7 @@ pub fn addTests(
     // file that rests on one, enumerating each hole with its location and the
     // theorems that depend on it.
     ctx.fail(&.{ "check", "tests/cases/hole.b4m" },
-        \\error: 1 hole(s) remain (default mode rejects holes; use --draft while filling them):
+        \\error: 1 uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites "<source>"` if an external source vouches for one):
         \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: restsOnHole
         \\
     );
@@ -389,16 +389,32 @@ pub fn addTests(
         \\  — DRAFT — 1 hole(s) unfilled (aspirational; the result is conditional on them): zeroIsEven; re-run `2b4m check` (no --draft) once filled.
         \\
     );
+    // A CITED hole PASSES a strict check — the citation names an external authority this
+    // checker cannot verify, so the run discloses it rather than rejecting. Still a hole:
+    // `--axioms` marks it `— CITED HOLE`, so it is never mistaken for a proved step.
+    ctx.ok(&.{ "check", "tests/cases/hole_cited.b4m" },
+        \\OK: 6 declarations, 1 theorems proven
+        \\  — 1 CITED hole(s) — assumed on external authority, NOT verified here; check each citation:
+        \\      zeroIsEven  (tests/cases/hole_cited.b4m:17)
+        \\          cites Hardy & Wright, Thm 1 (parity of zero)
+        \\
+    );
+    // `cites` on an AXIOM is a hard error: an axiom is a theory's own primitive, so a
+    // borrowed result must stay visible as a hole. Without this, the citation field would
+    // become a way to launder an unproved step into an axiom — the exact failure it exists
+    // to prevent.
+    ctx.fail(&.{ "check", "tests/cases/axiom_cites_bad.b4m" }, "tests/cases/axiom_cites_bad.b4m:2:11: error: 'cites' belongs on a hole, not an axiom: an axiom is a theory's own primitive, while a result borrowed from a source is assumed on external authority — write it as a cited hole, which stays disclosed but passes a strict check\n");
+
     // holes are ORTHOGONAL to acceleration: --fast alone still rejects them.
     ctx.fail(&.{ "check", "--fast", "tests/cases/hole.b4m" },
-        \\error: 1 hole(s) remain (default mode rejects holes; use --draft while filling them):
+        \\error: 1 uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites "<source>"` if an external source vouches for one):
         \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: restsOnHole
         \\
     );
     // holes propagate transitively across imports: a theorem citing a
     // hole-tainted theorem inherits the hole (blast radius shows both).
     ctx.fail(&.{ "check", "tests/cases/hole_transitive.b4m" },
-        \\error: 1 hole(s) remain (default mode rejects holes; use --draft while filling them):
+        \\error: 1 uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites "<source>"` if an external source vouches for one):
         \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: restsOnHole, transitiveHole
         \\
     );
@@ -473,7 +489,7 @@ pub fn addTests(
         \\
     );
     ctx.fail(&.{ "check", "tests/cases/hole.b4m", "restsOnHole", "--axioms" },
-        \\error: 1 hole(s) remain (default mode rejects holes; use --draft while filling them):
+        \\error: 1 uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites "<source>"` if an external source vouches for one):
         \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: restsOnHole
         \\
     );

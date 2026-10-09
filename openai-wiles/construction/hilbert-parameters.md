@@ -42,12 +42,12 @@ pred hasEmptyInterior(e: AnalyticSubset)
 
 // WELL-KNOWN (Remmert's proper mapping theorem, cited as [15]): the image of a proper map
 // of complex analytic spaces is closed analytic.
-axiom remmertProperMapping: forall h: AnalyticSpace;
+hole remmertProperMapping cites "Grauert-Remmert, Coherent Analytic Sheaves [15]: proper mapping theorem": forall h: AnalyticSpace;
   isProperOverTheBase(h) -> isClosedAnalytic(imageInTheBase(h))
 
 // WELL-KNOWN: a proper closed analytic subset of a connected complex manifold has empty
 // interior. (This is what the Baire argument in §12.3 consumes.)
-axiom aProperClosedAnalyticSubsetHasEmptyInterior: forall e: AnalyticSubset;
+hole aProperClosedAnalyticSubsetHasEmptyInterior cites "standard: a proper closed analytic subset of a connected complex manifold has empty interior": forall e: AnalyticSubset;
   isClosedAnalytic(e) -> isAProperSubsetOfTheBase(e) -> hasEmptyInterior(e)
 
 // LEMMA 12.1's consequence, PROVED from the two citations: a proper-over-U component whose
@@ -105,6 +105,6 @@ contribution.
 // WELL-KNOWN ([16] Hilbert schemes; [15] proper base change): the countable collection of
 // connected reduced components, proper over U, carrying flat families, exists and covers
 // every closed subscheme of every fiber.
-axiom theHilbertParameterSpacesExist: exists h: AnalyticSpace;
+hole theHilbertParameterSpacesExist cites "Grothendieck, Bourbaki exp. 221 [16] (Hilbert schemes) + [15] proper base change; manuscript Lemma 12.1": exists h: AnalyticSpace;
   isConnectedAndReduced(h) and isProperOverTheBase(h)
 ```

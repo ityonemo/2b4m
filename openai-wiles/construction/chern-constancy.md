@@ -51,13 +51,13 @@ pred joinedByAPath(b: ParameterPoint, c: ParameterPoint)
 // CITATION (homotopy invariance of the Chern character): endpoints of a path carry equal
 // Chern characters. This is step 3, and it is what the finite vector-bundle resolution of
 // steps 1-2 exists in order to apply.
-axiom chernCharactersAgreeAlongAPath: forall b, c: ParameterPoint;
+hole chernCharactersAgreeAlongAPath cites "standard: homotopy invariance of the Chern character": forall b, c: ParameterPoint;
   inComponent(b) -> inComponent(c) -> joinedByAPath(b, c) ->
   markedChernCharacter(b) = markedChernCharacter(c)
 
 // CITATION (connectedness + local path connectedness): any two points of the component are
 // joined by a path. Standard topology; Lemma 12.1 supplies the hypotheses.
-axiom anyTwoPointsOfTheComponentAreJoined: forall b, c: ParameterPoint;
+hole anyTwoPointsOfTheComponentAreJoined cites "standard: a connected, locally path-connected space is path-connected": forall b, c: ParameterPoint;
   inComponent(b) -> inComponent(c) -> joinedByAPath(b, c)
 
 // LEMMA 12.2's conclusion, now PROVED from the two citations rather than assumed.
@@ -152,18 +152,18 @@ func markedClassAt(b: ParameterPoint) => CycleClass
 
 // CITATION (Lemma 12.1, surjectivity of H -> U): every period in U is hit by some parameter
 // point of the component.
-axiom everyPeriodIsHitByTheComponent: forall p: Period;
+hole everyPeriodIsHitByTheComponent cites "manuscript §12.4: that component's image cannot be a proper subset of U. Thus H -> U is surjective": forall p: Period;
   inParameterSet(p) -> exists b: ParameterPoint; inComponent(b) and periodOf(b) = p
 
 // CITATION ([14], ch_4(O_Z) = [Z]): equal marked Chern characters at two parameter points
 // give equal marked cycle classes. This is the degree-four part of the identity.
-axiom equalChernCharactersGiveEqualClasses: forall b, c: ParameterPoint;
+hole equalChernCharactersGiveEqualClasses cites "Fulton, Intersection Theory [14]: ch_4(O_Z) = [Z]": forall b, c: ParameterPoint;
   markedChernCharacter(b) = markedChernCharacter(c) ->
   markedClassAt(b) = markedClassAt(c)
 
 // CITATION ([14] again, the algebraicity half): the class marked out at a parameter point is
 // algebraic at that point's period — it is the cycle class of an actual subscheme.
-axiom aMarkedClassIsAlgebraicAtItsOwnPeriod: forall b: ParameterPoint;
+hole aMarkedClassIsAlgebraicAtItsOwnPeriod cites "Fulton, Intersection Theory [14]: ch_4(O_Z) = [Z], algebraicity half": forall b: ParameterPoint;
   inComponent(b) -> isAlgebraic(periodOf(b), markedClassAt(b))
 
 // §12.4's SPREADING STEP, PROVED. Given a parameter point whose marked class is the one we

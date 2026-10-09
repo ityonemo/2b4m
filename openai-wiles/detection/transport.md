@@ -39,7 +39,7 @@ const theComplexPeriodClass: Class
 // WELL-KNOWN ([20], smooth proper base change over a strictly henselian trait): the
 // identification is compatible with cup products and Chern classes, so "in the span"
 // transports between the special and generic fibres in both directions.
-axiom baseChangeTransportsSpanMembership:
+hole baseChangeTransportsSpanMembership cites "Milne, Lectures on Etale Cohomology [20]: smooth proper base change; manuscript Prop 11.3":
   inTheSpanOfThePolarizationPowers(theGenericClass) ->
   inTheSpanOfThePolarizationPowers(theDetectedClass)
 
@@ -83,12 +83,12 @@ pred isRationalAlgebraicClass(z: Class)
 
 // WELL-KNOWN: the alternating Chern character of a perfect complex on a smooth projective
 // variety is a rational algebraic cycle class.
-axiom anAlternatingChernCharacterIsAlgebraic:
+hole anAlternatingChernCharacterIsAlgebraic cites "manuscript Prop 11.4: the alternating Chern character is a rational algebraic class":
   isRationalAlgebraicClass(theComplexPeriodClass)
 
 // WELL-KNOWN ([20]: invariance of ℓ-adic cohomology under extension of algebraically closed
 // fields, then Betti–étale comparison): span membership transports to the complex period.
-axiom theComparisonTransportsSpanMembership:
+hole theComparisonTransportsSpanMembership cites "Milne [20]: Betti-etale comparison + invariance under extension of algebraically closed fields; manuscript Prop 11.4":
   inTheSpanOfThePolarizationPowers(theComplexPeriodClass) ->
   inTheSpanOfThePolarizationPowers(theGenericClass)
 
@@ -146,11 +146,11 @@ pred hasNonzeroWeilProjection(z: Class)
 // WELL-KNOWN (Baire, applied to the countable union of proper closed analytic subsets that
 // `hilbert-parameters.md` shows have empty interior): a period avoiding every exceptional
 // locus exists.
-axiom baireSuppliesAGoodPeriod: aGoodPeriodExists()
+hole baireSuppliesAGoodPeriod cites "standard: Baire category theorem; manuscript §12.3": aGoodPeriodExists()
 
 // CITED (formula (2.3) of §2): a class outside the span of the powers of θ has a
 // codimension-four component with nonzero projection to the Weil plane.
-axiom outsideTheSpanForcesANonzeroWeilProjection:
+hole outsideTheSpanForcesANonzeroWeilProjection cites "manuscript formula (2.3): H^8 \u2229 H^{4,4} = Q.theta^4 (+) W_K":
   (not inTheSpanOfThePolarizationPowers(theComplexPeriodClass)) ->
   hasNonzeroWeilProjection(theComplexPeriodClass)
 

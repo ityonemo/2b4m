@@ -341,6 +341,12 @@ pub const Parser = struct {
                 // an optional `(params)` makes it an axiom-SCHEMA (a parametric assumption
                 // family) — recorded as Fact.params; "schema" is a downstream reading.
                 const params = try self.parseOptSchemaParams();
+                // `cites` belongs on a HOLE, not an axiom: an axiom is a theory's own
+                // primitive, while a borrowed result is assumed on someone else's authority
+                // and must stay visible as a hole.
+                if (self.tok.tag == .keyword_cites) {
+                    return self.fail("'cites' belongs on a hole, not an axiom: an axiom is a theory's own primitive, while a result borrowed from a source is assumed on external authority — write it as a cited hole, which stays disclosed but passes a strict check", .{});
+                }
                 _ = try self.expect(.colon);
                 const formula = try self.parseExpr();
                 if (self.tok.tag == .keyword_proof) {
@@ -352,11 +358,17 @@ pub const Parser = struct {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
                 const params = try self.parseOptSchemaParams();
+                // an optional `cites "locator"` makes this a CITED hole: assumed on external
+                // authority, reported but not a strict-mode failure. See ast.Decl.hole.
+                const cites: ?Token = if (self.tok.tag == .keyword_cites) blk: {
+                    _ = self.advance();
+                    break :blk try self.expect(.string);
+                } else null;
                 _ = try self.expect(.colon);
                 if (self.tok.tag == .keyword_proof) {
                     return self.fail("a hole is a placeholder and carries no proof; once you prove it, make it a theorem", .{});
                 }
-                return .{ .hole = .{ .local = .{ .name = name, .formula = try self.parseExpr(), .params = params } } };
+                return .{ .hole = .{ .local = .{ .name = name, .formula = try self.parseExpr(), .params = params, .cites = cites } } };
             },
             .keyword_theorem => {
                 _ = self.advance();

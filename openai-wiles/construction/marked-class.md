@@ -20,12 +20,12 @@ Its dependency chain is the entire construction:
                <-  Section 3     (the Lagrangian L)
                <-  §3.4          (stabilization traces of [6])  <-- THE ERROR IS HERE
 
-`openai-erratum/signs.md` checks the sign identities of Section 6 and finds them valid; the
+`../signs.md` checks the sign identities of Section 6 and finds them valid; the
 withdrawal points instead at §3.4's traces, whose *internal* arithmetic is also consistent
 (`φ → φ₁ : −1`, `φ₁ → φ : +1` at k = 4) but which depends on the convention imported from
 reference [6]. A formalization that *axiomatized* this proposition could not see any of
 that — which is the reason it is not axiomatized. The chain is wired through Lemma 3.6, so
-checking Theorem 1.1 in `openai-erratum/` reaches §3.4 and fails there.
+§3.4 is reached when checking Theorem 1.1.
 
 ```2b4m
 import legendrian <<< "../legendrian/stabilization-traces.md"
@@ -40,6 +40,7 @@ pred isAlgebraic(p: Period, z: CycleClass)
 pred inWeilPlane(p: Period, z: CycleClass)
 pred isZeroClass(z: CycleClass)
 pred representedByIntegralSubvarietiesAt(p: Period, z: transport.Class)
+sort Class = transport.Class
 const polarizationPower: CycleClass
 func scale(q: CycleClass, z: CycleClass) => CycleClass
 func add(z: CycleClass, w: CycleClass) => CycleClass
@@ -66,12 +67,59 @@ func add(z: CycleClass, w: CycleClass) => CycleClass
 //       H^8 = <theta^4> ⊕ W_K ⊕ (rest) of §2.
 //
 // Neither step is particular to this paper, and both are cited in §12.3.
-axiom aRationalAlgebraicClassIsACombinationOfSubvarieties:
+hole aRationalAlgebraicClassIsACombinationOfSubvarieties cites "manuscript Prop 12.3: Express a cycle representing this component as a finite rational linear combination of integral codimension-four subvarieties":
   transport.isRationalAlgebraicClass(transport.theComplexPeriodClass) ->
   (exists p: Period; inParameterSet(p) and avoidsExceptional(p) and
   representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass))
 
-axiom aNonzeroWeilProjectionSelectsAMarkedConstituent: forall p: Period;
+// §12.3's SELECTION STEP, now MODELLED on formula (2.3) rather than held as a hole.
+//
+// Prop 12.3: "Express a cycle representing this component as a finite rational linear
+// combination of integral codimension-four subvarieties. At least one constituent has a
+// nonzero Weil projection. Every such constituent has rational Hodge class and the period
+// lies outside E_Hdg, so its class has precisely the form (12.5)."
+//
+// Formula (2.3) is what makes the last clause work, and it is a TWO-summand direct sum:
+//
+//     H^8(A_Pi, Q) ∩ H^{4,4}(A_Pi) = Q.theta^4 (+) W_K     (j = 4)
+//
+// So a rational Hodge class in codimension four splits as a*theta^4 + w with NOTHING else —
+// there is no third summand to absorb a remainder. That is why "its class has precisely the
+// form (12.5)" follows rather than being assumed. Modelling the splitting as a function of
+// the class, with (2.3) as the citation that it reassembles, closes the hole.
+
+// The two projections of formula (2.3): the polarization coefficient and the Weil part.
+func polarizationCoefficient(p: Period, z: CycleClass) => CycleClass
+func weilPart(p: Period, z: CycleClass) => CycleClass
+
+// A class in the Hodge-class group at a period, which is what (2.3) decomposes.
+pred isRationalHodgeClass(p: Period, z: CycleClass)
+
+// CITATION, formula (2.3): a rational Hodge class in codimension four IS its polarization
+// term plus its Weil part. Two summands, so the splitting is exact.
+hole theHodgeClassesSplitAsInTwoPointThree cites "manuscript formula (2.3): H^{2j} \u2229 H^{j,j} = Q.theta^4 (+) W_K at j=4 \u2014 TWO summands, so the splitting is exact": forall p: Period; forall z: CycleClass;
+  inParameterSet(p) -> avoidsExceptional(p) -> isRationalHodgeClass(p, z) ->
+  z = add(scale(polarizationCoefficient(p, z), polarizationPower), weilPart(p, z))
+
+// CITATION, formula (2.3) again: the Weil part lands in W_K.
+hole theWeilPartLiesInTheWeilPlane cites "manuscript formula (2.3): the second summand IS W_K": forall p: Period; forall z: CycleClass;
+  inParameterSet(p) -> isRationalHodgeClass(p, z) -> inWeilPlane(p, weilPart(p, z))
+
+// CITATION (Prop 12.3's selection): a class represented by integral subvarieties whose Weil
+// projection is nonzero has a constituent that is an algebraic rational Hodge class with
+// nonzero Weil part. This is "At least one constituent has a nonzero Weil projection. Every
+// such constituent has rational Hodge class and the period lies outside E_Hdg."
+hole aConstituentCarriesTheWeilProjection cites "manuscript Prop 12.3: At least one constituent has a nonzero Weil projection. Every such constituent has rational Hodge class and the period lies outside E_Hdg": forall p: Period; forall z: Class;
+  inParameterSet(p) -> avoidsExceptional(p) ->
+  representedByIntegralSubvarietiesAt(p, z) ->
+  transport.hasNonzeroWeilProjection(z) ->
+  (exists c: CycleClass;
+  isRationalHodgeClass(p, c) and isAlgebraic(p, c) and
+  (not isZeroClass(weilPart(p, c))))
+
+// §12.3's selection step, PROVED: the constituent splits by (2.3) into exactly the marked
+// form, and its Weil part is nonzero by construction.
+theorem aNonzeroWeilProjectionSelectsAMarkedConstituent: forall p: Period;
   transport.aGoodPeriodExists() ->
   inParameterSet(p) -> avoidsExceptional(p) ->
   representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
@@ -79,6 +127,144 @@ axiom aNonzeroWeilProjectionSelectsAMarkedConstituent: forall p: Period;
   (exists a: CycleClass; exists w: CycleClass;
   inWeilPlane(p, w) and (not isZeroClass(w)) and
   isAlgebraic(p, add(scale(a, polarizationPower), w)))
+proof
+  @generalize-p |
+    fix p: Period {
+      @given-a-good-period |
+        assume transport.aGoodPeriodExists() {
+          @given-p-in-the-parameter-set |
+            assume inParameterSet(p) {
+              @p-is-in-the-parameter-set |
+                inParameterSet(p)
+                [by hypothesis given-p-in-the-parameter-set]
+              @given-p-avoids |
+                assume avoidsExceptional(p) {
+                  @p-avoids |
+                    avoidsExceptional(p)
+                    [by hypothesis given-p-avoids]
+                  @given-represented |
+                    assume representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) {
+                      @it-is-represented |
+                        representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass)
+                        [by hypothesis given-represented]
+                      @given-nonzero-weil-projection |
+                        assume transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) {
+                          @the-weil-projection-is-nonzero |
+                            transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass)
+                            [by hypothesis given-nonzero-weil-projection]
+                          @a-constituent-exists |
+                            exists c: CycleClass;
+                              isRationalHodgeClass(p, c) and isAlgebraic(p, c) and
+                              (not isZeroClass(weilPart(p, c)))
+                            [using specialize aConstituentCarriesTheWeilProjection(p, transport.theComplexPeriodClass) p-is-in-the-parameter-set p-avoids it-is-represented the-weil-projection-is-nonzero]
+                          @with-the-constituent |
+                            unpack c: CycleClass from a-constituent-exists {
+                              @the-constituent-facts |
+                                isRationalHodgeClass(p, c) and isAlgebraic(p, c) and
+                                  (not isZeroClass(weilPart(p, c)))
+                                [by hypothesis with-the-constituent]
+                              @the-constituent-is-a-hodge-class |
+                                isRationalHodgeClass(p, c)
+                                [using tautology the-constituent-facts]
+                              @the-constituent-is-algebraic |
+                                isAlgebraic(p, c)
+                                [using tautology the-constituent-facts]
+                              @its-weil-part-is-nonzero |
+                                not isZeroClass(weilPart(p, c))
+                                [using tautology the-constituent-facts]
+                              @it-splits-by-two-point-three |
+                                c = add(scale(polarizationCoefficient(p, c), polarizationPower),
+                                  weilPart(p, c))
+                                [using specialize theHodgeClassesSplitAsInTwoPointThree(p, c) p-is-in-the-parameter-set p-avoids the-constituent-is-a-hodge-class]
+                              @its-weil-part-is-in-the-plane |
+                                inWeilPlane(p, weilPart(p, c))
+                                [using specialize theWeilPartLiesInTheWeilPlane(p, c) p-is-in-the-parameter-set the-constituent-is-a-hodge-class]
+                              @the-marked-form-is-algebraic |
+                                isAlgebraic(p, add(scale(polarizationCoefficient(p, c),
+                                  polarizationPower), weilPart(p, c)))
+                                [by rewrite it-splits-by-two-point-three the-constituent-is-algebraic]
+                              @the-weil-part-is-in-the-plane-and-nonzero |
+                                inWeilPlane(p, weilPart(p, c)) and
+                                  (not isZeroClass(weilPart(p, c)))
+                                [by and_intro its-weil-part-is-in-the-plane its-weil-part-is-nonzero]
+                              @the-marked-form-works |
+                                inWeilPlane(p, weilPart(p, c)) and
+                                  (not isZeroClass(weilPart(p, c))) and
+                                  isAlgebraic(p, add(scale(polarizationCoefficient(p, c),
+                                  polarizationPower), weilPart(p, c)))
+                                [by and_intro the-weil-part-is-in-the-plane-and-nonzero the-marked-form-is-algebraic]
+                              @a-weil-part-exists |
+                                exists w: CycleClass;
+                                  inWeilPlane(p, w) and (not isZeroClass(w)) and
+                                  isAlgebraic(p, add(scale(polarizationCoefficient(p, c),
+                                  polarizationPower), w))
+                                [by exists_intro(weilPart(p, c)) the-marked-form-works]
+                              @conclusion-a-marked-pair-exists |
+                                exists a: CycleClass; exists w: CycleClass;
+                                  inWeilPlane(p, w) and (not isZeroClass(w)) and
+                                  isAlgebraic(p, add(scale(a, polarizationPower), w))
+                                [by exists_intro(polarizationCoefficient(p, c)) a-weil-part-exists]
+                            }
+                          @conclusion-marked-pair |
+                            exists a: CycleClass; exists w: CycleClass;
+                              inWeilPlane(p, w) and (not isZeroClass(w)) and
+                              isAlgebraic(p, add(scale(a, polarizationPower), w))
+                            [by exists_elim with-the-constituent]
+                        }
+                      @conclusion-weil-gives |
+                        transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+                          (exists a: CycleClass; exists w: CycleClass;
+                          inWeilPlane(p, w) and (not isZeroClass(w)) and
+                          isAlgebraic(p, add(scale(a, polarizationPower), w)))
+                        [by implies_intro given-nonzero-weil-projection]
+                    }
+                  @conclusion-represented-gives |
+                    representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
+                      transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+                      (exists a: CycleClass; exists w: CycleClass;
+                      inWeilPlane(p, w) and (not isZeroClass(w)) and
+                      isAlgebraic(p, add(scale(a, polarizationPower), w)))
+                    [by implies_intro given-represented]
+                }
+              @conclusion-avoids-gives |
+                avoidsExceptional(p) ->
+                  representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
+                  transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+                  (exists a: CycleClass; exists w: CycleClass;
+                  inWeilPlane(p, w) and (not isZeroClass(w)) and
+                  isAlgebraic(p, add(scale(a, polarizationPower), w)))
+                [by implies_intro given-p-avoids]
+            }
+          @conclusion-parameter-gives |
+            inParameterSet(p) -> avoidsExceptional(p) ->
+              representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
+              transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+              (exists a: CycleClass; exists w: CycleClass;
+              inWeilPlane(p, w) and (not isZeroClass(w)) and
+              isAlgebraic(p, add(scale(a, polarizationPower), w)))
+            [by implies_intro given-p-in-the-parameter-set]
+        }
+      @conclusion-at-p |
+        transport.aGoodPeriodExists() ->
+          inParameterSet(p) -> avoidsExceptional(p) ->
+          representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
+          transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+          (exists a: CycleClass; exists w: CycleClass;
+          inWeilPlane(p, w) and (not isZeroClass(w)) and
+          isAlgebraic(p, add(scale(a, polarizationPower), w)))
+        [by implies_intro given-a-good-period]
+    }
+  @conclusion |
+    forall p: Period;
+      transport.aGoodPeriodExists() ->
+      inParameterSet(p) -> avoidsExceptional(p) ->
+      representedByIntegralSubvarietiesAt(p, transport.theComplexPeriodClass) ->
+      transport.hasNonzeroWeilProjection(transport.theComplexPeriodClass) ->
+      (exists a: CycleClass; exists w: CycleClass;
+      inWeilPlane(p, w) and (not isZeroClass(w)) and
+      isAlgebraic(p, add(scale(a, polarizationPower), w)))
+    [by forall_intro generalize-p]
+qed
 
 // §12.3's last move, PROVED from (a) and (b).
 theorem aCycleClassDecomposesIntoIntegralSubvarieties:

@@ -248,7 +248,15 @@ model_define_targets: std.AutoHashMapUnmanaged(ModelDefineKey, DefineKey) = .emp
 
 pub const ModelDefineKey = struct { model: InternPool.Index, src: InternPool.Index };
 
-pub const HoleDecl = struct { name: InternPool.StrId, file: InternPool.Index, loc: u32 };
+/// `cites` is the CITED-HOLE locator (`hole x cites "src": …`), interned; `.none` for a bare
+/// hole. A cited hole is still disclosed, but it does not fail a strict check — the citation
+/// is an external authority this checker cannot verify, so it reports it instead.
+pub const HoleDecl = struct {
+    name: InternPool.StrId,
+    file: InternPool.Index,
+    loc: u32,
+    cites: InternPool.StrId = .none,
+};
 
 /// Where a file was discovered from: the import token (`loc`, in `file`) that named it.
 pub const Origin = struct { file: FileId, loc: u32 };
