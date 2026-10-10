@@ -430,6 +430,31 @@ proof
 qed
 ```
 
+### KEYWORD: fact
+
+**Re-exports a named fact** from another namespace, whatever its origin kind:
+
+```2b4m
+fact addZeroLeft = peano.addZeroLeft      // origin is an axiom
+fact addZeroRight = peano.addZeroRight    // origin is a theorem
+fact remmert = analytic.remmert           // origin is a cited hole
+```
+
+ALIAS-ONLY: there is no `fact X: <formula>` local form. A local claim always HAS
+a kind — `axiom` for this theory's own primitive, `theorem` for a proved result,
+`hole` (optionally with `cites`) for an unproved one — so a bare `fact` is a hard
+error that names those three.
+
+Why one keyword rather than restating the target's kind: that kind is the
+**target's** property. The alias cannot know it, nothing checked it, and it went
+stale in practice (before this keyword, 10 of `std/`'s 2345 aliases disagreed
+with their origin). `2b4m check --axioms` resolves every fact to its ORIGIN and
+reports the true kind there, so nothing is lost. `axiom X = …` and
+`theorem X = …` are hard errors naming `fact`.
+
+Alias-collapse is unchanged: identity is by ORIGIN, so the re-export and its
+target are the same entity everywhere.
+
 ### KEYWORD: hole
 
 An **aspirational placeholder** — a claim stated up front, accepted mechanically
@@ -559,7 +584,7 @@ section:
 
 ```2b4m
 import divides_theory <<< "std/integer/divides.b4m"
-theorem gcdGreatest = divides_theory.gcdGreatest
+fact gcdGreatest = divides_theory.gcdGreatest
 ```
 
 `intheory` promises a fact proved later in THIS file; a forward is that promise
@@ -596,8 +621,8 @@ thing, not a copy, so facts proved through either spelling interoperate.
 ```2b4m
 sort Nat = peano.Nat
 func add = peano.add
-axiom addZeroLeft = peano.addZeroLeft
-theorem addIsCommutative = peano.addIsCommutative
+fact addZeroLeft = peano.addZeroLeft
+fact addIsCommutative = peano.addIsCommutative
 ```
 
 ### KEYWORD: model

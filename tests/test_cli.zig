@@ -389,6 +389,13 @@ pub fn addTests(
         \\  — DRAFT — 1 hole(s) unfilled (aspirational; the result is conditional on them): zeroIsEven; re-run `2b4m check` (no --draft) once filled.
         \\
     );
+    // `fact X = ns.y` — one keyword for a re-export, whatever the target's kind. All three
+    // origin kinds (axiom, theorem, cited hole) alias through it; the old spellings
+    // `axiom X = …` / `theorem X = …` are hard errors naming `fact`.
+    ctx.okSilent(&.{ "check", "tests/cases/fact_alias.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/fact_local_bad.b4m" }, "tests/cases/fact_local_bad.b4m:3:9: error: a 'fact' is a re-export and must name a target: `fact <name> = <namespace>.<name>`. A local claim has a kind — use `axiom` for this theory's own primitive, `theorem` for a proved result, or `hole` (optionally `cites \"...\"`) for an unproved one\n");
+    ctx.fail(&.{ "check", "tests/cases/fact_old_spelling_bad.b4m" }, "tests/cases/fact_old_spelling_bad.b4m:4:11: error: a re-export is spelled `fact`, not `axiom`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale\n");
+
     // A CITED hole PASSES a strict check — the citation names an external authority this
     // checker cannot verify, so the run discloses it rather than rejecting. Still a hole:
     // `--axioms` marks it `— CITED HOLE`, so it is never mistaken for a proved step.
@@ -412,10 +419,13 @@ pub fn addTests(
         \\
     );
     // holes propagate transitively across imports: a theorem citing a
-    // hole-tainted theorem inherits the hole (blast radius shows both).
+    // hole-tainted theorem inherits the hole. The blast radius names the PROVED
+    // dependent only: `restsOnHole` reaches this file as a `fact` re-export, and a
+    // re-export does not itself rest on anything — its origin in hole.b4m does, and
+    // that is where the report points.
     ctx.fail(&.{ "check", "tests/cases/hole_transitive.b4m" },
         \\error: 1 uncited hole(s) remain (default mode rejects them; use --draft while filling them, or `cites "<source>"` if an external source vouches for one):
-        \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: restsOnHole, transitiveHole
+        \\  - zeroIsEven  (tests/cases/hole.b4m:10)  — rested on by: transitiveHole
         \\
     );
 

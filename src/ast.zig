@@ -222,6 +222,15 @@ pub const Decl = union(enum) {
     define: struct { name: Token, params: []const Token, value: *const Expr },
     func: Func,
     pred: Pred,
+    /// `fact NAME = ns.target` — RE-EXPORT of a named fact, whatever its origin kind.
+    /// ALIAS-ONLY: there is no `fact X: <formula>` local form, because a local claim always
+    /// HAS a kind (`axiom` = this theory's own primitive, `theorem` = proved, `hole` =
+    /// unproved, `hole … cites` = assumed on an external authority). The kind of an alias is
+    /// the TARGET's property, which the alias cannot know and nothing checked — so restating
+    /// it was redundant and went stale (it was wrong in 10 of std/'s 2345 aliases). See
+    /// FACT-ALIAS-PLAN.md. `--axioms` resolves every fact to its origin and reports the true
+    /// kind there, so nothing is lost.
+    fact: Alias,
     axiom: Axiom,
     /// `hole name: formula` — an aspirational placeholder, accepted like an axiom but
     /// disclosed as a hole (default mode rejects; --draft allows). Same shape as Axiom.
@@ -340,6 +349,7 @@ pub fn aliasOf(decl: *const Decl) ?Alias {
         .constant => |c| if (c == .alias) c.alias else null,
         .func => |f| if (f == .alias) f.alias else null,
         .pred => |p| if (p == .alias) p.alias else null,
+        .fact => |a| a,
         .axiom => |a| if (a == .alias) a.alias else null,
         .hole => |a| if (a == .alias) a.alias else null,
         .theorem => |t| if (t == .alias) t.alias else null,
@@ -360,6 +370,7 @@ pub fn declName(decl: *const Decl) Token {
         .define => |d| d.name,
         .func => |f| funcName(f),
         .pred => |p| predName(p),
+        .fact => |a| a.name,
         .axiom => |a| axiomName(a),
         .hole => |a| axiomName(a),
         .theorem => |t| theoremName(t),

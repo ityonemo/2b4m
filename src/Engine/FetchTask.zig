@@ -259,7 +259,7 @@ fn produce(self: *Context, task: FetchTask, h: *Engine.Handle, key: IdentKV.Key)
             // IDENTIFIERS — facts (including schemas) resolve through the FACT table via a
             // ProveTask. A fact reaching here means the demand was routed to the wrong table;
             // diagnose it (the citer used a name in an identifier position).
-            .axiom, .hole, .theorem => {
+            .fact, .axiom, .hole, .theorem => {
                 try demandDiag(self, task, "'{s}' names a fact, not a sort/constant/function/predicate", .{self.interner.stringBytes(task.name)});
                 return; // no publish
             },

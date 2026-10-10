@@ -372,6 +372,8 @@ fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Ke
     const fid = self.fileOf(task.file) orelse return .not_alias; // locate reports it
     const decl = self.declOf(fid, task.name) orelse return .not_alias; // locate reports "not found"
     const alias: ast.Alias = switch (decl.*) {
+        // `fact X = ns.y` — the kind-agnostic re-export, alias-only by construction.
+        .fact => |x| x,
         .axiom => |a| switch (a) {
             .alias => |x| x,
             .local => return .not_alias,
