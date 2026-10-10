@@ -224,7 +224,7 @@ pub const Parser = struct {
 
     fn isTopLevelKeyword(tag: Token.Tag) bool {
         return switch (tag) {
-            .keyword_sort, .keyword_const, .keyword_define, .keyword_func, .keyword_pred, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_import, .keyword_forward, .keyword_model => true,
+            .keyword_sort, .keyword_const, .keyword_define, .keyword_func, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_import, .keyword_forward, .keyword_model => true,
             else => false,
         };
     }
@@ -334,10 +334,23 @@ pub const Parser = struct {
                 if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
                 return .{ .pred = .{ .local = .{ .name = name, .params = params } } };
             },
+            .keyword_fact => {
+                _ = self.advance();
+                const name = try self.expect(.identifier);
+                // ALIAS-ONLY: `fact X = ns.y`. A bare `fact X: formula` is refused, because a
+                // LOCAL claim always has a kind — see ast.Decl.fact.
+                if (try self.parseAliasTail()) |target| return .{ .fact = .{ .name = name, .target = target } };
+                return self.fail("a 'fact' is a re-export and must name a target: `fact <name> = <namespace>.<name>`. A local claim has a kind — use `axiom` for this theory's own primitive, `theorem` for a proved result, or `hole` (optionally `cites \"...\"`) for an unproved one", .{});
+            },
             .keyword_axiom => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.parseAliasTail()) |target| return .{ .axiom = .{ .alias = .{ .name = name, .target = target } } };
+                // an `axiom X = ns.y` RE-EXPORT is now spelled `fact X = ns.y`: the kind of
+                // an alias is the TARGET's property, which the alias cannot know and nothing
+                // checked. See ast.Decl.fact.
+                if (self.tok.tag == .equal) {
+                    return self.fail("a re-export is spelled `fact`, not `axiom`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale", .{});
+                }
                 // an optional `(params)` makes it an axiom-SCHEMA (a parametric assumption
                 // family) — recorded as Fact.params; "schema" is a downstream reading.
                 const params = try self.parseOptSchemaParams();
@@ -373,7 +386,10 @@ pub const Parser = struct {
             .keyword_theorem => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.parseAliasTail()) |target| return .{ .theorem = .{ .alias = .{ .name = name, .target = target } } };
+                // likewise `theorem X = ns.y` → `fact X = ns.y`.
+                if (self.tok.tag == .equal) {
+                    return self.fail("a re-export is spelled `fact`, not `theorem`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale", .{});
+                }
                 // an optional `(params)` makes it a theorem-SCHEMA (proof re-checked per
                 // instantiation) — recorded as Fact.params.
                 const params = try self.parseOptSchemaParams();

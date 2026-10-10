@@ -1,7 +1,19 @@
 # `fact` — one keyword for re-exporting a proved-or-assumed name
 
-**Status: DECIDED, not yet built** (user, 2026-10-09: "the churn is cheap. Let's put a pin on
-it but plan on doing it definitely.")
+**Status: BUILT, 2026-10-09.** 2331 aliases migrated; `axiom X = …` / `theorem X = …` are now
+hard errors naming `fact`. Kept as the rationale record — the three findings below (it goes
+stale, nothing checks it, `--axioms` already reports the truth) are why the keyword exists.
+
+Two things the implementation turned up that the sketch did not predict:
+
+- **`fmt` has its own declaration-keyword list** (`src/fmt.zig:76`). Until `fact` was added to
+  it, `fmt` indented every `fact` line by two spaces as though it were inside a block — which
+  looked like a mass formatting regression across 149 files and was really one missing enum
+  arm. Any new top-level keyword needs that list.
+- **The blast-radius report changed, for the better.** `tests/cases/hole_transitive.b4m` used
+  to list `restsOnHole, transitiveHole` as resting on the hole; under `fact` it lists only
+  `transitiveHole`. A re-export does not itself rest on anything — its origin does — so the
+  shorter answer is the right one. The golden now records that reasoning.
 
 ## The problem
 

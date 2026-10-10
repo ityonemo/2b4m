@@ -77,6 +77,8 @@ const Query = struct {
         // real thing (print it). An `axiom` has no proof — print its statement
         // marked "axiomatic". An `alias` points elsewhere (follow it).
         for (file.decls) |decl| switch (decl) {
+            // a `fact X = ns.y` RE-EXPORT follows to its target, whatever kind that is.
+            .fact => |a| if (nameEql(source, a.name, name)) return self.follow(path, source, tokenText(source, a.target), hop),
             // a theorem (incl. proof-carrying schema = theorem with params) prints its proof;
             // a theorem alias follows to its target.
             .theorem => |t| switch (t) {
