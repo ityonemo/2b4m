@@ -1,0 +1,125 @@
+// BUG REPRO — SCHEMA INSTANCE CROSSTALK. Two theorems that each pass ALONE fail when checked
+// in the same pass:
+//
+//   2b4m check drafts/schema-instance-crosstalk.b4m later           -> OK
+//   2b4m check drafts/schema-instance-crosstalk.b4m theInstantiation -> OK
+//   2b4m check drafts/schema-instance-crosstalk.b4m                 -> ERROR
+//
+//   error: instantiate: expected premise 'inA(e)',
+//          got 'forall a: T; forall b: T; inA(a) -> inA(b) -> inA(op(a, b))'
+//
+// The two premises are reported SWAPPED. Swapping the instantiation's own refs does not change
+// the error, and -j1 reproduces it deterministically, so it is demand ORDER, not a race.
+//
+// src/kernel.zig:625 (`.schema_instance`) walks `r.premises` left-to-right against the
+// instance's antecedents, which is correct — so the corrupted value is the INSTANCE FORMULA
+// handed to it, built upstream while another ProveTask is in flight. Compare
+// [[side-table-lock-discipline]]: unguarded reads of lock-guarded Context side tables during
+// proving.
+//
+// MINIMISATION: deleting the single step
+//
+//     @sq | inN(op(e, e)) [using specialize closed(e, e) id-in id-in]
+//
+// from the SCHEMA BODY makes the whole file pass. That step is a `specialize` whose head is a
+// HYPOTHESIS of the schema rather than a declared fact.
+//
+// FOUND IN std/permutation/alternating.b4m while writing Lemma 10.9's conjugation step. There
+// it wore two faces in one run — an "expected premise" error inside the file's PRE-EXISTING
+// instantiation of aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup, and a
+// "cannot discharge the guard premise '<whole statement of
+// theAlternatingGroupIsClosedUnderComposition>'" on a plain theorem that merely specializes
+// that declared fact. Both theorems pass individually. The shared element is that both reach
+// theAlternatingGroupIsClosedUnderComposition, one through `specialize` and one through a
+// schema instantiation.
+
+sort T
+pred inA(x: T)
+func op(a: T, b: T) => T
+
+axiom closedOp: forall a: T; forall b: T; inA(a) -> inA(b) -> inA(op(a, b))
+axiom idIn: inA(e)
+const e: T
+
+theorem aSchema(inN(T)):
+  inN(e) ->
+  (forall a: T; forall b: T; inN(a) -> inN(b) -> inN(op(a, b))) ->
+  forall x: T; inN(x) -> inN(x)
+proof
+  @given-id |
+    assume inN(e) {
+      @given-closed |
+        assume forall a: T; forall b: T; inN(a) -> inN(b) -> inN(op(a, b)) {
+          @closed |
+            forall a: T; forall b: T; inN(a) -> inN(b) -> inN(op(a, b))
+            [by hypothesis given-closed]
+          @id-in |
+            inN(e)
+            [by hypothesis given-id]
+          @sq |
+            inN(op(e, e))
+            [using specialize closed(e, e) id-in id-in]
+          @generalize-x |
+            fix x: T {
+              @given-x |
+                assume inN(x) {
+                  @conclusion-x |
+                    inN(x)
+                    [by hypothesis given-x]
+                }
+              @conclusion-at-x |
+                inN(x) -> inN(x)
+                [by discharge given-x]
+            }
+          @discharge-x |
+            forall x: T; inN(x) -> inN(x)
+            [by generalize generalize-x]
+        }
+      @conclusion-inner |
+        (forall a: T; forall b: T; inN(a) -> inN(b) -> inN(op(a, b))) ->
+          (forall x: T; inN(x) -> inN(x))
+        [by discharge given-closed]
+    }
+  @conclusion |
+    inN(e) ->
+      ((forall a: T; forall b: T; inN(a) -> inN(b) -> inN(op(a, b))) ->
+      (forall x: T; inN(x) -> inN(x)))
+    [by discharge given-id]
+qed
+
+// INSTANTIATE the schema at inA — this is the step that poisons the next theorem
+theorem theInstantiation: forall x: T; inA(x) -> inA(x)
+proof
+  @id |
+    inA(e)
+    [by cite idIn]
+  @closed |
+    forall a: T; forall b: T; inA(a) -> inA(b) -> inA(op(a, b))
+    [by cite closedOp]
+  @conclusion |
+    forall x: T; inA(x) -> inA(x)
+    [using instantiation aSchema((fun x: T => inA(x))) id closed]
+qed
+
+// a LATER theorem that specializes closedOp directly
+theorem later: forall s: T; inA(s) -> inA(op(s, s))
+proof
+  @generalize-s |
+    fix s: T {
+      @given-s |
+        assume inA(s) {
+          @s-in |
+            inA(s)
+            [by hypothesis given-s]
+          @conclusion-sq |
+            inA(op(s, s))
+            [using specialize closedOp(s, s) s-in s-in]
+        }
+      @conclusion-at-s |
+        inA(s) -> inA(op(s, s))
+        [by discharge given-s]
+    }
+  @conclusion |
+    forall s: T; inA(s) -> inA(op(s, s))
+    [by generalize generalize-s]
+qed

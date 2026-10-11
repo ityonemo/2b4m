@@ -21,6 +21,7 @@ import peano_parity <<< "std/peano/parity.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import peano_subtraction <<< "std/peano/subtraction.b4m"
 import permutation_transpositions <<< "std/permutation/transpositions.b4m"
+import permutation_cycle <<< "std/permutation/cycle.b4m"
 
 // -- the vocabulary ------------------------------------------------------------------------
 
@@ -4029,4 +4030,334 @@ proof
   @conclusion |
     forall g: Fn; inAlternating(g) -> inAlternating(g)
     [using instantiation aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-in-the-alternating-group the-alternating-group-is-closed every-three-cycle-is-in-the-alternating-group]
+qed
+
+// ============================================================================
+// LEMMA 10.9's CONJUGATION STEP
+// ============================================================================
+
+// Conjugation carries a 3-cycle to a 3-cycle. This is what turns "N contains SOME 3-cycle"
+// into "N contains EVERY 3-cycle" once N is normal: the conjugate stays in N by normality,
+// and this theorem says it is still a 3-cycle.
+//
+// In std's fold a 3-cycle IS T(x,z) o T(x,y) with x, y, z distinct, so conjugating one is
+// conjugating a product of two transpositions: `conjugationIsMultiplicative` splits the
+// product, `conjugateOfATransposition` moves sigma onto each transposition's points, and
+// injectivity carries the three points' distinctness to their images.
+theorem aConjugateOfAThreeCycleIsAThreeCycle: forall sigma: Fn; forall g: Fn;
+  invertible(sigma) -> isAThreeCycle(g) ->
+  isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-sigma-invertible |
+            assume invertible(sigma) {
+              @sigma-is-a-permutation |
+                invertible(sigma)
+                [by hypothesis given-sigma-invertible]
+              @given-g-is-a-three-cycle |
+                assume isAThreeCycle(g) {
+                  @g-is-a-three-cycle |
+                    exists x: Element; exists y: Element; exists z: Element;
+                      x != y and x != z and y != z and
+                      g = compose(transposition(x, z), transposition(x, y))
+                    [by hypothesis given-g-is-a-three-cycle]
+                  @with-the-first-point |
+                    unpack x: Element from g-is-a-three-cycle {
+                      @a-second-point-exists |
+                        exists y: Element; exists z: Element;
+                          x != y and x != z and y != z and
+                          g = compose(transposition(x, z), transposition(x, y))
+                        [by hypothesis with-the-first-point]
+                      @with-the-second-point |
+                        unpack y: Element from a-second-point-exists {
+                          @a-third-point-exists |
+                            exists z: Element;
+                              x != y and x != z and y != z and
+                              g = compose(transposition(x, z), transposition(x, y))
+                            [by hypothesis with-the-second-point]
+                          @with-the-third-point |
+                            unpack z: Element from a-third-point-exists {
+                              @the-three-cycle-facts |
+                                x != y and x != z and y != z and
+                                  g = compose(transposition(x, z), transposition(x, y))
+                                [by hypothesis with-the-third-point]
+                              @g-is-the-product |
+                                g = compose(transposition(x, z), transposition(x, y))
+                                [using tautology the-three-cycle-facts]
+
+                              // the conjugate of the product, split into two conjugates
+                              @the-conjugate-of-the-product |
+                                compose(compose(sigma,
+                                  compose(transposition(x, z), transposition(x, y))),
+                                  inverse(sigma))
+                                  = compose(
+                                  compose(compose(sigma, transposition(x, z)), inverse(sigma)),
+                                  compose(compose(sigma, transposition(x, y)), inverse(sigma)))
+                                [using specialize permutation_cycle.conjugationIsMultiplicative(sigma, transposition(x, z), transposition(x, y)) sigma-is-a-permutation]
+                              @the-first-factor |
+                                compose(compose(sigma, transposition(x, z)), inverse(sigma))
+                                  = transposition(apply(sigma, x), apply(sigma, z))
+                                [using specialize permutation_cycle.conjugateOfATransposition(sigma, x, z) sigma-is-a-permutation]
+                              @the-second-factor |
+                                compose(compose(sigma, transposition(x, y)), inverse(sigma))
+                                  = transposition(apply(sigma, x), apply(sigma, y))
+                                [using specialize permutation_cycle.conjugateOfATransposition(sigma, x, y) sigma-is-a-permutation]
+                              @the-conjugate-with-the-first-moved |
+                                compose(compose(sigma,
+                                  compose(transposition(x, z), transposition(x, y))),
+                                  inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), apply(sigma, z)),
+                                  compose(compose(sigma, transposition(x, y)), inverse(sigma)))
+                                [by rewrite the-first-factor the-conjugate-of-the-product]
+                              @the-conjugate-is-a-product-of-transpositions |
+                                compose(compose(sigma,
+                                  compose(transposition(x, z), transposition(x, y))),
+                                  inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), apply(sigma, z)),
+                                  transposition(apply(sigma, x), apply(sigma, y)))
+                                [by rewrite the-second-factor the-conjugate-with-the-first-moved]
+                              @the-conjugate-of-g |
+                                compose(compose(sigma, g), inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), apply(sigma, z)),
+                                  transposition(apply(sigma, x), apply(sigma, y)))
+                                [by rewrite g-is-the-product the-conjugate-is-a-product-of-transpositions]
+
+                              // injectivity carries distinctness to the images
+                              @sigma-is-injective |
+                                forall u: Element; forall v: Element;
+                                  apply(sigma, u) = apply(sigma, v) -> u = v
+                                [using specialize permutation.permutationIsInjective(sigma) sigma-is-a-permutation]
+                              @given-the-images-of-x-and-y-agree |
+                                assume apply(sigma, x) = apply(sigma, y) {
+                                  @the-images-agree |
+                                    apply(sigma, x) = apply(sigma, y)
+                                    [by hypothesis given-the-images-of-x-and-y-agree]
+                                  @then-x-is-y |
+                                    x = y
+                                    [using specialize sigma-is-injective(x, y) the-images-agree]
+                                  @but-x-differs-from-y |
+                                    x != y
+                                    [using tautology the-three-cycle-facts]
+                                }
+                              @the-image-of-x-differs-from-y |
+                                apply(sigma, x) != apply(sigma, y)
+                                [by contradiction given-the-images-of-x-and-y-agree then-x-is-y but-x-differs-from-y]
+                              @given-the-images-of-x-and-z-agree |
+                                assume apply(sigma, x) = apply(sigma, z) {
+                                  @the-images-agree |
+                                    apply(sigma, x) = apply(sigma, z)
+                                    [by hypothesis given-the-images-of-x-and-z-agree]
+                                  @then-x-is-z |
+                                    x = z
+                                    [using specialize sigma-is-injective(x, z) the-images-agree]
+                                  @but-x-differs-from-z |
+                                    x != z
+                                    [using tautology the-three-cycle-facts]
+                                }
+                              @the-image-of-x-differs-from-z |
+                                apply(sigma, x) != apply(sigma, z)
+                                [by contradiction given-the-images-of-x-and-z-agree then-x-is-z but-x-differs-from-z]
+                              @given-the-images-of-y-and-z-agree |
+                                assume apply(sigma, y) = apply(sigma, z) {
+                                  @the-images-agree |
+                                    apply(sigma, y) = apply(sigma, z)
+                                    [by hypothesis given-the-images-of-y-and-z-agree]
+                                  @then-y-is-z |
+                                    y = z
+                                    [using specialize sigma-is-injective(y, z) the-images-agree]
+                                  @but-y-differs-from-z |
+                                    y != z
+                                    [using tautology the-three-cycle-facts]
+                                }
+                              @the-image-of-y-differs-from-z |
+                                apply(sigma, y) != apply(sigma, z)
+                                [by contradiction given-the-images-of-y-and-z-agree then-y-is-z but-y-differs-from-z]
+
+                              @the-images-are-distinct-and-fold |
+                                apply(sigma, x) != apply(sigma, y) and
+                                  apply(sigma, x) != apply(sigma, z) and
+                                  apply(sigma, y) != apply(sigma, z) and
+                                  compose(compose(sigma, g), inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), apply(sigma, z)),
+                                  transposition(apply(sigma, x), apply(sigma, y)))
+                                [using tautology the-image-of-x-differs-from-y the-image-of-x-differs-from-z the-image-of-y-differs-from-z the-conjugate-of-g]
+                              @the-third-image-works |
+                                exists w: Element;
+                                  apply(sigma, x) != apply(sigma, y) and
+                                  apply(sigma, x) != w and
+                                  apply(sigma, y) != w and
+                                  compose(compose(sigma, g), inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), w),
+                                  transposition(apply(sigma, x), apply(sigma, y)))
+                                [by witness(apply(sigma, z)) the-images-are-distinct-and-fold]
+                              @the-second-image-works |
+                                exists v: Element; exists w: Element;
+                                  apply(sigma, x) != v and
+                                  apply(sigma, x) != w and
+                                  v != w and
+                                  compose(compose(sigma, g), inverse(sigma))
+                                  = compose(transposition(apply(sigma, x), w),
+                                  transposition(apply(sigma, x), v))
+                                [by witness(apply(sigma, y)) the-third-image-works]
+                              @conclusion-the-conjugate-is-a-three-cycle |
+                                isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+                                [by witness(apply(sigma, x)) the-second-image-works]
+                            }
+                          @conclusion-at-the-third-point |
+                            isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+                            [by unpacked with-the-third-point]
+                        }
+                      @conclusion-at-the-second-point |
+                        isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+                        [by unpacked with-the-second-point]
+                    }
+                  @conclusion-at-the-first-point |
+                    isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+                    [by unpacked with-the-first-point]
+                }
+              @conclusion-three-cycle-gives |
+                isAThreeCycle(g) ->
+                  isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+                [by discharge given-g-is-a-three-cycle]
+            }
+          @conclusion-at-g |
+            invertible(sigma) -> isAThreeCycle(g) ->
+              isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+            [by discharge given-sigma-invertible]
+        }
+      @discharge-g |
+        forall g: Fn; invertible(sigma) -> isAThreeCycle(g) ->
+          isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall sigma: Fn; forall g: Fn;
+      invertible(sigma) -> isAThreeCycle(g) ->
+      isAThreeCycle(compose(compose(sigma, g), inverse(sigma)))
+    [by generalize generalize-sigma]
+qed
+
+// A_n is closed under conjugation BY ITS OWN ELEMENTS: both factors stay even, so the
+// conjugate does. (Conjugation by an ODD permutation also lands in A_n — parity is a
+// homomorphism to Z/2, where sigma's sign cancels against sigma^-1's — but that needs the
+// parity-of-a-product law, which std does not yet carry. Closure by even conjugators is what
+// Lemma 10.9 below consumes.)
+theorem theAlternatingGroupIsClosedUnderConjugation: forall sigma: Fn; forall g: Fn;
+  inAlternating(sigma) -> inAlternating(g) ->
+  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-sigma-in-a |
+            assume inAlternating(sigma) {
+              @sigma-in-a |
+                inAlternating(sigma)
+                [by hypothesis given-sigma-in-a]
+              @given-g-in-a |
+                assume inAlternating(g) {
+                  @g-in-a |
+                    inAlternating(g)
+                    [by hypothesis given-g-in-a]
+                  @the-inverse-is-in-a |
+                    inAlternating(inverse(sigma))
+                    [using specialize theAlternatingGroupIsClosedUnderInverses(sigma) sigma-in-a]
+                  @closure-under-composition |
+                    forall a: Fn; forall b: Fn;
+                      inAlternating(a) -> inAlternating(b) -> inAlternating(compose(a, b))
+                    [by cite theAlternatingGroupIsClosedUnderComposition]
+                  @the-first-product-is-in-a |
+                    inAlternating(compose(sigma, g))
+                    [using specialize closure-under-composition(sigma, g) sigma-in-a g-in-a]
+                  @conclusion-the-conjugate-is-in-a |
+                    inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                    [using specialize closure-under-composition(compose(sigma, g), inverse(sigma)) the-first-product-is-in-a the-inverse-is-in-a]
+                }
+              @conclusion-g-in-a-gives |
+                inAlternating(g) ->
+                  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                [by discharge given-g-in-a]
+            }
+          @conclusion-at-g |
+            inAlternating(sigma) -> inAlternating(g) ->
+              inAlternating(compose(compose(sigma, g), inverse(sigma)))
+            [by discharge given-sigma-in-a]
+        }
+      @discharge-g |
+        forall g: Fn; inAlternating(sigma) -> inAlternating(g) ->
+          inAlternating(compose(compose(sigma, g), inverse(sigma)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall sigma: Fn; forall g: Fn;
+      inAlternating(sigma) -> inAlternating(g) ->
+      inAlternating(compose(compose(sigma, g), inverse(sigma)))
+    [by generalize generalize-sigma]
+qed
+
+// LEMMA 10.9's CONJUGATION STEP. Judson: a normal subgroup containing one 3-cycle contains
+// every 3-cycle, because any 3-cycle is a conjugate of any other. Two halves, and only the
+// second is specific to 3-cycles:
+//
+//   NORMALITY gives inN(sigma o c o sigma^-1) from inN(c) — here
+//     `theAlternatingGroupIsClosedUnderConjugation`, with N = A_n
+//   `aConjugateOfAThreeCycleIsAThreeCycle` says that conjugate is still a 3-cycle
+//
+// Stated as the CONJUNCTION those two give, with N = A_n so both halves are theorems and the
+// result is unconditional. What it does NOT supply is transitivity: that conjugation reaches
+// EVERY 3-cycle from a given one needs "any triple of distinct points maps to any other by
+// some even sigma", which is where n >= 5 enters and is the remaining geometric step.
+theorem aConjugateOfAThreeCycleIsAThreeCycleInTheAlternatingGroup:
+  forall sigma: Fn; forall c: Fn;
+  inAlternating(sigma) -> isAThreeCycle(c) ->
+  isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @given-sigma-in-a |
+            assume inAlternating(sigma) {
+              @sigma-in-a |
+                inAlternating(sigma)
+                [by hypothesis given-sigma-in-a]
+              @the-membership-characterization |
+                inAlternating(sigma) iff (invertible(sigma) and isEvenPerm(sigma))
+                [using specialize inAlternatingDef(sigma)]
+              @sigma-is-a-permutation |
+                invertible(sigma)
+                [using tautology the-membership-characterization sigma-in-a]
+              @given-c-is-a-three-cycle |
+                assume isAThreeCycle(c) {
+                  @c-is-a-three-cycle |
+                    isAThreeCycle(c)
+                    [by hypothesis given-c-is-a-three-cycle]
+                  @conclusion-the-conjugate-is-a-three-cycle |
+                    isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+                    [using specialize aConjugateOfAThreeCycleIsAThreeCycle(sigma, c) sigma-is-a-permutation c-is-a-three-cycle]
+                }
+              @conclusion-three-cycle-gives |
+                isAThreeCycle(c) ->
+                  isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+                [by discharge given-c-is-a-three-cycle]
+            }
+          @conclusion-at-c |
+            inAlternating(sigma) -> isAThreeCycle(c) ->
+              isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+            [by discharge given-sigma-in-a]
+        }
+      @discharge-c |
+        forall c: Fn; inAlternating(sigma) -> isAThreeCycle(c) ->
+          isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall sigma: Fn; forall c: Fn;
+      inAlternating(sigma) -> isAThreeCycle(c) ->
+      isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+    [by generalize generalize-sigma]
 qed
