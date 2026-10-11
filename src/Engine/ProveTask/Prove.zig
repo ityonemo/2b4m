@@ -2069,7 +2069,7 @@ fn demandInstance(self: *Prove, e: *Elab, se: ?*Elab, c: ast.Step.Claim) Allocat
     }
     const pnames = pnames_list.items;
 
-    const hash = Schema.instanceHash(self.pool, schema_name, pnames, args);
+    const hash = Schema.instanceHash(self.ctx.interner, self.pool, schema_name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(schema_name), hash }) catch return error.OutOfMemory;
     const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
     // the instance is minted in the CURRENT model's namespace over the schema's file: an
@@ -2566,7 +2566,7 @@ fn demandSchemaTransferUnder(self: *Prove, c: ast.Step.Claim, schema_ix: InternP
         break :blk .{ rekeyed, src };
     };
 
-    const hash = Schema.instanceHash(self.pool, sk.name, pnames, args);
+    const hash = Schema.instanceHash(self.ctx.interner, self.pool, sk.name, pnames, args);
     const inst_name_bytes = std.fmt.allocPrint(self.ctx.arena, "{s}{{{x}}}", .{ self.ctx.interner.stringBytes(sk.name), hash }) catch return error.OutOfMemory;
     const inst_name = self.ctx.interner.internString(inst_name_bytes) catch return error.OutOfMemory;
     // The instance is proved under `cite_model orelse self.model` (see the rack below), so its
@@ -3078,7 +3078,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     const steps = try self.buildSpecializeProof(&b, head, head_local, head_formula, pnames, ants.items, consequent);
 
     // deterministic hash-name from the head formula + arg count (re-entry stable).
-    const hash = Schema.termHash(self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "specialize{{{x}}}", .{hash}));
 
     // call-site args mirror the params: the free-eigenvar args FIRST, then the user's ∀-args.
@@ -3458,7 +3458,7 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     const prem_formulae_p = try self.ctx.arena.alloc(TermId, prems_p.len);
     for (prems_p, prem_formulae_p) |p, *f| f.* = p.formula;
     const full_prop = try self.impliesChain(goal_p, prem_formulae_p);
-    const hash = Schema.termHash(self.pool, full_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "tautology{{{x}}}", .{hash}));
 
     // the abstracted eigenvars become the schema's value params (mirrored args at the call site).
@@ -4124,7 +4124,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     }
 
     // deterministic hash-name from the (pre-substitution) full proposition (re-entry stable).
-    const hash = Schema.termHash(self.pool, full_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "simplify{{{x}}}", .{hash}));
 
     return .{
@@ -4722,7 +4722,7 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     }
 
     // deterministic hash-name from the full proposition (re-entry stable).
-    const hash = Schema.termHash(self.pool, full_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "chain{{{x}}}", .{hash}));
     return .{
         .name = name,
@@ -5446,7 +5446,7 @@ fn finishReorder(
         pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
-    const hash = Schema.termHash(self.pool, full_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, name_prefix ++ "{{{x}}}", .{hash}));
     return .{
         .name = name,
@@ -5547,7 +5547,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
         pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
-    const hash = Schema.termHash(self.pool, full_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, full_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "extensionality{{{x}}}", .{hash}));
     return .{
         .name = name,
@@ -6353,7 +6353,7 @@ fn packageArith(self: *Prove, w: *const Walk, b: *Accelerant.Builder, comptime p
         pp.* = .{ .name = b.tok(name), .kind = .{ .value = b.sortTok(sort) } };
     }
 
-    const hash = Schema.termHash(self.pool, inner_prop);
+    const hash = Schema.termHash(self.ctx.interner, self.pool, inner_prop);
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, prefix ++ "{{{x}}}", .{hash}));
     return .{
         .name = name,

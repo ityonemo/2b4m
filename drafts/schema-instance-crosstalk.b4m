@@ -1,37 +1,46 @@
-// BUG REPRO — SCHEMA INSTANCE CROSSTALK. Two theorems that each pass ALONE fail when checked
-// in the same pass:
+// SCHEMA INSTANCE KEYING — one bug FIXED, one still OPEN. Both found while writing Lemma
+// 10.9's conjugation step in std/permutation/alternating.b4m.
 //
-//   2b4m check drafts/schema-instance-crosstalk.b4m later           -> OK
-//   2b4m check drafts/schema-instance-crosstalk.b4m theInstantiation -> OK
-//   2b4m check drafts/schema-instance-crosstalk.b4m                 -> ERROR
+// FIXED: `instanceHash` was NONDETERMINISTIC across runs.
 //
-//   error: instantiate: expected premise 'inA(e)',
-//          got 'forall a: T; forall b: T; inA(a) -> inA(b) -> inA(op(a, b))'
+//   It hashed entity `Index`es (`v.sort`, `v.name`, `ap.sym`). Sorts, constants, funcs and
+//   preds are MINTED, not deduped (InternPool.Key), so their Index is
+//   `@enumFromInt(items.len)` at first demand — allocation-ordered, hence dependent on the
+//   demand SCHEDULE. Measured on this file before the fix: 4 distinct `aSchema{...}` hashes
+//   across 5 whole-file runs, stable in single-theorem mode. One instantiation could
+//   therefore mint TWO instances and a citer bind to the wrong one.
 //
-// The two premises are reported SWAPPED. Swapping the instantiation's own refs does not change
-// the error, and -j1 reproduces it deterministically, so it is demand ORDER, not a race.
+//   Fix: `Schema.hashEntity` hashes `(nameOf, locOf)` — a string id, which IS content-deduped,
+//   plus the source position. `termHash` took the same fix; its doc comment already claimed
+//   "deterministic, re-entry-stable" and was not. `InternPool.locOf` is new.
 //
-// src/kernel.zig:625 (`.schema_instance`) walks `r.premises` left-to-right against the
-// instance's antecedents, which is correct — so the corrupted value is the INSTANCE FORMULA
-// handed to it, built upstream while another ProveTask is in flight. Compare
-// [[side-table-lock-discipline]]: unguarded reads of lock-guarded Context side tables during
-// proving.
+//   This file now produces ONE stable hash across runs. Verify with:
+//     for i in 1 2 3 4 5; do 2b4m check --trace-facts drafts/schema-instance-crosstalk.b4m \
+//       2>&1 | grep -oE "aSchema\{[0-9a-f]+\}" | sort -u; done
 //
-// MINIMISATION: deleting the single step
+// STILL OPEN: the premise mismatch below.
 //
-//     @sq | inN(op(e, e)) [using specialize closed(e, e) id-in id-in]
+//   2b4m check drafts/schema-instance-crosstalk.b4m
+//     -> error: instantiate: expected premise 'inA(e)',
+//               got 'forall a: T; forall b: T; inA(a) -> inA(b) -> inA(op(a, b))'
 //
-// from the SCHEMA BODY makes the whole file pass. That step is a `specialize` whose head is a
-// HYPOTHESIS of the schema rather than a declared fact.
+//   Now DETERMINISTIC (it was not before), so the hash was a separate fault. The premises are
+//   reported swapped. src/kernel.zig's `.schema_instance` arm walks `r.premises`
+//   left-to-right against the instance's antecedents, which is correct — so the instance
+//   formula handed to it has its antecedents in the wrong order, or a premise unsubstituted.
 //
-// FOUND IN std/permutation/alternating.b4m while writing Lemma 10.9's conjugation step. There
-// it wore two faces in one run — an "expected premise" error inside the file's PRE-EXISTING
-// instantiation of aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup, and a
-// "cannot discharge the guard premise '<whole statement of
-// theAlternatingGroupIsClosedUnderComposition>'" on a plain theorem that merely specializes
-// that declared fact. Both theorems pass individually. The shared element is that both reach
-// theAlternatingGroupIsClosedUnderComposition, one through `specialize` and one through a
-// schema instantiation.
+//   In the wild it also appeared as "cannot discharge the guard premise '<the whole statement
+//   of a theorem>'", from `withGuardPremises` (Prove.zig) counting real premises as guards
+//   when the peel loop over-runs.
+//
+//   NOT reproduced by a smaller fixture yet: a schema body that specializes one of its own
+//   hypotheses passes on its own, and so does one specializing at a computed argument. The
+//   extra ingredient here is a SECOND theorem that also specializes the same declared fact.
+//
+//   WORKAROUND, used in alternating.b4m: state the theorem as a single implication rather
+//   than a conjunction of two results. The conjunction form triggered it; the implication
+//   form does not, and is the better statement anyway since the halves compose at the call
+//   site.
 
 sort T
 pred inA(x: T)
