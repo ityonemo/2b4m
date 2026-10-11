@@ -7,8 +7,15 @@
 //   preds are MINTED, not deduped (InternPool.Key), so their Index is
 //   `@enumFromInt(items.len)` at first demand — allocation-ordered, hence dependent on the
 //   demand SCHEDULE. Measured on this file before the fix: 4 distinct `aSchema{...}` hashes
-//   across 5 whole-file runs, stable in single-theorem mode. One instantiation could
-//   therefore mint TWO instances and a citer bind to the wrong one.
+//   across 5 whole-file runs, stable in single-theorem mode.
+//
+//   SEVERITY, measured rather than assumed: within any SINGLE run there was always exactly
+//   ONE hash (`sort -u | wc -l` = 1 every time), so no run ever minted two instances for one
+//   instantiation. Soundness was never at risk either way — the hash only names a cache slot,
+//   and the kernel re-checks each instance body against its actual formula, so a mis-binding
+//   would REJECT rather than falsely accept. What the instability actually broke is
+//   reproducibility: the hash appears in `--trace-facts` output and in diagnostics, and
+//   `termHash`'s doc comment promised "deterministic, re-entry-stable" while not being so.
 //
 //   Fix: `Schema.hashEntity` hashes `(nameOf, locOf)` — a string id, which IS content-deduped,
 //   plus the source position. `termHash` took the same fix; its doc comment already claimed
