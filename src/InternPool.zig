@@ -706,6 +706,37 @@ pub fn nameOf(self: *const InternPool, id: Index) StrId {
     };
 }
 
+/// Whether `id` addresses a MINTED, NAMED Item (sort/constant/func/pred/import/schema) — the
+/// ones `nameOf`/`locOf` can resolve. False for `Index.none`, for the reserved low slots (the
+/// rule words, `SortId.prop`), and for unnamed kinds (string/file/model/namespace/fact/sig/
+/// guard). A caller that hashes an entity must branch on this: a named Item hashes by
+/// `(name bytes, loc)`, a reserved slot by its fixed value.
+pub fn isNamedItem(self: *const InternPool, id: Index) bool {
+    if (id == Index.none) return false;
+    const n = @intFromEnum(id);
+    if (n >= self.items.len) return false;
+    return switch (self.items.get(n).tag) {
+        .sort, .constant, .func, .pred, .import, .schema => true,
+        else => false,
+    };
+}
+
+/// A named Item's declaration `loc`. Pairs with `nameOf` to give an entity a CONTENT-STABLE
+/// identity: sorts/constants/funcs/preds are MINTED, not deduped, so their `Index` is
+/// allocation-ordered and therefore demand-order dependent — but `(name, loc)` is fixed by the
+/// source. Anything that must hash or key on an entity ACROSS RUNS (see
+/// `Engine/ProveTask/Schema.instanceHash`) must use this pair, never the raw `Index`.
+pub fn locOf(self: *const InternPool, id: Index) u32 {
+    return switch (self.keyOf(id)) {
+        .sort => |s| s.loc,
+        .constant => |c| c.loc,
+        .func, .pred => |c| c.loc,
+        .import => |m| m.loc,
+        .schema => |s| s.loc,
+        else => 0, // a fact has no decl loc of its own; its formula carries the content
+    };
+}
+
 /// The KERNEL sort a (possibly refined) sort `Index` lowers to: walk `parent` to the root
 /// (a `sort` with no refinement). A root sort is its own carrier. Mirrors env.carrierOf.
 pub fn carrierOf(self: *const InternPool, sort: Index) Index {

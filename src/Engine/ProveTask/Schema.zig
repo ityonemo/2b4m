@@ -48,23 +48,24 @@ pub const SchemaArgs = std.AutoHashMapUnmanaged(StrId, SchemaArg);
 /// The instance-identity hash over `(schema_name, args-in-param-order)`. `params` is the
 /// schema's param names IN ORDER (so the hash is order-stable and independent of the
 /// hashmap's iteration order). `pool` is the scratchpad the arg terms live in.
-pub fn instanceHash(pool: *const term.Pool, schema_name: StrId, params: []const StrId, args: *const SchemaArgs) u64 {
+pub fn instanceHash(ip: *const InternPool, pool: *const term.Pool, schema_name: StrId, params: []const StrId, args: *const SchemaArgs) u64 {
     var h = std.hash.Wyhash.init(0);
-    std.hash.autoHash(&h, @intFromEnum(schema_name));
+    // the schema's name BYTES — a StrId is allocation-ordered even though content-deduped.
+    h.update(ip.stringBytes(schema_name));
     for (params) |pname| {
         const arg = args.get(pname).?;
         switch (arg) {
             .value => |v| {
                 h.update("v");
-                std.hash.autoHash(&h, @intFromEnum(v.sort));
-                hashTerm(pool, &h, v.id, &.{});
+                hashEntity(ip, &h, v.sort);
+                hashTerm(ip, pool, &h, v.id, &.{});
             },
             .lambda => |l| {
                 h.update("l");
-                for (l.arg_sorts) |s| std.hash.autoHash(&h, @intFromEnum(s));
-                std.hash.autoHash(&h, @intFromEnum(l.result_sort));
+                for (l.arg_sorts) |s| hashEntity(ip, &h, s);
+                hashEntity(ip, &h, l.result_sort);
                 // the body's kept-free param fvars canonicalize BY POSITION (l.params[i] -> i)
-                hashTerm(pool, &h, l.body, l.params);
+                hashTerm(ip, pool, &h, l.body, l.params);
             },
         }
     }
@@ -79,7 +80,32 @@ pub fn instanceHash(pool: *const term.Pool, schema_name: StrId, params: []const 
 /// — depth-safe. The hash SEQUENCE must match the old recursion EXACTLY (it addresses a schema
 /// instance), so: pop a node, hash its scalars (tag first, as before), then push its children
 /// REVERSED so child 0 hashes next — reproducing pre-order. Scratch stack on the pool's GPA.
-fn hashTerm(pool: *const term.Pool, h: *std.hash.Wyhash, id: TermId, canon: []const StrId) void {
+/// Hash an ENTITY (sort/const/func/pred) by its `(name, loc)` rather than its `Index`.
+///
+/// Those Items are MINTED, not deduped (InternPool.Key), so their `Index` is
+/// `@enumFromInt(items.len)` at first demand — allocation-ordered, hence dependent on the
+/// demand schedule. Hashing the raw Index made `instanceHash` NONDETERMINISTIC: the same
+/// instantiation keyed to a different `Schema{<hash>}` run to run, so one instantiation could
+/// mint TWO instances and a citer could bind to the wrong one. `(name, loc)` is fixed by the
+/// source. See drafts/schema-instance-crosstalk.b4m.
+fn hashEntity(ip: *const InternPool, h: *std.hash.Wyhash, id: anytype) void {
+    const ix: InternPool.Index = @enumFromInt(@intFromEnum(id));
+    // RESERVED slots (`Index.none`, and the low sentinels `SortId.prop` and friends) are not
+    // minted Items and have no name: they are fixed by the pool's layout, so the raw value IS
+    // stable and is what we hash.
+    if (!ip.isNamedItem(ix)) {
+        h.update("~");
+        std.hash.autoHash(h, @intFromEnum(ix));
+        return;
+    }
+    // the NAME BYTES, not its StrId: `intern` dedupes by content but still allocates
+    // `@enumFromInt(items.len)`, so the id for the same text depends on what was interned
+    // BEFORE it — demand order again. Bytes plus the source `loc` are what the source fixes.
+    h.update(ip.stringBytes(ip.nameOf(ix)));
+    std.hash.autoHash(h, ip.locOf(ix));
+}
+
+fn hashTerm(ip: *const InternPool, pool: *const term.Pool, h: *std.hash.Wyhash, id: TermId, canon: []const StrId) void {
     var fb = std.heap.stackFallback(term.Pool.inline_stack * @sizeOf(TermId), pool.gpa);
     const a = fb.get();
     var stack: std.ArrayList(TermId) = .empty;
@@ -91,17 +117,17 @@ fn hashTerm(pool: *const term.Pool, h: *std.hash.Wyhash, id: TermId, canon: []co
         switch (node) {
             .bvar => |i| std.hash.autoHash(h, i),
             .fvar => |v| {
-                std.hash.autoHash(h, @intFromEnum(v.sort));
+                hashEntity(ip, h, v.sort);
                 if (indexOfName(canon, v.name)) |pos| {
                     h.update("#"); // a canonicalized lambda-param fvar
                     std.hash.autoHash(h, pos);
                 } else {
                     h.update("@"); // an ordinary fvar (caller eigenvar / ground): hash its name
-                    std.hash.autoHash(h, @intFromEnum(v.name));
+                    h.update(ip.stringBytes(v.name));
                 }
             },
             .app, .pred => |ap| {
-                std.hash.autoHash(h, @intFromEnum(ap.sym));
+                hashEntity(ip, h, ap.sym);
                 std.hash.autoHash(h, ap.args.len);
                 pushRev(&stack, a, pool.args(ap));
             },
@@ -136,10 +162,12 @@ fn indexOfName(canon: []const StrId, name: StrId) ?usize {
 }
 
 /// A structural (alpha-consistent) hash of one term — for deriving a deterministic,
-/// re-entry-stable synthetic-schema name from an accelerant's head formula.
-pub fn termHash(pool: *const term.Pool, id: TermId) u64 {
+/// re-entry-stable synthetic-schema name from an accelerant's head formula. Entities hash by
+/// `(name, loc)`, not by `Index`, so the name is stable ACROSS RUNS as well as across
+/// re-entry (see `hashEntity`).
+pub fn termHash(ip: *const InternPool, pool: *const term.Pool, id: TermId) u64 {
     var h = std.hash.Wyhash.init(0);
-    hashTerm(pool, &h, id, &.{});
+    hashTerm(ip, pool, &h, id, &.{});
     return h.final();
 }
 
@@ -155,9 +183,14 @@ test "instanceHash: value args — equal terms hash equal, distinct terms differ
     interner.* = try .init(arena);
     var pool = term.Pool.init(arena, arena);
 
-    const nat: SortId = @enumFromInt(10);
-    const zero_sym: term.SymId = @enumFromInt(20);
-    const succ_sym: term.SymId = @enumFromInt(21);
+    // MINT REAL entities: `hashEntity` resolves `(nameOf, locOf)`, so a fabricated Index
+    // would not be a named Item at all. Minting also makes the test exercise the real path.
+    const nat_ix = try interner.mintSort(.{ .name = try interner.internString("Nat"), .loc = 1 });
+    const nat: SortId = @enumFromInt(@intFromEnum(nat_ix));
+    const zero_ix = try interner.mintConstant(.{ .sort = nat_ix, .name = try interner.internString("ZERO"), .loc = 2 });
+    const zero_sym: term.SymId = @enumFromInt(@intFromEnum(zero_ix));
+    const succ_ix = try interner.mintConstant(.{ .sort = nat_ix, .name = try interner.internString("succ"), .loc = 3 });
+    const succ_sym: term.SymId = @enumFromInt(@intFromEnum(succ_ix));
     const schema = try interner.internString("zeroLike");
     const t = try interner.internString("t");
 
@@ -175,9 +208,9 @@ test "instanceHash: value args — equal terms hash equal, distinct terms differ
     try a3.put(arena, t, .{ .value = .{ .id = succ_zero, .sort = nat } });
 
     const params = [_]StrId{t};
-    const h1 = instanceHash(&pool, schema, &params, &a1);
-    const h2 = instanceHash(&pool, schema, &params, &a2);
-    const h3 = instanceHash(&pool, schema, &params, &a3);
+    const h1 = instanceHash(interner, &pool, schema, &params, &a1);
+    const h2 = instanceHash(interner, &pool, schema, &params, &a2);
+    const h3 = instanceHash(interner, &pool, schema, &params, &a3);
     try testing.expectEqual(h1, h2); // ZERO ≡ ZERO (structural), same hash
     try testing.expect(h1 != h3); // ZERO vs succ(ZERO) differ
 }
@@ -190,8 +223,10 @@ test "instanceHash: lambda args — fresh param fvars canonicalize by position" 
     interner.* = try .init(arena);
     var pool = term.Pool.init(arena, arena);
 
-    const t: SortId = @enumFromInt(10);
-    const goal: term.SymId = @enumFromInt(30);
+    const t_ix = try interner.mintSort(.{ .name = try interner.internString("T"), .loc = 1 });
+    const t: SortId = @enumFromInt(@intFromEnum(t_ix));
+    const goal_ix = try interner.mintConstant(.{ .sort = t_ix, .name = try interner.internString("goal"), .loc = 2 });
+    const goal: term.SymId = @enumFromInt(@intFromEnum(goal_ix));
     const schema = try interner.internString("everywhereGoal");
     const p = try interner.internString("prop");
 
@@ -210,8 +245,8 @@ test "instanceHash: lambda args — fresh param fvars canonicalize by position" 
 
     const params = [_]StrId{p};
     try testing.expectEqual(
-        instanceHash(&pool, schema, &params, &a1),
-        instanceHash(&pool, schema, &params, &a2),
+        instanceHash(interner, &pool, schema, &params, &a1),
+        instanceHash(interner, &pool, schema, &params, &a2),
     ); // distinct fresh param fvars, same position → same hash
 }
 
@@ -223,8 +258,10 @@ test "instanceHash: the schema name is folded in (rename escape hatch)" {
     interner.* = try .init(arena);
     var pool = term.Pool.init(arena, arena);
 
-    const nat: SortId = @enumFromInt(10);
-    const zero = try pool.addApp(.app, @enumFromInt(20), &.{});
+    const nat_ix = try interner.mintSort(.{ .name = try interner.internString("Nat"), .loc = 1 });
+    const nat: SortId = @enumFromInt(@intFromEnum(nat_ix));
+    const zero_ix = try interner.mintConstant(.{ .sort = nat_ix, .name = try interner.internString("ZERO"), .loc = 2 });
+    const zero = try pool.addApp(.app, @enumFromInt(@intFromEnum(zero_ix)), &.{});
     const t = try interner.internString("t");
     const params = [_]StrId{t};
     var a: SchemaArgs = .empty;
@@ -233,6 +270,53 @@ test "instanceHash: the schema name is folded in (rename escape hatch)" {
     const foo = try interner.internString("foo");
     const foo2 = try interner.internString("fooOopsHashCollision");
     try testing.expect(
-        instanceHash(&pool, foo, &params, &a) != instanceHash(&pool, foo2, &params, &a),
+        instanceHash(interner, &pool, foo, &params, &a) != instanceHash(interner, &pool, foo2, &params, &a),
     ); // same args, different schema name → different hash
+}
+
+// REGRESSION: the hash must depend on an entity's (name, loc), NOT on its Index.
+//
+// Entities are MINTED, not deduped, so an Index is allocation-ordered and therefore
+// demand-order dependent. Hashing it made `instanceHash` nondeterministic across runs: one
+// instantiation could key to two different `Schema{<hash>}` names and a citer bind to the
+// wrong instance. Measured before the fix on drafts/schema-instance-crosstalk.b4m: 4 distinct
+// hashes in 5 runs.
+//
+// Mint the SAME declaration (same name, same loc) in two pools at DIFFERENT indices — which
+// is exactly what a different demand order produces — and require equal hashes.
+test "instanceHash: an entity hashes by (name, loc), not by its minted Index" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const t_name = "T";
+    const c_name = "c";
+
+    var hashes: [2]u64 = undefined;
+    // run 0 mints the sort FIRST; run 1 mints decoys first, so the same decl lands at a
+    // different Index. The hash must not notice.
+    for (0..2) |run| {
+        const ip = try arena.create(InternPool);
+        ip.* = try .init(arena);
+        var pool = term.Pool.init(arena, arena);
+
+        if (run == 1) {
+            // decoys: shift every later Index along
+            _ = try ip.mintSort(.{ .name = try ip.internString("Decoy1"), .loc = 90 });
+            _ = try ip.mintSort(.{ .name = try ip.internString("Decoy2"), .loc = 91 });
+        }
+
+        const t_ix = try ip.mintSort(.{ .name = try ip.internString(t_name), .loc = 7 });
+        const c_ix = try ip.mintConstant(.{ .sort = t_ix, .name = try ip.internString(c_name), .loc = 8 });
+        const arg = try pool.addApp(.app, @enumFromInt(@intFromEnum(c_ix)), &.{});
+
+        const pname = try ip.internString("p");
+        var args: SchemaArgs = .empty;
+        try args.put(arena, pname, .{ .value = .{ .id = arg, .sort = @enumFromInt(@intFromEnum(t_ix)) } });
+
+        const params = [_]StrId{pname};
+        hashes[run] = instanceHash(ip, &pool, try ip.internString("sch"), &params, &args);
+    }
+
+    try testing.expectEqual(hashes[0], hashes[1]);
 }
