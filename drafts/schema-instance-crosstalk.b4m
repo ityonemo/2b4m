@@ -13,9 +13,17 @@
 //   ONE hash (`sort -u | wc -l` = 1 every time), so no run ever minted two instances for one
 //   instantiation. Soundness was never at risk either way — the hash only names a cache slot,
 //   and the kernel re-checks each instance body against its actual formula, so a mis-binding
-//   would REJECT rather than falsely accept. What the instability actually broke is
-//   reproducibility: the hash appears in `--trace-facts` output and in diagnostics, and
-//   `termHash`'s doc comment promised "deterministic, re-entry-stable" while not being so.
+//   would REJECT rather than falsely accept.
+//
+//   And the hash is NOT in user-facing output — measured across every surface: plain `check`
+//   errors, `--axioms` and `--draft` show it ZERO times; only `--trace-facts`, a debug flag,
+//   prints it (the cyclic-instantiation diagnostic uses the schema's SOURCE name, not the
+//   instance's). So the instability was visible only under a debug flag.
+//
+//   What is left, and the only honest reason this was worth fixing: `termHash`'s doc comment
+//   promised "deterministic, re-entry-stable" and it was not, and hashing an allocation-
+//   ordered Index is a latent hazard for any future caller that keys on it across runs —
+//   caching to disk, a reproducible-build check, or comparing two runs' traces.
 //
 //   Fix: `Schema.hashEntity` hashes `(nameOf, locOf)` — a string id, which IS content-deduped,
 //   plus the source position. `termHash` took the same fix; its doc comment already claimed
