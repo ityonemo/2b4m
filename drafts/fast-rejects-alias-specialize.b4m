@@ -1,0 +1,56 @@
+// REPRO: `[using specialize <alias>]` resolves under STRICT check but NOT under `--fast`.
+//
+//   2b4m check        drafts/fast-rejects-alias-specialize.b4m   -> OK, 2 theorems
+//   2b4m check --fast drafts/fast-rejects-alias-specialize.b4m   -> error:
+//                                       unknown reference 'aliasedFact'
+//
+// This is the fast/strict invariant violated in the UNUSUAL direction. `--fast` is the
+// PERMISSIVE mode — it admits an accelerant's verdict instead of demanding a kernel
+// certificate — so anything strict accepts it must accept. Here it REJECTS what strict
+// proves, which means the two modes resolve an accelerant's named inputs differently: the
+// strict path evidently follows the alias to its origin while the fast path looks only for a
+// local declaration and gives up.
+//
+// It is not a soundness gap (strict is the gate, and strict is the stricter judgement), but it
+// is a real defect: `--fast` is the documented write-check-fix loop, and here it reports a
+// nonexistent error on a correct proof. The cost is wasted debugging — I hit it as a wall of
+// 20+ "unknown reference" errors on a file that strict proves clean.
+//
+// Found 2026-10-13. The condition is PRE-EXISTING in
+// std/permutation/alternating-identities.b4m (reproduces at c706561 and earlier), masked
+// because that file's own aliases were qualified inline one at a time as each proof was
+// written, so the pattern never accumulated under a fast pass.
+//
+// WORKAROUND, and what the corpus already does: qualify inline —
+// `[using specialize peano.addZeroRight(succ(n))]` — rather than citing the bare alias.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+fact aliasedFact = peano.addZeroRight
+
+// a first theorem, so the file has more than one in flight
+theorem first: forall n: Nat; add(n, ZERO) = n
+proof
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using specialize peano.addZeroRight]
+qed
+
+// the second cites the ALIAS by its bare local name
+theorem second: forall n: Nat; add(succ(n), ZERO) = succ(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @at-successor |
+        add(succ(n), ZERO) = succ(n)
+        [using specialize aliasedFact(succ(n))]
+    }
+  @conclusion |
+    forall n: Nat; add(succ(n), ZERO) = succ(n)
+    [by generalize generalize-n]
+qed
