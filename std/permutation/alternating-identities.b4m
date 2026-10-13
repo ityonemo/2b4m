@@ -6484,3 +6484,216 @@ proof
       = compose(transposition(i, j), transposition(i, a))
     [by generalize generalize-i]
 qed
+
+// ============================================================================
+// LEMMA 10.9: from ONE 3-cycle in N to EVERY 3-cycle in N
+// ============================================================================
+
+// REACHING THE WHOLE FIXED FAMILY. If a normal subgroup N contains `(i,j,a)`, it contains
+// `(i,j,k)` for every k outside {i,j}:
+//
+//   (i,j,a) in N  ==>  (i,j,k) in N
+//
+// WHY THE FIXED FAMILY IS THE RIGHT TARGET, and why this is one step rather than a chain.
+// I first tried to reach an ARBITRARY 3-cycle by chaining
+// `conjugatingAThreeCycleMovesItsThirdPoint`, and measured the cost: diameter 3 under that
+// move alone (the far point being the twist, hence
+// `conjugatingAThreeCycleByASwapAndASpareSwapGivesItsTwist`), or diameter 2 with the twist
+// added. But the shortest chain's rotation representatives vary per target, so no fixed
+// formula captures it, and a fixed 3-move pattern I tried was blocked on 3120 of 3600 pairs —
+// the move cannot send a point to a value already in the triple.
+//
+// The fixed family dissolves that. Judson's four identities, all proved above, write ANY
+// 3-cycle as a PRODUCT of members of the single family `(i,j,k)` with i and j fixed:
+//
+//   (i,a,j)   = (i,j,a)^2                            aThreeCycleIsTheSquareOfItsTwist
+//   (i,a,b)   = (i,j,b)(i,j,a)^2                     aThreeCycleOffTheFixedPairFactors
+//   (j,a,b)   = (i,j,b)^2(i,j,a)                     aThreeCycleThroughTheSecondFixedPointFactors
+//   (a,b,c)   = (i,j,a)^2(i,j,c)(i,j,b)^2(i,j,a)     aThreeCycleAwayFromTheFixedPairFactors
+//
+// So N need only contain the FAMILY; closure under products (which a subgroup has) supplies
+// everything else. And within the family exactly ONE point varies, which is precisely what the
+// move changes — so reaching the whole family is a SINGLE conjugation, no chain and no case
+// analysis on overlap. Verified: every family member is one move away at n = 5 and n = 6.
+//
+// Stated over a schema parameter `inN(Fn)` rather than through a `model`, matching
+// `aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup`: N is a hypothesis here, not
+// a fixed predicate, so a consumer supplies its own membership predicate.
+theorem aNormalSubgroupWithOneFamilyMemberHasThemAll(inN(Fn)):
+  (forall sigma: Fn; forall g: Fn; alternating.inAlternating(sigma) -> inN(g) ->
+  inN(compose(compose(sigma, g), inverse(sigma)))) ->
+  forall i, j, a, b, c: Element;
+  i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c ->
+  alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) ->
+  inN(compose(transposition(i, a), transposition(i, j))) ->
+  inN(compose(transposition(i, b), transposition(i, j)))
+proof
+  @given-normality |
+    assume forall sigma: Fn; forall g: Fn; alternating.inAlternating(sigma) -> inN(g) ->
+      inN(compose(compose(sigma, g), inverse(sigma))) {
+      @normality |
+        forall sigma: Fn; forall g: Fn; alternating.inAlternating(sigma) -> inN(g) ->
+          inN(compose(compose(sigma, g), inverse(sigma)))
+        [by hypothesis given-normality]
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @generalize-b |
+                    fix b: Element {
+                      @generalize-c |
+                        fix c: Element {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-i-not-b |
+                                assume i != b {
+                                  @given-i-not-c |
+                                    assume i != c {
+                                      @given-j-not-a |
+                                        assume j != a {
+                                          @given-j-not-b |
+                                            assume j != b {
+                                              @given-j-not-c |
+                                                assume j != c {
+                                                  @given-a-not-b |
+                                                    assume a != b {
+                                                      @given-b-not-c |
+                                                        assume b != c {
+                                                          @given-conjugator-is-even |
+                                                            assume alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) {
+                                                              @given-family-member-in-n |
+                                                                assume inN(compose(transposition(i, a), transposition(i, j))) {
+                                                                  @i-is-not-a |
+                                                                    i != a
+                                                                    [by hypothesis given-i-not-a]
+                                                                  @i-is-not-b |
+                                                                    i != b
+                                                                    [by hypothesis given-i-not-b]
+                                                                  @i-is-not-c |
+                                                                    i != c
+                                                                    [by hypothesis given-i-not-c]
+                                                                  @j-is-not-a |
+                                                                    j != a
+                                                                    [by hypothesis given-j-not-a]
+                                                                  @j-is-not-b |
+                                                                    j != b
+                                                                    [by hypothesis given-j-not-b]
+                                                                  @j-is-not-c |
+                                                                    j != c
+                                                                    [by hypothesis given-j-not-c]
+                                                                  @a-is-not-b |
+                                                                    a != b
+                                                                    [by hypothesis given-a-not-b]
+                                                                  @b-is-not-c |
+                                                                    b != c
+                                                                    [by hypothesis given-b-not-c]
+                                                                  @the-conjugator-is-even |
+                                                                    alternating.inAlternating(compose(transposition(a, c), transposition(a, b)))
+                                                                    [by hypothesis given-conjugator-is-even]
+                                                                  @the-family-member-is-in-n |
+                                                                    inN(compose(transposition(i, a), transposition(i, j)))
+                                                                    [by hypothesis given-family-member-in-n]
+
+                                                                  // normality puts the conjugate in N
+                                                                  @the-conjugate-is-in-n |
+                                                                    inN(compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                                      compose(transposition(i, a), transposition(i, j))),
+                                                                      inverse(compose(transposition(a, c), transposition(a, b)))))
+                                                                    [using specialize normality(compose(transposition(a, c), transposition(a, b)), compose(transposition(i, a), transposition(i, j))) the-conjugator-is-even the-family-member-is-in-n]
+
+                                                                  // and that conjugate IS the next family member
+                                                                  @the-conjugate-moves-the-third-point |
+                                                                    compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                                      compose(transposition(i, a), transposition(i, j))),
+                                                                      inverse(compose(transposition(a, c), transposition(a, b))))
+                                                                      = compose(transposition(i, b), transposition(i, j))
+                                                                    [using specialize conjugatingAThreeCycleMovesItsThirdPoint(i, j, a, b, c) i-is-not-a i-is-not-b i-is-not-c j-is-not-a j-is-not-b j-is-not-c a-is-not-b b-is-not-c]
+
+                                                                  @conclusion-next-family-member |
+                                                                    inN(compose(transposition(i, b), transposition(i, j)))
+                                                                    [by rewrite the-conjugate-moves-the-third-point the-conjugate-is-in-n]
+                                                                  }
+                                                                  @family-member-in-n-implies |
+                                                                    inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                                      inN(compose(transposition(i, b), transposition(i, j)))
+                                                                    [by discharge given-family-member-in-n]
+                                                              }
+                                                              @conjugator-even-implies |
+                                                                alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                                  inN(compose(transposition(i, b), transposition(i, j)))
+                                                                [by discharge given-conjugator-is-even]
+                                                          }
+                                                          @b-not-c-implies |
+                                                            b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                              inN(compose(transposition(i, b), transposition(i, j)))
+                                                            [by discharge given-b-not-c]
+                                                      }
+                                                      @a-not-b-implies |
+                                                        a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                          inN(compose(transposition(i, b), transposition(i, j)))
+                                                        [by discharge given-a-not-b]
+                                                  }
+                                                  @j-not-c-implies |
+                                                    j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                      inN(compose(transposition(i, b), transposition(i, j)))
+                                                    [by discharge given-j-not-c]
+                                              }
+                                              @j-not-b-implies |
+                                                j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                                  inN(compose(transposition(i, b), transposition(i, j)))
+                                                [by discharge given-j-not-b]
+                                          }
+                                          @j-not-a-implies |
+                                            j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                              inN(compose(transposition(i, b), transposition(i, j)))
+                                            [by discharge given-j-not-a]
+                                      }
+                                      @i-not-c-implies |
+                                        i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                          inN(compose(transposition(i, b), transposition(i, j)))
+                                        [by discharge given-i-not-c]
+                                  }
+                                  @i-not-b-implies |
+                                    i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                      inN(compose(transposition(i, b), transposition(i, j)))
+                                    [by discharge given-i-not-b]
+                              }
+                              @i-not-a-implies |
+                                i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                                  inN(compose(transposition(i, b), transposition(i, j)))
+                                [by discharge given-i-not-a]
+                          }
+                          @discharge-c |
+                            forall c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                              inN(compose(transposition(i, b), transposition(i, j)))
+                            [by generalize generalize-c]
+                      }
+                      @discharge-b |
+                        forall b, c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                          inN(compose(transposition(i, b), transposition(i, j)))
+                        [by generalize generalize-b]
+                  }
+                  @discharge-a |
+                    forall a, b, c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                      inN(compose(transposition(i, b), transposition(i, j)))
+                    [by generalize generalize-a]
+              }
+              @discharge-j |
+                forall j, a, b, c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+                  inN(compose(transposition(i, b), transposition(i, j)))
+                [by generalize generalize-j]
+          }
+          @every-family-member |
+            forall i, j, a, b, c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+              inN(compose(transposition(i, b), transposition(i, j)))
+            [by generalize generalize-i]
+      }
+      @conclusion |
+        forall sigma: Fn; forall g: Fn; alternating.inAlternating(sigma) -> inN(g) ->
+        inN(compose(compose(sigma, g), inverse(sigma))) ->
+          forall i, j, a, b, c: Element; i != a -> i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c -> alternating.inAlternating(compose(transposition(a, c), transposition(a, b))) -> inN(compose(transposition(i, a), transposition(i, j))) ->
+            inN(compose(transposition(i, b), transposition(i, j)))
+        [by discharge given-normality]
+qed
