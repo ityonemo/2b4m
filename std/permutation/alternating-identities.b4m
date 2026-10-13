@@ -58,6 +58,7 @@ func inverse = permutation.inverse
 pred invertible = permutation.invertible
 fact composeAssoc = function.composeAssoc
 fact composeIdentityRight = function.composeIdentityRight
+fact composeIdentityLeft = function.composeIdentityLeft
 fact transpositionIsAnInvolution = permutation.transpositionIsAnInvolution
 fact disjointTranspositionsCommute = permutation_parity.disjointTranspositionsCommute
 fact aTwoSidedInverseIsUnique = function.aTwoSidedInverseIsUnique
@@ -4814,5 +4815,251 @@ proof
       compose(transposition(i, a), transposition(i, j)))),
       inverse(compose(transposition(i, j), transposition(a, k)))) =
       compose(transposition(i, k), transposition(i, j))
+    [by generalize generalize-i]
+qed
+
+// ============================================================================
+// JUDSON LEMMA 3 (10.10), CASE 3: sigma = tau o (a b c) with tau a disjoint
+// product of 2-cycles. Then sigma^2 is the 3-cycle (a c b).
+// ============================================================================
+
+// The algebra first, with no cycle structure in sight: if the two factors COMMUTE and the
+// first is an INVOLUTION, squaring kills it.
+//
+//   (tau o g)^2 = tau o g o tau o g = tau o tau o g o g = id o g^2 = g^2
+//
+// Judson's case 3 is this plus `aThreeCycleIsTheSquareOfItsTwist`: tau is a product of
+// disjoint 2-cycles (hence an involution) disjoint from the 3-cycle (hence commuting), so
+// sigma^2 = (a b c)^2, which that identity says is (a c b).
+theorem squaringKillsACommutingInvolution: forall t: Fn; forall g: Fn;
+  compose(t, g) = compose(g, t) -> compose(t, t) = identityFn ->
+  compose(compose(t, g), compose(t, g)) = compose(g, g)
+proof
+  @generalize-t |
+    fix t: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-commute |
+            assume compose(t, g) = compose(g, t) {
+              @they-commute |
+                compose(t, g) = compose(g, t)
+                [by hypothesis given-commute]
+              @given-involution |
+                assume compose(t, t) = identityFn {
+                  @t-is-an-involution |
+                    compose(t, t) = identityFn
+                    [by hypothesis given-involution]
+                  // (t g)(t g) = t (g t) g  — pure reassociation
+                  @regrouped |
+                    compose(compose(t, g), compose(t, g))
+                      = compose(t, compose(compose(g, t), g))
+                    [using assoc(composeAssoc)]
+                  // swap the inner g t back to t g
+                  @inner-swapped |
+                    compose(compose(t, g), compose(t, g))
+                      = compose(t, compose(compose(t, g), g))
+                    [by rewrite they-commute regrouped]
+                  // t (t g g) — reassociate so the two t's meet
+                  @t-pair-adjacent |
+                    compose(t, compose(compose(t, g), g))
+                      = compose(compose(t, t), compose(g, g))
+                    [using assoc(composeAssoc)]
+                  @with-the-pair |
+                    compose(compose(t, g), compose(t, g))
+                      = compose(compose(t, t), compose(g, g))
+                    [using chain inner-swapped t-pair-adjacent]
+                  @identity-times-the-square |
+                    compose(compose(t, g), compose(t, g))
+                      = compose(identityFn, compose(g, g))
+                    [by rewrite t-is-an-involution with-the-pair]
+                  @identity-on-the-left |
+                    compose(identityFn, compose(g, g)) = compose(g, g)
+                    [using specialize function.composeIdentityLeft(compose(g, g))]
+                  @conclusion-square |
+                    compose(compose(t, g), compose(t, g)) = compose(g, g)
+                    [using chain identity-times-the-square identity-on-the-left]
+                }
+              @conclusion-involution-gives |
+                compose(t, t) = identityFn ->
+                  compose(compose(t, g), compose(t, g)) = compose(g, g)
+                [by discharge given-involution]
+            }
+          @conclusion-at-g |
+            compose(t, g) = compose(g, t) -> compose(t, t) = identityFn ->
+              compose(compose(t, g), compose(t, g)) = compose(g, g)
+            [by discharge given-commute]
+        }
+      @discharge-g |
+        forall g: Fn; compose(t, g) = compose(g, t) -> compose(t, t) = identityFn ->
+          compose(compose(t, g), compose(t, g)) = compose(g, g)
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall t: Fn; forall g: Fn;
+      compose(t, g) = compose(g, t) -> compose(t, t) = identityFn ->
+      compose(compose(t, g), compose(t, g)) = compose(g, g)
+    [by generalize generalize-t]
+qed
+
+// CASE 3 ITSELF. sigma = tau o (i,j,a) with tau commuting with the 3-cycle and tau an
+// involution: sigma^2 is the 3-cycle (i,a,j).
+//
+// `squaringKillsACommutingInvolution` reduces sigma^2 to the 3-cycle's own square, and
+// `aThreeCycleIsTheSquareOfItsTwist` names that square: it is (i,a,j).
+//
+// The hypotheses are stated as the ALGEBRA Judson's case supplies, not as cycle structure:
+// "tau is a product of disjoint 2-cycles disjoint from the 3-cycle" enters only through
+// commuting + being an involution, which is all the proof uses. A caller with the structural
+// form discharges them via `disjointPermutationsCommute` and the involution law.
+theorem squaringAThreeCycleTimesAnInvolutionGivesAThreeCycle: forall i, j, a: Element;
+  forall t: Fn;
+  i != j -> i != a -> j != a ->
+  compose(t, compose(transposition(i, a), transposition(i, j)))
+  = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+  compose(t, t) = identityFn ->
+  compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+  compose(t, compose(transposition(i, a), transposition(i, j))))
+  = compose(transposition(i, j), transposition(i, a))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-t |
+                fix t: Fn {
+                  @given-i-not-j |
+                    assume i != j {
+                      @i-not-j |
+                        i != j
+                        [by hypothesis given-i-not-j]
+                      @given-i-not-a |
+                        assume i != a {
+                          @i-not-a |
+                            i != a
+                            [by hypothesis given-i-not-a]
+                          @given-j-not-a |
+                            assume j != a {
+                              @j-not-a |
+                                j != a
+                                [by hypothesis given-j-not-a]
+                              @given-commute |
+                                assume compose(t, compose(transposition(i, a), transposition(i, j)))
+                                  = compose(compose(transposition(i, a), transposition(i, j)), t) {
+                                  @they-commute |
+                                    compose(t, compose(transposition(i, a), transposition(i, j)))
+                                      = compose(compose(transposition(i, a), transposition(i, j)), t)
+                                    [by hypothesis given-commute]
+                                  @given-involution |
+                                    assume compose(t, t) = identityFn {
+                                      @t-is-an-involution |
+                                        compose(t, t) = identityFn
+                                        [by hypothesis given-involution]
+                                      @the-square-is-the-cycles-square |
+                                        compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                          compose(t, compose(transposition(i, a), transposition(i, j))))
+                                          = compose(compose(transposition(i, a), transposition(i, j)),
+                                          compose(transposition(i, a), transposition(i, j)))
+                                        [using specialize squaringKillsACommutingInvolution(t, compose(transposition(i, a), transposition(i, j))) they-commute t-is-an-involution]
+                                      @the-cycles-square-is-the-twist |
+                                        compose(transposition(i, j), transposition(i, a))
+                                          = compose(compose(transposition(i, a), transposition(i, j)),
+                                          compose(transposition(i, a), transposition(i, j)))
+                                        [using specialize aThreeCycleIsTheSquareOfItsTwist(i, j, a) i-not-j i-not-a j-not-a]
+                                      @conclusion-square-is-a-three-cycle |
+                                        compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                          compose(t, compose(transposition(i, a), transposition(i, j))))
+                                          = compose(transposition(i, j), transposition(i, a))
+                                        [by rewrite the-cycles-square-is-the-twist the-square-is-the-cycles-square]
+                                    }
+                                  @conclusion-involution-gives |
+                                    compose(t, t) = identityFn ->
+                                      compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                      compose(t, compose(transposition(i, a), transposition(i, j))))
+                                      = compose(transposition(i, j), transposition(i, a))
+                                    [by discharge given-involution]
+                                }
+                              @conclusion-commute-gives |
+                                compose(t, compose(transposition(i, a), transposition(i, j)))
+                                  = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+                                  compose(t, t) = identityFn ->
+                                  compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                  compose(t, compose(transposition(i, a), transposition(i, j))))
+                                  = compose(transposition(i, j), transposition(i, a))
+                                [by discharge given-commute]
+                            }
+                          @conclusion-j-not-a-gives |
+                            j != a ->
+                              (compose(t, compose(transposition(i, a), transposition(i, j)))
+                              = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+                              compose(t, t) = identityFn ->
+                              compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                              compose(t, compose(transposition(i, a), transposition(i, j))))
+                              = compose(transposition(i, j), transposition(i, a)))
+                            [by discharge given-j-not-a]
+                        }
+                      @conclusion-i-not-a-gives |
+                        i != a -> j != a ->
+                          (compose(t, compose(transposition(i, a), transposition(i, j)))
+                          = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+                          compose(t, t) = identityFn ->
+                          compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                          compose(t, compose(transposition(i, a), transposition(i, j))))
+                          = compose(transposition(i, j), transposition(i, a)))
+                        [by discharge given-i-not-a]
+                    }
+                  @conclusion-at-t |
+                    i != j -> i != a -> j != a ->
+                      (compose(t, compose(transposition(i, a), transposition(i, j)))
+                      = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+                      compose(t, t) = identityFn ->
+                      compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                      compose(t, compose(transposition(i, a), transposition(i, j))))
+                      = compose(transposition(i, j), transposition(i, a)))
+                    [by discharge given-i-not-j]
+                }
+              @discharge-t |
+                forall t: Fn;
+                  i != j -> i != a -> j != a ->
+                  (compose(t, compose(transposition(i, a), transposition(i, j)))
+                  = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+                  compose(t, t) = identityFn ->
+                  compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                  compose(t, compose(transposition(i, a), transposition(i, j))))
+                  = compose(transposition(i, j), transposition(i, a)))
+                [by generalize generalize-t]
+            }
+          @discharge-a |
+            forall a: Element; forall t: Fn;
+              i != j -> i != a -> j != a ->
+              (compose(t, compose(transposition(i, a), transposition(i, j)))
+              = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+              compose(t, t) = identityFn ->
+              compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+              compose(t, compose(transposition(i, a), transposition(i, j))))
+              = compose(transposition(i, j), transposition(i, a)))
+            [by generalize generalize-a]
+        }
+      @discharge-j |
+        forall j: Element; forall a: Element; forall t: Fn;
+          i != j -> i != a -> j != a ->
+          (compose(t, compose(transposition(i, a), transposition(i, j)))
+          = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+          compose(t, t) = identityFn ->
+          compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+          compose(t, compose(transposition(i, a), transposition(i, j))))
+          = compose(transposition(i, j), transposition(i, a)))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Element; forall j: Element; forall a: Element; forall t: Fn;
+      i != j -> i != a -> j != a ->
+      (compose(t, compose(transposition(i, a), transposition(i, j)))
+      = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+      compose(t, t) = identityFn ->
+      compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+      compose(t, compose(transposition(i, a), transposition(i, j))))
+      = compose(transposition(i, j), transposition(i, a)))
     [by generalize generalize-i]
 qed
