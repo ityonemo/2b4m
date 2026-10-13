@@ -695,3 +695,43 @@ j -> i, a -> a), then the relabelled `T(j,a) T(j,i)` is the twist by TWO instanc
 `aThreeCycleIsInvariantUnderRotation` composed — at (a,j,i) and at (i,a,j). One instance does
 not suffice; the factors are swapped on both sides, which the exhaustive instance search showed
 before any proof was written.
+
+**POINT SUPPLY IS NOW IN std (2026-10-13), and it located a real gap rather than an imagined
+one.** The entry above said the twist conjugator needs two points outside {i,j,a}; both it and
+the one-point move take those points as HYPOTHESES, so something has to produce them.
+
+Nothing could, and the reason is worth writing down: **`Element` is an unconstrained sort.**
+`std/element.b4m` declares it with no operations and no axioms, deliberately. So "there are at
+least five points" is not a fact about `Element` that one could prove, nor one that could be
+refuted — it simply has no expression there. Every earlier statement of the n >= 5 hypothesis in
+this file was therefore informal in a way I had not noticed: the theorems said "given these five
+distinct points", never "five exist".
+
+std already had the convention for this and it was not a new mechanism: bound the domain with a
+SET carrying `hasSize`, the way `decomposition.finiteSupportDecomposes` bounds a support. Two
+theorems in `std/set/finite.b4m`:
+
+- `aDistinctPointSurvivesARemoval` — a point survives the removal of a different one, factored
+  out so the four peels below are uniform.
+- `aSetOfAtLeastFiveHasAFifthPoint` — a set of size 5+m has a member outside any four named
+  ones. `removingAnElementDropsTheSize` four times, then `sizedSetHasAMember` on the remainder
+  (size succ(m), so nonempty); the four disequalities come back out of the nested differences.
+
+THE BOUND IS FIVE, NOT SIX, and the reason is the two consumers: the one-point move needs a
+point to move TO and a point to park the displaced one on, both outside the three in hand; the
+twist needs two points outside the three whose swap makes the conjugator even. Four named plus
+one supplied is the worst case. That is the n >= 5 of Judson's hypothesis, finally stated as
+something the kernel checks.
+
+TWO CHOICES WORTH RECORDING.
+
+- **Iterated removal beat the slicker route.** `properSubsetIsSmaller` gives a contradiction
+  argument — if every member were one of the four, u would be a subset of a 4-set — but it needs
+  the four-point set BUILT and SIZED (three insertions carrying six non-membership side
+  conditions) plus a subset proof. Iterated removal needs no set construction at all. Counted
+  both before writing either.
+- **The disequality hypotheses are oriented for the peels** (`q != p`, not `p != q`) because
+  `finite.b4m` cannot reach a symmetry lemma — `disequalityIsSymmetric` lives in
+  `permutation/alternating.b4m`, ABOVE set theory, and importing it would be a cyclical
+  dependency. Callers flip with their own lemma. Writing the statement in the "natural" order and
+  then needing symmetry inside set theory would have been the wrong fix.
