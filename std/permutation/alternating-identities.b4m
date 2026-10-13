@@ -7730,3 +7730,109 @@ proof
       alternating.inAlternating(compose(transposition(x, z), transposition(x, y)))
     [using instantiation aThreeCycleDisjointFromTheFixedPairIsInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
 qed
+
+// ROTATION CARRIES MEMBERSHIP, and this is what collapses the selector.
+//
+// I first scoped the shape selector as a 13-leaf case tree over POSITIONS: six leaves for
+// "both fixed points present", three each for "only i" and "only j", one for "neither", with
+// the canonical rotation unique per leaf (verified over all 120 triples on six points) and so
+// no collapse available. That was right about rotation uniqueness and wrong about what the
+// formalization needs.
+//
+// A 3-cycle EQUALS each of its rotations as a permutation. So `inN(c)` for c in non-canonical
+// position is the SAME PROPOSITION as `inN(c')` for its canonical rotation c' — not a different
+// leaf needing its own theorem, just the same fact written differently. A consumer therefore
+// needs the FOUR canonical shape theorems (all proved above) plus this lemma, which it applies
+// when its 3-cycle is not already canonical.
+//
+// So the 13 leaves were an artifact of treating rotations as distinct cases. What genuinely
+// remains of the selector is the four-way split that picks WHICH shape applies.
+theorem rotationCarriesMembership(inN(Fn)):
+  forall i, j, k: Element;
+  i != j -> i != k -> j != k ->
+  inN(compose(transposition(i, k), transposition(i, j))) ->
+  inN(compose(transposition(j, i), transposition(j, k)))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-k |
+                    assume i != k {
+                      @given-j-not-k |
+                        assume j != k {
+                          @given-member |
+                            assume inN(compose(transposition(i, k), transposition(i, j))) {
+                              @i-is-not-j |
+                                i != j
+                                [by hypothesis given-i-not-j]
+                              @i-is-not-k |
+                                i != k
+                                [by hypothesis given-i-not-k]
+                              @j-is-not-k |
+                                j != k
+                                [by hypothesis given-j-not-k]
+                              @the-member |
+                                inN(compose(transposition(i, k), transposition(i, j)))
+                                [by hypothesis given-member]
+                              @the-rotation |
+                                compose(transposition(j, i), transposition(j, k))
+                                  = compose(transposition(i, k), transposition(i, j))
+                                [using specialize aThreeCycleIsInvariantUnderRotation(i, j, k) i-is-not-j i-is-not-k j-is-not-k]
+                              @conclusion-rotated-member |
+                                inN(compose(transposition(j, i), transposition(j, k)))
+                                [by rewrite the-rotation the-member]
+                            }
+                          @member-implies |
+                            inN(compose(transposition(i, k), transposition(i, j))) ->
+                              inN(compose(transposition(j, i), transposition(j, k)))
+                            [by discharge given-member]
+                        }
+                      @jk-implies |
+                        j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+                          inN(compose(transposition(j, i), transposition(j, k)))
+                        [by discharge given-j-not-k]
+                    }
+                  @ik-implies |
+                    i != k -> j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+                      inN(compose(transposition(j, i), transposition(j, k)))
+                    [by discharge given-i-not-k]
+                }
+              @conclusion-at-k |
+                i != j -> i != k -> j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+                  inN(compose(transposition(j, i), transposition(j, k)))
+                [by discharge given-i-not-j]
+            }
+          @d-k |
+            forall k: Element; i != j -> i != k -> j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+              inN(compose(transposition(j, i), transposition(j, k)))
+            [by generalize generalize-k]
+        }
+      @d-j |
+        forall j, k: Element; i != j -> i != k -> j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+          inN(compose(transposition(j, i), transposition(j, k)))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != j -> i != k -> j != k -> inN(compose(transposition(i, k), transposition(i, j))) ->
+      inN(compose(transposition(j, i), transposition(j, k)))
+    [by generalize generalize-i]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupCarriesRotations:
+  forall i, j, k: Element;
+  i != j -> i != k -> j != k ->
+  alternating.inAlternating(compose(transposition(i, k), transposition(i, j))) ->
+  alternating.inAlternating(compose(transposition(j, i), transposition(j, k)))
+proof
+  @conclusion |
+    forall i, j, k: Element; i != j -> i != k -> j != k ->
+      alternating.inAlternating(compose(transposition(i, k), transposition(i, j))) ->
+      alternating.inAlternating(compose(transposition(j, i), transposition(j, k)))
+    [using instantiation rotationCarriesMembership((fun g: Fn => alternating.inAlternating(g)))]
+qed
