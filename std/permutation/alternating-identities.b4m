@@ -5904,3 +5904,281 @@ proof
       = compose(transposition(i, a), transposition(i, j))
     [by generalize generalize-sigma]
 qed
+
+// ============================================================================
+// LEMMA 10.9'S TRANSITIVITY: conjugation reaches every 3-cycle, one point at a time
+// ============================================================================
+
+// THE ONE-POINT MOVE. Conjugating `(i,j,a)` by the 3-cycle `(a,b,c)` replaces the third
+// point by `b`:
+//
+//   (a,b,c) (i,j,a) (a,b,c)^-1 = (i,j,b)
+//
+// WHY THIS IS THE WHOLE OF LEMMA 10.9'S TRANSITIVITY. The missing step was "any triple of
+// distinct points maps to any other by some EVEN sigma", which reads as though it needs a way
+// to BUILD a permutation from a prescribed finite map — machinery std does not have. It does
+// not need that. Two observations collapse it:
+//
+//   1. Conjugation acts on 3-CYCLES, not on triples, and a 3-cycle equals each of its three
+//      rotations (`aThreeCycleIsInvariantUnderRotation`), so the target need only be matched
+//      up to rotation. Probed: a conjugator that is a product of two transpositions reaches
+//      ALL 20 three-cycles on five points from any one of them, whereas it carries only 2160
+//      of 3600 TRIPLE pairs. The triple framing is what made this look hard.
+//   2. The conjugator here is itself a 3-cycle, hence a product of exactly two transpositions
+//      in std's fold, hence EVEN by construction and already in A_n. Nothing needs its parity
+//      repaired, so the "two spare points to fix sigma's parity" step never arises.
+//
+// `b` and `c` are the two points outside `{i,j,a}`, which is where n >= 5 is spent: the move
+// needs a point to move TO (`b`) and a point to park the displaced one on (`c`).
+//
+// A caller chains the move. Under it the 3-cycles on five points have DIAMETER 3 (measured by
+// BFS over all 20, from every starting 3-cycle) — one application per point — so reaching an
+// arbitrary 3-cycle is at most three uses of this lemma composed, not an induction.
+//
+// The proof is `theConjugateOfAThreeCycleRelabelsItsPoints` at sigma = (a,b,c), then the three
+// images evaluated: the conjugator fixes i and j, being disjoint from them, and sends a to b.
+//
+// `a != c` is NOT a hypothesis, and that is deliberate rather than an oversight: the proof never
+// consults it (dropping it left every step intact), and the identity holds when a = c as well —
+// the conjugator degenerates to `T(a,b)` alone, which still carries a to b. Checked over all
+// 1080 configurations on six points with a = c allowed. Stating it would be an invented
+// hypothesis of the kind the axiomatization rule warns about.
+theorem conjugatingAThreeCycleMovesItsThirdPoint: forall i, j, a, b: Element;
+  forall c: Element;
+  i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+  a != b -> b != c ->
+  compose(compose(compose(transposition(a, c), transposition(a, b)),
+  compose(transposition(i, a), transposition(i, j))),
+  inverse(compose(transposition(a, c), transposition(a, b))))
+  = compose(transposition(i, b), transposition(i, j))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @generalize-b |
+                fix b: Element {
+                  @generalize-c |
+                    fix c: Element {
+                      @given-i-not-a |
+                        assume i != a {
+                          @given-i-not-b |
+                            assume i != b {
+                              @given-i-not-c |
+                                assume i != c {
+                                  @given-j-not-a |
+                                    assume j != a {
+                                      @given-j-not-b |
+                                        assume j != b {
+                                          @given-j-not-c |
+                                            assume j != c {
+                                              @given-a-not-b |
+                                                assume a != b {
+                                                  @given-b-not-c |
+                                                    assume b != c {
+                                                      @i-is-not-a |
+                                                        i != a
+                                                        [by hypothesis given-i-not-a]
+                                                      @i-is-not-c |
+                                                        i != c
+                                                        [by hypothesis given-i-not-c]
+                                                      @j-is-not-a |
+                                                        j != a
+                                                        [by hypothesis given-j-not-a]
+                                                      @j-is-not-c |
+                                                        j != c
+                                                        [by hypothesis given-j-not-c]
+                                                      @a-is-not-b |
+                                                        a != b
+                                                        [by hypothesis given-a-not-b]
+
+                                                      // the conjugator (a,b,c) is a permutation
+                                                      @ac-is-a-permutation |
+                                                        invertible(transposition(a, c))
+                                                        [using specialize permutation.transpositionIsAPermutation(a, c)]
+                                                      @ab-is-a-permutation |
+                                                        invertible(transposition(a, b))
+                                                        [using specialize permutation.transpositionIsAPermutation(a, b)]
+                                                      @the-conjugator-is-a-permutation |
+                                                        invertible(compose(transposition(a, c), transposition(a, b)))
+                                                        [using specialize function.composeInvertible(transposition(a, c), transposition(a, b)) ac-is-a-permutation ab-is-a-permutation]
+
+                                                      // the generic relabelling, before evaluating the images
+                                                      @the-conjugate-relabels |
+                                                        compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                          compose(transposition(i, a), transposition(i, j))),
+                                                          inverse(compose(transposition(a, c), transposition(a, b))))
+                                                          = compose(transposition(
+                                                          apply(compose(transposition(a, c), transposition(a, b)), i),
+                                                          apply(compose(transposition(a, c), transposition(a, b)), a)),
+                                                          transposition(
+                                                          apply(compose(transposition(a, c), transposition(a, b)), i),
+                                                          apply(compose(transposition(a, c), transposition(a, b)), j)))
+                                                        [using specialize theConjugateOfAThreeCycleRelabelsItsPoints(compose(transposition(a, c), transposition(a, b)), i, j, a) the-conjugator-is-a-permutation]
+
+                                                      // the conjugator fixes i and j, and sends a to b
+                                                      // evaluate the conjugator factor by factor at i, j and a
+                                                      @i-is-not-b |
+                                                        i != b
+                                                        [by hypothesis given-i-not-b]
+                                                      @j-is-not-b |
+                                                        j != b
+                                                        [by hypothesis given-j-not-b]
+                                                      @ab-fixes-i |
+                                                        apply(transposition(a, b), i) = i
+                                                        [using specialize transpositionElsewhere(a, b, i) i-is-not-a i-is-not-b]
+                                                      @ac-fixes-i |
+                                                        apply(transposition(a, c), i) = i
+                                                        [using specialize transpositionElsewhere(a, c, i) i-is-not-a i-is-not-c]
+                                                      @the-conjugator-fixes-i |
+                                                        apply(compose(transposition(a, c), transposition(a, b)), i) = i
+                                                        [using simplify function.composeApply ab-fixes-i ac-fixes-i]
+                                                      @ab-fixes-j |
+                                                        apply(transposition(a, b), j) = j
+                                                        [using specialize transpositionElsewhere(a, b, j) j-is-not-a j-is-not-b]
+                                                      @ac-fixes-j |
+                                                        apply(transposition(a, c), j) = j
+                                                        [using specialize transpositionElsewhere(a, c, j) j-is-not-a j-is-not-c]
+                                                      @the-conjugator-fixes-j |
+                                                        apply(compose(transposition(a, c), transposition(a, b)), j) = j
+                                                        [using simplify function.composeApply ab-fixes-j ac-fixes-j]
+                                                      @b-is-not-a |
+                                                        b != a
+                                                        [using specialize alternating.disequalityIsSymmetric(a, b) a-is-not-b]
+                                                      @b-is-not-c |
+                                                        b != c
+                                                        [by hypothesis given-b-not-c]
+                                                      @ab-sends-a-to-b |
+                                                        apply(transposition(a, b), a) = b
+                                                        [using specialize transpositionAtFirst(a, b)]
+                                                      @ac-fixes-b |
+                                                        apply(transposition(a, c), b) = b
+                                                        [using specialize transpositionElsewhere(a, c, b) b-is-not-a b-is-not-c]
+                                                      @the-conjugator-sends-a-to-b |
+                                                        apply(compose(transposition(a, c), transposition(a, b)), a) = b
+                                                        [using simplify function.composeApply ab-sends-a-to-b ac-fixes-b]
+
+                                                      @conclusion-third-point-moved |
+                                                        compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                          compose(transposition(i, a), transposition(i, j))),
+                                                          inverse(compose(transposition(a, c), transposition(a, b))))
+                                                          = compose(transposition(i, b), transposition(i, j))
+                                                        [using simplify the-conjugator-fixes-i the-conjugator-fixes-j the-conjugator-sends-a-to-b the-conjugate-relabels]
+                                                    }
+                                                  @b-not-c-implies |
+                                                    b != c ->
+                                                      compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                      compose(transposition(i, a), transposition(i, j))),
+                                                      inverse(compose(transposition(a, c), transposition(a, b))))
+                                                      = compose(transposition(i, b), transposition(i, j))
+                                                    [by discharge given-b-not-c]
+                                                }
+                                              @a-not-b-implies |
+                                                a != b -> b != c ->
+                                                  compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                                  compose(transposition(i, a), transposition(i, j))),
+                                                  inverse(compose(transposition(a, c), transposition(a, b))))
+                                                  = compose(transposition(i, b), transposition(i, j))
+                                                [by discharge given-a-not-b]
+                                            }
+                                          @j-not-c-implies |
+                                            j != c -> a != b -> b != c ->
+                                              compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                              compose(transposition(i, a), transposition(i, j))),
+                                              inverse(compose(transposition(a, c), transposition(a, b))))
+                                              = compose(transposition(i, b), transposition(i, j))
+                                            [by discharge given-j-not-c]
+                                        }
+                                      @j-not-b-implies |
+                                        j != b -> j != c -> a != b -> b != c ->
+                                          compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                          compose(transposition(i, a), transposition(i, j))),
+                                          inverse(compose(transposition(a, c), transposition(a, b))))
+                                          = compose(transposition(i, b), transposition(i, j))
+                                        [by discharge given-j-not-b]
+                                    }
+                                  @j-not-a-implies |
+                                    j != a -> j != b -> j != c -> a != b -> b != c ->
+                                      compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                      compose(transposition(i, a), transposition(i, j))),
+                                      inverse(compose(transposition(a, c), transposition(a, b))))
+                                      = compose(transposition(i, b), transposition(i, j))
+                                    [by discharge given-j-not-a]
+                                }
+                              @i-not-c-implies |
+                                i != c -> j != a -> j != b -> j != c -> a != b -> b != c ->
+                                  compose(compose(compose(transposition(a, c), transposition(a, b)),
+                                  compose(transposition(i, a), transposition(i, j))),
+                                  inverse(compose(transposition(a, c), transposition(a, b))))
+                                  = compose(transposition(i, b), transposition(i, j))
+                                [by discharge given-i-not-c]
+                            }
+                          @i-not-b-implies |
+                            i != b -> i != c -> j != a -> j != b -> j != c -> a != b -> b != c ->
+                              compose(compose(compose(transposition(a, c), transposition(a, b)),
+                              compose(transposition(i, a), transposition(i, j))),
+                              inverse(compose(transposition(a, c), transposition(a, b))))
+                              = compose(transposition(i, b), transposition(i, j))
+                            [by discharge given-i-not-b]
+                        }
+                      @conclusion-at-c |
+                        i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+                          a != b -> b != c ->
+                          compose(compose(compose(transposition(a, c), transposition(a, b)),
+                          compose(transposition(i, a), transposition(i, j))),
+                          inverse(compose(transposition(a, c), transposition(a, b))))
+                          = compose(transposition(i, b), transposition(i, j))
+                        [by discharge given-i-not-a]
+                    }
+                  @discharge-c |
+                    forall c: Element;
+                      i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+                      a != b -> b != c ->
+                      compose(compose(compose(transposition(a, c), transposition(a, b)),
+                      compose(transposition(i, a), transposition(i, j))),
+                      inverse(compose(transposition(a, c), transposition(a, b))))
+                      = compose(transposition(i, b), transposition(i, j))
+                    [by generalize generalize-c]
+                }
+              @discharge-b |
+                forall b: Element; forall c: Element;
+                  i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+                  a != b -> b != c ->
+                  compose(compose(compose(transposition(a, c), transposition(a, b)),
+                  compose(transposition(i, a), transposition(i, j))),
+                  inverse(compose(transposition(a, c), transposition(a, b))))
+                  = compose(transposition(i, b), transposition(i, j))
+                [by generalize generalize-b]
+            }
+          @discharge-a |
+            forall a, b: Element; forall c: Element;
+              i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+              a != b -> b != c ->
+              compose(compose(compose(transposition(a, c), transposition(a, b)),
+              compose(transposition(i, a), transposition(i, j))),
+              inverse(compose(transposition(a, c), transposition(a, b))))
+              = compose(transposition(i, b), transposition(i, j))
+            [by generalize generalize-a]
+        }
+      @discharge-j |
+        forall j, a, b: Element; forall c: Element;
+          i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+          a != b -> b != c ->
+          compose(compose(compose(transposition(a, c), transposition(a, b)),
+          compose(transposition(i, a), transposition(i, j))),
+          inverse(compose(transposition(a, c), transposition(a, b))))
+          = compose(transposition(i, b), transposition(i, j))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, a, b: Element; forall c: Element;
+      i != a -> i != b -> i != c -> j != a -> j != b -> j != c ->
+      a != b -> b != c ->
+      compose(compose(compose(transposition(a, c), transposition(a, b)),
+      compose(transposition(i, a), transposition(i, j))),
+      inverse(compose(transposition(a, c), transposition(a, b))))
+      = compose(transposition(i, b), transposition(i, j))
+    [by generalize generalize-i]
+qed
