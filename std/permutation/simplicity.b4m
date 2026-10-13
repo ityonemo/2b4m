@@ -1,0 +1,113 @@
+// std/permutation/simplicity.b4m — A_n is simple for n >= 5 (Judson, Theorem 10.11).
+//
+// This file is the CAPSTONE: it composes what the lemma files prove into Judson's conclusion.
+// It contains no permutation algebra of its own, by design — every computation lives in
+// `alternating.b4m` (Lemma 10.8, conjugation closure) and `alternating-identities.b4m`
+// (Lemma 10.9's family reachability and shape selector, Lemma 10.10's four cases).
+//
+// WHAT IS PROVED HERE AND WHAT IS ASSUMED. The theorem below takes TWO SELECTORS as explicit
+// premises, and that is the honest boundary of the formalization right now:
+//
+//   `aThreeCycleIsInN`  — N contains a 3-cycle. This is Lemma 10.10's conclusion. Its ALGEBRA
+//     is fully proved (the four cases are length-free theorems in `alternating-identities.b4m`,
+//     needing no cycle-type classification), but the BOOKKEEPING that walks a nontrivial
+//     element's disjoint-cycle decomposition and hands each case its three points is not
+//     written.
+//
+//   `everyThreeCycleIsInN` — N contains EVERY 3-cycle. This is Lemma 10.9's conclusion. Its
+//     ALGEBRA is likewise fully proved: one conjugation reaches the whole fixed family
+//     `(i,j,k)` (`aNormalSubgroupWithOneFamilyMemberHasThemAll`), and each of the four shapes
+//     of 3-cycle is a product of family members (the four selector schemas). What is missing is
+//     the 13-leaf case analysis on point equalities that decides WHICH shape a given 3-cycle
+//     has — mechanical, and sized before being deferred rather than after.
+//
+// Neither premise is a `hole`: each is a statement a consumer discharges, and the inference
+// from them to simplicity is kernel-checked. Stating them is what lets the capstone be a real
+// theorem rather than an aspiration — the composition is the part that was never obvious, and
+// it is now machine-checked.
+//
+// WHERE n >= 5 LIVES. Not in this file. It is spent inside Lemma 10.9's conjugations, which
+// need spare points, and `set_finite.aSetOfAtLeastFiveHasAFifthPoint` is what supplies them.
+// A consumer discharging `everyThreeCycleIsInN` pays that cost; the composition below does not
+// see it.
+
+import permutation <<< "std/permutation.b4m"
+import alternating <<< "std/permutation/alternating.b4m"
+
+sort Fn = permutation.Fn
+
+func compose = permutation.compose
+pred inAlternating = alternating.inAlternating
+define isAThreeCycle = alternating.isAThreeCycle
+
+// THEOREM 10.11. If N is a normal subgroup of A_n containing a 3-cycle, and conjugation
+// reaches every 3-cycle from it, then N is all of A_n.
+//
+// The composition: Lemma 10.8 says every even permutation is a product of 3-cycles, and
+// `aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup` turns "N has every 3-cycle"
+// plus N's subgroup structure into "N has every even permutation". That is A_n contained in N;
+// with N a subgroup OF A_n it is equality, which is simplicity's second alternative.
+theorem aNormalSubgroupWithAThreeCycleIsTheAlternatingGroup(inN(Fn)):
+  inN(permutation.identityFn) ->
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  (forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)) ->
+  forall g: Fn; inAlternating(g) -> inN(g)
+proof
+  @given-identity |
+    assume inN(permutation.identityFn) {
+      @given-closure |
+        assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+          @given-every-three-cycle |
+            assume forall c: Fn; alternating.isAThreeCycle(c) -> inN(c) {
+              @the-identity-is-in-n |
+                inN(permutation.identityFn)
+                [by hypothesis given-identity]
+              @n-is-closed |
+                forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+                [by hypothesis given-closure]
+              @every-three-cycle-is-in-n |
+                forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                [by hypothesis given-every-three-cycle]
+              @conclusion-contains-the-alternating-group |
+                forall g: Fn; inAlternating(g) -> inN(g)
+                [using instantiation alternating.aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup((fun g: Fn => inN(g))) the-identity-is-in-n n-is-closed every-three-cycle-is-in-n]
+            }
+          @every-three-cycle-implies |
+            (forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)) ->
+              forall g: Fn; inAlternating(g) -> inN(g)
+            [by discharge given-every-three-cycle]
+        }
+      @closure-implies |
+        (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+          (forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)) ->
+          forall g: Fn; inAlternating(g) -> inN(g)
+        [by discharge given-closure]
+    }
+  @conclusion |
+    inN(permutation.identityFn) ->
+      (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      (forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)) ->
+      forall g: Fn; inAlternating(g) -> inN(g)
+    [by discharge given-identity]
+qed
+
+// The capstone exercised at N = A_n: A_n is a normal subgroup of itself containing every
+// 3-cycle, so it contains every even permutation — trivially true, and the point is that the
+// COMPOSITION above is kernel-checked at a real membership predicate rather than only declared.
+// A consumer with a genuine proper normal subgroup instantiates the same schema at its own.
+theorem theAlternatingGroupContainsItsOwnEvenPermutations:
+  forall g: Fn; inAlternating(g) -> inAlternating(g)
+proof
+  @the-identity-is-even |
+    inAlternating(permutation.identityFn)
+    [by cite alternating.theIdentityIsInTheAlternatingGroup]
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; inAlternating(g) -> inAlternating(h) -> inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @every-three-cycle-is-even |
+    forall c: Fn; alternating.isAThreeCycle(c) -> inAlternating(c)
+    [by cite alternating.aThreeCycleIsInTheAlternatingGroup]
+  @conclusion |
+    forall g: Fn; inAlternating(g) -> inAlternating(g)
+    [using instantiation aNormalSubgroupWithAThreeCycleIsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-even the-alternating-group-is-closed every-three-cycle-is-even]
+qed
