@@ -7836,3 +7836,205 @@ proof
       alternating.inAlternating(compose(transposition(j, i), transposition(j, k)))
     [using instantiation rotationCarriesMembership((fun g: Fn => alternating.inAlternating(g)))]
 qed
+
+// A REPRESENTATIVE SELECTOR LEAF, proved to validate the template the rest follow.
+//
+// This is the leaf "i is the MIDDLE point": the 3-cycle is `(x,i,z)`, which is one
+// rotation away from nothing in particular — the off-pair shape theorem wants i FIRST, so
+// the route is to derive the canonical `(i,z,x)` from the two family members, then rotate
+// TWICE to land on `(x,i,z)`.
+//
+// Every one of the selector's 13 leaves has exactly this shape: zero to two applications
+// of `rotationCarriesMembership`, then one cite of an already-proved shape theorem,
+// instantiated at the leaf's own `inN`. No leaf introduces mathematics. What makes the
+// selector large is the case tree, not any individual branch.
+theorem aThreeCycleWithTheFirstFixedPointInTheMiddleIsInTheSubgroup(inN(Fn)):
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  forall i, j, x, z: Element;
+  i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+  inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+  inN(compose(transposition(x, z), transposition(x, i)))
+proof
+  @given-closure |
+    assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+      @closure |
+        forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+        [by hypothesis given-closure]
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-x |
+                fix x: Element {
+                  @generalize-z |
+                    fix z: Element {
+                      @given-i-not-j |
+                        assume i != j {
+                          @given-i-not-x |
+                            assume i != x {
+                              @given-i-not-z |
+                                assume i != z {
+                                  @given-j-not-x |
+                                    assume j != x {
+                                      @given-j-not-z |
+                                        assume j != z {
+                                          @given-x-not-z |
+                                            assume x != z {
+                                              @given-family-member-z |
+                                                assume inN(compose(transposition(i, z), transposition(i, j))) {
+                                                  @given-family-member-x |
+                                                    assume inN(compose(transposition(i, x), transposition(i, j))) {
+                                                      @i-is-not-j |
+                                                        i != j
+                                                        [by hypothesis given-i-not-j]
+                                                      @i-is-not-x |
+                                                        i != x
+                                                        [by hypothesis given-i-not-x]
+                                                      @i-is-not-z |
+                                                        i != z
+                                                        [by hypothesis given-i-not-z]
+                                                      @j-is-not-x |
+                                                        j != x
+                                                        [by hypothesis given-j-not-x]
+                                                      @j-is-not-z |
+                                                        j != z
+                                                        [by hypothesis given-j-not-z]
+                                                      @x-is-not-z |
+                                                        x != z
+                                                        [by hypothesis given-x-not-z]
+                                                      @family-member-z-is-in-n |
+                                                        inN(compose(transposition(i, z), transposition(i, j)))
+                                                        [by hypothesis given-family-member-z]
+                                                      @family-member-x-is-in-n |
+                                                        inN(compose(transposition(i, x), transposition(i, j)))
+                                                        [by hypothesis given-family-member-x]
+
+                                                      // the flipped disequalities the cites below consume
+                                                      @z-is-not-x |
+                                                        z != x
+                                                        [using specialize alternating.disequalityIsSymmetric(x, z) x-is-not-z]
+                                                      @z-is-not-i |
+                                                        z != i
+                                                        [using specialize alternating.disequalityIsSymmetric(i, z) i-is-not-z]
+                                                      @x-is-not-i |
+                                                        x != i
+                                                        [using specialize alternating.disequalityIsSymmetric(i, x) i-is-not-x]
+
+                                                      // the canonical (i,z,x) from the off-pair shape, then two rotations to (x,i,z)
+                                                      @the-off-pair-shape |
+                                                        forall i2, j2, a, b: Element;
+                                                          i2 != j2 -> i2 != a -> i2 != b -> j2 != a -> j2 != b -> a != b ->
+                                                          inN(compose(transposition(i2, a), transposition(i2, j2))) ->
+                                                          inN(compose(transposition(i2, b), transposition(i2, j2))) ->
+                                                          inN(compose(transposition(i2, b), transposition(i2, a)))
+                                                        [using instantiation aThreeCycleOffTheFixedPairIsInTheSubgroup((fun g: Fn => inN(g))) closure]
+                                                      @the-canonical-member |
+                                                        inN(compose(transposition(i, x), transposition(i, z)))
+                                                        [using specialize the-off-pair-shape(i, j, z, x) i-is-not-j i-is-not-z i-is-not-x j-is-not-z j-is-not-x z-is-not-x family-member-z-is-in-n family-member-x-is-in-n]
+                                                      @the-rotation |
+                                                        forall i2, j2, k: Element;
+                                                          i2 != j2 -> i2 != k -> j2 != k ->
+                                                          inN(compose(transposition(i2, k), transposition(i2, j2))) ->
+                                                          inN(compose(transposition(j2, i2), transposition(j2, k)))
+                                                        [using instantiation rotationCarriesMembership((fun g: Fn => inN(g)))]
+                                                      @rotated-once |
+                                                        inN(compose(transposition(z, i), transposition(z, x)))
+                                                        [using specialize the-rotation(i, z, x) i-is-not-z i-is-not-x z-is-not-x the-canonical-member]
+                                                      @conclusion-leaf |
+                                                        inN(compose(transposition(x, z), transposition(x, i)))
+                                                        [using specialize the-rotation(z, x, i) z-is-not-x z-is-not-i x-is-not-i rotated-once]
+                                                    }
+                                                  @member-x-implies |
+                                                    inN(compose(transposition(i, x), transposition(i, j))) ->
+                                                      inN(compose(transposition(x, z), transposition(x, i)))
+                                                    [by discharge given-family-member-x]
+                                                }
+                                              @member-z-implies |
+                                                inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                                                  inN(compose(transposition(x, z), transposition(x, i)))
+                                                [by discharge given-family-member-z]
+                                            }
+                                          @x-not-z-implies |
+                                            x != z ->
+                                              inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                                              inN(compose(transposition(x, z), transposition(x, i)))
+                                            [by discharge given-x-not-z]
+                                        }
+                                      @j-not-z-implies |
+                                        j != z -> x != z ->
+                                          inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                                          inN(compose(transposition(x, z), transposition(x, i)))
+                                        [by discharge given-j-not-z]
+                                    }
+                                  @j-not-x-implies |
+                                    j != x -> j != z -> x != z ->
+                                      inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                                      inN(compose(transposition(x, z), transposition(x, i)))
+                                    [by discharge given-j-not-x]
+                                }
+                              @i-not-z-implies |
+                                i != z -> j != x -> j != z -> x != z ->
+                                  inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                                  inN(compose(transposition(x, z), transposition(x, i)))
+                                [by discharge given-i-not-z]
+                            }
+                          @i-not-x-implies |
+                            i != x -> i != z -> j != x -> j != z -> x != z ->
+                              inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                              inN(compose(transposition(x, z), transposition(x, i)))
+                            [by discharge given-i-not-x]
+                        }
+                      @i-not-j-implies |
+                        i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+                          inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                          inN(compose(transposition(x, z), transposition(x, i)))
+                        [by discharge given-i-not-j]
+                    }
+                  @discharge-z |
+                    forall z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+                      inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                      inN(compose(transposition(x, z), transposition(x, i)))
+                    [by generalize generalize-z]
+                }
+              @discharge-x |
+                forall x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+                  inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+                  inN(compose(transposition(x, z), transposition(x, i)))
+                [by generalize generalize-x]
+            }
+          @discharge-j |
+            forall j, x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+              inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+              inN(compose(transposition(x, z), transposition(x, i)))
+            [by generalize generalize-j]
+        }
+      @every-such-leaf |
+        forall i, j, x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+          inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+          inN(compose(transposition(x, z), transposition(x, i)))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      forall i, j, x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+      inN(compose(transposition(i, z), transposition(i, j))) -> inN(compose(transposition(i, x), transposition(i, j))) ->
+      inN(compose(transposition(x, z), transposition(x, i)))
+    [by discharge given-closure]
+qed
+
+// That leaf exercised at N = A_n.
+theorem theAlternatingGroupHasTheMiddleFixedPointShapes:
+  forall i, j, x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+  alternating.inAlternating(compose(transposition(i, z), transposition(i, j))) -> alternating.inAlternating(compose(transposition(i, x), transposition(i, j))) ->
+  alternating.inAlternating(compose(transposition(x, z), transposition(x, i)))
+proof
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; alternating.inAlternating(g) -> alternating.inAlternating(h) ->
+      alternating.inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @conclusion |
+    forall i, j, x, z: Element; i != j -> i != x -> i != z -> j != x -> j != z -> x != z ->
+      alternating.inAlternating(compose(transposition(i, z), transposition(i, j))) -> alternating.inAlternating(compose(transposition(i, x), transposition(i, j))) ->
+      alternating.inAlternating(compose(transposition(x, z), transposition(x, i)))
+    [using instantiation aThreeCycleWithTheFirstFixedPointInTheMiddleIsInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
+qed
