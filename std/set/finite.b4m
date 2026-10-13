@@ -5121,3 +5121,341 @@ proof
     forall n: Nat; difference(segment(succ(n)), singleton(numeral(n))) = segment(n)
     [by generalize generalize-n]
 qed
+
+// A point survives a removal of a DIFFERENT point: the bookkeeping each peel below needs.
+theorem aDistinctPointSurvivesARemoval: forall u: Set; forall x, y: Element;
+  member(x, u) -> x != y -> member(x, difference(u, singleton(y)))
+proof
+  @generalize-u |
+    fix u: Set {
+      @generalize-x |
+        fix x: Element {
+          @generalize-y |
+            fix y: Element {
+              @given-x-in-u |
+                assume member(x, u) {
+                  @given-x-not-y |
+                    assume x != y {
+                      @x-is-in-u |
+                        member(x, u)
+                        [by hypothesis given-x-in-u]
+                      @x-is-not-y |
+                        x != y
+                        [by hypothesis given-x-not-y]
+                      @singleton-membership |
+                        member(x, singleton(y)) iff x = y
+                        [using specialize set.singletonMember(y, x)]
+                      @difference-membership |
+                        member(x, difference(u, singleton(y)))
+                          iff (member(x, u) and (not member(x, singleton(y))))
+                        [using specialize set.differenceMember(u, singleton(y), x)]
+                      @conclusion-survives |
+                        member(x, difference(u, singleton(y)))
+                        [using tautology x-is-in-u x-is-not-y singleton-membership difference-membership]
+                    }
+                  @x-not-y-implies |
+                    x != y -> member(x, difference(u, singleton(y)))
+                    [by discharge given-x-not-y]
+                }
+              @conclusion-at-y |
+                member(x, u) -> x != y -> member(x, difference(u, singleton(y)))
+                [by discharge given-x-in-u]
+            }
+          @discharge-y |
+            forall y: Element; member(x, u) -> x != y -> member(x, difference(u, singleton(y)))
+            [by generalize generalize-y]
+        }
+      @discharge-x |
+        forall x, y: Element; member(x, u) -> x != y -> member(x, difference(u, singleton(y)))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall u: Set; forall x, y: Element;
+      member(x, u) -> x != y -> member(x, difference(u, singleton(y)))
+    [by generalize generalize-u]
+qed
+// A set with at least five members has a member outside any four named ones.
+//
+// WHY THIS EXISTS AND WHERE IT IS SPENT. The `Element` sort is unconstrained —
+// `std/element.b4m` declares it with no operations and no axioms — so "there are at least five
+// points" has no expression as a fact about `Element`, and is neither provable nor refutable
+// there. std's convention is to bound a domain with a SET carrying `hasSize`, the way
+// `decomposition.finiteSupportDecomposes` does, and this is that convention applied to the only
+// arithmetic Judson's §10.2 needs: a fifth point, given four.
+//
+// A_n's simplicity argument spends it twice. Moving a 3-cycle's third point
+// (`conjugatingAThreeCycleMovesItsThirdPoint`) needs a point to move TO and a point to park the
+// displaced one on, both outside the three in hand; reaching a 3-cycle's twist
+// (`conjugatingAThreeCycleByASwapAndASpareSwapGivesItsTwist`) needs two points outside the
+// three, whose swap makes the conjugator even. Four named points plus one supplied is the worst
+// case — which is why the bound is five and not six.
+//
+// Route: `removingAnElementDropsTheSize` four times, peeling one named point per step, then
+// `sizedSetHasAMember` on what is left (size `succ(m)`, so nonempty). Each peel needs its point
+// still present, which `aDistinctPointSurvivesARemoval` supplies. The chosen point's four
+// disequalities then come straight back out of the nested differences.
+//
+// The disequality hypotheses are written in the orientation the peels consume (`q != p`, not
+// `p != q`) because this file cannot reach a symmetry lemma: `disequalityIsSymmetric` lives in
+// `permutation/alternating.b4m`, which sits ABOVE set theory, and importing it here would be a
+// cyclical dependency. A caller holding the other orientation flips it with its own lemma.
+
+// A set with at least five members has a member outside any four named ones.
+//
+// WHY THIS EXISTS AND WHERE IT IS SPENT. The `Element` sort is unconstrained —
+// `std/element.b4m` declares it with no operations and no axioms — so "there are at least five
+// points" has no expression as a fact about `Element`, and is neither provable nor refutable
+// there. std's convention is to bound a domain with a SET carrying `hasSize`, the way
+// `decomposition.finiteSupportDecomposes` does, and this is that convention applied to the only
+// arithmetic Judson's §10.2 needs: a fifth point, given four.
+//
+// A_n's simplicity argument spends it twice. Moving a 3-cycle's third point
+// (`conjugatingAThreeCycleMovesItsThirdPoint`) needs a point to move TO and a point to park the
+// displaced one on, both outside the three in hand; reaching a 3-cycle's twist
+// (`conjugatingAThreeCycleByASwapAndASpareSwapGivesItsTwist`) needs two points outside the
+// three, whose swap makes the conjugator even. Four named points plus one supplied is the worst
+// case — which is why the bound is five and not six.
+//
+// Route: `removingAnElementDropsTheSize` four times, peeling one named point per step, then
+// `sizedSetHasAMember` on what is left (size `succ(m)`, so nonempty). Each peel needs its point
+// still present, which `aDistinctPointSurvivesARemoval` supplies. The chosen point's four
+// disequalities then come straight back out of the nested differences.
+//
+// The disequality hypotheses are written in the orientation the peels consume (`q != p`, not
+// `p != q`) because this file cannot reach a symmetry lemma: `disequalityIsSymmetric` lives in
+// `permutation/alternating.b4m`, which sits ABOVE set theory, so importing it here would be a
+// cyclical dependency. A caller holding the other orientation flips it with its own lemma.
+theorem aSetOfAtLeastFiveHasAFifthPoint: forall u: Set; forall m: Nat;
+  forall p, q, r, s: Element;
+  hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+  exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+proof
+  @generalize-u |
+    fix u: Set {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-p |
+            fix p: Element {
+              @generalize-q |
+                fix q: Element {
+                  @generalize-r |
+                    fix r: Element {
+                      @generalize-s |
+                        fix s: Element {
+                          @given-size |
+                            assume hasSize(u, succ(succ(succ(succ(succ(m)))))) {
+                              @given-p-in-u |
+                                assume member(p, u) {
+                                  @given-q-in-u |
+                                    assume member(q, u) {
+                                      @given-r-in-u |
+                                        assume member(r, u) {
+                                          @given-s-in-u |
+                                            assume member(s, u) {
+                                              @given-q-not-p |
+                                                assume q != p {
+                                                  @given-r-not-p |
+                                                    assume r != p {
+                                                      @given-r-not-q |
+                                                        assume r != q {
+                                                          @given-s-not-p |
+                                                            assume s != p {
+                                                              @given-s-not-q |
+                                                                assume s != q {
+                                                                  @given-s-not-r |
+                                                                    assume s != r {
+                                                                      @u-has-five-or-more |
+                                                                        hasSize(u, succ(succ(succ(succ(succ(m))))))
+                                                                        [by hypothesis given-size]
+                                                                      @p-is-in-u |
+                                                                        member(p, u)
+                                                                        [by hypothesis given-p-in-u]
+                                                                      @q-is-in-u |
+                                                                        member(q, u)
+                                                                        [by hypothesis given-q-in-u]
+                                                                      @r-is-in-u |
+                                                                        member(r, u)
+                                                                        [by hypothesis given-r-in-u]
+                                                                      @s-is-in-u |
+                                                                        member(s, u)
+                                                                        [by hypothesis given-s-in-u]
+                                                                      @q-is-not-p |
+                                                                        q != p
+                                                                        [by hypothesis given-q-not-p]
+                                                                      @r-is-not-p |
+                                                                        r != p
+                                                                        [by hypothesis given-r-not-p]
+                                                                      @r-is-not-q |
+                                                                        r != q
+                                                                        [by hypothesis given-r-not-q]
+                                                                      @s-is-not-p |
+                                                                        s != p
+                                                                        [by hypothesis given-s-not-p]
+                                                                      @s-is-not-q |
+                                                                        s != q
+                                                                        [by hypothesis given-s-not-q]
+                                                                      @s-is-not-r |
+                                                                        s != r
+                                                                        [by hypothesis given-s-not-r]
+
+                                                                      // peel p, then q, then r, then s
+                                                                      @after-removing-p |
+                                                                        hasSize(difference(u, singleton(p)), succ(succ(succ(succ(m)))))
+                                                                        [using specialize removingAnElementDropsTheSize(u, p, succ(succ(succ(succ(m))))) u-has-five-or-more p-is-in-u]
+                                                                      @q-survives-p |
+                                                                        member(q, difference(u, singleton(p)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(u, q, p) q-is-in-u q-is-not-p]
+                                                                      @after-removing-q |
+                                                                        hasSize(difference(difference(u, singleton(p)), singleton(q)), succ(succ(succ(m))))
+                                                                        [using specialize removingAnElementDropsTheSize(difference(u, singleton(p)), q, succ(succ(succ(m)))) after-removing-p q-survives-p]
+                                                                      @r-survives-p |
+                                                                        member(r, difference(u, singleton(p)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(u, r, p) r-is-in-u r-is-not-p]
+                                                                      @r-survives-q |
+                                                                        member(r, difference(difference(u, singleton(p)), singleton(q)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(difference(u, singleton(p)), r, q) r-survives-p r-is-not-q]
+                                                                      @after-removing-r |
+                                                                        hasSize(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), succ(succ(m)))
+                                                                        [using specialize removingAnElementDropsTheSize(difference(difference(u, singleton(p)), singleton(q)), r, succ(succ(m))) after-removing-q r-survives-q]
+                                                                      @s-survives-p |
+                                                                        member(s, difference(u, singleton(p)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(u, s, p) s-is-in-u s-is-not-p]
+                                                                      @s-survives-q |
+                                                                        member(s, difference(difference(u, singleton(p)), singleton(q)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(difference(u, singleton(p)), s, q) s-survives-p s-is-not-q]
+                                                                      @s-survives-r |
+                                                                        member(s, difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)))
+                                                                        [using specialize aDistinctPointSurvivesARemoval(difference(difference(u, singleton(p)), singleton(q)), s, r) s-survives-q s-is-not-r]
+                                                                      @after-removing-s |
+                                                                        hasSize(difference(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s)), succ(m))
+                                                                        [using specialize removingAnElementDropsTheSize(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), s, succ(m)) after-removing-r s-survives-r]
+
+                                                                      // what is left is nonempty, and its member misses all four
+                                                                      @a-point-remains |
+                                                                        exists t: Element; member(t, difference(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s)))
+                                                                        [using specialize sizedSetHasAMember(difference(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s)), m) after-removing-s]
+                                                                      @with-remaining-point-w |
+                                                                        unpack w: Element from a-point-remains {
+                                                                          @w-is-in-the-remainder |
+                                                                            member(w, difference(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s)))
+                                                                            [by hypothesis with-remaining-point-w]
+                                                                          @w-membership-past-s |
+                                                                            member(w, difference(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s))) iff (member(w, difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r))) and (not member(w, singleton(s))))
+                                                                            [using specialize set.differenceMember(difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r)), singleton(s), w)]
+                                                                          @w-singleton-s |
+                                                                            member(w, singleton(s)) iff w = s
+                                                                            [using specialize set.singletonMember(s, w)]
+                                                                          @w-membership-past-r |
+                                                                            member(w, difference(difference(difference(u, singleton(p)), singleton(q)), singleton(r))) iff (member(w, difference(difference(u, singleton(p)), singleton(q))) and (not member(w, singleton(r))))
+                                                                            [using specialize set.differenceMember(difference(difference(u, singleton(p)), singleton(q)), singleton(r), w)]
+                                                                          @w-singleton-r |
+                                                                            member(w, singleton(r)) iff w = r
+                                                                            [using specialize set.singletonMember(r, w)]
+                                                                          @w-membership-past-q |
+                                                                            member(w, difference(difference(u, singleton(p)), singleton(q))) iff (member(w, difference(u, singleton(p))) and (not member(w, singleton(q))))
+                                                                            [using specialize set.differenceMember(difference(u, singleton(p)), singleton(q), w)]
+                                                                          @w-singleton-q |
+                                                                            member(w, singleton(q)) iff w = q
+                                                                            [using specialize set.singletonMember(q, w)]
+                                                                          @w-membership-past-p |
+                                                                            member(w, difference(u, singleton(p))) iff (member(w, u) and (not member(w, singleton(p))))
+                                                                            [using specialize set.differenceMember(u, singleton(p), w)]
+                                                                          @w-singleton-p |
+                                                                            member(w, singleton(p)) iff w = p
+                                                                            [using specialize set.singletonMember(p, w)]
+                                                                          @conclusion-w-works |
+                                                                            member(w, u) and w != p and w != q and w != r and w != s
+                                                                            [using tautology w-is-in-the-remainder w-membership-past-s w-singleton-s w-membership-past-r w-singleton-r w-membership-past-q w-singleton-q w-membership-past-p w-singleton-p]
+                                                                          @conclusion-a-fifth-point-exists |
+                                                                            exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                                            [by witness(w) conclusion-w-works]
+                                                                        }
+                                                                      @conclusion-point-supplied |
+                                                                        exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                                        [by unpacked with-remaining-point-w]
+                                                                    }
+                                                                  @s-not-r-implies |
+                                                                    s != r ->
+                                                                      exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                                    [by discharge given-s-not-r]
+                                                                }
+                                                              @s-not-q-implies |
+                                                                s != q -> s != r ->
+                                                                  exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                                [by discharge given-s-not-q]
+                                                            }
+                                                          @s-not-p-implies |
+                                                            s != p -> s != q -> s != r ->
+                                                              exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                            [by discharge given-s-not-p]
+                                                        }
+                                                      @r-not-q-implies |
+                                                        r != q -> s != p -> s != q -> s != r ->
+                                                          exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                        [by discharge given-r-not-q]
+                                                    }
+                                                  @r-not-p-implies |
+                                                    r != p -> r != q -> s != p -> s != q -> s != r ->
+                                                      exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                    [by discharge given-r-not-p]
+                                                }
+                                              @q-not-p-implies |
+                                                q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                                                  exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                                [by discharge given-q-not-p]
+                                            }
+                                          @s-in-u-implies |
+                                            member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                                              exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                            [by discharge given-s-in-u]
+                                        }
+                                      @r-in-u-implies |
+                                        member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                                          exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                        [by discharge given-r-in-u]
+                                    }
+                                  @q-in-u-implies |
+                                    member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                                      exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                    [by discharge given-q-in-u]
+                                }
+                              @p-in-u-implies |
+                                member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                                  exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                                [by discharge given-p-in-u]
+                            }
+                          @size-implies |
+                            hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                              exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                            [by discharge given-size]
+                        }
+                      @discharge-s |
+                        forall s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                          exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                        [by generalize generalize-s]
+                    }
+                  @discharge-r |
+                    forall r, s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                      exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r, s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+                  exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+                [by generalize generalize-q]
+            }
+          @discharge-p |
+            forall p, q, r, s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+              exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+            [by generalize generalize-p]
+        }
+      @discharge-m |
+        forall m: Nat; forall p, q, r, s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+          exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall u: Set; forall m: Nat; forall p, q, r, s: Element; hasSize(u, succ(succ(succ(succ(succ(m)))))) -> member(p, u) -> member(q, u) -> member(r, u) -> member(s, u) -> q != p -> r != p -> r != q -> s != p -> s != q -> s != r ->
+      exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
+    [by generalize generalize-u]
+qed
