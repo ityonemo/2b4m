@@ -5063,3 +5063,325 @@ proof
       = compose(transposition(i, j), transposition(i, a)))
     [by generalize generalize-i]
 qed
+
+// ============================================================================
+// THE EXPLICIT CONJUGATE OF A 3-CYCLE
+// ============================================================================
+
+// sigma o (i,j,a) o sigma^-1 = (sigma i, sigma j, sigma a) — conjugation RELABELS a 3-cycle's
+// three points by sigma's action, and says exactly which 3-cycle you land on.
+//
+// `alternating.aConjugateOfAThreeCycleIsAThreeCycle` already gives the EXISTENTIAL form (the
+// conjugate is SOME 3-cycle), which is what Lemma 10.9 consumes. Judson's Lemma 10.10 needs
+// the explicit form: case 1 conjugates (a1,a2,a3) by a long cycle and must know the result is
+// (a2,a3,a4) in order to multiply it by (a1,a3,a2) and land on a 3-cycle.
+//
+// In std's fold a 3-cycle IS T(i,a) o T(i,j), so this is `conjugationIsMultiplicative` to
+// split the product and `conjugateOfATransposition` on each factor — the same two steps as
+// the existential version, but keeping the images rather than discarding them.
+theorem theConjugateOfAThreeCycleRelabelsItsPoints: forall sigma: Fn; forall i, j, a: Element;
+  invertible(sigma) ->
+  compose(compose(sigma, compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+  = compose(transposition(apply(sigma, i), apply(sigma, a)),
+  transposition(apply(sigma, i), apply(sigma, j)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @given-invertible |
+                    assume invertible(sigma) {
+                      @sigma-is-a-permutation |
+                        invertible(sigma)
+                        [by hypothesis given-invertible]
+                      @split-the-product |
+                        compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                          = compose(
+                          compose(compose(sigma, transposition(i, a)), inverse(sigma)),
+                          compose(compose(sigma, transposition(i, j)), inverse(sigma)))
+                        [using specialize permutation_cycle.conjugationIsMultiplicative(sigma, transposition(i, a), transposition(i, j)) sigma-is-a-permutation]
+                      @the-first-factor |
+                        compose(compose(sigma, transposition(i, a)), inverse(sigma))
+                          = transposition(apply(sigma, i), apply(sigma, a))
+                        [using specialize permutation_cycle.conjugateOfATransposition(sigma, i, a) sigma-is-a-permutation]
+                      @the-second-factor |
+                        compose(compose(sigma, transposition(i, j)), inverse(sigma))
+                          = transposition(apply(sigma, i), apply(sigma, j))
+                        [using specialize permutation_cycle.conjugateOfATransposition(sigma, i, j) sigma-is-a-permutation]
+                      @first-moved |
+                        compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                          = compose(transposition(apply(sigma, i), apply(sigma, a)),
+                          compose(compose(sigma, transposition(i, j)), inverse(sigma)))
+                        [by rewrite the-first-factor split-the-product]
+                      @conclusion-relabelled |
+                        compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                          = compose(transposition(apply(sigma, i), apply(sigma, a)),
+                          transposition(apply(sigma, i), apply(sigma, j)))
+                        [by rewrite the-second-factor first-moved]
+                    }
+                  @conclusion-at-a |
+                    invertible(sigma) ->
+                      compose(compose(sigma,
+                      compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                      = compose(transposition(apply(sigma, i), apply(sigma, a)),
+                      transposition(apply(sigma, i), apply(sigma, j)))
+                    [by discharge given-invertible]
+                }
+              @discharge-a |
+                forall a: Element; invertible(sigma) ->
+                  compose(compose(sigma,
+                  compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                  = compose(transposition(apply(sigma, i), apply(sigma, a)),
+                  transposition(apply(sigma, i), apply(sigma, j)))
+                [by generalize generalize-a]
+            }
+          @discharge-j |
+            forall j: Element; forall a: Element; invertible(sigma) ->
+              compose(compose(sigma,
+              compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+              = compose(transposition(apply(sigma, i), apply(sigma, a)),
+              transposition(apply(sigma, i), apply(sigma, j)))
+            [by generalize generalize-j]
+        }
+      @discharge-i |
+        forall i: Element; forall j: Element; forall a: Element; invertible(sigma) ->
+          compose(compose(sigma,
+          compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+          = compose(transposition(apply(sigma, i), apply(sigma, a)),
+          transposition(apply(sigma, i), apply(sigma, j)))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall sigma: Fn; forall i: Element; forall j: Element; forall a: Element;
+      invertible(sigma) ->
+      compose(compose(sigma,
+      compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+      = compose(transposition(apply(sigma, i), apply(sigma, a)),
+      transposition(apply(sigma, i), apply(sigma, j)))
+    [by generalize generalize-sigma]
+qed
+
+// A 3-CYCLE'S INVERSE is its twist: (i,j,a)^-1 = (i,a,j).
+//
+// In std's fold (i,j,a) is T(i,a) o T(i,j), so the claim is that T(i,j) o T(i,a) undoes it.
+// That needs only the involution law and reassociation — no case analysis on points, and no
+// distinctness hypothesis, since T(u,u) is the identity and the algebra still closes.
+//
+//   (T(i,a) T(i,j)) (T(i,j) T(i,a)) = T(i,a) (T(i,j) T(i,j)) T(i,a)
+//                                   = T(i,a) id T(i,a) = T(i,a) T(i,a) = id
+theorem aThreeCyclesInverseIsItsTwist: forall i, j, a: Element;
+  inverse(compose(transposition(i, a), transposition(i, j)))
+  = compose(transposition(i, j), transposition(i, a))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @ij-is-an-involution |
+                compose(transposition(i, j), transposition(i, j)) = identityFn
+                [using specialize transpositionIsAnInvolution(i, j)]
+              @ia-is-an-involution |
+                compose(transposition(i, a), transposition(i, a)) = identityFn
+                [using specialize transpositionIsAnInvolution(i, a)]
+              // regroup so the two T(i,j)'s meet
+              @regrouped |
+                compose(compose(transposition(i, a), transposition(i, j)),
+                  compose(transposition(i, j), transposition(i, a)))
+                  = compose(transposition(i, a),
+                  compose(compose(transposition(i, j), transposition(i, j)),
+                  transposition(i, a)))
+                [using assoc(composeAssoc)]
+              @inner-cancelled |
+                compose(compose(transposition(i, a), transposition(i, j)),
+                  compose(transposition(i, j), transposition(i, a)))
+                  = compose(transposition(i, a),
+                  compose(identityFn, transposition(i, a)))
+                [by rewrite ij-is-an-involution regrouped]
+              @identity-removed |
+                compose(identityFn, transposition(i, a)) = transposition(i, a)
+                [using specialize function.composeIdentityLeft(transposition(i, a))]
+              @down-to-the-outer-pair |
+                compose(compose(transposition(i, a), transposition(i, j)),
+                  compose(transposition(i, j), transposition(i, a)))
+                  = compose(transposition(i, a), transposition(i, a))
+                [by rewrite identity-removed inner-cancelled]
+              @composes-to-identity |
+                compose(compose(transposition(i, a), transposition(i, j)),
+                  compose(transposition(i, j), transposition(i, a))) = identityFn
+                [using chain down-to-the-outer-pair ia-is-an-involution]
+              // the 3-cycle is a composite of two transpositions, so it is a permutation and
+              // `inverseLeft` applies — which is what `aTwoSidedInverseIsUnique` needs on the
+              // left of the pair.
+              @ia-is-a-permutation |
+                invertible(transposition(i, a))
+                [using specialize transpositionIsAPermutation(i, a)]
+              @ij-is-a-permutation |
+                invertible(transposition(i, j))
+                [using specialize transpositionIsAPermutation(i, j)]
+              @the-three-cycle-is-a-permutation |
+                invertible(compose(transposition(i, a), transposition(i, j)))
+                [using specialize composeIsAPermutation(transposition(i, a), transposition(i, j)) ia-is-a-permutation ij-is-a-permutation]
+              @the-inverse-undoes-it-on-the-left |
+                compose(inverse(compose(transposition(i, a), transposition(i, j))),
+                  compose(transposition(i, a), transposition(i, j))) = identityFn
+                [using specialize function.inverseLeft(compose(transposition(i, a), transposition(i, j))) the-three-cycle-is-a-permutation]
+              @conclusion-the-twist-is-the-inverse |
+                inverse(compose(transposition(i, a), transposition(i, j)))
+                  = compose(transposition(i, j), transposition(i, a))
+                [using specialize aTwoSidedInverseIsUnique(compose(transposition(i, a), transposition(i, j)), inverse(compose(transposition(i, a), transposition(i, j))), compose(transposition(i, j), transposition(i, a))) the-inverse-undoes-it-on-the-left composes-to-identity]
+            }
+          @discharge-a |
+            forall a: Element;
+              inverse(compose(transposition(i, a), transposition(i, j)))
+              = compose(transposition(i, j), transposition(i, a))
+            [by generalize generalize-a]
+        }
+      @discharge-j |
+        forall j: Element; forall a: Element;
+          inverse(compose(transposition(i, a), transposition(i, j)))
+          = compose(transposition(i, j), transposition(i, a))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Element; forall j: Element; forall a: Element;
+      inverse(compose(transposition(i, a), transposition(i, j)))
+      = compose(transposition(i, j), transposition(i, a))
+    [by generalize generalize-i]
+qed
+
+// ============================================================================
+// JUDSON LEMMA 3 (10.10), CASE 1: sigma has a cycle longer than 3
+// ============================================================================
+
+// THE COMMUTATOR CLOSED FORM. For any permutation sigma and any points i, j, a:
+//
+//   sigma (i,j,a) sigma^-1 (i,j,a)^-1 = T(si,sa) T(si,sj) T(i,j) T(i,a)
+//
+// where si = sigma(i) and so on. This is `theConjugateOfAThreeCycleRelabelsItsPoints` for the
+// conjugate and `aThreeCyclesInverseIsItsTwist` for the inverse, composed.
+//
+// WHY THIS REPLACES JUDSON'S CASE 1. Judson conjugates (a1,a2,a3) by a cycle of length r and
+// computes the r-dependent result (a1,a3,ar). The commutator does not need r at all: it
+// depends ONLY on sigma's action at the three points, so there is no cycle-length arithmetic
+// and no induction on r. Verified exhaustively over all 7200 (sigma, i, j, a) combinations on
+// five points, and on sigma = (a1a2a3a4) o (p q) to confirm the disjoint remainder is
+// irrelevant.
+//
+// A caller in case 1 instantiates sigma at its long cycle; the three images are then the
+// cycle's next three points, which is where r > 3 earns the distinctness the 3-cycle needs.
+theorem theCommutatorOfAThreeCycleWithAPermutation: forall sigma: Fn; forall i, j, a: Element;
+  invertible(sigma) ->
+  compose(compose(compose(sigma, compose(transposition(i, a), transposition(i, j))),
+  inverse(sigma)), inverse(compose(transposition(i, a), transposition(i, j))))
+  = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+  transposition(apply(sigma, i), apply(sigma, j))),
+  compose(transposition(i, j), transposition(i, a)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @given-invertible |
+                    assume invertible(sigma) {
+                      @sigma-is-a-permutation |
+                        invertible(sigma)
+                        [by hypothesis given-invertible]
+                      @the-conjugate-relabels |
+                        compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma))
+                          = compose(transposition(apply(sigma, i), apply(sigma, a)),
+                          transposition(apply(sigma, i), apply(sigma, j)))
+                        [using specialize theConjugateOfAThreeCycleRelabelsItsPoints(sigma, i, j, a) sigma-is-a-permutation]
+                      @the-inverse-is-the-twist |
+                        inverse(compose(transposition(i, a), transposition(i, j)))
+                          = compose(transposition(i, j), transposition(i, a))
+                        [using specialize aThreeCyclesInverseIsItsTwist(i, j, a)]
+                      @the-product-is-itself |
+                        compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                          = compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                        [by reflexivity]
+                      @conjugate-substituted |
+                        compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                          = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+                          transposition(apply(sigma, i), apply(sigma, j))),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                        [by rewrite the-conjugate-relabels the-product-is-itself]
+                      @conclusion-closed-form |
+                        compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                          = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+                          transposition(apply(sigma, i), apply(sigma, j))),
+                          compose(transposition(i, j), transposition(i, a)))
+                        [by rewrite the-inverse-is-the-twist conjugate-substituted]
+                    }
+                  @conclusion-at-a |
+                    invertible(sigma) ->
+                      compose(compose(compose(sigma,
+                      compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                      inverse(compose(transposition(i, a), transposition(i, j))))
+                      = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+                      transposition(apply(sigma, i), apply(sigma, j))),
+                      compose(transposition(i, j), transposition(i, a)))
+                    [by discharge given-invertible]
+                }
+              @discharge-a |
+                forall a: Element; invertible(sigma) ->
+                  compose(compose(compose(sigma,
+                  compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+                  inverse(compose(transposition(i, a), transposition(i, j))))
+                  = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+                  transposition(apply(sigma, i), apply(sigma, j))),
+                  compose(transposition(i, j), transposition(i, a)))
+                [by generalize generalize-a]
+            }
+          @discharge-j |
+            forall j: Element; forall a: Element; invertible(sigma) ->
+              compose(compose(compose(sigma,
+              compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+              inverse(compose(transposition(i, a), transposition(i, j))))
+              = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+              transposition(apply(sigma, i), apply(sigma, j))),
+              compose(transposition(i, j), transposition(i, a)))
+            [by generalize generalize-j]
+        }
+      @discharge-i |
+        forall i: Element; forall j: Element; forall a: Element; invertible(sigma) ->
+          compose(compose(compose(sigma,
+          compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+          inverse(compose(transposition(i, a), transposition(i, j))))
+          = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+          transposition(apply(sigma, i), apply(sigma, j))),
+          compose(transposition(i, j), transposition(i, a)))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall sigma: Fn; forall i: Element; forall j: Element; forall a: Element;
+      invertible(sigma) ->
+      compose(compose(compose(sigma,
+      compose(transposition(i, a), transposition(i, j))), inverse(sigma)),
+      inverse(compose(transposition(i, a), transposition(i, j))))
+      = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+      transposition(apply(sigma, i), apply(sigma, j))),
+      compose(transposition(i, j), transposition(i, a)))
+    [by generalize generalize-sigma]
+qed
