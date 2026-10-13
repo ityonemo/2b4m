@@ -66,6 +66,7 @@ fact transpositionIsAPermutation = permutation.transpositionIsAPermutation
 fact composeIsAPermutation = permutation.composeIsAPermutation
 fact conjugationIsMultiplicative = permutation_cycle.conjugationIsMultiplicative
 fact conjugateOfATransposition = permutation_cycle.conjugateOfATransposition
+fact transpositionIsSymmetric = permutation_parity.transpositionIsSymmetric
 
 // -- identity (1): (i,a,j) = (i,j,a)^2 -----------------------------------------------------
 
@@ -5383,5 +5384,523 @@ proof
       = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
       transposition(apply(sigma, i), apply(sigma, j))),
       compose(transposition(i, j), transposition(i, a)))
+    [by generalize generalize-sigma]
+qed
+
+// ============================================================================
+// JUDSON LEMMA 3 (10.10), CASE 5: sigma is a product of disjoint 2-cycles
+// ============================================================================
+
+// A PERMUTATION THAT SWAPS TWO OF A 3-CYCLE'S POINTS AND FIXES THE THIRD HAS THE
+// 3-CYCLE ITSELF AS ITS COMMUTATOR WITH IT.
+//
+//   sigma i = j, sigma j = i, sigma a = a   ==>   sigma (i,j,a) sigma^-1 (i,j,a)^-1 = (i,j,a)
+//
+// WHY THIS IS CASE 5. Judson's case 5 takes sigma = tau (a1a2)(a3a4) with tau a disjoint
+// product of an even number more 2-cycles, conjugates by (a1a2a3) to reach (a1a3)(a2a4), and
+// then conjugates AGAIN. The second conjugation is the one that lands a 3-cycle, and what
+// drives it is not the 2-cycle structure at all — only that the permutation SWAPS two of the
+// chosen 3-cycle's points and FIXES the third. Choosing the 3-cycle (a1,a3,a5) against
+// sigma' = (a1a3)(a2a4) is exactly that configuration: a5 is the fifth point, which is where
+// n >= 5 is spent.
+//
+// So the hypotheses here are the three point-values the proof uses, not a cycle type. A
+// caller in case 5 discharges them from its decomposition: the swapped pair comes from one
+// 2-cycle and the fixed point is any point outside sigma's support.
+//
+// The algebra: `theCommutatorOfAThreeCycleWithAPermutation` gives
+// T(si,sa) T(si,sj) T(i,j) T(i,a); substituting si=j, sj=i, sa=a makes the middle pair
+// T(j,i) T(i,j) = T(i,j) T(i,j) = identity, leaving T(j,a) T(i,a) — which is (i,j,a) in
+// std's fold, since (x,y,z) = T(x,z) T(x,y) and (i,j,a) rotates to (j,a,i).
+//
+// Verified computationally on six points before writing: with sigma = (a1a3)(a2a4) and the
+// 3-cycle (a1,a3,a5) the commutator is {a1->a3, a3->a5, a5->a1}, and the closed form above
+// reproduces it exactly.
+theorem theCommutatorWithASwapOfTwoOfItsPoints: forall sigma: Fn; forall i, j, a: Element;
+  invertible(sigma) ->
+  apply(sigma, i) = j ->
+  apply(sigma, j) = i ->
+  apply(sigma, a) = a ->
+  compose(compose(compose(sigma, compose(transposition(i, a), transposition(i, j))),
+  inverse(sigma)), inverse(compose(transposition(i, a), transposition(i, j))))
+  = compose(transposition(j, a), transposition(i, a))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @given-invertible |
+                    assume invertible(sigma) {
+                      @given-i-goes-to-j |
+                        assume apply(sigma, i) = j {
+                          @given-j-goes-to-i |
+                            assume apply(sigma, j) = i {
+                              @given-a-is-fixed |
+                                assume apply(sigma, a) = a {
+                                  @sigma-is-a-permutation |
+                                    invertible(sigma)
+                                    [by hypothesis given-invertible]
+                                  @i-goes-to-j |
+                                    apply(sigma, i) = j
+                                    [by hypothesis given-i-goes-to-j]
+                                  @j-goes-to-i |
+                                    apply(sigma, j) = i
+                                    [by hypothesis given-j-goes-to-i]
+                                  @a-is-fixed |
+                                    apply(sigma, a) = a
+                                    [by hypothesis given-a-is-fixed]
+
+                                  // the generic closed form, before substituting the images
+                                  @the-commutator-closed-form |
+                                    compose(compose(compose(sigma,
+                                      compose(transposition(i, a), transposition(i, j))),
+                                      inverse(sigma)),
+                                      inverse(compose(transposition(i, a), transposition(i, j))))
+                                      = compose(compose(transposition(apply(sigma, i), apply(sigma, a)),
+                                      transposition(apply(sigma, i), apply(sigma, j))),
+                                      compose(transposition(i, j), transposition(i, a)))
+                                    [using specialize theCommutatorOfAThreeCycleWithAPermutation(sigma, i, j, a) sigma-is-a-permutation]
+
+                                  // substitute the three images: si = j, sj = i, sa = a
+                                  @images-substituted |
+                                    compose(compose(compose(sigma,
+                                      compose(transposition(i, a), transposition(i, j))),
+                                      inverse(sigma)),
+                                      inverse(compose(transposition(i, a), transposition(i, j))))
+                                      = compose(compose(transposition(j, a),
+                                      transposition(j, i)),
+                                      compose(transposition(i, j), transposition(i, a)))
+                                    [using simplify i-goes-to-j j-goes-to-i a-is-fixed the-commutator-closed-form]
+
+                                  // T(j,i) = T(i,j), so the middle pair is an involution
+                                  @the-swap-is-symmetric |
+                                    transposition(j, i) = transposition(i, j)
+                                    [using specialize permutation_parity.transpositionIsSymmetric(j, i)]
+                                  @ij-is-an-involution |
+                                    compose(transposition(i, j), transposition(i, j)) = identityFn
+                                    [using specialize permutation.transpositionIsAnInvolution(i, j)]
+
+                                  // regroup so the two T(i,j)'s meet, then cancel
+                                  @regrouped |
+                                    compose(compose(transposition(j, a), transposition(i, j)),
+                                      compose(transposition(i, j), transposition(i, a)))
+                                      = compose(transposition(j, a),
+                                      compose(compose(transposition(i, j), transposition(i, j)),
+                                      transposition(i, a)))
+                                    [using assoc(composeAssoc)]
+                                  @middle-cancels |
+                                    compose(transposition(j, a),
+                                      compose(compose(transposition(i, j), transposition(i, j)),
+                                      transposition(i, a)))
+                                      = compose(transposition(j, a),
+                                      compose(identityFn, transposition(i, a)))
+                                    [using simplify ij-is-an-involution]
+                                  @identity-drops |
+                                    compose(identityFn, transposition(i, a)) = transposition(i, a)
+                                    [using specialize function.composeIdentityLeft(transposition(i, a))]
+                                  @right-factor-reduced |
+                                    compose(transposition(j, a),
+                                      compose(identityFn, transposition(i, a)))
+                                      = compose(transposition(j, a), transposition(i, a))
+                                    [using simplify identity-drops]
+
+                                  @conclusion-case-five |
+                                    compose(compose(compose(sigma,
+                                      compose(transposition(i, a), transposition(i, j))),
+                                      inverse(sigma)),
+                                      inverse(compose(transposition(i, a), transposition(i, j))))
+                                      = compose(transposition(j, a), transposition(i, a))
+                                    [using chain images-substituted the-swap-is-symmetric regrouped middle-cancels right-factor-reduced]
+                                }
+                              @a-fixed-implies |
+                                apply(sigma, a) = a ->
+                                  compose(compose(compose(sigma,
+                                  compose(transposition(i, a), transposition(i, j))),
+                                  inverse(sigma)),
+                                  inverse(compose(transposition(i, a), transposition(i, j))))
+                                  = compose(transposition(j, a), transposition(i, a))
+                                [by discharge given-a-is-fixed]
+                            }
+                          @j-to-i-implies |
+                            apply(sigma, j) = i ->
+                              apply(sigma, a) = a ->
+                              compose(compose(compose(sigma,
+                              compose(transposition(i, a), transposition(i, j))),
+                              inverse(sigma)),
+                              inverse(compose(transposition(i, a), transposition(i, j))))
+                              = compose(transposition(j, a), transposition(i, a))
+                            [by discharge given-j-goes-to-i]
+                        }
+                      @i-to-j-implies |
+                        apply(sigma, i) = j ->
+                          apply(sigma, j) = i ->
+                          apply(sigma, a) = a ->
+                          compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))),
+                          inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                          = compose(transposition(j, a), transposition(i, a))
+                        [by discharge given-i-goes-to-j]
+                    }
+                  @conclusion-at-a |
+                    invertible(sigma) ->
+                      apply(sigma, i) = j ->
+                      apply(sigma, j) = i ->
+                      apply(sigma, a) = a ->
+                      compose(compose(compose(sigma,
+                      compose(transposition(i, a), transposition(i, j))),
+                      inverse(sigma)),
+                      inverse(compose(transposition(i, a), transposition(i, j))))
+                      = compose(transposition(j, a), transposition(i, a))
+                    [by discharge given-invertible]
+                }
+              @conclusion-for-all-a |
+                forall a: Element; invertible(sigma) ->
+                  apply(sigma, i) = j ->
+                  apply(sigma, j) = i ->
+                  apply(sigma, a) = a ->
+                  compose(compose(compose(sigma,
+                  compose(transposition(i, a), transposition(i, j))),
+                  inverse(sigma)),
+                  inverse(compose(transposition(i, a), transposition(i, j))))
+                  = compose(transposition(j, a), transposition(i, a))
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-j-a |
+            forall j, a: Element; invertible(sigma) ->
+              apply(sigma, i) = j ->
+              apply(sigma, j) = i ->
+              apply(sigma, a) = a ->
+              compose(compose(compose(sigma,
+              compose(transposition(i, a), transposition(i, j))),
+              inverse(sigma)),
+              inverse(compose(transposition(i, a), transposition(i, j))))
+              = compose(transposition(j, a), transposition(i, a))
+            [by generalize generalize-j]
+        }
+      @conclusion-for-all-points |
+        forall i, j, a: Element; invertible(sigma) ->
+          apply(sigma, i) = j ->
+          apply(sigma, j) = i ->
+          apply(sigma, a) = a ->
+          compose(compose(compose(sigma,
+          compose(transposition(i, a), transposition(i, j))),
+          inverse(sigma)),
+          inverse(compose(transposition(i, a), transposition(i, j))))
+          = compose(transposition(j, a), transposition(i, a))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall sigma: Fn; forall i, j, a: Element; invertible(sigma) ->
+      apply(sigma, i) = j ->
+      apply(sigma, j) = i ->
+      apply(sigma, a) = a ->
+      compose(compose(compose(sigma,
+      compose(transposition(i, a), transposition(i, j))),
+      inverse(sigma)),
+      inverse(compose(transposition(i, a), transposition(i, j))))
+      = compose(transposition(j, a), transposition(i, a))
+    [by generalize generalize-sigma]
+qed
+
+// The commutator value of `theCommutatorWithASwapOfTwoOfItsPoints` IS the 3-cycle (i,j,a).
+//
+// That theorem lands `T(j,a) T(i,a)`, which is not in std's shared-first-point fold
+// `(x,y,z) = T(x,z) T(x,y)`. It becomes one by flipping both factors with
+// `transpositionIsSymmetric` — giving `T(a,j) T(a,i)`, which is `(a,i,j)` — and rotating with
+// `aThreeCycleIsInvariantUnderRotation` at (a,i,j), whose statement is exactly
+// `T(i,a) T(i,j) = T(a,j) T(a,i)`.
+//
+// Distinctness IS needed and only partly: the identity fails at i = j and at j = a (checked),
+// so those two are the hypotheses; i = a is not consulted. Both are free to a caller, whose
+// three points are a 3-cycle's.
+theorem aSwappedCommutatorIsTheThreeCycle: forall i, j, a: Element;
+  i != j -> i != a -> j != a ->
+  compose(transposition(j, a), transposition(i, a))
+  = compose(transposition(i, a), transposition(i, j))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-a |
+            fix a: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-a |
+                    assume i != a {
+                      @given-j-not-a |
+                        assume j != a {
+                          @i-is-not-j |
+                            i != j
+                            [by hypothesis given-i-not-j]
+                          @i-is-not-a |
+                            i != a
+                            [by hypothesis given-i-not-a]
+                          @j-is-not-a |
+                            j != a
+                            [by hypothesis given-j-not-a]
+
+                          // flip both factors onto the shared point a
+                          @first-factor-flipped |
+                            transposition(j, a) = transposition(a, j)
+                            [using specialize permutation_parity.transpositionIsSymmetric(j, a)]
+                          @second-factor-flipped |
+                            transposition(i, a) = transposition(a, i)
+                            [using specialize permutation_parity.transpositionIsSymmetric(i, a)]
+                          @shared-point-form |
+                            compose(transposition(j, a), transposition(i, a))
+                              = compose(transposition(a, j), transposition(a, i))
+                            [using simplify first-factor-flipped second-factor-flipped]
+
+                          // rotation at (a, i, j): T(i,a) T(i,j) = T(a,j) T(a,i)
+                          @a-is-not-i |
+                            a != i
+                            [using specialize alternating.disequalityIsSymmetric(i, a) i-is-not-a]
+                          @a-is-not-j |
+                            a != j
+                            [using specialize alternating.disequalityIsSymmetric(j, a) j-is-not-a]
+                          @rotated |
+                            compose(transposition(i, a), transposition(i, j))
+                              = compose(transposition(a, j), transposition(a, i))
+                            [using specialize aThreeCycleIsInvariantUnderRotation(a, i, j) a-is-not-i a-is-not-j i-is-not-j]
+                          @rotated-flipped |
+                            compose(transposition(a, j), transposition(a, i))
+                              = compose(transposition(i, a), transposition(i, j))
+                            [by symmetry rotated]
+
+                          @conclusion-three-cycle-form |
+                            compose(transposition(j, a), transposition(i, a))
+                              = compose(transposition(i, a), transposition(i, j))
+                            [using chain shared-point-form rotated-flipped]
+                        }
+                      @j-not-a-implies |
+                        j != a ->
+                          compose(transposition(j, a), transposition(i, a))
+                          = compose(transposition(i, a), transposition(i, j))
+                        [by discharge given-j-not-a]
+                    }
+                  @i-not-a-implies |
+                    i != a -> j != a ->
+                      compose(transposition(j, a), transposition(i, a))
+                      = compose(transposition(i, a), transposition(i, j))
+                    [by discharge given-i-not-a]
+                }
+              @conclusion-at-a |
+                i != j -> i != a -> j != a ->
+                  compose(transposition(j, a), transposition(i, a))
+                  = compose(transposition(i, a), transposition(i, j))
+                [by discharge given-i-not-j]
+            }
+          @discharge-a |
+            forall a: Element; i != j -> i != a -> j != a ->
+              compose(transposition(j, a), transposition(i, a))
+              = compose(transposition(i, a), transposition(i, j))
+            [by generalize generalize-a]
+        }
+      @discharge-j |
+        forall j, a: Element; i != j -> i != a -> j != a ->
+          compose(transposition(j, a), transposition(i, a))
+          = compose(transposition(i, a), transposition(i, j))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, a: Element; i != j -> i != a -> j != a ->
+      compose(transposition(j, a), transposition(i, a))
+      = compose(transposition(i, a), transposition(i, j))
+    [by generalize generalize-i]
+qed
+
+// CASE 5, STATED THE WAY A CALLER WANTS IT. The two theorems above composed:
+//
+//   sigma i = j, sigma j = i, sigma a = a,  i,j,a distinct
+//     ==>  sigma (i,j,a) sigma^-1 (i,j,a)^-1  =  (i,j,a)
+//
+// The commutator of a 3-cycle with a permutation that swaps two of its points and fixes the
+// third is that very 3-cycle. For case 5 this is the whole point: sigma lies in the normal
+// subgroup N, so the commutator does too (N is closed under conjugation and inverses), and the
+// commutator is a 3-cycle — which is what Lemma 10.10 claims.
+//
+// Spending n >= 5: the fixed point a must sit outside the swapped pair, and in case 5 sigma is
+// a product of disjoint 2-cycles, so a is taken from the fifth point.
+theorem theCommutatorWithASwapIsAThreeCycle: forall sigma: Fn; forall i, j, a: Element;
+  invertible(sigma) ->
+  i != j -> i != a -> j != a ->
+  apply(sigma, i) = j ->
+  apply(sigma, j) = i ->
+  apply(sigma, a) = a ->
+  compose(compose(compose(sigma, compose(transposition(i, a), transposition(i, j))),
+  inverse(sigma)), inverse(compose(transposition(i, a), transposition(i, j))))
+  = compose(transposition(i, a), transposition(i, j))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @given-invertible |
+                    assume invertible(sigma) {
+                      @given-i-not-j |
+                        assume i != j {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-j-not-a |
+                                assume j != a {
+                                  @given-i-goes-to-j |
+                                    assume apply(sigma, i) = j {
+                                      @given-j-goes-to-i |
+                                        assume apply(sigma, j) = i {
+                                          @given-a-is-fixed |
+                                            assume apply(sigma, a) = a {
+                                              @sigma-is-a-permutation |
+                                                invertible(sigma)
+                                                [by hypothesis given-invertible]
+                                              @i-is-not-j |
+                                                i != j
+                                                [by hypothesis given-i-not-j]
+                                              @i-is-not-a |
+                                                i != a
+                                                [by hypothesis given-i-not-a]
+                                              @j-is-not-a |
+                                                j != a
+                                                [by hypothesis given-j-not-a]
+                                              @i-goes-to-j |
+                                                apply(sigma, i) = j
+                                                [by hypothesis given-i-goes-to-j]
+                                              @j-goes-to-i |
+                                                apply(sigma, j) = i
+                                                [by hypothesis given-j-goes-to-i]
+                                              @a-is-fixed |
+                                                apply(sigma, a) = a
+                                                [by hypothesis given-a-is-fixed]
+
+                                              @the-commutator-value |
+                                                compose(compose(compose(sigma,
+                                                  compose(transposition(i, a), transposition(i, j))),
+                                                  inverse(sigma)),
+                                                  inverse(compose(transposition(i, a), transposition(i, j))))
+                                                  = compose(transposition(j, a), transposition(i, a))
+                                                [using specialize theCommutatorWithASwapOfTwoOfItsPoints(sigma, i, j, a) sigma-is-a-permutation i-goes-to-j j-goes-to-i a-is-fixed]
+                                              @that-value-is-the-three-cycle |
+                                                compose(transposition(j, a), transposition(i, a))
+                                                  = compose(transposition(i, a), transposition(i, j))
+                                                [using specialize aSwappedCommutatorIsTheThreeCycle(i, j, a) i-is-not-j i-is-not-a j-is-not-a]
+                                              @conclusion-commutator-is-the-three-cycle |
+                                                compose(compose(compose(sigma,
+                                                  compose(transposition(i, a), transposition(i, j))),
+                                                  inverse(sigma)),
+                                                  inverse(compose(transposition(i, a), transposition(i, j))))
+                                                  = compose(transposition(i, a), transposition(i, j))
+                                                [using chain the-commutator-value that-value-is-the-three-cycle]
+                                            }
+                                          @a-fixed-implies |
+                                            apply(sigma, a) = a ->
+                                              compose(compose(compose(sigma,
+                                              compose(transposition(i, a), transposition(i, j))),
+                                              inverse(sigma)),
+                                              inverse(compose(transposition(i, a), transposition(i, j))))
+                                              = compose(transposition(i, a), transposition(i, j))
+                                            [by discharge given-a-is-fixed]
+                                        }
+                                      @j-to-i-implies |
+                                        apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                          compose(compose(compose(sigma,
+                                          compose(transposition(i, a), transposition(i, j))),
+                                          inverse(sigma)),
+                                          inverse(compose(transposition(i, a), transposition(i, j))))
+                                          = compose(transposition(i, a), transposition(i, j))
+                                        [by discharge given-j-goes-to-i]
+                                    }
+                                  @i-to-j-implies |
+                                    apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                      compose(compose(compose(sigma,
+                                      compose(transposition(i, a), transposition(i, j))),
+                                      inverse(sigma)),
+                                      inverse(compose(transposition(i, a), transposition(i, j))))
+                                      = compose(transposition(i, a), transposition(i, j))
+                                    [by discharge given-i-goes-to-j]
+                                }
+                              @j-not-a-implies |
+                                j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                  compose(compose(compose(sigma,
+                                  compose(transposition(i, a), transposition(i, j))),
+                                  inverse(sigma)),
+                                  inverse(compose(transposition(i, a), transposition(i, j))))
+                                  = compose(transposition(i, a), transposition(i, j))
+                                [by discharge given-j-not-a]
+                            }
+                          @i-not-a-implies |
+                            i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                              compose(compose(compose(sigma,
+                              compose(transposition(i, a), transposition(i, j))),
+                              inverse(sigma)),
+                              inverse(compose(transposition(i, a), transposition(i, j))))
+                              = compose(transposition(i, a), transposition(i, j))
+                            [by discharge given-i-not-a]
+                        }
+                      @i-not-j-implies |
+                        i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                          compose(compose(compose(sigma,
+                          compose(transposition(i, a), transposition(i, j))),
+                          inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j))))
+                          = compose(transposition(i, a), transposition(i, j))
+                        [by discharge given-i-not-j]
+                    }
+                  @conclusion-at-a |
+                    invertible(sigma) -> i != j -> i != a -> j != a ->
+                      apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                      compose(compose(compose(sigma,
+                      compose(transposition(i, a), transposition(i, j))),
+                      inverse(sigma)),
+                      inverse(compose(transposition(i, a), transposition(i, j))))
+                      = compose(transposition(i, a), transposition(i, j))
+                    [by discharge given-invertible]
+                }
+              @discharge-a |
+                forall a: Element; invertible(sigma) -> i != j -> i != a -> j != a ->
+                  apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                  compose(compose(compose(sigma,
+                  compose(transposition(i, a), transposition(i, j))),
+                  inverse(sigma)),
+                  inverse(compose(transposition(i, a), transposition(i, j))))
+                  = compose(transposition(i, a), transposition(i, j))
+                [by generalize generalize-a]
+            }
+          @discharge-j |
+            forall j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a ->
+              apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+              compose(compose(compose(sigma,
+              compose(transposition(i, a), transposition(i, j))),
+              inverse(sigma)),
+              inverse(compose(transposition(i, a), transposition(i, j))))
+              = compose(transposition(i, a), transposition(i, j))
+            [by generalize generalize-j]
+        }
+      @discharge-i |
+        forall i, j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a ->
+          apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+          compose(compose(compose(sigma,
+          compose(transposition(i, a), transposition(i, j))),
+          inverse(sigma)),
+          inverse(compose(transposition(i, a), transposition(i, j))))
+          = compose(transposition(i, a), transposition(i, j))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall sigma: Fn; forall i, j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a ->
+      apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+      compose(compose(compose(sigma,
+      compose(transposition(i, a), transposition(i, j))),
+      inverse(sigma)),
+      inverse(compose(transposition(i, a), transposition(i, j))))
+      = compose(transposition(i, a), transposition(i, j))
     [by generalize generalize-sigma]
 qed
