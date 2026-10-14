@@ -805,3 +805,26 @@ arms: the 13 real leaves plus 3 contradiction arms, and the extra three are the 
 proof.
 
 Probed in a throwaway file before generating anything, like the other four patterns.
+
+**THE ASSEMBLY PLAN, VERIFIED MECHANICALLY BEFORE GENERATION (2026-10-14).**
+
+Four things checked by script rather than by reading, each of which would have surfaced as a
+confusing failure partway through a 500-line generated proof:
+
+1. **Every leaf's GOAL matches its schema's CONCLUSION** under an explicit variable
+   substitution. 13/13. This is the check that found the two missing rotation leaves.
+2. **Every schema's stated conclusion matches what the file actually proves** — parsed out of
+   `alternating-identities.b4m` rather than trusted from my spec. 12/12.
+3. **Every leaf's ARGUMENTS are fully pinned.** Binders not appearing in a conclusion came out
+   "UNPINNED" on the first pass; they are the fixed points `i`/`j`, which the assembly has in
+   scope, so filling them is mechanical — but silently passing the wrong one would have been a
+   long debug.
+4. **Every leaf's required DISEQUALITIES are derivable in its arm.** This one needed two passes.
+   The first reported 12 of 13 leaves missing facts like `z != i` in the arm where `x = i`; that
+   was my checker substituting in one direction only. Substituting both ways — `z != x` with
+   `x = i` gives `z != i` — clears all 13.
+
+Worth noting that (4)'s first result was a false alarm from the CHECKER, not the plan, and the
+fix was to make the checker as capable as a `rewrite` step is. A plan-verification script that
+is weaker than the proof system will report gaps that are not there; one that is stronger will
+miss gaps that are. Matching it to the available inference is the whole trick.
