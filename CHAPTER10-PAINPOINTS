@@ -828,3 +828,16 @@ Worth noting that (4)'s first result was a false alarm from the CHECKER, not the
 fix was to make the checker as capable as a `rewrite` step is. A plan-verification script that
 is weaker than the proof system will report gaps that are not there; one that is stronger will
 miss gaps that are. Matching it to the available inference is the whole trick.
+
+**`simplify` CANNOT PROVE A DISEQUATION (2026-10-14).** Deriving `z != i` from `z != x` and
+`x = i` looks like equational rewriting, and `[using simplify x-is-i z-not-x]` is the natural
+spelling. It fails: `simplify: goal is not an equation`. The accelerant rewrites to a shared
+normal form and needs an EQUATION goal; a disequation is not one.
+
+`[by rewrite x-is-i z-not-x]` does it — the kernel rule substitutes into any formula, including
+a disequation, and is bidirectional. Every one of the assembly's 16 arms needs two of these
+(the free coordinates' disequalities against i and j), so getting it wrong once would have been
+getting it wrong 32 times.
+
+Caught by probing arm (0,1) complete — statement, derivations, conclusion, AND an instantiation
+— before generating the other fifteen.
