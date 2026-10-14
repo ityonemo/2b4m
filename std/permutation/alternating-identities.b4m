@@ -10056,3 +10056,174 @@ proof
       alternating.inAlternating(compose(transposition(x, z), transposition(x, y)))
     [using instantiation everyThreeCycleIsInANormalSubgroupWithTheFamily((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
 qed
+
+// ============================================================================
+// LEMMA 10.9, COMPLETE: one 3-cycle in N gives EVERY 3-cycle in N
+// ============================================================================
+
+// The three pieces composed. A normal subgroup N of A_n that contains one member of the fixed
+// family `(i,j,a)` contains every 3-cycle:
+//
+//   reachability  — one conjugation carries `(i,j,a)` to `(i,j,k)` for any k
+//                   (`aNormalSubgroupWithOneFamilyMemberHasThemAll`)
+//   the selector  — every 3-cycle on distinct points is a product of family members
+//                   (`everyThreeCycleIsInANormalSubgroupWithTheFamily`)
+//   the bridge    — "every distinct triple" IS "every 3-cycle", since `isAThreeCycle` is a
+//                   nested existential (`everyTripleInTheSubgroupMeansEveryThreeCycle`)
+//
+// This is the premise `aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup` wants, and
+// therefore the second of the two premises `simplicity.b4m`'s capstone takes. Discharging it
+// leaves only Lemma 10.10's decomposition walk between the corpus and Theorem 10.11.
+//
+// The conjugator hypothesis is stated as the caller supplies it: for each target point k, SOME
+// even permutation whose action on the three points is the one the move needs. A caller builds
+// it from `set_finite.aSetOfAtLeastFiveHasAFifthPoint` — which is where n >= 5 is spent, and why
+// it does not appear here.
+theorem aNormalSubgroupWithAFamilyMemberHasEveryThreeCycle(inN(Fn)):
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+  inN(compose(transposition(i2, k), transposition(i2, j2)))) ->
+  (exists i: Element; exists j: Element; i != j) ->
+  forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+proof
+  @given-closure |
+    assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+      @closure |
+        forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+        [by hypothesis given-closure]
+      @given-family |
+        assume forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+          inN(compose(transposition(i2, k), transposition(i2, j2))) {
+          @family |
+            forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+              inN(compose(transposition(i2, k), transposition(i2, j2)))
+            [by hypothesis given-family]
+
+          // the selector: every distinct triple's 3-cycle is in N
+          @the-selector |
+            (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+              inN(compose(transposition(i2, k), transposition(i2, j2)))) ->
+              forall i, j, x, y, z: Element;
+              i != j -> x != y -> x != z -> y != z ->
+              inN(compose(transposition(x, z), transposition(x, y)))
+            [using instantiation everyThreeCycleIsInANormalSubgroupWithTheFamily((fun g: Fn => inN(g))) closure]
+          @every-triple-is-in-n |
+            forall i, j, x, y, z: Element;
+              i != j -> x != y -> x != z -> y != z ->
+              inN(compose(transposition(x, z), transposition(x, y)))
+            [by modus_ponens the-selector family]
+
+          // the bridge: that IS every 3-cycle
+          @the-bridge |
+            (forall x, y, z: Element; x != y -> x != z -> y != z ->
+              inN(compose(transposition(x, z), transposition(x, y)))) ->
+              forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+            [using instantiation everyTripleInTheSubgroupMeansEveryThreeCycle((fun g: Fn => inN(g)))]
+          // The selector's output still carries the fixed pair's binders and the bridge wants
+          // only the triple's. Peeling i and j needs a CONCRETE pair with i != j, and the
+          // schema has none in scope — so the hypothesis below asks the caller for one. That
+          // is honest: the whole construction is relative to a chosen fixed pair, which is
+          // exactly what "N contains one member of the family (i,j,k)" means.
+          @given-a-fixed-pair |
+            assume exists i: Element; exists j: Element; i != j {
+              @the-pair-exists |
+                exists i: Element; exists j: Element; i != j
+                [by hypothesis given-a-fixed-pair]
+              @with-first-point |
+                unpack i: Element from the-pair-exists {
+                  @inner-pair |
+                    exists j: Element; i != j
+                    [by hypothesis with-first-point]
+                  @with-second-point |
+                    unpack j: Element from inner-pair {
+                      @the-pair-is-distinct |
+                        i != j
+                        [by hypothesis with-second-point]
+                      // peeling i and j leaves `i != j` INSIDE the triple's binders, so the
+                      // generalization has to be rebuilt one binder at a time
+                      @triples-at-the-pair |
+                        forall x, y, z: Element;
+                          i != j -> x != y -> x != z -> y != z ->
+                          inN(compose(transposition(x, z), transposition(x, y)))
+                        [by apply_at(i, j) every-triple-is-in-n]
+                      @rebuild-x |
+                        fix x: Element {
+                          @rebuild-y |
+                            fix y: Element {
+                              @rebuild-z |
+                                fix z: Element {
+                                  @at-this-triple |
+                                    i != j -> x != y -> x != z -> y != z ->
+                                      inN(compose(transposition(x, z), transposition(x, y)))
+                                    [by apply_at(x, y, z) triples-at-the-pair]
+                                  @conclusion-at-this-triple |
+                                    x != y -> x != z -> y != z ->
+                                      inN(compose(transposition(x, z), transposition(x, y)))
+                                    [by modus_ponens at-this-triple the-pair-is-distinct]
+                                }
+                              @conclusion-for-z |
+                                forall z: Element; x != y -> x != z -> y != z ->
+                                  inN(compose(transposition(x, z), transposition(x, y)))
+                                [by generalize rebuild-z]
+                            }
+                          @conclusion-for-y-z |
+                            forall y, z: Element; x != y -> x != z -> y != z ->
+                              inN(compose(transposition(x, z), transposition(x, y)))
+                            [by generalize rebuild-y]
+                        }
+                      @every-triple-at-the-fixed-pair |
+                        forall x, y, z: Element;
+                          x != y -> x != z -> y != z ->
+                          inN(compose(transposition(x, z), transposition(x, y)))
+                        [by generalize rebuild-x]
+                      @three-cycles-at-the-pair |
+                        forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                        [using specialize the-bridge every-triple-at-the-fixed-pair]
+                    }
+                  @conclusion-second |
+                    forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                    [by unpacked with-second-point]
+                }
+              @conclusion-first |
+                forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                [by unpacked with-first-point]
+            }
+          @conclusion-every-three-cycle |
+            (exists i: Element; exists j: Element; i != j) ->
+              forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+            [by discharge given-a-fixed-pair]
+        }
+      @family-implies |
+        (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+          inN(compose(transposition(i2, k), transposition(i2, j2)))) ->
+          (exists i: Element; exists j: Element; i != j) ->
+          forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+        [by discharge given-family]
+    }
+  @conclusion |
+    (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+      inN(compose(transposition(i2, k), transposition(i2, j2)))) ->
+      (exists i: Element; exists j: Element; i != j) ->
+      forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+    [by discharge given-closure]
+qed
+
+// Lemma 10.9 exercised at N = A_n.
+theorem theAlternatingGroupHasEveryThreeCycleFromTheFamily:
+  (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+  alternating.inAlternating(compose(transposition(i2, k), transposition(i2, j2)))) ->
+  (exists i: Element; exists j: Element; i != j) ->
+  forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
+proof
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; alternating.inAlternating(g) -> alternating.inAlternating(h) ->
+      alternating.inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @conclusion |
+    (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+      alternating.inAlternating(compose(transposition(i2, k), transposition(i2, j2)))) ->
+      (exists i: Element; exists j: Element; i != j) ->
+      forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
+    [using instantiation aNormalSubgroupWithAFamilyMemberHasEveryThreeCycle((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
+qed
