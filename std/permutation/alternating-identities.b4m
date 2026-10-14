@@ -8857,3 +8857,116 @@ proof
       alternating.inAlternating(compose(transposition(p, j), transposition(p, q)))
     [using instantiation aThreeCycleEndingAtTheSecondFixedPointIsInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
 qed
+
+// FROM TRIPLES TO 3-CYCLES. `isAThreeCycle` is a `define` expanding to a nested existential —
+// "some distinct x, y, z with g = T(x,z) o T(x,y)" — so a statement about every DISTINCT TRIPLE
+// is already a statement about every 3-CYCLE. This lemma is that conversion, and it is the
+// bridge between the selector (which reasons about named points) and the capstone's second
+// premise (which quantifies over elements of Fn).
+//
+// It is worth its own lemma rather than being inlined because the unpack is three levels deep
+// and every consumer of the selector needs exactly this shape. The conjunction comes out by
+// `tautology`, which is sound here precisely because the four conjuncts are opaque atoms it
+// need only project — no equational reasoning is being asked of it.
+theorem everyTripleInTheSubgroupMeansEveryThreeCycle(inN(Fn)):
+  (forall x, y, z: Element; x != y -> x != z -> y != z ->
+  inN(compose(transposition(x, z), transposition(x, y)))) ->
+  forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+proof
+  @given-all-triples |
+    assume forall x, y, z: Element; x != y -> x != z -> y != z ->
+      inN(compose(transposition(x, z), transposition(x, y))) {
+      @all-triples |
+        forall x, y, z: Element; x != y -> x != z -> y != z ->
+          inN(compose(transposition(x, z), transposition(x, y)))
+        [by hypothesis given-all-triples]
+      @generalize-c |
+        fix c: Fn {
+          @given-three-cycle |
+            assume alternating.isAThreeCycle(c) {
+              @the-three-cycle |
+                alternating.isAThreeCycle(c)
+                [by hypothesis given-three-cycle]
+              @unfolded |
+                exists x: Element; exists y: Element; exists z: Element;
+                  x != y and x != z and y != z and
+                  c = compose(transposition(x, z), transposition(x, y))
+                [using tautology the-three-cycle]
+              @with-point-x |
+                unpack x: Element from unfolded {
+                  @inner-x |
+                    exists y: Element; exists z: Element;
+                      x != y and x != z and y != z and
+                      c = compose(transposition(x, z), transposition(x, y))
+                    [by hypothesis with-point-x]
+                  @with-point-y |
+                    unpack y: Element from inner-x {
+                      @inner-y |
+                        exists z: Element;
+                          x != y and x != z and y != z and
+                          c = compose(transposition(x, z), transposition(x, y))
+                        [by hypothesis with-point-y]
+                      @with-point-z |
+                        unpack z: Element from inner-y {
+                          @facts |
+                            x != y and x != z and y != z and
+                              c = compose(transposition(x, z), transposition(x, y))
+                            [by hypothesis with-point-z]
+                          @x-not-y |
+                            x != y
+                            [using tautology facts]
+                          @x-not-z |
+                            x != z
+                            [using tautology facts]
+                          @y-not-z |
+                            y != z
+                            [using tautology facts]
+                          @c-is-the-triple |
+                            c = compose(transposition(x, z), transposition(x, y))
+                            [using tautology facts]
+                          @triple-in-n |
+                            inN(compose(transposition(x, z), transposition(x, y)))
+                            [using specialize all-triples(x, y, z) x-not-y x-not-z y-not-z]
+                          @conclusion-c-in-n |
+                            inN(c)
+                            [by rewrite c-is-the-triple triple-in-n]
+                        }
+                      @conclusion-inner-z |
+                        inN(c)
+                        [by unpacked with-point-z]
+                    }
+                  @conclusion-inner-y |
+                    inN(c)
+                    [by unpacked with-point-y]
+                }
+              @conclusion-unpacked |
+                inN(c)
+                [by unpacked with-point-x]
+            }
+          @three-cycle-implies |
+            alternating.isAThreeCycle(c) -> inN(c)
+            [by discharge given-three-cycle]
+        }
+      @all-c |
+        forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    (forall x, y, z: Element; x != y -> x != z -> y != z ->
+      inN(compose(transposition(x, z), transposition(x, y)))) ->
+      forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+    [by discharge given-all-triples]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupHasEveryThreeCycleFromItsTriples:
+  (forall x, y, z: Element; x != y -> x != z -> y != z ->
+  alternating.inAlternating(compose(transposition(x, z), transposition(x, y)))) ->
+  forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
+proof
+  @conclusion |
+    (forall x, y, z: Element; x != y -> x != z -> y != z ->
+      alternating.inAlternating(compose(transposition(x, z), transposition(x, y)))) ->
+      forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
+    [using instantiation everyTripleInTheSubgroupMeansEveryThreeCycle((fun g: Fn => alternating.inAlternating(g)))]
+qed
