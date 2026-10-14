@@ -735,3 +735,47 @@ TWO CHOICES WORTH RECORDING.
   `permutation/alternating.b4m`, ABOVE set theory, and importing it would be a cyclical
   dependency. Callers flip with their own lemma. Writing the statement in the "natural" order and
   then needing symmetry inside set theory would have been the wrong fix.
+
+**LEMMA 10.9'S SELECTOR IS BUILT (2026-10-14), and the leaf count went 13 -> 5 -> 7.**
+
+The selector decides which of Judson's identities an arbitrary 3-cycle needs. Three successive
+scopings of it, each corrected by measurement:
+
+1. **13 leaves, no collapse.** Split on which coordinate of (x,y,z) is i and which is j: 4x4
+   minus the 3 same-coordinate clashes. Canonical rotation is unique per leaf (verified over all
+   120 triples on six points), so positions do not merge.
+2. **"5 leaves, the rest need nothing."** `rotationCarriesMembership` (a rotation rewrite
+   carries membership) made each leaf cheap, and I classified 3 as rotation-only and 3 as
+   zero-rotation restatements of their shape theorem — leaving 5 to prove. Those 5 were
+   generated against a validated template and all went strict-green.
+3. **Wrong: it was 7.** Mapping every leaf GOAL to a named proved theorem — mechanically, not by
+   reading — found two gaps, `(p,i,j)` and `(j,p,i)`. The family premise supplies `(i,j,p)`;
+   those goals are its ROTATIONS, and a rotation still wants a theorem. The classification was
+   right that they need no shape theorem and no product closure, wrong that they need nothing.
+
+So the honest count is 13 leaves: 1 closed by the family premise directly, 12 by named theorems.
+The full table maps each (which-coordinate-is-i, which-is-j) case to its theorem with the
+explicit variable substitution, checked by script rather than by eye — which is what caught the
+two gaps, and what confirmed all 13 map cleanly once they were closed.
+
+**PATTERNS PROBED BEFORE USE, each in a throwaway file.** Every one of these would have been a
+confusing failure inside a 500-line generated proof:
+
+- **Nested schema instantiation.** A selector leaf is a schema over `inN` citing a shape theorem
+  that is also a schema over `inN`, so it instantiates the inner one AT ITS OWN PARAMETER:
+  `[using instantiation innerSchema((fun g: Fn => inQ(g))) refs]`. Works.
+- **`case` arm restatement.** Inside a `case` arm, the arm label names a SUBPROOF, so
+  `[using tautology <arm-label>]` is an error ("names a subproof; a step reference is required").
+  The arm's assumption must first be restated with `[by hypothesis <arm-label>]`.
+- **The `isAThreeCycle` unpack.** It is a `define` expanding to a nested existential, so the
+  bridge from "every distinct triple" to "every 3-cycle" is three unpack levels with the
+  conjunction projected by `tautology`. Promoted to
+  `everyTripleInTheSubgroupMeansEveryThreeCycle` rather than inlined, since every consumer needs
+  exactly that shape.
+
+**AND A TRAP WORTH NAMING: an uninstantiated schema reports "0 theorems proven" and nothing
+else.** Not an error, not a warning. I lost a cycle to this twice — once on a typo'd step label
+in the capstone that checked green until the instantiation existed, once on a probe I thought had
+validated a leaf when it had checked nothing at all. A schema with no instantiation is unverified
+and SILENT about it, which is the strongest argument for `--library`'s rule that every schema be
+exercised where it is declared.
