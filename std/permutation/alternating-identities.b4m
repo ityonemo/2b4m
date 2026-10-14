@@ -8970,3 +8970,224 @@ proof
       forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
     [using instantiation everyTripleInTheSubgroupMeansEveryThreeCycle((fun g: Fn => alternating.inAlternating(g)))]
 qed
+
+// LEAF: the 3-cycle is `(j,p,i)` — one rotation of the family member `(i,j,p)`.
+//
+// No shape theorem and no product closure — the canonical form IS the family member the
+// consumer already holds, so the whole leaf is rotation. These two leaves are why the
+// "rotation-only leaves need nothing" classification was wrong: the family premise
+// supplies `(i,j,p)` and these goals are its rotations, which still want a theorem.
+theorem aFamilyMemberStartingAtTheSecondFixedPointIsInTheSubgroup(inN(Fn)):
+  forall i, j, p: Element;
+  i != j -> i != p -> j != p ->
+  inN(compose(transposition(i, p), transposition(i, j))) ->
+  inN(compose(transposition(j, i), transposition(j, p)))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-p |
+            fix p: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-p |
+                    assume i != p {
+                      @given-j-not-p |
+                        assume j != p {
+                          @given-family-member |
+                            assume inN(compose(transposition(i, p), transposition(i, j))) {
+                              @i-is-not-j |
+                                i != j
+                                [by hypothesis given-i-not-j]
+                              @i-is-not-p |
+                                i != p
+                                [by hypothesis given-i-not-p]
+                              @j-is-not-p |
+                                j != p
+                                [by hypothesis given-j-not-p]
+                              @the-family-member |
+                                inN(compose(transposition(i, p), transposition(i, j)))
+                                [by hypothesis given-family-member]
+
+                              // 1 rotation(s) of the family member
+                              @the-rotation |
+                                forall i2, j2, k: Element;
+                                  i2 != j2 -> i2 != k -> j2 != k ->
+                                  inN(compose(transposition(i2, k), transposition(i2, j2))) ->
+                                  inN(compose(transposition(j2, i2), transposition(j2, k)))
+                                [using instantiation rotationCarriesMembership((fun g: Fn => inN(g)))]
+                              @conclusion-leaf |
+                                inN(compose(transposition(j, i), transposition(j, p)))
+                                [using specialize the-rotation(i, j, p) i-is-not-j i-is-not-p j-is-not-p the-family-member]
+                            }
+                          @family-member-implies |
+                            inN(compose(transposition(i, p), transposition(i, j))) ->
+                              inN(compose(transposition(j, i), transposition(j, p)))
+                            [by discharge given-family-member]
+                        }
+                      @j-not-p-implies |
+                        j != p ->
+                          inN(compose(transposition(i, p), transposition(i, j))) ->
+                          inN(compose(transposition(j, i), transposition(j, p)))
+                        [by discharge given-j-not-p]
+                    }
+                  @i-not-p-implies |
+                    i != p -> j != p ->
+                      inN(compose(transposition(i, p), transposition(i, j))) ->
+                      inN(compose(transposition(j, i), transposition(j, p)))
+                    [by discharge given-i-not-p]
+                }
+              @i-not-j-implies |
+                i != j -> i != p -> j != p ->
+                  inN(compose(transposition(i, p), transposition(i, j))) ->
+                  inN(compose(transposition(j, i), transposition(j, p)))
+                [by discharge given-i-not-j]
+            }
+          @discharge-p |
+            forall p: Element; i != j -> i != p -> j != p ->
+              inN(compose(transposition(i, p), transposition(i, j))) ->
+              inN(compose(transposition(j, i), transposition(j, p)))
+            [by generalize generalize-p]
+        }
+      @discharge-j |
+        forall j, p: Element; i != j -> i != p -> j != p ->
+          inN(compose(transposition(i, p), transposition(i, j))) ->
+          inN(compose(transposition(j, i), transposition(j, p)))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, p: Element; i != j -> i != p -> j != p ->
+      inN(compose(transposition(i, p), transposition(i, j))) ->
+      inN(compose(transposition(j, i), transposition(j, p)))
+    [by generalize generalize-i]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupHasTheSecondStartFamilyShapes:
+  forall i, j, p: Element; i != j -> i != p -> j != p ->
+  alternating.inAlternating(compose(transposition(i, p), transposition(i, j))) ->
+  alternating.inAlternating(compose(transposition(j, i), transposition(j, p)))
+proof
+  @conclusion |
+    forall i, j, p: Element; i != j -> i != p -> j != p ->
+      alternating.inAlternating(compose(transposition(i, p), transposition(i, j))) ->
+      alternating.inAlternating(compose(transposition(j, i), transposition(j, p)))
+    [using instantiation aFamilyMemberStartingAtTheSecondFixedPointIsInTheSubgroup((fun g: Fn => alternating.inAlternating(g)))]
+qed
+
+// LEAF: the 3-cycle is `(p,i,j)` — two rotations of the family member `(i,j,p)`.
+//
+// No shape theorem and no product closure — the canonical form IS the family member the
+// consumer already holds, so the whole leaf is rotation. These two leaves are why the
+// "rotation-only leaves need nothing" classification was wrong: the family premise
+// supplies `(i,j,p)` and these goals are its rotations, which still want a theorem.
+theorem aFamilyMemberEndingAtTheFixedPairIsInTheSubgroup(inN(Fn)):
+  forall i, j, p: Element;
+  i != j -> i != p -> j != p ->
+  inN(compose(transposition(i, p), transposition(i, j))) ->
+  inN(compose(transposition(p, j), transposition(p, i)))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-p |
+            fix p: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-i-not-p |
+                    assume i != p {
+                      @given-j-not-p |
+                        assume j != p {
+                          @given-family-member |
+                            assume inN(compose(transposition(i, p), transposition(i, j))) {
+                              @i-is-not-j |
+                                i != j
+                                [by hypothesis given-i-not-j]
+                              @i-is-not-p |
+                                i != p
+                                [by hypothesis given-i-not-p]
+                              @j-is-not-p |
+                                j != p
+                                [by hypothesis given-j-not-p]
+                              @the-family-member |
+                                inN(compose(transposition(i, p), transposition(i, j)))
+                                [by hypothesis given-family-member]
+
+                              // the flipped disequalities the rotations consume
+                              @j-is-not-i |
+                                j != i
+                                [using specialize alternating.disequalityIsSymmetric(i, j) i-is-not-j]
+                              @p-is-not-i |
+                                p != i
+                                [using specialize alternating.disequalityIsSymmetric(i, p) i-is-not-p]
+
+                              // 2 rotation(s) of the family member
+                              @the-rotation |
+                                forall i2, j2, k: Element;
+                                  i2 != j2 -> i2 != k -> j2 != k ->
+                                  inN(compose(transposition(i2, k), transposition(i2, j2))) ->
+                                  inN(compose(transposition(j2, i2), transposition(j2, k)))
+                                [using instantiation rotationCarriesMembership((fun g: Fn => inN(g)))]
+                              @rotated-1 |
+                                inN(compose(transposition(j, i), transposition(j, p)))
+                                [using specialize the-rotation(i, j, p) i-is-not-j i-is-not-p j-is-not-p the-family-member]
+                              @conclusion-leaf |
+                                inN(compose(transposition(p, j), transposition(p, i)))
+                                [using specialize the-rotation(j, p, i) j-is-not-p j-is-not-i p-is-not-i rotated-1]
+                            }
+                          @family-member-implies |
+                            inN(compose(transposition(i, p), transposition(i, j))) ->
+                              inN(compose(transposition(p, j), transposition(p, i)))
+                            [by discharge given-family-member]
+                        }
+                      @j-not-p-implies |
+                        j != p ->
+                          inN(compose(transposition(i, p), transposition(i, j))) ->
+                          inN(compose(transposition(p, j), transposition(p, i)))
+                        [by discharge given-j-not-p]
+                    }
+                  @i-not-p-implies |
+                    i != p -> j != p ->
+                      inN(compose(transposition(i, p), transposition(i, j))) ->
+                      inN(compose(transposition(p, j), transposition(p, i)))
+                    [by discharge given-i-not-p]
+                }
+              @i-not-j-implies |
+                i != j -> i != p -> j != p ->
+                  inN(compose(transposition(i, p), transposition(i, j))) ->
+                  inN(compose(transposition(p, j), transposition(p, i)))
+                [by discharge given-i-not-j]
+            }
+          @discharge-p |
+            forall p: Element; i != j -> i != p -> j != p ->
+              inN(compose(transposition(i, p), transposition(i, j))) ->
+              inN(compose(transposition(p, j), transposition(p, i)))
+            [by generalize generalize-p]
+        }
+      @discharge-j |
+        forall j, p: Element; i != j -> i != p -> j != p ->
+          inN(compose(transposition(i, p), transposition(i, j))) ->
+          inN(compose(transposition(p, j), transposition(p, i)))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, p: Element; i != j -> i != p -> j != p ->
+      inN(compose(transposition(i, p), transposition(i, j))) ->
+      inN(compose(transposition(p, j), transposition(p, i)))
+    [by generalize generalize-i]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupHasTheFixedPairEndShapes:
+  forall i, j, p: Element; i != j -> i != p -> j != p ->
+  alternating.inAlternating(compose(transposition(i, p), transposition(i, j))) ->
+  alternating.inAlternating(compose(transposition(p, j), transposition(p, i)))
+proof
+  @conclusion |
+    forall i, j, p: Element; i != j -> i != p -> j != p ->
+      alternating.inAlternating(compose(transposition(i, p), transposition(i, j))) ->
+      alternating.inAlternating(compose(transposition(p, j), transposition(p, i)))
+    [using instantiation aFamilyMemberEndingAtTheFixedPairIsInTheSubgroup((fun g: Fn => alternating.inAlternating(g)))]
+qed
