@@ -10227,3 +10227,1099 @@ proof
       forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
     [using instantiation aNormalSubgroupWithAFamilyMemberHasEveryThreeCycle((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
 qed
+
+// ============================================================================
+// JUDSON'S LEMMA 10.10, CASE 1: sigma has a cycle longer than 3
+// ============================================================================
+//
+// Judson's own case analysis, transcribed rather than re-derived. His four cases are
+//
+//     sigma has a cycle of length r > 3     sigma^-1 (a1a2a3) sigma (a1a2a3)^-1 = (a1 a3 ar)
+//     sigma = tau (a1a2a3)(a4a5a6)          sigma^-1 (a1a2a4) sigma (a1a2a4)^-1 = (a1 a4 a2 a6 a3)
+//     sigma = tau (a1a2a3), tau involutive  sigma^2 = (a1 a3 a2)
+//     sigma = tau (a1a2)(a3a4)              a further conjugation
+//
+// and they TERMINATE: the second lands a 5-cycle, which is the first case's shape. Each
+// conjugator is read off the cycle shape, so there is no search and no induction on support.
+// (A previous scoping of this lemma here claimed otherwise; see CHAPTER10-PAINPOINTS.)
+//
+// Case 1 is `theCommutatorOfAThreeCycleWithAPermutation` instantiated at sigma^-1 — verified:
+// Judson's sigma^-1 c sigma c^-1 IS that theorem's sigma c sigma^-1 c^-1 with sigma := sigma^-1.
+// What was missing is recognising the resulting four-transposition product as a 3-cycle, which
+// is `theFourFactorProductIsAThreeCycle` below, proved the way every identity in this file is:
+// five pointwise cases, then `funcExtensionality`.
+
+theorem fourFactorAgreesAtA1: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), a1)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @l0-at-a1 |
+                                            apply(transposition(a1, a3), a1) = a3
+                                            [using specialize transpositionAtFirst(a1, a3)]
+                                          @a1-not-a3 |
+                                            a1 != a3
+                                            [by hypothesis given-a1-not-a3]
+                                          @a3-not-a1 |
+                                            a3 != a1
+                                            [using specialize alternating.disequalityIsSymmetric(a1, a3) a1-not-a3]
+                                          @a2-not-a3 |
+                                            a2 != a3
+                                            [by hypothesis given-a2-not-a3]
+                                          @a3-not-a2 |
+                                            a3 != a2
+                                            [using specialize alternating.disequalityIsSymmetric(a2, a3) a2-not-a3]
+                                          @l1-at-a3 |
+                                            apply(transposition(a1, a2), a3) = a3
+                                            [using specialize transpositionElsewhere(a1, a2, a3) a3-not-a1 a3-not-a2]
+                                          @a3-not-ar |
+                                            a3 != ar
+                                            [by hypothesis given-a3-not-ar]
+                                          @l2-at-a3 |
+                                            apply(transposition(ar, a1), a3) = a3
+                                            [using specialize transpositionElsewhere(ar, a1, a3) a3-not-ar a3-not-a1]
+                                          @l3-at-a3 |
+                                            apply(transposition(ar, a2), a3) = a3
+                                            [using specialize transpositionElsewhere(ar, a2, a3) a3-not-ar a3-not-a2]
+                                          @r1-at-a3 |
+                                            apply(transposition(a1, ar), a3) = a3
+                                            [using specialize transpositionElsewhere(a1, ar, a3) a3-not-a1 a3-not-ar]
+                                          @conclusion-at-this-point |
+                                            apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                                            [using simplify function.composeApply l0-at-a1 l1-at-a3 l2-at-a3 l3-at-a3 r1-at-a3]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), a1)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), a1)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), a1)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+    [by generalize generalize-a1]
+qed
+
+theorem fourFactorAgreesAtA2: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), a2)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @a1-not-a2 |
+                                            a1 != a2
+                                            [by hypothesis given-a1-not-a2]
+                                          @a2-not-a1 |
+                                            a2 != a1
+                                            [using specialize alternating.disequalityIsSymmetric(a1, a2) a1-not-a2]
+                                          @a2-not-a3 |
+                                            a2 != a3
+                                            [by hypothesis given-a2-not-a3]
+                                          @l0-at-a2 |
+                                            apply(transposition(a1, a3), a2) = a2
+                                            [using specialize transpositionElsewhere(a1, a3, a2) a2-not-a1 a2-not-a3]
+                                          @l1-at-a2 |
+                                            apply(transposition(a1, a2), a2) = a1
+                                            [using specialize transpositionAtSecond(a1, a2)]
+                                          @l2-at-a1 |
+                                            apply(transposition(ar, a1), a1) = ar
+                                            [using specialize transpositionAtSecond(ar, a1)]
+                                          @l3-at-ar |
+                                            apply(transposition(ar, a2), ar) = a2
+                                            [using specialize transpositionAtFirst(ar, a2)]
+                                          @a2-not-ar |
+                                            a2 != ar
+                                            [by hypothesis given-a2-not-ar]
+                                          @r1-at-a2 |
+                                            apply(transposition(a1, ar), a2) = a2
+                                            [using specialize transpositionElsewhere(a1, ar, a2) a2-not-a1 a2-not-ar]
+                                          @conclusion-at-this-point |
+                                            apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                                            [using simplify function.composeApply l0-at-a2 l1-at-a2 l2-at-a1 l3-at-ar r1-at-a2]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), a2)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), a2)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), a2)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+    [by generalize generalize-a1]
+qed
+
+theorem fourFactorAgreesAtA3: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), a3)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @l0-at-a3 |
+                                            apply(transposition(a1, a3), a3) = a1
+                                            [using specialize transpositionAtSecond(a1, a3)]
+                                          @l1-at-a1 |
+                                            apply(transposition(a1, a2), a1) = a2
+                                            [using specialize transpositionAtFirst(a1, a2)]
+                                          @a2-not-ar |
+                                            a2 != ar
+                                            [by hypothesis given-a2-not-ar]
+                                          @a1-not-a2 |
+                                            a1 != a2
+                                            [by hypothesis given-a1-not-a2]
+                                          @a2-not-a1 |
+                                            a2 != a1
+                                            [using specialize alternating.disequalityIsSymmetric(a1, a2) a1-not-a2]
+                                          @l2-at-a2 |
+                                            apply(transposition(ar, a1), a2) = a2
+                                            [using specialize transpositionElsewhere(ar, a1, a2) a2-not-ar a2-not-a1]
+                                          @l3-at-a2 |
+                                            apply(transposition(ar, a2), a2) = ar
+                                            [using specialize transpositionAtSecond(ar, a2)]
+                                          @r1-at-a1 |
+                                            apply(transposition(a1, ar), a1) = ar
+                                            [using specialize transpositionAtFirst(a1, ar)]
+                                          @conclusion-at-this-point |
+                                            apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                                            [using simplify function.composeApply l0-at-a3 l1-at-a1 l2-at-a2 l3-at-a2 r1-at-a1]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), a3)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), a3)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), a3)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+    [by generalize generalize-a1]
+qed
+
+theorem fourFactorAgreesAtAr: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), ar)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @a1-not-ar |
+                                            a1 != ar
+                                            [by hypothesis given-a1-not-ar]
+                                          @ar-not-a1 |
+                                            ar != a1
+                                            [using specialize alternating.disequalityIsSymmetric(a1, ar) a1-not-ar]
+                                          @a3-not-ar |
+                                            a3 != ar
+                                            [by hypothesis given-a3-not-ar]
+                                          @ar-not-a3 |
+                                            ar != a3
+                                            [using specialize alternating.disequalityIsSymmetric(a3, ar) a3-not-ar]
+                                          @l0-at-ar |
+                                            apply(transposition(a1, a3), ar) = ar
+                                            [using specialize transpositionElsewhere(a1, a3, ar) ar-not-a1 ar-not-a3]
+                                          @a2-not-ar |
+                                            a2 != ar
+                                            [by hypothesis given-a2-not-ar]
+                                          @ar-not-a2 |
+                                            ar != a2
+                                            [using specialize alternating.disequalityIsSymmetric(a2, ar) a2-not-ar]
+                                          @l1-at-ar |
+                                            apply(transposition(a1, a2), ar) = ar
+                                            [using specialize transpositionElsewhere(a1, a2, ar) ar-not-a1 ar-not-a2]
+                                          @l2-at-ar |
+                                            apply(transposition(ar, a1), ar) = a1
+                                            [using specialize transpositionAtFirst(ar, a1)]
+                                          @a1-not-a2 |
+                                            a1 != a2
+                                            [by hypothesis given-a1-not-a2]
+                                          @l3-at-a1 |
+                                            apply(transposition(ar, a2), a1) = a1
+                                            [using specialize transpositionElsewhere(ar, a2, a1) a1-not-ar a1-not-a2]
+                                          @r1-at-ar |
+                                            apply(transposition(a1, ar), ar) = a1
+                                            [using specialize transpositionAtSecond(a1, ar)]
+                                          @conclusion-at-this-point |
+                                            apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                                            [using simplify function.composeApply l0-at-ar l1-at-ar l2-at-ar l3-at-a1 r1-at-ar]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), ar)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), ar)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), ar)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+    [by generalize generalize-a1]
+qed
+
+theorem fourFactorAgreesAtElsewhere: forall a1, a2, a3, ar, x: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), x)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @generalize-x |
+                    fix x: Element {
+                      @given-a1-not-a2 |
+                        assume a1 != a2 {
+                          @given-a1-not-a3 |
+                            assume a1 != a3 {
+                              @given-a1-not-ar |
+                                assume a1 != ar {
+                                  @given-a2-not-a3 |
+                                    assume a2 != a3 {
+                                      @given-a2-not-ar |
+                                        assume a2 != ar {
+                                          @given-a3-not-ar |
+                                            assume a3 != ar {
+                                              @given-x-not-a1 |
+                                                assume x != a1 {
+                                                  @given-x-not-a2 |
+                                                    assume x != a2 {
+                                                      @given-x-not-a3 |
+                                                        assume x != a3 {
+                                                          @given-x-not-ar |
+                                                            assume x != ar {
+                                                              @x-not-a1 |
+                                                                x != a1
+                                                                [by hypothesis given-x-not-a1]
+                                                              @x-not-a3 |
+                                                                x != a3
+                                                                [by hypothesis given-x-not-a3]
+                                                              @l0-at-x |
+                                                                apply(transposition(a1, a3), x) = x
+                                                                [using specialize transpositionElsewhere(a1, a3, x) x-not-a1 x-not-a3]
+                                                              @x-not-a2 |
+                                                                x != a2
+                                                                [by hypothesis given-x-not-a2]
+                                                              @l1-at-x |
+                                                                apply(transposition(a1, a2), x) = x
+                                                                [using specialize transpositionElsewhere(a1, a2, x) x-not-a1 x-not-a2]
+                                                              @x-not-ar |
+                                                                x != ar
+                                                                [by hypothesis given-x-not-ar]
+                                                              @l2-at-x |
+                                                                apply(transposition(ar, a1), x) = x
+                                                                [using specialize transpositionElsewhere(ar, a1, x) x-not-ar x-not-a1]
+                                                              @l3-at-x |
+                                                                apply(transposition(ar, a2), x) = x
+                                                                [using specialize transpositionElsewhere(ar, a2, x) x-not-ar x-not-a2]
+                                                              @r1-at-x |
+                                                                apply(transposition(a1, ar), x) = x
+                                                                [using specialize transpositionElsewhere(a1, ar, x) x-not-a1 x-not-ar]
+                                                              @conclusion-at-this-point |
+                                                                apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                                [using simplify function.composeApply l0-at-x l1-at-x l2-at-x l3-at-x r1-at-x]
+                                                            }
+                                                          @x-not-ar-implies |
+                                                            x != ar ->
+                                                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                            [by discharge given-x-not-ar]
+                                                        }
+                                                      @x-not-a3-implies |
+                                                        x != a3 -> x != ar ->
+                                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [by discharge given-x-not-a3]
+                                                    }
+                                                  @x-not-a2-implies |
+                                                    x != a2 -> x != a3 -> x != ar ->
+                                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                      compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                    [by discharge given-x-not-a2]
+                                                }
+                                              @x-not-a1-implies |
+                                                x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                [by discharge given-x-not-a1]
+                                            }
+                                          @a3-not-ar-implies |
+                                            a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                            [by discharge given-a3-not-ar]
+                                        }
+                                      @a2-not-ar-implies |
+                                        a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                        [by discharge given-a2-not-ar]
+                                    }
+                                  @a2-not-a3-implies |
+                                    a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                    [by discharge given-a2-not-a3]
+                                }
+                              @a1-not-ar-implies |
+                                a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                [by discharge given-a1-not-ar]
+                            }
+                          @a1-not-a3-implies |
+                            a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                            [by discharge given-a1-not-a3]
+                        }
+                      @a1-not-a2-implies |
+                        a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                        [by discharge given-a1-not-a2]
+                    }
+                  @discharge-x |
+                    forall x: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), x)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                    [by generalize generalize-x]
+                }
+              @discharge-ar |
+                forall ar, x: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar, x: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), x)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar, x: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), x)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar, x: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar -> x != a1 -> x != a2 -> x != a3 -> x != ar ->
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), x)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+    [by generalize generalize-a1]
+qed
+
+// The pointwise agreement behind Judson's case 1: five cases on where x sits.
+theorem theFourFactorAgreesEverywhere: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  forall x: Element;
+  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3))), x)
+  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @a1-not-a2 |
+                                            a1 != a2
+                                            [by hypothesis given-a1-not-a2]
+                                          @a1-not-a3 |
+                                            a1 != a3
+                                            [by hypothesis given-a1-not-a3]
+                                          @a1-not-ar |
+                                            a1 != ar
+                                            [by hypothesis given-a1-not-ar]
+                                          @a2-not-a3 |
+                                            a2 != a3
+                                            [by hypothesis given-a2-not-a3]
+                                          @a2-not-ar |
+                                            a2 != ar
+                                            [by hypothesis given-a2-not-ar]
+                                          @a3-not-ar |
+                                            a3 != ar
+                                            [by hypothesis given-a3-not-ar]
+                                          @generalize-x |
+                                            fix x: Element {
+                                              @cases |
+                                                x = a1 or x = a2 or x = a3 or x = ar or (x != a1 and x != a2 and x != a3 and x != ar)
+                                                [using tautology]
+                                              @conclusion-at-x |
+                                                apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                case cases {
+                                                  @when-x-is-a1 |
+                                                    assume x = a1 {
+                                                      @x-equals-a1 |
+                                                        x = a1
+                                                        [by hypothesis when-x-is-a1]
+                                                      @agrees-at-a1 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), a1)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a1)
+                                                        [using specialize fourFactorAgreesAtA1(a1, a2, a3, ar) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar]
+                                                      @conclusion-when-x-is-a1 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [by rewrite x-equals-a1 agrees-at-a1]
+                                                    }
+                                                  @when-x-is-a2 |
+                                                    assume x = a2 {
+                                                      @x-equals-a2 |
+                                                        x = a2
+                                                        [by hypothesis when-x-is-a2]
+                                                      @agrees-at-a2 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), a2)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a2)
+                                                        [using specialize fourFactorAgreesAtA2(a1, a2, a3, ar) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar]
+                                                      @conclusion-when-x-is-a2 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [by rewrite x-equals-a2 agrees-at-a2]
+                                                    }
+                                                  @when-x-is-a3 |
+                                                    assume x = a3 {
+                                                      @x-equals-a3 |
+                                                        x = a3
+                                                        [by hypothesis when-x-is-a3]
+                                                      @agrees-at-a3 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), a3)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), a3)
+                                                        [using specialize fourFactorAgreesAtA3(a1, a2, a3, ar) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar]
+                                                      @conclusion-when-x-is-a3 |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [by rewrite x-equals-a3 agrees-at-a3]
+                                                    }
+                                                  @when-x-is-ar |
+                                                    assume x = ar {
+                                                      @x-equals-ar |
+                                                        x = ar
+                                                        [by hypothesis when-x-is-ar]
+                                                      @agrees-at-ar |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), ar)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), ar)
+                                                        [using specialize fourFactorAgreesAtAr(a1, a2, a3, ar) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar]
+                                                      @conclusion-when-x-is-ar |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [by rewrite x-equals-ar agrees-at-ar]
+                                                    }
+                                                  @when-x-is-elsewhere |
+                                                    assume x != a1 and x != a2 and x != a3 and x != ar {
+                                                      @x-is-elsewhere |
+                                                        x != a1 and x != a2 and x != a3 and x != ar
+                                                        [by hypothesis when-x-is-elsewhere]
+                                                      @x-not-a1 |
+                                                        x != a1
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-a2 |
+                                                        x != a2
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-a3 |
+                                                        x != a3
+                                                        [using tautology x-is-elsewhere]
+                                                      @x-not-ar |
+                                                        x != ar
+                                                        [using tautology x-is-elsewhere]
+                                                      @conclusion-when-x-is-elsewhere |
+                                                        apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                                        [using specialize fourFactorAgreesAtElsewhere(a1, a2, a3, ar, x) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar x-not-a1 x-not-a2 x-not-a3 x-not-ar]
+                                                    }
+                                                }
+                                            }
+                                          @conclusion-for-all-x |
+                                            forall x: Element;
+                                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                            [by generalize generalize-x]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          forall x: Element;
+                                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      forall x: Element;
+                                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  forall x: Element;
+                                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              forall x: Element;
+                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          forall x: Element;
+                          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3))), x)
+                          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      forall x: Element;
+                      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3))), x)
+                      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  forall x: Element;
+                  apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3))), x)
+                  = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              forall x: Element;
+              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3))), x)
+              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          forall x: Element;
+          apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3))), x)
+          = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      forall x: Element;
+      apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3))), x)
+      = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+    [by generalize generalize-a1]
+qed
+
+// JUDSON'S CASE 1, THE FOUR-FACTOR IDENTITY. The commutator's closed form, when the
+// conjugating permutation carries a1 -> ar, a2 -> a1, a3 -> a2 (which is what taking the
+// first three points of a cycle of length r and conjugating by its INVERSE gives), is
+//
+//     T(ar,a2) T(ar,a1) T(a1,a2) T(a1,a3)  =  (a1, a3, ar)
+//
+// Judson writes this as sigma^-1 (a1a2a3) sigma (a1a2a3)^-1 = (a1 a3 ar). Note a2 is
+// touched twice by the left side and returned — that cancellation is the whole content, and
+// it is why the result involves only a1, a3 and ar.
+//
+// Four distinct points is the exact hypothesis: the identity fails at a2 = ar (checked).
+theorem theFourFactorProductIsAThreeCycle: forall a1, a2, a3, ar: Element;
+  a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+  compose(compose(transposition(ar, a2), transposition(ar, a1)),
+  compose(transposition(a1, a2), transposition(a1, a3)))
+  = compose(transposition(a1, ar), transposition(a1, a3))
+proof
+  @generalize-a1 |
+    fix a1: Element {
+      @generalize-a2 |
+        fix a2: Element {
+          @generalize-a3 |
+            fix a3: Element {
+              @generalize-ar |
+                fix ar: Element {
+                  @given-a1-not-a2 |
+                    assume a1 != a2 {
+                      @given-a1-not-a3 |
+                        assume a1 != a3 {
+                          @given-a1-not-ar |
+                            assume a1 != ar {
+                              @given-a2-not-a3 |
+                                assume a2 != a3 {
+                                  @given-a2-not-ar |
+                                    assume a2 != ar {
+                                      @given-a3-not-ar |
+                                        assume a3 != ar {
+                                          @a1-not-a2 |
+                                            a1 != a2
+                                            [by hypothesis given-a1-not-a2]
+                                          @a1-not-a3 |
+                                            a1 != a3
+                                            [by hypothesis given-a1-not-a3]
+                                          @a1-not-ar |
+                                            a1 != ar
+                                            [by hypothesis given-a1-not-ar]
+                                          @a2-not-a3 |
+                                            a2 != a3
+                                            [by hypothesis given-a2-not-a3]
+                                          @a2-not-ar |
+                                            a2 != ar
+                                            [by hypothesis given-a2-not-ar]
+                                          @a3-not-ar |
+                                            a3 != ar
+                                            [by hypothesis given-a3-not-ar]
+                                          @agrees-everywhere |
+                                            forall x: Element;
+                                              apply(compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3))), x)
+                                              = apply(compose(transposition(a1, ar), transposition(a1, a3)), x)
+                                            [using specialize theFourFactorAgreesEverywhere(a1, a2, a3, ar) a1-not-a2 a1-not-a3 a1-not-ar a2-not-a3 a2-not-ar a3-not-ar]
+                                          @conclusion-identity |
+                                            compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                              compose(transposition(a1, a2), transposition(a1, a3)))
+                                              = compose(transposition(a1, ar), transposition(a1, a3))
+                                            [using specialize function.funcExtensionality(compose(compose(transposition(ar, a2), transposition(ar, a1)), compose(transposition(a1, a2), transposition(a1, a3))), compose(transposition(a1, ar), transposition(a1, a3))) agrees-everywhere]
+                                        }
+                                      @a3-not-ar-implies |
+                                        a3 != ar ->
+                                          compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3)))
+                                          = compose(transposition(a1, ar), transposition(a1, a3))
+                                        [by discharge given-a3-not-ar]
+                                    }
+                                  @a2-not-ar-implies |
+                                    a2 != ar -> a3 != ar ->
+                                      compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                      compose(transposition(a1, a2), transposition(a1, a3)))
+                                      = compose(transposition(a1, ar), transposition(a1, a3))
+                                    [by discharge given-a2-not-ar]
+                                }
+                              @a2-not-a3-implies |
+                                a2 != a3 -> a2 != ar -> a3 != ar ->
+                                  compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                                  compose(transposition(a1, a2), transposition(a1, a3)))
+                                  = compose(transposition(a1, ar), transposition(a1, a3))
+                                [by discharge given-a2-not-a3]
+                            }
+                          @a1-not-ar-implies |
+                            a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                              compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                              compose(transposition(a1, a2), transposition(a1, a3)))
+                              = compose(transposition(a1, ar), transposition(a1, a3))
+                            [by discharge given-a1-not-ar]
+                        }
+                      @a1-not-a3-implies |
+                        a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                          compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                          compose(transposition(a1, a2), transposition(a1, a3)))
+                          = compose(transposition(a1, ar), transposition(a1, a3))
+                        [by discharge given-a1-not-a3]
+                    }
+                  @a1-not-a2-implies |
+                    a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                      compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                      compose(transposition(a1, a2), transposition(a1, a3)))
+                      = compose(transposition(a1, ar), transposition(a1, a3))
+                    [by discharge given-a1-not-a2]
+                }
+              @discharge-ar |
+                forall ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                  compose(compose(transposition(ar, a2), transposition(ar, a1)),
+                  compose(transposition(a1, a2), transposition(a1, a3)))
+                  = compose(transposition(a1, ar), transposition(a1, a3))
+                [by generalize generalize-ar]
+            }
+          @discharge-a3 |
+            forall a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+              compose(compose(transposition(ar, a2), transposition(ar, a1)),
+              compose(transposition(a1, a2), transposition(a1, a3)))
+              = compose(transposition(a1, ar), transposition(a1, a3))
+            [by generalize generalize-a3]
+        }
+      @discharge-a2 |
+        forall a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+          compose(compose(transposition(ar, a2), transposition(ar, a1)),
+          compose(transposition(a1, a2), transposition(a1, a3)))
+          = compose(transposition(a1, ar), transposition(a1, a3))
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2, a3, ar: Element; a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+      compose(compose(transposition(ar, a2), transposition(ar, a1)),
+      compose(transposition(a1, a2), transposition(a1, a3)))
+      = compose(transposition(a1, ar), transposition(a1, a3))
+    [by generalize generalize-a1]
+qed
