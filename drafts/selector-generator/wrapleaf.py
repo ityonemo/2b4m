@@ -5,7 +5,9 @@ def wrap(ci,cj,thmname="probeLeaf"):
           ("x != z","h3","x-is-not-z"),("y != z","h4","y-is-not-z")]
     arm=f"{final.iarm(ci)}-and-{final.jarm(cj)}"
     HYP=" -> ".join(h[0] for h in HYPS)
-    ALLH=HYP+f" -> ({final.arm_formula(ci,cj)})"
+    def af0(fp,c):
+        return f"{final.POS[c]} = {fp}" if c is not None else " and ".join(f"{v} != {fp}" for v in "xyz")
+    ALLH=HYP+f" -> ({af0('i',ci)}) -> ({af0('j',cj)})"
     L=[]
     def w(ind,t=""): L.append((" "*ind+t).rstrip()+"\n")
     for l in ['import permutation <<< "std/permutation.b4m"',
@@ -38,7 +40,10 @@ def wrap(ci,cj,thmname="probeLeaf"):
         w(ind,f"@{blk} |"); w(ind+2,f"fix {v}: Element {{"); ind+=4
     for txt,blk,lbl in HYPS:
         w(ind,f"@{blk} |"); w(ind+2,f"assume {txt} {{"); ind+=4
-    w(ind,f"@when-{arm} |"); w(ind+2,f"assume {final.arm_formula(ci,cj)} {{"); ind+=4
+    def af(fp,c):
+        return f"{final.POS[c]} = {fp}" if c is not None else " and ".join(f"{v} != {fp}" for v in "xyz")
+    w(ind,f"@when-{final.iarm(ci)} |"); w(ind+2,f"assume {af('i',ci)} {{"); ind+=4
+    w(ind,f"@when-{final.jarm(cj)} |"); w(ind+2,f"assume {af('j',cj)} {{"); ind+=4
     final.OUT=[]; final.emit_leaf_body(ind,ci,cj); body=final.OUT
     bodytext="".join(body)
     for txt,blk,lbl in HYPS:
@@ -46,14 +51,17 @@ def wrap(ci,cj,thmname="probeLeaf"):
             w(ind,f"@{lbl} |"); w(ind+2,txt); w(ind+2,f"[by hypothesis {blk}]")
     L+=body
     needs_closure = "closure]" in bodytext
-    for k in range(len(HYPS),-1,-1):
+    for k in range(len(HYPS)+1,-1,-1):
         ind-=4; w(ind,"}")
-        if k==len(HYPS):
-            w(ind,"@arm-implies |"); w(ind+2,f"({final.arm_formula(ci,cj)}) ->"); w(ind+4,final.GOAL)
-            w(ind+2,f"[by discharge when-{arm}]")
+        if k==len(HYPS)+1:
+            w(ind,"@j-arm-implies |"); w(ind+2,f"({af('j',cj)}) ->"); w(ind+4,final.GOAL)
+            w(ind+2,f"[by discharge when-{final.jarm(cj)}]")
+        elif k==len(HYPS):
+            w(ind,"@i-arm-implies |"); w(ind+2,f"({af('i',ci)}) -> ({af('j',cj)}) ->"); w(ind+4,final.GOAL)
+            w(ind+2,f"[by discharge when-{final.iarm(ci)}]")
         else:
             w(ind,f"@{HYPS[k][1]}-implies |")
-            w(ind+2," -> ".join(h[0] for h in HYPS[k:])+f" -> ({final.arm_formula(ci,cj)}) ->")
+            w(ind+2," -> ".join(h[0] for h in HYPS[k:])+f" -> ({af('i',ci)}) -> ({af('j',cj)}) ->")
             w(ind+4,final.GOAL); w(ind+2,f"[by discharge {HYPS[k][1]}]")
     pts=["i","j","x","y","z"]; blks=["gi","gj","gx","gy","gz"]
     for k in range(len(pts)-1,-1,-1):
