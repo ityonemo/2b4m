@@ -69,20 +69,32 @@ def jarm(cj): return "no-j" if cj is None else f"{POS[cj]}-is-j"
 def emit_leaf_body(ind, ci, cj):
     """Emit a real leaf's steps, ending with a step labelled conclusion-<arm> proving GOAL."""
     arm=f"{iarm(ci)}-and-{jarm(cj)}"
-    # restate the arm's bundled assumption, then project its conjuncts on demand
-    w(ind,f"@{arm}-holds |"); w(ind+2,arm_formula(ci,cj))
-    w(ind+2,f"[by hypothesis when-{arm}]")
-    conj={}
-    if ci is not None: conj[f"{POS[ci]}-is-i"]=f"{POS[ci]} = i"
+    # each position fact comes straight from the arm that assumes it
+    conj={}; owner={}
+    iarmlbl=f"when-{iarm(ci)}"; jarmlbl=f"when-{jarm(cj)}"
+    if ci is not None:
+        conj[f"{POS[ci]}-is-i"]=f"{POS[ci]} = i"; owner[f"{POS[ci]}-is-i"]=iarmlbl
     else:
-        for v in "xyz": conj[f"{v}-is-not-i"]=f"{v} != i"
-    if cj is not None: conj[f"{POS[cj]}-is-j"]=f"{POS[cj]} = j"
+        for v in "xyz":
+            conj[f"{v}-is-not-i"]=f"{v} != i"; owner[f"{v}-is-not-i"]=iarmlbl
+    if cj is not None:
+        conj[f"{POS[cj]}-is-j"]=f"{POS[cj]} = j"; owner[f"{POS[cj]}-is-j"]=jarmlbl
     else:
-        for v in "xyz": conj[f"{v}-is-not-j"]=f"{v} != j"
-    projected=set()
+        for v in "xyz":
+            conj[f"{v}-is-not-j"]=f"{v} != j"; owner[f"{v}-is-not-j"]=jarmlbl
+    projected=set(); held=set()
+    def armform(armlbl):
+        fp = "i" if armlbl.endswith("no-i") else "j"
+        return " and ".join(f"{v} != {fp}" for v in "xyz")
     def project(lbl):
         if lbl in conj and lbl not in projected:
-            w(ind,f"@{lbl} |"); w(ind+2,conj[lbl]); w(ind+2,f"[using tautology {arm}-holds]")
+            src=owner[lbl]
+            bundled = src.endswith(("no-i","no-j"))
+            if bundled and src not in held:
+                w(ind,f"@{src}-holds |"); w(ind+2,armform(src))
+                w(ind+2,f"[by hypothesis {src}]"); held.add(src)
+            w(ind,f"@{lbl} |"); w(ind+2,conj[lbl])
+            w(ind+2,f"[using tautology {src}-holds]" if bundled else f"[by hypothesis {src}]")
             projected.add(lbl)
         return lbl
     eq,inv,frees,steps,have,ensure=plan(ci,cj,project)
