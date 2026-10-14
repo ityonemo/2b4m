@@ -33,7 +33,9 @@
 
 import permutation <<< "std/permutation.b4m"
 import alternating <<< "std/permutation/alternating.b4m"
+import alternating_identities <<< "std/permutation/alternating-identities.b4m"
 
+sort Element = permutation.Element
 sort Fn = permutation.Fn
 
 func compose = permutation.compose
@@ -110,4 +112,215 @@ proof
   @conclusion |
     forall g: Fn; inAlternating(g) -> inAlternating(g)
     [using instantiation aNormalSubgroupWithAThreeCycleIsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-even the-alternating-group-is-closed every-three-cycle-is-even]
+qed
+
+// THEOREM 10.11, with Lemma 10.9 DISCHARGED. The capstone above took "N contains every
+// 3-cycle" as a premise; `alternating_identities.aNormalSubgroupWithAFamilyMemberHasEveryThreeCycle`
+// now proves it from "N contains one member of the fixed family". So the only premise left
+// about N's contents is the one Lemma 10.10 owes — that N contains a 3-cycle at all, in the
+// family's own shape.
+//
+// WHAT REMAINS FOR AN UNCONDITIONAL THEOREM 10.11, stated precisely: a nontrivial normal
+// subgroup contains SOME non-identity element; Lemma 10.10's four cases each take that
+// element's three relevant points and produce a 3-cycle; what is unwritten is the walk over
+// `decomposition.aNonIdentityDecompositionPeelsOffALastCycle` that selects those points and
+// names which case applies. The algebra of all four cases is proved
+// (`alternating-identities.b4m`), as is the point supply n >= 5 needs
+// (`set_finite.aSetOfAtLeastFiveHasAFifthPoint`).
+theorem aNormalSubgroupWithAFamilyMemberIsTheAlternatingGroup(inN(Fn)):
+  inN(permutation.identityFn) ->
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+  inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))) ->
+  (exists i: Element; exists j: Element; i != j) ->
+  forall g: Fn; inAlternating(g) -> inN(g)
+proof
+  @given-identity |
+    assume inN(permutation.identityFn) {
+      @given-closure |
+        assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+          @given-family |
+            assume forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+              inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2))) {
+              @given-a-pair |
+                assume exists i: Element; exists j: Element; i != j {
+                  @the-identity-is-in-n |
+                    inN(permutation.identityFn)
+                    [by hypothesis given-identity]
+                  @n-is-closed |
+                    forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+                    [by hypothesis given-closure]
+                  @the-family-is-in-n |
+                    forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+                      inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))
+                    [by hypothesis given-family]
+                  @a-pair-exists |
+                    exists i: Element; exists j: Element; i != j
+                    [by hypothesis given-a-pair]
+
+                  // Lemma 10.9: the family gives every 3-cycle
+                  @lemma-ten-nine |
+                    (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+                      inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))) ->
+                      (exists i: Element; exists j: Element; i != j) ->
+                      forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                    [using instantiation alternating_identities.aNormalSubgroupWithAFamilyMemberHasEveryThreeCycle((fun g: Fn => inN(g))) n-is-closed]
+                  @every-three-cycle-given-a-pair |
+                    (exists i: Element; exists j: Element; i != j) ->
+                      forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                    [by modus_ponens lemma-ten-nine the-family-is-in-n]
+                  @every-three-cycle-is-in-n |
+                    forall c: Fn; alternating.isAThreeCycle(c) -> inN(c)
+                    [by modus_ponens every-three-cycle-given-a-pair a-pair-exists]
+
+                  // and the capstone turns that into all of A_n
+                  @conclusion-contains-the-alternating-group |
+                    forall g: Fn; inAlternating(g) -> inN(g)
+                    [using instantiation aNormalSubgroupWithAThreeCycleIsTheAlternatingGroup((fun g: Fn => inN(g))) the-identity-is-in-n n-is-closed every-three-cycle-is-in-n]
+                }
+              @pair-implies |
+                (exists i: Element; exists j: Element; i != j) ->
+                  forall g: Fn; inAlternating(g) -> inN(g)
+                [by discharge given-a-pair]
+            }
+          @family-implies |
+            (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+              inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))) ->
+              (exists i: Element; exists j: Element; i != j) ->
+              forall g: Fn; inAlternating(g) -> inN(g)
+            [by discharge given-family]
+        }
+      @closure-implies |
+        (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+          (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+          inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))) ->
+          (exists i: Element; exists j: Element; i != j) ->
+          forall g: Fn; inAlternating(g) -> inN(g)
+        [by discharge given-closure]
+    }
+  @conclusion |
+    inN(permutation.identityFn) ->
+      (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      (forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+      inN(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))) ->
+      (exists i: Element; exists j: Element; i != j) ->
+      forall g: Fn; inAlternating(g) -> inN(g)
+    [by discharge given-identity]
+qed
+
+// A family member is a 3-cycle, hence even. Needed to exercise the capstone at N = A_n.
+theorem theEveryFamilyMemberIsEven: forall i, j, k: Element;
+  i != j -> k != i -> k != j ->
+  inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+proof
+  @generalize-i |
+    fix i: Element {
+      @generalize-j |
+        fix j: Element {
+          @generalize-k |
+            fix k: Element {
+              @given-i-not-j |
+                assume i != j {
+                  @given-k-not-i |
+                    assume k != i {
+                      @given-k-not-j |
+                        assume k != j {
+                          @i-is-not-j |
+                            i != j
+                            [by hypothesis given-i-not-j]
+                          @k-is-not-i |
+                            k != i
+                            [by hypothesis given-k-not-i]
+                          @k-is-not-j |
+                            k != j
+                            [by hypothesis given-k-not-j]
+                          @i-is-not-k |
+                            i != k
+                            [using specialize alternating.disequalityIsSymmetric(k, i) k-is-not-i]
+                          @j-is-not-k |
+                            j != k
+                            [using specialize alternating.disequalityIsSymmetric(k, j) k-is-not-j]
+                          // the existential needs its three witnesses supplied, which
+                          // `tautology` cannot invent — it reported the whole existential as
+                          // one opaque false atom
+                          // even the reflexive equation is an opaque atom to `tautology`, so
+                          // it is proved separately and conjoined
+                          @it-equals-itself |
+                            compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                              = compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                            [by reflexivity]
+                          @the-conjunction |
+                            i != j and i != k and j != k and
+                              compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                              = compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                            [using tautology i-is-not-j i-is-not-k j-is-not-k it-equals-itself]
+                          @witness-z |
+                            exists z: Element; i != j and i != z and j != z and
+                              compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                              = compose(permutation.transposition(i, z), permutation.transposition(i, j))
+                            [by witness(k) the-conjunction]
+                          @witness-y-z |
+                            exists y: Element; exists z: Element; i != y and i != z and y != z and
+                              compose(permutation.transposition(i, k), permutation.transposition(i, j))
+                              = compose(permutation.transposition(i, z), permutation.transposition(i, y))
+                            [by witness(j) witness-z]
+                          @it-is-a-three-cycle |
+                            alternating.isAThreeCycle(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+                            [by witness(i) witness-y-z]
+                          @three-cycles-are-even |
+                            forall g: Fn; alternating.isAThreeCycle(g) -> inAlternating(g)
+                            [by cite alternating.aThreeCycleIsInTheAlternatingGroup]
+                          @conclusion-even |
+                            inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+                            [using specialize three-cycles-are-even(compose(permutation.transposition(i, k), permutation.transposition(i, j))) it-is-a-three-cycle]
+                        }
+                      @knj-implies |
+                        k != j -> inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+                        [by discharge given-k-not-j]
+                    }
+                  @kni-implies |
+                    k != i -> k != j -> inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+                    [by discharge given-k-not-i]
+                }
+              @conclusion-at-k |
+                i != j -> k != i -> k != j ->
+                  inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+                [by discharge given-i-not-j]
+            }
+          @discharge-k |
+            forall k: Element; i != j -> k != i -> k != j ->
+              inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+            [by generalize generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Element; i != j -> k != i -> k != j ->
+          inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Element; i != j -> k != i -> k != j ->
+      inAlternating(compose(permutation.transposition(i, k), permutation.transposition(i, j)))
+    [by generalize generalize-i]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupContainsItselfFromTheFamily:
+  (exists i: Element; exists j: Element; i != j) ->
+  forall g: Fn; inAlternating(g) -> inAlternating(g)
+proof
+  @the-identity-is-even |
+    inAlternating(permutation.identityFn)
+    [by cite alternating.theIdentityIsInTheAlternatingGroup]
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; inAlternating(g) -> inAlternating(h) -> inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  // a family member IS a 3-cycle, and every 3-cycle is even
+  @the-family-is-even |
+    forall i2, j2, k: Element; i2 != j2 -> k != i2 -> k != j2 ->
+      inAlternating(compose(permutation.transposition(i2, k), permutation.transposition(i2, j2)))
+    [by cite theEveryFamilyMemberIsEven]
+  @conclusion |
+    (exists i: Element; exists j: Element; i != j) ->
+      forall g: Fn; inAlternating(g) -> inAlternating(g)
+    [using instantiation aNormalSubgroupWithAFamilyMemberIsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-even the-alternating-group-is-closed the-family-is-even]
 qed
