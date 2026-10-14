@@ -779,3 +779,29 @@ in the capstone that checked green until the instantiation existed, once on a pr
 validated a leaf when it had checked nothing at all. A schema with no instantiation is unverified
 and SILENT about it, which is the strongest argument for `--library`'s rule that every schema be
 exercised where it is declared.
+
+**THE FLAT DISJUNCTION DOES NOT WORK, and the countermodel says exactly why (2026-10-14).**
+
+I tried to replace the nested 4x4 position split with one flat 13-way disjunction — simpler to
+generate, simpler to read. `tautology` refused it:
+
+    countermodel: x = i := true, y = j := false, z = j := false,
+                  x = j := true, y = i := false, z = i := false
+
+It set `x = i` AND `x = j` both true. With `i != j` in hand that is impossible, but `tautology`
+sees `x = i`, `x = j` and `i != j` as three unrelated opaque atoms and cannot link them. Adding
+`i != j` as a premise does not help, for exactly the same reason. This is the documented
+limitation, and the countermodel named the missing link precisely.
+
+The nested split works because each LEVEL is a genuine propositional tautology over its own
+atoms: level 1 is 4-way over `x=i`, `y=i`, `z=i`; level 2, inside each arm, is 4-way over the
+`j` atoms. Nothing cross-links.
+
+And the three same-coordinate clashes never need ruling out propositionally. In the arm where
+`x = i` and `x = j`, the leaf derives `i = j` by symmetry-and-rewrite and discharges against
+`i != j` with `ex_falso` — a kernel step, which is the standard remedy for this exact failure
+("do the non-propositional step yourself, then let tautology close it"). So the tree is 4x4 = 16
+arms: the 13 real leaves plus 3 contradiction arms, and the extra three are the cheapest in the
+proof.
+
+Probed in a throwaway file before generating anything, like the other four patterns.
