@@ -860,3 +860,28 @@ what the recursive version was built to handle and never had to.
 The lesson is the generator-design one: when the emitter grows branches for cases that may not
 arise, compute the answer for every case first and look at the table. Here the table showed the
 hard case was absent.
+
+**ALL 13 LEAF BODIES GENERATE AND VERIFY STRICTLY (2026-10-14).** Each wrapped as a standalone
+schema with a concrete instantiation at A_n, so each gets a real verdict rather than the silent
+"0 theorems proven" of an uninstantiated schema.
+
+The generator took four iterations, and every one was the SAME defect in a different place:
+**emitting a fact nothing cites.** `2b4m` rejects that outright ("unused fact: step 'X' is never
+used"), which is the right call and made each round a one-line diagnosis, but the shape is worth
+recording because a generator invites it:
+
+1. Pre-ensuring BOTH orientations of every disequality — `i != x` and `x != i` — when each leaf
+   consumes exactly one. Fixed by emitting lazily, at the point of use.
+2. Restating all four outer hypotheses in every leaf, when the smaller leaves cite two or three.
+   Fixed by generating the body first and emitting only the restatements its text references.
+3. Projecting every conjunct of the arm's bundled assumption, when a leaf uses a subset. Fixed
+   with an on-demand `project()` hook — which then had to be threaded INTO the disequality
+   planner, since `ensure()` is what discovers which conjuncts are wanted.
+4. A strip-regex matching `given-closure]` when testing for `closure]`, so the closure
+   restatement survived in the three leaves that need no product closure. Fixed with a
+   negative-lookbehind boundary.
+
+The pattern: a hand-written proof cites what it needs because the author writes the citation
+first. A generator emits a supply and hopes it matches the demand. Making the emitter DEMAND-DRIVEN
+— body first, facts second, each on request — removed all four at once, and is the shape to reach
+for directly next time.
