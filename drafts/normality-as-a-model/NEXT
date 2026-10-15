@@ -1,0 +1,60 @@
+WHERE THE NORMAL-SUBGROUP MODEL STANDS (2026-10-15)
+
+DONE, and in std:
+  - Prove.projectBlockGuard — the guard-arity projection. A source theory can now be
+    modeled onto a sort whose BASE is itself refined. Fixture:
+    tests/cases/model_guarded_refined_base.b4m.
+  - std/permutation/group.b4m — the symmetric group as a guarded model onto `Perm`;
+    four group laws transferred.
+  - std/permutation/alternating.b4m — `aConjugateOfAnEvenPermutationIsEven` and
+    `theAlternatingGroupIsNormal`. A_n IS NORMAL IN S_n, which std did not have.
+    Done by COUNTING (n + k + n), so no parity-totality theorem for permutations was
+    needed.
+  - std/group/normal-subgroup.b4m — normality as a modelable theory (the conjugation
+    condition as an axiom beside the three subgroup criteria).
+
+THE REMAINING BLOCKER, sized rather than guessed. The model of `normal-subgroup` onto
+A_n cannot discharge `subgroupIsNormal` yet, because the discharger is CONDITIONAL
+where the axiom is not:
+
+  axiom subgroupIsNormal:  forall g, n; inSubgroup(n) -> inSubgroup(g n g^-1)
+  theAlternatingGroupIsNormal: forall sigma, g;
+    invertible(sigma) -> isFinite(support(sigma)) -> inAlternating(g) -> …
+
+Two extra premises, of different kinds:
+  invertible(sigma)        — the AMBIENT group's membership. Group theory has no slot
+                             for it because every element of `Grp` is in the group;
+                             for permutations the ambient group is `Perm`, not `Fn`.
+                             Fixed by mapping the ambient sort to `Perm`.
+  isFinite(support(sigma)) — NOT group-theoretic at all. It is how std's parity
+                             argument factors a permutation into transpositions.
+
+THE RIGHT FIX, and why it is not a shortcut: S_n genuinely IS the FINITELY-SUPPORTED
+permutations — that is the group Judson means throughout, and `Perm` (all invertible
+functions) is strictly bigger. So the ambient sort should be
+
+    sort SymPerm = Perm where hasFiniteSupport
+
+and then `invertible` and finiteness both come from the binder's own guard, the
+discharger becomes unconditional in the theory's terms, and the overload machinery
+already built carries it (that is exactly the two-qualifier case the projection
+handles).
+
+WHAT THAT COSTS — three theorems std does not have, all standard:
+  1. support(compose(f, g)) subset union(support(f), support(g))
+  2. a union of two finite sets is finite  (induction on one side's size;
+     `disjointUnionSizesAdd` needs disjointness, which these supports do not have)
+  3. the three closure facts for the new sort: identityFn, compose, inverse preserve
+     finite support — (1) and (2) give compose; inverse is
+     support(inverse(f)) = support(f), which `aPermutationKeepsItsSupport` is close to.
+
+None of it is hard and none of it is novel. It is a set-theory errand, not a model
+problem — the model machinery is finished. Flagged here rather than started so the
+decision about whether std wants `SymPerm` is taken deliberately: adding it means
+every permutation theorem that currently quantifies over `Perm` has a second, smaller
+sort nearby, and that is a corpus-wide naming question.
+
+SOUNDNESS NOTE carried forward (user, 2026-10-15): the engine does not check that a
+model OVERLOADED every guard predicate it should. A consumer that forgets `inN` gets a
+theorem about the wrong subgroup with no diagnostic. Accepted deliberately; the
+guarantees are future work.
