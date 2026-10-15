@@ -2202,3 +2202,83 @@ proof
       transposition(at(s, ZERO), at(s, succ(ZERO))))
     [by generalize generalize-s]
 qed
+
+// THE FORWARD HALF of the long-cycle pattern, exposed separately.
+//
+// `aLongCycleMatchesTheFirstPattern` states the INVERSE values, which is what dispatch arm 1
+// consumes directly. But a consumer holding `sigma = compose(r, c)` with a disjoint remainder
+// needs the FORWARD values first: `aDisjointRemainderPreservesCycleValues` transfers forward
+// agreement from c to sigma, and `forwardGivesInverse` then converts against SIGMA rather than
+// against c. Transferring the inverse values directly would need an inverse-transfer lemma;
+// this route needs none.
+theorem aLongCycleAdvancesItsFirstPoints: forall s: Points; forall q: Nat;
+  distinct(s, succ(succ(succ(succ(q))))) ->
+  (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+  and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+  and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO))
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-q |
+        fix q: Nat {
+          @given-distinct |
+            assume distinct(s, succ(succ(succ(succ(q))))) {
+              @the-distinctness |
+                distinct(s, succ(succ(succ(succ(q)))))
+                [by hypothesis given-distinct]
+              @zero-gap |
+                add(ZERO, succ(succ(succ(q)))) = succ(succ(succ(q)))
+                [using specialize addZeroLeft(succ(succ(succ(q))))]
+              @zero-below |
+                less_than(ZERO, succ(succ(succ(q))))
+                [using specialize lessThanIntro(ZERO, succ(succ(q)), succ(succ(succ(q)))) zero-gap]
+              @one-gap |
+                add(succ(ZERO), succ(succ(q))) = succ(succ(succ(q)))
+                [using arithmetic(peano)]
+              @one-below |
+                less_than(succ(ZERO), succ(succ(succ(q))))
+                [using specialize lessThanIntro(succ(ZERO), succ(q), succ(succ(succ(q)))) one-gap]
+              @advances |
+                forall i: Nat; less_than(i, succ(succ(succ(q)))) ->
+                  apply(cycle(s, succ(succ(succ(succ(q))))), at(s, i)) = at(s, succ(i))
+                [using specialize cycleAdvances(s, succ(succ(succ(q)))) the-distinctness]
+              @at-zero |
+                apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+                [using specialize advances(ZERO) zero-below]
+              @at-one |
+                apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+                [using specialize advances(succ(ZERO)) one-below]
+              @wraps |
+                apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO)
+                [using specialize cycleWrapsAround(s, succ(succ(succ(q)))) the-distinctness]
+              @first-two |
+                (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+                  and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO))))
+                [by both at-zero at-one]
+              @conclusion-forward |
+                (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+                  and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+                  and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO))
+                [by both first-two wraps]
+            }
+          @c1 |
+            distinct(s, succ(succ(succ(succ(q))))) ->
+              (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+              and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+              and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO))
+            [by discharge given-distinct]
+        }
+      @c2 |
+        forall q: Nat; distinct(s, succ(succ(succ(succ(q))))) ->
+          (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+          and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+          and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall s: Points; forall q: Nat; distinct(s, succ(succ(succ(succ(q))))) ->
+      (apply(cycle(s, succ(succ(succ(succ(q))))), at(s, ZERO)) = at(s, succ(ZERO))
+      and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(ZERO))) = at(s, succ(succ(ZERO)))
+      and apply(cycle(s, succ(succ(succ(succ(q))))), at(s, succ(succ(succ(q))))) = at(s, ZERO))
+    [by generalize generalize-s]
+qed
