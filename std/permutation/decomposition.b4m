@@ -3815,3 +3815,90 @@ proof
       and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
     [by generalize generalize-f]
 qed
+
+// THE PEELED FACTORS ARE DISJOINT, in both orders. `peelingOffAnOrbit` reports the two
+// supports relative to the orbit — `support(c)` inside it, `support(g)` the rest of `support(f)`
+// outside it — and `separatedSupportsAreDisjoint` turns that into disjointness. The reusable
+// step is noting that a support KNOWN EXACTLY is in particular a subset of itself.
+theorem thePeeledFactorsAreDisjoint: forall f: Fn; forall c: Fn; forall g: Fn; forall x: Element;
+  subset(support(c), orbit(f, x)) ->
+  support(g) = difference(support(f), orbit(f, x)) ->
+  (disjointSupports(c, g) and disjointSupports(g, c))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @generalize-g |
+            fix g: Fn {
+              @generalize-x |
+                fix x: Element {
+                  @given-inside |
+                    assume subset(support(c), orbit(f, x)) {
+                      @given-outside |
+                        assume support(g) = difference(support(f), orbit(f, x)) {
+                          @c-inside |
+                            subset(support(c), orbit(f, x))
+                            [by hypothesis given-inside]
+                          @g-is-the-rest |
+                            support(g) = difference(support(f), orbit(f, x))
+                            [by hypothesis given-outside]
+
+                          // a set known exactly is a subset of what it equals; `tautology` sees the
+                          // universal as one opaque atom, so the binder is discharged by hand
+                          @membership-implies-itself |
+                            fix y: Element {
+                              @given-member |
+                                assume member(y, support(g)) {
+                                  @the-membership |
+                                    member(y, support(g))
+                                    [by hypothesis given-member]
+                                }
+                              @self-implication |
+                                member(y, support(g)) -> member(y, support(g))
+                                [by discharge given-member]
+                            }
+                          @every-member |
+                            forall y: Element; member(y, support(g)) -> member(y, support(g))
+                            [by generalize membership-implies-itself]
+                          @g-subset-itself |
+                            subset(support(g), support(g))
+                            [using tautology every-member]
+                          @g-outside |
+                            subset(support(g), difference(support(f), orbit(f, x)))
+                            [by rewrite g-is-the-rest g-subset-itself]
+
+                          @conclusion-disjoint |
+                            (disjointSupports(c, g) and disjointSupports(g, c))
+                            [using specialize separatedSupportsAreDisjoint(c, g, support(f), orbit(f, x)) c-inside g-outside]
+                        }
+                      @outside-implies |
+                        support(g) = difference(support(f), orbit(f, x)) ->
+                          (disjointSupports(c, g) and disjointSupports(g, c))
+                        [by discharge given-outside]
+                    }
+                  @inside-implies |
+                    subset(support(c), orbit(f, x)) -> support(g) = difference(support(f), orbit(f, x)) ->
+                      (disjointSupports(c, g) and disjointSupports(g, c))
+                    [by discharge given-inside]
+                }
+              @discharge-x |
+                forall x: Element; subset(support(c), orbit(f, x)) -> support(g) = difference(support(f), orbit(f, x)) ->
+                  (disjointSupports(c, g) and disjointSupports(g, c))
+                [by generalize generalize-x]
+            }
+          @discharge-g |
+            forall g: Fn; forall x: Element; subset(support(c), orbit(f, x)) -> support(g) = difference(support(f), orbit(f, x)) ->
+              (disjointSupports(c, g) and disjointSupports(g, c))
+            [by generalize generalize-g]
+        }
+      @discharge-c |
+        forall c: Fn; forall g: Fn; forall x: Element; subset(support(c), orbit(f, x)) -> support(g) = difference(support(f), orbit(f, x)) ->
+          (disjointSupports(c, g) and disjointSupports(g, c))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall f: Fn; forall c: Fn; forall g: Fn; forall x: Element; subset(support(c), orbit(f, x)) -> support(g) = difference(support(f), orbit(f, x)) ->
+      (disjointSupports(c, g) and disjointSupports(g, c))
+    [by generalize generalize-f]
+qed
