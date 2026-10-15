@@ -1,0 +1,52 @@
+// PROBE: the CONSUMER-SIDE model. N is a concrete predicate at the call site, so
+// the model is declarable THERE. Does the normal-subgroup theory then transfer?
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import alternating <<< "std/permutation/alternating.b4m"
+
+sort Fn = permutation.Fn
+sort Perm = permutation.Perm
+pred invertible = permutation.invertible
+func compose = permutation.compose
+func inverse = permutation.inverse
+const identityFn = permutation.identityFn
+pred inAlternating = alternating.inAlternating
+
+sort EvenPerm = Perm where inAlternating
+
+fact composeAssoc = function.composeAssoc
+fact composeIdentityLeft = function.composeIdentityLeft
+fact identityIsEven = alternating.theIdentityIsInTheAlternatingGroup
+fact evenClosedOp = alternating.theAlternatingGroupIsClosedUnderComposition
+fact evenClosedInverse = alternating.theAlternatingGroupIsClosedUnderInverses
+
+// A_n as a SUBGROUP of the permutations: map subgroup's vocabulary onto inAlternating.
+model AlternatingIsASubgroup {
+  subgroup.Grp: Perm
+  subgroup.E: identityFn(function_invertible.identityInvertible)
+  subgroup.op: compose -| function_invertible.composeInvertible
+  subgroup.inverse: inverse -| function_invertible.inverseInvertible
+  subgroup.inSubgroup: inAlternating
+  subgroup.Sub: EvenPerm
+  subgroup.grpAssoc <- composeAssoc
+  subgroup.grpIdentityLeft <- composeIdentityLeft
+  subgroup.grpInverseLeft <- function.inverseLeft
+  subgroup.subgroupHasIdentity <- identityIsEven
+  subgroup.subgroupClosedOp <- evenClosedOp
+  subgroup.subgroupClosedInverse <- evenClosedInverse
+}
+
+// a DERIVED subgroup theorem, transferred: the division criterion on A_n
+theorem evenPermutationsAreClosedUnderDivision: forall g: Fn; forall h: Fn;
+  invertible(g) -> invertible(h) -> inAlternating(g) -> inAlternating(h) ->
+  inAlternating(compose(g, inverse(h)))
+proof
+  @conclusion |
+    forall g: Fn; forall h: Fn;
+      invertible(g) -> invertible(h) -> inAlternating(g) -> inAlternating(h) ->
+      inAlternating(compose(g, inverse(h)))
+    [using model(AlternatingIsASubgroup) subgroup.subgroupClosedDivide]
+qed

@@ -1,0 +1,111 @@
+// std/permutation/group.b4m — THE SYMMETRIC GROUP: permutations as a group under composition.
+//
+// The invertible functions on a sort form a group under composition, and this file says so by
+// MODELING `std/group.b4m` onto them. In return the whole group corpus — inverse uniqueness,
+// the involution and product laws for inverses, both cancellation laws, the right-sided
+// identity and inverse laws — becomes available to every permutation file, relativized to
+// `invertible`.
+//
+// WHY THIS IS ITS OWN FILE. `std/permutation.b4m` does not import `group`, and should not: it
+// is the base of the permutation stack and group theory is not among its dependencies. A model
+// is the right way to join them, and the model's natural home is beside the thing it creates
+// rather than inside either theory — the same shape `power.b4m` and `sequence.b4m` already use.
+//
+// THE MODEL IS GUARDED. `Perm` is `Fn where invertible`, so the sort mapping targets a
+// predicated sort and every transferred theorem relativizes: a `invertible(x) ->` guard is
+// injected at each binder. The three membership obligations are nominated on the symbol map —
+// `identityFn` is invertible (parens form, a ground fact), and `compose` and `inverse` preserve
+// invertibility (`-|` form, closure facts).
+//
+// The three group axioms are discharged by the function corpus: composition is associative,
+// the identity is a left identity, and an invertible function's inverse is a left inverse.
+// Everything else group proves comes along for free.
+
+import group <<< "std/group.b4m"
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+
+sort Fn = permutation.Fn
+sort Perm = permutation.Perm
+pred invertible = permutation.invertible
+func compose = permutation.compose
+func inverse = permutation.inverse
+const identityFn = permutation.identityFn
+
+// the three group axioms, as the function corpus states them
+fact composeAssoc = function.composeAssoc
+fact composeIdentityLeft = function.composeIdentityLeft
+fact inverseLeft = function.inverseLeft
+
+// the three membership obligations: identityFn is invertible, and compose and inverse
+// preserve invertibility
+fact identityInvertible = function_invertible.identityInvertible
+fact composeInvertible = function_invertible.composeInvertible
+fact inverseInvertible = function_invertible.inverseInvertible
+
+// THE SYMMETRIC GROUP. `group.Grp: Perm` makes this guarded; the nominated facts discharge
+// each membership obligation the transfer walks into.
+model SymmetricGroup {
+  group.Grp: Perm
+  group.E: identityFn(identityInvertible)
+  group.op: compose -| composeInvertible
+  group.inverse: inverse -| inverseInvertible
+  group.opAssoc <- composeAssoc
+  group.opIdentityLeft <- composeIdentityLeft
+  group.opInverseLeft <- inverseLeft
+}
+
+// NOTE ON BINDER SHAPE. A guarded transfer injects each `invertible(x) ->` guard AT ITS OWN
+// BINDER, so the relativized statement interleaves (`forall g; invertible(g) -> forall f;
+// invertible(f) -> ...`) rather than collecting the guards at the front. The shims below are
+// written in that shape; writing the collected form costs a binder-shuffling proof for no gain.
+//
+// -- the group corpus on permutations ------------------------------------------------------
+//
+// Shim theorems, one per transferred law. Each gives the fact a BARE local name, which is what
+// a bare-name accelerant in a consumer file needs — a model-transferred fact has no local name
+// until one is written. This is the shim cost every model-based concrete structure pays.
+
+// The inverse is involutive: (f⁻¹)⁻¹ = f.
+theorem inverseIsInvolutive: forall f: Fn;
+  invertible(f) -> inverse(inverse(f)) = f
+proof
+  @conclusion |
+    forall f: Fn; invertible(f) -> inverse(inverse(f)) = f
+    [using model(SymmetricGroup) group.invInvolution]
+qed
+
+// The inverse of a composite reverses it: (g∘f)⁻¹ = f⁻¹∘g⁻¹.
+theorem inverseOfAComposite: forall g: Fn; invertible(g) -> forall f: Fn; invertible(f) ->
+  inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+proof
+  @conclusion |
+    forall g: Fn; invertible(g) -> forall f: Fn; invertible(f) ->
+      inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+    [using model(SymmetricGroup) group.invProduct]
+qed
+
+// Left cancellation: g∘f = g∘h implies f = h.
+theorem composeCancelsOnTheLeft: forall g: Fn; invertible(g) ->
+  forall f: Fn; invertible(f) -> forall h: Fn; invertible(h) ->
+  compose(g, f) = compose(g, h) -> f = h
+proof
+  @conclusion |
+    forall g: Fn; invertible(g) ->
+      forall f: Fn; invertible(f) -> forall h: Fn; invertible(h) ->
+      compose(g, f) = compose(g, h) -> f = h
+    [using model(SymmetricGroup) group.cancelLeft]
+qed
+
+// Right cancellation: f∘g = h∘g implies f = h.
+theorem composeCancelsOnTheRight: forall f: Fn; invertible(f) ->
+  forall g: Fn; invertible(g) -> forall h: Fn; invertible(h) ->
+  compose(f, g) = compose(h, g) -> f = h
+proof
+  @conclusion |
+    forall f: Fn; invertible(f) ->
+      forall g: Fn; invertible(g) -> forall h: Fn; invertible(h) ->
+      compose(f, g) = compose(h, g) -> f = h
+    [using model(SymmetricGroup) group.cancelRight]
+qed

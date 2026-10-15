@@ -1,0 +1,59 @@
+NORMALITY AS A MODEL — probed 2026-10-15, NOT adopted. Three findings, one blocker.
+
+THE QUESTION. Theorem 10.11 takes four hypotheses that together say "N is a normal
+subgroup of A_n": inN(identityFn), closure under products, closure under inverses,
+and the conjugation condition. Could one `model` declaration replace them?
+
+FINDING 1 — THE PERMUTATIONS DO MODEL `group`, cleanly. See
+permutations-model-group.b4m: a GUARDED model onto `Perm` (= `Fn where invertible`),
+nominating identityInvertible / composeInvertible / inverseInvertible as the
+membership dischargers, and discharging the three group axioms with composeAssoc /
+composeIdentityLeft / inverseLeft. `group.invInvolution` then transfers, relativized
+to `invertible`. Landed first try. This piece is worth having on its own merits —
+nothing in std currently models group onto permutations, so the whole group corpus is
+unavailable to permutation files.
+
+FINDING 2 — A SCHEMA PARAMETER CANNOT BE A MODEL TARGET. See
+schema-param-cannot-be-a-model-target.b4m. A model needs a file-level predicated sort
+(`sort SubN = Fn where inN`), and `inN` exists only inside the schema's own scope:
+
+    error: reference not found: 'inN'
+
+So "N is a normal subgroup" cannot become a model declaration IN THE CAPSTONE. It can
+only be declared by a CONSUMER, which already has a concrete predicate. The capstone
+therefore keeps its hypotheses either way; a model would move the boilerplate from the
+theorem's statement to each consumer's file, not remove it.
+
+FINDING 3 — THE BLOCKER, and it is the one worth writing down. We want to axiomatize
+what normality needs, but THOSE AXIOMS CARRY AN OVERLOAD REQUIREMENT WHENEVER THE BASE
+SORT IS NOT UNIVERSAL.
+
+`std/subgroup.b4m` is written against a universal base: `sort Sub = Grp where
+inSubgroup` has ONE guard, and its proofs' `[by predicate ...]` steps expect exactly
+that one. Permutations are not universal — `Perm = Fn where invertible` — so the target
+sort `EvenPerm = Perm where inAlternating` carries TWO guards, and every transferred
+binder relativizes to the CONJUNCTION. The mismatch lands inside the source file's own
+proof (see alternating-as-a-subgroup.b4m):
+
+    std/subgroup.b4m:152:8: error: AlternatingIsASubgroup@subgroupClosedDivide:
+      step claims 'inAlternating(g)' but the hypothesis derives
+      'inAlternating(g) and invertible(g)'
+
+GUIDE.md documents the conjunction injection for multi-qualifier sorts, so this is the
+mechanism working as specified — the gap is that a source theory's proofs are written
+against the arity of ITS OWN guard, and a refined-base target changes that arity.
+
+WHAT THAT MEANS FOR THE DESIGN. An abstract theory meant to be modeled onto a REFINED
+base sort has to be stated so its membership obligations are overload-tolerant: either
+every guard-consuming step takes the guard as an explicit premise rather than through
+`[by predicate]`, or the model mechanism learns to project a conjunction onto the
+single guard the source names. The second is the real fix and is engine work.
+
+Related: [[required-on-model-primitive]] records model_guarded* blocked on a different
+missing primitive ("required on model"); this is a third guarded-model gap, distinct
+from both that and the @-projection route in tests/cases/model_subgroup_transfer.b4m
+(which works precisely because its base sort IS universal).
+
+STATUS. Finding 1 is adoptable now and would be a real addition to std. Findings 2 and
+3 say the capstone's hypotheses stay. Not pursuing further without a decision on the
+overload question.
