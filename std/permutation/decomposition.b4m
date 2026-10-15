@@ -78,6 +78,7 @@ fact aPrefixProductIsDisjointFromADisjointEntry = permutation_sequence.aPrefixPr
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
 func succ = peano.succ
+func add = peano.add
 pred less_than = peano.less_than
 define less_or_equal(a, b) = peano.less_or_equal(a, b)
 fact zeroOrSucc = peano.zeroOrSucc
@@ -2067,4 +2068,609 @@ proof
       and f = compose(productUpTo(w, k), at(w, k))
       and disjointSupports(productUpTo(w, k), at(w, k))
     [by generalize generalize-f]
+qed
+
+// A DISJOINT REMAINDER DOES NOT CHANGE A CYCLE'S VALUES ON ITS OWN SUPPORT.
+//
+//     sigma = compose(r, c),  disjointSupports(r, c),  x in support(c)
+//       ==>  apply(sigma, x) = apply(c, x)
+//
+// THIS IS THE STEP JUDSON ELIDES. When he writes "sigma = tau(a1 a2 ... ar)" and then treats
+// a1..ar as SIGMA's points — conjugating sigma and reading off sigma(a1) = a2 — he is using
+// that sigma agrees with its cycle on that cycle's own support. On paper "the cycle containing
+// a1" and "sigma restricted there" are the same object, so there is nothing to say. A
+// formalization has to say it once, and this is it.
+//
+// Concretely: `aNonIdentityDecompositionPeelsOffALastCycle` hands back
+// `f = compose(productUpTo(w,k), at(w,k))` with disjoint supports, and every Lemma 10.10 case
+// names its points from the peeled cycle while its identity is about sigma.
+//
+// The argument is `supportMember` twice over: x moves under c, so x is in c's support; the
+// supports are disjoint, so x is not in r's; so r fixes x. Applied at c(x) too, since
+// sigma(x) = r(c(x)) and c(x) is also in c's support (a permutation maps its support onto
+// itself, which needs injectivity at a point).
+//
+// Verified exhaustively over every disjoint pair at n = 4, 5, 6 (53, 309, 2119 pairs) before
+// writing, forward and inverse directions both.
+theorem aDisjointRemainderPreservesCycleValues: forall r: Fn; forall c: Fn; forall x: Element;
+  invertible(c) ->
+  disjointSupports(r, c) ->
+  member(x, support(c)) ->
+  apply(compose(r, c), x) = apply(c, x)
+proof
+  @generalize-r |
+    fix r: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-invertible |
+                assume invertible(c) {
+                  @given-disjoint |
+                    assume disjointSupports(r, c) {
+                      @given-in-support |
+                        assume member(x, support(c)) {
+                          @c-is-a-permutation |
+                            invertible(c)
+                            [by hypothesis given-invertible]
+                          @the-disjointness |
+                            disjointSupports(r, c)
+                            [by hypothesis given-disjoint]
+                          @x-moves |
+                            member(x, support(c))
+                            [by hypothesis given-in-support]
+
+                          // c(x) is also in c's support: a permutation maps its support onto
+                          // itself. Suppose c(c(x)) = c(x); applying inverse(c) to both sides
+                          // gives c(x) = x, contradicting x in support(c).
+                          @what-support-means-at-x |
+                            member(x, support(c)) iff apply(c, x) != x
+                            [using specialize permutation.supportMember(c, x)]
+                          @x-really-moves |
+                            apply(c, x) != x
+                            [using tautology x-moves what-support-means-at-x]
+                          @suppose-image-fixed |
+                            assume apply(c, apply(c, x)) = apply(c, x) {
+                              @the-fixed-equation |
+                                apply(c, apply(c, x)) = apply(c, x)
+                                [by hypothesis suppose-image-fixed]
+                              @undo-everywhere |
+                                forall w: Element; apply(inverse(c), apply(c, w)) = w
+                                [using specialize inverseUndoesAtAPoint(c) c-is-a-permutation]
+                              @undo-at-image |
+                                apply(inverse(c), apply(c, apply(c, x))) = apply(c, x)
+                                [by apply_at(apply(c, x)) undo-everywhere]
+                              @undo-at-x |
+                                apply(inverse(c), apply(c, x)) = x
+                                [by apply_at(x) undo-everywhere]
+                              @substituted |
+                                apply(inverse(c), apply(c, x)) = apply(c, x)
+                                [by rewrite the-fixed-equation undo-at-image]
+                              // both sides name inverse(c)(c(x)): one says it is c(x), the other x
+                              @flipped |
+                                apply(c, x) = apply(inverse(c), apply(c, x))
+                                [by symmetry substituted]
+                              @image-equals-x |
+                                apply(c, x) = x
+                                [using chain flipped undo-at-x]
+                            }
+                          @image-really-moves |
+                            apply(c, apply(c, x)) != apply(c, x)
+                            [by contradiction suppose-image-fixed image-equals-x x-really-moves]
+                          @what-support-means-at-image |
+                            member(apply(c, x), support(c)) iff apply(c, apply(c, x)) != apply(c, x)
+                            [using specialize permutation.supportMember(c, apply(c, x))]
+                          @image-in-support |
+                            member(apply(c, x), support(c))
+                            [using tautology what-support-means-at-image image-really-moves]
+
+                          // x not in r's support, from disjointness
+                          @the-intersection-is-empty |
+                            intersection(support(r), support(c)) = emptyset
+                            [using tautology the-disjointness]
+                          @intersection-at-the-image |
+                            member(apply(c, x), intersection(support(r), support(c)))
+                              iff (member(apply(c, x), support(r)) and member(apply(c, x), support(c)))
+                            [using specialize set.intersectionMember(support(r), support(c), apply(c, x))]
+                          @nothing-in-the-emptyset |
+                            not member(apply(c, x), emptyset)
+                            [using specialize set.emptysetMember(apply(c, x))]
+                          @not-in-the-intersection |
+                            not member(apply(c, x), intersection(support(r), support(c)))
+                            [by rewrite the-intersection-is-empty nothing-in-the-emptyset]
+                          @image-not-in-r |
+                            not member(apply(c, x), support(r))
+                            [using tautology intersection-at-the-image not-in-the-intersection image-in-support]
+                          @what-support-means-for-r |
+                            member(apply(c, x), support(r)) iff apply(r, apply(c, x)) != apply(c, x)
+                            [using specialize permutation.supportMember(r, apply(c, x))]
+                          @r-fixes-the-image |
+                            apply(r, apply(c, x)) = apply(c, x)
+                            [using tautology what-support-means-for-r image-not-in-r]
+
+                          @unfold-the-composite |
+                            apply(compose(r, c), x) = apply(r, apply(c, x))
+                            [using specialize function.composeApply(r, c, x)]
+                          @conclusion-value |
+                            apply(compose(r, c), x) = apply(c, x)
+                            [by rewrite r-fixes-the-image unfold-the-composite]
+                        }
+                      @in-support-implies |
+                        member(x, support(c)) ->
+                          apply(compose(r, c), x) = apply(c, x)
+                        [by discharge given-in-support]
+                    }
+                  @disjoint-implies |
+                    disjointSupports(r, c) -> member(x, support(c)) ->
+                      apply(compose(r, c), x) = apply(c, x)
+                    [by discharge given-disjoint]
+                }
+              @invertible-implies |
+                invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+                  apply(compose(r, c), x) = apply(c, x)
+                [by discharge given-invertible]
+            }
+          @discharge-x |
+            forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+              apply(compose(r, c), x) = apply(c, x)
+            [by generalize generalize-x]
+        }
+      @discharge-c |
+        forall c: Fn; forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+          apply(compose(r, c), x) = apply(c, x)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall r: Fn; forall c: Fn; forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+      apply(compose(r, c), x) = apply(c, x)
+    [by generalize generalize-r]
+qed
+
+// Disequality is symmetric over Element. Needed here and provable in four steps; the twin in
+// `permutation/alternating.b4m` cannot be cited because that file IMPORTS this one, and
+// `tautology` sees the two orientations as unrelated atoms.
+theorem pointDisequalityIsSymmetric: forall u, v: Element; u != v -> v != u
+proof
+  @generalize-u |
+    fix u: Element {
+      @generalize-v |
+        fix v: Element {
+          @given-u-not-v |
+            assume u != v {
+              @u-not-v |
+                u != v
+                [by hypothesis given-u-not-v]
+              @suppose-v-equals-u |
+                assume v = u {
+                  @v-is-u |
+                    v = u
+                    [by hypothesis suppose-v-equals-u]
+                  @u-is-v |
+                    u = v
+                    [by symmetry v-is-u]
+                }
+              @conclusion-v-not-u |
+                v != u
+                [by contradiction suppose-v-equals-u u-is-v u-not-v]
+            }
+          @conclusion-implication |
+            u != v -> v != u
+            [by discharge given-u-not-v]
+        }
+      @discharge-v |
+        forall v: Element; u != v -> v != u
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall u, v: Element; u != v -> v != u
+    [by generalize generalize-u]
+qed
+
+// FROM JUDSON'S SHAPE TO ARM 1'S PATTERN. The peel hands back `sigma = compose(tau, c)` with
+// `c` a cycle and the supports disjoint — exactly how Judson writes his first case,
+// `sigma = tau(a1 a2 ... ar)` with r > 3. This converts that shape into the point-values
+// `aLongCyclePatternPutsAThreeCycleInTheSubgroup` consumes.
+//
+// The points are the cycle's first three entries and its last, `(s0, s1, s2, s_p)` — Judson's
+// `(a1, a2, a3, a_r)`. Length is written `succ^4(q)` (so r > 3) because the index facts then
+// come out structurally; `arithmetic(peano)` treats `succ` opaquely and cannot bridge numerals
+// to a variable under it.
+//
+// Three steps per point: `cycleAdvances`/`cycleWrapsAround` give the cycle's forward value,
+// `aDisjointRemainderPreservesCycleValues` transfers it to sigma — the step Judson elides when
+// he treats a1..ar as SIGMA's points — and `forwardGivesInverse` converts to the inverse value
+// the arm wants.
+theorem aLongCycleFactorGivesTheFirstPattern: forall tau: Fn; forall s: Points; forall q: Nat;
+  invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) ->
+  invertible(cycle(s, succ(succ(succ(succ(q)))))) ->
+  distinct(s, succ(succ(succ(succ(q))))) ->
+  disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+  (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+proof
+  @generalize-tau |
+    fix tau: Fn {
+      @generalize-s |
+        fix s: Points {
+          @generalize-q |
+            fix q: Nat {
+              @given-sigma-invertible |
+                assume invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) {
+                  @given-cycle-invertible |
+                    assume invertible(cycle(s, succ(succ(succ(succ(q)))))) {
+                      @given-distinct |
+                        assume distinct(s, succ(succ(succ(succ(q))))) {
+                          @given-disjoint |
+                            assume disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) {
+                              @sigma-is-a-permutation |
+                                invertible(compose(tau, cycle(s, succ(succ(succ(succ(q)))))))
+                                [by hypothesis given-sigma-invertible]
+                              @the-cycle-is-a-permutation |
+                                invertible(cycle(s, succ(succ(succ(succ(q))))))
+                                [by hypothesis given-cycle-invertible]
+                              @the-distinctness |
+                                distinct(s, succ(succ(succ(succ(q)))))
+                                [by hypothesis given-distinct]
+                              @the-disjointness |
+                                disjointSupports(tau, cycle(s, succ(succ(succ(succ(q))))))
+                                [by hypothesis given-disjoint]
+
+                              // index bounds, from lessThanIntro with the gap written out
+                              @zero-gap |
+                                add(ZERO, succ(succ(succ(q)))) = succ(succ(succ(q)))
+                                [using specialize peano.addZeroLeft(succ(succ(succ(q))))]
+                              @zero-below |
+                                less_than(ZERO, succ(succ(succ(q))))
+                                [using specialize peano_order.lessThanIntro(ZERO, succ(succ(q)), succ(succ(succ(q)))) zero-gap]
+                              @one-gap |
+                                add(succ(ZERO), succ(succ(q))) = succ(succ(succ(q)))
+                                [using arithmetic(peano)]
+                              @one-below |
+                                less_than(succ(ZERO), succ(succ(succ(q))))
+                                [using specialize peano_order.lessThanIntro(succ(ZERO), succ(q), succ(succ(succ(q)))) one-gap]
+
+                              // the cycle's three forward values
+                              @advances |
+                                forall i: Nat; less_than(i, succ(succ(succ(q)))) ->
+                                  apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, i)) = cycle_theory.at(s, succ(i))
+                                [using specialize cycle_theory.cycleAdvances(s, succ(succ(succ(q)))) the-distinctness]
+                              @cycle-at-zero |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(ZERO))
+                                [using specialize advances(ZERO) zero-below]
+                              @cycle-at-one |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, succ(succ(ZERO)))
+                                [using specialize advances(succ(ZERO)) one-below]
+                              @cycle-wraps |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q))))) = cycle_theory.at(s, ZERO)
+                                [using specialize cycle_theory.cycleWrapsAround(s, succ(succ(succ(q)))) the-distinctness]
+
+                              // the six point disequalities, from distinctEntriesDiffer at the index pairs
+                              @zero-in-range |
+                                less_than(ZERO, succ(succ(succ(succ(q)))))
+                                [using specialize peano_order.lessThanSuccRight(ZERO, succ(succ(succ(q)))) zero-below]
+                              @one-in-range |
+                                less_than(succ(ZERO), succ(succ(succ(succ(q)))))
+                                [using specialize peano_order.lessThanSuccRight(succ(ZERO), succ(succ(succ(q)))) one-below]
+                              @two-gap |
+                                add(succ(succ(ZERO)), succ(succ(q))) = succ(succ(succ(succ(q))))
+                                [using arithmetic(peano)]
+                              @two-in-range |
+                                less_than(succ(succ(ZERO)), succ(succ(succ(succ(q)))))
+                                [using specialize peano_order.lessThanIntro(succ(succ(ZERO)), succ(q), succ(succ(succ(succ(q))))) two-gap]
+                              @p-in-range |
+                                less_than(succ(succ(succ(q))), succ(succ(succ(succ(q)))))
+                                [using specialize peano_order.lessThanSelf(succ(succ(succ(q))))]
+                              @one-is-not-zero |
+                                succ(ZERO) != ZERO
+                                [using specialize peano.succNotZero(ZERO)]
+                              @zero-is-not-one |
+                                ZERO != succ(ZERO)
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(ZERO), ZERO) one-is-not-zero]
+                              @two-is-not-zero |
+                                succ(succ(ZERO)) != ZERO
+                                [using specialize peano.succNotZero(succ(ZERO))]
+                              @zero-is-not-two |
+                                ZERO != succ(succ(ZERO))
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(succ(ZERO)), ZERO) two-is-not-zero]
+                              @p-is-not-zero |
+                                succ(succ(succ(q))) != ZERO
+                                [using specialize peano.succNotZero(succ(succ(q)))]
+                              @zero-is-not-p |
+                                ZERO != succ(succ(succ(q)))
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(succ(succ(q))), ZERO) p-is-not-zero]
+                              @suppose-one-is-two |
+                                assume succ(ZERO) = succ(succ(ZERO)) {
+                                  @the-one-two-equation |
+                                    succ(ZERO) = succ(succ(ZERO))
+                                    [by hypothesis suppose-one-is-two]
+                                  @stripped-one-two |
+                                    ZERO = succ(ZERO)
+                                    [using specialize peano.succInjective(ZERO, succ(ZERO)) the-one-two-equation]
+                                }
+                              @one-is-not-two |
+                                succ(ZERO) != succ(succ(ZERO))
+                                [by contradiction suppose-one-is-two stripped-one-two zero-is-not-one]
+                              @inner-is-not-zero |
+                                succ(succ(q)) != ZERO
+                                [using specialize peano.succNotZero(succ(q))]
+                              @zero-is-not-inner |
+                                ZERO != succ(succ(q))
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(succ(q)), ZERO) inner-is-not-zero]
+                              @suppose-one-is-p |
+                                assume succ(ZERO) = succ(succ(succ(q))) {
+                                  @the-one-p-equation |
+                                    succ(ZERO) = succ(succ(succ(q)))
+                                    [by hypothesis suppose-one-is-p]
+                                  @stripped-one-p |
+                                    ZERO = succ(succ(q))
+                                    [using specialize peano.succInjective(ZERO, succ(succ(q))) the-one-p-equation]
+                                }
+                              @one-is-not-p |
+                                succ(ZERO) != succ(succ(succ(q)))
+                                [by contradiction suppose-one-is-p stripped-one-p zero-is-not-inner]
+                              @innermost-is-not-zero |
+                                succ(q) != ZERO
+                                [using specialize peano.succNotZero(q)]
+                              @zero-is-not-innermost |
+                                ZERO != succ(q)
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(q), ZERO) innermost-is-not-zero]
+                              @suppose-two-is-p |
+                                assume succ(succ(ZERO)) = succ(succ(succ(q))) {
+                                  @the-two-p-equation |
+                                    succ(succ(ZERO)) = succ(succ(succ(q)))
+                                    [by hypothesis suppose-two-is-p]
+                                  @stripped-two-p-once |
+                                    succ(ZERO) = succ(succ(q))
+                                    [using specialize peano.succInjective(succ(ZERO), succ(succ(q))) the-two-p-equation]
+                                  @stripped-two-p |
+                                    ZERO = succ(q)
+                                    [using specialize peano.succInjective(ZERO, succ(q)) stripped-two-p-once]
+                                }
+                              @two-is-not-p |
+                                succ(succ(ZERO)) != succ(succ(succ(q)))
+                                [by contradiction suppose-two-is-p stripped-two-p zero-is-not-innermost]
+                              @points-s0-s1-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), ZERO, succ(ZERO)) the-distinctness zero-in-range one-in-range zero-is-not-one]
+                              @points-s0-s2-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), ZERO, succ(succ(ZERO))) the-distinctness zero-in-range two-in-range zero-is-not-two]
+                              @points-s0-sp-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), ZERO, succ(succ(succ(q)))) the-distinctness zero-in-range p-in-range zero-is-not-p]
+                              @points-s1-s2-differ |
+                                cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), succ(ZERO), succ(succ(ZERO))) the-distinctness one-in-range two-in-range one-is-not-two]
+                              @points-s1-sp-differ |
+                                cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), succ(ZERO), succ(succ(succ(q)))) the-distinctness one-in-range p-in-range one-is-not-p]
+                              @points-s2-sp-differ |
+                                cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), succ(succ(ZERO)), succ(succ(succ(q)))) the-distinctness two-in-range p-in-range two-is-not-p]
+
+                              // each point moves under the cycle, hence lies in its support
+                              @s1-is-not-s0 |
+                                cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, ZERO)
+                                [using specialize pointDisequalityIsSymmetric(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO))) points-s0-s1-differ]
+                              @s2-is-not-s1 |
+                                cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(ZERO))
+                                [using specialize pointDisequalityIsSymmetric(cycle_theory.at(s, succ(ZERO)), cycle_theory.at(s, succ(succ(ZERO)))) points-s1-s2-differ]
+                              @s0-moves |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO)) != cycle_theory.at(s, ZERO)
+                                [by rewrite cycle-at-zero s1-is-not-s0]
+                              @support-means-at-s0 |
+                                member(cycle_theory.at(s, ZERO), support(cycle(s, succ(succ(succ(succ(q))))))) iff apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO)) != cycle_theory.at(s, ZERO)
+                                [using specialize permutation.supportMember(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO))]
+                              @s0-in-support |
+                                member(cycle_theory.at(s, ZERO), support(cycle(s, succ(succ(succ(succ(q)))))))
+                                [using tautology support-means-at-s0 s0-moves]
+                              @s1-moves |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO))) != cycle_theory.at(s, succ(ZERO))
+                                [by rewrite cycle-at-one s2-is-not-s1]
+                              @support-means-at-s1 |
+                                member(cycle_theory.at(s, succ(ZERO)), support(cycle(s, succ(succ(succ(succ(q))))))) iff apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO))) != cycle_theory.at(s, succ(ZERO))
+                                [using specialize permutation.supportMember(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO)))]
+                              @s1-in-support |
+                                member(cycle_theory.at(s, succ(ZERO)), support(cycle(s, succ(succ(succ(succ(q)))))))
+                                [using tautology support-means-at-s1 s1-moves]
+                              @sp-moves |
+                                apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q))))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                [by rewrite cycle-wraps points-s0-sp-differ]
+                              @support-means-at-sp |
+                                member(cycle_theory.at(s, succ(succ(succ(q)))), support(cycle(s, succ(succ(succ(succ(q))))))) iff apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q))))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                [using specialize permutation.supportMember(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q)))))]
+                              @sp-in-support |
+                                member(cycle_theory.at(s, succ(succ(succ(q)))), support(cycle(s, succ(succ(succ(succ(q)))))))
+                                [using tautology support-means-at-sp sp-moves]
+
+                              // transfer the cycle's values to sigma -- the step Judson elides
+                              @transfer-at-s0 |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, ZERO)) = apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO))
+                                [using specialize aDisjointRemainderPreservesCycleValues(tau, cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, ZERO)) the-cycle-is-a-permutation the-disjointness s0-in-support]
+                              @sigma-at-s0 |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(ZERO))
+                                [using chain transfer-at-s0 cycle-at-zero]
+                              @transfer-at-s1 |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(ZERO))) = apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO)))
+                                [using specialize aDisjointRemainderPreservesCycleValues(tau, cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(ZERO))) the-cycle-is-a-permutation the-disjointness s1-in-support]
+                              @sigma-at-s1 |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, succ(succ(ZERO)))
+                                [using chain transfer-at-s1 cycle-at-one]
+                              @transfer-at-sp |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(succ(succ(q))))) = apply(cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q)))))
+                                [using specialize aDisjointRemainderPreservesCycleValues(tau, cycle(s, succ(succ(succ(succ(q))))), cycle_theory.at(s, succ(succ(succ(q))))) the-cycle-is-a-permutation the-disjointness sp-in-support]
+                              @sigma-at-sp |
+                                apply(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(succ(succ(q))))) = cycle_theory.at(s, ZERO)
+                                [using chain transfer-at-sp cycle-wraps]
+
+                              // and convert to the inverse values arm 1 wants
+                              @sigma-inverse-at-s1 |
+                                apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                                [using specialize cycle_theory.forwardGivesInverse(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO))) sigma-is-a-permutation sigma-at-s0]
+                              @sigma-inverse-at-s2 |
+                                apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO))
+                                [using specialize cycle_theory.forwardGivesInverse(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(ZERO)), cycle_theory.at(s, succ(succ(ZERO)))) sigma-is-a-permutation sigma-at-s1]
+                              @sigma-inverse-at-s0 |
+                                apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                                [using specialize cycle_theory.forwardGivesInverse(compose(tau, cycle(s, succ(succ(succ(succ(q)))))), cycle_theory.at(s, succ(succ(succ(q)))), cycle_theory.at(s, ZERO)) sigma-is-a-permutation sigma-at-sp]
+
+                              // fold the nine facts
+                              @pattern-first-2 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO))))
+                                [by both points-s0-s1-differ points-s0-s2-differ]
+                              @pattern-first-3 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q)))))
+                                [by both pattern-first-2 points-s0-sp-differ]
+                              @pattern-first-4 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO))))
+                                [by both pattern-first-3 points-s1-s2-differ]
+                              @pattern-first-5 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q)))))
+                                [by both pattern-first-4 points-s1-sp-differ]
+                              @pattern-first-6 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q)))))
+                                [by both pattern-first-5 points-s2-sp-differ]
+                              @pattern-first-7 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q)))))
+                                [by both pattern-first-6 sigma-inverse-at-s0]
+                              @pattern-first-8 |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO))
+                                [by both pattern-first-7 sigma-inverse-at-s1]
+                              @conclusion-pattern |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+                                [by both pattern-first-8 sigma-inverse-at-s2]
+                            }
+                          @disjoint-implies |
+                            disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+                              (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                              and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                              and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                              and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                              and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                              and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+                            [by discharge given-disjoint]
+                        }
+                      @distinct-implies |
+                        distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+                          (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                          and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                          and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                          and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                          and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                          and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+                        [by discharge given-distinct]
+                    }
+                  @cycle-invertible-implies |
+                    invertible(cycle(s, succ(succ(succ(succ(q)))))) -> distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+                      (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                      and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                      and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                      and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                      and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                      and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+                    [by discharge given-cycle-invertible]
+                }
+              @sigma-invertible-implies |
+                invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) -> invertible(cycle(s, succ(succ(succ(succ(q)))))) -> distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+                  (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                  and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                  and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+                  and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+                  and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+                [by discharge given-sigma-invertible]
+            }
+          @discharge-q |
+            forall q: Nat; invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) -> invertible(cycle(s, succ(succ(succ(succ(q)))))) -> distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+              (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+              and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+              and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+              and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+              and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+              and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+              and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+            [by generalize generalize-q]
+        }
+      @discharge-s |
+        forall s: Points; forall q: Nat; invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) -> invertible(cycle(s, succ(succ(succ(succ(q)))))) -> distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+          (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+          and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+          and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+          and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+          and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+          and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+          and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall tau: Fn; forall s: Points; forall q: Nat; invertible(compose(tau, cycle(s, succ(succ(succ(succ(q))))))) -> invertible(cycle(s, succ(succ(succ(succ(q)))))) -> distinct(s, succ(succ(succ(succ(q))))) -> disjointSupports(tau, cycle(s, succ(succ(succ(succ(q)))))) ->
+      (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+      and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+      and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(succ(q))))
+      and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+      and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(succ(q))))
+      and cycle_theory.at(s, succ(succ(ZERO))) != cycle_theory.at(s, succ(succ(succ(q))))
+      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, ZERO)) = cycle_theory.at(s, succ(succ(succ(q))))
+      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(ZERO))) = cycle_theory.at(s, ZERO)
+      and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
+    [by generalize generalize-tau]
 qed
