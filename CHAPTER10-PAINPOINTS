@@ -1021,3 +1021,41 @@ conjugation ORDER right and the GROUPING wrong.
 
 Checked computationally before rewriting: `sigma^-1 c sigma c^-1` and `sigma^-1 * (c sigma c^-1)`
 agree, so the regrouping is sound and the normality route is the one to build.
+
+**THE --fast ALIAS BUG: REPRODUCED, ROOT-CAUSED, FIXED (2026-10-14).**
+
+SYMPTOM: `[using specialize <alias>]` passed strict and failed `--fast` with "unknown
+reference" — the fast/strict invariant violated in the PERMISSIVE direction, which is the
+nonsensical one: `--fast` admits accelerated verdicts instead of demanding certificates, so
+anything strict accepts it must accept.
+
+ROOT CAUSE, in `Prove.namesAFact` (`src/Engine/ProveTask/Prove.zig`). An admitted accelerant
+builds no certificate, so the admit path walks its refs only to seed use-all-facts roots, and
+`seedAndCheckLocalRoot` diagnoses a ref naming neither a local step nor a global fact as a
+typo. That guard is deliberate and correct — it exists so `--fast` cannot accept a typo'd ref
+strict would reject. But `namesAFact` decided "global fact" by switching over the file's own
+AST declaration:
+
+    .axiom, .hole, .theorem => true,
+    else => false,
+
+written before the `fact` keyword existed. An alias is `ast.Decl.fact` (ast.zig:233), a
+variant distinct from `.theorem`, so it fell through and every aliased lemma looked like a typo.
+
+THE TELLING DETAIL: the function's own doc comment says it "counts an ALIAS to a fact too" and
+explains exactly why that matters. The comment was right; the code had stopped matching it.
+Reading the comment would have confirmed the intended behaviour and hidden the bug — only the
+switch body shows it.
+
+FIX: add `.fact` to the switch. One token. Verified the typo guard still fires in both modes
+afterwards, so the fix is narrow rather than a loosening.
+
+WHY IT HID: it needs an ACCELERANT citing an alias by bare local name under `--fast`. The
+corpus habit of qualifying inline avoids it; `by cite <alias>` is unaffected (different
+resolution path, which does count aliases). It surfaced only once
+`alternating-identities.b4m` accumulated enough aliased citations to produce 20+ bogus errors
+at once — and cost a cycle believing I had broken a green file.
+
+NARROWING worth keeping: my original repro header claimed the bug needed two theorems in the
+file. It does not; one suffices. And a LOCAL theorem cited identically works fine, which is
+what isolated the alias as the trigger rather than `specialize` itself.

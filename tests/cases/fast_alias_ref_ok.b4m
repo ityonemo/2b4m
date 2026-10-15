@@ -1,0 +1,38 @@
+// `--fast` must never REJECT what strict ACCEPTS — the half of the fast/strict invariant that
+// `fast_unknown_ref_bad.b4m` does not cover (it guards the other direction).
+//
+// An admitted accelerant builds no certificate, so the admit path walks its refs only to seed
+// use-all-facts roots, diagnosing a ref that names NEITHER a local step nor a global fact as a
+// typo. `namesAFact` decides "global fact", and its switch over the file's AST listed
+// `.axiom`, `.hole`, `.theorem` — written before the `fact` keyword existed. An ALIAS is
+// `ast.Decl.fact`, so every aliased lemma looked like a typo: `--fast` rejected proofs strict
+// proved clean.
+//
+// Aliasing another theory's lemma and citing it by its bare local name is the ORDINARY way a
+// file names an imported fact, so this was not an edge case — it fired on any file whose
+// accelerant steps cite aliases, which `std/permutation/alternating-identities.b4m` does
+// throughout.
+//
+// Both modes must accept this file.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+fact aliasedFact = peano.addZeroRight
+
+theorem citesTheAlias: forall n: Nat; add(succ(n), ZERO) = succ(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @at-successor |
+        add(succ(n), ZERO) = succ(n)
+        [using specialize aliasedFact(succ(n))]
+    }
+  @conclusion |
+    forall n: Nat; add(succ(n), ZERO) = succ(n)
+    [by generalize generalize-n]
+qed

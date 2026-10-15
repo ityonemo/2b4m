@@ -753,7 +753,10 @@ fn namesAFact(self: *Prove, name: StrId) bool {
     const fid = self.ctx.fileOf(self.file) orelse return false;
     const d = self.ctx.declOf(fid, name) orelse return false;
     return switch (d.*) {
-        .axiom, .hole, .theorem => true,
+        // `.fact` is the ALIAS form (`fact X = ns.y`), which is how a file names another
+        // theory's lemma; omitting it rejected every aliased rewrite lemma under `--fast`
+        // while strict accepted it.
+        .axiom, .hole, .theorem, .fact => true,
         else => false,
     };
 }
