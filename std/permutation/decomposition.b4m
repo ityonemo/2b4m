@@ -3269,3 +3269,119 @@ proof
       apply(compose(r, compose(t, c)), x) = apply(c, x)
     [by generalize generalize-r]
 qed
+
+// THE PEELED CYCLE MOVES THE POINT IT WAS PEELED AT, which is what rules out the
+// degenerate length-1 case in a dispatch.
+//
+// `peelingOffAnOrbit` at a moved point x gives `f = compose(c, g)` with
+// `support(g) = support(f) \ orbit(f, x)`. Since x lies in its own orbit it is NOT in g's
+// support, so g fixes it; then `f(x) = c(g(x)) = c(x)`, and f moves x, so c moves x.
+//
+// Without this the length split has a real length-1 branch — `isACycle` admits `cycle(s, 1)`,
+// which is the identity — and handling it would mean recursing on the remainder. This closes
+// it from the peel's own support equation instead.
+theorem aPeeledCycleMovesItsPoint: forall f: Fn; forall c: Fn; forall g: Fn; forall x: Element;
+  member(x, support(f)) ->
+  f = compose(c, g) ->
+  support(g) = difference(support(f), orbit(f, x)) ->
+  apply(c, x) != x
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @generalize-g |
+            fix g: Fn {
+              @generalize-x |
+                fix x: Element {
+                  @given-moved |
+                    assume member(x, support(f)) {
+                      @given-factors |
+                        assume f = compose(c, g) {
+                          @given-remainder |
+                            assume support(g) = difference(support(f), orbit(f, x)) {
+                              @x-is-moved |
+                                member(x, support(f))
+                                [by hypothesis given-moved]
+                              @the-factorization |
+                                f = compose(c, g)
+                                [by hypothesis given-factors]
+                              @the-remainder-support |
+                                support(g) = difference(support(f), orbit(f, x))
+                                [by hypothesis given-remainder]
+
+                              // x is in its own orbit, so it is not in g's support
+                              @x-in-its-orbit |
+                                member(x, orbit(f, x))
+                                [using specialize orbit_theory.pointIsInItsOrbit(f, x)]
+                              @difference-at-x |
+                                member(x, difference(support(f), orbit(f, x)))
+                                  iff (member(x, support(f)) and (not member(x, orbit(f, x))))
+                                [using specialize set.differenceMember(support(f), orbit(f, x), x)]
+                              @not-in-the-difference |
+                                not member(x, difference(support(f), orbit(f, x)))
+                                [using tautology difference-at-x x-in-its-orbit]
+                              @not-in-g |
+                                not member(x, support(g))
+                                [by rewrite the-remainder-support not-in-the-difference]
+                              @support-means-for-g |
+                                member(x, support(g)) iff apply(g, x) != x
+                                [using specialize permutation.supportMember(g, x)]
+                              @g-fixes-x |
+                                apply(g, x) = x
+                                [using tautology support-means-for-g not-in-g]
+
+                              // so f(x) = c(x), and f moves x
+                              @support-means-for-f |
+                                member(x, support(f)) iff apply(f, x) != x
+                                [using specialize permutation.supportMember(f, x)]
+                              @f-moves-x |
+                                apply(f, x) != x
+                                [using tautology support-means-for-f x-is-moved]
+                              @unfold-f-at-x |
+                                apply(compose(c, g), x) = apply(c, apply(g, x))
+                                [using specialize function.composeApply(c, g, x)]
+                              @f-at-x-itself |
+                                apply(f, x) = apply(f, x)
+                                [by reflexivity]
+                              @f-at-x-is-the-composite |
+                                apply(f, x) = apply(compose(c, g), x)
+                                [by rewrite the-factorization f-at-x-itself]
+                              @composite-after-g |
+                                apply(compose(c, g), x) = apply(c, x)
+                                [by rewrite g-fixes-x unfold-f-at-x]
+                              @f-at-x-is-c-at-x |
+                                apply(f, x) = apply(c, x)
+                                [using chain f-at-x-is-the-composite composite-after-g]
+                              @conclusion-c-moves-x |
+                                apply(c, x) != x
+                                [by rewrite f-at-x-is-c-at-x f-moves-x]
+                            }
+                          @remainder-implies |
+                            support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+                            [by discharge given-remainder]
+                        }
+                      @factors-implies |
+                        f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+                        [by discharge given-factors]
+                    }
+                  @moved-implies |
+                    member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+                    [by discharge given-moved]
+                }
+              @discharge-x |
+                forall x: Element; member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+                [by generalize generalize-x]
+            }
+          @discharge-g |
+            forall g: Fn; forall x: Element; member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+            [by generalize generalize-g]
+        }
+      @discharge-c |
+        forall c: Fn; forall g: Fn; forall x: Element; member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall f: Fn; forall c: Fn; forall g: Fn; forall x: Element; member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
+    [by generalize generalize-f]
+qed
