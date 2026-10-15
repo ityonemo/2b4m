@@ -225,6 +225,16 @@ pub fn addTests(
     // a source theory could only be modeled onto a universal base. Complements the fixture
     // above, which works precisely BECAUSE its base sort is universal.
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_refined_base.b4m" });
+    // THE SUBSUMED-ANTECEDENT ARM of auto-weakening, the converse of the projection above.
+    // `std/permutation/symmetric.b4m` models the normal-subgroup theory onto A_n with the
+    // ambient sort `SymPerm = Perm where hasFiniteSupport` over `Perm = Fn where invertible`.
+    // Group theory's `opInverseLeft` is UNCONDITIONAL, but its permutation discharger
+    // (`function.inverseLeft`) needs `invertible(f)` — which the two-qualifier guard chain
+    // already carries as a conjunct. Before the fix emitWeakening classified the goal's
+    // conjunction as an injected guard, stripped it, and then found the cores differed
+    // (the source still led with `invertible(f) ->`), so it bailed. Now it consumes both and
+    // projects the antecedent back out of the guard to modus_ponens it.
+    ctx.okSilent(&.{ "check", "std/permutation/symmetric.b4m" });
     // A FIXED-CONSTANT DEVELOPMENT REACHED AT A VARIABLE ELEMENT. std/group/order.b4m proves a
     // corpus about a fixed element A of fixed order N (three order axioms); the model maps A/N
     // onto a local element and its order and discharges those axioms from a `hasOrder`

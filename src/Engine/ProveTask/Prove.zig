@@ -1308,6 +1308,10 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
     // part of the Core, left in place. Stop at a non-`∀`/`->` head or a genuine antecedent.
     var eigen: std.ArrayList(term.Node.Fvar) = .empty;
     var guards_per: std.ArrayList(std.ArrayList(TermId)) = .empty;
+    // Source antecedents the goal's guard chain SUBSUMES (see the `.implies` arm): each is
+    // discharged at the innermost step by projecting `antecedent` out of `guard`.
+    const Subsumed = struct { guard: TermId, antecedent: TermId };
+    var subsumed: std.ArrayList(Subsumed) = .empty;
     var g = goal;
     var f = fact_f;
     while (true) {
@@ -1330,6 +1334,24 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
             // GENUINE antecedent: the source ALSO has a leading `->` with the SAME antecedent →
             // it's part of the Core, not a guard. Stop peeling (the rest, incl. this `->`, is Core).
             if (fn_ == .bin and fn_.bin.op == .implies and self.pool.alphaEq(gn.bin.lhs, fn_.bin.lhs)) break;
+            // SUBSUMED antecedent: the source's leading `->` antecedent is a CONJUNCT of the
+            // goal's injected guard. This is the multi-qualifier case — the ambient sort refines
+            // a base whose own guard is what the source states as a premise (`Perm = Fn where
+            // invertible` under `SymPerm = Perm where hasFiniteSupport`, against a source axiom
+            // reading `invertible(f) -> …`). The guard chain already carries the premise, so
+            // consume BOTH: strip the goal's conjunction as a guard and the source's antecedent
+            // as discharged by it. `subsumed` records which guard discharges which antecedent so
+            // the innermost step can project it back out.
+            if (fn_ == .bin and fn_.bin.op == .implies and eigen.items.len > 0) {
+                var probe: std.ArrayList(bool) = .empty;
+                if (try self.conjunctPath(gn.bin.lhs, fn_.bin.lhs, &probe) and probe.items.len > 0) {
+                    try guards_per.items[guards_per.items.len - 1].append(self.ctx.arena, gn.bin.lhs);
+                    try subsumed.append(self.ctx.arena, .{ .guard = gn.bin.lhs, .antecedent = fn_.bin.lhs });
+                    g = gn.bin.rhs;
+                    f = fn_.bin.rhs;
+                    continue;
+                }
+            }
             // else INJECTED guard (absent from the source here) → strip, associate with the binder.
             if (eigen.items.len == 0) return null; // a guard before any binder — not relativization
             try guards_per.items[guards_per.items.len - 1].append(self.ctx.arena, gn.bin.lhs);
@@ -1371,6 +1393,29 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
         const opened = try self.pool.open(self.pool.get(cur_f).quant.body, fvt);
         cur = try self.emitSynthetic(inner, loc, opened, .{ .apply_at = .{ .step = cur, .with = fvt, .with_loc = loc } });
         cur_f = opened;
+    }
+    // Discharge each SUBSUMED antecedent: the guard chain carries it as a conjunct, so project
+    // it out (and_elim down the enclosing `assume`'s conjunction) and modus_ponens. In claim
+    // order, which is the order the walk stripped them.
+    for (subsumed.items) |sb| {
+        const node = self.pool.get(cur_f);
+        if (node != .bin or node.bin.op != .implies) break;
+        // find the `assume` block whose hypothesis IS `sb.guard`, and project the antecedent
+        // out of it. The blocks were built above, so look them up by formula rather than
+        // through `known` (which is not populated for synthetic blocks).
+        var src: ?kernel.SRef = null;
+        outer: for (asm_blk, 0..) |abs_, bi| {
+            for (abs_, 0..) |ab, gi| {
+                if (self.pool.alphaEq(guards_per.items[bi].items[gi], sb.guard)) {
+                    const whole = try self.emitSynthetic(inner, loc, sb.guard, .{ .hypothesis = .{ .id = ab, .loc = loc } });
+                    src = try self.emitConjunctExtractFrom(inner, loc, sb.guard, sb.antecedent, whole);
+                    break :outer;
+                }
+            }
+        }
+        const ant = src orelse break;
+        cur = try self.emitSynthetic(inner, loc, node.bin.rhs, .{ .modus_ponens = .{ .implication = cur, .antecedent = ant } });
+        cur_f = node.bin.rhs;
     }
     // unwind inner→outer: discharge per assume (rebuilding the guard chain), generalize
     // per fix. Every export but the OUTERMOST is an emitted synthetic in its enclosing block;
