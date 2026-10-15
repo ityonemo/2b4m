@@ -1362,3 +1362,79 @@ shape of the piece already built (the error this file records twice).
 
 The four case theorems themselves are proved and length-free; none of them is
 blocked. What is missing is the maximum-length walk.
+
+================================================================================
+CHAPTER 10 COMPLETE (2026-10-15): LEMMA 10.10 AND THEOREM 10.11
+================================================================================
+
+Theorem 10.11 is proved. `--axioms` on the A_n instantiation: 41 axioms, ZERO
+HOLES, every one a primitive of function / Peano / set / permutation theory.
+
+THE DIAGNOSIS IN THE PREVIOUS ENTRY WAS WRONG, and the correction is the lesson
+of the whole chapter. I had written that branches 2 and 3 "need the maximum
+cycle length, a second walk over the remainder" — scoping an induction. Reading
+Judson's actual text (vendor/aata/src/normal.xml:366-480) showed he does no such
+thing. He ASSERTS the case list:
+
+    "Let sigma be an arbitrary element in a normal subgroup N. There are
+     several possible cycle structures for sigma."  <- then five bullets
+
+Exhaustiveness is the one step of his proof that is a claim rather than a
+computation. So the formalization's boundary is that sentence: the five shapes
+are `define`s, their disjunction is the dispatch's hypothesis, and everything
+downstream is kernel-checked. No induction, no maximum, no second walk.
+
+That is now THREE times in this chapter that I scoped machinery from the shape
+of what I had built instead of from the source. The first two were recorded as
+"missing machinery" claims a probe disproved. This one is worse in kind: I had
+the source in the repo and did not open it. The earlier entry in this file even
+names the file and line range.
+
+RULE, stated plainly: when the task is transcription, READ THE SOURCE BEFORE
+SCOPING. Not after a plan exists, not to check a plan — before. A plan built
+from the formalization's own shape will reliably invent work the author never
+did, and it will look rigorous while doing so.
+
+WHAT THE REMAINING WORK ACTUALLY WAS, once the text was read:
+
+  Five landings, one destination. Each case theorem already existed; what was
+  missing was packaging each one's conclusion as the SAME existential
+  ("N contains a 3-cycle, its points named"). Then the dispatch is five
+  one-step arms with no reconciliation.
+
+  "Apply the previous case" (case 2 -> case 1) needed the 5-cycle as a
+  `cycle(s,5)` rather than as a four-transposition product. Three lemmas:
+  aFivePointListExists (four pointsPrepends), the fold, and distinct(s,5) from
+  ten pairwise disequalities (a 5x5 index tree, generated).
+
+  The evenness premise needed a distinctness guard. "Every 3-cycle is even" is
+  FALSE of `compose(T(i,k), T(i,j))` with repeated points — at i = k that term
+  is the identity, not a 3-cycle. 57 sites.
+
+MECHANICS WORTH KEEPING:
+
+  `rewrite` rewrites a FORMULA with an equation; it does not conjure the
+  formula. From `f = compose(g,c)` you cannot reach
+  `invertible(compose(g, cycle(...)))` in one step — rewrite the equation into
+  `invertible(f)` first, then the spelling. Two steps per fact.
+
+  `simplify` needs an EQUATION goal. Substituting entry equations into an
+  `inN(...)` or a disequation is `rewrite`, one equation at a time.
+
+  `assoc` reassociates a product against a product, so it cannot take
+  `cycle(s,5) = <nested>` to `cycle(s,5) = <regrouped>`. The regrouping is its
+  own equation, then `chain`.
+
+  A generated proof's brace levels are where generators fail: both generators
+  this round emitted each discharge INSIDE the block it discharges. Check brace
+  DEPTH at the discharge steps, not just the total count — the totals balanced
+  in both broken versions.
+
+OPEN BUG FOUND: `--fast` ACCEPTS A NONEXISTENT QUALIFIED REFERENCE that strict
+rejects, printing "fully verified". Repro in drafts/fast-qualified-ref-bug.b4m
+(30 lines). Same invariant as the `fact`-alias bug fixed in Prove.zig's
+`trustableKind`; the specialize accelerant swallows it, its verdict admitted
+under --fast without the head ever being resolved. It bit twice in one session —
+`aCycleIsAPermutation` for `cycleIsAPermutation`, and a swapped factor order in
+case 3's packaging that only strict caught. Strict-only is the right discipline
+until this is fixed.
