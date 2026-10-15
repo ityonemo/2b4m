@@ -3050,3 +3050,136 @@ proof
     forall f: Fn; forall g: Fn; forall x: Element; forall y: Element; disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
     [by generalize generalize-f]
 qed
+
+// A NON-IDENTITY DECOMPOSABLE PERMUTATION FACTORS AS A CYCLE TIMES A DISJOINT REMAINDER —
+// the shape all four of Judson's Lemma 10.10 cases take.
+//
+// This is `aNonIdentityDecompositionPeelsOffALastCycle` with its seven-way conjunction
+// projected down to the three facts a case actually consumes: the peeled factor is a cycle,
+// sigma is the product, and the remainder is disjoint from it. The peel's other four conjuncts
+// (support containments and the pairwise disjointness of the earlier cycles) are what cases 2
+// and 4 would additionally want, and are deliberately dropped here.
+//
+// Having this separately is what lets a dispatch read "sigma = rho o c, c a cycle, disjoint"
+// without re-unpacking a seven-conjunct existential at each use.
+theorem aNonIdentityPermutationIsACycleTimesADisjointRest: forall sigma: Fn;
+  decomposesIntoDisjointCycles(sigma) ->
+  sigma != identityFn ->
+  (exists rho: Fn; exists c: Fn;
+  isACycle(c)
+  and sigma = compose(rho, c)
+  and disjointSupports(rho, c))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @given-decomposes |
+        assume decomposesIntoDisjointCycles(sigma) {
+          @given-nonidentity |
+            assume sigma != identityFn {
+              @the-decomposition |
+                decomposesIntoDisjointCycles(sigma)
+                [by hypothesis given-decomposes]
+              @not-the-identity |
+                sigma != identityFn
+                [by hypothesis given-nonidentity]
+              @the-peel |
+                exists w: Seq; exists k: Nat;
+                  isACycle(at(w, k))
+                  and subset(support(at(w, k)), support(sigma))
+                  and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+                  and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(sigma)))
+                  and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                  and sigma = compose(productUpTo(w, k), at(w, k))
+                  and disjointSupports(productUpTo(w, k), at(w, k))
+                [using specialize aNonIdentityDecompositionPeelsOffALastCycle(sigma) the-decomposition not-the-identity]
+              @with-w |
+                unpack w: Seq from the-peel {
+                  @inner |
+                    exists k: Nat;
+                      isACycle(at(w, k))
+                      and subset(support(at(w, k)), support(sigma))
+                      and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+                      and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(sigma)))
+                      and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                      and sigma = compose(productUpTo(w, k), at(w, k))
+                      and disjointSupports(productUpTo(w, k), at(w, k))
+                    [by hypothesis with-w]
+                  @with-k |
+                    unpack k: Nat from inner {
+                      @the-facts |
+                        isACycle(at(w, k))
+                          and subset(support(at(w, k)), support(sigma))
+                          and (forall i: Nat; less_than(i, k) -> isACycle(at(w, i)))
+                          and (forall i: Nat; less_than(i, k) -> subset(support(at(w, i)), support(sigma)))
+                          and (forall i: Nat; forall j: Nat; less_than(i, k) -> less_than(j, k) -> i != j -> disjointSupports(at(w, i), at(w, j)))
+                          and sigma = compose(productUpTo(w, k), at(w, k))
+                          and disjointSupports(productUpTo(w, k), at(w, k))
+                        [by hypothesis with-k]
+                      @the-cycle |
+                        isACycle(at(w, k))
+                        [using tautology the-facts]
+                      @the-factorization |
+                        sigma = compose(productUpTo(w, k), at(w, k))
+                        [using tautology the-facts]
+                      @the-disjointness |
+                        disjointSupports(productUpTo(w, k), at(w, k))
+                        [using tautology the-facts]
+                      @the-triple |
+                        (isACycle(at(w, k))
+                          and sigma = compose(productUpTo(w, k), at(w, k))
+                          and disjointSupports(productUpTo(w, k), at(w, k)))
+                        [using tautology the-cycle the-factorization the-disjointness]
+                      @witness-c |
+                        exists c: Fn;
+                          isACycle(c)
+                          and sigma = compose(productUpTo(w, k), c)
+                          and disjointSupports(productUpTo(w, k), c)
+                        [by witness(at(w, k)) the-triple]
+                      @conclusion-inner |
+                        (exists rho: Fn; exists c: Fn;
+                          isACycle(c)
+                          and sigma = compose(rho, c)
+                          and disjointSupports(rho, c))
+                        [by witness(productUpTo(w, k)) witness-c]
+                    }
+                  @conclusion-k |
+                    (exists rho: Fn; exists c: Fn;
+                      isACycle(c)
+                      and sigma = compose(rho, c)
+                      and disjointSupports(rho, c))
+                    [by unpacked with-k]
+                }
+              @conclusion-w |
+                (exists rho: Fn; exists c: Fn;
+                  isACycle(c)
+                  and sigma = compose(rho, c)
+                  and disjointSupports(rho, c))
+                [by unpacked with-w]
+            }
+          @nonidentity-implies |
+            sigma != identityFn ->
+              (exists rho: Fn; exists c: Fn;
+              isACycle(c)
+              and sigma = compose(rho, c)
+              and disjointSupports(rho, c))
+            [by discharge given-nonidentity]
+        }
+      @conclusion-at-sigma |
+        decomposesIntoDisjointCycles(sigma) ->
+          sigma != identityFn ->
+          (exists rho: Fn; exists c: Fn;
+          isACycle(c)
+          and sigma = compose(rho, c)
+          and disjointSupports(rho, c))
+        [by discharge given-decomposes]
+    }
+  @conclusion |
+    forall sigma: Fn;
+      decomposesIntoDisjointCycles(sigma) ->
+      sigma != identityFn ->
+      (exists rho: Fn; exists c: Fn;
+      isACycle(c)
+      and sigma = compose(rho, c)
+      and disjointSupports(rho, c))
+    [by generalize generalize-sigma]
+qed
