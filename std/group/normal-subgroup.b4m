@@ -1,0 +1,124 @@
+// std/group/normal-subgroup.b4m — the theory of a NORMAL SUBGROUP, as a MODELABLE theory.
+//
+// `std/group/normal.b4m` develops normality the other way round: it proves the conjugation ⟺
+// coset equivalence and then takes normality as a HYPOTHESIS on each theorem. That is right for
+// the equivalence itself, but it means "N is a normal subgroup" has no reified form — every
+// consumer re-states the four conditions in its own statement, and a consumer with a concrete N
+// cannot say "this is a normal subgroup" once and be done.
+//
+// This file reifies it. Normality is an AXIOM here, alongside the three subgroup criteria, so
+// the whole package is a theory a concrete subgroup MODELS — and in return the corpus below
+// transfers onto its own predicate.
+//
+// WHY A SEPARATE FILE FROM normal.b4m. Two reasons, both about what a name can hold. First,
+// `normal.b4m`'s theorems are stated with normality as an antecedent, and the same names here
+// would be a different claim (holding ON a normal subgroup, unconditionally) — a file cannot
+// carry both. Second, and more practically: `normal.b4m` imports `coset.b4m` for the coset
+// characterisation, which this theory does not need. A theory meant to be modeled should ask
+// for as little as possible, because every import is something a consumer's model must keep
+// consistent.
+//
+// WHAT A CONSUMER OWES, and the one thing the engine does not yet check. A model of this theory
+// must map the sort, the three group operations, and `inSubgroup` — and discharge four axioms.
+// If a consumer FORGETS to overload `inSubgroup` (mapping only the sort and operations), the
+// transfer proceeds against this file's own opaque predicate rather than the consumer's, and
+// the resulting theorem is about the wrong subgroup. Nothing currently detects that. It is a
+// known soundness hole, accepted deliberately; the guarantees are future work. Until then a
+// consumer's model block is load-bearing and should be read as carefully as a proof.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+
+// The ambient group, ALIASED — one origin, as in subgroup.b4m.
+sort Grp = group.Grp
+const E = group.E
+func op = group.op
+func inverse = group.inverse
+
+fact grpAssoc = group.opAssoc
+fact grpIdentityLeft = group.opIdentityLeft
+fact grpIdentityRight = group.opIdentityRight
+fact grpInverseLeft = group.opInverseLeft
+fact grpInverseRight = group.opInverseRight
+fact invInvolution = group.invInvolution
+fact invProduct = group.invProduct
+
+// The subgroup criteria, ALIASED from `subgroup.b4m` rather than re-declared: a normal
+// subgroup IS a subgroup, so its membership predicate and three criteria are that theory's.
+// A consumer modeling THIS theory therefore satisfies the subgroup theory too, and
+// `subgroup.b4m`'s corpus is available alongside this one.
+pred inSubgroup = subgroup.inSubgroup
+fact subgroupHasIdentity = subgroup.subgroupHasIdentity
+fact subgroupClosedOp = subgroup.subgroupClosedOp
+fact subgroupClosedInverse = subgroup.subgroupClosedInverse
+
+// NORMALITY, as the conjugation condition. This is the one axiom the file adds, and it is the
+// form every later proof uses — `normal.b4m` proves it equivalent to the coset condition
+// (`conjugationLandsInTheSubgroupIffCosetsCoincide`), so stating it this way loses nothing.
+axiom subgroupIsNormal: forall g: Grp; forall n: Grp;
+  inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+
+// WHY THIS THEORY DECLARES NO PREDICATED SORT. `subgroup.b4m` has `Sub = Grp where
+// inSubgroup` and states its corpus over it, which reads well — but normality is the one
+// property whose statement quantifies over the AMBIENT group as well as the subgroup
+// (`∀g ∈ G, ∀n ∈ N`). A predicated sort over `Grp` is indistinguishable from `Grp` to the
+// transfer: mapping it relativizes EVERY binder over the carrier, so the conjugator `g`
+// acquires `inSubgroup(g)` and the transferred theorem says only that N is closed under
+// conjugation BY ITS OWN ELEMENTS — a strictly weaker claim, and not normality.
+//
+// Measured: with `Nml = Grp where inSubgroup` mapped onto A_n, the transfer demanded
+// `inAlternating(g)` for the conjugator; without the mapping the derived sort does not remap
+// at all ("expected sort 'Fn', got 'Grp'"). So the corpus below takes membership as an
+// explicit PREMISE and quantifies only over `Grp`. Less pretty, and correct.
+
+// -- the corpus ----------------------------------------------------------------------------
+
+// CONJUGATION BY AN ARBITRARY AMBIENT ELEMENT STAYS INSIDE. The axiom itself, re-exported so
+// a consumer gets it under a name that says what it means.
+theorem conjugationStaysInside: forall g: Grp; forall n: Grp;
+  inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+proof
+  @conclusion |
+    forall g: Grp; forall n: Grp;
+      inSubgroup(n) -> inSubgroup(op(op(g, n), inverse(g)))
+    [by cite subgroupIsNormal]
+qed
+
+// CONJUGATION BY AN INVERSE STAYS INSIDE TOO — Judson's observation that g⁻¹ works wherever g
+// does, which is his (2)⇒(3). The axiom at `inverse(g)` plus the involution law rewriting
+// `inverse(inverse(g))` back to `g`.
+theorem conjugationByAnInverseStaysInside: forall g: Grp; forall n: Grp;
+  inSubgroup(n) -> inSubgroup(op(op(inverse(g), n), g))
+proof
+  @generalize-g |
+    fix g: Grp {
+      @generalize-n |
+        fix n: Grp {
+          @given-n-in-the-subgroup |
+            assume inSubgroup(n) {
+              @n-is-a-member |
+                inSubgroup(n)
+                [by hypothesis given-n-in-the-subgroup]
+              @conjugate-by-the-inverse |
+                inSubgroup(op(op(inverse(g), n), inverse(inverse(g))))
+                [using specialize subgroupIsNormal(inverse(g), n) n-is-a-member]
+              @the-inverse-is-involutive |
+                inverse(inverse(g)) = g
+                [using specialize invInvolution(g)]
+              @conclusion-conjugate-is-inside |
+                inSubgroup(op(op(inverse(g), n), g))
+                [by rewrite the-inverse-is-involutive conjugate-by-the-inverse]
+            }
+          @conclusion-at-n |
+            inSubgroup(n) -> inSubgroup(op(op(inverse(g), n), g))
+            [by discharge given-n-in-the-subgroup]
+        }
+      @discharge-n |
+        forall n: Grp; inSubgroup(n) -> inSubgroup(op(op(inverse(g), n), g))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall g: Grp; forall n: Grp;
+      inSubgroup(n) -> inSubgroup(op(op(inverse(g), n), g))
+    [by generalize generalize-g]
+qed
