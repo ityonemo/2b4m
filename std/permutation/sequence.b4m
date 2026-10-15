@@ -1042,3 +1042,98 @@ proof
       disjointSupports(productUpTo(s, m), t)
     [by generalize generalize-s]
 qed
+
+// A PRODUCT FIXES WHAT ALL ITS FACTORS FIX. Cases 2 and 4 of Judson's Lemma 10.10 name two
+// cycles from a decomposition, so their remainder is a shorter product `productUpTo(w, j)` —
+// and what the value transfer needs of it is only that it FIXES the points of the cycles it is
+// disjoint from.
+//
+// Stated pointwise rather than as `disjointSupports(productUpTo(w, j), c)`, which would need
+// support-of-a-composite theory std does not carry. The pointwise form is a plain induction:
+// `productUpTo(w, ZERO)` is the identity, and `productUpTo(w, succ(k))` is
+// `compose(productUpTo(w, k), at(w, k))`, so it fixes x when both halves do.
+theorem aProductFixesWhatItsFactorsFix:
+  forall w: Seq; forall x: Element;
+  (forall i: Nat; apply(at(w, i), x) = x) ->
+  forall n: Nat; apply(productUpTo(w, n), x) = x
+proof
+  @generalize-w |
+    fix w: Seq {
+      @generalize-x |
+        fix x: Element {
+          @given-all-fix |
+            assume forall i: Nat; apply(at(w, i), x) = x {
+              @every-factor-fixes |
+                forall i: Nat; apply(at(w, i), x) = x
+                [by hypothesis given-all-fix]
+
+              // base: the empty product is the identity
+              @empty-is-identity |
+                productUpTo(w, ZERO) = identityFn
+                [using specialize productUpToZero(w)]
+              @identity-fixes |
+                apply(identityFn, x) = x
+                [using specialize function.identityApply(x)]
+              @base-case |
+                apply(productUpTo(w, ZERO), x) = x
+                [by rewrite empty-is-identity identity-fixes]
+
+              // step: one more factor, which also fixes x
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume apply(productUpTo(w, k), x) = x {
+                      @inductive-hypothesis |
+                        apply(productUpTo(w, k), x) = x
+                        [by hypothesis given-inductive-hypothesis]
+                      @this-factor-fixes |
+                        apply(at(w, k), x) = x
+                        [by apply_at(k) every-factor-fixes]
+                      @unfold-one-more |
+                        productUpTo(w, succ(k)) = compose(productUpTo(w, k), at(w, k))
+                        [using specialize productUpToSucc(w, k)]
+                      @value-of-the-composite |
+                        apply(compose(productUpTo(w, k), at(w, k)), x)
+                          = apply(productUpTo(w, k), apply(at(w, k), x))
+                        [using specialize function.composeApply(productUpTo(w, k), at(w, k), x)]
+                      @after-the-factor |
+                        apply(compose(productUpTo(w, k), at(w, k)), x)
+                          = apply(productUpTo(w, k), x)
+                        [by rewrite this-factor-fixes value-of-the-composite]
+                      @composite-fixes |
+                        apply(compose(productUpTo(w, k), at(w, k)), x) = x
+                        [using chain after-the-factor inductive-hypothesis]
+                      @conclusion-at-successor |
+                        apply(productUpTo(w, succ(k)), x) = x
+                        [by rewrite unfold-one-more composite-fixes]
+                    }
+                  @step-implication |
+                    apply(productUpTo(w, k), x) = x
+                      -> apply(productUpTo(w, succ(k)), x) = x
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat; apply(productUpTo(w, k), x) = x
+                  -> apply(productUpTo(w, succ(k)), x) = x
+                [by generalize induction-step]
+              @conclusion-all-n |
+                forall n: Nat; apply(productUpTo(w, n), x) = x
+                [using instantiation induction((fun n: Nat => apply(productUpTo(w, n), x) = x)) base-case induction-step-for-all-k]
+            }
+          @conclusion-at-x |
+            (forall i: Nat; apply(at(w, i), x) = x) ->
+              forall n: Nat; apply(productUpTo(w, n), x) = x
+            [by discharge given-all-fix]
+        }
+      @discharge-x |
+        forall x: Element;
+          (forall i: Nat; apply(at(w, i), x) = x) ->
+          forall n: Nat; apply(productUpTo(w, n), x) = x
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall w: Seq; forall x: Element;
+      (forall i: Nat; apply(at(w, i), x) = x) ->
+      forall n: Nat; apply(productUpTo(w, n), x) = x
+    [by generalize generalize-w]
+qed
