@@ -13799,3 +13799,337 @@ proof
       alternating.inAlternating(compose(transposition(a1, ar), transposition(a1, a3)))
     [using instantiation aLongCyclePatternPutsAThreeCycleInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) normal invclosed prodclosed]
 qed
+
+// DISPATCH ARM, Judson's case 3: sigma = tau * (i,j,a) with tau an involution commuting with
+// the 3-cycle. Then sigma^2 is the 3-cycle's twist, and N contains it.
+//
+// THE SIMPLEST ARM: no normality at all. sigma^2 is a product of two elements of N, so plain
+// product closure suffices — the other three arms need a conjugate from normality, this one
+// does not. That asymmetry is Judson's, not an artifact: his case 3 is the one that squares
+// rather than conjugating.
+theorem anInvolutionTimesAThreeCyclePutsAThreeCycleInTheSubgroup(inN(Fn)):
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  forall t: Fn; forall i, j, a: Element;
+  i != j -> i != a -> j != a ->
+  compose(t, compose(transposition(i, a), transposition(i, j)))
+  = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+  compose(t, t) = identityFn ->
+  inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+  inN(compose(transposition(i, j), transposition(i, a)))
+proof
+  @given-prod-closed |
+    assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+      @product-closed |
+        forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+        [by hypothesis given-prod-closed]
+      @generalize-t |
+        fix t: Fn {
+          @generalize-i |
+            fix i: Element {
+              @generalize-j |
+                fix j: Element {
+                  @generalize-a |
+                    fix a: Element {
+                      @given-i-not-j |
+                        assume i != j {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-j-not-a |
+                                assume j != a {
+                                  @given-commutes |
+                                    assume compose(t, compose(transposition(i, a), transposition(i, j)))
+                                      = compose(compose(transposition(i, a), transposition(i, j)), t) {
+                                      @given-involution |
+                                        assume compose(t, t) = identityFn {
+                                          @given-sigma-in-n |
+                                            assume inN(compose(t, compose(transposition(i, a), transposition(i, j)))) {
+                                              @i-not-j |
+                                                i != j
+                                                [by hypothesis given-i-not-j]
+                                              @i-not-a |
+                                                i != a
+                                                [by hypothesis given-i-not-a]
+                                              @j-not-a |
+                                                j != a
+                                                [by hypothesis given-j-not-a]
+                                              @they-commute |
+                                                compose(t, compose(transposition(i, a), transposition(i, j)))
+                                                  = compose(compose(transposition(i, a), transposition(i, j)), t)
+                                                [by hypothesis given-commutes]
+                                              @t-is-an-involution |
+                                                compose(t, t) = identityFn
+                                                [by hypothesis given-involution]
+                                              @sigma-in-n |
+                                                inN(compose(t, compose(transposition(i, a), transposition(i, j))))
+                                                [by hypothesis given-sigma-in-n]
+
+                                              // sigma^2 is in N by product closure alone
+                                              @sigma-squared-in-n |
+                                                inN(compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                                  compose(t, compose(transposition(i, a), transposition(i, j)))))
+                                                [using specialize product-closed(compose(t, compose(transposition(i, a), transposition(i, j))), compose(t, compose(transposition(i, a), transposition(i, j)))) sigma-in-n sigma-in-n]
+
+                                              // and sigma^2 IS the twist
+                                              @sigma-squared-is-the-twist |
+                                                compose(compose(t, compose(transposition(i, a), transposition(i, j))),
+                                                  compose(t, compose(transposition(i, a), transposition(i, j))))
+                                                  = compose(transposition(i, j), transposition(i, a))
+                                                [using specialize squaringAThreeCycleTimesAnInvolutionGivesAThreeCycle(i, j, a, t) i-not-j i-not-a j-not-a they-commute t-is-an-involution]
+
+                                              @conclusion-arm |
+                                                inN(compose(transposition(i, j), transposition(i, a)))
+                                                [by rewrite sigma-squared-is-the-twist sigma-squared-in-n]
+                                            }
+                                          @sigma-in-n-implies |
+                                            inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                                              inN(compose(transposition(i, j), transposition(i, a)))
+                                            [by discharge given-sigma-in-n]
+                                        }
+                                      @involution-implies |
+                                        compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                                          inN(compose(transposition(i, j), transposition(i, a)))
+                                        [by discharge given-involution]
+                                    }
+                                  @commutes-implies |
+                                    compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                                      inN(compose(transposition(i, j), transposition(i, a)))
+                                    [by discharge given-commutes]
+                                }
+                              @j-not-a-implies |
+                                j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                                  inN(compose(transposition(i, j), transposition(i, a)))
+                                [by discharge given-j-not-a]
+                            }
+                          @i-not-a-implies |
+                            i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                              inN(compose(transposition(i, j), transposition(i, a)))
+                            [by discharge given-i-not-a]
+                        }
+                      @i-not-j-implies |
+                        i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                          inN(compose(transposition(i, j), transposition(i, a)))
+                        [by discharge given-i-not-j]
+                    }
+                  @discharge-a |
+                    forall a: Element; i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                      inN(compose(transposition(i, j), transposition(i, a)))
+                    [by generalize generalize-a]
+                }
+              @discharge-j |
+                forall j, a: Element; i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+                  inN(compose(transposition(i, j), transposition(i, a)))
+                [by generalize generalize-j]
+            }
+          @discharge-i |
+            forall i, j, a: Element; i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+              inN(compose(transposition(i, j), transposition(i, a)))
+            [by generalize generalize-i]
+        }
+      @all-cases |
+        forall t: Fn; forall i, j, a: Element; i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+          inN(compose(transposition(i, j), transposition(i, a)))
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      forall t: Fn; forall i, j, a: Element; i != j -> i != a -> j != a -> compose(t, compose(transposition(i, a), transposition(i, j))) = compose(compose(transposition(i, a), transposition(i, j)), t) -> compose(t, t) = identityFn -> inN(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+      inN(compose(transposition(i, j), transposition(i, a)))
+    [by discharge given-prod-closed]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupGetsAThreeCycleFromAnInvolutionProduct:
+  forall t: Fn; forall i, j, a: Element;
+  i != j -> i != a -> j != a ->
+  compose(t, compose(transposition(i, a), transposition(i, j)))
+  = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+  compose(t, t) = identityFn ->
+  alternating.inAlternating(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+  alternating.inAlternating(compose(transposition(i, j), transposition(i, a)))
+proof
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; alternating.inAlternating(g) -> alternating.inAlternating(h) ->
+      alternating.inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @conclusion |
+    forall t: Fn; forall i, j, a: Element;
+      i != j -> i != a -> j != a ->
+      compose(t, compose(transposition(i, a), transposition(i, j)))
+      = compose(compose(transposition(i, a), transposition(i, j)), t) ->
+      compose(t, t) = identityFn ->
+      alternating.inAlternating(compose(t, compose(transposition(i, a), transposition(i, j)))) ->
+      alternating.inAlternating(compose(transposition(i, j), transposition(i, a)))
+    [using instantiation anInvolutionTimesAThreeCyclePutsAThreeCycleInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed]
+qed
+
+// CASE 4 STEP 2, REGROUPED FOR MEMBERSHIP. `theCommutatorWithASwapIsAThreeCycle` is stated as
+// the commutator `sigma c sigma^-1 c^-1`; a membership argument needs
+//
+//     sigma * (c sigma^-1 c^-1)
+//
+// because that is what N's closure sees: `c sigma^-1 c^-1` is in N by normality (sigma^-1 in N
+// by inverse closure, c in A_n), and sigma is in N, so the product is. Note the conjugated
+// element here is sigma^-INVERSE, not sigma — the opposite of case 1's grouping, because the
+// commutator's factor order differs. Verified computationally before writing.
+theorem theSwapCommutatorRegrouped: forall sigma: Fn; forall i, j, a: Element;
+  invertible(sigma) ->
+  i != j -> i != a -> j != a ->
+  apply(sigma, i) = j ->
+  apply(sigma, j) = i ->
+  apply(sigma, a) = a ->
+  compose(sigma,
+  compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+  inverse(compose(transposition(i, a), transposition(i, j)))))
+  = compose(transposition(i, a), transposition(i, j))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-i |
+        fix i: Element {
+          @generalize-j |
+            fix j: Element {
+              @generalize-a |
+                fix a: Element {
+                  @given-invertible |
+                    assume invertible(sigma) {
+                      @given-i-not-j |
+                        assume i != j {
+                          @given-i-not-a |
+                            assume i != a {
+                              @given-j-not-a |
+                                assume j != a {
+                                  @given-i-to-j |
+                                    assume apply(sigma, i) = j {
+                                      @given-j-to-i |
+                                        assume apply(sigma, j) = i {
+                                          @given-a-fixed |
+                                            assume apply(sigma, a) = a {
+                                              @sigma-is-a-permutation |
+                                                invertible(sigma)
+                                                [by hypothesis given-invertible]
+                                              @i-not-j |
+                                                i != j
+                                                [by hypothesis given-i-not-j]
+                                              @i-not-a |
+                                                i != a
+                                                [by hypothesis given-i-not-a]
+                                              @j-not-a |
+                                                j != a
+                                                [by hypothesis given-j-not-a]
+                                              @i-to-j |
+                                                apply(sigma, i) = j
+                                                [by hypothesis given-i-to-j]
+                                              @j-to-i |
+                                                apply(sigma, j) = i
+                                                [by hypothesis given-j-to-i]
+                                              @a-fixed |
+                                                apply(sigma, a) = a
+                                                [by hypothesis given-a-fixed]
+
+                                              @the-commutator-form |
+                                                compose(compose(compose(sigma, compose(transposition(i, a), transposition(i, j))),
+                                                  inverse(sigma)), inverse(compose(transposition(i, a), transposition(i, j))))
+                                                  = compose(transposition(i, a), transposition(i, j))
+                                                [using specialize theCommutatorWithASwapIsAThreeCycle(sigma, i, j, a) sigma-is-a-permutation i-not-j i-not-a j-not-a i-to-j j-to-i a-fixed]
+                                              @regrouped |
+                                                compose(sigma,
+                                                  compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                                  inverse(compose(transposition(i, a), transposition(i, j)))))
+                                                  = compose(compose(compose(sigma, compose(transposition(i, a), transposition(i, j))),
+                                                  inverse(sigma)), inverse(compose(transposition(i, a), transposition(i, j))))
+                                                [using assoc(composeAssoc)]
+                                              @conclusion-regrouped |
+                                                compose(sigma,
+                                                  compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                                  inverse(compose(transposition(i, a), transposition(i, j)))))
+                                                  = compose(transposition(i, a), transposition(i, j))
+                                                [using chain regrouped the-commutator-form]
+                                            }
+                                          @a-fixed-implies |
+                                            apply(sigma, a) = a ->
+                                              compose(sigma,
+                                              compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                              inverse(compose(transposition(i, a), transposition(i, j)))))
+                                              = compose(transposition(i, a), transposition(i, j))
+                                            [by discharge given-a-fixed]
+                                        }
+                                      @j-to-i-implies |
+                                        apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                          compose(sigma,
+                                          compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                          inverse(compose(transposition(i, a), transposition(i, j)))))
+                                          = compose(transposition(i, a), transposition(i, j))
+                                        [by discharge given-j-to-i]
+                                    }
+                                  @i-to-j-implies |
+                                    apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                      compose(sigma,
+                                      compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                      inverse(compose(transposition(i, a), transposition(i, j)))))
+                                      = compose(transposition(i, a), transposition(i, j))
+                                    [by discharge given-i-to-j]
+                                }
+                              @j-not-a-implies |
+                                j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                                  compose(sigma,
+                                  compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                                  inverse(compose(transposition(i, a), transposition(i, j)))))
+                                  = compose(transposition(i, a), transposition(i, j))
+                                [by discharge given-j-not-a]
+                            }
+                          @i-not-a-implies |
+                            i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                              compose(sigma,
+                              compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                              inverse(compose(transposition(i, a), transposition(i, j)))))
+                              = compose(transposition(i, a), transposition(i, j))
+                            [by discharge given-i-not-a]
+                        }
+                      @i-not-j-implies |
+                        i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                          compose(sigma,
+                          compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                          inverse(compose(transposition(i, a), transposition(i, j)))))
+                          = compose(transposition(i, a), transposition(i, j))
+                        [by discharge given-i-not-j]
+                    }
+                  @invertible-implies |
+                    invertible(sigma) -> i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                      compose(sigma,
+                      compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                      inverse(compose(transposition(i, a), transposition(i, j)))))
+                      = compose(transposition(i, a), transposition(i, j))
+                    [by discharge given-invertible]
+                }
+              @discharge-a |
+                forall a: Element; invertible(sigma) -> i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+                  compose(sigma,
+                  compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+                  inverse(compose(transposition(i, a), transposition(i, j)))))
+                  = compose(transposition(i, a), transposition(i, j))
+                [by generalize generalize-a]
+            }
+          @discharge-j |
+            forall j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+              compose(sigma,
+              compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+              inverse(compose(transposition(i, a), transposition(i, j)))))
+              = compose(transposition(i, a), transposition(i, j))
+            [by generalize generalize-j]
+        }
+      @discharge-i |
+        forall i, j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+          compose(sigma,
+          compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+          inverse(compose(transposition(i, a), transposition(i, j)))))
+          = compose(transposition(i, a), transposition(i, j))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall sigma: Fn; forall i, j, a: Element; invertible(sigma) -> i != j -> i != a -> j != a -> apply(sigma, i) = j -> apply(sigma, j) = i -> apply(sigma, a) = a ->
+      compose(sigma,
+      compose(compose(compose(transposition(i, a), transposition(i, j)), inverse(sigma)),
+      inverse(compose(transposition(i, a), transposition(i, j)))))
+      = compose(transposition(i, a), transposition(i, j))
+    [by generalize generalize-sigma]
+qed
