@@ -216,6 +216,15 @@ pub fn addTests(
     // Exercises the DIRECT-MAPPED-axiom transfer (group.opAssoc, an axiom, discharged
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
     ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.b4m" });
+    // GUARD-ARITY PROJECTION: the same subgroup theory modeled onto a target whose BASE SORT
+    // IS ITSELF REFINED. `Sub = Grp where inSubgroup` has one qualifier and its proofs claim
+    // that one guard; `EvenPerm = Perm where inAlternating` over `Perm = Fn where invertible`
+    // has two, so each transferred binder relativizes to their conjunction. Before
+    // `Prove.projectBlockGuard` this failed INSIDE subgroup.b4m's own proof ("step claims
+    // 'inAlternating(g)' but the hypothesis derives 'inAlternating(g) and invertible(g)'"), so
+    // a source theory could only be modeled onto a universal base. Complements the fixture
+    // above, which works precisely BECAUSE its base sort is universal.
+    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_refined_base.b4m" });
     // A FIXED-CONSTANT DEVELOPMENT REACHED AT A VARIABLE ELEMENT. std/group/order.b4m proves a
     // corpus about a fixed element A of fixed order N (three order axioms); the model maps A/N
     // onto a local element and its order and discharges those axioms from a `hasOrder`
