@@ -1,0 +1,71 @@
+// GUARD-ARITY PROJECTION: a source theory models onto a sort whose BASE IS ITSELF REFINED.
+//
+// `std/subgroup.b4m` is written against `Sub = Grp where inSubgroup` — ONE qualifier, and its
+// proofs' `[by predicate …]` steps claim that one guard. Here the target is
+// `EvenPerm = Perm where inAlternating`, and `Perm` is `Fn where invertible`, so the chain
+// carries TWO qualifiers and every transferred binder relativizes to their CONJUNCTION.
+//
+// Before the projection in `Prove.projectBlockGuard` the transfer failed inside the SOURCE
+// file's own proof:
+//
+//   std/subgroup.b4m:152:8: AlternatingIsASubgroup@subgroupClosedDivide:
+//     step claims 'inAlternating(g)' but the hypothesis derives
+//     'inAlternating(g) and invertible(g)'
+//
+// The projection and_elims the conjunction down to the claimed conjunct, so a source theory is
+// no longer restricted to universal-base targets. Note the transferred statement's shape: each
+// guard is injected AT ITS OWN BINDER, conjoined per binder.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import alternating <<< "std/permutation/alternating.b4m"
+
+sort Fn = permutation.Fn
+sort Perm = permutation.Perm
+pred invertible = permutation.invertible
+func compose = permutation.compose
+func inverse = permutation.inverse
+const identityFn = permutation.identityFn
+pred inAlternating = alternating.inAlternating
+
+// the target: a refinement OF a refined sort
+sort EvenPerm = Perm where inAlternating
+
+fact composeAssoc = function.composeAssoc
+fact composeIdentityLeft = function.composeIdentityLeft
+fact inverseLeft = function.inverseLeft
+fact identityIsEven = alternating.theIdentityIsInTheAlternatingGroup
+fact evenClosedOp = alternating.theAlternatingGroupIsClosedUnderComposition
+fact evenClosedInverse = alternating.theAlternatingGroupIsClosedUnderInverses
+
+model AlternatingIsASubgroup {
+  subgroup.Grp: Perm
+  subgroup.E: identityFn(function_invertible.identityInvertible)
+  subgroup.op: compose -| function_invertible.composeInvertible
+  subgroup.inverse: inverse -| function_invertible.inverseInvertible
+  subgroup.inSubgroup: inAlternating
+  subgroup.Sub: EvenPerm
+  subgroup.grpAssoc <- composeAssoc
+  subgroup.grpIdentityLeft <- composeIdentityLeft
+  subgroup.grpInverseLeft <- inverseLeft
+  subgroup.subgroupHasIdentity <- identityIsEven
+  subgroup.subgroupClosedOp <- evenClosedOp
+  subgroup.subgroupClosedInverse <- evenClosedInverse
+}
+
+// The division criterion, transferred. Its source proof opens two refined binders with
+// `[by predicate]`, which is what the projection licenses here.
+theorem evenPermutationsAreClosedUnderDivision:
+  forall g: Fn; (inAlternating(g) and invertible(g)) ->
+  forall h: Fn; (inAlternating(h) and invertible(h)) ->
+  inAlternating(compose(g, inverse(h)))
+proof
+  @conclusion |
+    forall g: Fn; (inAlternating(g) and invertible(g)) ->
+      forall h: Fn; (inAlternating(h) and invertible(h)) ->
+      inAlternating(compose(g, inverse(h)))
+    [using model(AlternatingIsASubgroup) subgroup.subgroupClosedDivide]
+qed

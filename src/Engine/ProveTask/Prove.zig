@@ -3242,6 +3242,49 @@ fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: [
 /// An SRef proving `prop` in block `kb`, from what the proof KNOWS (identity lookup — never a
 /// search): a teaching STEP is cited directly (and marked consumed); a teaching BLOCK's
 /// hypothesis is restated as a synthetic `hypothesis` step — the assumption itself, a refined
+/// GUARD-ARITY PROJECTION for `[by predicate]` / `[by hypothesis]` on a refined `fix`.
+///
+/// The step claims `goal`; the block's guard is `whole`. When they are equal the plain
+/// `.hypothesis` justification is right and this returns null. When `goal` is a strict
+/// CONJUNCT of `whole`, the claim is still true and this builds the derivation: restate
+/// `whole` by hypothesis, then `and_elim` down to `goal`'s PARENT, and return the final
+/// `and_lhs`/`and_rhs` as the claim's own justification.
+///
+/// WHY THIS EXISTS. A guarded model transfer injects every qualifier on the target sort's
+/// refinement chain, conjoined. A source theory written against a single-qualifier sort
+/// (`Sub = Grp where inSubgroup`) therefore claims ONE conjunct where the transferred binder
+/// carries SEVERAL — which happens exactly when the target's base sort is itself refined
+/// (`Perm = Fn where invertible`). Without the projection such a theory can only be modeled
+/// onto a universal base.
+///
+/// SOUNDNESS NOTE, and the current limit: this projects a conjunction DOWN to a conjunct, so
+/// every step it licenses was already derivable — the kernel re-checks each `and_lhs`/`and_rhs`
+/// it emits. What the engine does NOT yet check is the converse direction: a model may FORGET
+/// to overload a guard predicate, and nothing here detects that. Those guarantees are future
+/// work (see drafts/normality-as-a-model/).
+fn projectBlockGuard(self: *Prove, kb: kernel.BlockId, bref: kernel.BRef, goal: TermId) Error!?kernel.Justification {
+    const b = self.low_blocks.items[@intFromEnum(bref.id)];
+    const whole = switch (b.kind) {
+        .fix => |fx| fx.guard orelse return null,
+        .assume => |a| a,
+        else => return null,
+    };
+    if (whole == goal) return null; // the plain hypothesis arm handles it
+    var path: std.ArrayList(bool) = .empty;
+    if (!try self.conjunctPath(whole, goal, &path)) return null;
+    if (path.items.len == 0) return null;
+    // restate the whole guard, then and_elim down to the claim's PARENT; the last turn
+    // becomes the claim's own justification.
+    var step = try self.emitSynthetic(kb, bref.loc, whole, .{ .hypothesis = bref });
+    var cur = whole;
+    for (path.items[0 .. path.items.len - 1]) |left| {
+        const n = self.pool.get(cur);
+        cur = if (left) n.bin.lhs else n.bin.rhs;
+        step = try self.emitSynthetic(kb, bref.loc, cur, if (left) .{ .and_lhs = step } else .{ .and_rhs = step });
+    }
+    return if (path.items[path.items.len - 1]) .{ .and_lhs = step } else .{ .and_rhs = step };
+}
+
 /// binder's guard (a multi-qualifier guard's conjunct extracted), an unpack witness's guard
 /// conjunct. Null when nothing taught it here (a refined result's closure fact has no step).
 fn refForKnown(self: *Prove, kb: kernel.BlockId, loc: u32, prop: TermId) Error!?kernel.SRef {
@@ -9095,7 +9138,20 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
         },
         .hypothesis, .predicate => {
             try self.wantRefs(c, 1);
-            return .{ .hypothesis = try self.resolveBlockRef(w, c.refs[0]) };
+            const bref = try self.resolveBlockRef(w, c.refs[0]);
+            // GUARD-ARITY PROJECTION. A `[by predicate <fix>]` (or `[by hypothesis]` on a
+            // refined `fix`) claims the binder's guard. Under a GUARDED MODEL TRANSFER whose
+            // target sort refines a base that is ITSELF refined, the binder's guard is the
+            // CONJUNCTION of every qualifier on the chain, while the source proof — written
+            // against its own single-qualifier sort — claims one conjunct. The claim is still
+            // true, so project: and_elim down the conjunction to the claimed conjunct.
+            //
+            // Without this a source theory can only be modeled onto a sort whose base is
+            // UNIVERSAL, which is why `std/subgroup.b4m` would not transfer onto `Perm`
+            // (= `Fn where invertible`): `Sub = Grp where inSubgroup` has one qualifier,
+            // `Perm where inAlternating` has two. See drafts/normality-as-a-model/.
+            if (try self.projectBlockGuard(kb, bref, goal)) |j| return j;
+            return .{ .hypothesis = bref };
         },
         .modus_ponens => {
             try self.wantRefs(c, 2);
