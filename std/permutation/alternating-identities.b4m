@@ -17616,3 +17616,602 @@ proof
       forall c: Fn; alternating.isAThreeCycle(c) -> alternating.inAlternating(c)
     [using instantiation aNormalSubgroupWithOneThreeCycleHasEveryThreeCycle((fun g: Fn => alternating.inAlternating(g))) the-alternating-group-is-closed the-alternating-group-is-normal-in-itself]
 qed
+
+// THE INDEX FACTS CASE 1 SPENDS. Its three points are the cycle's entries at indices 0, 2 and
+// 3+q of a cycle of length 4+q, and the one-3-cycle premise wants them pairwise distinct.
+// `distinctEntriesDiffer` converts index facts into point disequalities, so what is owed is
+// six index facts: three bounds and three index disequalities.
+//
+// Stated in SUCCESSOR form throughout rather than with numerals, because `arithmetic(peano)`
+// treats `succ` opaquely — an index fact with a variable under `succ` comes back "the
+// statement is false" — so each is built from the order primitives instead.
+theorem theFirstCasesIndicesAreDistinct: forall q: Nat;
+  peano.less_than(ZERO, succ(succ(succ(succ(q))))) and
+  peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q))))) and
+  peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q))))) and
+  ZERO != succ(succ(ZERO)) and
+  ZERO != succ(succ(succ(q))) and
+  succ(succ(ZERO)) != succ(succ(succ(q)))
+proof
+  @generalize-q |
+    fix q: Nat {
+      // the three bounds
+      @zero-is-below |
+        peano.less_than(ZERO, succ(succ(succ(succ(q)))))
+        [using specialize peano_order.zeroBelowSucc(succ(succ(succ(q))))]
+      @zero-is-below-two-less |
+        peano.less_than(ZERO, succ(succ(q)))
+        [using specialize peano_order.zeroBelowSucc(succ(q))]
+      @one-is-below-three-less |
+        peano.less_than(succ(ZERO), succ(succ(succ(q))))
+        [using specialize peano_order.succPreservesOrder(ZERO, succ(succ(q))) zero-is-below-two-less]
+      @two-is-below |
+        peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q)))))
+        [using specialize peano_order.succPreservesOrder(succ(ZERO), succ(succ(succ(q)))) one-is-below-three-less]
+      @the-last-index-is-below |
+        peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q)))))
+        [using specialize peano_order.lessThanSelf(succ(succ(succ(q))))]
+
+      // the three index disequalities: zero is no successor, and the other pair reduces
+      @zero-is-not-two |
+        ZERO != succ(succ(ZERO))
+        [using specialize peano_order.zeroIsNotSucc(succ(ZERO))]
+      @zero-is-not-the-last |
+        ZERO != succ(succ(succ(q)))
+        [using specialize peano_order.zeroIsNotSucc(succ(succ(q)))]
+      @zero-is-not-one-less |
+        ZERO != succ(q)
+        [using specialize peano_order.zeroIsNotSucc(q)]
+      @given-two-is-the-last |
+        assume succ(succ(ZERO)) = succ(succ(succ(q))) {
+          @two-is-the-last |
+            succ(succ(ZERO)) = succ(succ(succ(q)))
+            [by hypothesis given-two-is-the-last]
+          @one-is-two-less |
+            succ(ZERO) = succ(succ(q))
+            [using specialize peano.succInjective(succ(ZERO), succ(succ(q))) two-is-the-last]
+          @zero-is-one-less |
+            ZERO = succ(q)
+            [using specialize peano.succInjective(ZERO, succ(q)) one-is-two-less]
+        }
+      @two-is-not-the-last |
+        succ(succ(ZERO)) != succ(succ(succ(q)))
+        [by contradiction given-two-is-the-last zero-is-one-less zero-is-not-one-less]
+
+      @conclusion-at-q |
+        peano.less_than(ZERO, succ(succ(succ(succ(q))))) and
+          peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q))))) and
+          peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q))))) and
+          ZERO != succ(succ(ZERO)) and
+          ZERO != succ(succ(succ(q))) and
+          succ(succ(ZERO)) != succ(succ(succ(q)))
+        [using tautology zero-is-below two-is-below the-last-index-is-below zero-is-not-two zero-is-not-the-last two-is-not-the-last]
+    }
+  @conclusion |
+    forall q: Nat;
+      peano.less_than(ZERO, succ(succ(succ(succ(q))))) and
+      peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q))))) and
+      peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q))))) and
+      ZERO != succ(succ(ZERO)) and
+      ZERO != succ(succ(succ(q))) and
+      succ(succ(ZERO)) != succ(succ(succ(q)))
+    [by generalize generalize-q]
+qed
+
+// JUDSON'S CASE 1, WIRED TO THE DECOMPOSITION. The decision step
+// (`decomposition.aNonIdentityPermutationHasACycleOfKnownLength`) reports a non-identity
+// element as `f = compose(c, g)` with c a cycle of a KNOWN length; this takes its length-(4+q)
+// branch and lands the one-3-cycle premise Theorem 10.11 wants.
+//
+// TWO MISMATCHES between what the decision reports and what case 1 consumes, both bookkeeping
+// rather than mathematics:
+//
+//   ORDER. The decision peels the cycle OUTERMOST (`compose(c, g)`); case 1 reads
+//     `compose(tau, c)`. They commute, the supports being disjoint — `disjointPermutationsCommute`.
+//
+//   DISJOINTNESS. The decision reports the remainder's support as an EQUATION
+//     (`support(g) = difference(support(f), orbit(f, x))`); case 1 wants `disjointSupports`.
+//     `thePeeledFactorsAreDisjoint` converts it.
+//
+// The three points are the cycle's entries at indices 0, 2 and 3+q, distinct by
+// `theFirstCasesIndicesAreDistinct` plus `cycle.distinctEntriesDiffer` — that conversion being
+// what Judson's "treating a1...ar as sigma's points" compresses.
+theorem judsonsFirstCaseFromTheDecomposition(inN(Fn)):
+  (forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+  inN(compose(compose(g2, h2), inverse(g2)))) ->
+  (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+  (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+  forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+  invertible(f) -> invertible(c) -> invertible(g) ->
+  f = compose(c, g) ->
+  c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+  permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+  inN(f) ->
+  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+  (exists i: Element; exists j: Element; exists a: Element;
+  i != j and a != i and a != j and
+  inN(compose(transposition(i, a), transposition(i, j))))
+proof
+  @given-normal |
+    assume forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+      inN(compose(compose(g2, h2), inverse(g2))) {
+      @normality |
+        forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+          inN(compose(compose(g2, h2), inverse(g2)))
+        [by hypothesis given-normal]
+      @given-inv |
+        assume forall g2: Fn; inN(g2) -> inN(inverse(g2)) {
+          @inverse-closure |
+            forall g2: Fn; inN(g2) -> inN(inverse(g2))
+            [by hypothesis given-inv]
+          @given-prod |
+            assume forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2)) {
+              @product-closure |
+                forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))
+                [by hypothesis given-prod]
+              @the-first-case |
+                forall tau: Fn; forall s: Points; forall q: Nat;
+                  invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) ->
+                  invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) ->
+                  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                  permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) ->
+                  inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) ->
+                  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                [using instantiation judsonsFirstCasePutsAThreeCycleInTheSubgroup((fun g2: Fn => inN(g2))) normality inverse-closure product-closure]
+
+              @generalize-f |
+                fix f: Fn {
+                  @generalize-c |
+                    fix c: Fn {
+                      @generalize-g |
+                        fix g: Fn {
+                          @generalize-s |
+                            fix s: Points {
+                              @generalize-q |
+                                fix q: Nat {
+                                  @generalize-x |
+                                    fix x: Element {
+                                      @given-f-invertible |
+                                        assume invertible(f) {
+                                          @given-c-invertible |
+                                            assume invertible(c) {
+                                              @given-g-invertible |
+                                                assume invertible(g) {
+                                                  @given-the-factoring |
+                                                    assume f = compose(c, g) {
+                                                      @given-the-cycle |
+                                                        assume c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) {
+                                                          @given-distinct |
+                                                            assume permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) {
+                                                              @given-inside-the-orbit |
+                                                                assume permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) {
+                                                                  @given-the-remainders-support |
+                                                                    assume support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) {
+                                                                      @given-f-in-n |
+                                                                        assume inN(f) {
+                                                                          @given-the-twist-is-even |
+                                                                            assume alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) {
+                                                                              @f-is-invertible |
+                                                                                invertible(f)
+                                                                                [by hypothesis given-f-invertible]
+                                                                              @c-is-invertible |
+                                                                                invertible(c)
+                                                                                [by hypothesis given-c-invertible]
+                                                                              @g-is-invertible |
+                                                                                invertible(g)
+                                                                                [by hypothesis given-g-invertible]
+                                                                              @the-factoring |
+                                                                                f = compose(c, g)
+                                                                                [by hypothesis given-the-factoring]
+                                                                              @the-cycle |
+                                                                                c = permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))
+                                                                                [by hypothesis given-the-cycle]
+                                                                              @the-entries-are-distinct |
+                                                                                permutation_cycle.distinct(s, succ(succ(succ(succ(q)))))
+                                                                                [by hypothesis given-distinct]
+                                                                              @the-cycle-is-inside-the-orbit |
+                                                                                permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x))
+                                                                                [by hypothesis given-inside-the-orbit]
+                                                                              @the-remainders-support |
+                                                                                support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x))
+                                                                                [by hypothesis given-the-remainders-support]
+                                                                              @f-is-in-n |
+                                                                                inN(f)
+                                                                                [by hypothesis given-f-in-n]
+                                                                              @the-twist-is-even |
+                                                                                alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO)))))
+                                                                                [by hypothesis given-the-twist-is-even]
+
+                                                                              // the two factors are disjoint, in both orders
+                                                                              @the-factors-are-disjoint |
+                                                                                permutation_decomposition.disjointSupports(c, g) and permutation_decomposition.disjointSupports(g, c)
+                                                                                [using specialize permutation_decomposition.thePeeledFactorsAreDisjoint(f, c, g, x) the-cycle-is-inside-the-orbit the-remainders-support]
+                                                                              @the-remainder-is-disjoint-from-the-cycle |
+                                                                                permutation_decomposition.disjointSupports(g, c)
+                                                                                [by and_rhs the-factors-are-disjoint]
+
+                                                                              // the order flip: the decision peels the cycle outermost, case 1 reads it innermost
+                                                                              @the-factors-commute |
+                                                                                compose(g, c) = compose(c, g)
+                                                                                [using specialize permutation.disjointPermutationsCommute(g, c) the-remainder-is-disjoint-from-the-cycle]
+                                                                              @f-is-the-remainder-times-the-cycle |
+                                                                                f = compose(g, c)
+                                                                                [by rewrite the-factors-commute the-factoring]
+
+                                                                              // case 1, at tau := g and the cycle in its own spelling
+                                                                              @the-cycle-is-invertible |
+                                                                                invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))
+                                                                                [by rewrite the-cycle c-is-invertible]
+                                                                              @the-swapped-product-is-invertible |
+                                                                                invertible(compose(g, c))
+                                                                                [by rewrite f-is-the-remainder-times-the-cycle f-is-invertible]
+                                                                              @the-product-is-invertible |
+                                                                                invertible(compose(g, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))))
+                                                                                [by rewrite the-cycle the-swapped-product-is-invertible]
+                                                                              @the-remainder-is-disjoint-from-the-spelled-cycle |
+                                                                                permutation_decomposition.disjointSupports(g, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))
+                                                                                [by rewrite the-cycle the-remainder-is-disjoint-from-the-cycle]
+                                                                              @the-swapped-product-is-in-n |
+                                                                                inN(compose(g, c))
+                                                                                [by rewrite f-is-the-remainder-times-the-cycle f-is-in-n]
+                                                                              @the-product-is-in-n |
+                                                                                inN(compose(g, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))))
+                                                                                [by rewrite the-cycle the-swapped-product-is-in-n]
+                                                                              @the-three-cycle-is-in-n |
+                                                                                inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                                                                [using specialize the-first-case(g, s, q) the-product-is-invertible the-cycle-is-invertible the-entries-are-distinct the-remainder-is-disjoint-from-the-spelled-cycle the-product-is-in-n the-twist-is-even]
+
+                                                                              // the three points are distinct: index facts through distinctEntriesDiffer
+                                                                              @the-index-facts |
+                                                                                peano.less_than(ZERO, succ(succ(succ(succ(q))))) and
+                                                                                  peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q))))) and
+                                                                                  peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q))))) and
+                                                                                  ZERO != succ(succ(ZERO)) and
+                                                                                  ZERO != succ(succ(succ(q))) and
+                                                                                  succ(succ(ZERO)) != succ(succ(succ(q)))
+                                                                                [using specialize theFirstCasesIndicesAreDistinct(q)]
+                                                                              @zero-is-in-range |
+                                                                                peano.less_than(ZERO, succ(succ(succ(succ(q)))))
+                                                                                [using tautology the-index-facts]
+                                                                              @two-is-in-range |
+                                                                                peano.less_than(succ(succ(ZERO)), succ(succ(succ(succ(q)))))
+                                                                                [using tautology the-index-facts]
+                                                                              @the-last-index-is-in-range |
+                                                                                peano.less_than(succ(succ(succ(q))), succ(succ(succ(succ(q)))))
+                                                                                [using tautology the-index-facts]
+                                                                              @zero-is-not-two |
+                                                                                ZERO != succ(succ(ZERO))
+                                                                                [using tautology the-index-facts]
+                                                                              @zero-is-not-the-last |
+                                                                                ZERO != succ(succ(succ(q)))
+                                                                                [using tautology the-index-facts]
+                                                                              @two-is-not-the-last |
+                                                                                succ(succ(ZERO)) != succ(succ(succ(q)))
+                                                                                [using tautology the-index-facts]
+                                                                              @the-first-point-differs-from-the-second |
+                                                                                permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                                                [using specialize permutation_cycle.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), ZERO, succ(succ(ZERO))) the-entries-are-distinct zero-is-in-range two-is-in-range zero-is-not-two]
+                                                                              @the-first-point-differs-from-the-third |
+                                                                                permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                                                [using specialize permutation_cycle.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), ZERO, succ(succ(succ(q)))) the-entries-are-distinct zero-is-in-range the-last-index-is-in-range zero-is-not-the-last]
+                                                                              @the-second-point-differs-from-the-third |
+                                                                                permutation_cycle.at(s, succ(succ(ZERO))) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                                                [using specialize permutation_cycle.distinctEntriesDiffer(s, succ(succ(succ(succ(q)))), succ(succ(ZERO)), succ(succ(succ(q)))) the-entries-are-distinct two-is-in-range the-last-index-is-in-range two-is-not-the-last]
+                                                                              @the-third-point-differs-from-the-first |
+                                                                                permutation_cycle.at(s, succ(succ(succ(q)))) != permutation_cycle.at(s, ZERO)
+                                                                                [using specialize disequalityIsSymmetric(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))) the-first-point-differs-from-the-third]
+                                                                              @the-third-point-differs-from-the-second |
+                                                                                permutation_cycle.at(s, succ(succ(succ(q)))) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                                                [using specialize disequalityIsSymmetric(permutation_cycle.at(s, succ(succ(ZERO))), permutation_cycle.at(s, succ(succ(succ(q))))) the-second-point-differs-from-the-third]
+
+                                                                              // package it as the one-3-cycle premise
+                                                                              @the-three-cycles-data |
+                                                                                permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(ZERO))) and
+                                                                                  permutation_cycle.at(s, succ(succ(succ(q)))) != permutation_cycle.at(s, ZERO) and
+                                                                                  permutation_cycle.at(s, succ(succ(succ(q)))) != permutation_cycle.at(s, succ(succ(ZERO))) and
+                                                                                  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                                                                [using tautology the-first-point-differs-from-the-second the-third-point-differs-from-the-first the-third-point-differs-from-the-second the-three-cycle-is-in-n]
+                                                                              @the-third-point-is-a-witness |
+                                                                                exists a: Element;
+                                                                                  permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(ZERO))) and
+                                                                                  a != permutation_cycle.at(s, ZERO) and
+                                                                                  a != permutation_cycle.at(s, succ(succ(ZERO))) and
+                                                                                  inN(compose(transposition(permutation_cycle.at(s, ZERO), a), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                                                                [by witness(permutation_cycle.at(s, succ(succ(succ(q))))) the-three-cycles-data]
+                                                                              @the-second-point-is-a-witness |
+                                                                                exists j: Element; exists a: Element;
+                                                                                  permutation_cycle.at(s, ZERO) != j and
+                                                                                  a != permutation_cycle.at(s, ZERO) and a != j and
+                                                                                  inN(compose(transposition(permutation_cycle.at(s, ZERO), a), transposition(permutation_cycle.at(s, ZERO), j)))
+                                                                                [by witness(permutation_cycle.at(s, succ(succ(ZERO)))) the-third-point-is-a-witness]
+                                                                              @conclusion-a-three-cycle-is-in-n |
+                                                                                exists i: Element; exists j: Element; exists a: Element;
+                                                                                  i != j and a != i and a != j and
+                                                                                  inN(compose(transposition(i, a), transposition(i, j)))
+                                                                                [by witness(permutation_cycle.at(s, ZERO)) the-second-point-is-a-witness]
+                                                                            }
+                                                                          @twist-implies |
+                                                                            alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                                              (exists i: Element; exists j: Element; exists a: Element;
+                                                                              i != j and a != i and a != j and
+                                                                              inN(compose(transposition(i, a), transposition(i, j))))
+                                                                            [by discharge given-the-twist-is-even]
+                                                                        }
+                                                                      @f-in-n-implies |
+                                                                        inN(f) ->
+                                                                          alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                                          (exists i: Element; exists j: Element; exists a: Element;
+                                                                          i != j and a != i and a != j and
+                                                                          inN(compose(transposition(i, a), transposition(i, j))))
+                                                                        [by discharge given-f-in-n]
+                                                                    }
+                                                                  @remainder-support-implies |
+                                                                    support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                                      inN(f) ->
+                                                                      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                                      (exists i: Element; exists j: Element; exists a: Element;
+                                                                      i != j and a != i and a != j and
+                                                                      inN(compose(transposition(i, a), transposition(i, j))))
+                                                                    [by discharge given-the-remainders-support]
+                                                                }
+                                                              @orbit-implies |
+                                                                permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                                                  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                                  inN(f) ->
+                                                                  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                                  (exists i: Element; exists j: Element; exists a: Element;
+                                                                  i != j and a != i and a != j and
+                                                                  inN(compose(transposition(i, a), transposition(i, j))))
+                                                                [by discharge given-inside-the-orbit]
+                                                            }
+                                                          @distinct-implies |
+                                                            permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                                              permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                                              support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                              inN(f) ->
+                                                              alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                              (exists i: Element; exists j: Element; exists a: Element;
+                                                              i != j and a != i and a != j and
+                                                              inN(compose(transposition(i, a), transposition(i, j))))
+                                                            [by discharge given-distinct]
+                                                        }
+                                                      @cycle-implies |
+                                                        c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                                          permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                                          permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                                          support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                          inN(f) ->
+                                                          alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                          (exists i: Element; exists j: Element; exists a: Element;
+                                                          i != j and a != i and a != j and
+                                                          inN(compose(transposition(i, a), transposition(i, j))))
+                                                        [by discharge given-the-cycle]
+                                                    }
+                                                  @factoring-implies |
+                                                    f = compose(c, g) ->
+                                                      c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                                      permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                                      permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                                      support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                      inN(f) ->
+                                                      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                      (exists i: Element; exists j: Element; exists a: Element;
+                                                      i != j and a != i and a != j and
+                                                      inN(compose(transposition(i, a), transposition(i, j))))
+                                                    [by discharge given-the-factoring]
+                                                }
+                                              @g-invertible-implies |
+                                                invertible(g) -> f = compose(c, g) ->
+                                                  c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                                  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                                  permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                                  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                                  inN(f) ->
+                                                  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                  (exists i: Element; exists j: Element; exists a: Element;
+                                                  i != j and a != i and a != j and
+                                                  inN(compose(transposition(i, a), transposition(i, j))))
+                                                [by discharge given-g-invertible]
+                                            }
+                                          @c-invertible-implies |
+                                            invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                                              c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                              permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                              permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                              support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                              inN(f) ->
+                                              alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                              (exists i: Element; exists j: Element; exists a: Element;
+                                              i != j and a != i and a != j and
+                                              inN(compose(transposition(i, a), transposition(i, j))))
+                                            [by discharge given-c-invertible]
+                                        }
+                                      @conclusion-at-this-data |
+                                        invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                                          c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                          permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                          permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                          support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                          inN(f) ->
+                                          alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                          (exists i: Element; exists j: Element; exists a: Element;
+                                          i != j and a != i and a != j and
+                                          inN(compose(transposition(i, a), transposition(i, j))))
+                                        [by discharge given-f-invertible]
+                                    }
+                                  @discharge-x |
+                                    forall x: Element;
+                                      invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                                      c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                      permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                      permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                      support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                      inN(f) ->
+                                      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                      (exists i: Element; exists j: Element; exists a: Element;
+                                      i != j and a != i and a != j and
+                                      inN(compose(transposition(i, a), transposition(i, j))))
+                                    [by generalize generalize-x]
+                                }
+                              @discharge-q |
+                                forall q: Nat; forall x: Element;
+                                  invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                                  c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                                  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                                  permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                                  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                                  inN(f) ->
+                                  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                  (exists i: Element; exists j: Element; exists a: Element;
+                                  i != j and a != i and a != j and
+                                  inN(compose(transposition(i, a), transposition(i, j))))
+                                [by generalize generalize-q]
+                            }
+                          @discharge-s |
+                            forall s: Points; forall q: Nat; forall x: Element;
+                              invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                              c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                              permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                              permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                              support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                              inN(f) ->
+                              alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                              (exists i: Element; exists j: Element; exists a: Element;
+                              i != j and a != i and a != j and
+                              inN(compose(transposition(i, a), transposition(i, j))))
+                            [by generalize generalize-s]
+                        }
+                      @discharge-g |
+                        forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+                          invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                          c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                          permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                          permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                          support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                          inN(f) ->
+                          alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                          (exists i: Element; exists j: Element; exists a: Element;
+                          i != j and a != i and a != j and
+                          inN(compose(transposition(i, a), transposition(i, j))))
+                        [by generalize generalize-g]
+                    }
+                  @discharge-c |
+                    forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+                      invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                      c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                      permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                      permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                      support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                      inN(f) ->
+                      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                      (exists i: Element; exists j: Element; exists a: Element;
+                      i != j and a != i and a != j and
+                      inN(compose(transposition(i, a), transposition(i, j))))
+                    [by generalize generalize-c]
+                }
+              @all-data |
+                forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+                  invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+                  c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+                  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+                  permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+                  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+                  inN(f) ->
+                  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                  (exists i: Element; exists j: Element; exists a: Element;
+                  i != j and a != i and a != j and
+                  inN(compose(transposition(i, a), transposition(i, j))))
+                [by generalize generalize-f]
+            }
+          @prod-implies |
+            (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+              forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+              invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+              c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+              permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+              permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+              support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+              inN(f) ->
+              alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+              (exists i: Element; exists j: Element; exists a: Element;
+              i != j and a != i and a != j and
+              inN(compose(transposition(i, a), transposition(i, j))))
+            [by discharge given-prod]
+        }
+      @inv-implies |
+        (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+          (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+          forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+          invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+          c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+          permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+          permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+          support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+          inN(f) ->
+          alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+          (exists i: Element; exists j: Element; exists a: Element;
+          i != j and a != i and a != j and
+          inN(compose(transposition(i, a), transposition(i, j))))
+        [by discharge given-inv]
+    }
+  @conclusion |
+    (forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+      inN(compose(compose(g2, h2), inverse(g2)))) ->
+      (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+      (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+      forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+      invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+      c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+      permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+      permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+      support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+      inN(f) ->
+      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+      (exists i: Element; exists j: Element; exists a: Element;
+      i != j and a != i and a != j and
+      inN(compose(transposition(i, a), transposition(i, j))))
+    [by discharge given-normal]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupGetsAThreeCycleFromTheDecomposition:
+  forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+  invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+  c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+  permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+  permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+  support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+  alternating.inAlternating(f) ->
+  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+  (exists i: Element; exists j: Element; exists a: Element;
+  i != j and a != i and a != j and
+  alternating.inAlternating(compose(transposition(i, a), transposition(i, j))))
+proof
+  @normal |
+    forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(h2) ->
+      alternating.inAlternating(compose(compose(g2, h2), inverse(g2)))
+    [by cite alternating.theAlternatingGroupIsClosedUnderConjugation]
+  @invclosed |
+    forall g2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(inverse(g2))
+    [by cite alternating.theAlternatingGroupIsClosedUnderInverses]
+  @prodclosed |
+    forall g2, h2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(h2) ->
+      alternating.inAlternating(compose(g2, h2))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @conclusion |
+    forall f: Fn; forall c: Fn; forall g: Fn; forall s: Points; forall q: Nat; forall x: Element;
+      invertible(f) -> invertible(c) -> invertible(g) -> f = compose(c, g) ->
+      c = permutation_cycle.cycle(s, succ(succ(succ(succ(q))))) ->
+      permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) ->
+      permutation_decomposition.subset(support(c), permutation_decomposition.orbit(f, x)) ->
+      support(g) = permutation_decomposition.difference(support(f), permutation_decomposition.orbit(f, x)) ->
+      alternating.inAlternating(f) ->
+      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+      (exists i: Element; exists j: Element; exists a: Element;
+      i != j and a != i and a != j and
+      alternating.inAlternating(compose(transposition(i, a), transposition(i, j))))
+    [using instantiation judsonsFirstCaseFromTheDecomposition((fun g2: Fn => alternating.inAlternating(g2))) normal invclosed prodclosed]
+qed
