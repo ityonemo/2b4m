@@ -40,9 +40,15 @@ import alternating <<< "std/permutation/alternating.b4m"
 import permutation_parity <<< "std/permutation/parity.b4m"
 import permutation_cycle <<< "std/permutation/cycle.b4m"
 import function_invertible <<< "std/function/invertible.b4m"
+import permutation_decomposition <<< "std/permutation/decomposition.b4m"
+import peano <<< "std/peano.b4m"
 
 sort Element = permutation.Element
 sort Fn = permutation.Fn
+sort Points = permutation_cycle.Points
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
 
 func compose = permutation.compose
 func apply = permutation.apply
@@ -15028,4 +15034,222 @@ proof
       alternating.inAlternating(compose(compose(transposition(a1, a3), transposition(a1, a6)),
       compose(transposition(a1, a2), transposition(a1, a4))))
     [using instantiation twoDisjointThreeCyclesPutAFiveCycleInTheSubgroup((fun g: Fn => alternating.inAlternating(g))) normal invclosed prodclosed]
+qed
+
+// JUDSON'S FIRST CASE, COMPLETE. Given a normal subgroup N containing
+// `sigma = tau o (a1 a2 ... ar)` with r > 3 and the remainder disjoint — Judson's case 1
+// verbatim — N contains a 3-cycle.
+//
+// The two halves composed: `decomposition.aLongCycleFactorGivesTheFirstPattern` turns the
+// SHAPE into the point-values, and `aLongCyclePatternPutsAThreeCycleInTheSubgroup` turns those
+// into membership. Judson's a1..ar are the cycle's entries `at(s, 0..p)`; the 3-cycle produced
+// is his `(a1 a3 ar)`.
+theorem judsonsFirstCasePutsAThreeCycleInTheSubgroup(inN(Fn)):
+  (forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+  inN(compose(compose(g2, h2), inverse(g2)))) ->
+  (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+  (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+  forall tau: Fn; forall s: Points; forall q: Nat;
+  invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+proof
+  @given-normal |
+    assume forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+      inN(compose(compose(g2, h2), inverse(g2))) {
+      @given-inv |
+        assume forall g2: Fn; inN(g2) -> inN(inverse(g2)) {
+          @given-prod |
+            assume forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2)) {
+              @normality |
+                forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+                  inN(compose(compose(g2, h2), inverse(g2)))
+                [by hypothesis given-normal]
+              @inverse-closed |
+                forall g2: Fn; inN(g2) -> inN(inverse(g2))
+                [by hypothesis given-inv]
+              @product-closed |
+                forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))
+                [by hypothesis given-prod]
+              @gt |
+                fix tau: Fn {
+                  @gs |
+                    fix s: Points {
+                      @gq |
+                        fix q: Nat {
+                          @hs |
+                            assume invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) {
+                              @hc |
+                                assume invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) {
+                                  @hd |
+                                    assume permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) {
+                                      @hj |
+                                        assume permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) {
+                                          @hn |
+                                            assume inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) {
+                                              @he |
+                                                assume alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) {
+                                                  @sigma-is-a-permutation |
+                                                    invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))))
+                                                    [by hypothesis hs]
+                                                  @cycle-is-a-permutation |
+                                                    invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))
+                                                    [by hypothesis hc]
+                                                  @the-distinctness |
+                                                    permutation_cycle.distinct(s, succ(succ(succ(succ(q)))))
+                                                    [by hypothesis hd]
+                                                  @the-disjointness |
+                                                    permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))
+                                                    [by hypothesis hj]
+                                                  @sigma-in-n |
+                                                    inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))))
+                                                    [by hypothesis hn]
+                                                  @the-conjugator-is-even |
+                                                    alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO)))))
+                                                    [by hypothesis he]
+
+                                                  // the shape gives the pattern
+                                                  @the-pattern |
+                                                    (permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(ZERO))
+                                                      and permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                      and permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                      and permutation_cycle.at(s, succ(ZERO)) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                      and permutation_cycle.at(s, succ(ZERO)) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                      and permutation_cycle.at(s, succ(succ(ZERO))) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                      and apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, ZERO)) = permutation_cycle.at(s, succ(succ(succ(q))))
+                                                      and apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, succ(ZERO))) = permutation_cycle.at(s, ZERO)
+                                                      and apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, succ(succ(ZERO)))) = permutation_cycle.at(s, succ(ZERO)))
+                                                    [using specialize permutation_decomposition.aLongCycleFactorGivesTheFirstPattern(tau, s, q) sigma-is-a-permutation cycle-is-a-permutation the-distinctness the-disjointness]
+                                                  @s0-not-s1 |
+                                                    permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(ZERO))
+                                                    [using tautology the-pattern]
+                                                  @s0-not-s2 |
+                                                    permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                    [using tautology the-pattern]
+                                                  @s0-not-sp |
+                                                    permutation_cycle.at(s, ZERO) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                    [using tautology the-pattern]
+                                                  @s1-not-s2 |
+                                                    permutation_cycle.at(s, succ(ZERO)) != permutation_cycle.at(s, succ(succ(ZERO)))
+                                                    [using tautology the-pattern]
+                                                  @s1-not-sp |
+                                                    permutation_cycle.at(s, succ(ZERO)) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                    [using tautology the-pattern]
+                                                  @s2-not-sp |
+                                                    permutation_cycle.at(s, succ(succ(ZERO))) != permutation_cycle.at(s, succ(succ(succ(q))))
+                                                    [using tautology the-pattern]
+                                                  @inv-at-s0 |
+                                                    apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, ZERO)) = permutation_cycle.at(s, succ(succ(succ(q))))
+                                                    [using tautology the-pattern]
+                                                  @inv-at-s1 |
+                                                    apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, succ(ZERO))) = permutation_cycle.at(s, ZERO)
+                                                    [using tautology the-pattern]
+                                                  @inv-at-s2 |
+                                                    apply(inverse(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))), permutation_cycle.at(s, succ(succ(ZERO)))) = permutation_cycle.at(s, succ(ZERO))
+                                                    [using tautology the-pattern]
+
+                                                  // and the pattern gives membership
+                                                  @the-arm |
+                                                    forall sigma2: Fn; forall a1, a2, a3, ar: Element;
+                                                      invertible(sigma2) -> inN(sigma2) ->
+                                                      a1 != a2 -> a1 != a3 -> a1 != ar -> a2 != a3 -> a2 != ar -> a3 != ar ->
+                                                      apply(inverse(sigma2), a1) = ar ->
+                                                      apply(inverse(sigma2), a2) = a1 ->
+                                                      apply(inverse(sigma2), a3) = a2 ->
+                                                      alternating.inAlternating(compose(transposition(a1, a3), transposition(a1, a2))) ->
+                                                      inN(compose(transposition(a1, ar), transposition(a1, a3)))
+                                                    [using instantiation aLongCyclePatternPutsAThreeCycleInTheSubgroup((fun g2: Fn => inN(g2))) normality inverse-closed product-closed]
+                                                  @conclusion-first-case |
+                                                    inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                                    [using specialize the-arm(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))), permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO)), permutation_cycle.at(s, succ(succ(ZERO))), permutation_cycle.at(s, succ(succ(succ(q))))) sigma-is-a-permutation sigma-in-n s0-not-s1 s0-not-s2 s0-not-sp s1-not-s2 s1-not-sp s2-not-sp inv-at-s0 inv-at-s1 inv-at-s2 the-conjugator-is-even]
+                                                }
+                                              @he-implies |
+                                                alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                                  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                                [by discharge he]
+                                            }
+                                          @hn-implies |
+                                            inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                              inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                            [by discharge hn]
+                                        }
+                                      @hj-implies |
+                                        permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                          inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                        [by discharge hj]
+                                    }
+                                  @hd-implies |
+                                    permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                      inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                    [by discharge hd]
+                                }
+                              @hc-implies |
+                                invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                                  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                                [by discharge hc]
+                            }
+                          @hs-implies |
+                            invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                              inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                            [by discharge hs]
+                        }
+                      @d-q |
+                        forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                          inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                        [by generalize gq]
+                    }
+                  @d-s |
+                    forall s: Points; forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                      inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                    [by generalize gs]
+                }
+              @all-cases |
+                forall tau: Fn; forall s: Points; forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+                  inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+                [by generalize gt]
+            }
+          @prod-implies |
+            (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+              forall tau: Fn; forall s: Points; forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+              inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+            [by discharge given-prod]
+        }
+      @inv-implies |
+        (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+          (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+          forall tau: Fn; forall s: Points; forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+          inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+        [by discharge given-inv]
+    }
+  @conclusion |
+    (forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> inN(h2) ->
+      inN(compose(compose(g2, h2), inverse(g2)))) ->
+      (forall g2: Fn; inN(g2) -> inN(inverse(g2))) ->
+      (forall g2, h2: Fn; inN(g2) -> inN(h2) -> inN(compose(g2, h2))) ->
+      forall tau: Fn; forall s: Points; forall q: Nat; invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> inN(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+      inN(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+    [by discharge given-normal]
+qed
+
+// Exercised at N = A_n.
+theorem theAlternatingGroupGetsAThreeCycleFromJudsonsFirstCase:
+  forall tau: Fn; forall s: Points; forall q: Nat;
+  invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> alternating.inAlternating(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+  alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+proof
+  @normal |
+    forall g2: Fn; forall h2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(h2) ->
+      alternating.inAlternating(compose(compose(g2, h2), inverse(g2)))
+    [by cite alternating.theAlternatingGroupIsClosedUnderConjugation]
+  @invclosed |
+    forall g2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(inverse(g2))
+    [by cite alternating.theAlternatingGroupIsClosedUnderInverses]
+  @prodclosed |
+    forall g2, h2: Fn; alternating.inAlternating(g2) -> alternating.inAlternating(h2) ->
+      alternating.inAlternating(compose(g2, h2))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @conclusion |
+    forall tau: Fn; forall s: Points; forall q: Nat;
+      invertible(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> invertible(permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> permutation_cycle.distinct(s, succ(succ(succ(succ(q))))) -> permutation_decomposition.disjointSupports(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q)))))) -> alternating.inAlternating(compose(tau, permutation_cycle.cycle(s, succ(succ(succ(succ(q))))))) -> alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO)))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(ZERO))))) ->
+      alternating.inAlternating(compose(transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(succ(q))))), transposition(permutation_cycle.at(s, ZERO), permutation_cycle.at(s, succ(succ(ZERO))))))
+    [using instantiation judsonsFirstCasePutsAThreeCycleInTheSubgroup((fun g2: Fn => alternating.inAlternating(g2))) normal invclosed prodclosed]
 qed
