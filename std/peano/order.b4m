@@ -1790,3 +1790,145 @@ proof
     forall a, b: Nat; a != b -> b != a
     [by generalize generalize-a]
 qed
+
+// A NAT IS ZERO, ONE, TWO, OR AT LEAST THREE. Three nested `zeroOrSucc` splits, packaged so
+// a consumer splitting a cycle's length does not repeat them.
+//
+// Stated in successor form (`exists q; p = succ^3(q)`) rather than with `less_than`, because
+// that is the form the cycle-length branches consume — `cycleAdvances` and friends want
+// literal succ-towers, and `arithmetic(peano)` cannot bridge numerals to a variable under
+// succ (it treats succ opaquely).
+theorem aNatIsZeroOneTwoOrMore: forall p: Nat;
+  (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+  or (exists q: Nat; p = succ(succ(succ(q)))))
+proof
+  @generalize-p |
+    fix p: Nat {
+      @split-p |
+        p = ZERO or (exists m: Nat; p = succ(m))
+        [using specialize zeroOrSucc(p)]
+      @conclusion-at-p |
+        (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+          or (exists q: Nat; p = succ(succ(succ(q)))))
+        case split-p {
+          @when-p-is-zero |
+            assume p = ZERO {
+              @p-is-zero |
+                p = ZERO
+                [by hypothesis when-p-is-zero]
+              @conclusion-zero |
+                (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                  or (exists q: Nat; p = succ(succ(succ(q)))))
+                [using tautology p-is-zero]
+            }
+          @when-p-is-successor |
+            assume exists m: Nat; p = succ(m) {
+              @some-m |
+                exists m: Nat; p = succ(m)
+                [by hypothesis when-p-is-successor]
+              @with-m |
+                unpack m: Nat from some-m {
+                  @p-is-succ-m |
+                    p = succ(m)
+                    [by hypothesis with-m]
+                  @split-m |
+                    m = ZERO or (exists m2: Nat; m = succ(m2))
+                    [using specialize zeroOrSucc(m)]
+                  @conclusion-at-m |
+                    (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                      or (exists q: Nat; p = succ(succ(succ(q)))))
+                    case split-m {
+                      @when-m-is-zero |
+                        assume m = ZERO {
+                          @m-is-zero |
+                            m = ZERO
+                            [by hypothesis when-m-is-zero]
+                          @p-is-one |
+                            p = succ(ZERO)
+                            [by rewrite m-is-zero p-is-succ-m]
+                          @conclusion-one |
+                            (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                              or (exists q: Nat; p = succ(succ(succ(q)))))
+                            [using tautology p-is-one]
+                        }
+                      @when-m-is-successor |
+                        assume exists m2: Nat; m = succ(m2) {
+                          @some-m2 |
+                            exists m2: Nat; m = succ(m2)
+                            [by hypothesis when-m-is-successor]
+                          @with-m2 |
+                            unpack m2: Nat from some-m2 {
+                              @m-is-succ-m2 |
+                                m = succ(m2)
+                                [by hypothesis with-m2]
+                              @p-is-succ-succ-m2 |
+                                p = succ(succ(m2))
+                                [by rewrite m-is-succ-m2 p-is-succ-m]
+                              @split-m2 |
+                                m2 = ZERO or (exists m3: Nat; m2 = succ(m3))
+                                [using specialize zeroOrSucc(m2)]
+                              @conclusion-at-m2 |
+                                (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                                  or (exists q: Nat; p = succ(succ(succ(q)))))
+                                case split-m2 {
+                                  @when-m2-is-zero |
+                                    assume m2 = ZERO {
+                                      @m2-is-zero |
+                                        m2 = ZERO
+                                        [by hypothesis when-m2-is-zero]
+                                      @p-is-two |
+                                        p = succ(succ(ZERO))
+                                        [by rewrite m2-is-zero p-is-succ-succ-m2]
+                                      @conclusion-two |
+                                        (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                                          or (exists q: Nat; p = succ(succ(succ(q)))))
+                                        [using tautology p-is-two]
+                                    }
+                                  @when-m2-is-successor |
+                                    assume exists m3: Nat; m2 = succ(m3) {
+                                      @some-m3 |
+                                        exists m3: Nat; m2 = succ(m3)
+                                        [by hypothesis when-m2-is-successor]
+                                      @with-m3 |
+                                        unpack m3: Nat from some-m3 {
+                                          @m2-is-succ-m3 |
+                                            m2 = succ(m3)
+                                            [by hypothesis with-m3]
+                                          @p-is-three-plus |
+                                            p = succ(succ(succ(m3)))
+                                            [by rewrite m2-is-succ-m3 p-is-succ-succ-m2]
+                                          @the-existential |
+                                            exists q: Nat; p = succ(succ(succ(q)))
+                                            [by witness(m3) p-is-three-plus]
+                                          @conclusion-more |
+                                            (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                                              or (exists q: Nat; p = succ(succ(succ(q)))))
+                                            [using tautology the-existential]
+                                        }
+                                      @conclusion-unpacked-m3 |
+                                        (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                                          or (exists q: Nat; p = succ(succ(succ(q)))))
+                                        [by unpacked with-m3]
+                                    }
+                                }
+                            }
+                          @conclusion-unpacked-m2 |
+                            (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                              or (exists q: Nat; p = succ(succ(succ(q)))))
+                            [by unpacked with-m2]
+                        }
+                    }
+                }
+              @conclusion-unpacked-m |
+                (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                  or (exists q: Nat; p = succ(succ(succ(q)))))
+                [by unpacked with-m]
+            }
+        }
+    }
+  @conclusion |
+    forall p: Nat;
+      (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+      or (exists q: Nat; p = succ(succ(succ(q)))))
+    [by generalize generalize-p]
+qed
