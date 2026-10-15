@@ -16362,3 +16362,178 @@ proof
       compose(transposition(permutation_cycle.at(s1, ZERO), permutation_cycle.at(s1, succ(ZERO))), transposition(permutation_cycle.at(s1, ZERO), permutation_cycle.at(s2, ZERO)))))
     [using instantiation judsonsSecondCasePutsAFiveCycleInTheSubgroup((fun g2: Fn => alternating.inAlternating(g2))) normal invclosed prodclosed]
 qed
+
+// CASE 4 STEP 1, REGROUPED FOR MEMBERSHIP. Judson's first conjugation in the all-2-cycles case,
+// stated the way N's closure sees it:
+//
+//     sigma^-1 * (c sigma c^-1) = (a1a3)(a2a4)     where c = (a1, a2, a3)
+//
+// Same shape as `theLongCycleCommutatorIsAThreeCycle` for case 1: the commutator closed form at
+// sigma^-1, with the three images substituted, then `composeAssoc` and `invInvolution` to put
+// the grouping where normality and inverse-closure can act.
+//
+// Needs no distinctness at all — `theTwoCycleCommutatorIsADoubleTransposition` is
+// unconditional, the middle pair cancelling by symmetry plus the involution law.
+theorem theTwoCycleCommutatorRegrouped: forall sigma: Fn; forall a1, a2, a3, a4: Element;
+  invertible(sigma) ->
+  apply(inverse(sigma), a1) = a2 ->
+  apply(inverse(sigma), a2) = a1 ->
+  apply(inverse(sigma), a3) = a4 ->
+  compose(inverse(sigma),
+  compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+  inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+  = compose(transposition(a2, a4), transposition(a1, a3))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-a1 |
+        fix a1: Element {
+          @generalize-a2 |
+            fix a2: Element {
+              @generalize-a3 |
+                fix a3: Element {
+                  @generalize-a4 |
+                    fix a4: Element {
+                      @given-invertible |
+                        assume invertible(sigma) {
+                          @given-im1 |
+                            assume apply(inverse(sigma), a1) = a2 {
+                              @given-im2 |
+                                assume apply(inverse(sigma), a2) = a1 {
+                                  @given-im3 |
+                                    assume apply(inverse(sigma), a3) = a4 {
+                                      @sigma-is-a-permutation |
+                                        invertible(sigma)
+                                        [by hypothesis given-invertible]
+                                      @image-a1 |
+                                        apply(inverse(sigma), a1) = a2
+                                        [by hypothesis given-im1]
+                                      @image-a2 |
+                                        apply(inverse(sigma), a2) = a1
+                                        [by hypothesis given-im2]
+                                      @image-a3 |
+                                        apply(inverse(sigma), a3) = a4
+                                        [by hypothesis given-im3]
+
+                                      @sigma-inverse-is-a-permutation |
+                                        invertible(inverse(sigma))
+                                        [using specialize permutation.inverseIsAPermutation(sigma) sigma-is-a-permutation]
+                                      @the-closed-form |
+                                        compose(compose(compose(inverse(sigma),
+                                          compose(transposition(a1, a3), transposition(a1, a2))),
+                                          inverse(inverse(sigma))),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2))))
+                                          = compose(compose(transposition(apply(inverse(sigma), a1), apply(inverse(sigma), a3)),
+                                          transposition(apply(inverse(sigma), a1), apply(inverse(sigma), a2))),
+                                          compose(transposition(a1, a2), transposition(a1, a3)))
+                                        [using specialize theCommutatorOfAThreeCycleWithAPermutation(inverse(sigma), a1, a2, a3) sigma-inverse-is-a-permutation]
+                                      @images-substituted |
+                                        compose(compose(compose(inverse(sigma),
+                                          compose(transposition(a1, a3), transposition(a1, a2))),
+                                          inverse(inverse(sigma))),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2))))
+                                          = compose(compose(transposition(a2, a4), transposition(a2, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3)))
+                                        [using simplify image-a1 image-a2 image-a3 the-closed-form]
+                                      @the-cancellation |
+                                        compose(compose(transposition(a2, a4), transposition(a2, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3)))
+                                          = compose(transposition(a2, a4), transposition(a1, a3))
+                                        [using specialize theTwoCycleCommutatorIsADoubleTransposition(a1, a2, a3, a4)]
+                                      @double-inverse |
+                                        inverse(inverse(sigma)) = sigma
+                                        [using specialize function_invertible.invInvolution(sigma) sigma-is-a-permutation]
+                                      @commutator-at-sigma |
+                                        compose(compose(compose(inverse(sigma),
+                                          compose(transposition(a1, a3), transposition(a1, a2))), sigma),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2))))
+                                          = compose(compose(transposition(a2, a4), transposition(a2, a1)),
+                                          compose(transposition(a1, a2), transposition(a1, a3)))
+                                        [by rewrite double-inverse images-substituted]
+                                      @regrouped |
+                                        compose(inverse(sigma),
+                                          compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                                          = compose(compose(compose(inverse(sigma),
+                                          compose(transposition(a1, a3), transposition(a1, a2))), sigma),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2))))
+                                        [using assoc(composeAssoc)]
+                                      @conclusion-regrouped |
+                                        compose(inverse(sigma),
+                                          compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                                          inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                                          = compose(transposition(a2, a4), transposition(a1, a3))
+                                        [using chain regrouped commutator-at-sigma the-cancellation]
+                                    }
+                                  @im3-implies |
+                                    apply(inverse(sigma), a3) = a4 ->
+                                      compose(inverse(sigma),
+                                      compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                                      inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                                      = compose(transposition(a2, a4), transposition(a1, a3))
+                                    [by discharge given-im3]
+                                }
+                              @im2-implies |
+                                apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+                                  compose(inverse(sigma),
+                                  compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                                  inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                                  = compose(transposition(a2, a4), transposition(a1, a3))
+                                [by discharge given-im2]
+                            }
+                          @im1-implies |
+                            apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+                              compose(inverse(sigma),
+                              compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                              inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                              = compose(transposition(a2, a4), transposition(a1, a3))
+                            [by discharge given-im1]
+                        }
+                      @invertible-implies |
+                        invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+                          compose(inverse(sigma),
+                          compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                          inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                          = compose(transposition(a2, a4), transposition(a1, a3))
+                        [by discharge given-invertible]
+                    }
+                  @discharge-a4 |
+                    forall a4: Element; invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+                      compose(inverse(sigma),
+                      compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                      inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                      = compose(transposition(a2, a4), transposition(a1, a3))
+                    [by generalize generalize-a4]
+                }
+              @discharge-a3 |
+                forall a3, a4: Element; invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+                  compose(inverse(sigma),
+                  compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+                  inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+                  = compose(transposition(a2, a4), transposition(a1, a3))
+                [by generalize generalize-a3]
+            }
+          @discharge-a2 |
+            forall a2, a3, a4: Element; invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+              compose(inverse(sigma),
+              compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+              inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+              = compose(transposition(a2, a4), transposition(a1, a3))
+            [by generalize generalize-a2]
+        }
+      @discharge-a1 |
+        forall a1, a2, a3, a4: Element; invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+          compose(inverse(sigma),
+          compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+          inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+          = compose(transposition(a2, a4), transposition(a1, a3))
+        [by generalize generalize-a1]
+    }
+  @conclusion |
+    forall sigma: Fn; forall a1, a2, a3, a4: Element; invertible(sigma) -> apply(inverse(sigma), a1) = a2 -> apply(inverse(sigma), a2) = a1 -> apply(inverse(sigma), a3) = a4 ->
+      compose(inverse(sigma),
+      compose(compose(compose(transposition(a1, a3), transposition(a1, a2)), sigma),
+      inverse(compose(transposition(a1, a3), transposition(a1, a2)))))
+      = compose(transposition(a2, a4), transposition(a1, a3))
+    [by generalize generalize-sigma]
+qed
