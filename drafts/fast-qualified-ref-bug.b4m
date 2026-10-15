@@ -1,0 +1,31 @@
+// REPRO: `--fast` ACCEPTS A NONEXISTENT QUALIFIED REFERENCE that strict REJECTS.
+//
+//   2b4m check --fast drafts/fast-qualified-ref-bug.b4m   -> OK: 1 theorems proven
+//   2b4m check        drafts/fast-qualified-ref-bug.b4m   -> error: reference not found
+//
+// Same invariant as the `fact`-alias bug fixed in Prove.zig's `trustableKind`
+// (`fast-strict-invariant-and-rummage-rule`): --fast and strict must agree in BOTH
+// directions. A --fast pass that admits a typo'd name is worse than slow — it reports a
+// proof green that has no proof.
+//
+// Found 2026-10-15 while wiring Judson's case 2 to case 1: `permutation_cycle` has
+// `cycleIsAPermutation`, I wrote `aCycleIsAPermutation`, and --fast on that single theorem
+// printed "fully verified". Only the whole-file strict pass caught it.
+//
+// The specialize accelerant is what swallows it: the reference sits in a `[using specialize
+// X.y(args)]` justification, and under --fast the accelerant's verdict is admitted without
+// the head ever being resolved.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+theorem trustsATypoedQualifiedName: forall n: Nat; add(ZERO, n) = n
+proof
+  @conclusion |
+    forall n: Nat; add(ZERO, n) = n
+    [using specialize peano.thereIsNoSuchTheorem]
+qed
