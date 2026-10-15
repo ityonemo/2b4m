@@ -2954,3 +2954,99 @@ proof
       apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
     [by generalize generalize-rho]
 qed
+
+// POINTS IN DISJOINT SUPPORTS DIFFER. The step Judson's cases 2 and 4 need and cases 1 and 3
+// do not: those name all their points from ONE cycle, where `distinctEntriesDiffer` suffices,
+// while 2 and 4 name points from TWO disjoint cycles and need them distinct ACROSS the cycles.
+//
+//     disjointSupports(f, g), member(x, support(f)), member(y, support(g))  ==>  x != y
+//
+// Judson never writes it because "disjoint cycles" already means the entries are different
+// letters. Formally it is one `intersectionMember`: were x = y, that point would sit in both
+// supports, contradicting the empty intersection.
+theorem pointsInDisjointSupportsDiffer: forall f: Fn; forall g: Fn; forall x: Element; forall y: Element;
+  disjointSupports(f, g) ->
+  member(x, support(f)) ->
+  member(y, support(g)) ->
+  x != y
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-x |
+            fix x: Element {
+              @generalize-y |
+                fix y: Element {
+                  @given-disjoint |
+                    assume disjointSupports(f, g) {
+                      @given-x-in-f |
+                        assume member(x, support(f)) {
+                          @given-y-in-g |
+                            assume member(y, support(g)) {
+                              @the-disjointness |
+                                disjointSupports(f, g)
+                                [by hypothesis given-disjoint]
+                              @x-in-f |
+                                member(x, support(f))
+                                [by hypothesis given-x-in-f]
+                              @y-in-g |
+                                member(y, support(g))
+                                [by hypothesis given-y-in-g]
+                              @the-intersection-is-empty |
+                                intersection(support(f), support(g)) = emptyset
+                                [using tautology the-disjointness]
+                              @suppose-equal |
+                                assume x = y {
+                                  @they-are-equal |
+                                    x = y
+                                    [by hypothesis suppose-equal]
+                                  @x-in-g |
+                                    member(x, support(g))
+                                    [by rewrite they-are-equal y-in-g]
+                                  @x-in-both |
+                                    member(x, intersection(support(f), support(g)))
+                                      iff (member(x, support(f)) and member(x, support(g)))
+                                    [using specialize set.intersectionMember(support(f), support(g), x)]
+                                  @x-in-the-intersection |
+                                    member(x, intersection(support(f), support(g)))
+                                    [using tautology x-in-both x-in-f x-in-g]
+                                  @x-in-the-emptyset |
+                                    member(x, emptyset)
+                                    [by rewrite the-intersection-is-empty x-in-the-intersection]
+                                  @nothing-in-the-emptyset |
+                                    not member(x, emptyset)
+                                    [using specialize set.emptysetMember(x)]
+                                }
+                              @conclusion-differ |
+                                x != y
+                                [by contradiction suppose-equal x-in-the-emptyset nothing-in-the-emptyset]
+                            }
+                          @y-in-g-implies |
+                            member(y, support(g)) -> x != y
+                            [by discharge given-y-in-g]
+                        }
+                      @x-in-f-implies |
+                        member(x, support(f)) -> member(y, support(g)) -> x != y
+                        [by discharge given-x-in-f]
+                    }
+                  @disjoint-implies |
+                    disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
+                    [by discharge given-disjoint]
+                }
+              @discharge-y |
+                forall y: Element; disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
+                [by generalize generalize-y]
+            }
+          @discharge-x |
+            forall x: Element; forall y: Element; disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
+            [by generalize generalize-x]
+        }
+      @discharge-g |
+        forall g: Fn; forall x: Element; forall y: Element; disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn; forall x: Element; forall y: Element; disjointSupports(f, g) -> member(x, support(f)) -> member(y, support(g)) -> x != y
+    [by generalize generalize-f]
+qed
