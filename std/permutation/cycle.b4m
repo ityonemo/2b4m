@@ -1906,3 +1906,65 @@ proof
       transposition(at(s, ZERO), at(s, succ(ZERO))))
     [by generalize generalize-s]
 qed
+
+// A CYCLE THAT MOVES ANYTHING HAS LENGTH AT LEAST TWO. With `aPeeledCycleMovesItsPoint` this
+// is what removes the degenerate branch from a length split: `isACycle(c)` unpacks to
+// `c = cycle(s, succ(p))`, and p = ZERO makes that `cycle(s, 1)`, which
+// `oneCycleIsTheIdentity` says is the identity — moving nothing.
+//
+// So a cycle known to move a point has p != ZERO, and `aNatIsZeroOneTwoOrMore` then leaves
+// exactly Judson's three live lengths: 2, 3, and at least 4.
+theorem aMovingCycleHasLengthAtLeastTwo: forall s: Points; forall p: Nat; forall x: Element;
+  apply(cycle(s, succ(p)), x) != x ->
+  p != ZERO
+proof
+  @generalize-s |
+    fix s: Points {
+      @generalize-p |
+        fix p: Nat {
+          @generalize-x |
+            fix x: Element {
+              @given-moves |
+                assume apply(cycle(s, succ(p)), x) != x {
+                  @it-moves |
+                    apply(cycle(s, succ(p)), x) != x
+                    [by hypothesis given-moves]
+                  @suppose-p-is-zero |
+                    assume p = ZERO {
+                      @p-is-zero |
+                        p = ZERO
+                        [by hypothesis suppose-p-is-zero]
+                      @the-one-cycle |
+                        cycle(s, succ(ZERO)) = identityFn
+                        [using specialize oneCycleIsTheIdentity(s)]
+                      @identity-fixes |
+                        apply(identityFn, x) = x
+                        [using specialize function.identityApply(x)]
+                      @one-cycle-fixes |
+                        apply(cycle(s, succ(ZERO)), x) = x
+                        [by rewrite the-one-cycle identity-fixes]
+                      @it-fixes |
+                        apply(cycle(s, succ(p)), x) = x
+                        [by rewrite p-is-zero one-cycle-fixes]
+                    }
+                  @conclusion-p-nonzero |
+                    p != ZERO
+                    [by contradiction suppose-p-is-zero it-fixes it-moves]
+                }
+              @conclusion-at-x |
+                apply(cycle(s, succ(p)), x) != x -> p != ZERO
+                [by discharge given-moves]
+            }
+          @discharge-x |
+            forall x: Element; apply(cycle(s, succ(p)), x) != x -> p != ZERO
+            [by generalize generalize-x]
+        }
+      @discharge-p |
+        forall p: Nat; forall x: Element; apply(cycle(s, succ(p)), x) != x -> p != ZERO
+        [by generalize generalize-p]
+    }
+  @conclusion |
+    forall s: Points; forall p: Nat; forall x: Element;
+      apply(cycle(s, succ(p)), x) != x -> p != ZERO
+    [by generalize generalize-s]
+qed
