@@ -59,6 +59,16 @@ fact identityIsAPermutation = permutation.identityIsAPermutation
 fact transpositionIsAPermutation = permutation.transpositionIsAPermutation
 fact lessThanSuccSplit = peano_order.lessThanSuccSplit
 func mul = peano.mul
+fact addIsAssociative = peano.addIsAssociative
+fact addIsCommutative = peano.addIsCommutative
+fact addLeftSwap = peano.addLeftSwap
+fact dividesRefl = peano_divides.dividesRefl
+fact dividesMul = peano_divides.dividesMul
+fact everyPermutationOfAFiniteSetIsAProductOfTranspositions =
+  permutation_transpositions.everyPermutationOfAFiniteSetIsAProductOfTranspositions
+define isAProductOfTranspositions(g) = permutation_transpositions.isAProductOfTranspositions(g)
+func support = permutation.support
+define isFinite(a) = permutation_transpositions.isFinite(a)
 fact induction = peano.induction
 fact composeAssoc = function.composeAssoc
 fact lessThanSelf = peano_order.lessThanSelf
@@ -4359,5 +4369,415 @@ proof
     forall sigma: Fn; forall c: Fn;
       inAlternating(sigma) -> isAThreeCycle(c) ->
       isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+    [by generalize generalize-sigma]
+qed
+
+// ============================================================================
+// A_n IS NORMAL IN S_n
+// ============================================================================
+//
+// `theAlternatingGroupIsClosedUnderConjugation` above conjugates by an EVEN element, which is
+// what A_n-as-a-subgroup-of-itself needs. NORMALITY is the stronger claim — conjugation by an
+// ARBITRARY permutation — and it is what Judson's Lemma 10.10 and Theorem 10.11 actually use
+// when they say "N is a normal subgroup of A_n" and reach for a conjugator from the ambient
+// group. std did not have it.
+//
+// NO CASE SPLIT ON THE CONJUGATOR'S PARITY, which is the point worth keeping. The obvious
+// route is "sigma is even or odd", and std has no such theorem for permutations (only
+// `peano_parity.evenOrOdd` for naturals). It is not needed: count instead. sigma's
+// transposition run has some length n, its inverse's REVERSAL has the SAME length n
+// (`reversedIsTranspositions`), and g contributes an even k. The total is (n + k) + n, and
+// 2 | (n + n) whatever n is — so `dividesAdd` twice closes it and sigma's parity never enters.
+
+theorem twoDividesASelfSum: forall n: Nat; divides(TWO, add(n, n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @two-divides-two |
+        divides(TWO, TWO)
+        [using specialize peano_divides.dividesRefl(TWO)]
+      @two-divides-the-multiple |
+        divides(TWO, peano.mul(TWO, n))
+        [using specialize peano_divides.dividesMul(TWO, TWO, n) two-divides-two]
+      @the-sum-is-the-multiple |
+        add(n, n) = peano.mul(TWO, n)
+        [using arithmetic(peano)]
+      @conclusion-at-n |
+        divides(TWO, add(n, n))
+        [by rewrite the-sum-is-the-multiple two-divides-the-multiple]
+    }
+  @conclusion |
+    forall n: Nat; divides(TWO, add(n, n))
+    [by generalize generalize-n]
+qed
+
+// A CONJUGATE OF AN EVEN PERMUTATION IS EVEN — i.e. A_n is NORMAL in S_n, which is what
+// Judson's Lemma 10.10 and Theorem 10.11 actually need and what `std` did not have:
+// `theAlternatingGroupIsClosedUnderConjugation` only conjugates by an EVEN element.
+//
+// NO CASE SPLIT ON sigma'S PARITY. The uniform route is to count: sigma's transposition run
+// has some length n, its inverse's reversal has THE SAME length n
+// (`reversedIsTranspositions`), and g contributes an even k. The total is n + k + n, and
+// `2 | (n + n)` whatever n is, so `dividesAdd` twice gives `2 | (n + k + n)`. sigma's own
+// parity never enters — which is why no `evenOrOdd` on permutations is needed (std has none).
+//
+// Two `seqConcat`s, associated as (s ++ t) ++ r so the lengths add as (n + k) + n.
+theorem aConjugateOfAnEvenPermutationIsEven: forall sigma: Fn; forall g: Fn;
+  invertible(sigma) -> isFinite(support(sigma)) -> isEvenPerm(g) ->
+  isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-sigma-invertible |
+            assume invertible(sigma) {
+              @given-sigma-finite |
+                assume isFinite(support(sigma)) {
+                  @given-g-even |
+                    assume isEvenPerm(g) {
+                      @sigma-is-invertible |
+                        invertible(sigma)
+                        [by hypothesis given-sigma-invertible]
+                      @sigma-has-finite-support |
+                        isFinite(support(sigma))
+                        [by hypothesis given-sigma-finite]
+                      @g-is-even |
+                        isEvenPerm(g)
+                        [by hypothesis given-g-even]
+                      // sigma factors into transpositions (finite support)
+                      @sigma-factors |
+                        isAProductOfTranspositions(sigma)
+                        [using specialize permutation_transpositions.everyPermutationOfAFiniteSetIsAProductOfTranspositions(sigma) sigma-has-finite-support]
+                      @sigmas-run-exists |
+                        exists w: Seq; exists r: Nat;
+                          (forall i: Nat; less_than(i, r) -> isTransposition(at(w, i))) and productUpTo(w, r) = sigma
+                        [using tautology sigma-factors]
+                      @with-sigmas-run |
+                        unpack s: Seq from sigmas-run-exists {
+                          @inner-sigma-length |
+                            exists r: Nat;
+                              (forall i: Nat; less_than(i, r) -> isTransposition(at(s, i))) and productUpTo(s, r) = sigma
+                            [by hypothesis with-sigmas-run]
+                          @with-sigmas-length |
+                            unpack n: Nat from inner-sigma-length {
+                              @sigmas-run-data |
+                                (forall i: Nat; less_than(i, n) -> isTransposition(at(s, i))) and productUpTo(s, n) = sigma
+                                [by hypothesis with-sigmas-length]
+                              @sigma-entries |
+                                forall i: Nat; less_than(i, n) -> isTransposition(at(s, i))
+                                [by and_lhs sigmas-run-data]
+                              @sigma-product |
+                                productUpTo(s, n) = sigma
+                                [by and_rhs sigmas-run-data]
+                              @what-sigma-transpositions-means |
+                                allTranspositions(s, n) iff (forall i: Nat; less_than(i, n) -> isTransposition(at(s, i)))
+                                [using specialize allTranspositionsDef(s, n)]
+                              @sigma-transpositions |
+                                allTranspositions(s, n)
+                                [using tautology what-sigma-transpositions-means sigma-entries]
+                              // g's even-length run
+                              @what-even-means-for-g |
+                                isEvenPerm(g) iff (exists t: Seq; exists k: Nat; allTranspositions(t, k) and productUpTo(t, k) = g and divides(TWO, k))
+                                [using specialize isEvenPermDef(g)]
+                              @gs-run-exists |
+                                exists t: Seq; exists k: Nat; allTranspositions(t, k) and productUpTo(t, k) = g and divides(TWO, k)
+                                [using tautology what-even-means-for-g g-is-even]
+                              @with-gs-run |
+                                unpack t: Seq from gs-run-exists {
+                                  @inner-g-length |
+                                    exists k: Nat; allTranspositions(t, k) and productUpTo(t, k) = g and divides(TWO, k)
+                                    [by hypothesis with-gs-run]
+                                  @with-gs-length |
+                                    unpack k: Nat from inner-g-length {
+                                      @gs-run-data |
+                                        allTranspositions(t, k) and productUpTo(t, k) = g and divides(TWO, k)
+                                        [by hypothesis with-gs-length]
+                                      @g-product |
+                                        productUpTo(t, k) = g
+                                        [using tautology gs-run-data]
+                                      @g-length-is-even |
+                                        divides(TWO, k)
+                                        [using tautology gs-run-data]
+                                      @g-entries |
+                                        forall i: Nat; less_than(i, k) -> isTransposition(at(t, i))
+                                        [using tautology gs-run-data what-g-transpositions-means]
+                                      @what-g-transpositions-means |
+                                        allTranspositions(t, k) iff (forall i: Nat; less_than(i, k) -> isTransposition(at(t, i)))
+                                        [using specialize allTranspositionsDef(t, k)]
+                                      // sigma^-1's run: the reversal, SAME length n
+                                      @reversed-exists |
+                                        exists r2: Seq; allTranspositions(r2, n) and productUpTo(r2, n) = inverse(productUpTo(s, n))
+                                        [using specialize reversedIsTranspositions(s, n) sigma-transpositions]
+                                      @with-reversed |
+                                        unpack r: Seq from reversed-exists {
+                                          @reversed-data |
+                                            allTranspositions(r, n) and productUpTo(r, n) = inverse(productUpTo(s, n))
+                                            [by hypothesis with-reversed]
+                                          @reversed-transpositions |
+                                            allTranspositions(r, n)
+                                            [by and_lhs reversed-data]
+                                          @reversed-product-raw |
+                                            productUpTo(r, n) = inverse(productUpTo(s, n))
+                                            [by and_rhs reversed-data]
+                                          @reversed-product |
+                                            productUpTo(r, n) = inverse(sigma)
+                                            [by rewrite sigma-product reversed-product-raw]
+                                          @what-reversed-transpositions-means |
+                                            allTranspositions(r, n) iff (forall i: Nat; less_than(i, n) -> isTransposition(at(r, i)))
+                                            [using specialize allTranspositionsDef(r, n)]
+                                          @reversed-entries |
+                                            forall i: Nat; less_than(i, n) -> isTransposition(at(r, i))
+                                            [using tautology what-reversed-transpositions-means reversed-transpositions]
+                                          // CONCAT 1: sigma's run ++ g's run, length n + k, product sigma o g
+                                          @first-concat-exists |
+                                            exists u: Seq;
+                                              (forall i: Nat; less_than(i, n) -> at(u, i) = at(s, i))
+                                              and (forall i: Nat; less_than(i, k) -> at(u, add(n, i)) = at(t, i))
+                                              and productUpTo(u, add(n, k)) = compose(productUpTo(s, n), productUpTo(t, k))
+                                            [using specialize seqConcat(s, t, n, k)]
+                                          @with-first-concat |
+                                            unpack u: Seq from first-concat-exists {
+                                              @first-concat-data |
+                                                (forall i: Nat; less_than(i, n) -> at(u, i) = at(s, i))
+                                                  and (forall i: Nat; less_than(i, k) -> at(u, add(n, i)) = at(t, i))
+                                                  and productUpTo(u, add(n, k)) = compose(productUpTo(s, n), productUpTo(t, k))
+                                                [by hypothesis with-first-concat]
+                                              @first-agreement-pair |
+                                                (forall i: Nat; less_than(i, n) -> at(u, i) = at(s, i))
+                                                  and (forall i: Nat; less_than(i, k) -> at(u, add(n, i)) = at(t, i))
+                                                [by and_lhs first-concat-data]
+                                              @u-agrees-with-sigmas-run |
+                                                forall i: Nat; less_than(i, n) -> at(u, i) = at(s, i)
+                                                [by and_lhs first-agreement-pair]
+                                              @u-agrees-with-gs-run |
+                                                forall i: Nat; less_than(i, k) -> at(u, add(n, i)) = at(t, i)
+                                                [by and_rhs first-agreement-pair]
+                                              @u-product-raw |
+                                                productUpTo(u, add(n, k)) = compose(productUpTo(s, n), productUpTo(t, k))
+                                                [by and_rhs first-concat-data]
+                                              @u-entries |
+                                                forall i: Nat; less_than(i, add(n, k)) -> isTransposition(at(u, i))
+                                                [using specialize concatenationPreservesTranspositions(u, s, t, n, k) u-agrees-with-sigmas-run u-agrees-with-gs-run sigma-entries g-entries]
+                                              @u-product-with-sigma |
+                                                productUpTo(u, add(n, k)) = compose(sigma, productUpTo(t, k))
+                                                [by rewrite sigma-product u-product-raw]
+                                              @u-product |
+                                                productUpTo(u, add(n, k)) = compose(sigma, g)
+                                                [by rewrite g-product u-product-with-sigma]
+                                              // CONCAT 2: that ++ sigma^-1's run, length (n + k) + n
+                                              @second-concat-exists |
+                                                exists v: Seq;
+                                                  (forall i: Nat; less_than(i, add(n, k)) -> at(v, i) = at(u, i))
+                                                  and (forall i: Nat; less_than(i, n) -> at(v, add(add(n, k), i)) = at(r, i))
+                                                  and productUpTo(v, add(add(n, k), n)) = compose(productUpTo(u, add(n, k)), productUpTo(r, n))
+                                                [using specialize seqConcat(u, r, add(n, k), n)]
+                                              @with-second-concat |
+                                                unpack v: Seq from second-concat-exists {
+                                                  @second-concat-data |
+                                                    (forall i: Nat; less_than(i, add(n, k)) -> at(v, i) = at(u, i))
+                                                      and (forall i: Nat; less_than(i, n) -> at(v, add(add(n, k), i)) = at(r, i))
+                                                      and productUpTo(v, add(add(n, k), n)) = compose(productUpTo(u, add(n, k)), productUpTo(r, n))
+                                                    [by hypothesis with-second-concat]
+                                                  @second-agreement-pair |
+                                                    (forall i: Nat; less_than(i, add(n, k)) -> at(v, i) = at(u, i))
+                                                      and (forall i: Nat; less_than(i, n) -> at(v, add(add(n, k), i)) = at(r, i))
+                                                    [by and_lhs second-concat-data]
+                                                  @v-agrees-with-u |
+                                                    forall i: Nat; less_than(i, add(n, k)) -> at(v, i) = at(u, i)
+                                                    [by and_lhs second-agreement-pair]
+                                                  @v-agrees-with-the-reversal |
+                                                    forall i: Nat; less_than(i, n) -> at(v, add(add(n, k), i)) = at(r, i)
+                                                    [by and_rhs second-agreement-pair]
+                                                  @v-product-raw |
+                                                    productUpTo(v, add(add(n, k), n)) = compose(productUpTo(u, add(n, k)), productUpTo(r, n))
+                                                    [by and_rhs second-concat-data]
+                                                  @v-entries |
+                                                    forall i: Nat; less_than(i, add(add(n, k), n)) -> isTransposition(at(v, i))
+                                                    [using specialize concatenationPreservesTranspositions(v, u, r, add(n, k), n) v-agrees-with-u v-agrees-with-the-reversal u-entries reversed-entries]
+                                                  @what-v-transpositions-means |
+                                                    allTranspositions(v, add(add(n, k), n)) iff (forall i: Nat; less_than(i, add(add(n, k), n)) -> isTransposition(at(v, i)))
+                                                    [using specialize allTranspositionsDef(v, add(add(n, k), n))]
+                                                  @v-transpositions |
+                                                    allTranspositions(v, add(add(n, k), n))
+                                                    [using tautology what-v-transpositions-means v-entries]
+                                                  @v-product-with-the-pair |
+                                                    productUpTo(v, add(add(n, k), n)) = compose(compose(sigma, g), productUpTo(r, n))
+                                                    [by rewrite u-product v-product-raw]
+                                                  @v-product |
+                                                    productUpTo(v, add(add(n, k), n)) = compose(compose(sigma, g), inverse(sigma))
+                                                    [by rewrite reversed-product v-product-with-the-pair]
+                                                  // THE PARITY COUNT: 2 | (n + k) + n, from 2 | k and 2 | (n + n). sigma's own parity
+                                                  // never enters — this is why no `evenOrOdd` on permutations is needed.
+                                                  @two-divides-the-self-sum |
+                                                    divides(TWO, add(n, n))
+                                                    [using specialize twoDividesASelfSum(n)]
+                                                  @the-total-regrouped |
+                                                    add(add(n, k), n) = add(k, add(n, n))
+                                                    [using arithmetic(peano)]
+                                                  @two-divides-the-regrouped-total |
+                                                    divides(TWO, add(k, add(n, n)))
+                                                    [using specialize dividesAdd(TWO, k, add(n, n)) g-length-is-even two-divides-the-self-sum]
+                                                  @the-total-is-even |
+                                                    divides(TWO, add(add(n, k), n))
+                                                    [by rewrite the-total-regrouped two-divides-the-regrouped-total]
+                                                  @v-all-three |
+                                                    allTranspositions(v, add(add(n, k), n))
+                                                      and productUpTo(v, add(add(n, k), n)) = compose(compose(sigma, g), inverse(sigma))
+                                                      and divides(TWO, add(add(n, k), n))
+                                                    [using tautology v-transpositions v-product the-total-is-even]
+                                                  @inner-witness |
+                                                    exists m2: Nat; allTranspositions(v, m2)
+                                                      and productUpTo(v, m2) = compose(compose(sigma, g), inverse(sigma))
+                                                      and divides(TWO, m2)
+                                                    [by witness(add(add(n, k), n)) v-all-three]
+                                                  @a-factorization-exists |
+                                                    exists w2: Seq; exists m2: Nat; allTranspositions(w2, m2)
+                                                      and productUpTo(w2, m2) = compose(compose(sigma, g), inverse(sigma))
+                                                      and divides(TWO, m2)
+                                                    [by witness(v) inner-witness]
+                                                  @what-even-means-for-the-conjugate |
+                                                    isEvenPerm(compose(compose(sigma, g), inverse(sigma))) iff (exists w2: Seq; exists m2: Nat; allTranspositions(w2, m2)
+                                                      and productUpTo(w2, m2) = compose(compose(sigma, g), inverse(sigma))
+                                                      and divides(TWO, m2))
+                                                    [using specialize isEvenPermDef(compose(compose(sigma, g), inverse(sigma)))]
+                                                  @conclusion-the-conjugate-is-even |
+                                                    isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                                    [using tautology what-even-means-for-the-conjugate a-factorization-exists]
+                                                }
+                                              @conclusion-after-v |
+                                                isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                                [by unpacked with-second-concat]
+                                            }
+                                          @conclusion-after-u |
+                                            isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                            [by unpacked with-first-concat]
+                                        }
+                                      @conclusion-after-r |
+                                        isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                        [by unpacked with-reversed]
+                                    }
+                                  @conclusion-after-k |
+                                    isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                    [by unpacked with-gs-length]
+                                }
+                              @conclusion-after-t |
+                                isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                                [by unpacked with-gs-run]
+                            }
+                          @conclusion-after-n |
+                            isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                            [by unpacked with-sigmas-length]
+                        }
+                      @conclusion-after-s |
+                        isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                        [by unpacked with-sigmas-run]
+                    }
+                  @g-even-implies |
+                    isEvenPerm(g) -> isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                    [by discharge given-g-even]
+                }
+              @finite-implies |
+                isFinite(support(sigma)) -> isEvenPerm(g) -> isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                [by discharge given-sigma-finite]
+            }
+          @conclusion-at-sigma-and-g |
+            invertible(sigma) -> isFinite(support(sigma)) -> isEvenPerm(g) -> isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+            [by discharge given-sigma-invertible]
+        }
+      @discharge-g |
+        forall g: Fn; invertible(sigma) -> isFinite(support(sigma)) -> isEvenPerm(g) -> isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall sigma: Fn; forall g: Fn;
+      invertible(sigma) -> isFinite(support(sigma)) -> isEvenPerm(g) -> isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+    [by generalize generalize-sigma]
+qed
+
+// A_n IS NORMAL, in `inAlternating` terms — the form a consumer wants when it plugs A_n in as
+// a NORMAL subgroup of the permutations. The conjugator is an arbitrary permutation of finite
+// support; the conjugate is even by the count above, and invertible by composition closure.
+theorem theAlternatingGroupIsNormal: forall sigma: Fn; forall g: Fn;
+  invertible(sigma) -> isFinite(support(sigma)) -> inAlternating(g) ->
+  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-sigma-invertible |
+            assume invertible(sigma) {
+              @given-sigma-finite |
+                assume isFinite(support(sigma)) {
+                  @given-g-in |
+                    assume inAlternating(g) {
+                      @sigma-is-a-permutation |
+                        invertible(sigma)
+                        [by hypothesis given-sigma-invertible]
+                      @sigma-has-finite-support |
+                        isFinite(support(sigma))
+                        [by hypothesis given-sigma-finite]
+                      @g-is-in |
+                        inAlternating(g)
+                        [by hypothesis given-g-in]
+                      @what-membership-means-for-g |
+                        inAlternating(g) iff (invertible(g) and isEvenPerm(g))
+                        [using specialize inAlternatingDef(g)]
+                      @g-is-a-permutation |
+                        invertible(g)
+                        [using tautology what-membership-means-for-g g-is-in]
+                      @g-is-even |
+                        isEvenPerm(g)
+                        [using tautology what-membership-means-for-g g-is-in]
+
+                      // the conjugate is EVEN by the parity count
+                      @the-conjugate-is-even |
+                        isEvenPerm(compose(compose(sigma, g), inverse(sigma)))
+                        [using specialize aConjugateOfAnEvenPermutationIsEven(sigma, g) sigma-is-a-permutation sigma-has-finite-support g-is-even]
+
+                      // and INVERTIBLE by composition closure
+                      @the-inverse-is-a-permutation |
+                        invertible(inverse(sigma))
+                        [using specialize inverseIsAPermutation(sigma) sigma-is-a-permutation]
+                      @the-inner-product-is-a-permutation |
+                        invertible(compose(sigma, g))
+                        [using specialize composeIsAPermutation(sigma, g) sigma-is-a-permutation g-is-a-permutation]
+                      @the-conjugate-is-a-permutation |
+                        invertible(compose(compose(sigma, g), inverse(sigma)))
+                        [using specialize composeIsAPermutation(compose(sigma, g), inverse(sigma)) the-inner-product-is-a-permutation the-inverse-is-a-permutation]
+
+                      @what-membership-means-for-the-conjugate |
+                        inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                          iff (invertible(compose(compose(sigma, g), inverse(sigma)))
+                          and isEvenPerm(compose(compose(sigma, g), inverse(sigma))))
+                        [using specialize inAlternatingDef(compose(compose(sigma, g), inverse(sigma)))]
+                      @conclusion-the-conjugate-is-in |
+                        inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                        [using tautology what-membership-means-for-the-conjugate the-conjugate-is-a-permutation the-conjugate-is-even]
+                    }
+                  @g-in-implies |
+                    inAlternating(g) -> inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                    [by discharge given-g-in]
+                }
+              @finite-implies |
+                isFinite(support(sigma)) -> inAlternating(g) ->
+                  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                [by discharge given-sigma-finite]
+            }
+          @conclusion-at-sigma-and-g |
+            invertible(sigma) -> isFinite(support(sigma)) -> inAlternating(g) ->
+              inAlternating(compose(compose(sigma, g), inverse(sigma)))
+            [by discharge given-sigma-invertible]
+        }
+      @discharge-g |
+        forall g: Fn; invertible(sigma) -> isFinite(support(sigma)) -> inAlternating(g) ->
+          inAlternating(compose(compose(sigma, g), inverse(sigma)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall sigma: Fn; forall g: Fn;
+      invertible(sigma) -> isFinite(support(sigma)) -> inAlternating(g) ->
+      inAlternating(compose(compose(sigma, g), inverse(sigma)))
     [by generalize generalize-sigma]
 qed
