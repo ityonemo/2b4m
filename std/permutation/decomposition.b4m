@@ -3183,3 +3183,89 @@ proof
       and disjointSupports(rho, c))
     [by generalize generalize-sigma]
 qed
+
+// VALUE TRANSFER FROM FIXING, rather than from disjointness. The disjointness-based forms
+// above suit a remainder the peel hands over whole; cases 2 and 4 have a remainder that is a
+// shorter PRODUCT, whose disjointness std cannot state without support-of-a-composite theory —
+// but whose FIXING behaviour `sequence.aProductFixesWhatItsFactorsFix` supplies directly.
+//
+// So this takes the two outer factors' fixing as hypotheses instead:
+//
+//     r fixes c(x),  t fixes c(x)
+//       ==>  apply(compose(r, compose(t, c)), x) = apply(c, x)
+//
+// Weaker than the disjointness version in an instructive way: it needs neither `invertible(c)`
+// nor `member(x, support(c))`. Those were doing nothing but establishing the fixing facts, so
+// taking the fixing facts directly drops both — the checker said so, flagging each as unused.
+theorem fixingFactorsPreserveCycleValues:
+  forall r: Fn; forall t: Fn; forall c: Fn; forall x: Element;
+  apply(t, apply(c, x)) = apply(c, x) ->
+  apply(r, apply(c, x)) = apply(c, x) ->
+  apply(compose(r, compose(t, c)), x) = apply(c, x)
+proof
+  @generalize-r |
+    fix r: Fn {
+      @generalize-t |
+        fix t: Fn {
+          @generalize-c |
+            fix c: Fn {
+              @generalize-x |
+                fix x: Element {
+                  @given-t-fixes |
+                    assume apply(t, apply(c, x)) = apply(c, x) {
+                      @given-r-fixes |
+                        assume apply(r, apply(c, x)) = apply(c, x) {
+                          @t-fixes |
+                            apply(t, apply(c, x)) = apply(c, x)
+                            [by hypothesis given-t-fixes]
+                          @r-fixes |
+                            apply(r, apply(c, x)) = apply(c, x)
+                            [by hypothesis given-r-fixes]
+
+                          @unfold-outer |
+                            apply(compose(r, compose(t, c)), x)
+                              = apply(r, apply(compose(t, c), x))
+                            [using specialize function.composeApply(r, compose(t, c), x)]
+                          @unfold-inner |
+                            apply(compose(t, c), x) = apply(t, apply(c, x))
+                            [using specialize function.composeApply(t, c, x)]
+                          @inner-is-the-image |
+                            apply(compose(t, c), x) = apply(c, x)
+                            [using chain unfold-inner t-fixes]
+                          @outer-at-the-image |
+                            apply(compose(r, compose(t, c)), x) = apply(r, apply(c, x))
+                            [by rewrite inner-is-the-image unfold-outer]
+                          @conclusion-value |
+                            apply(compose(r, compose(t, c)), x) = apply(c, x)
+                            [using chain outer-at-the-image r-fixes]
+                        }
+                      @r-fixes-implies |
+                        apply(r, apply(c, x)) = apply(c, x) ->
+                          apply(compose(r, compose(t, c)), x) = apply(c, x)
+                        [by discharge given-r-fixes]
+                    }
+                  @t-fixes-implies |
+                    apply(t, apply(c, x)) = apply(c, x) -> apply(r, apply(c, x)) = apply(c, x) ->
+                      apply(compose(r, compose(t, c)), x) = apply(c, x)
+                    [by discharge given-t-fixes]
+                }
+              @discharge-x |
+                forall x: Element; apply(t, apply(c, x)) = apply(c, x) -> apply(r, apply(c, x)) = apply(c, x) ->
+                  apply(compose(r, compose(t, c)), x) = apply(c, x)
+                [by generalize generalize-x]
+            }
+          @discharge-c |
+            forall c: Fn; forall x: Element; apply(t, apply(c, x)) = apply(c, x) -> apply(r, apply(c, x)) = apply(c, x) ->
+              apply(compose(r, compose(t, c)), x) = apply(c, x)
+            [by generalize generalize-c]
+        }
+      @discharge-t |
+        forall t: Fn; forall c: Fn; forall x: Element; apply(t, apply(c, x)) = apply(c, x) -> apply(r, apply(c, x)) = apply(c, x) ->
+          apply(compose(r, compose(t, c)), x) = apply(c, x)
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    forall r: Fn; forall t: Fn; forall c: Fn; forall x: Element; apply(t, apply(c, x)) = apply(c, x) -> apply(r, apply(c, x)) = apply(c, x) ->
+      apply(compose(r, compose(t, c)), x) = apply(c, x)
+    [by generalize generalize-r]
+qed
