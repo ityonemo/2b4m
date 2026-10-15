@@ -2674,3 +2674,283 @@ proof
       and apply(inverse(compose(tau, cycle(s, succ(succ(succ(succ(q))))))), cycle_theory.at(s, succ(succ(ZERO)))) = cycle_theory.at(s, succ(ZERO)))
     [by generalize generalize-tau]
 qed
+
+// A DISJOINT PERMUTATION FIXES EVERY POINT OF THE OTHER'S SUPPORT. The step
+// `aDisjointRemainderPreservesCycleValues` uses twice over, factored out because the
+// two-factor version needs it three times.
+//
+//     disjointSupports(r, c),  member(x, support(c))  ==>  apply(r, x) = x
+//
+// One `intersectionMember` and one `supportMember`: x is in c's support, the intersection is
+// empty, so x is not in r's support, so r fixes it.
+theorem aDisjointPermutationFixesTheOthersSupport: forall r: Fn; forall c: Fn; forall x: Element;
+  disjointSupports(r, c) ->
+  member(x, support(c)) ->
+  apply(r, x) = x
+proof
+  @generalize-r |
+    fix r: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-disjoint |
+                assume disjointSupports(r, c) {
+                  @given-in-support |
+                    assume member(x, support(c)) {
+                      @the-disjointness |
+                        disjointSupports(r, c)
+                        [by hypothesis given-disjoint]
+                      @x-in-c |
+                        member(x, support(c))
+                        [by hypothesis given-in-support]
+                      @the-intersection-is-empty |
+                        intersection(support(r), support(c)) = emptyset
+                        [using tautology the-disjointness]
+                      @intersection-at-x |
+                        member(x, intersection(support(r), support(c)))
+                          iff (member(x, support(r)) and member(x, support(c)))
+                        [using specialize set.intersectionMember(support(r), support(c), x)]
+                      @nothing-in-the-emptyset |
+                        not member(x, emptyset)
+                        [using specialize set.emptysetMember(x)]
+                      @not-in-the-intersection |
+                        not member(x, intersection(support(r), support(c)))
+                        [by rewrite the-intersection-is-empty nothing-in-the-emptyset]
+                      @x-not-in-r |
+                        not member(x, support(r))
+                        [using tautology intersection-at-x not-in-the-intersection x-in-c]
+                      @support-means-for-r |
+                        member(x, support(r)) iff apply(r, x) != x
+                        [using specialize permutation.supportMember(r, x)]
+                      @conclusion-fixed |
+                        apply(r, x) = x
+                        [using tautology support-means-for-r x-not-in-r]
+                    }
+                  @in-support-implies |
+                    member(x, support(c)) -> apply(r, x) = x
+                    [by discharge given-in-support]
+                }
+              @conclusion-at-x |
+                disjointSupports(r, c) -> member(x, support(c)) -> apply(r, x) = x
+                [by discharge given-disjoint]
+            }
+          @discharge-x |
+            forall x: Element;
+              disjointSupports(r, c) -> member(x, support(c)) -> apply(r, x) = x
+            [by generalize generalize-x]
+        }
+      @discharge-c |
+        forall c: Fn; forall x: Element;
+          disjointSupports(r, c) -> member(x, support(c)) -> apply(r, x) = x
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall r: Fn; forall c: Fn; forall x: Element;
+      disjointSupports(r, c) -> member(x, support(c)) -> apply(r, x) = x
+    [by generalize generalize-r]
+qed
+
+// A PERMUTATION MAPS ITS SUPPORT ONTO ITSELF. Extracted from
+// `aDisjointRemainderPreservesCycleValues`, whose proof derived it inline, because the
+// two-factor version needs it as well.
+//
+// From c(c(x)) = c(x), applying inverse(c) to both sides gives c(x) = x, contradicting
+// x in support(c). That is injectivity at a point, via `inverseUndoesAtAPoint`.
+theorem aPermutationKeepsItsSupport: forall c: Fn; forall x: Element;
+  invertible(c) -> member(x, support(c)) -> member(apply(c, x), support(c))
+proof
+  @generalize-c |
+    fix c: Fn {
+      @generalize-x |
+        fix x: Element {
+          @given-invertible |
+            assume invertible(c) {
+              @given-in-support |
+                assume member(x, support(c)) {
+                  @c-is-a-permutation |
+                    invertible(c)
+                    [by hypothesis given-invertible]
+                  @x-moves |
+                    member(x, support(c))
+                    [by hypothesis given-in-support]
+                  @what-support-means-at-x |
+                    member(x, support(c)) iff apply(c, x) != x
+                    [using specialize permutation.supportMember(c, x)]
+                  @x-really-moves |
+                    apply(c, x) != x
+                    [using tautology x-moves what-support-means-at-x]
+                  @undo-everywhere |
+                    forall w: Element; apply(inverse(c), apply(c, w)) = w
+                    [using specialize inverseUndoesAtAPoint(c) c-is-a-permutation]
+                  @suppose-image-fixed |
+                    assume apply(c, apply(c, x)) = apply(c, x) {
+                      @the-fixed-equation |
+                        apply(c, apply(c, x)) = apply(c, x)
+                        [by hypothesis suppose-image-fixed]
+                      @undo-at-image |
+                        apply(inverse(c), apply(c, apply(c, x))) = apply(c, x)
+                        [by apply_at(apply(c, x)) undo-everywhere]
+                      @undo-at-x |
+                        apply(inverse(c), apply(c, x)) = x
+                        [by apply_at(x) undo-everywhere]
+                      @substituted |
+                        apply(inverse(c), apply(c, x)) = apply(c, x)
+                        [by rewrite the-fixed-equation undo-at-image]
+                      @flipped |
+                        apply(c, x) = apply(inverse(c), apply(c, x))
+                        [by symmetry substituted]
+                      @image-equals-x |
+                        apply(c, x) = x
+                        [using chain flipped undo-at-x]
+                    }
+                  @image-really-moves |
+                    apply(c, apply(c, x)) != apply(c, x)
+                    [by contradiction suppose-image-fixed image-equals-x x-really-moves]
+                  @what-support-means-at-image |
+                    member(apply(c, x), support(c)) iff apply(c, apply(c, x)) != apply(c, x)
+                    [using specialize permutation.supportMember(c, apply(c, x))]
+                  @conclusion-image-in-support |
+                    member(apply(c, x), support(c))
+                    [using tautology what-support-means-at-image image-really-moves]
+                }
+              @in-support-implies |
+                member(x, support(c)) -> member(apply(c, x), support(c))
+                [by discharge given-in-support]
+            }
+          @conclusion-at-x |
+            invertible(c) -> member(x, support(c)) -> member(apply(c, x), support(c))
+            [by discharge given-invertible]
+        }
+      @discharge-x |
+        forall x: Element;
+          invertible(c) -> member(x, support(c)) -> member(apply(c, x), support(c))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall c: Fn; forall x: Element;
+      invertible(c) -> member(x, support(c)) -> member(apply(c, x), support(c))
+    [by generalize generalize-c]
+qed
+
+// TWO DISJOINT FACTORS PRESERVE A CYCLE'S VALUES, which is what Judson's cases 2 and 4 need:
+// both name TWO cycles from the decomposition, so sigma is `rho o (c2 o c1)` with all three
+// pairwise disjoint.
+//
+//     apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)   for x in support(c1)
+//
+// Stated with the two disjointness facts SEPARATELY — exactly as `decomposesIntoDisjointCycles`
+// supplies them — rather than as "rho o c2 is disjoint from c1", which would need
+// support-of-a-composite theory std does not have.
+//
+// Same argument as the one-factor version with one more fixing step: c1(x) stays in c1's
+// support (`aPermutationKeepsItsSupport`), so both c2 and rho fix it
+// (`aDisjointPermutationFixesTheOthersSupport`).
+theorem twoDisjointFactorsPreserveCycleValues:
+  forall rho: Fn; forall c2: Fn; forall c1: Fn; forall x: Element;
+  invertible(c1) ->
+  disjointSupports(rho, c1) ->
+  disjointSupports(c2, c1) ->
+  member(x, support(c1)) ->
+  apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+proof
+  @generalize-rho |
+    fix rho: Fn {
+      @generalize-c2 |
+        fix c2: Fn {
+          @generalize-c1 |
+            fix c1: Fn {
+              @generalize-x |
+                fix x: Element {
+                  @given-invertible |
+                    assume invertible(c1) {
+                      @given-rho-disjoint |
+                        assume disjointSupports(rho, c1) {
+                          @given-c2-disjoint |
+                            assume disjointSupports(c2, c1) {
+                              @given-in-support |
+                                assume member(x, support(c1)) {
+                                  @c1-is-a-permutation |
+                                    invertible(c1)
+                                    [by hypothesis given-invertible]
+                                  @rho-disjoint |
+                                    disjointSupports(rho, c1)
+                                    [by hypothesis given-rho-disjoint]
+                                  @c2-disjoint |
+                                    disjointSupports(c2, c1)
+                                    [by hypothesis given-c2-disjoint]
+                                  @x-in-support |
+                                    member(x, support(c1))
+                                    [by hypothesis given-in-support]
+
+                                  // c1(x) is also in c1's support
+                                  @image-in-support |
+                                    member(apply(c1, x), support(c1))
+                                    [using specialize aPermutationKeepsItsSupport(c1, x) c1-is-a-permutation x-in-support]
+
+                                  // so both outer factors fix it
+                                  @c2-fixes-the-image |
+                                    apply(c2, apply(c1, x)) = apply(c1, x)
+                                    [using specialize aDisjointPermutationFixesTheOthersSupport(c2, c1, apply(c1, x)) c2-disjoint image-in-support]
+                                  @rho-fixes-the-image |
+                                    apply(rho, apply(c1, x)) = apply(c1, x)
+                                    [using specialize aDisjointPermutationFixesTheOthersSupport(rho, c1, apply(c1, x)) rho-disjoint image-in-support]
+
+                                  // unfold the composite and collapse
+                                  @unfold-outer |
+                                    apply(compose(rho, compose(c2, c1)), x)
+                                      = apply(rho, apply(compose(c2, c1), x))
+                                    [using specialize function.composeApply(rho, compose(c2, c1), x)]
+                                  @unfold-inner |
+                                    apply(compose(c2, c1), x) = apply(c2, apply(c1, x))
+                                    [using specialize function.composeApply(c2, c1, x)]
+                                  @inner-is-the-image |
+                                    apply(compose(c2, c1), x) = apply(c1, x)
+                                    [using chain unfold-inner c2-fixes-the-image]
+                                  @outer-at-the-image |
+                                    apply(compose(rho, compose(c2, c1)), x) = apply(rho, apply(c1, x))
+                                    [by rewrite inner-is-the-image unfold-outer]
+                                  @conclusion-value |
+                                    apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                                    [using chain outer-at-the-image rho-fixes-the-image]
+                                }
+                              @in-support-implies |
+                                member(x, support(c1)) ->
+                                  apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                                [by discharge given-in-support]
+                            }
+                          @c2-disjoint-implies |
+                            disjointSupports(c2, c1) -> member(x, support(c1)) ->
+                              apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                            [by discharge given-c2-disjoint]
+                        }
+                      @rho-disjoint-implies |
+                        disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+                          apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                        [by discharge given-rho-disjoint]
+                    }
+                  @invertible-implies |
+                    invertible(c1) -> disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+                      apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                    [by discharge given-invertible]
+                }
+              @discharge-x |
+                forall x: Element; invertible(c1) -> disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+                  apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+                [by generalize generalize-x]
+            }
+          @discharge-c1 |
+            forall c1: Fn; forall x: Element; invertible(c1) -> disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+              apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+            [by generalize generalize-c1]
+        }
+      @discharge-c2 |
+        forall c2: Fn; forall c1: Fn; forall x: Element; invertible(c1) -> disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+          apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+        [by generalize generalize-c2]
+    }
+  @conclusion |
+    forall rho: Fn; forall c2: Fn; forall c1: Fn; forall x: Element; invertible(c1) -> disjointSupports(rho, c1) -> disjointSupports(c2, c1) -> member(x, support(c1)) ->
+      apply(compose(rho, compose(c2, c1)), x) = apply(c1, x)
+    [by generalize generalize-rho]
+qed
