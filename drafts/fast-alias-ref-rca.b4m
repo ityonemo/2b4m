@@ -1,0 +1,70 @@
+// FIXED 2026-10-14. Kept as the narrative; the regression gate is
+// `tests/cases/fast_alias_ref_ok.b4m`.
+//
+// SYMPTOM: `[using specialize <alias>]` passed strict check and FAILED `--fast` with
+// "unknown reference", the fast/strict invariant violated in the permissive direction —
+// `--fast` admits accelerated verdicts rather than demanding certificates, so anything strict
+// accepts it must accept.
+//
+// ROOT CAUSE: `Prove.namesAFact` (src/Engine/ProveTask/Prove.zig). An admitted accelerant
+// builds no certificate, so the admit path walks its refs only to seed use-all-facts roots,
+// and `seedAndCheckLocalRoot` diagnoses a ref naming NEITHER a local step nor a global fact as
+// a typo — a deliberate guard, added so `--fast` could not accept a typo'd ref that strict
+// rejects. `namesAFact` answers "is this a global fact?" partly by switching over the file's
+// own AST declaration:
+//
+//     return switch (d.*) {
+//         .axiom, .hole, .theorem => true,
+//         else => false,
+//     };
+//
+// That list predates the `fact` keyword. An alias is `ast.Decl.fact` (ast.zig:233), a variant
+// distinct from `.theorem`, so it fell to `else => false` and every aliased lemma looked like a
+// typo. The function's own doc comment claims it "counts an ALIAS to a fact too" and explains
+// why that matters — the comment was right and the code no longer matched it, which is why
+// reading the comment alone would not have found this.
+//
+// FIX: add `.fact` to the switch. One token.
+//
+// WHY IT WAS INVISIBLE FOR SO LONG: it fires only on an ACCELERANT citing an alias by its bare
+// local name, under `--fast`, where strict is the gate and `--fast` is the dev loop. The
+// corpus's own habit of qualifying inline (`permutation.transpositionAtFirst`) avoids it, and
+// `by cite <alias>` is unaffected (that path uses `resolveStepRef`, whose equivalent test does
+// count aliases). It surfaced as 20+ bogus errors on
+// `std/permutation/alternating-identities.b4m` once that file accumulated enough aliased
+// citations — and cost a cycle believing the file had been broken.
+//
+// NARROWING, for the record: the original repro claimed it needed two theorems in the file.
+// It does not — one suffices. And a LOCAL theorem cited the same way works fine, which is what
+// isolated the alias as the trigger.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+fact aliasedFact = peano.addZeroRight
+
+// a first theorem, so the file has more than one in flight
+theorem first: forall n: Nat; add(n, ZERO) = n
+proof
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using specialize peano.addZeroRight]
+qed
+
+// the second cites the ALIAS by its bare local name
+theorem second: forall n: Nat; add(succ(n), ZERO) = succ(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @at-successor |
+        add(succ(n), ZERO) = succ(n)
+        [using specialize aliasedFact(succ(n))]
+    }
+  @conclusion |
+    forall n: Nat; add(succ(n), ZERO) = succ(n)
+    [by generalize generalize-n]
+qed
