@@ -3385,3 +3385,433 @@ proof
     forall f: Fn; forall c: Fn; forall g: Fn; forall x: Element; member(x, support(f)) -> f = compose(c, g) -> support(g) = difference(support(f), orbit(f, x)) -> apply(c, x) != x
     [by generalize generalize-f]
 qed
+
+// THE DISPATCH'S DECISION STEP: a non-identity permutation presents a cycle of one of
+// Judson's three live lengths.
+//
+// Four proved pieces combined:
+//   `peelingOffAnOrbit`                 f = compose(c, g), c a cycle, remainder's support known
+//   `aPeeledCycleMovesItsPoint`         c moves the point it was peeled at
+//   `cycle.aMovingCycleHasLengthAtLeastTwo`   so its length index p is not ZERO
+//   `peano_order.aNatIsZeroOneTwoOrMore`      p is 0, 1, 2 or at least 3
+//
+// p != ZERO removes the degenerate branch, leaving lengths 2, 3 and >= 4 — which are exactly
+// Judson's case 4, case 3 (or 2), and case 1. The remainder's support comes along because
+// cases 2 and 4 need it to see a second cycle.
+theorem aNonIdentityPermutationHasACycleOfKnownLength: forall f: Perm; forall x: Element;
+  isFinite(support(f)) -> member(x, support(f)) ->
+  (exists c: Fn; exists g: Fn; exists s: Points;
+  f = compose(c, g)
+  and support(g) = difference(support(f), orbit(f, x))
+  and
+  ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+  or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+  or (exists q: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q)))))
+  and cycle_theory.distinct(s, succ(succ(succ(succ(q)))))))
+  )
+proof
+  @generalize-f |
+    fix f: Perm {
+      @generalize-x |
+        fix x: Element {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @given-moved |
+                assume member(x, support(f)) {
+                  @the-finiteness |
+                    isFinite(support(f))
+                    [by hypothesis given-finite]
+                  @x-is-moved |
+                    member(x, support(f))
+                    [by hypothesis given-moved]
+                  @the-peel |
+                    exists c: Fn; exists g: Fn;
+                      invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+                      and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                    [using specialize peelingOffAnOrbit(f, x) the-finiteness x-is-moved]
+                  @with-c |
+                    unpack c: Fn from the-peel {
+                      @inner-g |
+                        exists g: Fn;
+                          invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+                          and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                        [by hypothesis with-c]
+                      @with-g |
+                        unpack g: Fn from inner-g {
+                          @the-facts |
+                            invertible(c) and invertible(g) and isACycle(c) and f = compose(c, g)
+                              and subset(support(c), orbit(f, x)) and support(g) = difference(support(f), orbit(f, x))
+                            [by hypothesis with-g]
+                          @c-is-a-cycle |
+                            isACycle(c)
+                            [using tautology the-facts]
+                          @the-factorization |
+                            f = compose(c, g)
+                            [using tautology the-facts]
+                          @the-remainder |
+                            support(g) = difference(support(f), orbit(f, x))
+                            [using tautology the-facts]
+
+                          // c moves x, so its length index is not ZERO
+                          @c-moves-x |
+                            apply(c, x) != x
+                            [using specialize aPeeledCycleMovesItsPoint(f, c, g, x) x-is-moved the-factorization the-remainder]
+                          @c-unfolds |
+                            exists s: Points; exists p: Nat; cycle_theory.distinct(s, succ(p)) and c = cycle_theory.cycle(s, succ(p))
+                            [using tautology c-is-a-cycle]
+                          @with-s |
+                            unpack s: Points from c-unfolds {
+                              @inner-p |
+                                exists p: Nat; cycle_theory.distinct(s, succ(p)) and c = cycle_theory.cycle(s, succ(p))
+                                [by hypothesis with-s]
+                              @with-p |
+                                unpack p: Nat from inner-p {
+                                  @the-cycle-facts |
+                                    cycle_theory.distinct(s, succ(p)) and c = cycle_theory.cycle(s, succ(p))
+                                    [by hypothesis with-p]
+                                  @the-distinctness |
+                                    cycle_theory.distinct(s, succ(p))
+                                    [using tautology the-cycle-facts]
+                                  @c-is-the-cycle |
+                                    c = cycle_theory.cycle(s, succ(p))
+                                    [using tautology the-cycle-facts]
+                                  @the-cycle-moves-x |
+                                    apply(cycle_theory.cycle(s, succ(p)), x) != x
+                                    [by rewrite c-is-the-cycle c-moves-x]
+                                  @p-is-not-zero |
+                                    p != ZERO
+                                    [using specialize cycle_theory.aMovingCycleHasLengthAtLeastTwo(s, p, x) the-cycle-moves-x]
+                                  @length-cases |
+                                    (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                                      or (exists q: Nat; p = succ(succ(succ(q)))))
+                                    [using specialize peano_order.aNatIsZeroOneTwoOrMore(p)]
+                                  @conclusion-by-length |
+                                    (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                      f = compose(c2, g2)
+                                      and support(g2) = difference(support(f), orbit(f, x))
+                                      and
+                                      ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                      or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                      or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                      and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                    case length-cases {
+                                      @when-zero |
+                                        assume p = ZERO {
+                                          @p-zero |
+                                            p = ZERO
+                                            [by hypothesis when-zero]
+                                          @conclusion-zero |
+                                            (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                              f = compose(c2, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                            [by ex_falso p-zero p-is-not-zero]
+                                        }
+                                      @when-one |
+                                        assume p = succ(ZERO) {
+                                          @p-is-two |
+                                            p = succ(ZERO)
+                                            [by hypothesis when-one]
+                                          @c-at-two |
+                                            c = cycle_theory.cycle(s, succ(succ(ZERO)))
+                                            [by rewrite p-is-two c-is-the-cycle]
+                                          @distinct-at-two |
+                                            cycle_theory.distinct(s, succ(succ(ZERO)))
+                                            [by rewrite p-is-two the-distinctness]
+                                          @the-two-pair |
+                                            (c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                            [by both c-at-two distinct-at-two]
+                                          @the-two-disjunct |
+                                            ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                            [using tautology the-two-pair]
+                                          @the-two-triple |
+                                            (f = compose(c, g)
+                                              and support(g) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [using tautology the-factorization the-remainder the-two-disjunct]
+                                          @witness-s-two |
+                                            (exists s2: Points;
+                                              f = compose(c, g)
+                                              and support(g) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [by witness(s) the-two-triple]
+                                          @witness-g-two |
+                                            (exists g2: Fn; exists s2: Points;
+                                              f = compose(c, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [by witness(g) witness-s-two]
+                                          @conclusion-two |
+                                            (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                              f = compose(c2, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                            [by witness(c) witness-g-two]
+                                        }
+                                      @when-two |
+                                        assume p = succ(succ(ZERO)) {
+                                          @p-is-three |
+                                            p = succ(succ(ZERO))
+                                            [by hypothesis when-two]
+                                          @c-at-three |
+                                            c = cycle_theory.cycle(s, succ(succ(succ(ZERO))))
+                                            [by rewrite p-is-three c-is-the-cycle]
+                                          @distinct-at-three |
+                                            cycle_theory.distinct(s, succ(succ(succ(ZERO))))
+                                            [by rewrite p-is-three the-distinctness]
+                                          @the-three-pair |
+                                            (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                            [by both c-at-three distinct-at-three]
+                                          @the-three-disjunct |
+                                            ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                            [using tautology the-three-pair]
+                                          @the-three-triple |
+                                            (f = compose(c, g)
+                                              and support(g) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [using tautology the-factorization the-remainder the-three-disjunct]
+                                          @witness-s-three |
+                                            (exists s2: Points;
+                                              f = compose(c, g)
+                                              and support(g) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [by witness(s) the-three-triple]
+                                          @witness-g-three |
+                                            (exists g2: Fn; exists s2: Points;
+                                              f = compose(c, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                              )
+                                            [by witness(g) witness-s-three]
+                                          @conclusion-three |
+                                            (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                              f = compose(c2, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                            [by witness(c) witness-g-three]
+                                        }
+                                      @when-more |
+                                        assume exists q: Nat; p = succ(succ(succ(q))) {
+                                          @some-q |
+                                            exists q: Nat; p = succ(succ(succ(q)))
+                                            [by hypothesis when-more]
+                                          @with-q |
+                                            unpack q: Nat from some-q {
+                                              @p-is-three-plus |
+                                                p = succ(succ(succ(q)))
+                                                [by hypothesis with-q]
+                                              @c-at-long |
+                                                c = cycle_theory.cycle(s, succ(succ(succ(succ(q)))))
+                                                [by rewrite p-is-three-plus c-is-the-cycle]
+                                              @distinct-at-long |
+                                                cycle_theory.distinct(s, succ(succ(succ(succ(q)))))
+                                                [by rewrite p-is-three-plus the-distinctness]
+                                              @the-long-pair |
+                                                (c = cycle_theory.cycle(s, succ(succ(succ(succ(q))))) and cycle_theory.distinct(s, succ(succ(succ(succ(q))))))
+                                                [by both c-at-long distinct-at-long]
+                                              @the-long-existential |
+                                                (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s, succ(succ(succ(succ(q2))))))
+                                                [by witness(q) the-long-pair]
+                                              @the-long-disjunct |
+                                                ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                                  or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                                  or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                                [using tautology the-long-existential]
+                                              @the-long-triple |
+                                                (f = compose(c, g)
+                                                  and support(g) = difference(support(f), orbit(f, x))
+                                                  and
+                                                  ((c = cycle_theory.cycle(s, succ(succ(ZERO))) and cycle_theory.distinct(s, succ(succ(ZERO))))
+                                                  or (c = cycle_theory.cycle(s, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s, succ(succ(succ(ZERO)))))
+                                                  or (exists q2: Nat; c = cycle_theory.cycle(s, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s, succ(succ(succ(succ(q2)))))))
+                                                  )
+                                                [using tautology the-factorization the-remainder the-long-disjunct]
+                                              @witness-s-long |
+                                                (exists s2: Points;
+                                                  f = compose(c, g)
+                                                  and support(g) = difference(support(f), orbit(f, x))
+                                                  and
+                                                  ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                                  or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                                  or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                                  )
+                                                [by witness(s) the-long-triple]
+                                              @witness-g-long |
+                                                (exists g2: Fn; exists s2: Points;
+                                                  f = compose(c, g2)
+                                                  and support(g2) = difference(support(f), orbit(f, x))
+                                                  and
+                                                  ((c = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                                  or (c = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                                  or (exists q2: Nat; c = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s2, succ(succ(succ(succ(q2)))))))
+                                                  )
+                                                [by witness(g) witness-s-long]
+                                              @conclusion-long |
+                                                (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                                  f = compose(c2, g2)
+                                                  and support(g2) = difference(support(f), orbit(f, x))
+                                                  and
+                                                  ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                                  or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                                  or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                                  and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                                [by witness(c) witness-g-long]
+                                            }
+                                          @conclusion-unpacked-q |
+                                            (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                              f = compose(c2, g2)
+                                              and support(g2) = difference(support(f), orbit(f, x))
+                                              and
+                                              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                            [by unpacked with-q]
+                                        }
+                                    }
+                                }
+                              @conclusion-unpacked-p |
+                                (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                                  f = compose(c2, g2)
+                                  and support(g2) = difference(support(f), orbit(f, x))
+                                  and
+                                  ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                                  or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                                  or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                                  and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                                [by unpacked with-p]
+                            }
+                          @conclusion-unpacked-s |
+                            (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                              f = compose(c2, g2)
+                              and support(g2) = difference(support(f), orbit(f, x))
+                              and
+                              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                            [by unpacked with-s]
+                        }
+                      @conclusion-unpacked-g |
+                        (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                          f = compose(c2, g2)
+                          and support(g2) = difference(support(f), orbit(f, x))
+                          and
+                          ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                          or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                          or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                          and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                        [by unpacked with-g]
+                    }
+                  @conclusion-unpacked-c |
+                    (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                      f = compose(c2, g2)
+                      and support(g2) = difference(support(f), orbit(f, x))
+                      and
+                      ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                      or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                      or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                      and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                    [by unpacked with-c]
+                }
+              @moved-implies |
+                member(x, support(f)) ->
+                  (exists c2: Fn; exists g2: Fn; exists s2: Points;
+                  f = compose(c2, g2)
+                  and support(g2) = difference(support(f), orbit(f, x))
+                  and
+                  ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+                  or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+                  or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+                  and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+                [by discharge given-moved]
+            }
+          @finite-implies |
+            isFinite(support(f)) -> member(x, support(f)) ->
+              (exists c2: Fn; exists g2: Fn; exists s2: Points;
+              f = compose(c2, g2)
+              and support(g2) = difference(support(f), orbit(f, x))
+              and
+              ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+              or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+              or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+              and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+            [by discharge given-finite]
+        }
+      @discharge-x |
+        forall x: Element; isFinite(support(f)) -> member(x, support(f)) ->
+          (exists c2: Fn; exists g2: Fn; exists s2: Points;
+          f = compose(c2, g2)
+          and support(g2) = difference(support(f), orbit(f, x))
+          and
+          ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+          or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+          or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+          and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall f: Perm; forall x: Element;
+      isFinite(support(f)) -> member(x, support(f)) ->
+      (exists c2: Fn; exists g2: Fn; exists s2: Points;
+      f = compose(c2, g2)
+      and support(g2) = difference(support(f), orbit(f, x))
+      and
+      ((c2 = cycle_theory.cycle(s2, succ(succ(ZERO))) and cycle_theory.distinct(s2, succ(succ(ZERO))))
+      or (c2 = cycle_theory.cycle(s2, succ(succ(succ(ZERO)))) and cycle_theory.distinct(s2, succ(succ(succ(ZERO)))))
+      or (exists q2: Nat; c2 = cycle_theory.cycle(s2, succ(succ(succ(succ(q2)))))
+      and cycle_theory.distinct(s2, succ(succ(succ(succ(q2))))))))
+    [by generalize generalize-f]
+qed
