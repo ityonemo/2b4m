@@ -49,6 +49,7 @@ fact composeIdentityLeft = function_invertible.composeIdentityLeft
 
 sort Perm = permutation.Perm
 func support = permutation.support
+func transposition = permutation.transposition
 fact supportMember = permutation.supportMember
 fact inverseIsAPermutation = permutation.inverseIsAPermutation
 fact composeIsAPermutation = permutation.composeIsAPermutation
@@ -2067,4 +2068,339 @@ proof
       and f = compose(productUpTo(w, k), at(w, k))
       and disjointSupports(productUpTo(w, k), at(w, k))
     [by generalize generalize-f]
+qed
+
+// EVERY NON-IDENTITY CYCLE IS A TRANSPOSITION, A 3-CYCLE, OR LONGER.
+//
+// The covering proof's foundation, stated over ONE cycle rather than over a permutation's whole
+// decomposition — which is the honest unit, since each branch discharges from a cycle fact
+// alone and needs no remainder.
+//
+// The four lengths, via `aNatIsZeroOneTwoOrMore` on the cycle's `p`:
+//   length 1  excluded: `oneCycleIsTheIdentity` contradicts `c != identityFn`
+//   length 2  `twoCycleIsATransposition`
+//   length 3  `aThreeLengthCycleIsAThreeCycleProduct`, which already has the fold
+//             `isAThreeCycle` wants
+//   length>=4 witness the sequence and the excess directly
+//
+// Judson's Lemma 10.10 consumes the three surviving shapes as its cases 1/3/4 (and case 2 is
+// two length-3 cycles), so this is the case split his analysis performs, proved once.
+theorem aNonIdentityCycleIsATranspositionAThreeCycleOrLonger: forall c: Fn;
+  isACycle(c) -> c != identityFn ->
+  ((exists x: Element; exists y: Element; exists z: Element;
+  x != y and x != z and y != z
+  and c = compose(transposition(x, z), transposition(x, y)))
+  or (exists s2: Points; exists qq: Nat;
+  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+proof
+  @generalize-c |
+    fix c: Fn {
+      @given-cycle |
+        assume isACycle(c) {
+          @given-nonidentity |
+            assume c != identityFn {
+              @the-cycle |
+                isACycle(c)
+                [by hypothesis given-cycle]
+              @not-the-identity |
+                c != identityFn
+                [by hypothesis given-nonidentity]
+              @unfolded |
+                exists s: Points; exists p: Nat; distinct(s, succ(p)) and c = cycle(s, succ(p))
+                [using tautology the-cycle]
+              @with-points |
+                unpack s: Points from unfolded {
+                  @inner |
+                    exists p: Nat; distinct(s, succ(p)) and c = cycle(s, succ(p))
+                    [by hypothesis with-points]
+                  @with-length |
+                    unpack p: Nat from inner {
+                      @the-facts |
+                        distinct(s, succ(p)) and c = cycle(s, succ(p))
+                        [by hypothesis with-length]
+                      @the-distinctness |
+                        distinct(s, succ(p))
+                        [using tautology the-facts]
+                      @c-is-the-cycle |
+                        c = cycle(s, succ(p))
+                        [using tautology the-facts]
+                      @length-cases |
+                        (p = ZERO or p = succ(ZERO) or p = succ(succ(ZERO))
+                          or (exists q: Nat; p = succ(succ(succ(q)))))
+                        [using specialize peano_order.aNatIsZeroOneTwoOrMore(p)]
+                      @conclusion-by-length |
+                        ((exists x: Element; exists y: Element; exists z: Element;
+                          x != y and x != z and y != z
+                          and c = compose(transposition(x, z), transposition(x, y)))
+                          or (exists s2: Points; exists qq: Nat;
+                          c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                          or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                        case length-cases {
+                          @when-length-one |
+                            assume p = ZERO {
+                              @p-is-zero |
+                                p = ZERO
+                                [by hypothesis when-length-one]
+                              @c-is-one-cycle |
+                                c = cycle(s, succ(ZERO))
+                                [by rewrite p-is-zero c-is-the-cycle]
+                              @one-cycle-is-identity |
+                                cycle(s, succ(ZERO)) = identityFn
+                                [using specialize cycle_theory.oneCycleIsTheIdentity(s)]
+                              @c-is-the-identity |
+                                c = identityFn
+                                [by rewrite one-cycle-is-identity c-is-one-cycle]
+                              @conclusion-length-one |
+                                ((exists x: Element; exists y: Element; exists z: Element;
+                                  x != y and x != z and y != z
+                                  and c = compose(transposition(x, z), transposition(x, y)))
+                                  or (exists s2: Points; exists qq: Nat;
+                                  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                                  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                                [by ex_falso c-is-the-identity not-the-identity]
+                            }
+                          @when-length-two |
+                            assume p = succ(ZERO) {
+                              @p-is-one |
+                                p = succ(ZERO)
+                                [by hypothesis when-length-two]
+                              @c-is-two-cycle |
+                                c = cycle(s, succ(succ(ZERO)))
+                                [by rewrite p-is-one c-is-the-cycle]
+                              @two-cycle-is-transposition |
+                                cycle(s, succ(succ(ZERO))) = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO)))
+                                [using specialize cycle_theory.twoCycleIsATransposition(s)]
+                              @c-is-a-transposition |
+                                c = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO)))
+                                [by rewrite two-cycle-is-transposition c-is-two-cycle]
+                              @distinct-at-two |
+                                distinct(s, succ(succ(ZERO)))
+                                [by rewrite p-is-one the-distinctness]
+                              @zero-below-one |
+                                less_than(ZERO, succ(ZERO))
+                                [using specialize peano_order.lessThanSelf(ZERO)]
+                              @zero-below-two |
+                                less_than(ZERO, succ(succ(ZERO)))
+                                [using specialize peano_order.lessThanSuccRight(ZERO, succ(ZERO)) zero-below-one]
+                              @one-below-two |
+                                less_than(succ(ZERO), succ(succ(ZERO)))
+                                [using specialize peano_order.lessThanSelf(succ(ZERO))]
+                              @one-is-not-zero |
+                                succ(ZERO) != ZERO
+                                [using specialize peano.succNotZero(ZERO)]
+                              @zero-is-not-one |
+                                ZERO != succ(ZERO)
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(ZERO), ZERO) one-is-not-zero]
+                              @points-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(ZERO)), ZERO, succ(ZERO)) distinct-at-two zero-below-two one-below-two zero-is-not-one]
+                              @the-pair |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO)) and c = transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO)))
+                                [by both points-differ c-is-a-transposition]
+                              @inner-transposition-witness |
+                                exists v: Element; cycle_theory.at(s, ZERO) != v and c = transposition(cycle_theory.at(s, ZERO), v)
+                                [by witness(cycle_theory.at(s, succ(ZERO))) the-pair]
+                              @a-transposition-exists |
+                                exists u: Element; exists v: Element; u != v and c = transposition(u, v)
+                                [by witness(cycle_theory.at(s, ZERO)) inner-transposition-witness]
+                              @conclusion-length-two |
+                                ((exists x: Element; exists y: Element; exists z: Element;
+                                  x != y and x != z and y != z
+                                  and c = compose(transposition(x, z), transposition(x, y)))
+                                  or (exists s2: Points; exists qq: Nat;
+                                  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                                  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                                [using tautology a-transposition-exists]
+                            }
+                          @when-length-three |
+                            assume p = succ(succ(ZERO)) {
+                              @p-is-two |
+                                p = succ(succ(ZERO))
+                                [by hypothesis when-length-three]
+                              @c-is-three-cycle |
+                                c = cycle(s, succ(succ(succ(ZERO))))
+                                [by rewrite p-is-two c-is-the-cycle]
+                              @three-cycle-shape |
+                                cycle(s, succ(succ(succ(ZERO)))) = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(succ(ZERO)))), transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO))))
+                                [using specialize cycle_theory.aThreeLengthCycleIsAThreeCycleProduct(s)]
+                              @c-has-the-fold |
+                                c = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(succ(ZERO)))), transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO))))
+                                [by rewrite three-cycle-shape c-is-three-cycle]
+                              @distinct-at-three |
+                                distinct(s, succ(succ(succ(ZERO))))
+                                [by rewrite p-is-two the-distinctness]
+                              @zero-below-one-3 |
+                                less_than(ZERO, succ(ZERO))
+                                [using specialize peano_order.lessThanSelf(ZERO)]
+                              @zero-below-two-3 |
+                                less_than(ZERO, succ(succ(ZERO)))
+                                [using specialize peano_order.lessThanSuccRight(ZERO, succ(ZERO)) zero-below-one-3]
+                              @zero-below-three |
+                                less_than(ZERO, succ(succ(succ(ZERO))))
+                                [using specialize peano_order.lessThanSuccRight(ZERO, succ(succ(ZERO))) zero-below-two-3]
+                              @one-below-two-3 |
+                                less_than(succ(ZERO), succ(succ(ZERO)))
+                                [using specialize peano_order.lessThanSelf(succ(ZERO))]
+                              @one-below-three |
+                                less_than(succ(ZERO), succ(succ(succ(ZERO))))
+                                [using specialize peano_order.lessThanSuccRight(succ(ZERO), succ(succ(ZERO))) one-below-two-3]
+                              @two-below-three |
+                                less_than(succ(succ(ZERO)), succ(succ(succ(ZERO))))
+                                [using specialize peano_order.lessThanSelf(succ(succ(ZERO)))]
+                              @one-is-not-zero-3 |
+                                succ(ZERO) != ZERO
+                                [using specialize peano.succNotZero(ZERO)]
+                              @zero-is-not-one-3 |
+                                ZERO != succ(ZERO)
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(ZERO), ZERO) one-is-not-zero-3]
+                              @two-is-not-zero-3 |
+                                succ(succ(ZERO)) != ZERO
+                                [using specialize peano.succNotZero(succ(ZERO))]
+                              @zero-is-not-two-3 |
+                                ZERO != succ(succ(ZERO))
+                                [using specialize peano_order.natDisequalityIsSymmetric(succ(succ(ZERO)), ZERO) two-is-not-zero-3]
+                              @suppose-one-is-two-3 |
+                                assume succ(ZERO) = succ(succ(ZERO)) {
+                                  @the-eq-3 |
+                                    succ(ZERO) = succ(succ(ZERO))
+                                    [by hypothesis suppose-one-is-two-3]
+                                  @stripped-3 |
+                                    ZERO = succ(ZERO)
+                                    [using specialize peano.succInjective(ZERO, succ(ZERO)) the-eq-3]
+                                }
+                              @one-is-not-two-3 |
+                                succ(ZERO) != succ(succ(ZERO))
+                                [by contradiction suppose-one-is-two-3 stripped-3 zero-is-not-one-3]
+                              @points-s0-s1-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(ZERO))), ZERO, succ(ZERO)) distinct-at-three zero-below-three one-below-three zero-is-not-one-3]
+                              @points-s0-s2-differ |
+                                cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO)))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(ZERO))), ZERO, succ(succ(ZERO))) distinct-at-three zero-below-three two-below-three zero-is-not-two-3]
+                              @points-s1-s2-differ |
+                                cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO)))
+                                [using specialize cycle_theory.distinctEntriesDiffer(s, succ(succ(succ(ZERO))), succ(ZERO), succ(succ(ZERO))) distinct-at-three one-below-three two-below-three one-is-not-two-3]
+                              @three-points-distinct |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO)) and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO))) and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO))))
+                                [using tautology points-s0-s1-differ points-s0-s2-differ points-s1-s2-differ]
+                              @the-three-cycle-conjunction |
+                                (cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO)) and cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(succ(ZERO))) and cycle_theory.at(s, succ(ZERO)) != cycle_theory.at(s, succ(succ(ZERO))) and c = compose(transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(succ(ZERO)))), transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO)))))
+                                [by both three-points-distinct c-has-the-fold]
+                              @witness-z |
+                                exists z: Element; cycle_theory.at(s, ZERO) != cycle_theory.at(s, succ(ZERO)) and cycle_theory.at(s, ZERO) != z and cycle_theory.at(s, succ(ZERO)) != z
+                                  and c = compose(transposition(cycle_theory.at(s, ZERO), z), transposition(cycle_theory.at(s, ZERO), cycle_theory.at(s, succ(ZERO))))
+                                [by witness(cycle_theory.at(s, succ(succ(ZERO)))) the-three-cycle-conjunction]
+                              @witness-y-z |
+                                exists y: Element; exists z: Element; cycle_theory.at(s, ZERO) != y and cycle_theory.at(s, ZERO) != z and y != z
+                                  and c = compose(transposition(cycle_theory.at(s, ZERO), z), transposition(cycle_theory.at(s, ZERO), y))
+                                [by witness(cycle_theory.at(s, succ(ZERO))) witness-z]
+                              @c-is-a-three-cycle |
+                                (exists x: Element; exists y: Element; exists z: Element;
+                                  x != y and x != z and y != z
+                                  and c = compose(transposition(x, z), transposition(x, y)))
+                                [by witness(cycle_theory.at(s, ZERO)) witness-y-z]
+                              @conclusion-length-three |
+                                ((exists x: Element; exists y: Element; exists z: Element;
+                                  x != y and x != z and y != z
+                                  and c = compose(transposition(x, z), transposition(x, y)))
+                                  or (exists s2: Points; exists qq: Nat;
+                                  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                                  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                                [using tautology c-is-a-three-cycle]
+                            }
+                          @when-length-more |
+                            assume exists q: Nat; p = succ(succ(succ(q))) {
+                              @some-q |
+                                exists q: Nat; p = succ(succ(succ(q)))
+                                [by hypothesis when-length-more]
+                              @with-q |
+                                unpack q: Nat from some-q {
+                                  @p-is-three-plus |
+                                    p = succ(succ(succ(q)))
+                                    [by hypothesis with-q]
+                                  @c-is-the-long-cycle |
+                                    c = cycle(s, succ(succ(succ(succ(q)))))
+                                    [by rewrite p-is-three-plus c-is-the-cycle]
+                                  @distinct-long |
+                                    distinct(s, succ(succ(succ(succ(q)))))
+                                    [by rewrite p-is-three-plus the-distinctness]
+                                  @the-long-pair |
+                                    (c = cycle(s, succ(succ(succ(succ(q))))) and distinct(s, succ(succ(succ(succ(q))))))
+                                    [by both c-is-the-long-cycle distinct-long]
+                                  @inner-long-witness |
+                                    exists q2: Nat; c = cycle(s, succ(succ(succ(succ(q2)))))
+                                      and distinct(s, succ(succ(succ(succ(q2)))))
+                                    [by witness(q) the-long-pair]
+                                  @a-long-cycle-exists |
+                                    exists s2: Points; exists q2: Nat; c = cycle(s2, succ(succ(succ(succ(q2)))))
+                                      and distinct(s2, succ(succ(succ(succ(q2)))))
+                                    [by witness(s) inner-long-witness]
+                                  @conclusion-long |
+                                    ((exists x: Element; exists y: Element; exists z: Element;
+                                      x != y and x != z and y != z
+                                      and c = compose(transposition(x, z), transposition(x, y)))
+                                      or (exists s2: Points; exists qq: Nat;
+                                      c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                                      or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                                    [using tautology a-long-cycle-exists]
+                                }
+                              @conclusion-length-more |
+                                ((exists x: Element; exists y: Element; exists z: Element;
+                                  x != y and x != z and y != z
+                                  and c = compose(transposition(x, z), transposition(x, y)))
+                                  or (exists s2: Points; exists qq: Nat;
+                                  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                                  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                                [by unpacked with-q]
+                            }
+                        }
+                    }
+                  @conclusion-unpacked-length |
+                    ((exists x: Element; exists y: Element; exists z: Element;
+                      x != y and x != z and y != z
+                      and c = compose(transposition(x, z), transposition(x, y)))
+                      or (exists s2: Points; exists qq: Nat;
+                      c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                      or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                    [by unpacked with-length]
+                }
+              @conclusion-unpacked-points |
+                ((exists x: Element; exists y: Element; exists z: Element;
+                  x != y and x != z and y != z
+                  and c = compose(transposition(x, z), transposition(x, y)))
+                  or (exists s2: Points; exists qq: Nat;
+                  c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+                  or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+                [by unpacked with-points]
+            }
+          @nonidentity-implies |
+            c != identityFn ->
+              ((exists x: Element; exists y: Element; exists z: Element;
+              x != y and x != z and y != z
+              and c = compose(transposition(x, z), transposition(x, y)))
+              or (exists s2: Points; exists qq: Nat;
+              c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+              or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+            [by discharge given-nonidentity]
+        }
+      @cycle-implies |
+        isACycle(c) -> c != identityFn ->
+          ((exists x: Element; exists y: Element; exists z: Element;
+          x != y and x != z and y != z
+          and c = compose(transposition(x, z), transposition(x, y)))
+          or (exists s2: Points; exists qq: Nat;
+          c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+          or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+        [by discharge given-cycle]
+    }
+  @conclusion |
+    forall c: Fn; isACycle(c) -> c != identityFn ->
+      ((exists x: Element; exists y: Element; exists z: Element;
+      x != y and x != z and y != z
+      and c = compose(transposition(x, z), transposition(x, y)))
+      or (exists s2: Points; exists qq: Nat;
+      c = cycle(s2, succ(succ(succ(succ(qq))))) and distinct(s2, succ(succ(succ(succ(qq))))))
+      or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
+    [by generalize generalize-c]
 qed
