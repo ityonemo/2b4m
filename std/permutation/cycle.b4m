@@ -1812,3 +1812,61 @@ proof
       distinct(s, succ(k)) -> apply(inverseFn(cycle(s, succ(k))), at(s, ZERO)) = at(s, k)
     [by generalize generalize-s]
 qed
+
+// FORWARD VALUES GIVE INVERSE VALUES, and this is the bridge the covering proof needs.
+//
+// The dispatch arms' hypotheses are about sigma^INVERSE (`apply(inverse(sigma), a1) = ar`),
+// because each identity came from the commutator closed form instantiated at sigma^-1. But
+// std's cycle tools — `cycleAdvances`, `cycleWrapsAround` — give FORWARD values of a cycle.
+// This converts, so a covering proof can cite them directly with no inversion machinery:
+//
+//     apply(f, x) = y   ==>   apply(inverseFn(f), y) = x
+//
+// One step from `inverseUndoesPermutation` plus a rewrite. Takes `invertible(f)` explicitly
+// rather than a refined `Perm` binder, because this file works over plain `Fn`.
+theorem forwardGivesInverse: forall f: Fn; forall x, y: Element;
+  invertible(f) -> apply(f, x) = y -> apply(inverseFn(f), y) = x
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-x |
+        fix x: Element {
+          @generalize-y |
+            fix y: Element {
+              @given-invertible |
+                assume invertible(f) {
+                  @given-forward |
+                    assume apply(f, x) = y {
+                      @f-is-a-permutation |
+                        invertible(f)
+                        [by hypothesis given-invertible]
+                      @forward |
+                        apply(f, x) = y
+                        [by hypothesis given-forward]
+                      @undoes |
+                        apply(inverseFn(f), apply(f, x)) = x
+                        [using specialize permutation.inverseUndoesPermutation(f, x) f-is-a-permutation]
+                      @conclusion-inverse |
+                        apply(inverseFn(f), y) = x
+                        [by rewrite forward undoes]
+                    }
+                  @forward-implies |
+                    apply(f, x) = y -> apply(inverseFn(f), y) = x
+                    [by discharge given-forward]
+                }
+              @conclusion-at-y |
+                invertible(f) -> apply(f, x) = y -> apply(inverseFn(f), y) = x
+                [by discharge given-invertible]
+            }
+          @d-y |
+            forall y: Element; invertible(f) -> apply(f, x) = y -> apply(inverseFn(f), y) = x
+            [by generalize generalize-y]
+        }
+      @d-x |
+        forall x, y: Element; invertible(f) -> apply(f, x) = y -> apply(inverseFn(f), y) = x
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall f: Fn; forall x, y: Element; invertible(f) -> apply(f, x) = y -> apply(inverseFn(f), y) = x
+    [by generalize generalize-f]
+qed
