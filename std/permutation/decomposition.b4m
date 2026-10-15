@@ -2404,3 +2404,153 @@ proof
       or (exists u: Element; exists v: Element; u != v and c = transposition(u, v)))
     [by generalize generalize-c]
 qed
+
+// A DISJOINT REMAINDER DOES NOT CHANGE A CYCLE'S VALUES ON ITS OWN SUPPORT.
+//
+//     sigma = compose(r, c),  disjointSupports(r, c),  x in support(c)
+//       ==>  apply(sigma, x) = apply(c, x)
+//
+// This is what lets Lemma 10.10's cases read sigma's point-values off the PEELED CYCLE. The
+// peel hands back `f = compose(productUpTo(w,k), at(w,k))` with disjoint supports, and each
+// dispatch arm wants sigma's values at the peeled cycle's points — so without this the cases
+// could only talk about the cycle, not about sigma.
+//
+// The argument is one step of `supportMember` twice over: x moves under c, so x lies in c's
+// support; the supports are disjoint, so x is NOT in r's support; so r fixes x; so
+// sigma(x) = r(c(x)) = c(x) — using that c(x) is also in c's support, hence also fixed by r.
+//
+// Verified exhaustively over every disjoint pair at n = 4, 5, 6 (53, 309, 2119 pairs) before
+// writing, forward and inverse directions both.
+theorem aDisjointRemainderPreservesCycleValues: forall r: Fn; forall c: Fn; forall x: Element;
+  invertible(c) ->
+  disjointSupports(r, c) ->
+  member(x, support(c)) ->
+  apply(compose(r, c), x) = apply(c, x)
+proof
+  @generalize-r |
+    fix r: Fn {
+      @generalize-c |
+        fix c: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-invertible |
+                assume invertible(c) {
+                  @given-disjoint |
+                    assume disjointSupports(r, c) {
+                      @given-in-support |
+                        assume member(x, support(c)) {
+                          @c-is-a-permutation |
+                            invertible(c)
+                            [by hypothesis given-invertible]
+                          @the-disjointness |
+                            disjointSupports(r, c)
+                            [by hypothesis given-disjoint]
+                          @x-moves |
+                            member(x, support(c))
+                            [by hypothesis given-in-support]
+
+                          // c(x) is also in c's support: a permutation maps its support onto
+                          // itself. Suppose c(c(x)) = c(x); applying inverse(c) to both sides
+                          // gives c(x) = x, contradicting x in support(c).
+                          @what-support-means-at-x |
+                            member(x, support(c)) iff apply(c, x) != x
+                            [using specialize permutation.supportMember(c, x)]
+                          @x-really-moves |
+                            apply(c, x) != x
+                            [using tautology x-moves what-support-means-at-x]
+                          @suppose-image-fixed |
+                            assume apply(c, apply(c, x)) = apply(c, x) {
+                              @the-fixed-equation |
+                                apply(c, apply(c, x)) = apply(c, x)
+                                [by hypothesis suppose-image-fixed]
+                              @undo-everywhere |
+                                forall w: Element; apply(inverse(c), apply(c, w)) = w
+                                [using specialize inverseUndoesAtAPoint(c) c-is-a-permutation]
+                              @undo-at-image |
+                                apply(inverse(c), apply(c, apply(c, x))) = apply(c, x)
+                                [by apply_at(apply(c, x)) undo-everywhere]
+                              @undo-at-x |
+                                apply(inverse(c), apply(c, x)) = x
+                                [by apply_at(x) undo-everywhere]
+                              @substituted |
+                                apply(inverse(c), apply(c, x)) = apply(c, x)
+                                [by rewrite the-fixed-equation undo-at-image]
+                              // both sides name inverse(c)(c(x)): one says it is c(x), the other x
+                              @flipped |
+                                apply(c, x) = apply(inverse(c), apply(c, x))
+                                [by symmetry substituted]
+                              @image-equals-x |
+                                apply(c, x) = x
+                                [using chain flipped undo-at-x]
+                            }
+                          @image-really-moves |
+                            apply(c, apply(c, x)) != apply(c, x)
+                            [by contradiction suppose-image-fixed image-equals-x x-really-moves]
+                          @what-support-means-at-image |
+                            member(apply(c, x), support(c)) iff apply(c, apply(c, x)) != apply(c, x)
+                            [using specialize permutation.supportMember(c, apply(c, x))]
+                          @image-in-support |
+                            member(apply(c, x), support(c))
+                            [using tautology what-support-means-at-image image-really-moves]
+
+                          // x not in r's support, from disjointness
+                          @the-intersection-is-empty |
+                            intersection(support(r), support(c)) = emptyset
+                            [using tautology the-disjointness]
+                          @intersection-at-the-image |
+                            member(apply(c, x), intersection(support(r), support(c)))
+                              iff (member(apply(c, x), support(r)) and member(apply(c, x), support(c)))
+                            [using specialize set.intersectionMember(support(r), support(c), apply(c, x))]
+                          @nothing-in-the-emptyset |
+                            not member(apply(c, x), emptyset)
+                            [using specialize set.emptysetMember(apply(c, x))]
+                          @not-in-the-intersection |
+                            not member(apply(c, x), intersection(support(r), support(c)))
+                            [by rewrite the-intersection-is-empty nothing-in-the-emptyset]
+                          @image-not-in-r |
+                            not member(apply(c, x), support(r))
+                            [using tautology intersection-at-the-image not-in-the-intersection image-in-support]
+                          @what-support-means-for-r |
+                            member(apply(c, x), support(r)) iff apply(r, apply(c, x)) != apply(c, x)
+                            [using specialize permutation.supportMember(r, apply(c, x))]
+                          @r-fixes-the-image |
+                            apply(r, apply(c, x)) = apply(c, x)
+                            [using tautology what-support-means-for-r image-not-in-r]
+
+                          @unfold-the-composite |
+                            apply(compose(r, c), x) = apply(r, apply(c, x))
+                            [using specialize function.composeApply(r, c, x)]
+                          @conclusion-value |
+                            apply(compose(r, c), x) = apply(c, x)
+                            [by rewrite r-fixes-the-image unfold-the-composite]
+                        }
+                      @in-support-implies |
+                        member(x, support(c)) ->
+                          apply(compose(r, c), x) = apply(c, x)
+                        [by discharge given-in-support]
+                    }
+                  @disjoint-implies |
+                    disjointSupports(r, c) -> member(x, support(c)) ->
+                      apply(compose(r, c), x) = apply(c, x)
+                    [by discharge given-disjoint]
+                }
+              @invertible-implies |
+                invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+                  apply(compose(r, c), x) = apply(c, x)
+                [by discharge given-invertible]
+            }
+          @discharge-x |
+            forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+              apply(compose(r, c), x) = apply(c, x)
+            [by generalize generalize-x]
+        }
+      @discharge-c |
+        forall c: Fn; forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+          apply(compose(r, c), x) = apply(c, x)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall r: Fn; forall c: Fn; forall x: Element; invertible(c) -> disjointSupports(r, c) -> member(x, support(c)) ->
+      apply(compose(r, c), x) = apply(c, x)
+    [by generalize generalize-r]
+qed
