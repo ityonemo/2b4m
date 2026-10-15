@@ -40,6 +40,7 @@ sort Fn = permutation.Fn
 
 func compose = permutation.compose
 pred inAlternating = alternating.inAlternating
+pred invertible = permutation.invertible
 define isAThreeCycle = alternating.isAThreeCycle
 
 // THEOREM 10.11. If N is a normal subgroup of A_n containing a 3-cycle, and conjugation
@@ -543,4 +544,279 @@ proof
       inAlternating(compose(permutation.transposition(i, a), permutation.transposition(i, j)))) ->
       forall g: Fn; inAlternating(g) -> inAlternating(g)
     [using instantiation aNormalSubgroupWithAThreeCycleAndNormalityIsTheAlternatingGroup((fun g: Fn => inAlternating(g))) the-identity-is-even the-alternating-group-is-closed the-alternating-group-is-normal-in-itself]
+qed
+
+// THEOREM 10.11. The alternating group A_n is simple for n >= 5.
+//
+// Judson's proof is three sentences: "Let N be a normal subgroup of A_n. By Lemma 10.10, N
+// contains a 3-cycle. By Lemma 10.9, N = A_n; therefore A_n contains no proper nontrivial
+// normal subgroups for n >= 5." This is that composition, with both lemmas now proved.
+//
+// WHAT N MUST SUPPLY: the subgroup structure (identity, products, inverses) and normality.
+// WHAT n >= 5 SUPPLIES: a fifth point for any four. One hypothesis, spent inside Lemma 10.9's
+//   conjugations; `set_finite.aSetOfAtLeastFiveHasAFifthPoint` discharges it at a point
+//   universe of size at least five.
+// WHAT REMAINS JUDSON'S OWN ASSERTION: that the five cycle structures exhaust the
+//   possibilities for a non-identity sigma. His text states the list and does not argue it.
+//
+// Everything else — all four conjugation identities, the five landings, Lemma 10.9's
+// reachability and its thirteen-leaf selector, Lemma 10.8's generation by 3-cycles — is
+// machine-checked from the kernel.
+theorem theAlternatingGroupIsSimple(inN(Fn)):
+  inN(permutation.identityFn) ->
+  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+  (forall g: Fn; inN(g) -> inN(permutation.inverse(g))) ->
+  (forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+  inN(compose(compose(sigma, g), permutation.inverse(sigma)))) ->
+  (forall p, q, r, s: Element;
+  exists t: Element; t != p and t != q and t != r and t != s) ->
+  (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+  (alternating.isAThreeCycle(sigma)
+  or alternating_identities.judsonsLongCycleShape(sigma)
+  or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+  or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+  or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+  forall g: Fn; inAlternating(g) -> inN(g)
+proof
+  @given-identity |
+    assume inN(permutation.identityFn) {
+      @given-closure |
+        assume forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h)) {
+          @given-inverses |
+            assume forall g: Fn; inN(g) -> inN(permutation.inverse(g)) {
+              @given-normality |
+                assume forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+                  inN(compose(compose(sigma, g), permutation.inverse(sigma))) {
+                  @given-a-spare-point |
+                    assume forall p, q, r, s: Element;
+                      exists t: Element; t != p and t != q and t != r and t != s {
+                      @given-a-shaped-element |
+                        assume exists sigma: Fn; invertible(sigma) and inN(sigma) and
+                          (alternating.isAThreeCycle(sigma)
+                          or alternating_identities.judsonsLongCycleShape(sigma)
+                          or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                          or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                          or alternating_identities.judsonsDisjointTwoCyclesShape(sigma)) {
+                          @the-identity-is-in-n |
+                            inN(permutation.identityFn)
+                            [by hypothesis given-identity]
+                          @n-is-closed |
+                            forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))
+                            [by hypothesis given-closure]
+                          @n-is-closed-under-inverses |
+                            forall g: Fn; inN(g) -> inN(permutation.inverse(g))
+                            [by hypothesis given-inverses]
+                          @n-is-normal |
+                            forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+                              inN(compose(compose(sigma, g), permutation.inverse(sigma)))
+                            [by hypothesis given-normality]
+                          @the-spare-point-supply |
+                            forall p, q, r, s: Element;
+                              exists t: Element; t != p and t != q and t != r and t != s
+                            [by hypothesis given-a-spare-point]
+                          @a-shaped-element-exists |
+                            exists sigma: Fn; invertible(sigma) and inN(sigma) and
+                              (alternating.isAThreeCycle(sigma)
+                              or alternating_identities.judsonsLongCycleShape(sigma)
+                              or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                              or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                              or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))
+                            [by hypothesis given-a-shaped-element]
+
+                          // every 3-cycle on distinct points is even — the premise both
+                          // lemmas' conjugations spend
+                          @three-cycles-are-even |
+                            forall i2: Element; forall j2: Element; forall k2: Element;
+                              i2 != j2 -> i2 != k2 -> j2 != k2 ->
+                              inAlternating(compose(permutation.transposition(i2, k2), permutation.transposition(i2, j2)))
+                            [by cite alternating_identities.aThreeCycleOnDistinctPointsIsEven]
+
+                          // LEMMA 10.10: the shaped element gives a 3-cycle in N
+                          @lemma-ten-ten |
+                            forall sigma: Fn;
+                              invertible(sigma) -> inN(sigma) ->
+                              (alternating.isAThreeCycle(sigma)
+                              or alternating_identities.judsonsLongCycleShape(sigma)
+                              or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                              or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                              or alternating_identities.judsonsDisjointTwoCyclesShape(sigma)) ->
+                              (exists i: Element; exists j: Element; exists a: Element;
+                              i != j and a != i and a != j and
+                              inN(compose(permutation.transposition(i, a), permutation.transposition(i, j))))
+                            [using instantiation alternating_identities.judsonsLemmaTenTen((fun g2: Fn => inN(g2))) n-is-normal n-is-closed-under-inverses n-is-closed three-cycles-are-even]
+
+                          @with-the-element |
+                            unpack sigma: Fn from a-shaped-element-exists {
+                              @the-elements-data |
+                                invertible(sigma) and inN(sigma) and
+                                  (alternating.isAThreeCycle(sigma)
+                                  or alternating_identities.judsonsLongCycleShape(sigma)
+                                  or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                                  or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                                  or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))
+                                [by hypothesis with-the-element]
+                              @the-element-is-invertible |
+                                invertible(sigma)
+                                [using tautology the-elements-data]
+                              @the-element-is-in-n |
+                                inN(sigma)
+                                [using tautology the-elements-data]
+                              @the-elements-shape |
+                                alternating.isAThreeCycle(sigma)
+                                  or alternating_identities.judsonsLongCycleShape(sigma)
+                                  or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                                  or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                                  or alternating_identities.judsonsDisjointTwoCyclesShape(sigma)
+                                [using tautology the-elements-data]
+                              @a-three-cycle-is-in-n |
+                                exists i: Element; exists j: Element; exists a: Element;
+                                  i != j and a != i and a != j and
+                                  inN(compose(permutation.transposition(i, a), permutation.transposition(i, j)))
+                                [using specialize lemma-ten-ten(sigma) the-element-is-invertible the-element-is-in-n the-elements-shape]
+
+                              // THEOREM 10.11: that 3-cycle gives all of A_n
+                              @the-capstone |
+                                inN(permutation.identityFn) ->
+                                  (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+                                  (forall sigma2: Fn; forall g: Fn; inAlternating(sigma2) -> inN(g) ->
+                                  inN(compose(compose(sigma2, g), permutation.inverse(sigma2)))) ->
+                                  (forall p, q, r, s: Element;
+                                  exists t: Element; t != p and t != q and t != r and t != s) ->
+                                  (exists i: Element; exists j: Element; exists a: Element;
+                                  i != j and a != i and a != j and
+                                  inN(compose(permutation.transposition(i, a), permutation.transposition(i, j)))) ->
+                                  forall g: Fn; inAlternating(g) -> inN(g)
+                                [using instantiation aNormalSubgroupWithAThreeCycleAndNormalityIsTheAlternatingGroup((fun g2: Fn => inN(g2)))]
+                              @conclusion-n-is-the-alternating-group |
+                                forall g: Fn; inAlternating(g) -> inN(g)
+                                [using specialize the-capstone the-identity-is-in-n n-is-closed n-is-normal the-spare-point-supply a-three-cycle-is-in-n]
+                            }
+                          @conclusion-unpacked |
+                            forall g: Fn; inAlternating(g) -> inN(g)
+                            [by unpacked with-the-element]
+                        }
+                      @shaped-element-implies |
+                        (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+                          (alternating.isAThreeCycle(sigma)
+                          or alternating_identities.judsonsLongCycleShape(sigma)
+                          or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                          or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                          or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+                          forall g: Fn; inAlternating(g) -> inN(g)
+                        [by discharge given-a-shaped-element]
+                    }
+                  @spare-point-implies |
+                    (forall p, q, r, s: Element;
+                      exists t: Element; t != p and t != q and t != r and t != s) ->
+                      (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+                      (alternating.isAThreeCycle(sigma)
+                      or alternating_identities.judsonsLongCycleShape(sigma)
+                      or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                      or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                      or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+                      forall g: Fn; inAlternating(g) -> inN(g)
+                    [by discharge given-a-spare-point]
+                }
+              @normality-implies |
+                (forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+                  inN(compose(compose(sigma, g), permutation.inverse(sigma)))) ->
+                  (forall p, q, r, s: Element;
+                  exists t: Element; t != p and t != q and t != r and t != s) ->
+                  (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+                  (alternating.isAThreeCycle(sigma)
+                  or alternating_identities.judsonsLongCycleShape(sigma)
+                  or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+                  or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+                  or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+                  forall g: Fn; inAlternating(g) -> inN(g)
+                [by discharge given-normality]
+            }
+          @inverses-implies |
+            (forall g: Fn; inN(g) -> inN(permutation.inverse(g))) ->
+              (forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+              inN(compose(compose(sigma, g), permutation.inverse(sigma)))) ->
+              (forall p, q, r, s: Element;
+              exists t: Element; t != p and t != q and t != r and t != s) ->
+              (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+              (alternating.isAThreeCycle(sigma)
+              or alternating_identities.judsonsLongCycleShape(sigma)
+              or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+              or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+              or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+              forall g: Fn; inAlternating(g) -> inN(g)
+            [by discharge given-inverses]
+        }
+      @closure-implies |
+        (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+          (forall g: Fn; inN(g) -> inN(permutation.inverse(g))) ->
+          (forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+          inN(compose(compose(sigma, g), permutation.inverse(sigma)))) ->
+          (forall p, q, r, s: Element;
+          exists t: Element; t != p and t != q and t != r and t != s) ->
+          (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+          (alternating.isAThreeCycle(sigma)
+          or alternating_identities.judsonsLongCycleShape(sigma)
+          or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+          or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+          or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+          forall g: Fn; inAlternating(g) -> inN(g)
+        [by discharge given-closure]
+    }
+  @conclusion |
+    inN(permutation.identityFn) ->
+      (forall g, h: Fn; inN(g) -> inN(h) -> inN(compose(g, h))) ->
+      (forall g: Fn; inN(g) -> inN(permutation.inverse(g))) ->
+      (forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inN(g) ->
+      inN(compose(compose(sigma, g), permutation.inverse(sigma)))) ->
+      (forall p, q, r, s: Element;
+      exists t: Element; t != p and t != q and t != r and t != s) ->
+      (exists sigma: Fn; invertible(sigma) and inN(sigma) and
+      (alternating.isAThreeCycle(sigma)
+      or alternating_identities.judsonsLongCycleShape(sigma)
+      or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+      or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+      or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+      forall g: Fn; inAlternating(g) -> inN(g)
+    [by discharge given-identity]
+qed
+
+// THEOREM 10.11 exercised at N = A_n: A_n is a normal subgroup of itself, and a non-identity
+// even permutation of a known shape puts every even permutation in it — trivially true at
+// N = A_n, and the point is that the whole composition is kernel-checked at a real membership
+// predicate. A consumer with a genuine proper normal subgroup instantiates the same schema.
+theorem theAlternatingGroupIsSimpleAtItself:
+  (forall p, q, r, s: Element;
+  exists t: Element; t != p and t != q and t != r and t != s) ->
+  (exists sigma: Fn; invertible(sigma) and inAlternating(sigma) and
+  (alternating.isAThreeCycle(sigma)
+  or alternating_identities.judsonsLongCycleShape(sigma)
+  or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+  or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+  or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+  forall g: Fn; inAlternating(g) -> inAlternating(g)
+proof
+  @the-identity-is-even |
+    inAlternating(permutation.identityFn)
+    [by cite alternating.theIdentityIsInTheAlternatingGroup]
+  @the-alternating-group-is-closed |
+    forall g, h: Fn; inAlternating(g) -> inAlternating(h) -> inAlternating(compose(g, h))
+    [by cite alternating.theAlternatingGroupIsClosedUnderComposition]
+  @the-alternating-group-has-inverses |
+    forall g: Fn; inAlternating(g) -> inAlternating(permutation.inverse(g))
+    [by cite alternating.theAlternatingGroupIsClosedUnderInverses]
+  @the-alternating-group-is-normal-in-itself |
+    forall sigma: Fn; forall g: Fn; inAlternating(sigma) -> inAlternating(g) ->
+      inAlternating(compose(compose(sigma, g), permutation.inverse(sigma)))
+    [by cite alternating.theAlternatingGroupIsClosedUnderConjugation]
+  @conclusion |
+    (forall p, q, r, s: Element;
+      exists t: Element; t != p and t != q and t != r and t != s) ->
+      (exists sigma: Fn; invertible(sigma) and inAlternating(sigma) and
+      (alternating.isAThreeCycle(sigma)
+      or alternating_identities.judsonsLongCycleShape(sigma)
+      or alternating_identities.judsonsTwoThreeCyclesShape(sigma)
+      or alternating_identities.judsonsInvolutionTimesAThreeCycleShape(sigma)
+      or alternating_identities.judsonsDisjointTwoCyclesShape(sigma))) ->
+      forall g: Fn; inAlternating(g) -> inAlternating(g)
+    [using instantiation theAlternatingGroupIsSimple((fun g2: Fn => inAlternating(g2))) the-identity-is-even the-alternating-group-is-closed the-alternating-group-has-inverses the-alternating-group-is-normal-in-itself]
 qed
