@@ -1059,3 +1059,41 @@ at once — and cost a cycle believing I had broken a green file.
 NARROWING worth keeping: my original repro header claimed the bug needed two theorems in the
 file. It does not; one suffices. And a LOCAL theorem cited identically works fine, which is
 what isolated the alias as the trigger rather than `specialize` itself.
+
+**ALL FOUR DISPATCH ARMS ARE PROVED (2026-10-14).** Each takes a point-value pattern plus N's
+closure properties and puts a cycle in N:
+
+    arm 1  long cycle        aLongCyclePatternPutsAThreeCycleInTheSubgroup        -> 3-cycle
+    arm 2  two 3-cycles      twoDisjointThreeCyclesPutAFiveCycleInTheSubgroup     -> 5-CYCLE
+    arm 3  invol. x 3-cycle  anInvolutionTimesAThreeCyclePutsAThreeCycleInTheSubgroup -> 3-cycle
+    arm 4  disjoint 2-cycles disjointTwoCyclesPutAThreeCycleInTheSubgroup         -> 3-cycle
+
+THREE THINGS THE ARMS TAUGHT, none of which was visible from the identities alone.
+
+- **Arm 2's conclusion is a 5-cycle, not a 3-cycle.** That is what makes Judson's analysis
+  TERMINATE rather than recurse: the caller feeds the 5-cycle back to arm 1. Verified which
+  pattern arm 1 then matches — the 5-cycle's inverse sends a1 -> a3, a4 -> a1, a2 -> a4, so arm
+  1 applies at (a1, a4, a2, a3), walking the 5-cycle backwards, and yields (a1, a2, a3). All
+  four points distinct.
+
+- **Arm 3 needs NO normality.** sigma^2 is a product of two elements of N, so product closure
+  alone suffices. The other three arms each need a conjugate. That asymmetry is Judson's — his
+  case 3 squares rather than conjugating — and noticing it saved writing the normality
+  machinery into an arm that cannot use it.
+
+- **Every identity had to be REGROUPED, and the grouping differs per case.** Judson writes
+  commutators; N's closure sees products of specific shapes. Case 1 regroups to
+  `sigma^-1 * (c sigma c^-1)` — the conjugated element is sigma. Case 4 step 2 regroups to
+  `sigma * (c sigma^-1 c^-1)` — the conjugated element is sigma^INVERSE, because the
+  commutator's factor order differs. Each was verified computationally before writing, which is
+  the only reason the second one did not land as a late kernel failure.
+
+Where n >= 5 is spent is now ONE named place: arm 4's step 2 needs a point the double
+transposition fixes, i.e. outside {a1,a2,a3,a4}. Its four disequalities are the arm's only
+extra hypotheses, dischargeable from `set_finite.aSetOfAtLeastFiveHasAFifthPoint`.
+
+WHAT REMAINS for unconditional Theorem 10.11 is one theorem: that every non-identity even
+permutation MATCHES one of the four patterns. The coverage is measured (exhaustive at
+n = 5, 6, 7); the proof is not written, and needs two peels of
+`aNonIdentityDecompositionPeelsOffALastCycle`, two length splits, and one parity argument
+(an even permutation is not a lone transposition). All four inputs exist in std.
