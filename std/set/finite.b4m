@@ -5459,3 +5459,171 @@ proof
       exists t: Element; member(t, u) and t != p and t != q and t != r and t != s
     [by generalize generalize-u]
 qed
+
+// ============================================================================
+// UNION FINITENESS
+// ============================================================================
+//
+// `disjointUnionSizesAdd` above needs the two sides DISJOINT, which two arbitrary finite sets
+// are not. The standard repair: split `b` as `b \ a`, which IS disjoint from `a`, is a subset
+// of `b` and so finite by `subsetOfFiniteIsFinite`, and whose union with `a` is `a u b`.
+//
+// Needed by any sort refined on finite support — a composite's support is contained in the
+// union of its factors' supports, so closure under composition is this plus that containment.
+
+// a u b = a u (b \ a)
+theorem unionAbsorbsADifference: forall a: Set; forall b: Set;
+  union(a, b) = union(a, difference(b, a))
+proof
+  @conclusion |
+    forall a: Set; forall b: Set; union(a, b) = union(a, difference(b, a))
+    [using extensionality_quantified(extensionality) unionMember differenceMember]
+qed
+
+// a n (b \ a) = {}
+theorem aSetIsDisjointFromADifferenceByIt: forall a: Set; forall b: Set;
+  intersection(a, difference(b, a)) = emptyset
+proof
+  @conclusion |
+    forall a: Set; forall b: Set; intersection(a, difference(b, a)) = emptyset
+    [using extensionality_quantified(extensionality) intersectionMember differenceMember emptysetMember]
+qed
+
+// A DIFFERENCE IS A SUBSET of what it subtracts from.
+theorem differenceIsASubset: forall a: Set; forall b: Set; subset(difference(a, b), a)
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-x |
+            fix x: Element {
+              @given-in-the-difference |
+                assume member(x, difference(a, b)) {
+                  @x-is-in-the-difference |
+                    member(x, difference(a, b))
+                    [by hypothesis given-in-the-difference]
+                  @what-the-difference-means |
+                    member(x, difference(a, b)) iff (member(x, a) and (not member(x, b)))
+                    [using specialize differenceMember(a, b, x)]
+                  @conclusion-x-is-in-a |
+                    member(x, a)
+                    [using tautology what-the-difference-means x-is-in-the-difference]
+                }
+              @conclusion-at-x |
+                member(x, difference(a, b)) -> member(x, a)
+                [by discharge given-in-the-difference]
+            }
+          @conclusion-subset |
+            subset(difference(a, b), a)
+            [by generalize generalize-x]
+        }
+      @discharge-b |
+        forall b: Set; subset(difference(a, b), a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; subset(difference(a, b), a)
+    [by generalize generalize-a]
+qed
+
+// A UNION OF TWO FINITE SETS IS FINITE. `disjointUnionSizesAdd` needs the two sides
+// disjoint, which `a` and `b` are not — so split `b` as `(b \ a)`, which IS disjoint from
+// `a` and is a subset of `b`, hence finite by `subsetOfFiniteIsFinite`.
+theorem aUnionOfFiniteSetsIsFinite: forall a: Set; forall b: Set;
+  isFinite(a) -> isFinite(b) -> isFinite(union(a, b))
+proof
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @given-a-finite |
+            assume isFinite(a) {
+              @given-b-finite |
+                assume isFinite(b) {
+                  @a-is-finite |
+                    isFinite(a)
+                    [by hypothesis given-a-finite]
+                  @b-is-finite |
+                    isFinite(b)
+                    [by hypothesis given-b-finite]
+                  @a-has-a-size |
+                    exists n: Nat; hasSize(a, n)
+                    [using tautology a-is-finite]
+                  @b-has-a-size |
+                    exists n: Nat; hasSize(b, n)
+                    [using tautology b-is-finite]
+                  @with-a-size |
+                    unpack m: Nat from a-has-a-size {
+                      @a-has-size-m |
+                        hasSize(a, m)
+                        [by hypothesis with-a-size]
+                      @with-b-size |
+                        unpack n: Nat from b-has-a-size {
+                          @b-has-size-n |
+                            hasSize(b, n)
+                            [by hypothesis with-b-size]
+
+                          // b \ a is a subset of b, so it has a size too
+                          @the-difference-is-a-subset |
+                            subset(difference(b, a), b)
+                            [using specialize differenceIsASubset(b, a)]
+                          @the-difference-has-a-size |
+                            exists k: Nat; hasSize(difference(b, a), k) and less_or_equal(k, n)
+                            [using specialize subsetOfFiniteIsFinite(n, b, difference(b, a)) b-has-size-n the-difference-is-a-subset]
+                          @with-the-difference-size |
+                            unpack k: Nat from the-difference-has-a-size {
+                              @the-differences-size-data |
+                                hasSize(difference(b, a), k) and less_or_equal(k, n)
+                                [by hypothesis with-the-difference-size]
+                              @the-difference-has-size-k |
+                                hasSize(difference(b, a), k)
+                                [by and_lhs the-differences-size-data]
+
+                              // a and b \ a are disjoint, so their union's size adds
+                              @they-are-disjoint |
+                                intersection(a, difference(b, a)) = emptyset
+                                [using specialize aSetIsDisjointFromADifferenceByIt(a, b)]
+                              @the-disjoint-union-has-a-size |
+                                hasSize(union(a, difference(b, a)), add(m, k))
+                                [using specialize disjointUnionSizesAdd(a, m, k, difference(b, a)) a-has-size-m the-difference-has-size-k they-are-disjoint]
+
+                              // and that union IS a u b
+                              @the-union-absorbs |
+                                union(a, b) = union(a, difference(b, a))
+                                [using specialize unionAbsorbsADifference(a, b)]
+                              @the-union-has-a-size |
+                                hasSize(union(a, b), add(m, k))
+                                [by rewrite the-union-absorbs the-disjoint-union-has-a-size]
+                              @conclusion-the-union-is-finite |
+                                isFinite(union(a, b))
+                                [by witness(add(m, k)) the-union-has-a-size]
+                            }
+                          @conclusion-after-the-difference |
+                            isFinite(union(a, b))
+                            [by unpacked with-the-difference-size]
+                        }
+                      @conclusion-after-b |
+                        isFinite(union(a, b))
+                        [by unpacked with-b-size]
+                    }
+                  @conclusion-after-a |
+                    isFinite(union(a, b))
+                    [by unpacked with-a-size]
+                }
+              @b-finite-implies |
+                isFinite(b) -> isFinite(union(a, b))
+                [by discharge given-b-finite]
+            }
+          @conclusion-at-a-and-b |
+            isFinite(a) -> isFinite(b) -> isFinite(union(a, b))
+            [by discharge given-a-finite]
+        }
+      @discharge-b |
+        forall b: Set; isFinite(a) -> isFinite(b) -> isFinite(union(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: Set; forall b: Set; isFinite(a) -> isFinite(b) -> isFinite(union(a, b))
+    [by generalize generalize-a]
+qed

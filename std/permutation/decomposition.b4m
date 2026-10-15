@@ -27,6 +27,8 @@ const emptyset = set.emptyset
 pred member = set.member
 func difference = set.difference
 func intersection = set.intersection
+func union = set.union
+fact unionMember = set.unionMember
 fact differenceMember = set.differenceMember
 fact intersectionMember = set.intersectionMember
 fact emptysetMember = set.emptysetMember
@@ -4488,5 +4490,340 @@ proof
     }
   @conclusion |
     forall f: Fn; disjointSupports(identityFn, f) and disjointSupports(f, identityFn)
+    [by generalize generalize-f]
+qed
+
+// ============================================================================
+// SUPPORT ALGEBRA: what a composite and an inverse move
+// ============================================================================
+//
+// Two facts a sort refined on FINITE SUPPORT needs — S_n is the finitely-supported
+// permutations, which is the group Judson means throughout, and closure under composition and
+// inverses is exactly these two plus `set_finite.aUnionOfFiniteSetsIsFinite`.
+
+// A COMPOSITE MOVES ONLY WHAT ITS FACTORS MOVE: support(f o g) subset support(f) u support(g).
+//
+// Contrapositive at a point: if both f and g fix x then (f o g)(x) = f(g(x)) = f(x) = x.
+theorem aCompositesSupportIsInsideTheUnion: forall f: Fn; forall g: Fn;
+  subset(support(compose(f, g)), union(support(f), support(g)))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @generalize-x |
+            fix x: Element {
+              @given-moved-by-the-composite |
+                assume member(x, support(compose(f, g))) {
+                  @x-is-moved |
+                    member(x, support(compose(f, g)))
+                    [by hypothesis given-moved-by-the-composite]
+                  @what-support-means-for-the-composite |
+                    member(x, support(compose(f, g))) iff apply(compose(f, g), x) != x
+                    [using specialize supportMember(compose(f, g), x)]
+                  @the-composite-moves-x |
+                    apply(compose(f, g), x) != x
+                    [using tautology what-support-means-for-the-composite x-is-moved]
+                  @what-support-means-for-f |
+                    member(x, support(f)) iff apply(f, x) != x
+                    [using specialize supportMember(f, x)]
+                  @what-support-means-for-g |
+                    member(x, support(g)) iff apply(g, x) != x
+                    [using specialize supportMember(g, x)]
+                  @what-the-union-means |
+                    member(x, union(support(f), support(g)))
+                      iff (member(x, support(f)) or member(x, support(g)))
+                    [using specialize unionMember(support(f), support(g), x)]
+                  // if both fix x the composite fixes it, contradicting the above
+                  @suppose-both-fix-x |
+                    assume (not member(x, support(f))) and (not member(x, support(g))) {
+                      @neither-moves-x |
+                        (not member(x, support(f))) and (not member(x, support(g)))
+                        [by hypothesis suppose-both-fix-x]
+                      @f-fixes-x |
+                        apply(f, x) = x
+                        [using tautology neither-moves-x what-support-means-for-f]
+                      @g-fixes-x |
+                        apply(g, x) = x
+                        [using tautology neither-moves-x what-support-means-for-g]
+                      @the-composite-unfolds |
+                        apply(compose(f, g), x) = apply(f, apply(g, x))
+                        [using specialize composeApply(f, g, x)]
+                      @at-g-of-x |
+                        apply(compose(f, g), x) = apply(f, x)
+                        [by rewrite g-fixes-x the-composite-unfolds]
+                      @the-composite-fixes-x |
+                        apply(compose(f, g), x) = x
+                        [using chain at-g-of-x f-fixes-x]
+                    }
+                  @not-both-fix-x |
+                    not ((not member(x, support(f))) and (not member(x, support(g))))
+                    [by contradiction suppose-both-fix-x the-composite-fixes-x the-composite-moves-x]
+                  @conclusion-x-is-in-the-union |
+                    member(x, union(support(f), support(g)))
+                    [using tautology not-both-fix-x what-the-union-means]
+                }
+              @conclusion-at-x |
+                member(x, support(compose(f, g))) -> member(x, union(support(f), support(g)))
+                [by discharge given-moved-by-the-composite]
+            }
+          @conclusion-subset |
+            subset(support(compose(f, g)), union(support(f), support(g)))
+            [by generalize generalize-x]
+        }
+      @discharge-g |
+        forall g: Fn; subset(support(compose(f, g)), union(support(f), support(g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn;
+      subset(support(compose(f, g)), union(support(f), support(g)))
+    [by generalize generalize-f]
+qed
+
+// AN INVERSE HAS THE SAME SUPPORT. f fixes x exactly when f^-1 does: apply inverse to both
+// sides of f(x) = x, and conversely.
+theorem anInverseHasTheSameSupport: forall f: Fn;
+  invertible(f) -> support(inverse(f)) = support(f)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-invertible |
+        assume invertible(f) {
+          @f-is-invertible |
+            invertible(f)
+            [by hypothesis given-invertible]
+          @generalize-x |
+            fix x: Element {
+              // forward: if f^-1 moves x then f does
+              @given-moved-by-the-inverse |
+                assume member(x, support(inverse(f))) {
+                  @x-is-moved-by-the-inverse |
+                    member(x, support(inverse(f)))
+                    [by hypothesis given-moved-by-the-inverse]
+                  @what-support-means-for-the-inverse |
+                    member(x, support(inverse(f))) iff apply(inverse(f), x) != x
+                    [using specialize supportMember(inverse(f), x)]
+                  @the-inverse-moves-x |
+                    apply(inverse(f), x) != x
+                    [using tautology what-support-means-for-the-inverse x-is-moved-by-the-inverse]
+                  @what-support-means-for-f |
+                    member(x, support(f)) iff apply(f, x) != x
+                    [using specialize supportMember(f, x)]
+                  @suppose-f-fixes-x |
+                    assume apply(f, x) = x {
+                      @f-fixes-x |
+                        apply(f, x) = x
+                        [by hypothesis suppose-f-fixes-x]
+                      @the-inverse-fixes-it-too |
+                        apply(inverse(f), x) = x
+                        [using specialize inverseFixesAFixedPoint(f, x) f-is-invertible f-fixes-x]
+                    }
+                  @f-moves-x |
+                    apply(f, x) != x
+                    [by contradiction suppose-f-fixes-x the-inverse-fixes-it-too the-inverse-moves-x]
+                  @conclusion-x-is-in-fs-support |
+                    member(x, support(f))
+                    [using tautology what-support-means-for-f f-moves-x]
+                }
+              @the-inverses-support-is-inside |
+                member(x, support(inverse(f))) -> member(x, support(f))
+                [by discharge given-moved-by-the-inverse]
+
+            }
+          @the-inverses-support-is-included |
+            forall x: Element; member(x, support(inverse(f))) -> member(x, support(f))
+            [by generalize generalize-x]
+          @generalize-x2 |
+            fix x2: Element {
+              @given-moved-by-f-2 |
+                assume member(x2, support(f)) {
+                  @x2-is-moved-by-f |
+                    member(x2, support(f))
+                    [by hypothesis given-moved-by-f-2]
+                  @what-support-means-for-f-at-x2 |
+                    member(x2, support(f)) iff apply(f, x2) != x2
+                    [using specialize supportMember(f, x2)]
+                  @f-moves-x2 |
+                    apply(f, x2) != x2
+                    [using tautology what-support-means-for-f-at-x2 x2-is-moved-by-f]
+                  @what-support-means-for-the-inverse-at-x2 |
+                    member(x2, support(inverse(f))) iff apply(inverse(f), x2) != x2
+                    [using specialize supportMember(inverse(f), x2)]
+                  @the-inverse-is-invertible-2 |
+                    invertible(inverse(f))
+                    [using specialize permutation.inverseIsAPermutation(f) f-is-invertible]
+                  @suppose-the-inverse-fixes-x2 |
+                    assume apply(inverse(f), x2) = x2 {
+                      @the-inverse-fixes-x2 |
+                        apply(inverse(f), x2) = x2
+                        [by hypothesis suppose-the-inverse-fixes-x2]
+                      @then-its-own-inverse-does-2 |
+                        apply(inverse(inverse(f)), x2) = x2
+                        [using specialize inverseFixesAFixedPoint(inverse(f), x2) the-inverse-is-invertible-2 the-inverse-fixes-x2]
+                      @the-double-inverse-is-f-2 |
+                        inverse(inverse(f)) = f
+                        [using specialize function_invertible.invInvolution(f) f-is-invertible]
+                      @f-fixes-x2-after-all |
+                        apply(f, x2) = x2
+                        [by rewrite the-double-inverse-is-f-2 then-its-own-inverse-does-2]
+                    }
+                  @the-inverse-moves-x2 |
+                    apply(inverse(f), x2) != x2
+                    [by contradiction suppose-the-inverse-fixes-x2 f-fixes-x2-after-all f-moves-x2]
+                  @conclusion-x2-is-in-the-inverses-support |
+                    member(x2, support(inverse(f)))
+                    [using tautology what-support-means-for-the-inverse-at-x2 the-inverse-moves-x2]
+                }
+              @conclusion-at-x2 |
+                member(x2, support(f)) -> member(x2, support(inverse(f)))
+                [by discharge given-moved-by-f-2]
+            }
+          @fs-support-is-included |
+            forall x: Element; member(x, support(f)) -> member(x, support(inverse(f)))
+            [by generalize generalize-x2]
+          @conclusion-same-support |
+            support(inverse(f)) = support(f)
+            [using specialize set.extensionality(support(inverse(f)), support(f)) the-inverses-support-is-included fs-support-is-included]
+        }
+      @conclusion-at-f |
+        invertible(f) -> support(inverse(f)) = support(f)
+        [by discharge given-invertible]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> support(inverse(f)) = support(f)
+    [by generalize generalize-f]
+qed
+
+// -- FINITE SUPPORT IS CLOSED under the group operations ------------------------------------
+//
+// The three facts a `Perm where hasFiniteSupport` sort needs as its membership dischargers:
+// a ground one for the identity, and a closure one each for composition and inversion.
+
+// The identity moves nothing, and the empty set is finite.
+theorem theIdentityHasFiniteSupport: isFinite(support(identityFn))
+proof
+  @the-support-is-empty |
+    support(identityFn) = emptyset
+    [by cite permutation.supportOfIdentityIsEmpty]
+  @the-empty-set-has-size-zero |
+    set_finite.hasSize(emptyset, ZERO)
+    [by cite set_finite.emptysetHasSizeZero]
+  @the-support-has-size-zero |
+    set_finite.hasSize(support(identityFn), ZERO)
+    [by rewrite the-support-is-empty the-empty-set-has-size-zero]
+  @conclusion |
+    isFinite(support(identityFn))
+    [by witness(ZERO) the-support-has-size-zero]
+qed
+
+// A COMPOSITE of finitely-supported permutations is finitely supported: its support sits
+// inside the union of the factors' supports, that union is finite, and a subset of a finite
+// set is finite.
+theorem aCompositeHasFiniteSupport: forall f: Fn; forall g: Fn;
+  isFinite(support(f)) -> isFinite(support(g)) -> isFinite(support(compose(f, g)))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-f-finite |
+            assume isFinite(support(f)) {
+              @given-g-finite |
+                assume isFinite(support(g)) {
+                  @f-has-finite-support |
+                    isFinite(support(f))
+                    [by hypothesis given-f-finite]
+                  @g-has-finite-support |
+                    isFinite(support(g))
+                    [by hypothesis given-g-finite]
+                  @the-union-is-finite |
+                    isFinite(union(support(f), support(g)))
+                    [using specialize set_finite.aUnionOfFiniteSetsIsFinite(support(f), support(g)) f-has-finite-support g-has-finite-support]
+                  @the-union-has-a-size |
+                    exists n: Nat; set_finite.hasSize(union(support(f), support(g)), n)
+                    [using tautology the-union-is-finite]
+                  @with-the-unions-size |
+                    unpack n: Nat from the-union-has-a-size {
+                      @the-union-has-size-n |
+                        set_finite.hasSize(union(support(f), support(g)), n)
+                        [by hypothesis with-the-unions-size]
+                      @the-composites-support-is-inside |
+                        subset(support(compose(f, g)), union(support(f), support(g)))
+                        [using specialize aCompositesSupportIsInsideTheUnion(f, g)]
+                      @the-composites-support-has-a-size |
+                        exists m: Nat; set_finite.hasSize(support(compose(f, g)), m) and less_or_equal(m, n)
+                        [using specialize set_finite.subsetOfFiniteIsFinite(n, union(support(f), support(g)), support(compose(f, g))) the-union-has-size-n the-composites-support-is-inside]
+                      @with-the-composites-size |
+                        unpack m: Nat from the-composites-support-has-a-size {
+                          @the-composites-size-data |
+                            set_finite.hasSize(support(compose(f, g)), m) and less_or_equal(m, n)
+                            [by hypothesis with-the-composites-size]
+                          @the-composites-support-has-size-m |
+                            set_finite.hasSize(support(compose(f, g)), m)
+                            [by and_lhs the-composites-size-data]
+                          @conclusion-the-composite-is-finite |
+                            isFinite(support(compose(f, g)))
+                            [by witness(m) the-composites-support-has-size-m]
+                        }
+                      @conclusion-after-the-composites-size |
+                        isFinite(support(compose(f, g)))
+                        [by unpacked with-the-composites-size]
+                    }
+                  @conclusion-after-the-unions-size |
+                    isFinite(support(compose(f, g)))
+                    [by unpacked with-the-unions-size]
+                }
+              @g-finite-implies |
+                isFinite(support(g)) -> isFinite(support(compose(f, g)))
+                [by discharge given-g-finite]
+            }
+          @conclusion-at-f-and-g |
+            isFinite(support(f)) -> isFinite(support(g)) -> isFinite(support(compose(f, g)))
+            [by discharge given-f-finite]
+        }
+      @discharge-g |
+        forall g: Fn; isFinite(support(f)) -> isFinite(support(g)) -> isFinite(support(compose(f, g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn;
+      isFinite(support(f)) -> isFinite(support(g)) -> isFinite(support(compose(f, g)))
+    [by generalize generalize-f]
+qed
+
+// AN INVERSE has finite support, its support being literally the same set.
+theorem anInverseHasFiniteSupport: forall f: Fn;
+  invertible(f) -> isFinite(support(f)) -> isFinite(support(inverse(f)))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-invertible |
+        assume invertible(f) {
+          @given-finite |
+            assume isFinite(support(f)) {
+              @f-is-invertible |
+                invertible(f)
+                [by hypothesis given-invertible]
+              @f-has-finite-support |
+                isFinite(support(f))
+                [by hypothesis given-finite]
+              @the-supports-agree |
+                support(inverse(f)) = support(f)
+                [using specialize anInverseHasTheSameSupport(f) f-is-invertible]
+              @conclusion-the-inverse-is-finite |
+                isFinite(support(inverse(f)))
+                [by rewrite the-supports-agree f-has-finite-support]
+            }
+          @finite-implies |
+            isFinite(support(f)) -> isFinite(support(inverse(f)))
+            [by discharge given-finite]
+        }
+      @conclusion-at-f |
+        invertible(f) -> isFinite(support(f)) -> isFinite(support(inverse(f)))
+        [by discharge given-invertible]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> isFinite(support(f)) -> isFinite(support(inverse(f)))
     [by generalize generalize-f]
 qed
