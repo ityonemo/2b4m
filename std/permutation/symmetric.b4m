@@ -1,0 +1,259 @@
+// std/permutation/symmetric.b4m — S_n as a SORT, and A_n as a NORMAL SUBGROUP of it.
+//
+// S_n is the FINITELY SUPPORTED permutations. That is the group Judson means throughout —
+// `Perm` (every invertible function on the point sort) is strictly bigger, and the parity
+// argument that defines even/odd needs a finite factorization into transpositions, so a
+// permutation with infinite support has no parity at all.
+//
+// WHY THIS SORT EARNS ITS KEEP. `std/group/normal-subgroup.b4m` reifies "N is a normal
+// subgroup" as a modelable theory, and a model of it onto A_n has to discharge the normality
+// axiom. The discharger (`alternating.theAlternatingGroupIsNormal`) is CONDITIONAL — it needs
+// the conjugator invertible AND of finite support — while the axiom is unconditional. Mapping
+// the ambient sort to `SymPerm` makes both conditions the binder's own guard, so the axiom's
+// obligations are met by the sort rather than by extra premises nothing in group theory has a
+// slot for.
+//
+// That makes this the TWO-QUALIFIER case: `SymPerm = Perm where hasFiniteSupport` over
+// `Perm = Fn where invertible`. Every transferred binder relativizes to the conjunction, which
+// is what `Prove.projectBlockGuard` (for `[by predicate]` claims) and `emitWeakening`'s
+// subsumed-antecedent arm (for unconditional source axioms mapped to conditional facts) exist
+// to carry.
+//
+// THE SOUNDNESS HOLE TO KNOW ABOUT. The engine does not check that a model OVERLOADED every
+// guard predicate it should. A consumer that maps the sort and operations but forgets
+// `inSubgroup` gets a theorem about this file's opaque predicate rather than its own, with no
+// diagnostic. Accepted deliberately (user, 2026-10-15); the guarantees are future work. Until
+// then read a model block as carefully as a proof.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import normal_subgroup <<< "std/group/normal-subgroup.b4m"
+import permutation <<< "std/permutation.b4m"
+import function <<< "std/function.b4m"
+import function_invertible <<< "std/function/invertible.b4m"
+import permutation_decomposition <<< "std/permutation/decomposition.b4m"
+import alternating <<< "std/permutation/alternating.b4m"
+import set_finite <<< "std/set/finite.b4m"
+
+sort Fn = permutation.Fn
+sort Perm = permutation.Perm
+pred invertible = permutation.invertible
+func compose = permutation.compose
+func inverse = permutation.inverse
+func support = permutation.support
+const identityFn = permutation.identityFn
+pred inAlternating = alternating.inAlternating
+
+// S_n: the FINITELY SUPPORTED permutations. `hasFiniteSupport` is the guard predicate the
+// refinement needs — a `define` over isFinite(support(.)).
+pred hasFiniteSupport(f: Fn)
+axiom hasFiniteSupportDef: forall f: Fn;
+  hasFiniteSupport(f) iff set_finite.isFinite(support(f))
+
+sort SymPerm = Perm where hasFiniteSupport
+
+// the membership dischargers, in `hasFiniteSupport` terms
+theorem theIdentityIsInSym: hasFiniteSupport(identityFn)
+proof
+  @the-support-is-finite |
+    set_finite.isFinite(support(identityFn))
+    [by cite permutation_decomposition.theIdentityHasFiniteSupport]
+  @what-membership-means |
+    hasFiniteSupport(identityFn) iff set_finite.isFinite(support(identityFn))
+    [using specialize hasFiniteSupportDef(identityFn)]
+  @conclusion |
+    hasFiniteSupport(identityFn)
+    [using tautology what-membership-means the-support-is-finite]
+qed
+
+theorem symIsClosedUnderComposition: forall f: Fn; forall g: Fn;
+  hasFiniteSupport(f) -> hasFiniteSupport(g) -> hasFiniteSupport(compose(f, g))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-f |
+            assume hasFiniteSupport(f) {
+              @given-g |
+                assume hasFiniteSupport(g) {
+                  @f-is-in |
+                    hasFiniteSupport(f)
+                    [by hypothesis given-f]
+                  @g-is-in |
+                    hasFiniteSupport(g)
+                    [by hypothesis given-g]
+                  @what-it-means-for-f |
+                    hasFiniteSupport(f) iff set_finite.isFinite(support(f))
+                    [using specialize hasFiniteSupportDef(f)]
+                  @what-it-means-for-g |
+                    hasFiniteSupport(g) iff set_finite.isFinite(support(g))
+                    [using specialize hasFiniteSupportDef(g)]
+                  @f-has-finite-support |
+                    set_finite.isFinite(support(f))
+                    [using tautology what-it-means-for-f f-is-in]
+                  @g-has-finite-support |
+                    set_finite.isFinite(support(g))
+                    [using tautology what-it-means-for-g g-is-in]
+                  @the-composite-has-finite-support |
+                    set_finite.isFinite(support(compose(f, g)))
+                    [using specialize permutation_decomposition.aCompositeHasFiniteSupport(f, g) f-has-finite-support g-has-finite-support]
+                  @what-it-means-for-the-composite |
+                    hasFiniteSupport(compose(f, g)) iff set_finite.isFinite(support(compose(f, g)))
+                    [using specialize hasFiniteSupportDef(compose(f, g))]
+                  @conclusion-the-composite-is-in |
+                    hasFiniteSupport(compose(f, g))
+                    [using tautology what-it-means-for-the-composite the-composite-has-finite-support]
+                }
+              @g-implies |
+                hasFiniteSupport(g) -> hasFiniteSupport(compose(f, g))
+                [by discharge given-g]
+            }
+          @conclusion-at-f-and-g |
+            hasFiniteSupport(f) -> hasFiniteSupport(g) -> hasFiniteSupport(compose(f, g))
+            [by discharge given-f]
+        }
+      @discharge-g |
+        forall g: Fn; hasFiniteSupport(f) -> hasFiniteSupport(g) -> hasFiniteSupport(compose(f, g))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f: Fn; forall g: Fn;
+      hasFiniteSupport(f) -> hasFiniteSupport(g) -> hasFiniteSupport(compose(f, g))
+    [by generalize generalize-f]
+qed
+
+theorem symIsClosedUnderInverses: forall f: Fn;
+  invertible(f) -> hasFiniteSupport(f) -> hasFiniteSupport(inverse(f))
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-invertible |
+        assume invertible(f) {
+          @given-finite |
+            assume hasFiniteSupport(f) {
+              @f-is-invertible |
+                invertible(f)
+                [by hypothesis given-invertible]
+              @f-is-in |
+                hasFiniteSupport(f)
+                [by hypothesis given-finite]
+              @what-it-means-for-f |
+                hasFiniteSupport(f) iff set_finite.isFinite(support(f))
+                [using specialize hasFiniteSupportDef(f)]
+              @f-has-finite-support |
+                set_finite.isFinite(support(f))
+                [using tautology what-it-means-for-f f-is-in]
+              @the-inverse-has-finite-support |
+                set_finite.isFinite(support(inverse(f)))
+                [using specialize permutation_decomposition.anInverseHasFiniteSupport(f) f-is-invertible f-has-finite-support]
+              @what-it-means-for-the-inverse |
+                hasFiniteSupport(inverse(f)) iff set_finite.isFinite(support(inverse(f)))
+                [using specialize hasFiniteSupportDef(inverse(f))]
+              @conclusion-the-inverse-is-in |
+                hasFiniteSupport(inverse(f))
+                [using tautology what-it-means-for-the-inverse the-inverse-has-finite-support]
+            }
+          @finite-implies |
+            hasFiniteSupport(f) -> hasFiniteSupport(inverse(f))
+            [by discharge given-finite]
+        }
+      @conclusion-at-f |
+        invertible(f) -> hasFiniteSupport(f) -> hasFiniteSupport(inverse(f))
+        [by discharge given-invertible]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> hasFiniteSupport(f) -> hasFiniteSupport(inverse(f))
+    [by generalize generalize-f]
+qed
+
+// A_n IS NORMAL IN S_n, with the conjugator's hypotheses now carried by the sort's guard.
+theorem theAlternatingGroupIsNormalInSym: forall sigma: Fn; forall g: Fn;
+  invertible(sigma) -> hasFiniteSupport(sigma) -> inAlternating(g) ->
+  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+proof
+  @generalize-sigma |
+    fix sigma: Fn {
+      @generalize-g |
+        fix g: Fn {
+          @given-invertible |
+            assume invertible(sigma) {
+              @given-finite |
+                assume hasFiniteSupport(sigma) {
+                  @given-g-even |
+                    assume inAlternating(g) {
+                      @sigma-is-invertible |
+                        invertible(sigma)
+                        [by hypothesis given-invertible]
+                      @sigma-is-in-sym |
+                        hasFiniteSupport(sigma)
+                        [by hypothesis given-finite]
+                      @g-is-even |
+                        inAlternating(g)
+                        [by hypothesis given-g-even]
+                      @what-sym-means |
+                        hasFiniteSupport(sigma) iff set_finite.isFinite(support(sigma))
+                        [using specialize hasFiniteSupportDef(sigma)]
+                      @sigma-has-finite-support |
+                        set_finite.isFinite(support(sigma))
+                        [using tautology what-sym-means sigma-is-in-sym]
+                      @conclusion-the-conjugate-is-even |
+                        inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                        [using specialize alternating.theAlternatingGroupIsNormal(sigma, g) sigma-is-invertible sigma-has-finite-support g-is-even]
+                    }
+                  @g-even-implies |
+                    inAlternating(g) -> inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                    [by discharge given-g-even]
+                }
+              @finite-implies |
+                hasFiniteSupport(sigma) -> inAlternating(g) ->
+                  inAlternating(compose(compose(sigma, g), inverse(sigma)))
+                [by discharge given-finite]
+            }
+          @conclusion-at-sigma-and-g |
+            invertible(sigma) -> hasFiniteSupport(sigma) -> inAlternating(g) ->
+              inAlternating(compose(compose(sigma, g), inverse(sigma)))
+            [by discharge given-invertible]
+        }
+      @discharge-g |
+        forall g: Fn; invertible(sigma) -> hasFiniteSupport(sigma) -> inAlternating(g) ->
+          inAlternating(compose(compose(sigma, g), inverse(sigma)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall sigma: Fn; forall g: Fn;
+      invertible(sigma) -> hasFiniteSupport(sigma) -> inAlternating(g) ->
+      inAlternating(compose(compose(sigma, g), inverse(sigma)))
+    [by generalize generalize-sigma]
+qed
+
+// THE MODEL: A_n is a normal subgroup of S_n. The ambient sort is SymPerm, whose TWO
+// qualifiers (invertible, hasFiniteSupport) are exactly what the dischargers need — which is
+// the two-qualifier case the guard-arity projection handles.
+model AlternatingIsNormalInSym {
+  normal_subgroup.Grp: SymPerm
+  normal_subgroup.E: identityFn(function_invertible.identityInvertible, theIdentityIsInSym)
+  normal_subgroup.op: compose -| function_invertible.composeInvertible, symIsClosedUnderComposition
+  normal_subgroup.inverse: inverse -| function_invertible.inverseInvertible, symIsClosedUnderInverses
+  normal_subgroup.inSubgroup: inAlternating
+  normal_subgroup.grpAssoc <- function.composeAssoc
+  normal_subgroup.grpIdentityLeft <- function.composeIdentityLeft
+  normal_subgroup.grpInverseLeft <- function.inverseLeft
+  normal_subgroup.subgroupHasIdentity <- alternating.theIdentityIsInTheAlternatingGroup
+  normal_subgroup.subgroupClosedOp <- alternating.theAlternatingGroupIsClosedUnderComposition
+  normal_subgroup.subgroupClosedInverse <- alternating.theAlternatingGroupIsClosedUnderInverses
+  normal_subgroup.subgroupIsNormal <- theAlternatingGroupIsNormalInSym
+}
+
+// A transferred theorem: conjugation by an inverse stays inside.
+theorem conjugatingAnEvenPermutationByAnInverseStaysEven:
+  forall g: Fn; (hasFiniteSupport(g) and invertible(g)) ->
+  forall n: Fn; (hasFiniteSupport(n) and invertible(n)) ->
+  inAlternating(n) -> inAlternating(compose(compose(inverse(g), n), g))
+proof
+  @conclusion |
+    forall g: Fn; (hasFiniteSupport(g) and invertible(g)) ->
+      forall n: Fn; (hasFiniteSupport(n) and invertible(n)) ->
+      inAlternating(n) -> inAlternating(compose(compose(inverse(g), n), g))
+    [using model(AlternatingIsNormalInSym) normal_subgroup.conjugationByAnInverseStaysInside]
+qed
