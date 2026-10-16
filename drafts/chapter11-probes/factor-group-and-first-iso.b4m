@@ -1,0 +1,438 @@
+// PROBE: the FACTOR GROUP G/N as a genuine SORT, on mod-n.b4m's pattern.
+// If this works, §10.1's "there is no coset sort" gap closes and the isomorphism
+// theorems become statable.
+import group <<< "std/group.b4m"
+
+sort G
+const EG: G
+func opG(a: G, b: G) => G
+func invG(a: G) => G
+axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
+axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
+
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+
+// the normal subgroup N, as a membership predicate (std's convention).
+pred inN(g: G)
+axiom nHasIdentity: inN(EG)
+axiom nClosedOp: forall a, b: G; inN(a) -> inN(b) -> inN(opG(a, b))
+axiom nClosedInverse: forall a: G; inN(a) -> inN(invG(a))
+axiom nIsNormal: forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
+
+// THE FACTOR GROUP G/N, as a sort with a class map. `cls(g)` IS the coset gN.
+sort Quot
+func cls(a: G) => Quot
+axiom clsSurjective: forall q: Quot; exists a: G; q = cls(a)
+// the quotient identification: gN = hN iff g^-1 h is in N (§6.1's criterion).
+axiom clsCongruent: forall a, b: G; cls(a) = cls(b) iff inN(opG(invG(a), b))
+
+// the induced structure, lifted by the class map being a homomorphism
+const EQ: Quot
+func opQ(x: Quot, y: Quot) => Quot
+func invQ(x: Quot) => Quot
+axiom eqIsClsIdentity: EQ = cls(EG)
+axiom opQHom: forall a, b: G; opQ(cls(a), cls(b)) = cls(opG(a, b))
+axiom invQHom: forall a: G; invQ(cls(a)) = cls(invG(a))
+
+// -- the group axioms on G/N, LIFTED ------------------------------------------
+theorem opQAssoc: forall x, y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+proof
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-rep |
+                exists a: G; x = cls(a)
+                [using specialize clsSurjective(x)]
+              @with-x-rep |
+                unpack a: G from x-has-a-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-x-rep]
+                  @y-has-a-rep |
+                    exists b: G; y = cls(b)
+                    [using specialize clsSurjective(y)]
+                  @with-y-rep |
+                    unpack b: G from y-has-a-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-y-rep]
+                      @z-has-a-rep |
+                        exists c: G; z = cls(c)
+                        [using specialize clsSurjective(z)]
+                      @with-z-rep |
+                        unpack c: G from z-has-a-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-z-rep]
+                          @the-left-inner |
+                            opQ(cls(a), cls(b)) = cls(opG(a, b))
+                            [using specialize opQHom(a, b)]
+                          @the-left |
+                            opQ(cls(opG(a, b)), cls(c)) = cls(opG(opG(a, b), c))
+                            [using specialize opQHom(opG(a, b), c)]
+                          @the-right-inner |
+                            opQ(cls(b), cls(c)) = cls(opG(b, c))
+                            [using specialize opQHom(b, c)]
+                          @the-right |
+                            opQ(cls(a), cls(opG(b, c))) = cls(opG(a, opG(b, c)))
+                            [using specialize opQHom(a, opG(b, c))]
+                          @g-is-associative |
+                            opG(opG(a, b), c) = opG(a, opG(b, c))
+                            [using specialize opGAssoc(a, b, c)]
+                          @conclusion-at-reps |
+                            opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                            [using simplify x-is-cls-a y-is-cls-b z-is-cls-c the-left-inner the-left the-right-inner the-right g-is-associative]
+                        }
+                      @conclusion-after-z |
+                        opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                        [by unpacked with-z-rep]
+                    }
+                  @conclusion-after-y |
+                    opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                    [by unpacked with-y-rep]
+                }
+              @conclusion-after-x |
+                opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                [by unpacked with-x-rep]
+            }
+          @discharge-z |
+            forall z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+            [by generalize generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+    [by generalize generalize-x]
+qed
+
+// PROBE: is the FIRST ISOMORPHISM THEOREM statable? Judson: psi : G -> H with K = ker psi;
+// then eta : G/K -> psi(G) given by eta(gK) = psi(g) is a well-defined isomorphism.
+//
+// Here N plays K. The crux is eta's WELL-DEFINEDNESS -- "if g1K = g2K then psi(g1) = psi(g2)"
+// -- because that is what the quotient sort makes expressible: cls(g1) = cls(g2) is an
+// EQUATION in Quot, so `rewrite` can use it.
+sort HH
+const EHH: HH
+func opHH(a: HH, b: HH) => HH
+func invHH(a: HH) => HH
+axiom opHHAssoc: forall a, b, c: HH; opHH(opHH(a, b), c) = opHH(a, opHH(b, c))
+axiom opHHIdentityLeft: forall a: HH; opHH(EHH, a) = a
+axiom opHHInverseLeft: forall a: HH; opHH(invHH(a), a) = EHH
+
+func psi(a: G) => HH
+axiom psiPreservesOp: forall a, b: G; psi(opG(a, b)) = opHH(psi(a), psi(b))
+// N IS psi's kernel -- the theorem's hypothesis K = ker psi.
+axiom nIsTheKernel: forall g: G; inN(g) iff psi(g) = EHH
+
+model HHIsAGroup {
+  group.Grp: HH
+  group.E: EHH
+  group.op: opHH
+  group.inverse: invHH
+  group.opAssoc <- opHHAssoc
+  group.opIdentityLeft <- opHHIdentityLeft
+  group.opInverseLeft <- opHHInverseLeft
+}
+
+theorem cancelRightHH: forall b: HH; forall a: HH; forall c: HH; opHH(b, a) = opHH(c, a) -> b = c
+proof
+  @conclusion |
+    forall b: HH; forall a: HH; forall c: HH; opHH(b, a) = opHH(c, a) -> b = c
+    [using model(HHIsAGroup) group.cancelRight]
+qed
+
+theorem identityRightHH: forall a: HH; opHH(a, EHH) = a
+proof
+  @conclusion |
+    forall a: HH; opHH(a, EHH) = a
+    [using model(HHIsAGroup) group.opIdentityRight]
+qed
+
+// psi preserves the identity and inverses -- Prop 11.4 again, at psi.
+theorem psiPreservesIdentityHH: psi(EG) = EHH
+proof
+  @identity-is-idempotent |
+    opG(EG, EG) = EG
+    [using specialize opGIdentityLeft(EG)]
+  @psi-of-the-product |
+    psi(opG(EG, EG)) = opHH(psi(EG), psi(EG))
+    [using specialize psiPreservesOp(EG, EG)]
+  @psi-of-the-identity |
+    psi(EG) = opHH(psi(EG), psi(EG))
+    [by rewrite identity-is-idempotent psi-of-the-product]
+  @the-identity-absorbs |
+    opHH(EHH, psi(EG)) = psi(EG)
+    [using specialize opHHIdentityLeft(psi(EG))]
+  @both-products-agree |
+    opHH(EHH, psi(EG)) = opHH(psi(EG), psi(EG))
+    [using chain the-identity-absorbs psi-of-the-identity]
+  @the-identity-is-the-image |
+    EHH = psi(EG)
+    [using specialize cancelRightHH(EHH, psi(EG), psi(EG)) both-products-agree]
+  @conclusion |
+    psi(EG) = EHH
+    [by symmetry the-identity-is-the-image]
+qed
+
+theorem psiPreservesInversesHH: forall g: G; psi(invG(g)) = invHH(psi(g))
+proof
+  @generalize-g |
+    fix g: G {
+      @the-inverse-cancels |
+        opG(invG(g), g) = EG
+        [using specialize opGInverseLeft(g)]
+      @psi-of-the-product |
+        psi(opG(invG(g), g)) = opHH(psi(invG(g)), psi(g))
+        [using specialize psiPreservesOp(invG(g), g)]
+      @psi-of-the-identity-product |
+        psi(EG) = opHH(psi(invG(g)), psi(g))
+        [by rewrite the-inverse-cancels psi-of-the-product]
+      @the-image-of-the-identity |
+        psi(EG) = EHH
+        [by cite psiPreservesIdentityHH]
+      @the-product-is-the-identity |
+        EHH = opHH(psi(invG(g)), psi(g))
+        [by rewrite the-image-of-the-identity psi-of-the-identity-product]
+      @the-inverses-product |
+        opHH(invHH(psi(g)), psi(g)) = EHH
+        [using specialize opHHInverseLeft(psi(g))]
+      @both-agree |
+        opHH(invHH(psi(g)), psi(g)) = opHH(psi(invG(g)), psi(g))
+        [using chain the-inverses-product the-product-is-the-identity]
+      @the-inverse-is-the-image |
+        invHH(psi(g)) = psi(invG(g))
+        [using specialize cancelRightHH(invHH(psi(g)), psi(g), psi(invG(g))) both-agree]
+      @conclusion-at-g |
+        psi(invG(g)) = invHH(psi(g))
+        [by symmetry the-inverse-is-the-image]
+    }
+  @conclusion |
+    forall g: G; psi(invG(g)) = invHH(psi(g))
+    [by generalize generalize-g]
+qed
+
+// eta : G/N -> psi(G), by eta(cls(g)) = psi(g).
+func eta(q: Quot) => HH
+axiom etaOnClasses: forall g: G; eta(cls(g)) = psi(g)
+
+// THE CRUX: eta is WELL DEFINED. Judson proves this before anything else, and it is the
+// step that needs the quotient identification. If cls(a) = cls(b) then psi(a) = psi(b).
+theorem etaIsWellDefined: forall a: G; forall b: G;
+  cls(a) = cls(b) -> psi(a) = psi(b)
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-same-class |
+            assume cls(a) = cls(b) {
+              @same-class |
+                cls(a) = cls(b)
+                [by hypothesis given-same-class]
+              @eta-at-a |
+                eta(cls(a)) = psi(a)
+                [using specialize etaOnClasses(a)]
+              @eta-at-b |
+                eta(cls(b)) = psi(b)
+                [using specialize etaOnClasses(b)]
+              @eta-at-a-via-b |
+                eta(cls(b)) = psi(a)
+                [by rewrite same-class eta-at-a]
+              @psi-b-is-psi-a |
+                psi(b) = psi(a)
+                [using chain eta-at-b eta-at-a-via-b]
+              @conclusion-at-a-and-b |
+                psi(a) = psi(b)
+                [by symmetry psi-b-is-psi-a]
+            }
+          @conclusion-implication |
+            cls(a) = cls(b) -> psi(a) = psi(b)
+            [by discharge given-same-class]
+        }
+      @discharge-b |
+        forall b: G; cls(a) = cls(b) -> psi(a) = psi(b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; cls(a) = cls(b) -> psi(a) = psi(b)
+    [by generalize generalize-a]
+qed
+
+// eta is a HOMOMORPHISM: eta(xy) = eta(x)eta(y).
+theorem etaPreservesOp: forall x: Quot; forall y: Quot;
+  eta(opQ(x, y)) = opHH(eta(x), eta(y))
+proof
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @x-has-a-rep |
+            exists a: G; x = cls(a)
+            [using specialize clsSurjective(x)]
+          @with-x-rep |
+            unpack a: G from x-has-a-rep {
+              @x-is-cls-a |
+                x = cls(a)
+                [by hypothesis with-x-rep]
+              @y-has-a-rep |
+                exists b: G; y = cls(b)
+                [using specialize clsSurjective(y)]
+              @with-y-rep |
+                unpack b: G from y-has-a-rep {
+                  @y-is-cls-b |
+                    y = cls(b)
+                    [by hypothesis with-y-rep]
+                  @the-product-of-classes |
+                    opQ(cls(a), cls(b)) = cls(opG(a, b))
+                    [using specialize opQHom(a, b)]
+                  @eta-at-the-product |
+                    eta(cls(opG(a, b))) = psi(opG(a, b))
+                    [using specialize etaOnClasses(opG(a, b))]
+                  @psi-splits |
+                    psi(opG(a, b)) = opHH(psi(a), psi(b))
+                    [using specialize psiPreservesOp(a, b)]
+                  @eta-at-a |
+                    eta(cls(a)) = psi(a)
+                    [using specialize etaOnClasses(a)]
+                  @eta-at-b |
+                    eta(cls(b)) = psi(b)
+                    [using specialize etaOnClasses(b)]
+                  @conclusion-at-reps |
+                    eta(opQ(x, y)) = opHH(eta(x), eta(y))
+                    [using simplify x-is-cls-a y-is-cls-b the-product-of-classes eta-at-the-product psi-splits eta-at-a eta-at-b]
+                }
+              @conclusion-after-y |
+                eta(opQ(x, y)) = opHH(eta(x), eta(y))
+                [by unpacked with-y-rep]
+            }
+          @conclusion-after-x |
+            eta(opQ(x, y)) = opHH(eta(x), eta(y))
+            [by unpacked with-x-rep]
+        }
+      @discharge-y |
+        forall y: Quot; eta(opQ(x, y)) = opHH(eta(x), eta(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x: Quot; forall y: Quot; eta(opQ(x, y)) = opHH(eta(x), eta(y))
+    [by generalize generalize-x]
+qed
+
+// eta is INJECTIVE -- Judson's last step. eta(g1K) = eta(g2K) => psi(g1)=psi(g2)
+// => psi(g1^-1 g2) = e => g1^-1 g2 in K => g1K = g2K.
+theorem etaIsInjective: forall x: Quot; forall y: Quot;
+  eta(x) = eta(y) -> x = y
+proof
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @given-same-image |
+            assume eta(x) = eta(y) {
+              @same-image |
+                eta(x) = eta(y)
+                [by hypothesis given-same-image]
+              @x-has-a-rep |
+                exists a: G; x = cls(a)
+                [using specialize clsSurjective(x)]
+              @with-x-rep |
+                unpack a: G from x-has-a-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-x-rep]
+                  @y-has-a-rep |
+                    exists b: G; y = cls(b)
+                    [using specialize clsSurjective(y)]
+                  @with-y-rep |
+                    unpack b: G from y-has-a-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-y-rep]
+                      @eta-at-a |
+                        eta(cls(a)) = psi(a)
+                        [using specialize etaOnClasses(a)]
+                      @eta-at-b |
+                        eta(cls(b)) = psi(b)
+                        [using specialize etaOnClasses(b)]
+                      @same-image-with-a |
+                        eta(cls(a)) = eta(y)
+                        [by rewrite x-is-cls-a same-image]
+                      @same-image-at-reps |
+                        eta(cls(a)) = eta(cls(b))
+                        [by rewrite y-is-cls-b same-image-with-a]
+                      @psi-a-is-eta-b |
+                        psi(a) = eta(cls(b))
+                        [using chain eta-at-a same-image-at-reps]
+                      @the-images-agree |
+                        psi(a) = psi(b)
+                        [using chain psi-a-is-eta-b eta-at-b]
+                      // psi(a^-1 b) = psi(a)^-1 psi(b) = psi(a)^-1 psi(a) = e
+                      @psi-splits-the-quotient |
+                        psi(opG(invG(a), b)) = opHH(psi(invG(a)), psi(b))
+                        [using specialize psiPreservesOp(invG(a), b)]
+                      @psi-of-the-inverse |
+                        psi(invG(a)) = invHH(psi(a))
+                        [using specialize psiPreservesInversesHH(a)]
+                      @the-quotients-image |
+                        psi(opG(invG(a), b)) = opHH(invHH(psi(a)), psi(b))
+                        [by rewrite psi-of-the-inverse psi-splits-the-quotient]
+                      @with-the-images-equal |
+                        psi(opG(invG(a), b)) = opHH(invHH(psi(a)), psi(a))
+                        [by rewrite the-images-agree the-quotients-image]
+                      @the-inverse-cancels |
+                        opHH(invHH(psi(a)), psi(a)) = EHH
+                        [using specialize opHHInverseLeft(psi(a))]
+                      @the-quotient-is-killed |
+                        psi(opG(invG(a), b)) = EHH
+                        [using chain with-the-images-equal the-inverse-cancels]
+                      @what-the-kernel-means |
+                        inN(opG(invG(a), b)) iff psi(opG(invG(a), b)) = EHH
+                        [using specialize nIsTheKernel(opG(invG(a), b))]
+                      @the-quotient-is-in-n |
+                        inN(opG(invG(a), b))
+                        [using tautology what-the-kernel-means the-quotient-is-killed]
+                      @the-classes-agree |
+                        cls(a) = cls(b) iff inN(opG(invG(a), b))
+                        [using specialize clsCongruent(a, b)]
+                      @the-classes-are-equal |
+                        cls(a) = cls(b)
+                        [using tautology the-classes-agree the-quotient-is-in-n]
+                      @conclusion-at-reps |
+                        x = y
+                        [using simplify the-classes-are-equal x-is-cls-a y-is-cls-b]
+                    }
+                  @conclusion-after-y |
+                    x = y
+                    [by unpacked with-y-rep]
+                }
+              @conclusion-after-x |
+                x = y
+                [by unpacked with-x-rep]
+            }
+          @conclusion-implication |
+            eta(x) = eta(y) -> x = y
+            [by discharge given-same-image]
+        }
+      @discharge-y |
+        forall y: Quot; eta(x) = eta(y) -> x = y
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x: Quot; forall y: Quot; eta(x) = eta(y) -> x = y
+    [by generalize generalize-x]
+qed
