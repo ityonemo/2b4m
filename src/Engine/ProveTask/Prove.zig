@@ -657,6 +657,47 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     return null;
 }
 
+/// `demandParse` the file of every QUALIFIED citation in a trusted step — the accelerant head
+/// (`c.schema` for `specialize`) and each ref. Returns a blocker to suspend on, as the rest of
+/// the read pass does. Only the FILE is demanded: no fact's proof, so no cascade.
+///
+/// The namespace resolution is deliberately silent on failure. An unresolvable qualifier is a
+/// real error, but the process pass diagnoses it with position and context; failing here would
+/// report it from the read pass instead, and a read-pass diagnostic is not unwritten if the
+/// process pass later succeeds.
+fn demandQualifiedCiteFiles(self: *Prove, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
+    const word = self.trustWord(c) orelse return null;
+    switch (word) {
+        .model, .import => return null, // handled by `trustSourceFile` below
+        else => {},
+    }
+    var toks: std.ArrayList(lexer.Token) = .empty;
+    if (word == .specialize) if (c.schema) |t| try toks.append(self.ctx.arena, t);
+    for (c.refs) |r| try toks.append(self.ctx.arena, r);
+    for (toks.items) |tok| {
+        if (tok.qualifier == InternPool.Index.none) continue;
+        const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tok.qualifier }) orelse continue;
+        const ix = switch (state) {
+            .done => |x| x,
+            .in_flight => continue,
+        };
+        const nsix = switch (self.ctx.interner.keyOf(ix)) {
+            .import => |m| m.namespace,
+            else => continue,
+        };
+        const nsfile = switch (self.ctx.interner.keyOf(nsix)) {
+            .namespace => |m| m.file,
+            else => continue,
+        };
+        switch (try self.ctx.demandParse(self.h, nsfile)) {
+            .parsed => {},
+            .parsing => |t| return t,
+            .unparsed => {}, // undiscovered — the process pass diagnoses
+        }
+    }
+    return null;
+}
+
 /// The read pass for a TRUSTED `using` step: make the AST that `process` will SHAPE-CHECK
 /// available WITHOUT demanding any fact's PROOF. It resolves only IDENT-domain refs (sorts,
 /// funcs, preds, and the model/import NAME — cheap FetchTask/ModelTask, no proof cascade) and
@@ -682,9 +723,16 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     };
     if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, idents[0..n])) |blocker| return blocker;
 
+    // An ACCELERANT admits from the local goal — its producer matches THIS proof's goal AST —
+    // so it needs no source file for the α-match. But a citation inside it still has to RESOLVE,
+    // and a QUALIFIED one names another file: `[using specialize peano.addZeroLeft]`. Parse that
+    // file here so `seedAndCheckLocalRoot` can check the name in the process pass. Without it
+    // `Context.fileOf` returns null there and a typo'd qualified head went unchecked — `--fast`
+    // printed "fully verified" where strict reported "reference not found".
+    if (try self.demandQualifiedCiteFiles(c)) |blocker| return blocker;
+
     // parse the source file whose decl AST the α-match reads (model: src.thm's file; import:
-    // I's file; instantiation: the schema's file). An accelerant admits from the local goal,
-    // decl — its producer matches THIS proof's goal AST — so it parses nothing here.
+    // I's file; instantiation: the schema's file).
     const src_file = self.trustSourceFile(c) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return null, // diagnosed; process re-hits + rejects
@@ -734,7 +782,24 @@ fn seedLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!void {
 /// is a typo. For `c.refs` (always logical inputs) and for `specialize`'s head — the only
 /// rule word whose `c.schema` must resolve (see `seedLocalRoot` on that slot's overloading).
 fn seedAndCheckLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!void {
-    if (tok.qualifier != InternPool.Index.none) return;
+    // A `ns.`-QUALIFIED token names a global fact, never a local step, so it seeds no root —
+    // but it must still RESOLVE. Returning here unconditionally is what let `--fast` admit a
+    // typo'd qualified head: `[using specialize peano.noSuchLemma]` named nothing, nothing
+    // checked it, and the step was admitted "fully verified" while strict reported
+    // "reference not found". `--fast` and strict must agree in BOTH directions.
+    if (tok.qualifier != InternPool.Index.none) {
+        const ns = try self.resolveQualifier(tok); // diagnoses an unknown namespace
+        switch (self.qualifiedFactStatus(ns, tokName(tok))) {
+            .names_a_fact => {},
+            // The target FILE is not loaded. `demandQualifiedCiteFiles` parses it in the read
+            // pass, so reaching here means the qualifier did not resolve to an import at all —
+            // which the process pass diagnoses with better position and context than a
+            // "not found" from here would carry.
+            .file_not_loaded => {},
+            .no_such_fact => return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)}),
+        }
+        return;
+    }
     const name = tokName(tok);
     const target = w.resolveStep(name) orelse {
         if (self.namesAFact(name)) return;
@@ -748,17 +813,33 @@ fn seedAndCheckLocalRoot(self: *Prove, w: *const Walk, tok: lexer.Token) Error!v
 /// a fact too (`theorem addSuccLeft = peano.addSuccLeft`): `ast.factOf` returns null for an
 /// alias, and a re-exported lemma is the ordinary way a file names another theory's fact, so
 /// testing only for a local fact decl would reject every aliased rewrite lemma.
-fn namesAFact(self: *Prove, name: StrId) bool {
-    if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null) return true;
-    const fid = self.ctx.fileOf(self.file) orelse return false;
-    const d = self.ctx.declOf(fid, name) orelse return false;
+/// Whether a QUALIFIED citation (`peano.addSuccLeft`) names a fact in `ns` — with
+/// `file_not_loaded` kept DISTINCT from `no_such_fact`, because they warrant opposite
+/// responses. Existence only: under `--fast` the cited fact may not be proven yet, so this
+/// must NOT demand `.proven` the way `resolveFactIn` does.
+const QualifiedFactStatus = enum { names_a_fact, file_not_loaded, no_such_fact };
+fn qualifiedFactStatus(self: *Prove, ns: InternPool.Index, name: StrId) QualifiedFactStatus {
+    if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name }) != null) return .names_a_fact;
+    const nsfile = switch (self.ctx.interner.keyOf(ns)) {
+        .namespace => |m| m.file,
+        else => return .file_not_loaded,
+    };
+    // not parsed in this run — no information, so no verdict
+    const fid = self.ctx.fileOf(nsfile) orelse return .file_not_loaded;
+    const d = self.ctx.declOf(fid, name) orelse return .no_such_fact;
     return switch (d.*) {
         // `.fact` is the ALIAS form (`fact X = ns.y`), which is how a file names another
         // theory's lemma; omitting it rejected every aliased rewrite lemma under `--fast`
         // while strict accepted it.
-        .axiom, .hole, .theorem, .fact => true,
-        else => false,
+        .axiom, .hole, .theorem, .fact => .names_a_fact,
+        else => .no_such_fact,
     };
+}
+
+/// `qualifiedFactStatus` at this proof's own namespace, for an UNQUALIFIED name — where a
+/// not-loaded file cannot arise (it is this file).
+fn namesAFact(self: *Prove, name: StrId) bool {
+    return self.qualifiedFactStatus(self.ns, name) == .names_a_fact;
 }
 
 /// The NAME of the fact a trusted engine-word citation reads, paired with `trustSourceFile`'s

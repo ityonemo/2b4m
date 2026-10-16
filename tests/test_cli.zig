@@ -209,6 +209,17 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/fast_unknown_ref_bad.b4m" }, "tests/cases/fast_unknown_ref_bad.b4m:43:27: error: reference not found: 'p-holds-everywhere'\n");
     ctx.fail(&.{ "check", "--fast", "tests/cases/fast_unknown_ref_bad.b4m" }, "tests/cases/fast_unknown_ref_bad.b4m:43:27: error: unknown reference 'p-holds-everywhere'\n");
 
+    // the QUALIFIED twin of the above, and a second escape on the same walk: a `ns.`-qualified
+    // name is never a local step, so `seedAndCheckLocalRoot` returned on sight of a qualifier
+    // and nothing resolved it at all. `--fast` printed "fully verified" where strict reported
+    // "reference not found". The fix needs BOTH halves: `demandQualifiedCiteFiles` parses the
+    // cited file in the trusted read pass (without it `Context.fileOf` is null in the process
+    // pass and every valid cross-file qualified citation in std becomes a false positive), and
+    // the check is then existence-only — NOT `.proven`, since under `--fast` the cited fact's
+    // own proof may not have run.
+    ctx.fail(&.{ "check", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:31:23: error: reference not found: 'thereIsNoSuchTheorem'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:31:23: error: unknown reference 'peano.thereIsNoSuchTheorem'\n");
+
     // the other direction: `--fast` must not REJECT what strict ACCEPTS. An aliased lemma
     // (`fact X = ns.y`) cited by its bare name is the ordinary way a file names an imported
     // fact; `namesAFact` used to omit `.fact` and so treated every alias as a typo.
