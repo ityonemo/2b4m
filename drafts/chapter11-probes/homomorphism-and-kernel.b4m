@@ -1,0 +1,222 @@
+// PROBE: a group HOMOMORPHISM (no bijectivity) + its kernel. Judson Prop 11.4 and Thm 11.6.
+import group <<< "std/group.b4m"
+
+// -- source group G --
+sort G
+const EG: G
+func opG(a: G, b: G) => G
+func invG(a: G) => G
+axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
+axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
+
+// -- target group H --
+sort H
+const EH: H
+func opH(a: H, b: H) => H
+func invH(a: H) => H
+axiom opHAssoc: forall a, b, c: H; opH(opH(a, b), c) = opH(a, opH(b, c))
+axiom opHIdentityLeft: forall a: H; opH(EH, a) = a
+axiom opHInverseLeft: forall a: H; opH(invH(a), a) = EH
+
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+model HIsAGroup {
+  group.Grp: H
+  group.E: EH
+  group.op: opH
+  group.inverse: invH
+  group.opAssoc <- opHAssoc
+  group.opIdentityLeft <- opHIdentityLeft
+  group.opInverseLeft <- opHInverseLeft
+}
+
+// H's cancellation law, under a bare local name (a model-transferred fact has none).
+theorem cancelRightH: forall b: H; forall a: H; forall c: H; opH(b, a) = opH(c, a) -> b = c
+proof
+  @conclusion |
+    forall b: H; forall a: H; forall c: H; opH(b, a) = opH(c, a) -> b = c
+    [using model(HIsAGroup) group.cancelRight]
+qed
+
+theorem identityRightH: forall a: H; opH(a, EH) = a
+proof
+  @conclusion |
+    forall a: H; opH(a, EH) = a
+    [using model(HIsAGroup) group.opIdentityRight]
+qed
+
+theorem inverseRightH: forall a: H; opH(a, invH(a)) = EH
+proof
+  @conclusion |
+    forall a: H; opH(a, invH(a)) = EH
+    [using model(HIsAGroup) group.opInverseRight]
+qed
+
+// THE HOMOMORPHISM -- one axiom, no bijectivity.
+func phi(a: G) => H
+axiom phiPreservesOp: forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
+
+// Judson Prop 11.4(1): phi(e) is the identity.
+// "e' phi(e) = phi(e) = phi(ee) = phi(e)phi(e). By cancellation, phi(e) = e'."
+theorem phiPreservesIdentity: phi(EG) = EH
+proof
+  @identity-is-idempotent |
+    opG(EG, EG) = EG
+    [using specialize opGIdentityLeft(EG)]
+  @phi-of-the-product |
+    phi(opG(EG, EG)) = opH(phi(EG), phi(EG))
+    [using specialize phiPreservesOp(EG, EG)]
+  @phi-of-the-identity |
+    phi(EG) = opH(phi(EG), phi(EG))
+    [by rewrite identity-is-idempotent phi-of-the-product]
+  @the-identity-absorbs |
+    opH(EH, phi(EG)) = phi(EG)
+    [using specialize opHIdentityLeft(phi(EG))]
+  @both-products-agree |
+    opH(EH, phi(EG)) = opH(phi(EG), phi(EG))
+    [using chain the-identity-absorbs phi-of-the-identity]
+  @the-identity-is-the-image |
+    EH = phi(EG)
+    [using specialize cancelRightH(EH, phi(EG), phi(EG)) both-products-agree]
+  @conclusion |
+    phi(EG) = EH
+    [by symmetry the-identity-is-the-image]
+qed
+
+// Judson Prop 11.4(2): phi(g^-1) = phi(g)^-1.
+theorem phiPreservesInverses: forall g: G; phi(invG(g)) = invH(phi(g))
+proof
+  @generalize-g |
+    fix g: G {
+      @the-inverse-cancels |
+        opG(invG(g), g) = EG
+        [using specialize opGInverseLeft(g)]
+      @phi-of-the-product |
+        phi(opG(invG(g), g)) = opH(phi(invG(g)), phi(g))
+        [using specialize phiPreservesOp(invG(g), g)]
+      @phi-of-the-identity-product |
+        phi(EG) = opH(phi(invG(g)), phi(g))
+        [by rewrite the-inverse-cancels phi-of-the-product]
+      @the-image-of-the-identity |
+        phi(EG) = EH
+        [by cite phiPreservesIdentity]
+      @the-product-is-the-identity |
+        EH = opH(phi(invG(g)), phi(g))
+        [by rewrite the-image-of-the-identity phi-of-the-identity-product]
+      @the-inverses-product |
+        opH(invH(phi(g)), phi(g)) = EH
+        [using specialize opHInverseLeft(phi(g))]
+      @both-agree |
+        opH(invH(phi(g)), phi(g)) = opH(phi(invG(g)), phi(g))
+        [using chain the-inverses-product the-product-is-the-identity]
+      @the-inverse-is-the-image |
+        invH(phi(g)) = phi(invG(g))
+        [using specialize cancelRightH(invH(phi(g)), phi(g), phi(invG(g))) both-agree]
+      @conclusion-at-g |
+        phi(invG(g)) = invH(phi(g))
+        [by symmetry the-inverse-is-the-image]
+    }
+  @conclusion |
+    forall g: G; phi(invG(g)) = invH(phi(g))
+    [by generalize generalize-g]
+qed
+
+// THE KERNEL, as a membership predicate on G.
+pred inKernel(g: G)
+axiom inKernelDef: forall g: G; inKernel(g) iff phi(g) = EH
+
+// Judson Thm 11.6: the kernel is a NORMAL subgroup of G.
+// Subgroup first: the identity is in it, and it is closed under op and inverses.
+theorem theKernelHasTheIdentity: inKernel(EG)
+proof
+  @the-image-of-the-identity |
+    phi(EG) = EH
+    [by cite phiPreservesIdentity]
+  @what-the-kernel-means |
+    inKernel(EG) iff phi(EG) = EH
+    [using specialize inKernelDef(EG)]
+  @conclusion |
+    inKernel(EG)
+    [using tautology what-the-kernel-means the-image-of-the-identity]
+qed
+
+// NORMALITY: phi(g n g^-1) = phi(g) e' phi(g)^-1 = e', so g n g^-1 is in the kernel.
+theorem theKernelIsNormal: forall g: G; forall n: G;
+  inKernel(n) -> inKernel(opG(opG(g, n), invG(g)))
+proof
+  @generalize-g |
+    fix g: G {
+      @generalize-n |
+        fix n: G {
+          @given-n-in-the-kernel |
+            assume inKernel(n) {
+              @n-is-in-the-kernel |
+                inKernel(n)
+                [by hypothesis given-n-in-the-kernel]
+              @what-the-kernel-means-for-n |
+                inKernel(n) iff phi(n) = EH
+                [using specialize inKernelDef(n)]
+              @phi-kills-n |
+                phi(n) = EH
+                [using tautology what-the-kernel-means-for-n n-is-in-the-kernel]
+
+              // phi(gng^-1) = phi(gn) phi(g^-1) = phi(g)phi(n) phi(g)^-1
+              @split-the-outer |
+                phi(opG(opG(g, n), invG(g))) = opH(phi(opG(g, n)), phi(invG(g)))
+                [using specialize phiPreservesOp(opG(g, n), invG(g))]
+              @split-the-inner |
+                phi(opG(g, n)) = opH(phi(g), phi(n))
+                [using specialize phiPreservesOp(g, n)]
+              @with-the-inner-split |
+                phi(opG(opG(g, n), invG(g))) = opH(opH(phi(g), phi(n)), phi(invG(g)))
+                [by rewrite split-the-inner split-the-outer]
+              @the-image-of-the-inverse |
+                phi(invG(g)) = invH(phi(g))
+                [using specialize phiPreservesInverses(g)]
+              @with-the-inverse |
+                phi(opG(opG(g, n), invG(g))) = opH(opH(phi(g), phi(n)), invH(phi(g)))
+                [by rewrite the-image-of-the-inverse with-the-inner-split]
+              @with-n-killed |
+                phi(opG(opG(g, n), invG(g))) = opH(opH(phi(g), EH), invH(phi(g)))
+                [by rewrite phi-kills-n with-the-inverse]
+
+              // phi(g) e' phi(g)^-1 = phi(g) phi(g)^-1 = e'
+              @the-identity-absorbs-on-the-right |
+                opH(phi(g), EH) = phi(g)
+                [using specialize identityRightH(phi(g))]
+              @collapsed |
+                phi(opG(opG(g, n), invG(g))) = opH(phi(g), invH(phi(g)))
+                [by rewrite the-identity-absorbs-on-the-right with-n-killed]
+              @the-inverse-cancels-on-the-right |
+                opH(phi(g), invH(phi(g))) = EH
+                [using specialize inverseRightH(phi(g))]
+              @the-conjugate-is-killed |
+                phi(opG(opG(g, n), invG(g))) = EH
+                [using chain collapsed the-inverse-cancels-on-the-right]
+              @what-the-kernel-means-for-the-conjugate |
+                inKernel(opG(opG(g, n), invG(g))) iff phi(opG(opG(g, n), invG(g))) = EH
+                [using specialize inKernelDef(opG(opG(g, n), invG(g)))]
+              @conclusion-the-conjugate-is-in |
+                inKernel(opG(opG(g, n), invG(g)))
+                [using tautology what-the-kernel-means-for-the-conjugate the-conjugate-is-killed]
+            }
+          @conclusion-at-n |
+            inKernel(n) -> inKernel(opG(opG(g, n), invG(g)))
+            [by discharge given-n-in-the-kernel]
+        }
+      @discharge-n |
+        forall n: G; inKernel(n) -> inKernel(opG(opG(g, n), invG(g)))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall g: G; forall n: G; inKernel(n) -> inKernel(opG(opG(g, n), invG(g)))
+    [by generalize generalize-g]
+qed
